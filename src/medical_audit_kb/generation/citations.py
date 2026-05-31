@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from enum import StrEnum
+from uuid import UUID
+
+from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
+
+DEFAULT_SNIPPET_CHARS = 240
+
+
+class EvidenceType(StrEnum):
+    LEGAL_BASIS = "legal_basis"
+    RULE_BASIS = "rule_basis"
+    CATALOG_BASIS = "catalog_basis"
+    RISK_CASE_BASIS = "risk_case_basis"
+
+
+EVIDENCE_TITLES: dict[EvidenceType, str] = {
+    EvidenceType.LEGAL_BASIS: "法规依据",
+    EvidenceType.RULE_BASIS: "规则依据",
+    EvidenceType.CATALOG_BASIS: "目录依据",
+    EvidenceType.RISK_CASE_BASIS: "风险案例依据",
+}
+
+EVIDENCE_ORDER: tuple[EvidenceType, ...] = (
+    EvidenceType.LEGAL_BASIS,
+    EvidenceType.RULE_BASIS,
+    EvidenceType.CATALOG_BASIS,
+    EvidenceType.RISK_CASE_BASIS,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Citation:
+    citation_id: str
+    evidence_type: EvidenceType
+    source_collection: SourceCollection
+    chunk_id: UUID
+    snippet: str
+    locator: dict[str, object]
+    index_version_key: str
+    source_package_version_key: str
+    score: float
+    metadata: dict[str, object]
+
+    @property
+    def marker(self) -> str:
+        return f"[{self.citation_id}]"
+
+
+@dataclass(frozen=True, slots=True)
+class CitationGroup:
+    evidence_type: EvidenceType
+    title: str
+    citations: tuple[Citation, ...]
+
+
+def build_citations(
+    results: tuple[HybridSearchResult, ...],
+    *,
+    max_snippet_chars: int = DEFAULT_SNIPPET_CHARS,
+) -> tuple[Citation, ...]:
+    citations: list[Citation] = []
+    for index, result in enumerate(results, start=1):
+        source_collection = _source_collection_from_metadata(result.chunk.metadata)
+        citations.append(
+            Citation(
+                citation_id=f"C{index}",
+                evidence_type=evidence_type_for_source_collection(source_collection),
+                source_collection=source_collection,
+                chunk_id=result.chunk.chunk_id,
+                snippet=_snippet(result.chunk.text, max_snippet_chars=max_snippet_chars),
+                locator=result.chunk.locator,
+                index_version_key=result.chunk.index_version_key,
+                source_package_version_key=result.chunk.source_package_version_key,
+                score=result.score,
+                metadata=result.chunk.metadata,
+            )
+        )
+    return tuple(citations)
+
+
+def group_citations(citations: tuple[Citation, ...]) -> tuple[CitationGroup, ...]:
+    groups: list[CitationGroup] = []
+    for evidence_type in EVIDENCE_ORDER:
+        grouped = tuple(
+            citation
+            for citation in citations
+            if citation.evidence_type == evidence_type
+        )
+        if not grouped:
+            continue
+        groups.append(
+            CitationGroup(
+                evidence_type=evidence_type,
+                title=EVIDENCE_TITLES[evidence_type],
+                citations=grouped,
+            )
+        )
+    return tuple(groups)
+
+
+def evidence_type_for_source_collection(source_collection: SourceCollection) -> EvidenceType:
+    if source_collection == SourceCollection.MEDICAL_INSURANCE_LAWS:
+        return EvidenceType.LEGAL_BASIS
+    if source_collection == SourceCollection.SUPERVISION_RULES_KNOWLEDGE:
+        return EvidenceType.RULE_BASIS
+    if source_collection == SourceCollection.MEDICAL_INSURANCE_CATALOG:
+        return EvidenceType.CATALOG_BASIS
+    if source_collection == SourceCollection.RISK_NEGATIVE_LIST:
+        return EvidenceType.RISK_CASE_BASIS
+    raise ValueError(f"unsupported source collection: {source_collection}")
+
+
+def _source_collection_from_metadata(metadata: dict[str, object]) -> SourceCollection:
+    value = metadata.get("source_collection")
+    if not isinstance(value, str):
+        raise ValueError("citation metadata must contain source_collection")
+    return SourceCollection(value)
+
+
+def _snippet(text: str, *, max_snippet_chars: int) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if len(normalized) <= max_snippet_chars:
+        return normalized
+    return f"{normalized[: max_snippet_chars - 1].rstrip()}…"

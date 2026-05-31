@@ -1,0 +1,14 @@
+data_root: data/医保审核前期资料
+index_root: tmp/knowledge-query-indexes
+database_url: postgresql+psycopg://medical_audit_kb:medical_audit_kb_dev@localhost:5433/medical_audit_kb
+model_provider:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  embedding_model: text-embedding-3-small
+  rerank_model: null
+  chat_model: gpt-4.1-mini
+source_collection_weights:
+  medical-insurance-catalog: 1.25
+  supervision-rules-knowledge: 1.35
+  risk-negative-list: 1.1
+  medical-insurance-laws: 1.0

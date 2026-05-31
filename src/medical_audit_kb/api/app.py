@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import cast
+from uuid import UUID
+
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+
+from medical_audit_kb import __version__
+from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
+from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
+from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
+from medical_audit_kb.preview.resolver import PreviewResolver
+from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
+
+
+@dataclass(frozen=True, slots=True)
+class PreviewReference:
+    locator: dict[str, object]
+    citation_text: str | None = None
+
+
+@dataclass(slots=True)
+class ApiState:
+    settings: KnowledgeQuerySettings
+    index_pipeline: KnowledgeIndexPipeline
+    preview_resolver: PreviewResolver
+    search_engine: HybridSearchEngine | None = None
+    current_snapshot: ManifestIndexSnapshot | None = None
+    index_versions: list[dict[str, object]] = field(default_factory=list)
+    index_jobs: list[dict[str, object]] = field(default_factory=list)
+    failed_files: list[dict[str, object]] = field(default_factory=list)
+    pending_files: list[dict[str, object]] = field(default_factory=list)
+    query_logs: list[dict[str, object]] = field(default_factory=list)
+    operation_logs: list[dict[str, object]] = field(default_factory=list)
+    preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
+
+    @classmethod
+    def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
+        return cls(
+            settings=settings,
+            index_pipeline=KnowledgeIndexPipeline(),
+            preview_resolver=PreviewResolver(source_root=settings.data_root),
+        )
+
+    @property
+    def source_root(self) -> Path:
+        return self.settings.data_root
+
+
+class HealthResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    version: str
+    data_root: str
+
+
+def create_app(api_state: ApiState | None = None) -> FastAPI:
+    state = api_state or ApiState.from_settings(load_settings())
+    app = FastAPI(title="Medical Audit Knowledge Query API", version=__version__)
+    app.state.api_state = state
+    app.mount(
+        "/static",
+        StaticFiles(directory=Path(__file__).parent / "static"),
+        name="static",
+    )
+
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(
+            status="ok",
+            version=__version__,
+            data_root=str(state.source_root),
+        )
+
+    from medical_audit_kb.api.routes_index import router as index_router
+    from medical_audit_kb.api.routes_pages import router as pages_router
+    from medical_audit_kb.api.routes_preview import router as preview_router
+    from medical_audit_kb.api.routes_query import router as query_router
+
+    app.include_router(pages_router)
+    app.include_router(query_router)
+    app.include_router(index_router)
+    app.include_router(preview_router)
+    return app
+
+
+def get_api_state(request: Request) -> ApiState:
+    return cast(ApiState, request.app.state.api_state)
+
+
+def record_index_run(state: ApiState, run_result: PipelineRunResult) -> None:
+    summary = run_result.summary.to_dict()
+    state.current_snapshot = run_result.snapshot
+    state.index_versions.append(
+        {
+            "index_version_key": run_result.summary.index_version_key,
+            "source_package_version_key": run_result.summary.source_package_version_key,
+            "status": "active",
+            "chunk_count": run_result.summary.chunk_count,
+            "document_count": run_result.summary.indexed_file_count,
+        }
+    )
+    state.index_jobs.append(
+        {
+            "job_id": run_result.summary.index_version_key,
+            "job_type": run_result.summary.job_type.value,
+            "status": "succeeded",
+            "summary": summary,
+        }
+    )
+    state.failed_files = [
+        {
+            "relative_path": item.relative_path,
+            "error_type": item.error_type.value,
+            "error_summary": item.error_summary,
+        }
+        for item in run_result.failed_files
+    ]
+    state.pending_files = [
+        {
+            "relative_path": item.relative_path,
+            "error_type": item.error_type.value,
+            "error_summary": item.error_summary,
+        }
+        for item in run_result.pending_files
+    ]
+    record_operation(
+        state,
+        "index",
+        {
+            "job_type": run_result.summary.job_type.value,
+            "index_version_key": run_result.summary.index_version_key,
+            "status": "succeeded",
+        },
+    )
+
+
+def record_operation(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> None:
+    state.operation_logs.append({"action": action, "payload": payload})
+
+
+class PermissionHeaders(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_identifier: str = Field(default="anonymous")
+    role: str = Field(default="auditor")

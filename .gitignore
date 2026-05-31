@@ -1,0 +1,27 @@
+.DS_Store
+*.swp
+*.swo
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.uploading.cfg
+
+.idea/
+.vscode/
+.venv/
+venv/
+node_modules/
+dist/
+build/
+coverage/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+
+tmp/
+
+# Local knowledge source materials are large and may contain proprietary data.
+data/*
+!data/.gitkeep

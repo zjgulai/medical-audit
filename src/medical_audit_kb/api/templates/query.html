@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>医保审核知识库查询</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Medical Audit KB</p>
+        <h1>引用优先的医保审核知识查询</h1>
+        <p class="lede">输入自然语言问题，系统返回分组依据、引用片段和原文预览入口。</p>
+      </section>
+
+      <section class="panel">
+        <form method="get" action="/pages/query" class="query-form">
+          <label for="question">自然语言问题</label>
+          <textarea id="question" name="question" rows="4" placeholder="例如：超量开药的审核依据是什么？">{{ question }}</textarea>
+
+          <fieldset>
+            <legend>来源过滤</legend>
+            {% for collection in source_collections %}
+              <label class="check">
+                <input
+                  type="checkbox"
+                  name="source_collection"
+                  value="{{ collection.value }}"
+                  {% if collection.value in selected_collections %}checked{% endif %}
+                >
+                <span>{{ collection.value }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+
+          <button type="submit">查询依据</button>
+        </form>
+      </section>
+
+      {% if error_message %}
+        <section class="notice">{{ error_message }}</section>
+      {% endif %}
+
+      {% if answer %}
+        <section class="answer-grid">
+          <article class="answer-card">
+            <p class="eyebrow">Answer</p>
+            <h2>引用型回答</h2>
+            <pre>{{ answer.answer }}</pre>
+            <p class="meta">confidence: {{ answer.confidence }} · fallback: {{ answer.fallback_used }}</p>
+          </article>
+
+          <aside class="answer-card">
+            <p class="eyebrow">Citations</p>
+            <h2>引用依据</h2>
+            {% for group in answer.basis_groups %}
+              <h3>{{ group.title }}</h3>
+              <ul class="citation-list">
+                {% for item in group.items %}
+                  <li>
+                    <strong>[{{ item.citation_id }}]</strong>
+                    <span>{{ item.snippet }}</span>
+                    <a href="/preview/{{ item.chunk_id }}">原文预览</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endfor %}
+          </aside>
+        </section>
+      {% endif %}
+
+      <section class="panel">
+        <p class="eyebrow">Recent Queries</p>
+        <h2>最近查询日志</h2>
+        <ul class="compact-list">
+          {% for log in query_logs %}
+            <li>{{ log.question }} · citations: {{ log.citation_count }}</li>
+          {% else %}
+            <li>暂无查询日志。</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
