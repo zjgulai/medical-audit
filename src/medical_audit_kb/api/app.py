@@ -29,6 +29,8 @@ class ApiState:
     index_pipeline: KnowledgeIndexPipeline
     preview_resolver: PreviewResolver
     search_engine: HybridSearchEngine | None = None
+    search_backend: str = "none"
+    search_backend_details: dict[str, object] = field(default_factory=dict)
     current_snapshot: ManifestIndexSnapshot | None = None
     index_versions: list[dict[str, object]] = field(default_factory=list)
     index_jobs: list[dict[str, object]] = field(default_factory=list)

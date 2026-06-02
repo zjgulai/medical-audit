@@ -24,6 +24,9 @@ search = [
     "tantivy>=0.22.0",
 ]
 
+[project.scripts]
+medical-audit-kb = "medical_audit_kb.cli:main"
+
 [dependency-groups]
 dev = [
     "aiosqlite>=0.20.0",

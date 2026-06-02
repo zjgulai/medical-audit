@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.app import ApiState, create_app
@@ -8,6 +9,11 @@ from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSe
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
+from medical_audit_kb.indexing.index_activation import (
+    IndexActivationError,
+    IndexActivationResult,
+    IndexRollbackResult,
+)
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
     InMemoryVectorIndex,
@@ -142,9 +148,247 @@ def test_index_retry_file_reports_missing_target(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["summary"]["failed_file_count"] == 1
     assert (
-        client.get("/index/failures").json()["items"][0]["relative_path"]
-        == "医保目录/missing.md"
+        client.get("/index/failures").json()["items"][0]["relative_path"] == "医保目录/missing.md"
     )
+
+
+def test_index_postgres_status_reports_database_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+
+    def fake_load_postgres_index_status(database_url: str) -> dict[str, object]:
+        return {
+            "available": True,
+            "row_counts": {
+                "source_package_versions": 1,
+                "source_documents": 486,
+                "document_chunks": 48985,
+                "chunk_embeddings": 48985,
+                "index_versions": 1,
+                "index_jobs": 1,
+                "failed_files": 0,
+                "pending_files": 13,
+            },
+            "embedding_sets": [
+                {
+                    "provider": "openai",
+                    "model_name": "kimi-for-coding",
+                    "provider_version": "v1",
+                    "dimension": 1024,
+                    "embedding_count": 48985,
+                }
+            ],
+            "index_versions": [
+                {
+                    "version_key": "source-package-real-data-kimi-20260531",
+                    "status": "active",
+                    "vector_provider": "openai",
+                    "vector_model": "kimi-for-coding",
+                    "chunk_count": 48985,
+                    "document_count": 486,
+                }
+            ],
+            "source_packages": [
+                {
+                    "version_key": "source-package-real-data-kimi-20260531",
+                    "source_root_path": "data/医保审核前期资料",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.load_postgres_index_status",
+        fake_load_postgres_index_status,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get("/index/postgres-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["row_counts"]["document_chunks"] == 48985
+    assert body["row_counts"]["pending_files"] == 13
+    assert body["embedding_sets"][0]["model_name"] == "kimi-for-coding"
+    assert state.operation_logs[-1]["action"] == "postgres-index-status-view"
+
+
+def test_index_postgres_search_backend_loads_with_admin_role(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = None
+    loaded_engine = _search_engine(_chunk_id(), "全量法律/law.md")
+    captured: dict[str, object] = {}
+
+    def fake_load_postgres_hybrid_search_engine(
+        *,
+        database_url: str,
+        embedding_provider: DeterministicFakeEmbeddingProvider,
+    ) -> HybridSearchEngine:
+        captured["database_url"] = database_url
+        captured["embedding_provider"] = embedding_provider
+        return loaded_engine
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.load_postgres_hybrid_search_engine",
+        fake_load_postgres_hybrid_search_engine,
+    )
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.count_postgres_embeddings",
+        lambda database_url, embedding_provider: 48985,
+    )
+    client = TestClient(create_app(state))
+
+    status_response = client.get("/index/search-backend")
+    assert status_response.status_code == 200
+    assert status_response.json() == {"backend": "none", "ready": False, "details": {}}
+
+    forbidden_response = client.post(
+        "/index/search-backend/postgres",
+        headers={"X-Role": "auditor"},
+        json={
+            "embedding_provider": "fake",
+            "embedding_model": "fake",
+            "embedding_dimension": 32,
+        },
+    )
+    assert forbidden_response.status_code == 403
+
+    response = client.post(
+        "/index/search-backend/postgres",
+        headers={"X-Role": "it-admin"},
+        json={
+            "embedding_provider": "fake",
+            "embedding_model": "fake",
+            "embedding_dimension": 32,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["backend"] == "postgres"
+    assert body["ready"] is True
+    assert body["details"]["embedding_provider"] == "fake"
+    assert body["details"]["embedding_dimension"] == 32
+    assert body["details"]["matching_embedding_count"] == 48985
+    assert id(state.search_engine) == id(loaded_engine)
+    assert captured["database_url"] == state.settings.database_url
+
+
+def test_index_postgres_search_backend_rejects_unmatched_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = None
+
+    def fake_count_postgres_embeddings(
+        database_url: str,
+        embedding_provider: DeterministicFakeEmbeddingProvider,
+    ) -> int:
+        raise ValueError("no postgres embeddings match requested provider metadata")
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.count_postgres_embeddings",
+        fake_count_postgres_embeddings,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/index/search-backend/postgres",
+        headers={"X-Role": "it-admin"},
+        json={
+            "embedding_provider": "fake",
+            "embedding_model": "fake",
+            "embedding_dimension": 1536,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "no postgres embeddings match" in response.json()["detail"]
+    assert state.search_engine is None
+    assert state.search_backend == "none"
+
+
+def test_index_version_activate_and_rollback_actions_require_admin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.activate_index_version",
+        lambda **kwargs: IndexActivationResult(
+            index_version_key=str(kwargs["index_version_key"]),
+            vector_provider="openai",
+            vector_model="kimi-for-coding",
+            previous_status="candidate",
+            deactivated_index_version_keys=("active-old",),
+        ),
+    )
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.rollback_index_version",
+        lambda **kwargs: IndexRollbackResult(
+            index_version_key=str(kwargs["index_version_key"]),
+            vector_provider="openai",
+            vector_model="kimi-for-coding",
+            previous_status="inactive",
+            deactivated_index_version_keys=("active-current",),
+        ),
+    )
+
+    forbidden_response = client.post(
+        "/index/versions/activate",
+        headers={"X-Role": "auditor"},
+        json={"index_version_key": "candidate-next"},
+    )
+    assert forbidden_response.status_code == 403
+
+    activate_response = client.post(
+        "/index/versions/activate",
+        headers={"X-Role": "it-admin"},
+        json={"index_version_key": "candidate-next"},
+    )
+    assert activate_response.status_code == 200
+    assert activate_response.json()["result"]["index_version_key"] == "candidate-next"
+    assert str(state.operation_logs[-1]["action"]) == "index-version-activate"
+
+    rollback_response = client.post(
+        "/index/versions/rollback",
+        headers={"X-Role": "it-admin"},
+        json={"index_version_key": "active-old"},
+    )
+    assert rollback_response.status_code == 200
+    assert rollback_response.json()["result"]["previous_status"] == "inactive"
+    assert str(state.operation_logs[-1]["action"]) == "index-version-rollback"
+
+
+def test_index_version_switch_returns_conflict_for_invalid_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    def fake_activate_index_version(**kwargs: object) -> IndexActivationResult:
+        raise IndexActivationError("index version must be candidate or active")
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_index.activate_index_version",
+        fake_activate_index_version,
+    )
+
+    response = client.post(
+        "/index/versions/activate",
+        headers={"X-Role": "it-admin"},
+        json={"index_version_key": "inactive-old"},
+    )
+
+    assert response.status_code == 409
+    assert "candidate or active" in response.json()["detail"]
 
 
 def _api_state(tmp_path: Path) -> ApiState:
