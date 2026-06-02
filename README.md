@@ -30,9 +30,11 @@ source: human+ai
    当前开发排期、交付物和里程碑基线。
 4. `docs/product/product-scope-baseline-stable.md`
    基于现有材料整理出的统一产品范围基线。
-5. `docs/knowledge/audit-agent-platform-reference-stable.pptx`
+5. `docs/knowledge/knowledge-query-evidence-register-stable.md`
+   知识库查询引擎草稿证据登记表，说明哪些评测、迁移和 UI 复盘草稿可以作为历史证据保留。
+6. `docs/knowledge/audit-agent-platform-reference-stable.pptx`
    上游平台能力参考材料，不直接作为当前医疗项目需求基线。
-6. `data/医保审核前期资料/`
+7. `data/医保审核前期资料/`
    当前项目的正式输入资料库。
 
 ## 目录说明
@@ -56,6 +58,7 @@ source: human+ai
 - 已补充项目资料审计结论和产品范围基线
 - 已落地 `docs/product/product-prd-medical-audit-v1-stable.md` 作为 V1.0 PRD 执行基线
 - 已形成知识库查询引擎的架构、API 和运行手册
+- 已建立 `docs/knowledge/knowledge-query-evidence-register-stable.md`，用于登记知识库评测、迁移、UI smoke 和 provider 预检草稿证据
 
 ## 下一步
 

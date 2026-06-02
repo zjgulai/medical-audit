@@ -201,6 +201,16 @@ curl http://127.0.0.1:8000/preview/{chunk_id}
 - `drafts/analysis/knowledge-query-evaluation-seed-draft-20260531.md`
 - `drafts/analysis/knowledge-query-real-data-retrieval-evaluation-draft-20260531.md`
 
+草稿证据登记表：
+
+- `docs/knowledge/knowledge-query-evidence-register-stable.md`
+
+使用规则：
+
+- 草稿报告只作为历史运行证据，不作为当前状态最高优先级来源。
+- 发布、回滚、上线验收前必须重新运行当前门禁，不能直接复用历史草稿指标。
+- 新增评测、迁移或 provider 预检草稿后，必须更新证据登记表再进入提交。
+
 ## 9. 本地持久化索引
 
 构建默认 fake embedding 索引：
