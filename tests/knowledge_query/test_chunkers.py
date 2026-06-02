@@ -58,13 +58,7 @@ def test_chunks_ordinary_markdown_by_headings_and_paragraphs() -> None:
         text_segments=(
             TextSegment(
                 text=(
-                    "# 审核说明\n"
-                    "第一段说明。\n"
-                    "\n"
-                    "第二段说明。\n"
-                    "继续第二段。\n"
-                    "## 细则\n"
-                    "细则段落。"
+                    "# 审核说明\n第一段说明。\n\n第二段说明。\n继续第二段。\n## 细则\n细则段落。"
                 ),
                 line_start=1,
                 line_end=7,
@@ -119,19 +113,19 @@ def test_chunks_xlsx_rows_with_sheet_and_row_locator() -> None:
         relative_path="智能监管“两库”规则和知识点/rules.xlsx",
     )
 
-    assert len(chunks) == 2
-    assert chunks[1].sheet_name == "规则"
-    assert chunks[1].row_number == 2
-    assert chunks[1].title_path == ["规则"]
-    assert "规则编码: R001" in chunks[1].text
-    assert "规则名称: 超量开药" in chunks[1].text
-    assert chunks[1].locator == {
+    assert len(chunks) == 1
+    assert chunks[0].sheet_name == "规则"
+    assert chunks[0].row_number == 2
+    assert chunks[0].title_path == ["规则"]
+    assert "规则编码: R001" in chunks[0].text
+    assert "规则名称: 超量开药" in chunks[0].text
+    assert chunks[0].locator == {
         "type": "xlsx-row",
         "source_path": "智能监管“两库”规则和知识点/rules.xlsx",
         "sheet_name": "规则",
         "row_number": 2,
     }
-    assert chunks[1].metadata["values_by_header"]["规则名称"] == "超量开药"
+    assert chunks[0].metadata["values_by_header"]["规则名称"] == "超量开药"
 
 
 def test_splits_long_article_into_windows_with_parent_locator() -> None:
@@ -181,3 +175,27 @@ def test_non_extracted_result_returns_no_chunks() -> None:
     )
 
     assert chunks == []
+
+
+def test_chunker_sanitizes_invalid_unicode_surrogates() -> None:
+    result = ExtractionResult(
+        path=Path("bad-unicode.md"),
+        status=ExtractionStatus.EXTRACTED,
+        media_type="text/markdown",
+        text_segments=(
+            TextSegment(
+                text="医保\udce2审核依据",
+                line_start=1,
+                line_end=1,
+            ),
+        ),
+    )
+
+    chunks = chunk_extraction_result(
+        result,
+        source_document_id=uuid4(),
+        source_collection=SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
+        relative_path="智能监管“两库”规则和知识点/bad-unicode.md",
+    )
+
+    assert chunks[0].text == "医保审核依据"

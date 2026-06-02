@@ -94,6 +94,8 @@ def _chunk_table_rows(
 ) -> list[DocumentChunkCreate]:
     chunks: list[DocumentChunkCreate] = []
     for row in rows:
+        if _is_header_row(row):
+            continue
         text = _table_row_text(row)
         if not text:
             continue
@@ -122,16 +124,22 @@ def _chunk_table_rows(
     return chunks
 
 
+def _is_header_row(row: TableRow) -> bool:
+    return row.row_number == 1 and row.values_by_header == {
+        cell: cell for cell in row.cells if cell
+    }
+
+
 def _table_row_text(row: TableRow) -> str:
     if row.values_by_header:
         parts = [
-            f"{key}: {value}"
+            f"{_sanitize_text(key)}: {_sanitize_text(value)}"
             for key, value in row.values_by_header.items()
             if key and value
         ]
         if parts:
             return "\n".join(parts)
-    return "\n".join(cell for cell in row.cells if cell)
+    return "\n".join(_sanitize_text(cell) for cell in row.cells if cell)
 
 
 def _located_lines(segments: tuple[TextSegment, ...]) -> list[LocatedLine]:
@@ -144,7 +152,7 @@ def _located_lines(segments: tuple[TextSegment, ...]) -> list[LocatedLine]:
             line_number = segment.line_start + offset if segment.line_start is not None else None
             lines.append(
                 LocatedLine(
-                    text=text.rstrip(),
+                    text=_sanitize_text(text).rstrip(),
                     page_number=segment.page_number,
                     line_number=line_number,
                 )
@@ -327,7 +335,7 @@ def _chunk_text_block(
 
 
 def _text_windows(text: str, *, max_chunk_chars: int, overlap_chars: int) -> tuple[str, ...]:
-    normalized = text.strip()
+    normalized = _sanitize_text(text).strip()
     if not normalized:
         return ()
     if len(normalized) <= max_chunk_chars:
@@ -352,3 +360,7 @@ def _rough_token_count(text: str) -> int:
 
 def _safe_relative_path(path: Path) -> str:
     return path.as_posix()
+
+
+def _sanitize_text(text: str) -> str:
+    return text.encode("utf-8", "ignore").decode("utf-8").replace("\x00", "")

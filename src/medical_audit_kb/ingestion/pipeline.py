@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID, uuid5
 
 from medical_audit_kb.domain.constants import DocumentStatus, FileErrorType, IndexJobType
+from medical_audit_kb.domain.schemas import DocumentChunkCreate
 from medical_audit_kb.indexing.index_jobs import (
     IndexDiff,
     IndexRunSummary,
@@ -31,6 +32,7 @@ class PipelineFileResult:
     relative_path: str
     status: ExtractionStatus
     chunk_count: int
+    chunks: tuple[DocumentChunkCreate, ...] = ()
     error_type: FileErrorType | None = None
     error_summary: str | None = None
 
@@ -60,11 +62,15 @@ class KnowledgeIndexPipeline:
         source_root: Path | str,
         *,
         package_version_key: str | None = None,
+        max_chunks: int | None = None,
     ) -> PipelineRunResult:
+        if max_chunks is not None and max_chunks <= 0:
+            raise ValueError("max_chunks must be positive")
         manifest = build_source_package_manifest(source_root, version_key=package_version_key)
         snapshot = ManifestIndexSnapshot.from_manifest(manifest)
         file_results, failed_files, extraction_pending_files = self._process_files(
-            manifest.index_candidates
+            manifest.index_candidates,
+            max_chunks=max_chunks,
         )
         pending_files = _manifest_pending_issues(manifest.pending_files) + extraction_pending_files
         summary = IndexRunSummary(
@@ -208,6 +214,8 @@ class KnowledgeIndexPipeline:
     def _process_files(
         self,
         files: tuple[InventoryFile, ...],
+        *,
+        max_chunks: int | None = None,
     ) -> tuple[
         tuple[PipelineFileResult, ...],
         tuple[PipelineFileIssue, ...],
@@ -216,25 +224,82 @@ class KnowledgeIndexPipeline:
         results: list[PipelineFileResult] = []
         failed_files: list[PipelineFileIssue] = []
         pending_files: list[PipelineFileIssue] = []
+        remaining_chunks = max_chunks
 
         for file in files:
-            result = extract_file(file.path)
-            if result.status == ExtractionStatus.EXTRACTED and file.source_collection is not None:
-                chunks = chunk_extraction_result(
-                    result,
-                    source_document_id=_document_uuid(file),
-                    source_collection=file.source_collection,
-                    relative_path=file.relative_path,
-                    max_chunk_chars=self._max_chunk_chars,
-                    overlap_chars=self._overlap_chars,
+            if remaining_chunks is not None and remaining_chunks <= 0:
+                break
+            try:
+                result = extract_file(file.path)
+            except Exception as exc:
+                issue = _unexpected_file_issue(file.relative_path, exc)
+                failed_files.append(issue)
+                results.append(
+                    PipelineFileResult(
+                        relative_path=file.relative_path,
+                        status=ExtractionStatus.FAILED,
+                        chunk_count=0,
+                        error_type=issue.error_type,
+                        error_summary=issue.error_summary,
+                    )
                 )
+                continue
+
+            if result.status == ExtractionStatus.EXTRACTED and file.source_collection is not None:
+                try:
+                    chunks = chunk_extraction_result(
+                        result,
+                        source_document_id=_document_uuid(file),
+                        source_collection=file.source_collection,
+                        relative_path=file.relative_path,
+                        max_chunk_chars=self._max_chunk_chars,
+                        overlap_chars=self._overlap_chars,
+                    )
+                    selected_chunks = (
+                        tuple(chunks[:remaining_chunks])
+                        if remaining_chunks is not None
+                        else tuple(chunks)
+                    )
+                except Exception as exc:
+                    issue = _unexpected_file_issue(file.relative_path, exc)
+                    failed_files.append(issue)
+                    results.append(
+                        PipelineFileResult(
+                            relative_path=file.relative_path,
+                            status=ExtractionStatus.FAILED,
+                            chunk_count=0,
+                            error_type=issue.error_type,
+                            error_summary=issue.error_summary,
+                        )
+                    )
+                    continue
+                if not selected_chunks:
+                    issue = PipelineFileIssue(
+                        relative_path=file.relative_path,
+                        error_type=FileErrorType.LOW_QUALITY_TEXT,
+                        error_summary="extracted content produced no indexable chunks",
+                    )
+                    pending_files.append(issue)
+                    results.append(
+                        PipelineFileResult(
+                            relative_path=file.relative_path,
+                            status=ExtractionStatus.PENDING,
+                            chunk_count=0,
+                            error_type=issue.error_type,
+                            error_summary=issue.error_summary,
+                        )
+                    )
+                    continue
                 results.append(
                     PipelineFileResult(
                         relative_path=file.relative_path,
                         status=result.status,
-                        chunk_count=len(chunks),
+                        chunk_count=len(selected_chunks),
+                        chunks=selected_chunks,
                     )
                 )
+                if remaining_chunks is not None:
+                    remaining_chunks -= len(selected_chunks)
                 continue
 
             issue = PipelineFileIssue(
@@ -271,8 +336,22 @@ def _manifest_pending_issues(files: tuple[InventoryFile, ...]) -> tuple[Pipeline
 
 
 def _indexed_count(results: tuple[PipelineFileResult, ...]) -> int:
-    return len([result for result in results if result.status == ExtractionStatus.EXTRACTED])
+    return len(
+        [
+            result
+            for result in results
+            if result.status == ExtractionStatus.EXTRACTED and result.chunk_count > 0
+        ]
+    )
 
 
 def _document_uuid(file: InventoryFile) -> UUID:
     return uuid5(PIPELINE_DOCUMENT_NAMESPACE, f"{file.relative_path}:{file.sha256}")
+
+
+def _unexpected_file_issue(relative_path: str, exc: Exception) -> PipelineFileIssue:
+    return PipelineFileIssue(
+        relative_path=relative_path,
+        error_type=FileErrorType.EXTRACTION_FAILED,
+        error_summary=f"pipeline processing failed: {type(exc).__name__}: {exc}",
+    )

@@ -15,6 +15,7 @@ from medical_audit_kb.domain.schemas import FailedFileCreate
 from medical_audit_kb.ingestion.inventory import PENDING_MEDIA_TYPES, SUPPORTED_MEDIA_TYPES
 
 MIN_EXTRACTABLE_PDF_CHARS = 20
+MIN_EXTRACTABLE_TEXT_CHARS = 1
 DEFAULT_MAX_XLSX_COLUMNS = 256
 
 
@@ -110,6 +111,13 @@ def _extract_plain_text(path: Path, media_type: str) -> ExtractionResult:
         return _failed_result(path, media_type, FileErrorType.EXTRACTION_FAILED, str(exc))
 
     line_count = len(text.splitlines()) or 1
+    if len(text.strip()) < MIN_EXTRACTABLE_TEXT_CHARS:
+        return _pending_result(
+            path,
+            media_type,
+            FileErrorType.LOW_QUALITY_TEXT,
+            "text file has no extractable content",
+        )
     return ExtractionResult(
         path=path,
         status=ExtractionStatus.EXTRACTED,
@@ -157,6 +165,14 @@ def _extract_xlsx(path: Path, media_type: str) -> ExtractionResult:
             rows.extend(_extract_worksheet_rows(worksheet))
     finally:
         workbook.close()
+
+    if not rows:
+        return _pending_result(
+            path,
+            media_type,
+            FileErrorType.LOW_QUALITY_TEXT,
+            "xlsx workbook has no extractable rows",
+        )
 
     return ExtractionResult(
         path=path,

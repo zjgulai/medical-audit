@@ -31,6 +31,17 @@ def test_extracts_markdown_and_txt_as_text_segments(tmp_path: Path) -> None:
     assert "第二行" in txt_result.text
 
 
+def test_empty_text_file_enters_pending_queue(tmp_path: Path) -> None:
+    text_path = tmp_path / "empty.md"
+    text_path.write_text(" \n\n", encoding="utf-8")
+
+    result = extract_file(text_path)
+
+    assert result.status == ExtractionStatus.PENDING
+    assert result.error_type == FileErrorType.LOW_QUALITY_TEXT
+    assert result.error_summary == "text file has no extractable content"
+
+
 def test_extracts_text_pdf(tmp_path: Path) -> None:
     pdf_path = tmp_path / "text.pdf"
     pdf_path.write_bytes(
@@ -64,6 +75,7 @@ def test_extracts_xlsx_rows_with_sheet_and_header_mapping(tmp_path: Path) -> Non
     xlsx_path = tmp_path / "rules.xlsx"
     workbook = Workbook()
     worksheet = workbook.active
+    assert worksheet is not None
     worksheet.title = "规则"
     worksheet.append(["规则编码", "规则名称", "说明"])
     worksheet.append(["R001", "超量开药", "超过限定数量"])
@@ -80,6 +92,18 @@ def test_extracts_xlsx_rows_with_sheet_and_header_mapping(tmp_path: Path) -> Non
     assert result.table_rows[1].cells == ("R001", "超量开药", "超过限定数量")
     assert result.table_rows[1].values_by_header["规则名称"] == "超量开药"
     assert result.table_rows[2].values_by_header["说明"] == ""
+
+
+def test_empty_xlsx_file_enters_pending_queue(tmp_path: Path) -> None:
+    xlsx_path = tmp_path / "empty.xlsx"
+    workbook = Workbook()
+    workbook.save(xlsx_path)
+
+    result = extract_file(xlsx_path)
+
+    assert result.status == ExtractionStatus.PENDING
+    assert result.error_type == FileErrorType.LOW_QUALITY_TEXT
+    assert result.error_summary == "xlsx workbook has no extractable rows"
 
 
 def test_unsupported_files_enter_pending_queue(tmp_path: Path) -> None:
@@ -131,7 +155,9 @@ def _minimal_text_pdf_bytes(text: str) -> bytes:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
         ),
         b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-        b"5 0 obj << /Length " + str(len(stream)).encode("ascii") + b" >> stream\n"
+        b"5 0 obj << /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >> stream\n"
         + stream
         + b"\nendstream endobj\n",
     ]
