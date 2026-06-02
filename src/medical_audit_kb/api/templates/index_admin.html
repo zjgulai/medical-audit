@@ -10,7 +10,7 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="shell">
       <nav class="topbar" aria-label="页面导航">
-        <a class="brand" href="/pages/query">Medical Audit KB</a>
+        <a class="brand" href="/pages/chat">AuditScope</a>
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query">查询工作台</a>
@@ -23,21 +23,21 @@
 
       <section class="hero admin-hero">
         <div>
-          <p class="eyebrow">Index Ops</p>
+          <p class="eyebrow">索引运维控制台</p>
           <h1>知识库索引管理</h1>
           <p class="lede">把资料导入、向量状态、后端加载和异常队列集中到一个可审计的控制面板。</p>
         </div>
         <aside class="hero-console" aria-label="PostgreSQL 状态">
           <div>
-            <span>postgres</span>
+            <span>PostgreSQL</span>
             <strong>{% if postgres_status.available %}ready{% else %}offline{% endif %}</strong>
           </div>
           <div>
-            <span>backend</span>
+            <span>后端</span>
             <strong>{{ search_backend.backend }}</strong>
           </div>
           <div>
-            <span>evaluation</span>
+            <span>验收</span>
             <strong>{{ evaluation_status.status }}</strong>
           </div>
         </aside>
@@ -60,11 +60,11 @@
       <section class="ops-console panel" aria-labelledby="release-console-title">
         <div class="ops-console-heading">
           <div>
-            <p class="eyebrow">Release Console</p>
+            <p class="eyebrow">发布控制台 · Release Console</p>
             <h2 id="release-console-title">发布、回滚与运行态重载</h2>
             <p class="meta">严格按顺序执行：发布 candidate 或回滚历史版本，再重载 PostgreSQL 检索后端，最后用 smoke question 验证对话闭环。</p>
           </div>
-          <span class="ops-seal">audited switch</span>
+          <span class="ops-seal">受控切换</span>
         </div>
 
         <div class="ops-grid">
@@ -142,7 +142,7 @@
       <section class="panel history-panel" aria-labelledby="evaluation-history-title">
         <div class="ops-console-heading">
           <div>
-            <p class="eyebrow">Evaluation History</p>
+            <p class="eyebrow">验收历史 · Evaluation History</p>
             <h2 id="evaluation-history-title">验收历史</h2>
             <p class="meta">历史报告列表用于复盘每次发布后的固定检索评测、答案评测和 UI smoke 结果。</p>
           </div>
@@ -163,7 +163,7 @@
 
       <section class="split">
         <article class="panel">
-          <p class="eyebrow">Runtime</p>
+          <p class="eyebrow">运行态</p>
           <h2>检索后端</h2>
           <dl class="kv">
             <dt>backend</dt><dd>{{ search_backend.backend }}</dd>
@@ -175,7 +175,7 @@
         </article>
 
         <article class="panel">
-          <p class="eyebrow">Data Source</p>
+          <p class="eyebrow">数据源</p>
           <h2>数据源状态</h2>
           <dl class="kv">
             <dt>data_root</dt><dd>{{ data_root }}</dd>
@@ -186,7 +186,7 @@
       </section>
 
       <section class="panel">
-        <p class="eyebrow">Vector Sets</p>
+        <p class="eyebrow">向量集合</p>
         <h2>数据库向量集合</h2>
         <ul class="compact-list">
           {% for item in postgres_status.embedding_sets %}

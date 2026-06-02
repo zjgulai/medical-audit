@@ -14,7 +14,7 @@
           <span class="brand-mark">AS</span>
           <span class="brand-lockup">
             <strong>AuditScope</strong>
-            <small>医保审核对话审证台</small>
+            <small>医保审计证据控制台</small>
           </span>
         </a>
         <div class="nav-links">
@@ -40,10 +40,10 @@
 
       <section class="command-header" aria-labelledby="command-title">
         <div class="command-title-block">
-          <p class="eyebrow">Evidence Command Center</p>
-          <h1 id="command-title">把每次问答变成可复核的审证记录。</h1>
+          <p class="eyebrow">医保审计证据控制台 · Evidence Command Center</p>
+          <h1 id="command-title">原文依据约束审计回答。</h1>
           <p class="lede">
-            AuditScope 会把医保审核问题拆解为结论、证据链、适用边界和原文入口。没有引用依据时，不生成审核结论。
+            AuditScope 将医保审核问题拆解为结论、证据链、适用边界和原文入口。没有引用依据时，不生成审核结论。
           </p>
         </div>
         <div class="command-scoreboard" aria-label="审证能力状态">
@@ -64,7 +64,7 @@
 
       <section class="chat-layout command-layout">
         <aside class="conversation-sidebar command-rail panel" aria-label="会话与审证流程">
-          <p class="eyebrow">Case Rail</p>
+          <p class="eyebrow">审证流程 · Case Review</p>
           <h2>审证流程</h2>
           <ol class="stage-list">
             <li class="{% if not question %}active{% endif %}">
@@ -105,12 +105,12 @@
           <article class="chat-transcript transcript-card">
             {% if question %}
               <section class="message user-message audit-question">
-                <p class="message-role">Auditor Question</p>
+                <p class="message-role">审计问题</p>
                 <div>{{ question }}</div>
               </section>
             {% else %}
               <section class="empty-state command-empty">
-                <p class="eyebrow">Start Here</p>
+                <p class="eyebrow">开始审证</p>
                 <h2>输入一个医保审核问题，系统会先找依据，再组织回答。</h2>
                 <p>
                   推荐从“是否合规、依据是什么、还需核验哪些材料”三个角度提问。当前版本会优先返回可点击原文预览。
@@ -122,7 +122,7 @@
               <section class="decision-card assistant-message" aria-label="审证结论">
                 <div class="decision-header">
                   <div>
-                    <p class="message-role">AuditScope Decision</p>
+                    <p class="message-role">AuditScope 审证结论</p>
                     <h2>可追溯回答</h2>
                   </div>
                   <div class="decision-badges" aria-label="回答质量摘要">
@@ -151,7 +151,7 @@
           <article class="composer-card command-composer">
             <form method="get" action="/pages/chat" class="chat-form">
               <div class="composer-heading">
-                <label for="question">Command Composer</label>
+                <label for="question">审计问题输入</label>
                 <span>问题必须能被证据回答</span>
               </div>
               <textarea
@@ -188,7 +188,7 @@
         </section>
 
         <aside class="evidence-panel evidence-dossier panel" aria-label="证据卷宗">
-          <p class="eyebrow">Evidence Dossier</p>
+          <p class="eyebrow">证据卷宗 · Evidence Dossier</p>
           <h2>证据卷宗</h2>
           <div class="quality-card {{ answer_quality.status }}">
             <strong>{{ answer_quality.title }}</strong>

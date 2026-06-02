@@ -10,7 +10,7 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="shell">
       <nav class="topbar" aria-label="页面导航">
-        <a class="brand" href="/pages/query">Medical Audit KB</a>
+        <a class="brand" href="/pages/chat">AuditScope</a>
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query">查询工作台</a>
@@ -24,21 +24,21 @@
 
       <section class="hero preview-hero">
         <div>
-          <p class="eyebrow">Source Preview</p>
+          <p class="eyebrow">原文定位</p>
           <h1>原文证据预览</h1>
           <p class="lede">核对引用片段、定位信息和源文件路径，确认答案是否可追溯。</p>
         </div>
         <aside class="hero-console" aria-label="定位信息">
           <div>
-            <span>media</span>
+            <span>类型</span>
             <strong>{{ media_type }}</strong>
           </div>
           <div>
-            <span>line</span>
+            <span>行号</span>
             <strong>{% if line_start %}{{ line_start }}-{{ line_end }}{% else %}n/a{% endif %}</strong>
           </div>
           <div>
-            <span>page</span>
+            <span>页码</span>
             <strong>{% if page_number %}{{ page_number }}{% else %}n/a{% endif %}</strong>
           </div>
         </aside>
@@ -46,13 +46,13 @@
 
       <section class="preview-grid">
         <article class="panel source-panel">
-          <p class="eyebrow">Evidence Text</p>
+          <p class="eyebrow">证据文本</p>
           <h2>上下文片段</h2>
           <pre class="source-text">{{ preview_text }}</pre>
         </article>
 
         <aside class="panel">
-          <p class="eyebrow">Locator</p>
+          <p class="eyebrow">定位元数据</p>
           <h2>定位元数据</h2>
           <dl class="kv">
             <dt>chunk_id</dt><dd>{{ chunk_id }}</dd>

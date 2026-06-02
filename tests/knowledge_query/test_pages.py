@@ -73,8 +73,8 @@ def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -
     assert "医保审核对话审证台" in response.text
     assert "AuditScope" in response.text
     assert "Evidence Command Center" in response.text
-    assert "Case Rail" in response.text
-    assert "Command Composer" in response.text
+    assert "审证流程 · Case Review" in response.text
+    assert "审计问题输入" in response.text
     assert "Evidence Dossier" in response.text
     assert "证据卷宗" in response.text
     assert "可追溯回答" in response.text

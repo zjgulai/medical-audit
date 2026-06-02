@@ -10,7 +10,7 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="shell">
       <nav class="topbar" aria-label="页面导航">
-        <a class="brand" href="/pages/query">Medical Audit KB</a>
+        <a class="brand" href="/pages/chat">AuditScope</a>
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query" aria-current="page">查询工作台</a>
@@ -23,21 +23,21 @@
 
       <section class="hero query-hero">
         <div>
-          <p class="eyebrow">Evidence Workbench</p>
+          <p class="eyebrow">医保审计知识查询</p>
           <h1>引用优先的医保审核知识查询</h1>
           <p class="lede">围绕法规、目录、监管规则和风险清单检索依据，先给证据，再给结论。</p>
         </div>
         <aside class="hero-console" aria-label="运行状态">
           <div>
-            <span>backend</span>
+            <span>后端</span>
             <strong>{{ search_backend.backend }}</strong>
           </div>
           <div>
-            <span>citations</span>
+            <span>引用</span>
             <strong>{% if answer %}{{ answer.citations|length }}{% else %}0{% endif %}</strong>
           </div>
           <div>
-            <span>recent queries</span>
+            <span>最近查询</span>
             <strong>{{ query_logs|length }}</strong>
           </div>
         </aside>
@@ -52,7 +52,7 @@
 
       <section class="workbench-grid">
         <article class="panel query-panel">
-          <p class="eyebrow">Ask</p>
+          <p class="eyebrow">问题输入</p>
           <h2>查询问题</h2>
           <form method="get" action="/pages/query" class="query-form">
             <label for="question">自然语言问题</label>
@@ -88,7 +88,7 @@
         </article>
 
         <aside class="panel guidance-panel">
-          <p class="eyebrow">Audit Lens</p>
+          <p class="eyebrow">审计口径</p>
           <h2>提问口径</h2>
           <ul class="compact-list">
             <li>优先输入诊疗行为、收费项目、目录编码或监管规则名称。</li>
@@ -105,14 +105,14 @@
       {% if answer %}
         <section class="answer-grid">
           <article class="answer-card answer-main">
-            <p class="eyebrow">Answer</p>
+            <p class="eyebrow">回答</p>
             <h2>引用型回答</h2>
             <pre>{{ answer.answer }}</pre>
             <p class="meta">confidence: {{ answer.confidence }} · fallback: {{ answer.fallback_used }}</p>
           </article>
 
           <aside class="answer-card evidence-rail">
-            <p class="eyebrow">Citations</p>
+            <p class="eyebrow">引用依据</p>
             <h2>引用依据</h2>
             {% for group in answer.basis_groups %}
               <section class="evidence-group">
@@ -132,14 +132,14 @@
         </section>
       {% else %}
         <section class="empty-state">
-          <p class="eyebrow">No Query Yet</p>
+          <p class="eyebrow">等待查询</p>
           <h2>等待第一条审计问题</h2>
           <p>页面会在查询后展示答案、证据分组、引用片段和原文预览入口。</p>
         </section>
       {% endif %}
 
       <section class="panel">
-        <p class="eyebrow">Recent Queries</p>
+        <p class="eyebrow">最近查询</p>
         <h2>最近查询日志</h2>
         <ul class="compact-list">
           {% for log in query_logs %}
