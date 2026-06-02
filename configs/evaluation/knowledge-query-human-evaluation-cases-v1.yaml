@@ -1,0 +1,790 @@
+dataset_id: knowledge-query-human-evaluation-cases-v1
+title: 知识库固定人工评测集 V1
+status: review
+created: "2026-06-01"
+updated: "2026-06-01"
+owner: self
+source: human+ai
+description: >
+  首版固定评测集，用于替代纯自动生成 case 的单一路径。当前样例由真实索引资料人工挑选，
+  当前包含 52 条 review case，仍需后续医保审核专家复核后转为 stable。
+cases:
+  - case_id: human-rule-drug-max-days-001
+    question: 药品超过限定最大开药天数或开药量时，应引用哪条智能监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 药品限最大开药天数 / 开药量
+        required_terms: [药品限最大开药天数, 开药量]
+    acceptance_criteria:
+      required_terms: [药品限最大开药天数, 开药量]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, rule, prescription, drug-quantity]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-course-001
+    question: 药品使用超过限定支付疗程时，应检索哪条规则作为依据？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 药品限支付疗程
+        required_terms: [药品限支付疗程, 限定支付]
+    acceptance_criteria:
+      required_terms: [药品限支付疗程]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, rule, prescription, drug-course]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-service-child-001
+    question: 非儿童患者使用仅限儿童支付的医疗服务项目，应引用哪条规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 医疗服务项目限儿童使用
+        required_terms: [医疗服务项目限儿童使用]
+    acceptance_criteria:
+      required_terms: [医疗服务项目限儿童使用]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, rule, medical-service, age-limit]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-surgery-gender-001
+    question: 手术操作编码与参保人性别不符时，应命中哪条监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 手术操作编码与性别不符
+        required_terms: [手术操作编码, 性别不符]
+    acceptance_criteria:
+      required_terms: [手术操作编码, 性别不符]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, rule, surgery, gender]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-inventory-001
+    question: 药品进货数量小于存货和销售数量之和时，应引用哪条进销存监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 药品进销存异常
+        required_terms: [药品进销存异常, 进货数量]
+    acceptance_criteria:
+      required_terms: [药品进销存异常]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, rule, inventory, drug]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-negative-over-prescription-001
+    question: 超过规定剂量开药在医保负面清单中如何表述？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 超量开药
+        required_terms: [超过规定剂量, 超量开药]
+    acceptance_criteria:
+      required_terms: [超量开药]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, negative-list, prescription]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-duplicate-fee-001
+    question: 医保负面清单中重复收费类问题有哪些典型表述？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/医保负面清单整理_2024年2月.pdf
+        article_or_rule: 重复收费
+        required_terms: [重复收费]
+    acceptance_criteria:
+      required_terms: [重复收费]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, negative-list, duplicate-fee]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-catalog-icd-cholera-001
+    question: ICD-10医保2.0版中 A00.0 对应的诊断名称是什么？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/ICD-10医保2.0版.pdf
+        article_or_rule: A00.0
+        required_terms: [A00.0, 霍乱]
+    acceptance_criteria:
+      required_terms: [A00.0, 霍乱]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, catalog, icd10]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-dip-gastritis-001
+    question: DIP病种库中 A09.9 未特指病因的胃肠炎和结肠炎可关联哪些胃镜相关操作？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/按病种分值（DIP）付费病种库.pdf
+        article_or_rule: A09.9
+        required_terms: [A09.9, 胃镜检查]
+    acceptance_criteria:
+      required_terms: [A09.9, 胃镜检查]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, catalog, dip]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drug-insulin-001
+    question: 2025年药品目录中门冬胰岛素30属于哪类胰岛素条目？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+        article_or_rule: 门冬胰岛素30
+        required_terms: [门冬胰岛素30, 胰岛素]
+    acceptance_criteria:
+      required_terms: [门冬胰岛素30]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, catalog, drug]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-law-shanghai-medical-security-001
+    question: 上海市医疗保障条例第一条规定了哪些立法目的？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/上海市医疗保障条例_20241231.md
+        article_or_rule: 第一条
+        required_terms: [规范医疗保障关系, 多层次医疗保障体系]
+    acceptance_criteria:
+      required_terms: [第一条, 医疗保障]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, law, shanghai]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-law-jiangsu-medical-security-001
+    question: 江苏省医疗保障条例中关于医保基金监管应优先检索哪份法规？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/江苏省医疗保障条例_20230119.md
+        article_or_rule: 医疗保障
+        required_terms: [医疗保障]
+    acceptance_criteria:
+      required_terms: [江苏省医疗保障条例]
+      min_citations: 1
+      require_preview: true
+    tags: [human-seed, law, jiangsu]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-rule-service-repeat-fee-001
+    question: 医疗服务项目重复收费应命中智能监管规则库中的哪条规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/第七批/aa44a0d6424c4822b4be23f47cfccf2b.xlsx
+        article_or_rule: 医疗服务项目重复收费
+        required_terms: [医疗服务项目重复收费]
+    acceptance_criteria:
+      required_terms: [医疗服务项目重复收费]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, medical-service, duplicate-fee]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-service-split-fee-001
+    question: 将医疗服务项目拆分为多个项目收费时，应引用哪条智能监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 医疗服务项目分解收费
+        required_terms: [医疗服务项目分解收费]
+    acceptance_criteria:
+      required_terms: [医疗服务项目分解收费]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, medical-service, split-fee]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-antibiotic-perioperative-001
+    question: 围手术期抗菌药物预防性应用应对应哪条药品监管类规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 围手术期抗菌药物预防性应用监管
+        required_terms: [围手术期抗菌药物预防性应用监管]
+    acceptance_criteria:
+      required_terms: [围手术期抗菌药物]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, drug, antibiotic]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-diagnosis-gender-001
+    question: 诊断与患者性别不符时，应使用哪条行为主体监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 诊断与患者性别不符
+        required_terms: [诊断与患者性别不符]
+    acceptance_criteria:
+      required_terms: [诊断与患者性别不符]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, diagnosis, gender]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-child-forbidden-001
+    question: 儿童禁用药品应检索智能监管规则库中的哪条合理用药规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 药品儿童禁用
+        required_terms: [药品儿童禁用]
+    acceptance_criteria:
+      required_terms: [药品儿童禁用]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, drug, pediatric]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-no-indication-exam-001
+    question: 无明确指征开展检验检查时，应关联哪条医疗服务项目合理使用规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 无指征检验检查
+        required_terms: [无指征检验检查]
+    acceptance_criteria:
+      required_terms: [无指征检验检查]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, medical-service, no-indication]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-negative-split-hospitalization-001
+    question: 医保负面清单中分解住院的典型认定情形有哪些？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 分解住院
+        required_terms: [分解住院]
+    acceptance_criteria:
+      required_terms: [分解住院]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, hospitalization]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-bed-hanging-001
+    question: 医保负面清单中挂床住院如何定义？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 挂床住院
+        required_terms: [挂床住院]
+    acceptance_criteria:
+      required_terms: [挂床住院]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, hospitalization]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-swap-items-001
+    question: 串换药品、医用耗材、诊疗项目和服务设施属于负面清单哪类问题？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 串换药品、医用耗材、诊疗项目和服务设施
+        required_terms: [串换药品, 医用耗材, 诊疗项目]
+    acceptance_criteria:
+      required_terms: [串换药品]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, swap-items]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-fictitious-service-001
+    question: 虚构医药服务项目在医保负面清单中如何表述？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 虚构医药服务项目
+        required_terms: [虚构医药服务项目]
+    acceptance_criteria:
+      required_terms: [虚构医药服务项目]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, fraud]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-catalog-icd-lung-cancer-001
+    question: ICD-10医保2.0版中 C34.9 对应的支气管或肺恶性肿瘤条目是什么？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/ICD-10医保2.0版.pdf
+        article_or_rule: C34.9
+        required_terms: [C34.9, 支气管, 肺恶性肿瘤]
+    acceptance_criteria:
+      required_terms: [C34.9, 肺恶性肿瘤]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, icd10, oncology]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-icd-diabetes-001
+    question: ICD-10医保2.0版中 E11.9 对应哪类 2 型糖尿病诊断？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/ICD-10医保2.0版.pdf
+        article_or_rule: E11.9
+        required_terms: [E11.9, 2型糖尿病]
+    acceptance_criteria:
+      required_terms: [E11.9, 2型糖尿病]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, icd10, diabetes]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drug-amoxicillin-001
+    question: 2025年药品目录中阿莫西林在抗菌药分类下对应哪些剂型？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+        article_or_rule: 阿莫西林
+        required_terms: [阿莫西林, XJ01CA]
+    acceptance_criteria:
+      required_terms: [阿莫西林]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, drug, antibiotic]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drg-adrg-change-001
+    question: DRG 2.0 分组方案中 ADRG 从多少组升级到多少组？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+        article_or_rule: ADRG 从 376 组升级至
+        required_terms: [ADRG, "376", "409"]
+    acceptance_criteria:
+      required_terms: [ADRG, "409"]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, drg]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-dip-appendicitis-001
+    question: DIP病种库中 K35.2 急性阑尾炎伴弥漫性腹膜炎可关联哪些阑尾切除操作？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/按病种分值（DIP）付费病种库.pdf
+        article_or_rule: K35.2
+        required_terms: [K35.2, 腹腔镜下阑尾切除术]
+    acceptance_criteria:
+      required_terms: [K35.2, 阑尾切除术]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, dip]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-law-heilongjiang-fund-supervision-001
+    question: 黑龙江省医疗保障基金监督管理条例第一条的立法目的是什么？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/黑龙江省医疗保障基金监督管理条例_20221226.md
+        article_or_rule: 第一条
+        required_terms: [医疗保障基金监督管理, 保障基金安全]
+    acceptance_criteria:
+      required_terms: [第一条, 医疗保障基金]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, heilongjiang, fund-supervision]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-law-guangzhou-designated-institution-001
+    question: 广州市社会医疗保险条例中定点医疗机构不得有哪些骗取或损害基金的行为？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/广州市社会医疗保险条例_20181221.md
+        article_or_rule: 第三十七条
+        required_terms: [定点医疗机构, 过度检查, 挂床住院]
+    acceptance_criteria:
+      required_terms: [第三十七条, 定点医疗机构]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, guangzhou, designated-institution]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-law-work-injury-medical-treatment-001
+    question: 工伤保险条例中治疗工伤所需费用何种情况下由工伤保险基金支付？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/工伤保险条例_20101220.md
+        article_or_rule: 第三十条
+        required_terms: [治疗工伤所需费用, 工伤保险基金支付]
+    acceptance_criteria:
+      required_terms: [第三十条, 工伤保险基金]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, work-injury]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-rule-service-frequency-001
+    question: 医疗服务项目数量超过限定频次时，应检索哪条智能监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/第八批/0f4e962e399f4e8998a6475089a71c89.xlsx
+        article_or_rule: 医疗服务项目限定频次
+        required_terms: [医疗服务项目限定频次]
+    acceptance_criteria:
+      required_terms: [医疗服务项目限定频次]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, medical-service, frequency]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-diagnosis-surgery-mismatch-001
+    question: 诊断编码与手术操作编码不符时，应关联哪条信息数据监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 编码与主要诊断编码不符
+        required_terms: [手术操作编码, 主要诊断编码不符]
+    acceptance_criteria:
+      required_terms: [诊断编码, 手术操作编码]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, diagnosis, surgery]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-over-dosage-001
+    question: 超说明书用量开药应命中智能监管规则库中的哪条规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 超说明书用量开药
+        required_terms: [超说明书用量开药]
+    acceptance_criteria:
+      required_terms: [超说明书用量开药]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, drug, dosage]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-duplicate-001
+    question: 同一患者重复开具药理作用相同或相似药物时，应命中哪条合理用药规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 重复开药
+        required_terms: [重复开药]
+    acceptance_criteria:
+      required_terms: [重复开药]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, drug, duplicate]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-drug-interaction-001
+    question: 药品之间存在相互作用风险时，应检索哪条智能监管规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 药品相互作用
+        required_terms: [药品相互作用]
+    acceptance_criteria:
+      required_terms: [药品相互作用]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, drug, interaction]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-rule-consumable-disease-limit-001
+    question: 医用耗材仅限特定疾病使用时，应命中哪条医用耗材合理使用规则？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+        article_or_rule: 医用耗材限疾病使用
+        required_terms: [医用耗材限疾病使用]
+    acceptance_criteria:
+      required_terms: [医用耗材限疾病使用]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, rule, consumable, disease-limit]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: human-negative-over-treatment-001
+    question: 医保负面清单中违反诊疗规范的过度诊疗、过度检查如何定义？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 过度诊疗、过度检查
+        required_terms: [过度诊疗, 过度检查]
+    acceptance_criteria:
+      required_terms: [过度诊疗]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, over-treatment]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-split-prescription-001
+    question: 医保负面清单中分解处方是指什么行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 分解处方
+        required_terms: [分解处方]
+    acceptance_criteria:
+      required_terms: [分解处方]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, prescription]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-over-standard-fee-001
+    question: 医保负面清单中超标准收费的一般表现形式有哪些？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 超标准收费
+        required_terms: [超标准收费]
+    acceptance_criteria:
+      required_terms: [超标准收费]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, fee]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-split-item-fee-001
+    question: 医保负面清单中分解项目收费是指什么？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 分解项目收费
+        required_terms: [分解项目收费]
+    acceptance_criteria:
+      required_terms: [分解项目收费]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, fee]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-resell-drug-001
+    question: 为参保人员转卖医保药品提供便利在负面清单中属于哪类行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 转卖药品
+        required_terms: [转卖药品]
+    acceptance_criteria:
+      required_terms: [转卖药品]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, drug-resell]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-out-of-scope-fund-001
+    question: 将不属于医疗保障基金支付范围的医药费用纳入基金结算属于哪类负面清单问题？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 将不属于医疗保障基金支付范围的医药费用纳入基金结算
+        required_terms: [不属于医疗保障基金支付范围, 纳入基金结算]
+    acceptance_criteria:
+      required_terms: [医疗保障基金支付范围]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, payment-scope]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-false-visit-001
+    question: 诱导、协助他人冒名或者虚假就医购药在负面清单中如何表述？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 诱导或协助他人冒名或者虚假就医、购药
+        required_terms: [冒名, 虚假就医, 购药]
+    acceptance_criteria:
+      required_terms: [虚假就医]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, fraud]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-negative-document-falsification-001
+    question: 伪造、变造、隐匿、涂改或销毁医学文书等资料属于哪类骗取医保基金行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+        article_or_rule: 伪造、变造、隐匿、涂改、销毁医学文书
+        required_terms: [伪造, 变造, 隐匿, 医学文书]
+    acceptance_criteria:
+      required_terms: [医学文书]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, negative-list, fraud, documents]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: human-catalog-icd-tuberculosis-001
+    question: ICD-10医保2.0版中 A15.0 对应哪类肺结核诊断？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/ICD-10医保2.0版.pdf
+        article_or_rule: A15.0
+        required_terms: [A15.0, 肺结核]
+    acceptance_criteria:
+      required_terms: [A15.0, 肺结核]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, icd10, tuberculosis]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drug-ceftriaxone-001
+    question: 2025年药品目录中头孢曲松属于哪类头孢菌素药品？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+        article_or_rule: 头孢曲松
+        required_terms: [头孢曲松, XJ01DD]
+    acceptance_criteria:
+      required_terms: [头孢曲松]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, drug, antibiotic]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drug-piperacillin-tazobactam-001
+    question: 2025年药品目录中哌拉西林他唑巴坦对应的剂型是什么？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+        article_or_rule: 哌拉西林他唑巴坦
+        required_terms: [哌拉西林他唑巴坦, 注射剂]
+    acceptance_criteria:
+      required_terms: [哌拉西林他唑巴坦]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, drug, antibiotic]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-drg-ungrouped-001
+    question: DRG 2.0 方案中 0000 组代表什么含义？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+        article_or_rule: 0000 组
+        required_terms: ["0000", 疾病诊断编码不规范]
+    acceptance_criteria:
+      required_terms: ["0000", 疾病诊断编码]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, drg]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-catalog-dip-core-count-001
+    question: DIP 2.0 病种库中核心病种从多少组降到多少组？
+    expected_evidence:
+      - source_collection: medical-insurance-catalog
+        source_path: 医保目录/按病种分值（DIP）付费病种库.pdf
+        article_or_rule: 核心病种从 11553 组降到 9520 组
+        required_terms: [核心病种, "11553", "9520"]
+    acceptance_criteria:
+      required_terms: [核心病种, "9520"]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, catalog, dip]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: human-law-shanghai-fund-dedicated-use-001
+    question: 上海市医疗保障条例中医疗保障基金如何执行专款专用要求？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/上海市医疗保障条例_20241231.md
+        article_or_rule: 第二十五条
+        required_terms: [医疗保障基金, 专款专用, 侵占]
+    acceptance_criteria:
+      required_terms: [第二十五条, 医疗保障基金]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, shanghai, fund]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-law-shanghai-supervision-measures-001
+    question: 上海市医疗保障条例中医疗保障部门实施监督检查可以采取哪些措施？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/上海市医疗保障条例_20241231.md
+        article_or_rule: 第五十二条
+        required_terms: [监督检查, 进入现场检查, 询问有关人员]
+    acceptance_criteria:
+      required_terms: [第五十二条, 监督检查]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, shanghai, supervision]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: human-law-shanghai-public-complaint-001
+    question: 上海市医疗保障条例中社会公众如何举报投诉侵害医疗保障基金的行为？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/上海市医疗保障条例_20241231.md
+        article_or_rule: 第五十九条
+        required_terms: [举报, 投诉, 医疗保障基金]
+    acceptance_criteria:
+      required_terms: [第五十九条, 举报]
+      min_citations: 1
+      require_preview: true
+    tags: [human-expanded, law, shanghai, complaint]
+    filters:
+      source_collections: [medical-insurance-laws]

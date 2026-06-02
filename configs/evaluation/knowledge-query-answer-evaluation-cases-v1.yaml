@@ -1,0 +1,93 @@
+dataset_id: knowledge-query-answer-evaluation-cases-v1
+title: 知识库答案生成质量评测集 V1
+status: review
+created: "2026-06-01"
+updated: "2026-06-01"
+owner: self
+source: human+ai
+description: >
+  首版 answer-level 评测集，用于验证答案是否严格基于引用、是否覆盖关键术语、
+  是否在证据不足时拒答。当前仍为 review，需要医保审核专家复核后转 stable。
+cases:
+  - case_id: answer-law-shanghai-fund-dedicated-use-001
+    question: 上海市医疗保障条例中医疗保障基金是否必须专款专用？
+    expected_behavior: answer
+    required_evidence_terms: [第二十五条, 专款专用]
+    required_answer_terms: [专款专用]
+    required_citation_terms: [医疗保障基金, 专款专用]
+    forbidden_answer_terms: [自行推断]
+    tags: [answerable, law, shanghai, fund]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: answer-negative-over-prescription-001
+    question: 医保负面清单中超量开药是如何定义的？
+    expected_behavior: answer
+    required_evidence_terms: [超量开药, 超过规定剂量]
+    required_answer_terms: [超量开药]
+    required_citation_terms: [超过规定剂量]
+    forbidden_answer_terms: [安全合理]
+    tags: [answerable, negative-list, prescription]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: answer-catalog-icd-cholera-001
+    question: ICD-10医保2.0版中 A00.0 对应什么诊断？
+    expected_behavior: answer
+    required_evidence_terms: [A00.0, 霍乱]
+    required_answer_terms: [霍乱]
+    required_citation_terms: [A00.0, 霍乱]
+    forbidden_answer_terms: [肺结核]
+    tags: [answerable, catalog, icd10]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: answer-catalog-drg-ungrouped-001
+    question: DRG 2.0 方案中的 0000 组表示什么？
+    expected_behavior: answer
+    required_evidence_terms: ["0000", 疾病诊断编码不规范]
+    required_answer_terms: ["0000"]
+    required_citation_terms: [疾病诊断编码不规范]
+    tags: [answerable, catalog, drg]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: answer-catalog-drug-ceftriaxone-001
+    question: 2025年药品目录中头孢曲松的剂型是什么？
+    expected_behavior: answer
+    required_evidence_terms: [头孢曲松, 注射剂]
+    required_answer_terms: [头孢曲松]
+    required_citation_terms: [注射剂]
+    forbidden_answer_terms: [口服常释剂型]
+    tags: [answerable, catalog, drug]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: answer-rule-drug-interaction-001
+    question: 药品相互作用风险应引用哪条智能监管规则？
+    expected_behavior: answer
+    required_evidence_terms: [药品相互作用]
+    required_answer_terms: [药品相互作用]
+    required_citation_terms: [药品相互作用]
+    forbidden_answer_terms: [无需监管]
+    tags: [answerable, rule, drug]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: answer-refuse-specific-hospital-penalty-001
+    question: 请根据资料回答某医院2026年医保处罚金额是多少。
+    expected_behavior: refuse
+    required_evidence_terms: [某医院2026年医保处罚金额]
+    forbidden_answer_terms: [处罚金额为, 万元]
+    tags: [refusal, missing-case-fact]
+    filters:
+      source_collections: [medical-insurance-laws, risk-negative-list]
+
+  - case_id: answer-refuse-personal-claim-001
+    question: 请判断张三这次医保报销是否违规。
+    expected_behavior: refuse
+    required_evidence_terms: [张三, 报销明细]
+    forbidden_answer_terms: [张三违规, 可以报销]
+    tags: [refusal, missing-claim-detail]
+    filters:
+      source_collections: [supervision-rules-knowledge, risk-negative-list]

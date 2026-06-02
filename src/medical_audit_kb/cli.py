@@ -3,9 +3,38 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, cast
 
+from medical_audit_kb.acceptance.reports import (
+    build_acceptance_report,
+    render_acceptance_report_markdown,
+)
 from medical_audit_kb.core.config import DATABASE_URL_ENV
+from medical_audit_kb.evaluation.answer_datasets import load_answer_evaluation_cases
+from medical_audit_kb.evaluation.answer_reports import (
+    render_answer_evaluation_summary_markdown,
+)
+from medical_audit_kb.evaluation.answer_runner import evaluate_answers
+from medical_audit_kb.evaluation.datasets import (
+    generate_candidate_cases_from_materials,
+    load_evaluation_cases,
+)
+from medical_audit_kb.evaluation.reports import render_evaluation_summary_markdown
+from medical_audit_kb.evaluation.runner import evaluate_retrieval
+from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
+from medical_audit_kb.generation.answer_preflight import (
+    render_answer_provider_preflight_markdown,
+    run_answer_provider_preflight,
+)
+from medical_audit_kb.generation.answer_providers import (
+    AnthropicAnswerGenerationProvider,
+    OpenAICompatibleAnswerGenerationProvider,
+)
+from medical_audit_kb.indexing.embeddings import (
+    DeterministicFakeEmbeddingProvider,
+    EmbeddingProvider,
+    OpenAICompatibleEmbeddingProvider,
+)
 from medical_audit_kb.indexing.incremental_plan import (
     build_incremental_plan_from_database,
     incremental_plan_json,
@@ -19,6 +48,11 @@ from medical_audit_kb.indexing.index_activation import (
     render_index_rollback_markdown,
     rollback_index_version,
 )
+from medical_audit_kb.indexing.persistent_index import (
+    build_persistent_index,
+    load_material_question_seeds,
+    load_persistent_search_engine,
+)
 from medical_audit_kb.indexing.pgvector_import import (
     build_pgvector_import_plan,
     render_pgvector_import_plan_markdown,
@@ -27,13 +61,29 @@ from medical_audit_kb.indexing.pgvector_writer import (
     render_pgvector_import_execution_markdown,
     run_pgvector_import,
 )
+from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline
+from medical_audit_kb.preview.resolver import PreviewResolver
+from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
+
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command == "acceptance-run":
+        return _acceptance_run(args)
+    if args.command == "index-build":
+        return _index_build(args)
     if args.command == "index-incremental-plan":
         return _index_incremental_plan(args)
+    if args.command == "evaluate-index":
+        return _evaluate_index(args)
+    if args.command == "evaluate-postgres-index":
+        return _evaluate_postgres_index(args)
+    if args.command == "evaluate-answers":
+        return _evaluate_answers(args)
+    if args.command == "answer-provider-smoke":
+        return _answer_provider_smoke(args)
     if args.command == "pgvector-import-plan":
         return _pgvector_import_plan(args)
     if args.command == "pgvector-import":
@@ -48,6 +98,30 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="medical-audit-kb")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    acceptance = subparsers.add_parser(
+        "acceptance-run",
+        help="Run read-only source package indexing acceptance and write a report.",
+    )
+    acceptance.add_argument("--source-root", required=True, type=Path)
+    acceptance.add_argument("--output", required=True, type=Path)
+    acceptance.add_argument("--json-output", type=Path)
+    acceptance.add_argument("--package-version-key")
+
+    index_build = subparsers.add_parser(
+        "index-build",
+        help="Build durable local vector and BM25 artifacts from source materials.",
+    )
+    index_build.add_argument("--source-root", required=True, type=Path)
+    index_build.add_argument("--index-root", required=True, type=Path)
+    index_build.add_argument("--json-output", type=Path)
+    index_build.add_argument("--package-version-key")
+    _add_embedding_provider_args(index_build)
+    index_build.add_argument("--max-chunks", type=int)
+    index_build.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reuse existing matching embeddings.jsonl rows and append missing rows.",
+    )
 
     incremental_plan = subparsers.add_parser(
         "index-incremental-plan",
@@ -58,6 +132,54 @@ def _build_parser() -> argparse.ArgumentParser:
     incremental_plan.add_argument("--output", required=True, type=Path)
     incremental_plan.add_argument("--json-output", type=Path)
     incremental_plan.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+
+    evaluate = subparsers.add_parser(
+        "evaluate-index",
+        help="Evaluate a durable local index with auto-generated material questions.",
+    )
+    evaluate.add_argument("--source-root", required=True, type=Path)
+    evaluate.add_argument("--index-root", required=True, type=Path)
+    evaluate.add_argument("--output", required=True, type=Path)
+    evaluate.add_argument("--json-output", type=Path)
+    evaluate.add_argument("--cases-file", type=Path)
+    evaluate.add_argument("--max-cases", type=int, default=25)
+    evaluate.add_argument("--top-k", type=int, default=5)
+    evaluate.add_argument("--query-terms", nargs="*")
+    _add_embedding_provider_args(evaluate)
+
+    evaluate_postgres = subparsers.add_parser(
+        "evaluate-postgres-index",
+        help="Evaluate PostgreSQL + pgvector retrieval path with fixed material cases.",
+    )
+    evaluate_postgres.add_argument("--source-root", required=True, type=Path)
+    evaluate_postgres.add_argument("--output", required=True, type=Path)
+    evaluate_postgres.add_argument("--json-output", type=Path)
+    evaluate_postgres.add_argument("--cases-file", required=True, type=Path)
+    evaluate_postgres.add_argument("--max-cases", type=int, default=25)
+    evaluate_postgres.add_argument("--top-k", type=int, default=5)
+    evaluate_postgres.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    _add_embedding_provider_args(evaluate_postgres)
+
+    answer_evaluate = subparsers.add_parser(
+        "evaluate-answers",
+        help="Evaluate citation-backed answer quality on a durable local index.",
+    )
+    answer_evaluate.add_argument("--index-root", required=True, type=Path)
+    answer_evaluate.add_argument("--cases-file", required=True, type=Path)
+    answer_evaluate.add_argument("--output", required=True, type=Path)
+    answer_evaluate.add_argument("--json-output", type=Path)
+    answer_evaluate.add_argument("--max-cases", type=int, default=25)
+    answer_evaluate.add_argument("--top-k", type=int, default=5)
+    _add_embedding_provider_args(answer_evaluate)
+    _add_answer_generation_provider_args(answer_evaluate)
+
+    answer_provider_smoke = subparsers.add_parser(
+        "answer-provider-smoke",
+        help="Preflight an OpenAI-compatible answer provider before full evaluation.",
+    )
+    answer_provider_smoke.add_argument("--output", required=True, type=Path)
+    answer_provider_smoke.add_argument("--json-output", type=Path)
+    _add_answer_generation_provider_args(answer_provider_smoke)
 
     pgvector_import_plan = subparsers.add_parser(
         "pgvector-import-plan",
@@ -108,7 +230,41 @@ def _build_parser() -> argparse.ArgumentParser:
     index_rollback.add_argument("--database-url-env", default=DATABASE_URL_ENV)
     index_rollback.add_argument("--output", required=True, type=Path)
     index_rollback.add_argument("--json-output", type=Path)
+
     return parser
+
+
+def _acceptance_run(args: argparse.Namespace) -> int:
+    run_result = KnowledgeIndexPipeline().run_full_rebuild(
+        args.source_root,
+        package_version_key=args.package_version_key,
+    )
+    report = build_acceptance_report(run_result)
+    _write_text(args.output, render_acceptance_report_markdown(report))
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(report.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0 if report.passed else 2
+
+
+def _index_build(args: argparse.Namespace) -> int:
+    embedding_provider = _embedding_provider_from_args(args)
+    result = build_persistent_index(
+        args.source_root,
+        args.index_root,
+        package_version_key=args.package_version_key,
+        embedding_provider=embedding_provider,
+        max_chunks=args.max_chunks,
+        resume=args.resume,
+    )
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(result.summary, ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0
 
 
 def _index_incremental_plan(args: argparse.Namespace) -> int:
@@ -121,6 +277,138 @@ def _index_incremental_plan(args: argparse.Namespace) -> int:
     if args.json_output is not None:
         _write_text(args.json_output, incremental_plan_json(plan))
     return 0 if plan.ready_for_incremental_build else 2
+
+
+def _evaluate_index(args: argparse.Namespace) -> int:
+    embedding_provider = _embedding_provider_from_args(args)
+    search_engine = load_persistent_search_engine(
+        args.index_root,
+        embedding_provider=embedding_provider,
+    )
+    if args.cases_file is not None:
+        cases = load_evaluation_cases(args.cases_file)[: args.max_cases]
+    else:
+        seeds = load_material_question_seeds(
+            args.index_root,
+            max_cases=args.max_cases,
+            query_terms=tuple(args.query_terms or ()),
+        )
+        cases = generate_candidate_cases_from_materials(
+            seeds,
+            case_id_prefix="real-data-auto",
+            max_cases=args.max_cases,
+        )
+    summary = evaluate_retrieval(
+        cases,
+        search_engine,
+        top_k=args.top_k,
+        preview_resolver=PreviewResolver(source_root=args.source_root),
+    )
+    _write_text(
+        args.output,
+        render_evaluation_summary_markdown(
+            summary,
+            embedding_provider=embedding_provider.provider,
+            embedding_model=embedding_provider.model_name,
+            embedding_dimension=embedding_provider.dimension,
+            index_root=str(args.index_root),
+        ),
+    )
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(summary.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0
+
+
+def _evaluate_postgres_index(args: argparse.Namespace) -> int:
+    database_url = _database_url_from_env(args.database_url_env)
+    embedding_provider = _embedding_provider_from_args(args)
+    search_engine = load_postgres_hybrid_search_engine(
+        database_url=database_url,
+        embedding_provider=embedding_provider,
+    )
+    cases = load_evaluation_cases(args.cases_file)[: args.max_cases]
+    summary = evaluate_retrieval(
+        cases,
+        search_engine,
+        top_k=args.top_k,
+        preview_resolver=PreviewResolver(source_root=args.source_root),
+    )
+    _write_text(
+        args.output,
+        render_evaluation_summary_markdown(
+            summary,
+            embedding_provider=embedding_provider.provider,
+            embedding_model=embedding_provider.model_name,
+            embedding_dimension=embedding_provider.dimension,
+            index_root=f"postgres:{args.database_url_env}",
+        ),
+    )
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(summary.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0
+
+
+def _evaluate_answers(args: argparse.Namespace) -> int:
+    embedding_provider = _embedding_provider_from_args(args)
+    generation_provider = _answer_generation_provider_from_args(args)
+    search_engine = load_persistent_search_engine(
+        args.index_root,
+        embedding_provider=embedding_provider,
+    )
+    cases = load_answer_evaluation_cases(args.cases_file)[: args.max_cases]
+    summary = evaluate_answers(
+        cases,
+        search_engine,
+        top_k=args.top_k,
+        generation_provider=generation_provider,
+        require_generation_success=(
+            generation_provider is not None and not args.allow_answer_fallback
+        ),
+    )
+    _write_text(
+        args.output,
+        render_answer_evaluation_summary_markdown(
+            summary,
+            embedding_provider=embedding_provider.provider,
+            embedding_model=embedding_provider.model_name,
+            embedding_dimension=embedding_provider.dimension,
+            answer_provider=(
+                generation_provider.provider if generation_provider is not None else "fallback"
+            ),
+            answer_model=(
+                generation_provider.model_name
+                if generation_provider is not None
+                else "citation-backed-fallback"
+            ),
+            index_root=str(args.index_root),
+        ),
+    )
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(summary.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0
+
+
+def _answer_provider_smoke(args: argparse.Namespace) -> int:
+    generation_provider = _answer_generation_provider_from_args(args)
+    if generation_provider is None:
+        _die("answer-provider-smoke requires --answer-provider openai")
+    result = run_answer_provider_preflight(generation_provider)
+    _write_text(args.output, render_answer_provider_preflight_markdown(result))
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0 if result.success else 2
 
 
 def _pgvector_import_plan(args: argparse.Namespace) -> int:
@@ -179,6 +467,73 @@ def _index_rollback(args: argparse.Namespace) -> int:
     if args.json_output is not None:
         _write_text(args.json_output, index_rollback_json(result))
     return 0 if result.success else 2
+
+
+def _answer_generation_provider_from_args(
+    args: argparse.Namespace,
+) -> AnswerGenerationProvider | None:
+    if args.answer_provider == "fallback":
+        return None
+    if args.answer_provider == "anthropic":
+        return AnthropicAnswerGenerationProvider.from_env(
+            api_key_env=args.answer_api_key_env,
+            model_name=args.answer_model,
+            base_url=args.answer_base_url or "https://api.anthropic.com",
+            max_output_tokens=args.answer_max_output_tokens,
+            temperature=args.answer_temperature,
+        )
+    return OpenAICompatibleAnswerGenerationProvider.from_env(
+        api_key_env=args.answer_api_key_env,
+        model_name=args.answer_model,
+        base_url=args.answer_base_url or "https://api.openai.com/v1",
+        max_output_tokens=args.answer_max_output_tokens,
+        temperature=args.answer_temperature,
+    )
+
+
+def _embedding_provider_from_args(args: argparse.Namespace) -> EmbeddingProvider:
+    if args.embedding_provider == "fake":
+        return cast(
+            EmbeddingProvider,
+            DeterministicFakeEmbeddingProvider(dimension=args.embedding_dimension or 32),
+        )
+    return OpenAICompatibleEmbeddingProvider.from_env(
+        api_key_env=args.api_key_env,
+        model_name=args.embedding_model,
+        dimension=args.embedding_dimension,
+        base_url=args.embedding_base_url,
+        batch_size=args.embedding_batch_size,
+    )
+
+
+def _add_embedding_provider_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--embedding-provider", choices=("fake", "openai"), default="fake")
+    parser.add_argument("--embedding-model", default="text-embedding-3-small")
+    parser.add_argument("--embedding-dimension", type=int)
+    parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument("--embedding-base-url", default="https://api.openai.com/v1")
+    parser.add_argument("--embedding-batch-size", type=int, default=128)
+
+
+def _add_answer_generation_provider_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--answer-provider",
+        choices=("fallback", "openai", "anthropic"),
+        default="fallback",
+    )
+    parser.add_argument("--answer-model", default="gpt-4.1-mini")
+    parser.add_argument("--answer-api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument("--answer-base-url")
+    parser.add_argument("--answer-max-output-tokens", type=int, default=600)
+    parser.add_argument("--answer-temperature", type=float, default=0.0)
+    parser.add_argument(
+        "--allow-answer-fallback",
+        action="store_true",
+        help=(
+            "Do not fail answer cases when the configured answer provider falls back "
+            "to citation-backed fallback output."
+        ),
+    )
 
 
 def _write_text(path: Path, content: str) -> None:

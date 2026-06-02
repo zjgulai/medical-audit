@@ -75,9 +75,7 @@ def test_load_evaluation_cases_keeps_expected_sources_and_auditor_import(
         SourceCollection.SUPERVISION_RULES_KNOWLEDGE
     )
     assert cases[0].expected_evidence[0].article_or_rule == "超量开药"
-    assert cases[0].filters.source_collections == (
-        SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
-    )
+    assert cases[0].filters.source_collections == (SourceCollection.SUPERVISION_RULES_KNOWLEDGE,)
     assert cases[0].auditor_import.auditor_question_id == "auditor-q-1"
 
 
@@ -111,9 +109,7 @@ def test_generate_candidate_cases_from_articles_and_rules() -> None:
     assert cases[0].question == "医保基金监管条例中第一条的审核要求是什么？"
     assert cases[0].expected_evidence[0].article_or_rule == "第一条"
     assert cases[1].question == "超量开药规则的判定依据是什么？"
-    assert cases[1].filters.source_collections == (
-        SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
-    )
+    assert cases[1].filters.source_collections == (SourceCollection.SUPERVISION_RULES_KNOWLEDGE,)
 
 
 def test_evaluate_retrieval_outputs_recall_citation_and_preview_metrics(

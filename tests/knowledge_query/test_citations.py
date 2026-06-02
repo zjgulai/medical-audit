@@ -116,8 +116,46 @@ def test_answer_falls_back_to_citation_list_when_model_fails() -> None:
     assert answer.generation_error == "model unavailable"
     assert "未生成无引用结论" in answer.answer
     assert "[C1]" in answer.answer
-    assert "[C2]" in answer.answer
-    assert answer.confidence == ConfidenceCue.HIGH
+    assert "[C2]" not in answer.answer
+    assert answer.confidence == ConfidenceCue.MEDIUM
+
+
+def test_answer_fallback_keeps_question_focused_citations() -> None:
+    answer = build_citation_backed_answer(
+        "头孢曲松的剂型是什么？",
+        (
+            _result(
+                SourceCollection.MEDICAL_INSURANCE_CATALOG,
+                text="650 西那卡塞 口服常释剂型 乙 651 依降钙素 注射剂",
+                score=0.8,
+            ),
+            _result(
+                SourceCollection.MEDICAL_INSURANCE_CATALOG,
+                text="697 注射用头孢曲松钠/氯化钠注射液 乙 698 注射用头孢他啶",
+                score=0.7,
+            ),
+        ),
+    )
+
+    assert len(answer.citations) == 1
+    assert "头孢曲松" in answer.answer
+    assert "口服常释剂型" not in answer.answer
+
+
+def test_answer_fallback_prioritizes_domain_codes_over_version_terms() -> None:
+    answer = build_citation_backed_answer(
+        "ICD-10医保2.0版中 A00.0 对应什么诊断？",
+        (
+            _result(
+                SourceCollection.MEDICAL_INSURANCE_CATALOG,
+                text=("ICD-10医保2.0版 " + "无关内容" * 40 + " A00.0 霍乱，由于O1群霍乱弧菌所致"),
+                score=0.8,
+            ),
+        ),
+    )
+
+    assert "A00.0 霍乱" in answer.answer
+    assert answer.citations[0].snippet.startswith("…")
 
 
 def test_answer_falls_back_when_provider_returns_uncited_answer() -> None:

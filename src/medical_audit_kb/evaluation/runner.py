@@ -87,9 +87,7 @@ def evaluate_retrieval(
         recall_at_k=_rate(result.recall_hit for result in case_results),
         citation_hit_rate=_rate(result.citation_hit for result in case_results),
         preview_location_success_rate=_rate(
-            result.preview_success
-            for result in case_results
-            if result.citation_hit
+            result.preview_success for result in case_results if result.citation_hit
         ),
         results=case_results,
     )
