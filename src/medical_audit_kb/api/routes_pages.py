@@ -9,6 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.templating import Jinja2Templates
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
+from medical_audit_kb.api.evaluation_reports import (
+    latest_evaluation_report,
+    list_evaluation_history,
+    list_evaluation_report_files,
+)
 from medical_audit_kb.api.postgres_status import load_postgres_index_status, row_count
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.answer_builder import (
@@ -167,10 +172,8 @@ def index_admin_page(
             "operation_logs": state.operation_logs[-10:],
             "search_backend": _search_backend_context(state),
             "postgres_status": postgres_status,
-            "evaluation_status": {
-                "status": "not-run",
-                "description": "发布后验收将在下一阶段接入。",
-            },
+            "evaluation_status": _evaluation_status_context(state),
+            "evaluation_history": _evaluation_history_context(state, postgres_status),
         },
     )
 
@@ -322,3 +325,45 @@ def _postgres_status_context(state: ApiState) -> dict[str, object]:
             "pending_files": row_count(status, "pending_files"),
         },
     }
+
+
+def _evaluation_status_context(state: ApiState) -> dict[str, object]:
+    if not state.evaluation_runs:
+        latest_report = latest_evaluation_report(state)
+        if latest_report is not None:
+            return _evaluation_status_from_result(latest_report)
+        return {
+            "status": "not-run",
+            "description": "尚未运行发布后固定验收。",
+            "latest": None,
+            "report": None,
+        }
+    return _evaluation_status_from_result(state.evaluation_runs[-1])
+
+
+def _evaluation_status_from_result(latest: dict[str, object]) -> dict[str, object]:
+    retrieval = latest.get("retrieval")
+    answer = latest.get("answer")
+    ui_smoke = latest.get("ui_smoke")
+    retrieval_cases = retrieval.get("case_count") if isinstance(retrieval, dict) else "unknown"
+    answer_cases = answer.get("case_count") if isinstance(answer, dict) else "unknown"
+    smoke_success = ui_smoke.get("success") if isinstance(ui_smoke, dict) else False
+    return {
+        "status": latest.get("status", "unknown"),
+        "description": (
+            f"retrieval cases: {retrieval_cases} · "
+            f"answer cases: {answer_cases} · "
+            f"smoke: {'pass' if smoke_success else 'fail'}"
+        ),
+        "latest": latest,
+        "report": latest.get("report"),
+    }
+
+
+def _evaluation_history_context(
+    state: ApiState,
+    postgres_status: dict[str, object],
+) -> list[dict[str, object]]:
+    if postgres_status.get("available") is True:
+        return list_evaluation_history(state, limit=8)
+    return list_evaluation_report_files(state, limit=8)

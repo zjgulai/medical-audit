@@ -18,3 +18,15 @@ def test_pgvector_schema_keeps_metadata_indexes_for_filtered_retrieval() -> None
     assert "idx_document_chunks_metadata_gin" in schema
     assert "idx_document_chunks_locator_gin" in schema
     assert "idx_query_logs_filters_gin" in schema
+
+
+def test_pgvector_schema_includes_evaluation_run_history_table() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS index_evaluation_runs" in schema
+    assert "run_id uuid NOT NULL UNIQUE" in schema
+    assert "report_path text NOT NULL" in schema
+    assert "request jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "report jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "idx_index_evaluation_runs_created_at" in schema
+    assert "idx_index_evaluation_runs_status" in schema

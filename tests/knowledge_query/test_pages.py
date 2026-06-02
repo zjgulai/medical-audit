@@ -153,6 +153,14 @@ def test_index_admin_page_renders_operational_status_and_records_log(tmp_path: P
     assert 'data-endpoint="/index/versions/rollback"' in response.text
     assert 'data-endpoint="/index/search-backend/postgres"' in response.text
     assert "Smoke Question" in response.text
+    assert "Acceptance Panel" in response.text
+    assert "运行发布后验收" in response.text
+    assert "下载最新验收报告 JSON" in response.text
+    assert "验收历史" in response.text
+    assert "历史报告列表" in response.text
+    assert 'href="/index/evaluation/history"' in response.text
+    assert 'data-endpoint="/index/evaluation/run"' in response.text
+    assert 'href="/index/evaluation/latest/export"' in response.text
     assert state.operation_logs[-1]["action"] == "page-index-admin-view"
 
 

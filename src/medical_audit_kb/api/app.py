@@ -36,6 +36,7 @@ class ApiState:
     index_jobs: list[dict[str, object]] = field(default_factory=list)
     failed_files: list[dict[str, object]] = field(default_factory=list)
     pending_files: list[dict[str, object]] = field(default_factory=list)
+    evaluation_runs: list[dict[str, object]] = field(default_factory=list)
     query_logs: list[dict[str, object]] = field(default_factory=list)
     operation_logs: list[dict[str, object]] = field(default_factory=list)
     preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)

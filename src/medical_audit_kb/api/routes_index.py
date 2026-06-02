@@ -1,16 +1,36 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from medical_audit_kb.api.app import ApiState, get_api_state, record_index_run, record_operation
+from medical_audit_kb.api.app import (
+    ApiState,
+    PreviewReference,
+    get_api_state,
+    record_index_run,
+    record_operation,
+)
+from medical_audit_kb.api.evaluation_reports import (
+    latest_evaluation_report,
+    list_evaluation_history,
+    persist_evaluation_report,
+)
 from medical_audit_kb.api.postgres_status import (
     count_postgres_embeddings,
     load_postgres_index_status,
     row_count,
+)
+from medical_audit_kb.evaluation.answer_datasets import load_answer_evaluation_cases
+from medical_audit_kb.evaluation.answer_runner import evaluate_answers
+from medical_audit_kb.evaluation.datasets import load_evaluation_cases
+from medical_audit_kb.evaluation.runner import evaluate_retrieval
+from medical_audit_kb.generation.answer_builder import (
+    NoCitedEvidenceError,
+    build_citation_backed_answer,
 )
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
@@ -23,6 +43,7 @@ from medical_audit_kb.indexing.index_activation import (
     activate_index_version,
     rollback_index_version,
 )
+from medical_audit_kb.preview.resolver import PreviewResolutionError
 from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
 
 router = APIRouter(prefix="/index")
@@ -53,6 +74,19 @@ class IndexVersionSwitchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     index_version_key: str = Field(min_length=1)
+
+
+class EvaluationRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieval_cases_file: str = "configs/evaluation/knowledge-query-human-evaluation-cases-v1.yaml"
+    answer_cases_file: str = "configs/evaluation/knowledge-query-answer-evaluation-cases-v1.yaml"
+    max_retrieval_cases: int = Field(default=52, gt=0)
+    max_answer_cases: int = Field(default=8, gt=0)
+    top_k: int = Field(default=5, gt=0)
+    smoke_question: str = Field(default="医保基金审核依据", min_length=1)
+    min_recall_at_k: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_answer_pass_rate: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 @router.post("/rebuild")
@@ -195,6 +229,106 @@ def rollback_postgres_index_version(
     return _index_version_switch_response(result.to_dict())
 
 
+@router.post("/evaluation/run")
+def run_post_release_evaluation(
+    payload: EvaluationRunRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    _require_index_admin(x_role)
+    if state.search_engine is None:
+        raise HTTPException(status_code=409, detail="search backend is not ready")
+    try:
+        retrieval_cases = load_evaluation_cases(Path(payload.retrieval_cases_file))[
+            : payload.max_retrieval_cases
+        ]
+        answer_cases = load_answer_evaluation_cases(Path(payload.answer_cases_file))[
+            : payload.max_answer_cases
+        ]
+        retrieval_summary = evaluate_retrieval(
+            retrieval_cases,
+            state.search_engine,
+            top_k=payload.top_k,
+            preview_resolver=state.preview_resolver,
+        )
+        answer_summary = evaluate_answers(
+            answer_cases,
+            state.search_engine,
+            top_k=payload.top_k,
+        )
+        ui_smoke = _run_ui_smoke_check(
+            state,
+            question=payload.smoke_question,
+            top_k=payload.top_k,
+        )
+    except (FileNotFoundError, ValueError, NoCitedEvidenceError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    status = (
+        "pass"
+        if retrieval_summary.recall_at_k >= payload.min_recall_at_k
+        and answer_summary.pass_rate >= payload.min_answer_pass_rate
+        and bool(ui_smoke["success"])
+        else "fail"
+    )
+    response: dict[str, object] = {
+        "status": status,
+        "retrieval": retrieval_summary.to_dict(),
+        "answer": answer_summary.to_dict(),
+        "ui_smoke": ui_smoke,
+        "thresholds": {
+            "min_recall_at_k": payload.min_recall_at_k,
+            "min_answer_pass_rate": payload.min_answer_pass_rate,
+        },
+    }
+    report_metadata = persist_evaluation_report(
+        state,
+        payload=payload,
+        result=response,
+        search_backend=_search_backend_response(state),
+    )
+    response["report"] = report_metadata
+    response["history"] = report_metadata.get("history", {})
+    state.evaluation_runs.append(response)
+    record_operation(
+        state,
+        "index-evaluation-run",
+        {
+            "status": status,
+            "retrieval_case_count": retrieval_summary.case_count,
+            "answer_case_count": answer_summary.case_count,
+            "ui_smoke_success": bool(ui_smoke["success"]),
+        },
+    )
+    return response
+
+
+@router.get("/evaluation/latest/export")
+def export_latest_evaluation_report(
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> dict[str, object]:
+    report = latest_evaluation_report(state)
+    if report is None:
+        raise HTTPException(status_code=404, detail="evaluation report not found")
+    record_operation(
+        state,
+        "index-evaluation-report-export",
+        {"run_id": str(report.get("run_id", "unknown"))},
+    )
+    return report
+
+
+@router.get("/evaluation/history")
+def evaluation_history(state: Annotated[ApiState, Depends(get_api_state)]) -> dict[str, object]:
+    items = list_evaluation_history(state, limit=20)
+    record_operation(
+        state,
+        "index-evaluation-history-view",
+        {"count": len(items)},
+    )
+    return {"items": items}
+
+
 @router.get("/postgres-status")
 def postgres_index_status(state: Annotated[ApiState, Depends(get_api_state)]) -> dict[str, object]:
     try:
@@ -327,4 +461,52 @@ def _index_version_switch_response(result: dict[str, object]) -> dict[str, objec
             "run-ui-smoke",
             "run-fixed-evaluation",
         ],
+    }
+
+
+def _run_ui_smoke_check(
+    state: ApiState,
+    *,
+    question: str,
+    top_k: int,
+) -> dict[str, object]:
+    if state.search_engine is None:
+        return {"success": False, "question": question, "error": "search backend is not ready"}
+
+    try:
+        results = state.search_engine.search(question, top_k=top_k)
+        answer = build_citation_backed_answer(question, results)
+    except NoCitedEvidenceError as exc:
+        return {"success": False, "question": question, "error": str(exc)}
+
+    preview_path: str | None = None
+    preview_success = False
+    first_citation = answer.citations[0] if answer.citations else None
+    if first_citation is not None:
+        state.preview_references[first_citation.chunk_id] = PreviewReference(
+            locator=first_citation.locator,
+            citation_text=first_citation.snippet,
+        )
+        preview_path = f"/pages/preview/{first_citation.chunk_id}"
+        try:
+            state.preview_resolver.resolve(
+                first_citation.locator,
+                citation_text=first_citation.snippet,
+            )
+            preview_success = True
+        except PreviewResolutionError as exc:
+            return {
+                "success": False,
+                "question": question,
+                "citation_count": len(answer.citations),
+                "preview_path": preview_path,
+                "error": str(exc),
+            }
+
+    return {
+        "success": bool(answer.citations) and preview_success,
+        "question": question,
+        "citation_count": len(answer.citations),
+        "preview_path": preview_path,
+        "confidence": answer.confidence.value,
     }

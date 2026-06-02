@@ -129,6 +129,23 @@ CREATE TABLE IF NOT EXISTS query_logs (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS index_evaluation_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id uuid NOT NULL UNIQUE,
+    status text NOT NULL,
+    report_path text NOT NULL,
+    retrieval_case_count integer NOT NULL DEFAULT 0,
+    answer_case_count integer NOT NULL DEFAULT 0,
+    ui_smoke_success boolean NOT NULL DEFAULT false,
+    search_backend text NOT NULL,
+    search_backend_details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    request jsonb NOT NULL DEFAULT '{}'::jsonb,
+    report jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_index_evaluation_runs_retrieval_case_count_non_negative CHECK (retrieval_case_count >= 0),
+    CONSTRAINT ck_index_evaluation_runs_answer_case_count_non_negative CHECK (answer_case_count >= 0)
+);
+
 CREATE INDEX IF NOT EXISTS idx_source_documents_collection ON source_documents (source_collection);
 CREATE INDEX IF NOT EXISTS idx_source_documents_package ON source_documents (source_package_version_id);
 CREATE INDEX IF NOT EXISTS idx_source_documents_sha256 ON source_documents (sha256);
@@ -153,3 +170,5 @@ CREATE INDEX IF NOT EXISTS idx_failed_files_status ON failed_files (status);
 CREATE INDEX IF NOT EXISTS idx_pending_files_status ON pending_files (status);
 CREATE INDEX IF NOT EXISTS idx_query_logs_created_at ON query_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_query_logs_filters_gin ON query_logs USING gin (filters);
+CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_created_at ON index_evaluation_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_status ON index_evaluation_runs (status);

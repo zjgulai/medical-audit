@@ -115,7 +115,50 @@
             <output id="admin-action-result" class="admin-action-result" aria-live="polite">等待操作。</output>
           </article>
 
+          <article class="ops-card acceptance-card">
+            <span class="step-mark">04</span>
+            <h3>Acceptance Panel</h3>
+            <p>发布后自动执行固定检索评测、答案评测和 UI smoke，结果写入本进程运行态。</p>
+            <dl class="acceptance-status">
+              <dt>latest</dt>
+              <dd>{{ evaluation_status.status }}</dd>
+              <dt>summary</dt>
+              <dd>{{ evaluation_status.description }}</dd>
+            </dl>
+            <p><a class="text-link" href="/index/evaluation/latest/export">下载最新验收报告 JSON</a></p>
+            <form class="admin-action-form dense-form" data-endpoint="/index/evaluation/run" data-method="POST">
+              <input type="hidden" name="retrieval_cases_file" value="configs/evaluation/knowledge-query-human-evaluation-cases-v1.yaml">
+              <input type="hidden" name="answer_cases_file" value="configs/evaluation/knowledge-query-answer-evaluation-cases-v1.yaml">
+              <input type="hidden" name="max_retrieval_cases" value="52">
+              <input type="hidden" name="max_answer_cases" value="8">
+              <input type="hidden" name="top_k" value="5">
+              <input type="hidden" name="smoke_question" value="医保基金审核依据">
+              <button type="submit">运行发布后验收</button>
+            </form>
+          </article>
         </div>
+      </section>
+
+      <section class="panel history-panel" aria-labelledby="evaluation-history-title">
+        <div class="ops-console-heading">
+          <div>
+            <p class="eyebrow">Evaluation History</p>
+            <h2 id="evaluation-history-title">验收历史</h2>
+            <p class="meta">历史报告列表用于复盘每次发布后的固定检索评测、答案评测和 UI smoke 结果。</p>
+          </div>
+          <a class="text-link" href="/index/evaluation/history">历史报告列表</a>
+        </div>
+        <ul class="compact-list">
+          {% for item in evaluation_history %}
+            <li>
+              <code>{{ item.run_id }}</code> · {{ item.status }} · retrieval: {{ item.retrieval_case_count }}
+              · answer: {{ item.answer_case_count }} · smoke: {% if item.ui_smoke_success %}pass{% else %}fail{% endif %}
+              · source: {{ item.source }}
+            </li>
+          {% else %}
+            <li>暂无验收历史。运行发布后验收后会生成 JSON 报告，并在 PostgreSQL 可用时写入历史表。</li>
+          {% endfor %}
+        </ul>
       </section>
 
       <section class="split">
