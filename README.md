@@ -59,12 +59,13 @@ source: human+ai
 - 已落地 `docs/product/product-prd-medical-audit-v1-stable.md` 作为 V1.0 PRD 执行基线
 - 已形成知识库查询引擎的架构、API 和运行手册
 - 已建立 `docs/knowledge/knowledge-query-evidence-register-stable.md`，用于登记知识库评测、迁移、UI smoke 和 provider 预检草稿证据
+- 已产出 `drafts/docs/architecture-his-data-ingestion-design-draft-20260602.md`，作为 HIS DDL、字段映射和任务级快照设计的评审草稿
 
 ## 下一步
 
 下一步围绕 V1.0 PRD 做详细设计和交付拆分：
 
-- 继续收口知识库查询引擎当前未提交改动，保持原子提交
-- 补充 HIS 数据接入设计、首个专项审计场景 PRD、底稿报告模板设计
+- 评审 HIS 数据接入设计草稿，并向院方/信息科索取 HIS DDL、字段字典、脱敏历史数据和验证集
+- 补充首个专项审计场景 PRD、底稿报告模板设计
 - 与院方确认 HIS DDL、脱敏测试集、报告模板和准确率口径
 - 将 V1.0 的 0/1 合规判定、复核、报告和整改链路拆成可开发任务
