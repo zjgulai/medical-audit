@@ -24,8 +24,23 @@ def test_query_page_renders_form_and_source_filters(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "引用优先的医保审核知识查询" in response.text
+    assert "检索已就绪" in response.text
     assert "来源过滤" in response.text
+    assert 'href="#main-content"' in response.text
+    assert 'aria-current="page">查询工作台' in response.text
+    assert 'aria-describedby="question-help"' in response.text
+    assert "required" in response.text
     assert SourceCollection.MEDICAL_INSURANCE_LAWS.value in response.text
+
+
+def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "医保审核对话审证台" in response.text
+    assert 'aria-current="page">对话审证' in response.text
 
 
 def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Path) -> None:
@@ -43,9 +58,44 @@ def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Pat
     assert response.status_code == 200
     assert "引用型回答" in response.text
     assert "法规依据" in response.text
-    assert f"/preview/{LAW_CHUNK_ID}" in response.text
+    assert f"/pages/preview/{LAW_CHUNK_ID}" in response.text
     assert state.operation_logs[-1]["action"] == "page-query"
     assert state.query_logs[-1]["question"] == "医保基金审核依据"
+
+
+def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/pages/chat", params={"question": "医保基金审核依据"})
+
+    assert response.status_code == 200
+    assert "医保审核对话审证台" in response.text
+    assert "AuditScope" in response.text
+    assert "Evidence Command Center" in response.text
+    assert "Case Rail" in response.text
+    assert "Command Composer" in response.text
+    assert "Evidence Dossier" in response.text
+    assert "证据卷宗" in response.text
+    assert "可追溯回答" in response.text
+    assert "把以上依据整理成审核要点清单" in response.text
+    assert f"/pages/preview/{LAW_CHUNK_ID}" in response.text
+    assert "<pre>" not in response.text
+    assert state.operation_logs[-1]["action"] == "page-chat"
+
+
+def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    client.get("/pages/query", params={"question": "医保基金审核依据"})
+
+    response = client.get(f"/pages/preview/{LAW_CHUNK_ID}")
+
+    assert response.status_code == 200
+    assert "原文证据预览" in response.text
+    assert "第一条 医疗机构应当保留医保基金审核依据。" in response.text
+    assert "全量法律/law.md" in response.text
+    assert state.operation_logs[-1]["action"] == "page-preview"
 
 
 def test_index_admin_page_renders_operational_status_and_records_log(tmp_path: Path) -> None:
@@ -87,12 +137,44 @@ def test_index_admin_page_renders_operational_status_and_records_log(tmp_path: P
 
     assert response.status_code == 200
     assert "知识库索引管理" in response.text
+    assert "数据库 chunks" in response.text
+    assert "检索已就绪" in response.text
+    assert 'href="#main-content"' in response.text
+    assert 'aria-current="page">索引管理' in response.text
     assert "index-v1" in response.text
     assert "全量法律/broken.pdf" in response.text
     assert "风险负面清单/case.png" in response.text
     assert "not-run" in response.text
     assert "导出操作日志 JSON" in response.text
+    assert "Release Console" in response.text
+    assert "发布 candidate" in response.text
+    assert "回滚到历史版本" in response.text
+    assert 'data-endpoint="/index/versions/activate"' in response.text
+    assert 'data-endpoint="/index/versions/rollback"' in response.text
+    assert 'data-endpoint="/index/search-backend/postgres"' in response.text
+    assert "Smoke Question" in response.text
     assert state.operation_logs[-1]["action"] == "page-index-admin-view"
+
+
+def test_query_page_exposes_alert_when_backend_is_not_ready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = None
+    client = TestClient(create_app(state))
+
+    response = client.get("/pages/query", params={"question": "医保基金审核依据"})
+
+    assert response.status_code == 200
+    assert 'role="alert"' in response.text
+    assert "检索引擎尚未初始化" in response.text
+
+
+def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.get("/static/app.css")
+
+    assert response.status_code == 200
+    assert ":focus-visible" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:

@@ -155,6 +155,7 @@ def _write_xlsx(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
     worksheet = workbook.active
+    assert worksheet is not None
     worksheet.title = "规则"
     worksheet.append(["规则编码", "规则名称"])
     worksheet.append(["R001", "超量开药"])

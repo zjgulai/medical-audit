@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -457,6 +458,43 @@ def test_pgvector_import_command_writes_dry_run_outputs(tmp_path: Path) -> None:
     assert '"ready_for_write": true' in json_path.read_text(encoding="utf-8")
 
 
+def test_ui_smoke_command_writes_success_report(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    json_path = tmp_path / "ui-smoke.json"
+    monkeypatch.setattr(
+        "medical_audit_kb.cli._create_api_test_client",
+        lambda: FakeUiSmokeClient(backend_status_code=200),
+    )
+
+    exit_code = main(["ui-smoke", "--json-output", str(json_path)])
+
+    body = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert body["success"] is True
+    assert body["preview_path"] == "/pages/preview/11111111-1111-4111-8111-111111111111"
+
+
+def test_ui_smoke_command_fails_when_backend_load_fails(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    json_path = tmp_path / "ui-smoke.json"
+    monkeypatch.setattr(
+        "medical_audit_kb.cli._create_api_test_client",
+        lambda: FakeUiSmokeClient(backend_status_code=409),
+    )
+
+    exit_code = main(["ui-smoke", "--json-output", str(json_path)])
+
+    body = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 2
+    assert body["success"] is False
+    assert body["backend_load_status_code"] == 409
+    assert body["query_page_status_code"] is None
+
+
 class StaticAnswerSmokeProvider:
     provider = "fake"
     model_name = "static-smoke"
@@ -469,6 +507,76 @@ class StaticAnswerSmokeProvider:
 class EmptySearchEngine:
     def search(self, *args: object, **kwargs: object) -> tuple[object, ...]:
         return ()
+
+
+class FakeResponse:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        text: str = "",
+        payload: object | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.text = text
+        self._payload = payload
+
+    def json(self) -> object:
+        return self._payload
+
+
+class FakeUiSmokeClient:
+    def __init__(self, *, backend_status_code: int) -> None:
+        self._backend_status_code = backend_status_code
+
+    def get(
+        self,
+        path: str,
+        *,
+        params: dict[str, object] | None = None,
+    ) -> FakeResponse:
+        if path == "/index/postgres-status":
+            return FakeResponse(
+                status_code=200,
+                payload={
+                    "row_counts": {"document_chunks": 1, "chunk_embeddings": 1},
+                    "embedding_sets": [],
+                },
+            )
+        if path == "/pages/query":
+            return FakeResponse(
+                status_code=200,
+                text=(
+                    '引用型回答 <a href="/pages/preview/'
+                    '11111111-1111-4111-8111-111111111111">原文预览</a>'
+                ),
+            )
+        if path == "/pages/preview/11111111-1111-4111-8111-111111111111":
+            return FakeResponse(status_code=200, text="原文证据预览")
+        return FakeResponse(status_code=404)
+
+    def post(
+        self,
+        path: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, object],
+    ) -> FakeResponse:
+        if path != "/index/search-backend/postgres":
+            return FakeResponse(status_code=404)
+        if self._backend_status_code != 200:
+            return FakeResponse(
+                status_code=self._backend_status_code,
+                payload={"detail": "missing embedding api key env: KIMI_API_KEY"},
+            )
+        return FakeResponse(
+            status_code=200,
+            payload={
+                "backend": "postgres",
+                "ready": True,
+                "details": {"matching_embedding_count": 1},
+            },
+        )
 
 
 def _write_text(path: Path, content: str) -> Path:

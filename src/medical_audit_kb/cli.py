@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import NoReturn, Protocol, cast
 
 from medical_audit_kb.acceptance.reports import (
     build_acceptance_report,
@@ -65,6 +66,32 @@ from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline
 from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
 
+PREVIEW_LINK_PATTERN = re.compile(r'href="(?P<path>/pages/preview/[0-9a-fA-F-]+)"')
+
+
+class ClientResponse(Protocol):
+    status_code: int
+    text: str
+
+    def json(self) -> object: ...
+
+
+class ApiTestClient(Protocol):
+    def get(
+        self,
+        path: str,
+        *,
+        params: dict[str, object] | None = None,
+    ) -> ClientResponse: ...
+
+    def post(
+        self,
+        path: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, object],
+    ) -> ClientResponse: ...
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
@@ -91,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
         return _index_activate(args)
     if args.command == "index-rollback":
         return _index_rollback(args)
+    if args.command == "ui-smoke":
+        return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
 
 
@@ -230,6 +259,18 @@ def _build_parser() -> argparse.ArgumentParser:
     index_rollback.add_argument("--output", required=True, type=Path)
     index_rollback.add_argument("--json-output", type=Path)
 
+    ui_smoke = subparsers.add_parser(
+        "ui-smoke",
+        help="Run API UI smoke through PostgreSQL backend load, query page, and preview page.",
+    )
+    ui_smoke.add_argument("--question", default="医保基金审核依据")
+    ui_smoke.add_argument("--json-output", required=True, type=Path)
+    ui_smoke.add_argument("--embedding-provider", choices=("fake", "openai"), default="openai")
+    ui_smoke.add_argument("--embedding-model", default="kimi-for-coding")
+    ui_smoke.add_argument("--embedding-dimension", type=int, default=1024)
+    ui_smoke.add_argument("--api-key-env", default="KIMI_API_KEY")
+    ui_smoke.add_argument("--embedding-base-url", default="https://api.kimi.com/coding/v1")
+    ui_smoke.add_argument("--embedding-batch-size", type=int, default=16)
     return parser
 
 
@@ -468,6 +509,55 @@ def _index_rollback(args: argparse.Namespace) -> int:
     return 0 if result.success else 2
 
 
+def _ui_smoke(args: argparse.Namespace) -> int:
+    client = _create_api_test_client()
+    postgres_response = client.get("/index/postgres-status")
+    backend_response = client.post(
+        "/index/search-backend/postgres",
+        headers={"X-Role": "it-admin"},
+        json={
+            "embedding_provider": args.embedding_provider,
+            "embedding_model": args.embedding_model,
+            "embedding_dimension": args.embedding_dimension,
+            "api_key_env": args.api_key_env,
+            "embedding_base_url": args.embedding_base_url,
+            "embedding_batch_size": args.embedding_batch_size,
+        },
+    )
+
+    query_response: ClientResponse | None = None
+    preview_response: ClientResponse | None = None
+    preview_path: str | None = None
+    if backend_response.status_code == 200:
+        query_response = client.get("/pages/query", params={"question": args.question})
+        if query_response.status_code == 200:
+            preview_path = _first_preview_path(query_response.text)
+            if preview_path is not None:
+                preview_response = client.get(preview_path)
+
+    result = {
+        "success": (
+            postgres_response.status_code == 200
+            and backend_response.status_code == 200
+            and _response_status_code(query_response) == 200
+            and _response_status_code(preview_response) == 200
+            and preview_path is not None
+            and _response_text_contains(query_response, "引用型回答")
+            and _response_text_contains(preview_response, "原文证据预览")
+        ),
+        "question": args.question,
+        "postgres_status_code": postgres_response.status_code,
+        "backend_load_status_code": backend_response.status_code,
+        "query_page_status_code": _response_status_code(query_response),
+        "preview_page_status_code": _response_status_code(preview_response),
+        "preview_path": preview_path,
+        "postgres_status": _response_json(postgres_response),
+        "backend_load": _response_json(backend_response),
+    }
+    _write_text(args.json_output, json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+    return 0 if result["success"] else 2
+
+
 def _answer_generation_provider_from_args(
     args: argparse.Namespace,
 ) -> AnswerGenerationProvider | None:
@@ -538,6 +628,36 @@ def _add_answer_generation_provider_args(parser: argparse.ArgumentParser) -> Non
 def _write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def _create_api_test_client() -> ApiTestClient:
+    from fastapi.testclient import TestClient
+
+    from medical_audit_kb.api.app import create_app
+
+    return cast(ApiTestClient, TestClient(create_app()))
+
+
+def _first_preview_path(html: str) -> str | None:
+    match = PREVIEW_LINK_PATTERN.search(html)
+    return match.group("path") if match is not None else None
+
+
+def _response_status_code(response: ClientResponse | None) -> int | None:
+    return None if response is None else int(response.status_code)
+
+
+def _response_text_contains(response: ClientResponse | None, needle: str) -> bool:
+    return response is not None and needle in str(response.text)
+
+
+def _response_json(response: ClientResponse | None) -> object:
+    if response is None:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None
 
 
 def _database_url_from_env(env_name: str) -> str:

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from openpyxl import load_workbook  # type: ignore[import-untyped]
+from openpyxl import load_workbook
 from pypdf import PdfReader
 
 TEXT_FILE_SUFFIXES = {".md", ".txt"}
