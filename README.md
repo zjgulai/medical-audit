@@ -5,7 +5,7 @@ module: repository
 topic: project-overview
 status: stable
 created: 2026-05-31
-updated: 2026-05-31
+updated: 2026-06-02
 owner: self
 source: human+ai
 ---
@@ -24,13 +24,15 @@ source: human+ai
 
 1. `docs/product/product-meeting-consensus-20260315-stable.md`
    当前 MVP 范围的最高优先级业务共识。
-2. `docs/product/product-development-plan-medical-audit-stable.md`
+2. `docs/product/product-prd-medical-audit-v1-stable.md`
+   当前 V1.0 产品执行基线，承接业务共识、架构边界和验收要求。
+3. `docs/product/product-development-plan-medical-audit-stable.md`
    当前开发排期、交付物和里程碑基线。
-3. `docs/product/product-scope-baseline-stable.md`
+4. `docs/product/product-scope-baseline-stable.md`
    基于现有材料整理出的统一产品范围基线。
-4. `docs/knowledge/audit-agent-platform-reference-stable.pptx`
+5. `docs/knowledge/audit-agent-platform-reference-stable.pptx`
    上游平台能力参考材料，不直接作为当前医疗项目需求基线。
-5. `data/医保审核前期资料/`
+6. `data/医保审核前期资料/`
    当前项目的正式输入资料库。
 
 ## 目录说明
@@ -52,12 +54,14 @@ source: human+ai
 - 已建立标准目录骨架
 - 已将根目录文档迁入正式区、知识区或归档区
 - 已补充项目资料审计结论和产品范围基线
+- 已落地 `docs/product/product-prd-medical-audit-v1-stable.md` 作为 V1.0 PRD 执行基线
+- 已形成知识库查询引擎的架构、API 和运行手册
 
 ## 下一步
 
-下一步不直接写功能清单，先完成产品调研，确认：
+下一步围绕 V1.0 PRD 做详细设计和交付拆分：
 
-- 这个产品最终卖给谁、由谁主导采购
-- 第一阶段到底是医院内审工具，还是医保监管协同工具
-- MVP 首个细分场景具体落在哪一条审计链路
-- “两库四审”里哪些属于 V1，哪些属于 V1.1 以后
+- 继续收口知识库查询引擎当前未提交改动，保持原子提交
+- 补充 HIS 数据接入设计、首个专项审计场景 PRD、底稿报告模板设计
+- 与院方确认 HIS DDL、脱敏测试集、报告模板和准确率口径
+- 将 V1.0 的 0/1 合规判定、复核、报告和整改链路拆成可开发任务
