@@ -8,6 +8,7 @@ from medical_audit_kb.indexing.embeddings import (
     EmbeddingMetadata,
     EmbeddingProviderError,
     OpenAICompatibleEmbeddingProvider,
+    tokenize_text,
 )
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
@@ -29,6 +30,13 @@ def test_fake_embedding_is_deterministic_and_records_provider_metadata() -> None
     assert metadata.model_name == "deterministic-token-hashing"
     assert metadata.provider_version == "v1"
     assert metadata.dimension == 16
+
+
+def test_tokenize_text_keeps_medical_catalog_codes_as_exact_terms() -> None:
+    tokens = tokenize_text("ICD-10医保2.0版中 A00.0 和 C34.9 的诊断名称")
+
+    assert "a00.0" in tokens
+    assert "c34.9" in tokens
 
 
 def test_openai_compatible_embedding_provider_posts_batches_and_validates_dimension() -> None:
@@ -103,6 +111,35 @@ def test_vector_index_recalls_semantically_matching_fake_embedding() -> None:
     assert results[0].score > 0
 
 
+def test_vector_index_uses_numpy_path_without_filters_and_returns_ordered_results() -> None:
+    provider = DeterministicFakeEmbeddingProvider(dimension=16)
+    target_chunk_id = uuid4()
+    records = build_chunk_embedding_records(
+        [
+            ChunkEmbeddingInput(
+                chunk_id=target_chunk_id,
+                text="医保基金监管审核依据",
+                metadata={"source_collection": "medical-insurance-laws"},
+            ),
+            ChunkEmbeddingInput(
+                chunk_id=uuid4(),
+                text="城市绿化管理条例",
+                metadata={"source_collection": "medical-insurance-laws"},
+            ),
+        ],
+        provider=provider,
+    )
+    index = InMemoryVectorIndex(dimension=provider.dimension)
+    index.upsert(records)
+
+    query_embedding = provider.embed_texts(["医保基金监管"])[0]
+    results = index.search(query_embedding, top_k=2)
+
+    assert len(results) == 2
+    assert results[0].record.chunk_id == target_chunk_id
+    assert results[0].score >= results[1].score
+
+
 def test_chunk_embedding_records_can_be_serialized_for_pgvector_rows() -> None:
     provider = DeterministicFakeEmbeddingProvider(dimension=8)
     chunk_id = uuid4()
@@ -168,6 +205,30 @@ def test_bm25_recalls_by_policy_number_article_number_and_term() -> None:
     assert policy_results[0].document.chunk_id == policy_chunk_id
     assert article_results[0].document.chunk_id == article_chunk_id
     assert term_results[0].document.chunk_id == term_chunk_id
+
+
+def test_bm25_ranks_exact_medical_catalog_code_above_broad_code_range() -> None:
+    target_chunk_id = uuid4()
+    broad_range_chunk_id = uuid4()
+    index = InMemoryBM25Index()
+    index.upsert(
+        [
+            BM25Document(
+                chunk_id=broad_range_chunk_id,
+                text="1 A00-B99 某些传染病和寄生虫病 A15-A19 结核病",
+                metadata={"source_collection": "medical-insurance-catalog"},
+            ),
+            BM25Document(
+                chunk_id=target_chunk_id,
+                text="A00 霍乱 A00.0 霍乱，由于O1群霍乱弧菌，霍乱生物型所致",
+                metadata={"source_collection": "medical-insurance-catalog"},
+            ),
+        ]
+    )
+
+    results = index.search("A00.0 对应的诊断名称是什么？", top_k=2)
+
+    assert results[0].document.chunk_id == target_chunk_id
 
 
 def test_bm25_returns_no_results_for_unmatched_query() -> None:

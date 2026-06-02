@@ -12,7 +12,7 @@ import httpx
 
 type EmbeddingVector = tuple[float, ...]
 
-TOKEN_PATTERN = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]")
+TOKEN_PATTERN = re.compile(r"[a-z]\d{2}(?:\.\d+[a-z0-9+*]*)?|[a-z0-9]+|[\u4e00-\u9fff]")
 
 
 class EmbeddingProvider(Protocol):

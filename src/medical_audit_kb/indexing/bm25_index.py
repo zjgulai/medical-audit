@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from medical_audit_kb.indexing.embeddings import tokenize_text
 
 BM25_K1 = 1.5
 BM25_B = 0.75
+CATALOG_CODE_EXACT_MATCH_BOOST = 10.0
+CATALOG_CODE_TOKEN_PATTERN = re.compile(r"^[a-z]\d{2}\.\d+[a-z0-9+*]*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +93,8 @@ class InMemoryBM25Index:
             if term_frequency == 0:
                 continue
             score += self._score_term(term, term_frequency, document_length)
+            if CATALOG_CODE_TOKEN_PATTERN.match(term):
+                score += CATALOG_CODE_EXACT_MATCH_BOOST
 
         normalized_query = query_terms_to_string(query_terms)
         searchable_text = _searchable_text(document).lower()
