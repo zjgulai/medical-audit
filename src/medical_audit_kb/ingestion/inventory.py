@@ -221,11 +221,7 @@ def _find_duplicate_groups(
             continue
         grouped[file.sha256].append(file)
 
-    return {
-        digest: tuple(items)
-        for digest, items in grouped.items()
-        if len(items) > 1
-    }
+    return {digest: tuple(items) for digest, items in grouped.items() if len(items) > 1}
 
 
 def _default_version_key(root: Path) -> str:

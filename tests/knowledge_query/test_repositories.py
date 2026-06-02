@@ -168,12 +168,16 @@ async def _assert_repository_write_flow(
         await session.execute(select(SourceDocument).where(SourceDocument.id == document.id))
     ).scalar_one()
     stored_chunks = (
-        await session.execute(
-            select(DocumentChunk)
-            .where(DocumentChunk.source_document_id == document.id)
-            .order_by(DocumentChunk.chunk_index)
+        (
+            await session.execute(
+                select(DocumentChunk)
+                .where(DocumentChunk.source_document_id == document.id)
+                .order_by(DocumentChunk.chunk_index)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     stored_failure = (
         await session.execute(select(FailedFile).where(FailedFile.id == failed_file.id))
     ).scalar_one()

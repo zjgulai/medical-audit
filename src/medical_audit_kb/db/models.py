@@ -74,9 +74,7 @@ class SourceDocument(Base):
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
 
-    source_package_version: Mapped[SourcePackageVersion] = relationship(
-        back_populates="documents"
-    )
+    source_package_version: Mapped[SourcePackageVersion] = relationship(back_populates="documents")
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="source_document",
         cascade="all, delete-orphan",

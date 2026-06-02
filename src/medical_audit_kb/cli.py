@@ -66,7 +66,6 @@ from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
 
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)

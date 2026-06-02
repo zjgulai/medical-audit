@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from pytest import MonkeyPatch
@@ -456,7 +455,6 @@ def test_pgvector_import_command_writes_dry_run_outputs(tmp_path: Path) -> None:
     assert "知识库 pgvector 受控导入报告" in report_path.read_text(encoding="utf-8")
     assert '"mode": "dry-run"' in json_path.read_text(encoding="utf-8")
     assert '"ready_for_write": true' in json_path.read_text(encoding="utf-8")
-
 
 
 class StaticAnswerSmokeProvider:

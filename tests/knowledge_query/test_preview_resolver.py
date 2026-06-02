@@ -173,7 +173,9 @@ def _minimal_text_pdf_bytes(text: str) -> bytes:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
         ),
         b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-        b"5 0 obj << /Length " + str(len(stream)).encode("ascii") + b" >> stream\n"
+        b"5 0 obj << /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >> stream\n"
         + stream
         + b"\nendstream endobj\n",
     ]
