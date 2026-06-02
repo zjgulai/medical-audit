@@ -1,9 +1,13 @@
 from uuid import uuid4
 
+import httpx
+
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingMetadata,
+    EmbeddingProviderError,
+    OpenAICompatibleEmbeddingProvider,
 )
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
@@ -25,6 +29,45 @@ def test_fake_embedding_is_deterministic_and_records_provider_metadata() -> None
     assert metadata.model_name == "deterministic-token-hashing"
     assert metadata.provider_version == "v1"
     assert metadata.dimension == 16
+
+
+def test_openai_compatible_embedding_provider_posts_batches_and_validates_dimension() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": 0, "embedding": [1.0, 0.0, 0.0]},
+                    {"index": 1, "embedding": [0.0, 1.0, 0.0]},
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        api_key="test-key",
+        model_name="custom-embedding",
+        dimension=3,
+        base_url="https://example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    embeddings = provider.embed_texts(["医保审核", "超量开药"])
+
+    assert embeddings == ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    assert requests[0].url == "https://example.test/v1/embeddings"
+    assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_openai_compatible_embedding_provider_requires_dimension_for_unknown_model() -> None:
+    try:
+        OpenAICompatibleEmbeddingProvider(api_key="test-key", model_name="custom-embedding")
+    except EmbeddingProviderError as exc:
+        assert "dimension must be provided" in str(exc)
+    else:
+        raise AssertionError("expected EmbeddingProviderError")
 
 
 def test_vector_index_recalls_semantically_matching_fake_embedding() -> None:
