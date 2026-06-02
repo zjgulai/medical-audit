@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
-from openpyxl import load_workbook  # type: ignore[import-untyped]
+from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from medical_audit_kb.domain.constants import FileErrorType, FileQueueStatus
@@ -20,8 +20,11 @@ DEFAULT_MAX_XLSX_COLUMNS = 256
 
 
 class WorksheetLike(Protocol):
-    max_column: int | None
-    title: str
+    @property
+    def max_column(self) -> int | None: ...
+
+    @property
+    def title(self) -> str: ...
 
     def iter_rows(self, *, max_col: int, values_only: bool) -> Iterable[tuple[object, ...]]: ...
 

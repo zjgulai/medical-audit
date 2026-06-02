@@ -23,9 +23,14 @@ class RerankScore:
 
 
 class RerankProvider(Protocol):
-    provider: str
-    model_name: str
-    provider_version: str
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model_name(self) -> str: ...
+
+    @property
+    def provider_version(self) -> str: ...
 
     def rerank(
         self,
