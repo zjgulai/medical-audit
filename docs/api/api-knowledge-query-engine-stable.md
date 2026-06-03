@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-02
+updated: 2026-06-03
 owner: self
 source: human+ai
 ---
@@ -51,6 +51,104 @@ Query 参数：
 - 证据质量状态
 - 分组依据
 - 原文预览入口
+- 创建复核任务入口
+- 审计底稿 Markdown/JSON 导出入口
+
+### `GET /pages/chat/export`
+
+导出当前单轮对话的审计底稿，支持 JSON 和 Markdown 两种格式。该接口会重新执行一次引用型查询，因此要求检索后端已加载；没有引用依据时不生成底稿。
+
+Query 参数：
+
+- `question`：必填，自然语言问题。
+- `source_collection`：可重复传入，值为来源集合枚举。
+- `format`：`json` 或 `markdown`，默认 `json`。
+
+导出内容：
+
+- 问题、回答、置信度、生成方式和复核门禁。
+- 人工复核清单。
+- 证据分组。
+- 每条引用的 `citation_id`、`chunk_id`、`index_version_key`、`source_package_version_key`、`score`、`locator` 和 `preview_url`。
+
+响应：
+
+- `format=json`：`application/json`，下载文件名 `auditscope-dossier.json`。
+- `format=markdown`：`text/markdown`，下载文件名 `auditscope-dossier.md`。
+
+状态码：
+
+- `200`：导出成功。
+- `409`：检索后端未加载。
+- `404`：没有找到可引用依据。
+
+### `GET /pages/review-tasks`
+
+服务端模板复核任务台。当前实现为进程内本地任务记录，用于把单轮对话底稿沉淀为可追踪复核项；它不替代生产级案件系统、权限系统或数据库持久化。
+
+页面展示：
+
+- 任务总数、开放任务、待补证据、关闭任务统计。
+- 复核任务列表。
+- 每个任务的问题、创建时间、更新时间、引用数量、复核门禁。
+- 复核状态、复核意见、复核结论编辑表单。
+- 任务级 Markdown/JSON 导出入口。
+
+### `POST /pages/review-tasks/create`
+
+从当前问题创建复核任务。该接口读取 `application/x-www-form-urlencoded` 表单，会重新执行一次引用型查询并保存当时的审计底稿快照。
+
+Form 字段：
+
+- `question`：必填，自然语言问题。
+- `source_collection`：可重复传入，值为来源集合枚举。
+
+状态码：
+
+- `303`：创建成功，跳转 `/pages/review-tasks`。
+- `409`：检索后端未加载。
+- `404`：没有找到可引用依据。
+- `422`：缺少问题或来源集合枚举非法。
+
+### `POST /pages/review-tasks/{task_id}/status`
+
+更新复核任务状态、复核意见和复核结论。
+
+Form 字段：
+
+- `status`：必填，允许值为 `pending-review`、`confirmed-violation`、`rule-issue`、`data-issue`、`needs-evidence`、`not-violation`、`closed`。
+- `reviewer_note`：可选，人工复核意见。
+- `conclusion`：可选，复核结论。
+
+状态码：
+
+- `303`：保存成功，跳转 `/pages/review-tasks`。
+- `404`：任务不存在。
+- `422`：状态非法或缺少状态字段。
+
+### `GET /review-tasks/{task_id}/export`
+
+导出任务级复核记录，支持 JSON 和 Markdown 两种格式。
+
+Query 参数：
+
+- `format`：`json` 或 `markdown`，默认 `json`。
+
+导出内容：
+
+- `review-task-v1` 任务元数据。
+- 任务状态、复核意见、复核结论。
+- 创建任务时保存的 `audit-dossier-v1` 底稿快照。
+
+响应：
+
+- `format=json`：`application/json`，下载文件名 `{task_id}.json`。
+- `format=markdown`：`text/markdown`，下载文件名 `{task_id}.md`。
+
+状态码：
+
+- `200`：导出成功。
+- `404`：任务不存在。
 
 ### `GET /pages/query`
 
@@ -551,6 +649,8 @@ Kimi 主索引运行参数：
 - `--cases-file`: 固定评测集 YAML/JSON
 - `--max-cases`
 - `--top-k`
+- `--index-version-status`: `active | candidate | inactive`，默认 `active`
+- `--index-version-key`: 可选，限定评测某个 `index_versions.version_key`
 - `--embedding-provider`: `fake | openai`
 - `--embedding-model`
 - `--embedding-dimension`
@@ -563,6 +663,8 @@ Kimi 主索引运行参数：
 - pgvector self-query smoke：`tmp/outputs/knowledge-query-postgres-vector-self-query-smoke-20260601.json`，`passed=true`
 - PostgreSQL 数据源 BM25 固定 52 case：`drafts/analysis/knowledge-query-postgres-bm25-evaluation-v1-draft-20260601.md`
 - BM25 固定 52 case 指标：`recall@5=100%`，`citation_hit_rate=100%`，`preview_location_success_rate=100%`
+- candidate-only PostgreSQL 固定 52 case：`tmp/outputs/knowledge-query-postgres-candidate-fixed-evaluation-20260603.json`
+- candidate-only 指标：`index_version_key=full-rebuild-20260603085815`，`recall@5=100%`，`citation_hit_rate=100%`，`preview_location_success_rate=100%`
 
 限制：当前 shell 未设置 `KIMI_API_KEY`，因此尚未运行固定 52 case 的真实 pgvector+Kimi 查询向量评测。
 
@@ -591,6 +693,29 @@ Kimi 主索引运行参数：
 
 - `0`：PostgreSQL 状态、后端加载、查询页和预览页全部通过。
 - `2`：任一门禁失败。当前常见原因是 `KIMI_API_KEY` 未设置。
+
+### `scripts/capture-chat-workbench-visual-baseline.py`
+
+在已启动且检索后端 ready 的本地服务上捕获 `/pages/chat` 桌面与移动视觉基线。该脚本不接收 API key，也不加载后端，只读取 `/index/search-backend` 状态、访问对话审证页、截图并检查关键文案和横向溢出。
+
+示例：
+
+```bash
+uv run python scripts/capture-chat-workbench-visual-baseline.py \
+  --base-url http://127.0.0.1:8021 \
+  --report tmp/outputs/knowledge-query-chat-visual-baseline-latest.json
+```
+
+默认输出：
+
+- `tmp/screenshots/knowledge-query-chat-visual-baseline-desktop.png`
+- `tmp/screenshots/knowledge-query-chat-visual-baseline-mobile.png`
+- `tmp/outputs/knowledge-query-chat-visual-baseline-latest.json`
+
+退出码：
+
+- `0`：后端 ready、桌面/移动关键文案存在、无横向溢出。
+- `2`：后端未 ready、关键文案缺失或出现横向溢出。
 
 ### `medical-audit-kb evaluate-answers`
 
@@ -711,6 +836,8 @@ Kimi 主索引运行参数：
 - `chunk_embeddings.embedding` 以 `%s::vector` 写入，要求当前 schema 已初始化 `vector(1024)`。
 - 写入使用 `ON CONFLICT`，重复执行同一资料包导入应更新而不是重复插入。
 - 新导入默认状态为 `candidate`。candidate 版本必须通过评测后，再用 `medical-audit-kb index-activate` 切换为 active。
+- 生产发布新 candidate 前必须执行 `scripts/audit-index-candidate-release-readiness.py`；若 `index_version_key` 已存在或等于 active，禁止执行写入。
+- 新生成 artifact 的 `chunk_id` 必须绑定 `source_package_version_key`；旧 artifact 若在不同 `source_package_version_key` 下复用 active chunk id，发布门禁必须阻断。
 - 只有明确执行历史修复或一次性初始化时，才允许使用 `--index-version-status active`。
 
 当前 Kimi 主索引 dry-run 结果：

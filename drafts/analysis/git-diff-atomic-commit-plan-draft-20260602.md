@@ -5,7 +5,7 @@ module: repository-governance
 topic: git-diff-atomic-commit-plan
 status: draft
 created: 2026-06-02
-updated: 2026-06-02
+updated: 2026-06-03
 owner: self
 source: ai
 ---
@@ -14,238 +14,244 @@ source: ai
 
 ## 1. 当前事实
 
+- 当前分支：`codex/index-candidate-release-readiness`。
 - 当前没有 staged 文件，不能直接提交。
-- 当前 tracked 修改为 38 个文件，untracked 可提交候选为 63 个文件。
-- `tmp/`、`__pycache__`、`.DS_Store` 被 `.gitignore` 排除，不进入提交候选。
-- 明文密钥扫描未发现常见高风险 API key 前缀、环境变量明文赋值或配置项明文赋值。
-- 新增 Markdown 草稿和正式文档均已带 frontmatter。
-- `archive/snapshots/` 下两个 SQL 文件为 PostgreSQL dump/schema 快照，体量约 4K 和 20K，未发现业务数据正文。
+- 本轮审计时点的 tracked 修改为 21 个文件，untracked 可提交候选为 13 个文件。
+- `tmp/`、`.DS_Store`、缓存目录和 `*.pem` 已被 `.gitignore` 排除。
+- `ai_video.pem` 当前仍物理位于项目根目录，但已被忽略，不进入提交候选；后续应迁出仓库目录，避免目录治理噪音。
+- 密钥扫描未发现真实 `sk-*` API key、私钥正文或生产 `.env` 进入可提交文件；`configs/deploy/tencent-cloud/medical-audit.env.example` 只保留占位符。
+- 新增正式 Markdown 文档已带 frontmatter。
 
-## 2. 当前验证基线
+## 2. 已完成验证基线
 
-- `uv run pytest tests/knowledge_query`：141 passed，1 warning。
-- `uv run ruff format --check .`：通过，82 files already formatted。
-- `uv run ruff check .`：通过。
-- `uv run mypy src tests`：通过，82 source files。
+最近一轮完整验证已通过：
+
 - `git diff --check`：通过。
-- 本地 `http://127.0.0.1:8010` 已启动，PostgreSQL 后端 ready，`matching_embedding_count=48985`。
+- 正式文档 trailing whitespace 检查：通过。
+- `uv run pytest -q`：通过。
+- `uv run ruff check .`：通过。
+- `uv run ruff format --check .`：通过。
+
+生产验证事实：
+
+- 当前生产地址：`https://audit.lute-tlz-dddd.top/pages/chat`。
+- 当前 active index：`full-rebuild-20260603085815`。
+- 当前 inactive rollback target：`full-rebuild-20260531142344`。
+- PostgreSQL 计数：`source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
+- active 侧匹配索引：`486` documents、`48985` chunks、`48985` embeddings。
+- candidate write、activation、rollback rehearsal、return-to-new-active、API evaluation、production readonly E2E 均已完成。
+
+证据等级边界：
+
+- candidate dry-run / readiness report：`L2-fixture-or-dry-run`。
+- 生产页面、health、search-backend、readonly E2E：`L3-production-read-only`。
+- 已授权并执行的 candidate write、activation、rollback rehearsal：`L4-authorized-live`。
+- 以上不等于“无风险生产闭环”；仍需要提交拆分、CI/远端重建复核和后续 secret 管理改造。
 
 ## 3. 禁止直接打包提交
-
-当前 diff 中多处文件同时包含功能变更、格式化变更和类型门禁修复。
 
 禁止使用：
 
 - `git add .`
-- `git add src tests docs configs drafts archive scripts pyproject.toml uv.lock`
+- `git add src tests docs scripts configs drafts`
 - 单个“大而全”提交
 
 原因：
 
-- `routes_index.py` 同时包含搜索后端、版本激活、验收运行、历史报告等多类行为。
-- `routes_pages.py` 和 `index_admin.html` 同时包含 UI、验收状态、历史入口。
-- `sql/knowledge-query-schema.sql` 同时包含 1024 维 schema、HNSW 索引、评价历史表。
-- `tests/knowledge_query/test_api.py` 同时覆盖多个 API 行为，不适合整文件归入单一提交。
-- `ruff format .` 对多个既有改动文件产生格式噪音，应随对应功能 hunk 一起 staging，不能独立整文件提交。
+- `routes_pages.py` 同时包含查询页信息架构、对话页审计底稿导出、复核任务台、表单解析和导出逻辑。
+- `tests/knowledge_query/test_scripts.py` 同时覆盖部署容器启动、生产 E2E、pending 文件分类、candidate readiness、rollback readiness。
+- `docs/api/api-knowledge-query-engine-stable.md` 和 `docs/workflows/workflow-knowledge-query-engine-operations-stable.md` 同时记录 CLI 参数、candidate 发布、activation、rollback 和生产验收。
+- 一次性提交会让后续回滚无法判断是 UI、部署、索引生命周期还是文档同步引入问题。
 
 ## 4. 建议提交顺序
 
-### Commit 1：建立真实资料抽取与索引基础能力
+### Commit 1：隔离腾讯云部署运行环境
 
-目标：让 data 目录资料能稳定抽取、切分、形成可验收索引产物。
+目标：把腾讯云部署资产、容器启动脚本和生产 smoke 固化为可复用运维入口，不携带真实密钥。
 
 候选文件：
 
-- `src/medical_audit_kb/acceptance/`
-- `src/medical_audit_kb/ingestion/chunkers.py`
-- `src/medical_audit_kb/ingestion/extractors.py`
-- `src/medical_audit_kb/ingestion/inventory.py`
-- `src/medical_audit_kb/ingestion/pipeline.py`
-- `src/medical_audit_kb/indexing/bm25_index.py`
-- `src/medical_audit_kb/indexing/vector_index.py`
+- `.dockerignore`
+- `.gitignore`
+- `configs/deploy/tencent-cloud/Dockerfile`
+- `configs/deploy/tencent-cloud/docker-compose.prod.yaml`
+- `configs/deploy/tencent-cloud/medical-audit.env.example`
+- `configs/deploy/tencent-cloud/nginx-audit-server.conf`
+- `scripts/serve-chat-workbench-container.py`
+- `scripts/run-production-e2e-smoke.py`
+- `docs/workflows/workflow-tencent-cloud-audit-deployment-stable.md`
+
+需要 patch staging：
+
+- `tests/knowledge_query/test_scripts.py` 中容器启动脚本和生产 E2E smoke 相关测试。
+
+提交前验证：
+
+```bash
+uv run pytest tests/knowledge_query/test_scripts.py -q
+uv run ruff check .
+uv run ruff format --check .
+git diff --cached --check
+```
+
+建议提交信息：
+
+```bash
+git commit -m "隔离腾讯云部署环境并固化生产 smoke"
+```
+
+### Commit 2：收口索引候选发布、激活与回滚门禁
+
+目标：修复跨资料包 chunk_id 冲突风险，并让 candidate、active、inactive 的评测和回滚链路可审计。
+
+候选文件：
+
 - `src/medical_audit_kb/indexing/persistent_index.py`
-- `tests/knowledge_query/test_acceptance_reports.py`
-- `tests/knowledge_query/test_chunkers.py`
-- `tests/knowledge_query/test_extractors.py`
-- `tests/knowledge_query/test_index_backends.py`
-- `tests/knowledge_query/test_persistent_index.py`
-- `tests/knowledge_query/test_repositories.py`
-
-注意：`pyproject.toml` 中 `numpy` 依赖应随该提交进入，因为 vector index 使用 `numpy`。
-
-### Commit 2：接入 Kimi/OpenAI-compatible 向量与 pgvector 写入链路
-
-目标：把本地索引产物写入 PostgreSQL/pgvector，并固定 Kimi 1024 维 schema。
-
-候选文件：
-
-- `sql/knowledge-query-schema.sql` 中 1024 维、metadata GIN、locator GIN、Kimi HNSW 相关 hunk
-- `src/medical_audit_kb/indexing/pgvector_import.py`
-- `src/medical_audit_kb/indexing/pgvector_writer.py`
-- `src/medical_audit_kb/indexing/embeddings.py` 中 OpenAI-compatible embedding provider 相关 hunk
-- `archive/snapshots/postgres-pre-pgvector-import-20260601160814.sql`
-- `archive/snapshots/postgres-schema-before-pgvector-import-20260601160829.sql`
-- `tests/knowledge_query/test_pgvector_import.py`
-- `tests/knowledge_query/test_pgvector_writer.py`
-- `tests/knowledge_query/test_sql_assets.py` 中 pgvector schema 相关 hunk
-
-注意：`sql/knowledge-query-schema.sql` 需要 patch staging，不要把 `index_evaluation_runs` 历史表 hunk 混进本提交。
-
-### Commit 3：补齐 PostgreSQL active-version 检索、激活、回滚和增量计划
-
-目标：让 PostgreSQL 检索只读 active indexed 版本，并支持发布/回滚/增量计划。
-
-候选文件：
-
 - `src/medical_audit_kb/retrieval/postgres_search.py`
-- `src/medical_audit_kb/api/postgres_status.py`
-- `src/medical_audit_kb/indexing/index_activation.py`
-- `src/medical_audit_kb/indexing/incremental_plan.py`
-- `src/medical_audit_kb/cli.py` 中 pgvector、activate、rollback、incremental-plan 相关 hunk
-- `scripts/serve-chat-workbench.sh`
+- `src/medical_audit_kb/cli.py`
+- `scripts/audit-index-candidate-release-readiness.py`
+- `scripts/audit-index-rollback-readiness.py`
+- `tests/knowledge_query/test_persistent_index.py`
 - `tests/knowledge_query/test_postgres_search.py`
-- `tests/knowledge_query/test_postgres_status.py`
-- `tests/knowledge_query/test_index_activation.py`
-- `tests/knowledge_query/test_cli_index_activation.py`
-- `tests/knowledge_query/test_incremental_plan.py`
-- `tests/knowledge_query/test_cli_incremental_plan.py`
-- `tests/knowledge_query/test_scripts.py`
+- `tests/knowledge_query/test_cli.py`
 
-注意：`routes_index.py` 中 search-backend、activate、rollback hunk 可归入本提交；evaluation/history hunk 不归入本提交。
+需要 patch staging：
 
-### Commit 4：建立固定检索评测、答案评测和答案 provider 预检
+- `tests/knowledge_query/test_scripts.py` 中 candidate readiness 和 rollback readiness 相关测试。
+- `docs/api/api-knowledge-query-engine-stable.md` 中 `evaluate-postgres-index --index-version-status/--index-version-key`、candidate 验证、rollback 相关 hunk。
+- `docs/workflows/workflow-knowledge-query-engine-operations-stable.md` 中 candidate write、activation、rollback rehearsal、return-to-new-active 相关 hunk。
 
-目标：把知识库质量从人工感觉推进到固定 case 集和 answer gate。
+提交前验证：
 
-候选文件：
+```bash
+uv run pytest tests/knowledge_query/test_persistent_index.py tests/knowledge_query/test_postgres_search.py tests/knowledge_query/test_cli.py tests/knowledge_query/test_scripts.py -q
+uv run ruff check .
+uv run ruff format --check .
+git diff --cached --check
+```
 
-- `configs/evaluation/knowledge-query-human-evaluation-cases-v1.yaml`
-- `configs/evaluation/knowledge-query-answer-evaluation-cases-v1.yaml`
-- `src/medical_audit_kb/evaluation/`
-- `src/medical_audit_kb/generation/answer_builder.py`
-- `src/medical_audit_kb/generation/answer_preflight.py`
-- `src/medical_audit_kb/generation/answer_providers.py`
-- `src/medical_audit_kb/generation/citations.py`
-- `tests/knowledge_query/test_answer_evaluation.py`
-- `tests/knowledge_query/test_answer_providers.py`
-- `tests/knowledge_query/test_citations.py`
-- `tests/knowledge_query/test_evaluation.py`
+建议提交信息：
 
-注意：`answer_builder.py` 的 Protocol 只读属性修复也可归入质量门禁提交；如果用 patch staging，本提交只收答案行为相关 hunk。
+```bash
+git commit -m "收口索引候选发布与回滚门禁"
+```
 
-### Commit 5：上线对话审证、原文预览和索引管理 UI
+### Commit 3：完善对话审证 UI、底稿导出与复核任务台
 
-目标：把知识库从 API 能跑推进到可使用的对话工作台。
+目标：把知识库网站从“查询页面”推进到“审计员可使用的证据工作台”，但明确复核任务仍为进程内能力，不等价生产案件系统。
 
 候选文件：
 
+- `src/medical_audit_kb/api/app.py`
+- `src/medical_audit_kb/api/routes_pages.py`
 - `src/medical_audit_kb/api/static/app.css`
 - `src/medical_audit_kb/api/templates/chat.html`
 - `src/medical_audit_kb/api/templates/query.html`
 - `src/medical_audit_kb/api/templates/preview.html`
-- `src/medical_audit_kb/api/templates/index_admin.html` 中 UI 基础 hunk
-- `src/medical_audit_kb/api/routes_pages.py` 中 chat/query/index-admin 页面 hunk
-- `src/medical_audit_kb/api/routes_preview.py`
-- `src/medical_audit_kb/api/app.py` 中 search backend 状态字段 hunk
-- `docs/product/product-scope-baseline-stable.md`
-- `drafts/docs/product-knowledge-query-ui-ux-plan-draft-20260601.md`
-- `tests/knowledge_query/test_pages.py`
-- `tests/knowledge_query/test_preview_resolver.py`
-
-注意：`index_admin.html` 和 `routes_pages.py` 中验收历史 hunk 不归入本提交。
-
-### Commit 6：接入发布后验收报告持久化和历史列表
-
-目标：让发布后固定验收可下载、可复盘、可查询历史。
-
-候选文件：
-
-- `src/medical_audit_kb/api/evaluation_reports.py`
-- `src/medical_audit_kb/db/models.py` 中 `IndexEvaluationRun` hunk
-- `sql/knowledge-query-schema.sql` 中 `index_evaluation_runs` 相关 hunk
-- `src/medical_audit_kb/api/routes_index.py` 中 `/index/evaluation/run`、`/index/evaluation/latest/export`、`/index/evaluation/history` hunk
-- `src/medical_audit_kb/api/routes_pages.py` 中 evaluation status/history context hunk
-- `src/medical_audit_kb/api/templates/index_admin.html` 中 Acceptance Panel 和验收历史 hunk
-- `docs/api/api-knowledge-query-engine-stable.md`
-- `docs/architecture/architecture-knowledge-query-engine-stable.md`
-- `docs/workflows/workflow-knowledge-query-engine-operations-stable.md`
-- `tests/knowledge_query/test_api.py` 中 evaluation/history hunk
-- `tests/knowledge_query/test_pages.py` 中 Acceptance Panel 和验收历史断言 hunk
-- `tests/knowledge_query/test_sql_assets.py` 中 evaluation history table 断言 hunk
-
-### Commit 7：收口类型与格式门禁
-
-目标：让仓库形成稳定质量门禁，避免后续每轮都被历史格式和类型噪音阻塞。
-
-候选文件：
-
-- `pyproject.toml` 中 `types-openpyxl` dev 依赖
-- `uv.lock`
-- Protocol 只读属性相关 hunk
-- `openpyxl` `type: ignore` 移除 hunk
-- `Workbook.active is not None` 测试断言 hunk
-- `RecordingCursor.executemany` 签名 hunk
-- `test_cli_incremental_plan.py` fake 参数类型检查 hunk
-- 全仓 `ruff format` 产生的纯格式 hunk
-
-注意：此提交最容易和功能提交混杂。更推荐把纯格式 hunk 随对应功能提交进入；如果坚持单独提交，需要用 `git add -p` 只 stage 格式和类型 hunk。
-
-### Commit 8：提交评测、迁移和运行复盘草稿
-
-目标：保留关键执行证据，但不把草稿伪装成正式状态。
-
-候选文件：
-
-- `drafts/analysis/knowledge-*.md`
-- `drafts/docs/architecture-knowledge-query-engine-*-draft-*.md`
-- `drafts/docs/product-knowledge-query-ui-ux-plan-draft-20260601.md`
-
-注意：这些文件是草稿区资产，适合单独提交。不要和正式代码提交混在一起。
-
-## 5. Patch Staging 高风险文件
-
-以下文件必须使用 `git add -p` 或等效 patch staging：
-
-- `src/medical_audit_kb/api/routes_index.py`
-- `src/medical_audit_kb/api/routes_pages.py`
 - `src/medical_audit_kb/api/templates/index_admin.html`
-- `sql/knowledge-query-schema.sql`
-- `tests/knowledge_query/test_api.py`
+- `src/medical_audit_kb/api/templates/review_tasks.html`
 - `tests/knowledge_query/test_pages.py`
-- `tests/knowledge_query/test_sql_assets.py`
-- `src/medical_audit_kb/generation/answer_builder.py`
-- `src/medical_audit_kb/indexing/embeddings.py`
+- `drafts/analysis/knowledge-extraction-chat-ui-20-loop-report-draft-20260601.md`
 
-原因：这些文件跨越多个逻辑提交，整文件 staging 会破坏提交原子性。
+需要 patch staging：
 
-## 6. 建议执行命令
+- `routes_pages.py` 如果后续继续拆分，可把 source collection 卡片、dossier export、review task 三组 hunk 分开；当前文件内逻辑都服务于审证工作台，可作为一个 UI/UX 提交。
+- `tests/knowledge_query/test_pages.py` 建议整文件归入本提交，因为新增断言集中覆盖 UI、底稿导出、复核任务和 favicon 噪音修复。
 
-每个提交前运行：
+提交前验证：
+
+```bash
+uv run pytest tests/knowledge_query/test_pages.py -q
+uv run ruff check .
+uv run ruff format --check .
+git diff --cached --check
+```
+
+建议提交信息：
+
+```bash
+git commit -m "完善医保审证工作台与复核底稿闭环"
+```
+
+### Commit 4：补齐知识库 pending 分类和视觉基线工具
+
+目标：把源文件萃取过程中的 pending 文件分类、视觉基线采集沉淀为可重复脚本。
+
+候选文件：
+
+- `scripts/classify-knowledge-pending-files.py`
+- `scripts/capture-chat-workbench-visual-baseline.py`
+
+需要 patch staging：
+
+- `tests/knowledge_query/test_scripts.py` 中 pending 文件分类和视觉基线脚本相关测试。
+
+提交前验证：
+
+```bash
+uv run pytest tests/knowledge_query/test_scripts.py -q
+uv run ruff check .
+uv run ruff format --check .
+git diff --cached --check
+```
+
+建议提交信息：
+
+```bash
+git commit -m "沉淀知识库萃取分类与视觉基线工具"
+```
+
+### Commit 5：同步 PRD、开发计划和运行文档
+
+目标：把已完成的生产发布、索引生命周期和下一阶段产品规划同步到正式文档，避免代码事实与文档事实分叉。
+
+候选文件：
+
+- `docs/product/product-development-plan-medical-audit-stable.md`
+- `docs/product/product-prd-medical-audit-v1-stable.md`
+- `docs/api/api-knowledge-query-engine-stable.md` 中未随 Commit 2 进入的文档 hunk。
+- `docs/workflows/workflow-knowledge-query-engine-operations-stable.md` 中未随 Commit 2 进入的文档 hunk。
+
+需要 patch staging：
+
+- `docs/api/api-knowledge-query-engine-stable.md`
+- `docs/workflows/workflow-knowledge-query-engine-operations-stable.md`
+
+提交前验证：
 
 ```bash
 git diff --cached --check
-uv run pytest tests/knowledge_query
-uv run ruff format --check .
+uv run pytest -q
 uv run ruff check .
-uv run mypy src tests
+uv run ruff format --check .
 ```
 
-每个提交使用中文提交信息，描述“为什么”：
+建议提交信息：
 
 ```bash
-git commit -m "建立知识库真实资料索引验收基线"
-git commit -m "接入 Kimi 向量写入与 pgvector 检索底座"
-git commit -m "收口 PostgreSQL active 版本发布与回滚链路"
-git commit -m "建立固定评测和引用答案质量门禁"
-git commit -m "上线医保审核知识库对话审证工作台"
-git commit -m "沉淀发布后验收报告和历史复盘能力"
-git commit -m "收口知识库工程类型和格式门禁"
-git commit -m "归档知识库搭建评测和迁移复盘草稿"
+git commit -m "同步知识库生产发布与下一阶段规划"
 ```
 
-## 7. 当前不建议提交的内容
+## 5. 当前不建议提交的内容
 
-- `tmp/` 下运行报告、debug HTML、API 响应：已被 `.gitignore` 排除。
-- `__pycache__/`：已被 `.gitignore` 排除。
-- `.DS_Store`：已被 `.gitignore` 排除。
-- 明文 API key：未发现，且后续必须继续只通过进程环境变量传入。
+- `tmp/` 下所有生产 smoke、评测、截图、中间输出。
+- `.mypy_cache/`、`.pytest_cache/`、`.ruff_cache/`。
+- `.DS_Store`。
+- `ai_video.pem`。
+- 任何真实 API key、生产 `.env`、数据库 dump 明文。
+
+## 6. 下一步执行策略
+
+推荐先执行 Commit 1。原因：
+
+- 部署资产和生产 smoke 是当前生产可恢复性的基础。
+- 文件边界相对清晰，最少依赖 patch staging。
+- 提交后可以独立验证“重新部署/重跑生产 smoke”的能力，不与 UI 和索引逻辑纠缠。
+
+执行规则：
+
+- 只使用显式路径 `git add <path>`。
+- 对 `tests/knowledge_query/test_scripts.py` 使用 patch staging。
+- 每个提交前必须重新运行对应测试和 `git diff --cached --check`。
+- 不使用 `git add .`。
+- 不把未验证的 memory-derived 状态写成当前事实；生产状态变更前必须重新查询远端。

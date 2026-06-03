@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-operations
 status: stable
 created: 2026-05-31
-updated: 2026-06-02
+updated: 2026-06-03
 owner: self
 source: human+ai
 ---
@@ -57,6 +57,7 @@ uv run uvicorn medical_audit_kb.api.app:create_app --factory --reload
 
 - 对话审证页：`http://127.0.0.1:8010/pages/chat`
 - 查询页：`http://127.0.0.1:8010/pages/query`
+- 复核任务台：`http://127.0.0.1:8010/pages/review-tasks`
 - 索引管理页：`http://127.0.0.1:8010/pages/index-admin`
 - 健康检查：`http://127.0.0.1:8010/health`
 
@@ -181,6 +182,40 @@ curl http://127.0.0.1:8000/preview/{chunk_id}
 ```
 
 预览必须在查询之后执行，因为运行态需要先记录该 `chunk_id` 的 locator。
+
+单轮对话底稿导出：
+
+```bash
+curl 'http://127.0.0.1:8000/pages/chat/export?question=超量开药的审核依据是什么&format=markdown'
+curl 'http://127.0.0.1:8000/pages/chat/export?question=超量开药的审核依据是什么&format=json'
+```
+
+从对话结果创建本地复核任务：
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/pages/review-tasks/create \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "question=超量开药的审核依据是什么"
+```
+
+更新复核状态：
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/pages/review-tasks/review-task-0001/status \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "status=needs-evidence" \
+  --data-urlencode "reviewer_note=引用已覆盖规则依据，仍需补 HIS 原始凭证。" \
+  --data-urlencode "conclusion=暂不进入正式报告。"
+```
+
+导出任务级复核记录：
+
+```bash
+curl 'http://127.0.0.1:8000/review-tasks/review-task-0001/export?format=markdown'
+curl 'http://127.0.0.1:8000/review-tasks/review-task-0001/export?format=json'
+```
+
+当前复核任务台是进程内本地能力，只用于验证“对话回答 -> 底稿快照 -> 人工复核 -> 任务导出”闭环。服务重启后任务不保留；生产级案件持久化、权限、负责人审核和正式报告导出仍未完成。
 
 ## 8. 评测报告查看
 
@@ -631,10 +666,35 @@ uv run medical-audit-kb index-incremental-plan \
 
 1. `pgvector-import-plan` 通过。
 2. `pgvector-import` dry-run 通过。
-3. `pgvector-import --execute --index-version-status candidate` 写入候选版本。
-4. `evaluate-postgres-index` 固定评测通过。
-5. `evaluate-answers` fallback 答案评测通过。
-6. `ui-smoke` 在候选版本切换前后按需执行。
+3. `scripts/audit-index-candidate-release-readiness.py` 通过，确认 candidate key 不存在、不等于 active，provider/model 与当前 active 兼容，且不同 source package 下的 candidate chunk id 与 active 无碰撞。
+4. `pgvector-import --execute --index-version-status candidate` 写入候选版本。
+5. `evaluate-postgres-index` 固定评测通过。
+6. `evaluate-answers` fallback 答案评测通过。
+7. `ui-smoke` 在候选版本切换前后按需执行。
+
+当前生产门禁结果：
+
+- `knowledge-query-index-candidate-release-readiness-20260603` 返回 `blocked`，原因是 `candidate-index-version-key-already-exists` 和 `candidate-index-version-key-matches-active`。
+- 旧 candidate `full-rebuild-20260603081846` 的 `pgvector-import` dry-run 为 `success=true`，但 `chunk_collision_check.collision_count=48985`，因此继续阻断写库。
+- package-aware chunk id 修复已部署到腾讯云生产镜像，fixed candidate `full-rebuild-20260603085815` 已重新构建。
+- fixed candidate 构建结果：`persistent_chunk_count=48985`、`embedding_reused_count=48985`、`embedding_created_count=0`、`pending_file_count=0`、`failed_file_count=0`。
+- fixed candidate 的 `pgvector-import-plan` 和 `pgvector-import` dry-run 通过；发布就绪审计返回 `status=pass`、`safe_to_execute_candidate_write=true`、`chunk_collision_check.collision_count=0`、`evidence_grade=L3-production-read-only + L2-dry-run`。
+- 受控 `pgvector-import --execute --index-version-status candidate` 已执行；随后受控 `index-activate --index-version-key full-rebuild-20260603085815` 已执行。
+- 生产库当前包含 active `full-rebuild-20260603085815` 和 inactive `full-rebuild-20260531142344`，总计 `source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
+- 线上 PostgreSQL search backend 已重载，`/index/search-backend` 报告新 active 的 `matching_embedding_count=48985`。
+- candidate DB vector self-query 通过：candidate 范围内 top1 命中同一 chunk，`score=1`。
+- candidate PostgreSQL 固定 52 case 检索评测通过：`recall@5=100%`、`citation_hit_rate=100%`、`preview_location_success_rate=100%`。
+- candidate PostgreSQL fallback 答案评测通过：8 case `pass_rate=100%`、`citation_marker_rate=100%`、`unsupported_claim_free_rate=100%`、`fallback_rate=100%`。
+- 本地 artifact 评测在腾讯云轻量服务器被 OOM killer 终止，退出码 `137`；后续 candidate 评测应使用 PostgreSQL candidate-only 路径，不再在该服务器加载 733MB embedding artifact。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-fix-20260603` 通过；复核任务写入流已跳过，不能把该结果解释为复核工作流写入验收。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-write-20260603` 通过；复核任务写入流已跳过，不能把该结果解释为复核工作流写入验收。
+- 激活后线上综合评测 run `45f56a84-c4a8-4ad3-8450-e2b1cce1b786` 通过：`retrieval.case_count=52`、`retrieval.recall_at_k=1.0`、`answer.case_count=8`、`answer.pass_rate=1.0`、`ui_smoke.success=true`。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-activation-20260603` 通过；复核任务写入流已跳过，不能把该结果解释为复核工作流写入验收。
+- rollback readiness `knowledge-query-index-rollback-readiness-after-activation-20260603` 通过：`active_count=1`、`inactive_count=1`、`rollback_target_count=1`、`safe_to_execute_rollback_rehearsal=true`。
+- 真实 rollback rehearsal 已执行到旧 active：`knowledge-query-index-rollback-rehearsal-to-20260531-20260603` 成功，旧版本 `full-rebuild-20260531142344` 临时恢复为 active，查询引用版本、生产只读 E2E 和线上综合评测 run `5bf5a0d0-57e6-4105-ad98-37d9dc70f6bd` 均通过。
+- rehearsal 已切回新 active：`knowledge-query-index-rollback-rehearsal-return-to-20260603-20260603` 成功，`full-rebuild-20260603085815` 恢复为 active，查询引用版本、生产只读 E2E 和线上综合评测 run `18b97df2-c75b-4aa3-95b7-f5e001e9c3a1` 均通过。
+- rollback readiness `knowledge-query-index-rollback-readiness-after-return-20260603` 通过：`active_count=1`、`inactive_count=1`、`rollback_target_count=1`。
+- 结论：索引 candidate 写入、激活、回滚演练、切回和 smoke 闭环已完成；后续新资料包发布必须复用同一门禁链路。
 
 日常发布优先使用索引管理页：
 
@@ -856,7 +916,58 @@ uv run medical-audit-kb ui-smoke \
 
 如果当前 shell 未设置 `KIMI_API_KEY`，命令返回 `2`，JSON 中 `backend_load_status_code` 为 `409`。不要把 key 写入命令参数或仓库文件，只通过环境变量传入。
 
-## 16. 验收指标
+## 16. 审计底稿导出闭环
+
+对话页返回引用型回答后，可通过页面按钮或接口导出单轮审计底稿。导出内容用于人工复核和底稿草案，不替代正式审计结论。
+
+Markdown 导出：
+
+```bash
+curl -fsS \
+  'http://127.0.0.1:8021/pages/chat/export?question=医保基金审核依据&format=markdown' \
+  -o tmp/outputs/auditscope-dossier.md
+```
+
+JSON 导出：
+
+```bash
+curl -fsS \
+  'http://127.0.0.1:8021/pages/chat/export?question=医保基金审核依据&format=json' \
+  -o tmp/outputs/auditscope-dossier.json
+```
+
+导出验收点：
+
+- 文件包含问题、回答、置信度、生成方式和复核门禁。
+- 文件包含人工复核清单。
+- 每条引用包含 `chunk_id`、`index_version_key`、`source_package_version_key`、`score`、`locator` 和原文预览链接。
+- 后端未 ready 或无引用依据时，接口必须失败，不允许生成空底稿。
+
+## 17. 视觉回归基线
+
+`ui-smoke` 只证明查询页和原文预览链路可用，不证明页面布局、关键文案和移动端无横向溢出。每次改 `/pages/chat`、`app.css` 或证据展示模板后，在后端 ready 的本地服务上执行视觉基线捕获：
+
+```bash
+uv run python scripts/capture-chat-workbench-visual-baseline.py \
+  --base-url http://127.0.0.1:8021 \
+  --report tmp/outputs/knowledge-query-chat-visual-baseline-latest.json
+```
+
+该脚本不接收 API key，也不启动检索后端；它要求当前服务的 `/index/search-backend` 已经返回 `ready=true`。默认输出：
+
+- 桌面截图：`tmp/screenshots/knowledge-query-chat-visual-baseline-desktop.png`
+- 移动截图：`tmp/screenshots/knowledge-query-chat-visual-baseline-mobile.png`
+- JSON 报告：`tmp/outputs/knowledge-query-chat-visual-baseline-latest.json`
+
+JSON 报告必须满足：
+
+- `status=pass`
+- `captures[].metrics.scrollWidth <= captures[].metrics.clientWidth`
+- 桌面和移动截图均包含“可追溯回答、证据卷宗、人工复核清单、核验原文、复制引用、导出 Markdown 底稿、导出 JSON 记录”
+
+如果脚本返回 `2`，先处理后端未 ready、关键文案缺失或横向溢出，再继续提交 UI 变更。
+
+## 18. 验收指标
 
 - 可索引文件成功率不低于 `95%`。
 - 失败队列和待处理队列覆盖率为 `100%`，不可静默丢失文件。
