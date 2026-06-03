@@ -79,6 +79,8 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "query-api-with-citations" in script_text
     assert "citation-preview" in script_text
     assert "review-flow-create-update-export" in script_text
+    assert "--include-review-write" in script_text
+    assert "Default is read-only production smoke" in script_text
     assert "edge-regression" in script_text
 
 

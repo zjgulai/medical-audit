@@ -106,7 +106,7 @@ def main() -> int:
                 timeout_seconds=float(args.timeout_seconds),
             ),
         )
-        if not args.skip_review_write:
+        if args.include_review_write:
             _run_step(
                 steps,
                 "review-flow-create-update-export",
@@ -168,10 +168,21 @@ def _parse_args() -> argparse.Namespace:
         help="Existing public URL to regression-check. Can be supplied multiple times.",
     )
     parser.add_argument(
-        "--skip-review-write",
+        "--include-review-write",
+        dest="include_review_write",
         action="store_true",
-        help="Skip the in-memory review flow create/update/export check.",
+        help=(
+            "Run the in-memory review flow create/update/export check. "
+            "Default is read-only production smoke."
+        ),
     )
+    parser.add_argument(
+        "--skip-review-write",
+        dest="include_review_write",
+        action="store_false",
+        help="Deprecated compatibility flag. Production smoke is read-only by default.",
+    )
+    parser.set_defaults(include_review_write=False)
     return parser.parse_args()
 
 

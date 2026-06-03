@@ -252,7 +252,7 @@ uv run python scripts/run-production-e2e-smoke.py \
   --report tmp/outputs/production-e2e-smoke-latest.json
 ```
 
-覆盖范围：
+默认覆盖范围：
 
 - TLS 证书 SAN。
 - `/health` 和 `/index/search-backend`。
@@ -260,16 +260,15 @@ uv run python scripts/run-production-e2e-smoke.py \
 - `/query` 引用型回答。
 - `/pages/preview/{chunk_id}` 原文预览。
 - `/pages/chat/export` 底稿导出。
-- 复核任务创建、状态更新、导出。
 - 现有 `kg`、`video`、`voc`、主域名回归。
 
-只读巡检使用：
+默认生产巡检保持只读，不创建复核任务。只有在明确需要验证进程内复核写入流时，才使用：
 
 ```bash
 uv run python scripts/run-production-e2e-smoke.py \
   --base-url https://audit.lute-tlz-dddd.top \
-  --skip-review-write \
-  --report tmp/outputs/production-e2e-smoke-readonly-latest.json
+  --include-review-write \
+  --report tmp/outputs/production-e2e-smoke-with-review-write-latest.json
 ```
 
 ### 7.7 增量更新 dry-run 演练
