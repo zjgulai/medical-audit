@@ -14,6 +14,7 @@
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query" aria-current="page">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
           <a href="/pages/index-admin">索引管理</a>
         </div>
         <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
@@ -54,6 +55,7 @@
         <article class="panel query-panel">
           <p class="eyebrow">问题输入</p>
           <h2>查询问题</h2>
+          <p class="field-help">查询工作台用于快速定位依据。需要形成审证记录时，进入对话审证页复核引用和原文。</p>
           <form method="get" action="/pages/query" class="query-form">
             <label for="question">自然语言问题</label>
             <p id="question-help" class="field-help">输入一个可审计的问题。系统只在找到引用依据时生成回答。</p>
@@ -69,15 +71,19 @@
             <fieldset>
               <legend>来源过滤</legend>
               <div class="filter-grid">
-                {% for collection in source_collections %}
-                  <label class="check">
+                {% for collection in source_collection_cards %}
+                  <label class="check source-card">
                     <input
                       type="checkbox"
                       name="source_collection"
                       value="{{ collection.value }}"
-                      {% if collection.value in selected_collections %}checked{% endif %}
+                      {% if collection.selected %}checked{% endif %}
                     >
-                    <span>{{ collection.value }}</span>
+                    <span>
+                      <strong>{{ collection.title }}</strong>
+                      <small>{{ collection.description }}</small>
+                      <em>{{ collection.audit_hint }}</em>
+                    </span>
                   </label>
                 {% endfor %}
               </div>
@@ -107,7 +113,25 @@
           <article class="answer-card answer-main">
             <p class="eyebrow">回答</p>
             <h2>引用型回答</h2>
-            <pre>{{ answer.answer }}</pre>
+            <dl class="query-result-summary" aria-label="查询结果摘要">
+              <div><dt>confidence</dt><dd>{{ answer.confidence }}</dd></div>
+              <div><dt>citations</dt><dd>{{ answer.citations|length }}</dd></div>
+              <div><dt>mode</dt><dd>{% if answer.fallback_used %}检索直出{% else %}模型生成{% endif %}</dd></div>
+            </dl>
+            <div class="answer-report compact-answer-report">
+              {% for line in answer.answer.splitlines() %}
+                {% set clean_line = line.strip() %}
+                {% if clean_line %}
+                  {% if clean_line.startswith("- ") %}
+                    <p class="answer-line answer-bullet">{{ clean_line[2:] }}</p>
+                  {% elif clean_line.endswith("：") or clean_line.endswith(":") %}
+                    <h3>{{ clean_line }}</h3>
+                  {% else %}
+                    <p class="answer-line">{{ clean_line }}</p>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
             <p class="meta">confidence: {{ answer.confidence }} · fallback: {{ answer.fallback_used }}</p>
           </article>
 
@@ -122,7 +146,11 @@
                   <li class="citation-item">
                       <strong>[{{ item.citation_id }}]</strong>
                       <span>{{ item.snippet }}</span>
-                      <a href="/pages/preview/{{ item.chunk_id }}">原文预览</a>
+                      <dl class="citation-meta compact-citation-meta">
+                        <dt>chunk</dt><dd><code>{{ item.chunk_id }}</code></dd>
+                        <dt>index</dt><dd><code>{{ item.index_version_key }}</code></dd>
+                      </dl>
+                      <a href="/pages/preview/{{ item.chunk_id }}">核验原文</a>
                     </li>
                   {% endfor %}
                 </ul>

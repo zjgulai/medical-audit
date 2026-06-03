@@ -14,6 +14,7 @@
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
           <a href="/pages/index-admin">索引管理</a>
           <span class="nav-current" aria-current="page">原文预览</span>
         </div>
@@ -48,12 +49,22 @@
         <article class="panel source-panel">
           <p class="eyebrow">证据文本</p>
           <h2>上下文片段</h2>
+          <div class="source-review-banner">
+            <strong>原文复核优先级</strong>
+            <span>先确认上下文是否完整，再判断该引用能否进入底稿或报告。</span>
+          </div>
           <pre class="source-text">{{ preview_text }}</pre>
         </article>
 
         <aside class="panel">
           <p class="eyebrow">定位元数据</p>
           <h2>定位元数据</h2>
+          <section class="preview-chain" aria-label="证据链">
+            <span>查询结果</span>
+            <span>引用编号</span>
+            <span>chunk</span>
+            <span>原文定位</span>
+          </section>
           <dl class="kv">
             <dt>chunk_id</dt><dd>{{ chunk_id }}</dd>
             <dt>source_path</dt><dd>{{ source_path }}</dd>
@@ -72,6 +83,15 @@
               <li>未生成高亮范围，直接核对上下文片段。</li>
             {% endfor %}
           </ul>
+
+          <section class="dossier-checklist preview-checklist" aria-label="原文复核清单">
+            <h3>复核要点</h3>
+            <ol>
+              <li>片段是否与问题直接相关。</li>
+              <li>上下文是否存在例外条件。</li>
+              <li>文件路径是否属于当前有效资料包。</li>
+            </ol>
+          </section>
         </aside>
       </section>
 

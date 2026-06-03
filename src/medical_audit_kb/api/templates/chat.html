@@ -20,6 +20,7 @@
         <div class="nav-links">
           <a href="/pages/chat" aria-current="page">对话审证</a>
           <a href="/pages/query">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
           <a href="/pages/index-admin">索引管理</a>
         </div>
         <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
@@ -38,6 +39,25 @@
         <section class="notice command-alert" role="alert">{{ error_message }}</section>
       {% endif %}
 
+      <section class="audit-assurance-strip" aria-label="审计安全边界">
+        <article>
+          <strong>本地证据优先</strong>
+          <span>回答只围绕当前知识库索引和可追溯引用组织。</span>
+        </article>
+        <article>
+          <strong>无引用不结论</strong>
+          <span>没有命中原文依据时，页面只给出待补证据状态。</span>
+        </article>
+        <article>
+          <strong>人工复核门禁</strong>
+          <span>可追溯回答仍需审计员打开原文核验适用条件。</span>
+        </article>
+        <article>
+          <strong>患者数据边界</strong>
+          <span>当前页面不要求输入患者姓名、证件号等敏感明细。</span>
+        </article>
+      </section>
+
       <section class="command-header" aria-labelledby="command-title">
         <div class="command-title-block">
           <p class="eyebrow">医保审计证据控制台 · Evidence Command Center</p>
@@ -45,19 +65,28 @@
           <p class="lede">
             AuditScope 将医保审核问题拆解为结论、证据链、适用边界和原文入口。没有引用依据时，不生成审核结论。
           </p>
+          <div class="audit-context-row" aria-label="当前审计策略">
+            <span>证据优先</span>
+            <span>引用编号</span>
+            <span>原文预览</span>
+            <span>人工复核</span>
+          </div>
         </div>
         <div class="command-scoreboard" aria-label="审证能力状态">
           <article>
-            <span>Backend</span>
+            <span>检索后端</span>
             <strong>{% if search_backend.ready %}Ready{% else %}Not loaded{% endif %}</strong>
+            <small>{% if search_backend.ready %}可执行审证查询{% else %}需先加载索引{% endif %}</small>
           </article>
           <article>
-            <span>Answer Rule</span>
+            <span>回答规则</span>
             <strong>引用约束</strong>
+            <small>必须显示证据编号</small>
           </article>
           <article>
-            <span>Evidence</span>
+            <span>证据状态</span>
             <strong>{{ answer_quality.citation_count }} citations</strong>
+            <small>{{ answer_quality.status_label }}</small>
           </article>
         </div>
       </section>
@@ -66,6 +95,7 @@
         <aside class="conversation-sidebar command-rail panel" aria-label="会话与审证流程">
           <p class="eyebrow">审证流程 · Case Review</p>
           <h2>审证流程</h2>
+          <p class="rail-note">按“问题 - 依据 - 原文”推进，避免跳过证据直接写结论。</p>
           <ol class="stage-list">
             <li class="{% if not question %}active{% endif %}">
               <span>01</span>
@@ -81,6 +111,12 @@
             </li>
           </ol>
 
+          <div class="review-gate-card {{ answer_quality.status }}">
+            <span>复核门禁</span>
+            <strong>{{ answer_quality.review_gate }}</strong>
+            <p>{{ answer_quality.description }}</p>
+          </div>
+
           <h3>最近问题</h3>
           <ul class="compact-list timeline-list">
             {% for log in query_logs %}
@@ -94,6 +130,7 @@
           </ul>
 
           <h3>推荐追问</h3>
+          <p class="rail-note">追问优先补充适用条件、例外情形和原始凭证。</p>
           <div class="prompt-stack prompt-chips">
             {% for item in follow_up_questions %}
               <a href="/pages/chat?question={{ item|urlencode }}">{{ item }}</a>
@@ -115,6 +152,11 @@
                 <p>
                   推荐从“是否合规、依据是什么、还需核验哪些材料”三个角度提问。当前版本会优先返回可点击原文预览。
                 </p>
+                <div class="example-question-grid" aria-label="推荐问题模板">
+                  <a href="/pages/chat?question={{ '门诊超量开药应该核对哪些医保审核依据？'|urlencode }}">超量开药依据</a>
+                  <a href="/pages/chat?question={{ '医保目录限制条件应该如何核验？'|urlencode }}">目录限制核验</a>
+                  <a href="/pages/chat?question={{ '重复收费应查看哪些监管规则？'|urlencode }}">重复收费规则</a>
+                </div>
               </section>
             {% endif %}
 
@@ -126,10 +168,29 @@
                     <h2>可追溯回答</h2>
                   </div>
                   <div class="decision-badges" aria-label="回答质量摘要">
-                    <span>{{ answer.confidence }} confidence</span>
+                    <span>置信度 {{ answer_quality.confidence_label }}</span>
                     <span>{% if answer.fallback_used %}检索直出{% else %}模型生成{% endif %}</span>
+                    <span>{{ answer_quality.citation_count }} 条引用</span>
                   </div>
                 </div>
+                <dl class="decision-summary-grid" aria-label="回答复核摘要">
+                  <div>
+                    <dt>结论性质</dt>
+                    <dd>审计线索，不替代人工结论</dd>
+                  </div>
+                  <div>
+                    <dt>证据分组</dt>
+                    <dd>{{ answer_quality.group_count }}</dd>
+                  </div>
+                  <div>
+                    <dt>生成方式</dt>
+                    <dd>{{ answer_quality.fallback_label }}</dd>
+                  </div>
+                  <div>
+                    <dt>下一步</dt>
+                    <dd>打开原文核验适用条件</dd>
+                  </div>
+                </dl>
                 <div class="answer-report">
                   {% for line in answer.answer.splitlines() %}
                     {% set clean_line = line.strip() %}
@@ -144,6 +205,26 @@
                     {% endif %}
                   {% endfor %}
                 </div>
+                <footer class="decision-footnote">
+                  <strong>审计提示：</strong>
+                  回答进入底稿或报告前，必须核验引用原文、适用对象、时间范围和医院本地规则版本。
+                </footer>
+                <div class="dossier-export-actions" aria-label="导出审计底稿">
+                  <form method="post" action="/pages/review-tasks/create" class="inline-task-form">
+                    <input type="hidden" name="question" value="{{ question }}">
+                    {% for collection in selected_collections %}
+                      <input type="hidden" name="source_collection" value="{{ collection }}">
+                    {% endfor %}
+                    <button type="submit">创建复核任务</button>
+                  </form>
+                  <a
+                    href="/pages/chat/export?question={{ question|urlencode }}&format=markdown{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+                  >导出 Markdown 底稿</a>
+                  <a
+                    href="/pages/chat/export?question={{ question|urlencode }}&format=json{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+                  >导出 JSON 记录</a>
+                  <span>导出内容包含回答、引用、chunk/index/package 和复核清单。</span>
+                </div>
               </section>
             {% endif %}
           </article>
@@ -154,6 +235,9 @@
                 <label for="question">审计问题输入</label>
                 <span>问题必须能被证据回答</span>
               </div>
+              <p class="field-help">
+                建议包含审计对象、行为、目录编码或规则关键词。不要输入患者姓名、证件号、手机号等敏感标识。
+              </p>
               <textarea
                 id="question"
                 name="question"
@@ -165,15 +249,19 @@
               <details class="filter-drawer">
                 <summary>限定知识来源</summary>
                 <div class="filter-grid">
-                  {% for collection in source_collections %}
-                    <label class="check">
+                  {% for collection in source_collection_cards %}
+                    <label class="check source-card">
                       <input
                         type="checkbox"
                         name="source_collection"
                         value="{{ collection.value }}"
-                        {% if collection.value in selected_collections %}checked{% endif %}
+                        {% if collection.selected %}checked{% endif %}
                       >
-                      <span>{{ collection.value }}</span>
+                      <span>
+                        <strong>{{ collection.title }}</strong>
+                        <small>{{ collection.description }}</small>
+                        <em>{{ collection.audit_hint }}</em>
+                      </span>
                     </label>
                   {% endfor %}
                 </div>
@@ -199,6 +287,16 @@
             </dl>
           </div>
 
+          <section class="dossier-checklist" aria-label="人工复核清单">
+            <h3>人工复核清单</h3>
+            <ol>
+              <li>核对引用片段是否完整覆盖问题。</li>
+              <li>打开原文确认条款上下文。</li>
+              <li>检查目录、规则、法规版本是否适用。</li>
+              <li>确认是否还需 HIS 原始凭证补证。</li>
+            </ol>
+          </section>
+
           <ul class="quality-checks">
             {% for item in answer_quality.checks %}
               <li>{{ item }}</li>
@@ -216,7 +314,15 @@
                     <li class="citation-item dossier-item">
                       <strong>[{{ item.citation_id }}]</strong>
                       <span>{{ item.snippet }}</span>
-                      <a href="/pages/preview/{{ item.chunk_id }}">打开原文</a>
+                      <dl class="citation-meta">
+                        <dt>chunk</dt><dd><code>{{ item.chunk_id }}</code></dd>
+                        <dt>index</dt><dd><code>{{ item.index_version_key }}</code></dd>
+                        <dt>package</dt><dd><code>{{ item.source_package_version_key }}</code></dd>
+                      </dl>
+                      <div class="citation-actions">
+                        <a href="/pages/preview/{{ item.chunk_id }}">核验原文</a>
+                        <button type="button" class="copy-citation-button" data-copy-value="[{{ item.citation_id }}] {{ item.snippet }}">复制引用</button>
+                      </div>
                     </li>
                   {% endfor %}
                 </ul>
@@ -228,5 +334,18 @@
         </aside>
       </section>
     </main>
+    <script>
+      document.querySelectorAll(".copy-citation-button").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const value = button.dataset.copyValue || "";
+          if (!value) return;
+          await navigator.clipboard.writeText(value);
+          button.textContent = "已复制";
+          window.setTimeout(() => {
+            button.textContent = "复制引用";
+          }, 1400);
+        });
+      });
+    </script>
   </body>
 </html>

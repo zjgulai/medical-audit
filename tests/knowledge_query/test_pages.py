@@ -59,6 +59,9 @@ def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Pat
     assert "引用型回答" in response.text
     assert "法规依据" in response.text
     assert f"/pages/preview/{LAW_CHUNK_ID}" in response.text
+    assert "查询结果摘要" in response.text
+    assert "核验原文" in response.text
+    assert "chunk" in response.text
     assert state.operation_logs[-1]["action"] == "page-query"
     assert state.query_logs[-1]["question"] == "医保基金审核依据"
 
@@ -73,15 +76,202 @@ def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -
     assert "医保审核对话审证台" in response.text
     assert "AuditScope" in response.text
     assert "Evidence Command Center" in response.text
+    assert "本地证据优先" in response.text
+    assert "人工复核门禁" in response.text
     assert "审证流程 · Case Review" in response.text
     assert "审计问题输入" in response.text
     assert "Evidence Dossier" in response.text
     assert "证据卷宗" in response.text
+    assert "复核门禁" in response.text
+    assert "人工复核清单" in response.text
     assert "可追溯回答" in response.text
+    assert "回答进入底稿或报告前" in response.text
+    assert "创建复核任务" in response.text
+    assert "导出 Markdown 底稿" in response.text
+    assert "导出 JSON 记录" in response.text
+    assert "复制引用" in response.text
     assert "把以上依据整理成审核要点清单" in response.text
     assert f"/pages/preview/{LAW_CHUNK_ID}" in response.text
     assert "<pre>" not in response.text
     assert state.operation_logs[-1]["action"] == "page-chat"
+
+
+def test_chat_dossier_export_returns_json_download_and_records_log(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/chat/export",
+        params={
+            "question": "医保基金审核依据",
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="auditscope-dossier.json"'
+    )
+    body = response.json()
+    assert body["format"] == "audit-dossier-v1"
+    assert body["question"] == "医保基金审核依据"
+    assert body["review_gate"] == "可进入人工复核"
+    assert body["review_notice"] == "该导出为审计线索和人工复核底稿，不替代正式审计结论。"
+    assert body["review_checklist"] == [
+        "核对引用片段是否完整覆盖问题。",
+        "打开原文确认条款上下文。",
+        "检查目录、规则、法规版本是否适用。",
+        "确认是否还需 HIS 原始凭证补证。",
+    ]
+    assert body["citation_count"] >= 1
+    assert body["citations"][0]["chunk_id"] == str(LAW_CHUNK_ID)
+    assert body["citations"][0]["index_version_key"] == "index-v1"
+    assert body["citations"][0]["source_package_version_key"] == "package-v1"
+    assert body["citations"][0]["preview_url"].endswith(f"/pages/preview/{LAW_CHUNK_ID}")
+    assert state.operation_logs[-1]["action"] == "chat-dossier-export"
+
+
+def test_chat_dossier_export_returns_markdown_download(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/chat/export",
+        params={"question": "医保基金审核依据", "format": "markdown"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="auditscope-dossier.md"'
+    )
+    assert "# AuditScope 审计底稿导出" in response.text
+    assert "## 人工复核清单" in response.text
+    assert "## 可追溯回答" in response.text
+    assert f"chunk: `{LAW_CHUNK_ID}`" in response.text
+    assert "package: `package-v1`" in response.text
+    assert "原文链接: http://testserver/pages/preview/" in response.text
+
+
+def test_chat_dossier_export_fails_when_backend_is_not_ready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = None
+    client = TestClient(create_app(state))
+
+    response = client.get("/pages/chat/export", params={"question": "医保基金审核依据"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "检索引擎尚未初始化。"
+
+
+def test_review_tasks_page_renders_empty_state(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/pages/review-tasks")
+
+    assert response.status_code == 200
+    assert "复核任务台" in response.text
+    assert "暂无复核任务" in response.text
+    assert "从对话审证创建复核任务" in response.text
+    assert 'aria-current="page">复核任务' in response.text
+    assert state.operation_logs[-1]["action"] == "page-review-tasks-view"
+
+
+def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    create_response = client.post(
+        "/pages/review-tasks/create",
+        data={
+            "question": "医保基金审核依据",
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+        },
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert create_response.headers["location"] == "/pages/review-tasks"
+    assert len(state.review_tasks) == 1
+    task = state.review_tasks[0]
+    assert task["task_id"] == "review-task-0001"
+    assert task["status"] == "pending-review"
+    assert task["status_label"] == "待复核"
+    assert task["question"] == "医保基金审核依据"
+    citation_count = task["citation_count"]
+    assert isinstance(citation_count, int)
+    assert citation_count >= 1
+    assert str(state.operation_logs[-1]["action"]) == "review-task-create"
+
+    page_response = client.get("/pages/review-tasks")
+    assert page_response.status_code == 200
+    assert "review-task-0001" in page_response.text
+    assert "医保基金审核依据" in page_response.text
+    assert "待复核" in page_response.text
+    assert "导出任务 Markdown" in page_response.text
+    assert "导出任务 JSON" in page_response.text
+
+    update_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "confirmed-violation",
+            "reviewer_note": "引用已覆盖规则依据，需补 HIS 原始凭证。",
+            "conclusion": "疑似违规线索成立，进入人工复核。",
+        },
+        follow_redirects=False,
+    )
+
+    assert update_response.status_code == 303
+    updated_task = state.review_tasks[0]
+    assert updated_task["status"] == "confirmed-violation"
+    assert updated_task["status_label"] == "确认违规"
+    assert updated_task["reviewer_note"] == "引用已覆盖规则依据，需补 HIS 原始凭证。"
+    assert updated_task["conclusion"] == "疑似违规线索成立，进入人工复核。"
+    assert str(state.operation_logs[-1]["action"]) == "review-task-status-update"
+
+    json_response = client.get("/review-tasks/review-task-0001/export")
+    assert json_response.status_code == 200
+    assert json_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001.json"'
+    )
+    body = json_response.json()
+    assert body["format"] == "review-task-v1"
+    assert body["status"] == "confirmed-violation"
+    assert body["reviewer_note"] == "引用已覆盖规则依据，需补 HIS 原始凭证。"
+    assert body["conclusion"] == "疑似违规线索成立，进入人工复核。"
+    assert body["dossier"]["format"] == "audit-dossier-v1"
+    assert body["dossier"]["citations"][0]["chunk_id"] == str(LAW_CHUNK_ID)
+    assert body["dossier"]["citations"][0]["index_version_key"] == "index-v1"
+    assert str(state.operation_logs[-1]["action"]) == "review-task-export"
+
+    markdown_response = client.get(
+        "/review-tasks/review-task-0001/export",
+        params={"format": "markdown"},
+    )
+    assert markdown_response.status_code == 200
+    assert markdown_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001.md"'
+    )
+    assert "# AuditScope 复核任务记录" in markdown_response.text
+    assert "## 底稿" in markdown_response.text
+    assert "确认违规 (confirmed-violation)" in markdown_response.text
+    assert "疑似违规线索成立，进入人工复核。" in markdown_response.text
+    assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
+
+
+def test_review_task_create_fails_when_backend_is_not_ready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = None
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/pages/review-tasks/create",
+        data={"question": "医保基金审核依据"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "检索引擎尚未初始化。"
+    assert state.review_tasks == []
 
 
 def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None:
@@ -93,6 +283,9 @@ def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None
 
     assert response.status_code == 200
     assert "原文证据预览" in response.text
+    assert "原文复核优先级" in response.text
+    assert "证据链" in response.text
+    assert "复核要点" in response.text
     assert "第一条 医疗机构应当保留医保基金审核依据。" in response.text
     assert "全量法律/law.md" in response.text
     assert state.operation_logs[-1]["action"] == "page-preview"
@@ -183,6 +376,8 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert ":focus-visible" in response.text
+    assert "@media print" in response.text
+    assert ".copy-citation-button" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
@@ -196,6 +391,20 @@ def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
     body = response.json()
     assert body["format"] == "json"
     assert body["items"][-1]["action"] == "operation-logs-export"
+
+
+def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.get("/favicon.ico")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/svg+xml"
+    assert "<svg" in response.text
+
+    head_response = client.head("/favicon.ico")
+    assert head_response.status_code == 200
+    assert head_response.headers["content-type"] == "image/svg+xml"
 
 
 LAW_CHUNK_ID = UUID("11111111-1111-4111-8111-111111111111")

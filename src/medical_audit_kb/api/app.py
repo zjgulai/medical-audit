@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,7 @@ class ApiState:
     query_logs: list[dict[str, object]] = field(default_factory=list)
     operation_logs: list[dict[str, object]] = field(default_factory=list)
     preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
+    review_tasks: list[dict[str, object]] = field(default_factory=list)
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -79,6 +80,18 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
             version=__version__,
             data_root=str(state.source_root),
         )
+
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+    def favicon() -> Response:
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+            '<rect width="64" height="64" rx="16" fill="#0B1F33"/>'
+            '<path d="M18 17h28v6H18zM18 29h28v6H18zM18 41h18v6H18z" fill="#F5F7FA"/>'
+            '<path d="M42 39l4 4 8-11" fill="none" stroke="#0A84FF" stroke-width="5"'
+            ' stroke-linecap="round" stroke-linejoin="round"/>'
+            "</svg>"
+        )
+        return Response(content=svg, media_type="image/svg+xml")
 
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
