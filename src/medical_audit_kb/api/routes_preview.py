@@ -47,8 +47,7 @@ def preview_chunk(
         "preview_text": preview.preview_text,
         "locator": preview.locator,
         "highlights": [
-            {"start": item.start, "end": item.end, "text": item.text}
-            for item in preview.highlights
+            {"start": item.start, "end": item.end, "text": item.text} for item in preview.highlights
         ],
         "page_number": preview.page_number,
         "line_start": preview.line_start,

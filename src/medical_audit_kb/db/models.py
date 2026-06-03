@@ -4,7 +4,17 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -74,9 +84,7 @@ class SourceDocument(Base):
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
 
-    source_package_version: Mapped[SourcePackageVersion] = relationship(
-        back_populates="documents"
-    )
+    source_package_version: Mapped[SourcePackageVersion] = relationship(back_populates="documents")
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="source_document",
         cascade="all, delete-orphan",
@@ -261,6 +269,31 @@ class QueryLog(Base):
     filters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     answer_summary: Mapped[str | None] = mapped_column(Text)
     retrieved_chunk_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class IndexEvaluationRun(Base):
+    __tablename__ = "index_evaluation_runs"
+    __table_args__ = (
+        Index("idx_index_evaluation_runs_created_at", "created_at"),
+        Index("idx_index_evaluation_runs_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    report_path: Mapped[str] = mapped_column(Text, nullable=False)
+    retrieval_case_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    answer_case_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ui_smoke_success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    search_backend: Mapped[str] = mapped_column(String(48), nullable=False)
+    search_backend_details: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    request: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

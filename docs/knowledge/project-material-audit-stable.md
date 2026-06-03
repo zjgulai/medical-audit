@@ -5,7 +5,7 @@ module: repository
 topic: material-audit-and-classification
 status: stable
 created: 2026-05-31
-updated: 2026-05-31
+updated: 2026-06-02
 owner: self
 source: human+ai
 ---
@@ -103,15 +103,18 @@ source: human+ai
 - 标准目录骨架建立
 - 根目录正式材料归位
 - Markdown 正式文档开始补齐元信息
+- 统一版 V1.0 PRD 已落地：`docs/product/product-prd-medical-audit-v1-stable.md`
+- 知识库查询引擎架构文档、API 文档和运行手册已落地
+- 知识库查询引擎已形成真实资料索引、PostgreSQL + pgvector 迁移、active version 查询和对话审证台的工程闭环
 
 ### 7.2 仍缺失
 
-- 统一版 PRD
-- 系统架构文档
-- 数据接入方案文档
-- 角色权限模型
-- 验收指标定义文档
-- 开发任务拆解和实施计划
+- 首个 HIS 专项审计场景的详细 PRD
+- HIS 数据接入方案文档
+- 角色权限模型的详细设计
+- V1.0 准确率验收口径定义文档
+- 底稿和报告模板设计
+- V1.0 开发任务拆解和实施计划
 
 ## 8. 对后续工作的直接约束
 

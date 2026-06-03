@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>复核任务台</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body class="page-review-tasks">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query">查询工作台</a>
+          <a href="/pages/review-tasks" aria-current="page">复核任务</a>
+          <a href="/pages/index-admin">索引管理</a>
+        </div>
+        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
+          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
+        </span>
+      </nav>
+
+      <section class="hero review-hero">
+        <div>
+          <p class="eyebrow">人工复核台 · Review Desk</p>
+          <h1>把证据回答沉淀成可复核任务。</h1>
+          <p class="lede">复核任务保存问题、底稿、引用链、复核状态、意见和结论。当前版本为进程内任务台，不替代生产级案件系统。</p>
+        </div>
+        <aside class="hero-console" aria-label="复核任务状态">
+          <div><span>任务总数</span><strong>{{ review_task_stats.total }}</strong></div>
+          <div><span>开放任务</span><strong>{{ review_task_stats.open }}</strong></div>
+          <div><span>确认违规</span><strong>{{ review_task_stats.confirmed_violation }}</strong></div>
+        </aside>
+      </section>
+
+      <section class="metrics review-metrics">
+        <article><strong>{{ review_task_stats.total }}</strong><span>total</span></article>
+        <article><strong>{{ review_task_stats.open }}</strong><span>open</span></article>
+        <article><strong>{{ review_task_stats.needs_evidence }}</strong><span>needs evidence</span></article>
+        <article><strong>{{ review_task_stats.closed }}</strong><span>closed</span></article>
+      </section>
+
+      <section class="panel review-intake-panel" aria-labelledby="review-intake-title">
+        <div>
+          <p class="eyebrow">创建入口</p>
+          <h2 id="review-intake-title">从对话审证创建复核任务</h2>
+          <p class="meta">先在对话审证页形成引用型回答，再点击“创建复核任务”。任务进入此列表后再做状态、意见和结论维护。</p>
+        </div>
+        <p><a class="text-link" href="/pages/chat">返回对话审证</a></p>
+      </section>
+
+      <section class="review-task-list" aria-label="复核任务列表">
+        {% for task in review_tasks %}
+          <article class="panel review-task-card {{ task.status }}">
+            <header class="review-task-header">
+              <div>
+                <p class="eyebrow">{{ task.task_id }}</p>
+                <h2>{{ task.question }}</h2>
+              </div>
+              <span class="review-status-pill">{{ task.status_label }}</span>
+            </header>
+
+            <dl class="review-task-summary">
+              <div><dt>created</dt><dd>{{ task.created_at }}</dd></div>
+              <div><dt>updated</dt><dd>{{ task.updated_at }}</dd></div>
+              <div><dt>citations</dt><dd>{{ task.citation_count }}</dd></div>
+              <div><dt>review gate</dt><dd>{{ task.review_gate }}</dd></div>
+            </dl>
+
+            <form method="post" action="/pages/review-tasks/{{ task.task_id }}/status" class="review-task-form">
+              <label for="status-{{ task.task_id }}">复核状态</label>
+              <select id="status-{{ task.task_id }}" name="status">
+                {% for value, label in review_status_options.items() %}
+                  <option value="{{ value }}" {% if task.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+
+              <label for="note-{{ task.task_id }}">复核意见</label>
+              <textarea id="note-{{ task.task_id }}" name="reviewer_note" rows="3" placeholder="记录证据是否充分、仍需补证材料或规则口径问题。">{{ task.reviewer_note }}</textarea>
+
+              <label for="conclusion-{{ task.task_id }}">复核结论</label>
+              <textarea id="conclusion-{{ task.task_id }}" name="conclusion" rows="3" placeholder="仅在证据充分后填写结论。">{{ task.conclusion }}</textarea>
+
+              <div class="review-task-actions">
+                <button type="submit">保存复核状态</button>
+                <a href="/review-tasks/{{ task.task_id }}/export?format=markdown">导出任务 Markdown</a>
+                <a href="/review-tasks/{{ task.task_id }}/export?format=json">导出任务 JSON</a>
+              </div>
+            </form>
+          </article>
+        {% else %}
+          <section class="empty-state">
+            <p class="eyebrow">暂无复核任务</p>
+            <h2>先从对话审证页创建任务。</h2>
+            <p>当前没有保存的复核任务。复核任务用于把单轮证据回答沉淀为可追踪的人工复核记录。</p>
+            <p><a class="text-link" href="/pages/chat">进入对话审证</a></p>
+          </section>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

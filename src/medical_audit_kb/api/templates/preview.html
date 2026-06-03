@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>原文预览</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body class="page-preview">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/index-admin">索引管理</a>
+          <span class="nav-current" aria-current="page">原文预览</span>
+        </div>
+        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
+          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
+        </span>
+      </nav>
+
+      <section class="hero preview-hero">
+        <div>
+          <p class="eyebrow">原文定位</p>
+          <h1>原文证据预览</h1>
+          <p class="lede">核对引用片段、定位信息和源文件路径，确认答案是否可追溯。</p>
+        </div>
+        <aside class="hero-console" aria-label="定位信息">
+          <div>
+            <span>类型</span>
+            <strong>{{ media_type }}</strong>
+          </div>
+          <div>
+            <span>行号</span>
+            <strong>{% if line_start %}{{ line_start }}-{{ line_end }}{% else %}n/a{% endif %}</strong>
+          </div>
+          <div>
+            <span>页码</span>
+            <strong>{% if page_number %}{{ page_number }}{% else %}n/a{% endif %}</strong>
+          </div>
+        </aside>
+      </section>
+
+      <section class="preview-grid">
+        <article class="panel source-panel">
+          <p class="eyebrow">证据文本</p>
+          <h2>上下文片段</h2>
+          <div class="source-review-banner">
+            <strong>原文复核优先级</strong>
+            <span>先确认上下文是否完整，再判断该引用能否进入底稿或报告。</span>
+          </div>
+          <pre class="source-text">{{ preview_text }}</pre>
+        </article>
+
+        <aside class="panel">
+          <p class="eyebrow">定位元数据</p>
+          <h2>定位元数据</h2>
+          <section class="preview-chain" aria-label="证据链">
+            <span>查询结果</span>
+            <span>引用编号</span>
+            <span>chunk</span>
+            <span>原文定位</span>
+          </section>
+          <dl class="kv">
+            <dt>chunk_id</dt><dd>{{ chunk_id }}</dd>
+            <dt>source_path</dt><dd>{{ source_path }}</dd>
+            <dt>media_type</dt><dd>{{ media_type }}</dd>
+            <dt>line</dt><dd>{% if line_start %}{{ line_start }}-{{ line_end }}{% else %}not-applicable{% endif %}</dd>
+            <dt>page</dt><dd>{% if page_number %}{{ page_number }}{% else %}not-applicable{% endif %}</dd>
+            <dt>sheet</dt><dd>{% if sheet_name %}{{ sheet_name }}{% else %}not-applicable{% endif %}</dd>
+            <dt>row</dt><dd>{% if row_number %}{{ row_number }}{% else %}not-applicable{% endif %}</dd>
+          </dl>
+
+          <h3>命中高亮</h3>
+          <ul class="compact-list">
+            {% for item in highlights %}
+              <li>{{ item.text }} · {{ item.start }}-{{ item.end }}</li>
+            {% else %}
+              <li>未生成高亮范围，直接核对上下文片段。</li>
+            {% endfor %}
+          </ul>
+
+          <section class="dossier-checklist preview-checklist" aria-label="原文复核清单">
+            <h3>复核要点</h3>
+            <ol>
+              <li>片段是否与问题直接相关。</li>
+              <li>上下文是否存在例外条件。</li>
+              <li>文件路径是否属于当前有效资料包。</li>
+            </ol>
+          </section>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <p><a class="text-link" href="/pages/query">返回查询工作台</a></p>
+      </section>
+    </main>
+  </body>
+</html>

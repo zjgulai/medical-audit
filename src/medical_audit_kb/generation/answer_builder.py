@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -14,6 +15,34 @@ from medical_audit_kb.generation.citations import (
     group_citations,
 )
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
+
+MAX_FALLBACK_CITATIONS = 3
+ANSWER_SNIPPET_CHARS = 96
+
+QUESTION_STOP_TERMS = frozenset(
+    {
+        "请根据资料回答",
+        "根据资料",
+        "请",
+        "根据",
+        "资料",
+        "回答",
+        "是否",
+        "什么",
+        "如何",
+        "定义",
+        "对应",
+        "需要",
+        "必须",
+        "哪条",
+        "哪个",
+        "中的",
+        "中",
+        "是",
+        "的",
+        "了",
+    }
+)
 
 
 class ConfidenceCue(StrEnum):
@@ -31,9 +60,14 @@ class NoCitedEvidenceError(ValueError):
 
 
 class AnswerGenerationProvider(Protocol):
-    provider: str
-    model_name: str
-    provider_version: str
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model_name(self) -> str: ...
+
+    @property
+    def provider_version(self) -> str: ...
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str: ...
 
@@ -72,7 +106,13 @@ def build_citation_backed_answer(
     *,
     generation_provider: AnswerGenerationProvider | None = None,
 ) -> CitationBackedAnswer:
-    citations = build_citations(results)
+    focus_terms = _question_focus_terms(question)
+    focused_results = _select_focused_results(results, focus_terms)
+    citations = build_citations(
+        focused_results,
+        max_snippet_chars=ANSWER_SNIPPET_CHARS,
+        focus_terms=focus_terms,
+    )
     if not citations:
         raise NoCitedEvidenceError("cannot build answer without cited retrieval results")
 
@@ -143,6 +183,72 @@ def _fallback_answer(question: str, citation_groups: tuple[CitationGroup, ...]) 
 
 def _contains_citation_marker(answer: str, citations: tuple[Citation, ...]) -> bool:
     return any(citation.marker in answer for citation in citations)
+
+
+def _select_focused_results(
+    results: tuple[HybridSearchResult, ...],
+    focus_terms: tuple[str, ...],
+) -> tuple[HybridSearchResult, ...]:
+    if not focus_terms:
+        return results[:MAX_FALLBACK_CITATIONS]
+
+    scored_results = tuple(
+        (score, result) for result in results if (score := _focus_score(result, focus_terms)) > 0
+    )
+    if not scored_results:
+        return results[:MAX_FALLBACK_CITATIONS]
+
+    best_score = max(score for score, _ in scored_results)
+    minimum_score = max(1, int(best_score * 0.6))
+    selected = tuple(result for score, result in scored_results if score >= minimum_score)
+    return selected[:MAX_FALLBACK_CITATIONS]
+
+
+def _focus_score(result: HybridSearchResult, focus_terms: tuple[str, ...]) -> int:
+    metadata_values = " ".join(str(value) for value in result.chunk.metadata.values())
+    locator_values = " ".join(str(value) for value in result.chunk.locator.values())
+    haystack = f"{result.chunk.text}\n{metadata_values}\n{locator_values}"
+    return sum(len(term) for term in focus_terms if term in haystack)
+
+
+def _question_focus_terms(question: str) -> tuple[str, ...]:
+    terms: list[str] = []
+    alpha_numeric_terms = re.findall(r"[A-Za-z0-9]+(?:[._/-][A-Za-z0-9]+)*", question)
+    terms.extend(term for term in alpha_numeric_terms if _is_domain_code(term))
+    for segment in re.findall(r"[\u4e00-\u9fff]+", question):
+        normalized = segment
+        for stop_term in sorted(QUESTION_STOP_TERMS, key=len, reverse=True):
+            normalized = normalized.replace(stop_term, " ")
+        for part in re.findall(r"[\u4e00-\u9fff]+", normalized):
+            terms.extend(_chinese_ngrams(part))
+    terms.extend(term for term in alpha_numeric_terms if not _is_domain_code(term))
+    return _unique_terms(terms)
+
+
+def _is_domain_code(term: str) -> bool:
+    if term.upper().startswith("ICD"):
+        return False
+    return term.isdigit() or bool(re.fullmatch(r"[A-Za-z]+\d+(?:\.\d+)?", term))
+
+
+def _chinese_ngrams(text: str) -> tuple[str, ...]:
+    max_length = min(8, len(text))
+    ngrams: list[str] = []
+    for length in range(max_length, 1, -1):
+        ngrams.extend(text[start : start + length] for start in range(len(text) - length + 1))
+    return tuple(ngrams)
+
+
+def _unique_terms(terms: Sequence[str]) -> tuple[str, ...]:
+    unique_terms: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        normalized = term.strip()
+        if len(normalized) < 2 or normalized in QUESTION_STOP_TERMS or normalized in seen:
+            continue
+        unique_terms.append(normalized)
+        seen.add(normalized)
+    return tuple(unique_terms)
 
 
 def _confidence(citations: tuple[Citation, ...]) -> ConfidenceCue:

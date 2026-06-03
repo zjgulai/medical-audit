@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Protocol
 from uuid import UUID
 
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25SearchResult, InMemoryBM25Index
-from medical_audit_kb.indexing.embeddings import EmbeddingProvider
+from medical_audit_kb.indexing.embeddings import EmbeddingProvider, EmbeddingVector
 from medical_audit_kb.indexing.vector_index import InMemoryVectorIndex, VectorSearchResult
 from medical_audit_kb.retrieval.filters import RetrievalFilters
 from medical_audit_kb.retrieval.rerank import RerankCandidate, RerankProvider
@@ -39,6 +41,26 @@ class HybridSearchResult:
     matched_by: tuple[str, ...]
 
 
+class VectorIndex(Protocol):
+    def search(
+        self,
+        query_embedding: EmbeddingVector,
+        *,
+        top_k: int = 10,
+        filters: Mapping[str, object] | None = None,
+    ) -> tuple[VectorSearchResult, ...]: ...
+
+
+class BM25Index(Protocol):
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 10,
+        filters: Mapping[str, object] | None = None,
+    ) -> tuple[BM25SearchResult, ...]: ...
+
+
 @dataclass(slots=True)
 class _MergedCandidate:
     chunk_id: UUID
@@ -62,8 +84,8 @@ class HybridSearchEngine:
         self,
         *,
         embedding_provider: EmbeddingProvider,
-        vector_index: InMemoryVectorIndex,
-        bm25_index: InMemoryBM25Index,
+        vector_index: VectorIndex | InMemoryVectorIndex,
+        bm25_index: BM25Index | InMemoryBM25Index,
         rerank_provider: RerankProvider | None = None,
         source_collection_weights: dict[str, float] | None = None,
     ) -> None:

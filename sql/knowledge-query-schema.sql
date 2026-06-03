@@ -58,10 +58,10 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings (
     model_name text NOT NULL,
     provider_version text NOT NULL,
     dimension integer NOT NULL,
-    embedding vector(1536) NOT NULL,
+    embedding vector(1024) NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_chunk_embeddings_provider UNIQUE (chunk_id, provider, model_name, provider_version),
-    CONSTRAINT ck_chunk_embeddings_dimension_positive CHECK (dimension > 0)
+    CONSTRAINT ck_chunk_embeddings_dimension_1024 CHECK (dimension = 1024)
 );
 
 CREATE TABLE IF NOT EXISTS index_versions (
@@ -129,6 +129,23 @@ CREATE TABLE IF NOT EXISTS query_logs (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS index_evaluation_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id uuid NOT NULL UNIQUE,
+    status text NOT NULL,
+    report_path text NOT NULL,
+    retrieval_case_count integer NOT NULL DEFAULT 0,
+    answer_case_count integer NOT NULL DEFAULT 0,
+    ui_smoke_success boolean NOT NULL DEFAULT false,
+    search_backend text NOT NULL,
+    search_backend_details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    request jsonb NOT NULL DEFAULT '{}'::jsonb,
+    report jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_index_evaluation_runs_retrieval_case_count_non_negative CHECK (retrieval_case_count >= 0),
+    CONSTRAINT ck_index_evaluation_runs_answer_case_count_non_negative CHECK (answer_case_count >= 0)
+);
+
 CREATE INDEX IF NOT EXISTS idx_source_documents_collection ON source_documents (source_collection);
 CREATE INDEX IF NOT EXISTS idx_source_documents_package ON source_documents (source_package_version_id);
 CREATE INDEX IF NOT EXISTS idx_source_documents_sha256 ON source_documents (sha256);
@@ -136,10 +153,22 @@ CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents (stat
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document ON document_chunks (source_document_id);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_article_number ON document_chunks (article_number);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_page_number ON document_chunks (page_number);
+CREATE INDEX IF NOT EXISTS idx_document_chunks_metadata_gin ON document_chunks USING gin (metadata);
+CREATE INDEX IF NOT EXISTS idx_document_chunks_locator_gin ON document_chunks USING gin (locator);
 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk ON chunk_embeddings (chunk_id);
+CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_kimi_cosine_hnsw
+    ON chunk_embeddings
+    USING hnsw (embedding vector_cosine_ops)
+    WHERE provider = 'openai'
+      AND model_name = 'kimi-for-coding'
+      AND provider_version = 'v1'
+      AND dimension = 1024;
 CREATE INDEX IF NOT EXISTS idx_index_versions_package ON index_versions (source_package_version_id);
 CREATE INDEX IF NOT EXISTS idx_index_versions_status ON index_versions (status);
 CREATE INDEX IF NOT EXISTS idx_index_jobs_status ON index_jobs (status);
 CREATE INDEX IF NOT EXISTS idx_failed_files_status ON failed_files (status);
 CREATE INDEX IF NOT EXISTS idx_pending_files_status ON pending_files (status);
 CREATE INDEX IF NOT EXISTS idx_query_logs_created_at ON query_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_query_logs_filters_gin ON query_logs USING gin (filters);
+CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_created_at ON index_evaluation_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_status ON index_evaluation_runs (status);

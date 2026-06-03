@@ -6,72 +6,168 @@
     <title>医保审核知识库查询</title>
     <link rel="stylesheet" href="/static/app.css">
   </head>
-  <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Medical Audit KB</p>
-        <h1>引用优先的医保审核知识查询</h1>
-        <p class="lede">输入自然语言问题，系统返回分组依据、引用片段和原文预览入口。</p>
+  <body class="page-query">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query" aria-current="page">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/index-admin">索引管理</a>
+        </div>
+        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
+          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
+        </span>
+      </nav>
+
+      <section class="hero query-hero">
+        <div>
+          <p class="eyebrow">医保审计知识查询</p>
+          <h1>引用优先的医保审核知识查询</h1>
+          <p class="lede">围绕法规、目录、监管规则和风险清单检索依据，先给证据，再给结论。</p>
+        </div>
+        <aside class="hero-console" aria-label="运行状态">
+          <div>
+            <span>后端</span>
+            <strong>{{ search_backend.backend }}</strong>
+          </div>
+          <div>
+            <span>引用</span>
+            <strong>{% if answer %}{{ answer.citations|length }}{% else %}0{% endif %}</strong>
+          </div>
+          <div>
+            <span>最近查询</span>
+            <strong>{{ query_logs|length }}</strong>
+          </div>
+        </aside>
       </section>
 
-      <section class="panel">
-        <form method="get" action="/pages/query" class="query-form">
-          <label for="question">自然语言问题</label>
-          <textarea id="question" name="question" rows="4" placeholder="例如：超量开药的审核依据是什么？">{{ question }}</textarea>
+      {% if not search_backend.ready %}
+        <section class="notice state-notice" role="alert">
+          <strong>检索后端未加载。</strong>
+          先进入索引管理页核对 PostgreSQL 状态，并由 it-admin 加载 PostgreSQL 检索后端。
+        </section>
+      {% endif %}
 
-          <fieldset>
-            <legend>来源过滤</legend>
-            {% for collection in source_collections %}
-              <label class="check">
-                <input
-                  type="checkbox"
-                  name="source_collection"
-                  value="{{ collection.value }}"
-                  {% if collection.value in selected_collections %}checked{% endif %}
-                >
-                <span>{{ collection.value }}</span>
-              </label>
-            {% endfor %}
-          </fieldset>
+      <section class="workbench-grid">
+        <article class="panel query-panel">
+          <p class="eyebrow">问题输入</p>
+          <h2>查询问题</h2>
+          <p class="field-help">查询工作台用于快速定位依据。需要形成审证记录时，进入对话审证页复核引用和原文。</p>
+          <form method="get" action="/pages/query" class="query-form">
+            <label for="question">自然语言问题</label>
+            <p id="question-help" class="field-help">输入一个可审计的问题。系统只在找到引用依据时生成回答。</p>
+            <textarea
+              id="question"
+              name="question"
+              rows="5"
+              placeholder="例如：超量开药的审核依据是什么？"
+              aria-describedby="question-help"
+              required
+            >{{ question }}</textarea>
 
-          <button type="submit">查询依据</button>
-        </form>
+            <fieldset>
+              <legend>来源过滤</legend>
+              <div class="filter-grid">
+                {% for collection in source_collection_cards %}
+                  <label class="check source-card">
+                    <input
+                      type="checkbox"
+                      name="source_collection"
+                      value="{{ collection.value }}"
+                      {% if collection.selected %}checked{% endif %}
+                    >
+                    <span>
+                      <strong>{{ collection.title }}</strong>
+                      <small>{{ collection.description }}</small>
+                      <em>{{ collection.audit_hint }}</em>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+            </fieldset>
+
+            <button type="submit">查询依据</button>
+          </form>
+        </article>
+
+        <aside class="panel guidance-panel">
+          <p class="eyebrow">审计口径</p>
+          <h2>提问口径</h2>
+          <ul class="compact-list">
+            <li>优先输入诊疗行为、收费项目、目录编码或监管规则名称。</li>
+            <li>问题越接近审计场景，引用越容易回到可复核原文。</li>
+            <li>没有引用依据时，系统不得生成无来源结论。</li>
+          </ul>
+        </aside>
       </section>
 
       {% if error_message %}
-        <section class="notice">{{ error_message }}</section>
+        <section class="notice" role="alert">{{ error_message }}</section>
       {% endif %}
 
       {% if answer %}
         <section class="answer-grid">
-          <article class="answer-card">
-            <p class="eyebrow">Answer</p>
+          <article class="answer-card answer-main">
+            <p class="eyebrow">回答</p>
             <h2>引用型回答</h2>
-            <pre>{{ answer.answer }}</pre>
+            <dl class="query-result-summary" aria-label="查询结果摘要">
+              <div><dt>confidence</dt><dd>{{ answer.confidence }}</dd></div>
+              <div><dt>citations</dt><dd>{{ answer.citations|length }}</dd></div>
+              <div><dt>mode</dt><dd>{% if answer.fallback_used %}检索直出{% else %}模型生成{% endif %}</dd></div>
+            </dl>
+            <div class="answer-report compact-answer-report">
+              {% for line in answer.answer.splitlines() %}
+                {% set clean_line = line.strip() %}
+                {% if clean_line %}
+                  {% if clean_line.startswith("- ") %}
+                    <p class="answer-line answer-bullet">{{ clean_line[2:] }}</p>
+                  {% elif clean_line.endswith("：") or clean_line.endswith(":") %}
+                    <h3>{{ clean_line }}</h3>
+                  {% else %}
+                    <p class="answer-line">{{ clean_line }}</p>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
             <p class="meta">confidence: {{ answer.confidence }} · fallback: {{ answer.fallback_used }}</p>
           </article>
 
-          <aside class="answer-card">
-            <p class="eyebrow">Citations</p>
+          <aside class="answer-card evidence-rail">
+            <p class="eyebrow">引用依据</p>
             <h2>引用依据</h2>
             {% for group in answer.basis_groups %}
-              <h3>{{ group.title }}</h3>
-              <ul class="citation-list">
-                {% for item in group.items %}
-                  <li>
-                    <strong>[{{ item.citation_id }}]</strong>
-                    <span>{{ item.snippet }}</span>
-                    <a href="/preview/{{ item.chunk_id }}">原文预览</a>
-                  </li>
-                {% endfor %}
-              </ul>
+              <section class="evidence-group">
+                <h3>{{ group.title }}</h3>
+                <ul class="citation-list">
+                  {% for item in group.items %}
+                  <li class="citation-item">
+                      <strong>[{{ item.citation_id }}]</strong>
+                      <span>{{ item.snippet }}</span>
+                      <dl class="citation-meta compact-citation-meta">
+                        <dt>chunk</dt><dd><code>{{ item.chunk_id }}</code></dd>
+                        <dt>index</dt><dd><code>{{ item.index_version_key }}</code></dd>
+                      </dl>
+                      <a href="/pages/preview/{{ item.chunk_id }}">核验原文</a>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </section>
             {% endfor %}
           </aside>
+        </section>
+      {% else %}
+        <section class="empty-state">
+          <p class="eyebrow">等待查询</p>
+          <h2>等待第一条审计问题</h2>
+          <p>页面会在查询后展示答案、证据分组、引用片段和原文预览入口。</p>
         </section>
       {% endif %}
 
       <section class="panel">
-        <p class="eyebrow">Recent Queries</p>
+        <p class="eyebrow">最近查询</p>
         <h2>最近查询日志</h2>
         <ul class="compact-list">
           {% for log in query_logs %}

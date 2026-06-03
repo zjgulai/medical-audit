@@ -6,38 +6,216 @@
     <title>索引管理</title>
     <link rel="stylesheet" href="/static/app.css">
   </head>
-  <body>
-    <main class="shell">
+  <body class="page-admin">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query">查询工作台</a>
+          <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/index-admin" aria-current="page">索引管理</a>
+        </div>
+        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
+          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
+        </span>
+      </nav>
+
       <section class="hero admin-hero">
-        <p class="eyebrow">Index Ops</p>
-        <h1>知识库索引管理</h1>
-        <p class="lede">查看数据源、索引版本、重建任务、失败队列、待处理队列和评测状态。</p>
+        <div>
+          <p class="eyebrow">索引运维控制台</p>
+          <h1>知识库索引管理</h1>
+          <p class="lede">把资料导入、向量状态、后端加载和异常队列集中到一个可审计的控制面板。</p>
+        </div>
+        <aside class="hero-console" aria-label="PostgreSQL 状态">
+          <div>
+            <span>PostgreSQL</span>
+            <strong>{% if postgres_status.available %}ready{% else %}offline{% endif %}</strong>
+          </div>
+          <div>
+            <span>后端</span>
+            <strong>{{ search_backend.backend }}</strong>
+          </div>
+          <div>
+            <span>验收</span>
+            <strong>{{ evaluation_status.status }}</strong>
+          </div>
+        </aside>
       </section>
 
+      {% if not postgres_status.available %}
+        <section class="notice state-notice" role="alert">
+          <strong>PostgreSQL 状态不可用。</strong>
+          {{ postgres_status.error }}
+        </section>
+      {% endif %}
+
       <section class="metrics">
-        <article><strong>{{ index_versions|length }}</strong><span>索引版本</span></article>
-        <article><strong>{{ index_jobs|length }}</strong><span>索引任务</span></article>
-        <article><strong>{{ failed_files|length }}</strong><span>失败文件</span></article>
-        <article><strong>{{ pending_files|length }}</strong><span>待处理文件</span></article>
+        <article><strong>{{ postgres_status.metrics.document_chunks }}</strong><span>数据库 chunks</span></article>
+        <article><strong>{{ postgres_status.metrics.chunk_embeddings }}</strong><span>向量 embeddings</span></article>
+        <article><strong>{{ postgres_status.metrics.failed_files }}</strong><span>失败文件</span></article>
+        <article><strong>{{ postgres_status.metrics.pending_files }}</strong><span>待处理文件</span></article>
+      </section>
+
+      <section class="ops-console panel" aria-labelledby="release-console-title">
+        <div class="ops-console-heading">
+          <div>
+            <p class="eyebrow">发布控制台 · Release Console</p>
+            <h2 id="release-console-title">发布、回滚与运行态重载</h2>
+            <p class="meta">严格按顺序执行：发布 candidate 或回滚历史版本，再重载 PostgreSQL 检索后端，最后用 smoke question 验证对话闭环。</p>
+          </div>
+          <span class="ops-seal">受控切换</span>
+        </div>
+
+        <div class="ops-grid">
+          <article class="ops-card critical-path">
+            <span class="step-mark">01</span>
+            <h3>版本切换</h3>
+            <p>只输入已经通过评测门禁的 `index_version_key`。candidate 用发布；历史 inactive 用回滚。</p>
+            <form class="admin-action-form" data-endpoint="/index/versions/activate" data-method="POST">
+              <label for="activate-index-version-key">发布 candidate</label>
+              <input id="activate-index-version-key" name="index_version_key" placeholder="candidate-version-key" required>
+              <button type="submit">发布 candidate</button>
+            </form>
+            <form class="admin-action-form" data-endpoint="/index/versions/rollback" data-method="POST">
+              <label for="rollback-index-version-key">回滚到历史版本</label>
+              <input id="rollback-index-version-key" name="index_version_key" placeholder="previous-active-version-key" required>
+              <button type="submit" class="secondary-button">回滚到历史版本</button>
+            </form>
+          </article>
+
+          <article class="ops-card">
+            <span class="step-mark">02</span>
+            <h3>PostgreSQL 后端重载</h3>
+            <p>active version 切换后，进程内 BM25 必须重新加载，否则页面仍可能持有旧运行态。</p>
+            <form class="admin-action-form dense-form" data-endpoint="/index/search-backend/postgres" data-method="POST">
+              <input type="hidden" name="embedding_provider" value="openai">
+              <label for="embedding-model">embedding model</label>
+              <input id="embedding-model" name="embedding_model" value="{{ search_backend.details.embedding_model|default('kimi-for-coding') }}" required>
+              <label for="embedding-dimension">dimension</label>
+              <input id="embedding-dimension" name="embedding_dimension" value="{{ search_backend.details.embedding_dimension|default(1024) }}" inputmode="numeric" required>
+              <label for="api-key-env">api key env</label>
+              <input id="api-key-env" name="api_key_env" value="{{ search_backend.details.api_key_env|default('KIMI_API_KEY') }}" required>
+              <label for="embedding-base-url">base url</label>
+              <input id="embedding-base-url" name="embedding_base_url" value="{{ search_backend.details.embedding_base_url|default('https://api.kimi.com/coding/v1') }}" required>
+              <input type="hidden" name="embedding_batch_size" value="{{ search_backend.details.embedding_batch_size|default(16) }}">
+              <button type="submit">重载 PostgreSQL 后端</button>
+            </form>
+          </article>
+
+          <article class="ops-card smoke-card">
+            <span class="step-mark">03</span>
+            <h3>Smoke Question</h3>
+            <p>重载后立即用真实查询页验证引用型回答和原文预览链路。</p>
+            <form action="/pages/chat" method="get" class="dense-form">
+              <label for="smoke-question">Smoke Question</label>
+              <input id="smoke-question" name="question" value="医保基金审核依据" required>
+              <button type="submit">打开对话 smoke</button>
+            </form>
+            <output id="admin-action-result" class="admin-action-result" aria-live="polite">等待操作。</output>
+          </article>
+
+          <article class="ops-card acceptance-card">
+            <span class="step-mark">04</span>
+            <h3>Acceptance Panel</h3>
+            <p>发布后自动执行固定检索评测、答案评测和 UI smoke，结果写入本进程运行态。</p>
+            <dl class="acceptance-status">
+              <dt>latest</dt>
+              <dd>{{ evaluation_status.status }}</dd>
+              <dt>summary</dt>
+              <dd>{{ evaluation_status.description }}</dd>
+            </dl>
+            <p><a class="text-link" href="/index/evaluation/latest/export">下载最新验收报告 JSON</a></p>
+            <form class="admin-action-form dense-form" data-endpoint="/index/evaluation/run" data-method="POST">
+              <input type="hidden" name="retrieval_cases_file" value="configs/evaluation/knowledge-query-human-evaluation-cases-v1.yaml">
+              <input type="hidden" name="answer_cases_file" value="configs/evaluation/knowledge-query-answer-evaluation-cases-v1.yaml">
+              <input type="hidden" name="max_retrieval_cases" value="52">
+              <input type="hidden" name="max_answer_cases" value="8">
+              <input type="hidden" name="top_k" value="5">
+              <input type="hidden" name="smoke_question" value="医保基金审核依据">
+              <button type="submit">运行发布后验收</button>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel history-panel" aria-labelledby="evaluation-history-title">
+        <div class="ops-console-heading">
+          <div>
+            <p class="eyebrow">验收历史 · Evaluation History</p>
+            <h2 id="evaluation-history-title">验收历史</h2>
+            <p class="meta">历史报告列表用于复盘每次发布后的固定检索评测、答案评测和 UI smoke 结果。</p>
+          </div>
+          <a class="text-link" href="/index/evaluation/history">历史报告列表</a>
+        </div>
+        <ul class="compact-list">
+          {% for item in evaluation_history %}
+            <li>
+              <code>{{ item.run_id }}</code> · {{ item.status }} · retrieval: {{ item.retrieval_case_count }}
+              · answer: {{ item.answer_case_count }} · smoke: {% if item.ui_smoke_success %}pass{% else %}fail{% endif %}
+              · source: {{ item.source }}
+            </li>
+          {% else %}
+            <li>暂无验收历史。运行发布后验收后会生成 JSON 报告，并在 PostgreSQL 可用时写入历史表。</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="split">
+        <article class="panel">
+          <p class="eyebrow">运行态</p>
+          <h2>检索后端</h2>
+          <dl class="kv">
+            <dt>backend</dt><dd>{{ search_backend.backend }}</dd>
+            <dt>ready</dt><dd>{{ search_backend.ready }}</dd>
+            <dt>model</dt><dd>{{ search_backend.details.embedding_model|default("not-loaded") }}</dd>
+            <dt>dimension</dt><dd>{{ search_backend.details.embedding_dimension|default("not-loaded") }}</dd>
+            <dt>matching</dt><dd>{{ search_backend.details.matching_embedding_count|default("not-loaded") }}</dd>
+          </dl>
+        </article>
+
+        <article class="panel">
+          <p class="eyebrow">数据源</p>
+          <h2>数据源状态</h2>
+          <dl class="kv">
+            <dt>data_root</dt><dd>{{ data_root }}</dd>
+            <dt>index_root</dt><dd>{{ index_root }}</dd>
+            <dt>evaluation</dt><dd>{{ evaluation_status.status }} · {{ evaluation_status.description }}</dd>
+          </dl>
+        </article>
       </section>
 
       <section class="panel">
-        <h2>数据源状态</h2>
-        <dl class="kv">
-          <dt>data_root</dt><dd>{{ data_root }}</dd>
-          <dt>index_root</dt><dd>{{ index_root }}</dd>
-          <dt>evaluation</dt><dd>{{ evaluation_status.status }} · {{ evaluation_status.description }}</dd>
-        </dl>
+        <p class="eyebrow">向量集合</p>
+        <h2>数据库向量集合</h2>
+        <ul class="compact-list">
+          {% for item in postgres_status.embedding_sets %}
+            <li>{{ item.provider }}/{{ item.model_name }}/{{ item.provider_version }}/{{ item.dimension }} · embeddings: {{ item.embedding_count }}</li>
+          {% else %}
+            <li>暂无可用向量集合。</li>
+          {% endfor %}
+        </ul>
       </section>
 
       <section class="split">
         <article class="panel">
           <h2>索引版本</h2>
           <ul class="compact-list">
-            {% for item in index_versions %}
-              <li>{{ item.index_version_key }} · {{ item.status }} · chunks: {{ item.chunk_count }}</li>
+            {% for item in postgres_status.index_versions %}
+              <li class="version-row">
+                <span><code>{{ item.version_key }}</code> · {{ item.status }} · chunks: {{ item.chunk_count }} · docs: {{ item.document_count }}</span>
+                <button type="button" class="ghost-button copy-version-button" data-version-key="{{ item.version_key }}">复制 key</button>
+              </li>
             {% else %}
-              <li>暂无索引版本。</li>
+              {% for item in index_versions %}
+                <li class="version-row">
+                  <span><code>{{ item.index_version_key }}</code> · {{ item.status }} · chunks: {{ item.chunk_count }}</span>
+                  <button type="button" class="ghost-button copy-version-button" data-version-key="{{ item.index_version_key }}">复制 key</button>
+                </li>
+              {% else %}
+                <li>暂无索引版本。</li>
+              {% endfor %}
             {% endfor %}
           </ul>
         </article>
@@ -90,5 +268,57 @@
         </ul>
       </section>
     </main>
+    <script>
+      const resultBox = document.querySelector("#admin-action-result");
+
+      function formPayload(form) {
+        const payload = {};
+        for (const [key, value] of new FormData(form).entries()) {
+          if (value === "") continue;
+          if (key === "embedding_dimension" || key === "embedding_batch_size") {
+            payload[key] = Number(value);
+          } else if (key.startsWith("max_") || key === "top_k") {
+            payload[key] = Number(value);
+          } else {
+            payload[key] = value;
+          }
+        }
+        return payload;
+      }
+
+      document.querySelectorAll(".admin-action-form").forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const endpoint = form.dataset.endpoint;
+          if (!endpoint || !resultBox) return;
+          resultBox.textContent = "执行中：" + endpoint;
+          try {
+            const response = await fetch(endpoint, {
+              method: form.dataset.method || "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Role": "it-admin",
+              },
+              body: JSON.stringify(formPayload(form)),
+            });
+            const body = await response.json();
+            resultBox.textContent = response.ok
+              ? "执行成功：" + JSON.stringify(body.next_steps || body.result || body)
+              : "执行失败：" + (body.detail || response.statusText);
+          } catch (error) {
+            resultBox.textContent = "执行失败：" + error;
+          }
+        });
+      });
+
+      document.querySelectorAll(".copy-version-button").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const key = button.dataset.versionKey || "";
+          if (!key) return;
+          await navigator.clipboard.writeText(key);
+          if (resultBox) resultBox.textContent = "已复制 index_version_key：" + key;
+        });
+      });
+    </script>
   </body>
 </html>

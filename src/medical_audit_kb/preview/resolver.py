@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from openpyxl import load_workbook  # type: ignore[import-untyped]
+from openpyxl import load_workbook
 from pypdf import PdfReader
 
 TEXT_FILE_SUFFIXES = {".md", ".txt"}
@@ -161,11 +161,7 @@ class PreviewResolver:
             raise PreviewResolutionError(f"xlsx row not found: {row_number}")
 
         cells = tuple("" if value is None else str(value).strip() for value in values)
-        preview_text = "\n".join(
-            f"{index + 1}: {cell}"
-            for index, cell in enumerate(cells)
-            if cell
-        )
+        preview_text = "\n".join(f"{index + 1}: {cell}" for index, cell in enumerate(cells) if cell)
         return PreviewResult(
             source_path=source_path,
             media_type=_media_type(source_path),

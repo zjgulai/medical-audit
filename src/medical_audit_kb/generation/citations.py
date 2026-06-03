@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
@@ -62,6 +63,7 @@ def build_citations(
     results: tuple[HybridSearchResult, ...],
     *,
     max_snippet_chars: int = DEFAULT_SNIPPET_CHARS,
+    focus_terms: Sequence[str] = (),
 ) -> tuple[Citation, ...]:
     citations: list[Citation] = []
     for index, result in enumerate(results, start=1):
@@ -72,7 +74,11 @@ def build_citations(
                 evidence_type=evidence_type_for_source_collection(source_collection),
                 source_collection=source_collection,
                 chunk_id=result.chunk.chunk_id,
-                snippet=_snippet(result.chunk.text, max_snippet_chars=max_snippet_chars),
+                snippet=_snippet(
+                    result.chunk.text,
+                    max_snippet_chars=max_snippet_chars,
+                    focus_terms=focus_terms,
+                ),
                 locator=result.chunk.locator,
                 index_version_key=result.chunk.index_version_key,
                 source_package_version_key=result.chunk.source_package_version_key,
@@ -87,9 +93,7 @@ def group_citations(citations: tuple[Citation, ...]) -> tuple[CitationGroup, ...
     groups: list[CitationGroup] = []
     for evidence_type in EVIDENCE_ORDER:
         grouped = tuple(
-            citation
-            for citation in citations
-            if citation.evidence_type == evidence_type
+            citation for citation in citations if citation.evidence_type == evidence_type
         )
         if not grouped:
             continue
@@ -122,8 +126,40 @@ def _source_collection_from_metadata(metadata: dict[str, object]) -> SourceColle
     return SourceCollection(value)
 
 
-def _snippet(text: str, *, max_snippet_chars: int) -> str:
+def _snippet(
+    text: str,
+    *,
+    max_snippet_chars: int,
+    focus_terms: Sequence[str] = (),
+) -> str:
     normalized = re.sub(r"\s+", " ", text).strip()
     if len(normalized) <= max_snippet_chars:
         return normalized
+    focus_index = _focus_index(normalized, focus_terms)
+    if focus_index is not None:
+        return _focused_snippet(normalized, focus_index, max_snippet_chars=max_snippet_chars)
     return f"{normalized[: max_snippet_chars - 1].rstrip()}…"
+
+
+def _focus_index(text: str, focus_terms: Sequence[str]) -> int | None:
+    for term in focus_terms:
+        if not term:
+            continue
+        index = text.find(term)
+        if index >= 0:
+            return index
+    return None
+
+
+def _focused_snippet(text: str, focus_index: int, *, max_snippet_chars: int) -> str:
+    context_before = min(24, max_snippet_chars // 4)
+    start = max(0, focus_index - context_before)
+    end = min(len(text), start + max_snippet_chars)
+    if end - start < max_snippet_chars:
+        start = max(0, end - max_snippet_chars)
+    snippet = text[start:end].strip()
+    if start > 0:
+        snippet = f"…{snippet.lstrip()}"
+    if end < len(text):
+        snippet = f"{snippet.rstrip()}…"
+    return snippet

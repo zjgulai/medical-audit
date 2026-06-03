@@ -5,6 +5,7 @@
 *.pyo
 *.log
 *.tmp
+*.pem
 *.uploading.cfg
 
 .idea/
@@ -21,6 +22,10 @@ coverage/
 __pycache__/
 
 tmp/
+
+# Deployment secrets stay on the target host, never in git.
+configs/deploy/tencent-cloud/*.env
+!configs/deploy/tencent-cloud/*.env.example
 
 # Local knowledge source materials are large and may contain proprietary data.
 data/*

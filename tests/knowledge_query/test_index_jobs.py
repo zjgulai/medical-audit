@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from openpyxl import Workbook
+from pytest import MonkeyPatch
 
 from medical_audit_kb.domain.constants import IndexJobType
 from medical_audit_kb.indexing.index_jobs import (
@@ -28,7 +29,7 @@ def test_full_rebuild_outputs_version_and_file_statistics(tmp_path: Path) -> Non
     assert result.summary.discovered_file_count == 3
     assert result.summary.index_candidate_file_count == 2
     assert result.summary.indexed_file_count == 2
-    assert result.summary.chunk_count == 3
+    assert result.summary.chunk_count == 2
     assert result.summary.pending_file_count == 1
     assert result.summary.failed_file_count == 0
     assert result.summary.added_file_count == 2
@@ -151,6 +152,34 @@ def test_pipeline_counts_failed_and_pending_files(tmp_path: Path) -> None:
     assert result.pending_files[0].relative_path == "风险负面清单/scan.png"
 
 
+def test_pipeline_isolates_unexpected_chunking_failure(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "医保目录" / "catalog.md", "# 目录\n医保目录内容")
+
+    def fail_chunking(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("bad chunk")
+
+    monkeypatch.setattr(
+        "medical_audit_kb.ingestion.pipeline.chunk_extraction_result",
+        fail_chunking,
+    )
+
+    result = KnowledgeIndexPipeline().run_full_rebuild(
+        source_root,
+        package_version_key="failure-package",
+    )
+
+    assert result.summary.discovered_file_count == 1
+    assert result.summary.index_candidate_file_count == 1
+    assert result.summary.indexed_file_count == 0
+    assert result.summary.failed_file_count == 1
+    assert result.failed_files[0].relative_path == "医保目录/catalog.md"
+    assert "bad chunk" in result.failed_files[0].error_summary
+
+
 def _write_text(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -167,6 +196,7 @@ def _write_xlsx(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
     worksheet = workbook.active
+    assert worksheet is not None
     worksheet.title = "规则"
     worksheet.append(["规则编码", "规则名称"])
     worksheet.append(["R001", "超量开药"])
