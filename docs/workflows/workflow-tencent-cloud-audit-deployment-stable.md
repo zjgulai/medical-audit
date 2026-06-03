@@ -1,0 +1,381 @@
+---
+title: 腾讯云 AuditScope 知识库网站部署工作流
+doc_type: workflow
+module: deployment
+topic: tencent-cloud-audit-lute-tlz-dddd
+status: stable
+created: 2026-06-03
+updated: 2026-06-03
+owner: self
+source: human+ai
+---
+
+# 腾讯云 AuditScope 知识库网站部署工作流
+
+## 1. 目标
+
+将当前知识库网站部署到腾讯云轻量服务器：
+
+- 服务器：`101.34.52.232`
+- 主机名：`VM-0-16-ubuntu`
+- 用户：`ubuntu`
+- 域名：`audit.lute-tlz-dddd.top`
+- 应用：`AuditScope 医保审核对话审证台`
+
+部署边界：
+
+- 新建独立 Docker Compose project：`medical-audit`。
+- 新建独立 PostgreSQL/pgvector：`medical_audit_pg`。
+- 新建独立 Docker volume：`medical_audit_pgdata`。
+- 新建独立内部网络：`medical_audit_internal`。
+- 不复用 `voc_bi_pg`、`promptforge_mysql` 或 AI Video 数据库。
+- 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
+
+## 2. 当前服务器事实
+
+已核验：
+
+- `audit.lute-tlz-dddd.top` A 记录指向 `101.34.52.232`。
+- Docker 已安装：`Docker 26.1.3`，`Docker Compose v2.27.1`。
+- 当前公网入口容器：`ai_video_nginx`，占用 `80/443`。
+- 现有业务容器包括 `promptforge_app`、`voc_superset`、`ai_video_frontend`、`ai_video_backend`。
+- 当前证书 `/etc/letsencrypt/live/lute-tlz-dddd.top/fullchain.pem` 已包含 `audit.lute-tlz-dddd.top`。
+- 服务器磁盘约 `178G`，剩余约 `107G`。
+- 内存约 `7.3G`，可用约 `4.7G`。
+- Swap `1G` 已满，导入 pgvector 数据时必须避免并发高负载。
+
+## 3. 已完成的隔离环境
+
+已在远端创建：
+
+- `/opt/medical-audit/`
+- `/opt/medical-audit/app/configs/deploy/tencent-cloud/`
+- `/opt/medical-audit/backups/`
+- `/opt/medical-audit/tmp/`
+- Docker network：`medical_audit_internal`
+- Docker volume：`medical_audit_pgdata`
+- PostgreSQL/pgvector 容器：`medical_audit_pg`
+
+已执行 schema 初始化：
+
+- `pgcrypto` extension 已存在。
+- `vector` extension 已存在。
+- public schema 当前表数量：`10`。
+
+已完成公网发布：
+
+- `medical_audit_app` 已启动，监听宿主机 `127.0.0.1:18080`，不直接暴露公网端口。
+- `medical_audit_pg` 使用独立 volume `medical_audit_pgdata`，不复用其它项目数据库。
+- `full-rebuild-20260603085815` 已激活为 active index，`full-rebuild-20260531142344` 已变为 inactive rollback target。
+- `ai_video_nginx` 已加入 `audit.lute-tlz-dddd.top` HTTPS 反代块。
+- Let's Encrypt 证书已扩展 SAN，包含 `audit.lute-tlz-dddd.top`。
+- 公网入口：`https://audit.lute-tlz-dddd.top/pages/chat`。
+
+## 4. 部署资产
+
+项目内新增生产部署资产：
+
+- `configs/deploy/tencent-cloud/Dockerfile`
+- `configs/deploy/tencent-cloud/docker-compose.prod.yaml`
+- `configs/deploy/tencent-cloud/medical-audit.env.example`
+- `configs/deploy/tencent-cloud/nginx-audit-server.conf`
+- `.dockerignore`
+
+密钥策略：
+
+- `ai_video.pem` 只用于本地 SSH，不进入镜像。
+- `KIMI_API_KEY` 只允许写入远端 `medical-audit.env`，权限必须为 `600`。
+- 任何 `*.env`、`*.pem`、`*.key` 不允许进入 git。
+
+## 5. 已执行上线记录
+
+### 5.1 数据导入结果
+
+远端 pgvector 已完成导入和激活：
+
+- active `source_documents = 486`
+- active `document_chunks = 48985`
+- active `chunk_embeddings = 48985`
+- total `source_documents = 972`
+- total `document_chunks = 97970`
+- total `chunk_embeddings = 97970`
+- `failed_files = 0`
+- `pending_files = 13`
+- `index_version_status = active`
+- `active_index_version_key = full-rebuild-20260531142344`
+
+说明：
+
+- `pending_files = 13` 表示索引构建时仍有待处理源文件记录，不阻断当前 active index 使用。
+- 本次远端只同步 active index 实际引用的 486 个源文件，避免长中文文件名导致 rsync 失败。
+- 完整历史源文件仍保留在本地 `data/`，远端当前服务依赖 active source subset 和 pgvector 数据库。
+
+### 5.2 运行环境
+
+远端运行状态：
+
+- Compose project：`medical-audit`
+- App container：`medical_audit_app`
+- Database container：`medical_audit_pg`
+- Public proxy：`ai_video_nginx`
+- App local endpoint：`http://127.0.0.1:18080`
+- Public endpoint：`https://audit.lute-tlz-dddd.top`
+
+搜索后端 ready 门槛已通过：
+
+- `backend = postgres`
+- `ready = true`
+- `embedding_model = kimi-for-coding`
+- `embedding_dimension = 1024`
+- `matching_embedding_count = 48985`
+
+### 5.3 证书与反代
+
+已执行：
+
+1. 备份 `/opt/ai-video/deploy/lighthouse/nginx.conf` 到 `/opt/medical-audit/backups/`。
+2. 将 `audit.lute-tlz-dddd.top` 加入 80 端口 `server_name`。
+3. 通过 ACME challenge webroot 探测。
+4. 使用 certbot `--expand` 扩展 `lute-tlz-dddd.top` 证书 SAN。
+5. 将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 合并进 nginx `http` 块。
+6. 执行 `nginx -t` 并 reload `ai_video_nginx`。
+
+## 6. 后续维护流程
+
+### 6.1 代码与资产同步
+
+1. 在本地完成全量验证。
+2. 将当前工作树同步到 `/opt/medical-audit/app/`。
+3. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
+4. 同步 `data/医保审核前期资料`，用于原文预览。
+5. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
+
+### 6.2 数据库导入
+
+1. 确认 `medical_audit_pg` healthy。
+2. 执行 `pgvector-import-plan`，确认 artifact 完整。
+3. 执行 `pgvector-import --execute` 写入 `candidate`。
+4. 执行 `medical-audit-kb index-activate` 激活目标版本。
+5. 查询数据库计数：
+   - `source_documents = 486`
+   - `document_chunks = 48985`
+   - `chunk_embeddings = 48985`
+   - `failed_files = 0`
+   - `pending_files = 13`
+
+### 6.3 应用启动
+
+1. 在 `/opt/medical-audit/app/configs/deploy/tencent-cloud/medical-audit.env` 写入运行环境变量。
+2. `docker compose -f docker-compose.prod.yaml --env-file medical-audit.env build app`
+3. `docker compose -f docker-compose.prod.yaml --env-file medical-audit.env up -d app`
+4. 应用容器启动后必须自动加载 PostgreSQL search backend。
+5. 后端 ready 门槛：
+   - `backend = postgres`
+   - `ready = true`
+   - `matching_embedding_count = 48985`
+
+### 6.4 nginx 与证书
+
+1. 备份 `/opt/ai-video/deploy/lighthouse/nginx.conf`。
+2. 先把 `audit.lute-tlz-dddd.top` 加入 80 端口 `server_name`，保证 ACME challenge 可达。
+3. 执行 `nginx -t`。
+4. reload `ai_video_nginx`。
+5. 使用 certbot webroot 扩展 SAN，加入 `audit.lute-tlz-dddd.top`。
+6. 将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 中的 server block 合并到 nginx `http` 块。
+7. 再次执行 `nginx -t`。
+8. reload `ai_video_nginx`。
+
+## 7. 测试计划
+
+### 7.1 服务器内部测试
+
+```bash
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env ps
+
+curl -fsS http://127.0.0.1:18080/health
+curl -fsS http://127.0.0.1:18080/index/search-backend
+curl -fsS 'http://127.0.0.1:18080/pages/chat?question=医保基金审核依据'
+```
+
+### 7.2 容器网络测试
+
+```bash
+docker exec ai_video_nginx wget -qO- http://medical_audit_app:8000/health
+docker exec ai_video_nginx wget -qO- http://medical_audit_app:8000/index/search-backend
+```
+
+### 7.3 公网域名测试
+
+```bash
+curl -I https://audit.lute-tlz-dddd.top/health
+curl -fsS https://audit.lute-tlz-dddd.top/index/search-backend
+curl -fsS 'https://audit.lute-tlz-dddd.top/pages/chat?question=医保基金审核依据'
+```
+
+### 7.4 功能 smoke
+
+必须覆盖：
+
+- `/pages/chat` 能返回对话审证页。
+- `/pages/query` 能返回查询工作台。
+- `/pages/review-tasks` 能返回复核任务台。
+- `/pages/index-admin` 能返回索引管理页。
+- 对话查询返回引用。
+- 引用可打开 `/pages/preview/{chunk_id}`。
+- 单轮底稿可导出 Markdown/JSON。
+- 复核任务可创建、更新、导出。
+
+### 7.5 视觉基线
+
+公网切换后执行：
+
+```bash
+uv run python scripts/capture-chat-workbench-visual-baseline.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --report tmp/outputs/knowledge-query-chat-visual-baseline-prod.json
+```
+
+通过条件：
+
+- `status = pass`
+- desktop/mobile 均无横向溢出。
+- 关键文案无缺失。
+
+### 7.6 生产 E2E smoke
+
+公网部署、证书更新、依赖重启或知识库索引切换后执行：
+
+```bash
+uv run python scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --report tmp/outputs/production-e2e-smoke-latest.json
+```
+
+覆盖范围：
+
+- TLS 证书 SAN。
+- `/health` 和 `/index/search-backend`。
+- `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin`。
+- `/query` 引用型回答。
+- `/pages/preview/{chunk_id}` 原文预览。
+- `/pages/chat/export` 底稿导出。
+- 复核任务创建、状态更新、导出。
+- 现有 `kg`、`video`、`voc`、主域名回归。
+
+只读巡检使用：
+
+```bash
+uv run python scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --skip-review-write \
+  --report tmp/outputs/production-e2e-smoke-readonly-latest.json
+```
+
+### 7.7 增量更新 dry-run 演练
+
+新增源文档后，先只生成增量计划，不直接构建或激活索引：
+
+```bash
+medical-audit-kb index-incremental-plan \
+  --source-root /opt/medical-audit/app/data/医保审核前期资料 \
+  --package-version-key source-package-$(date +%Y%m%d%H%M%S) \
+  --database-url-env MEDICAL_AUDIT_KB_DATABASE_URL \
+  --output /opt/medical-audit/app/tmp/outputs/knowledge-query-incremental-plan-latest.md \
+  --json-output /opt/medical-audit/app/tmp/outputs/knowledge-query-incremental-plan-latest.json
+```
+
+通过条件：
+
+- `ready_for_incremental_build = true`。
+- `failed_files = 0`。
+- `added_files`、`modified_files`、`deleted_files` 与预期源文件变更一致。
+- 不改变 `index_versions.active`、`source_documents`、`document_chunks`、`chunk_embeddings` 当前计数。
+
+## 8. 验收标准
+
+当前已通过的验收：
+
+- `https://audit.lute-tlz-dddd.top/health` 返回 `200`。
+- TLS 证书 SAN 包含 `audit.lute-tlz-dddd.top`。
+- `/index/search-backend` 返回 `ready=true`。
+- `matching_embedding_count=48985`。
+- `/pages/chat` 页面可访问，并能渲染带引用的查询结果。
+- `/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
+- `/query` 公网调用返回 `confidence=high`、`citation_count=3`、`basis_group_count=2`。
+- `/pages/preview/{chunk_id}` 可打开首条引用原文预览。
+- `/pages/chat/export?format=markdown` 可导出带引用的审计底稿。
+- `review-task-0001` 已完成状态更新与 JSON 导出 smoke。
+- `scripts/run-production-e2e-smoke.py` 完整生产 E2E 已通过，最新任务样本为 `review-task-0002`。
+- 视觉基线脚本通过 desktop/mobile 检查，未发现横向溢出或关键文案缺失。
+- 增量更新 dry-run 已通过，486 个 active source files 全部 `unchanged`，新增/修改/删除/失败均为 `0`。
+- 初始索引回滚就绪审计已执行，旧状态下生产库 `active=1`、`inactive=0`、`rollback_target=0`，真实 rollback 被安全阻止且数据库计数未变化。
+- candidate 发布就绪审计已执行：active-key artifact 被 `candidate-index-version-key-matches-active` 阻断，旧 candidate `full-rebuild-20260603081846` 被 48,985 个 active chunk id 跨 source package 碰撞阻断，数据库计数均未变化。
+- package-aware chunk id 修复已部署到生产镜像，新 fixed candidate `full-rebuild-20260603085815` 构建完成，`embedding_reused_count=48985`，`embedding_created_count=0`，pending/failed 均为 `0`。
+- fixed candidate 的 `pgvector-import-plan` 和 `pgvector-import` dry-run 通过，发布就绪审计返回 `status=pass`、`safe_to_execute_candidate_write=true`、`chunk_collision_check.collision_count=0`。
+- 受控 candidate 写入已执行，生产库曾包含 active `full-rebuild-20260531142344` 和 candidate `full-rebuild-20260603085815`；总计 `source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
+- 受控 `index-activate` 已执行，当前 active 为 `full-rebuild-20260603085815`，旧 active `full-rebuild-20260531142344` 已变为 inactive。
+- 线上 PostgreSQL search backend 已重载，`/index/search-backend` 返回 `matching_embedding_count=48985`，查询引用版本为 `full-rebuild-20260603085815`。
+- candidate DB vector self-query 通过，candidate PostgreSQL 固定 52 case 检索评测通过，candidate fallback 答案评测 8 case 全部通过。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-fix-20260603` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`，复核任务写入流已跳过。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-write-20260603` 通过；证明 candidate 写入后线上 active 查询未回归。
+- 激活后线上综合评测 run `45f56a84-c4a8-4ad3-8450-e2b1cce1b786` 通过：52 case 检索、8 case fallback 答案和 UI smoke 均为 `pass`。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-activation-20260603` 通过；首条引用已来自新 active chunk。
+- rollback readiness `knowledge-query-index-rollback-readiness-after-activation-20260603` 通过，`rollback_target_count=1`。
+- 真实 rollback rehearsal 已执行：`knowledge-query-index-rollback-rehearsal-to-20260531-20260603` 将 active 临时切回 `full-rebuild-20260531142344`，reload 后查询引用版本、生产只读 E2E 和线上综合评测均通过。
+- rehearsal 已切回新 active：`knowledge-query-index-rollback-rehearsal-return-to-20260603-20260603` 将 active 恢复为 `full-rebuild-20260603085815`，reload 后查询引用版本、生产只读 E2E、线上综合评测和 rollback readiness 均通过。
+- 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
+
+部署验收必须同时满足：
+
+- `https://audit.lute-tlz-dddd.top/health` 返回 `200`。
+- TLS 证书 SAN 包含 `audit.lute-tlz-dddd.top`。
+- `/index/search-backend` 返回 `ready=true`。
+- `matching_embedding_count=48985`。
+- `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
+- 固定 smoke question 返回至少 1 条引用。
+- 原文预览可打开。
+- 底稿导出和复核任务导出可用。
+- 现有域名 `kg`、`video`、`voc`、`person`、`mkt` 不出现回归。
+- `docker ps` 中原有容器持续 healthy 或保持部署前状态。
+
+## 9. 待补强事项
+
+- `pending_files = 13` 已完成分类：`11` 个图片需 OCR 或替换为文本/xlsx 原件，`2` 个压缩包需解包、去重和范围审查。
+- 当前 active source subset 的增量 dry-run 为 `pending_files = 0`，但数据库历史 pending 记录仍为 `13`，两者含义不同。
+- 修复前生成的旧 candidate artifact 仍禁止写入；只有 package-aware chunk id 修复后生成并通过 readiness gate 的 fixed candidate 才允许进入受控 candidate 写入步骤。
+- 当前 fixed candidate 已完成受控写入、候选评测、active 激活、后置综合评测、生产 smoke 和真实 rollback rehearsal。
+- rehearsal 后最终状态为 active `full-rebuild-20260603085815`、inactive `full-rebuild-20260531142344`。
+- 真实 `index-rollback` 演练尚未执行；当前已有 inactive 目标 `full-rebuild-20260531142344`，执行前必须重新确认业务窗口和备份路径。
+- 当前远端只同步 active source subset；如果后续要求远端具备完整源文件再处理能力，需要先解决超长中文文件名归档策略。
+- `KIMI_API_KEY` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret，降低误操作风险。
+- nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
+
+## 10. 回滚方案
+
+应用回滚：
+
+```bash
+cd /opt/medical-audit/app/configs/deploy/tencent-cloud
+docker compose -f docker-compose.prod.yaml --env-file medical-audit.env stop app
+```
+
+nginx 回滚：
+
+1. 恢复部署前备份的 `/opt/ai-video/deploy/lighthouse/nginx.conf`。
+2. `docker exec ai_video_nginx nginx -t`
+3. `docker exec ai_video_nginx nginx -s reload`
+
+数据库保留：
+
+- 默认保留 `medical_audit_pgdata` 以便排障。
+- 如需彻底清理，必须先确认用户同意，再删除 volume。
+
+## 11. 不允许事项
+
+- 不复用其它项目数据库。
+- 不把 `KIMI_API_KEY` 写入 git。
+- 不把 `data/` 打进镜像。
+- 不直接覆盖 nginx 配置而不备份。
+- 不在证书 SAN 未包含 `audit` 时声称 HTTPS 已完成。
+- 不以 HTTP `200` 作为唯一验收标准，必须检查页面内容、后端 ready 和引用链。

@@ -1,0 +1,88 @@
+name: medical-audit
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: medical_audit_pg
+    restart: unless-stopped
+    env_file:
+      - medical-audit.env
+    expose:
+      - "5432"
+    volumes:
+      - medical_audit_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - medical_audit_internal
+    logging: *default-logging
+
+  app:
+    build:
+      context: ../../..
+      dockerfile: configs/deploy/tencent-cloud/Dockerfile
+    image: medical-audit-kb:prod
+    container_name: medical_audit_app
+    restart: unless-stopped
+    env_file:
+      - medical-audit.env
+    environment:
+      MEDICAL_AUDIT_KB_HOST: 0.0.0.0
+      MEDICAL_AUDIT_KB_PORT: "8000"
+      MEDICAL_AUDIT_KB_API_URL: http://127.0.0.1:8000
+      MEDICAL_AUDIT_KB_CONFIG: /app/configs/knowledge-query-engine-dev.yaml
+      MEDICAL_AUDIT_KB_DATA_ROOT: /app/data/医保审核前期资料
+      MEDICAL_AUDIT_KB_INDEX_ROOT: /app/tmp/knowledge-query-indexes
+      MEDICAL_AUDIT_KB_LOG_LEVEL: warning
+      MEDICAL_AUDIT_KB_LOAD_BACKEND: "1"
+      KIMI_API_KEY_ENV: KIMI_API_KEY
+      KIMI_EMBEDDING_PROVIDER: openai
+      KIMI_EMBEDDING_MODEL: kimi-for-coding
+      KIMI_EMBEDDING_DIMENSION: "1024"
+      KIMI_EMBEDDING_BASE_URL: https://api.kimi.com/coding/v1
+      KIMI_EMBEDDING_BATCH_SIZE: "16"
+    ports:
+      - "127.0.0.1:18080:8000"
+    volumes:
+      - ../../../data:/app/data:ro
+      - ../../../tmp/knowledge-query-indexes:/app/tmp/knowledge-query-indexes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      medical_audit_internal:
+      lighthouse_ai_video_net:
+        aliases:
+          - medical_audit_app
+    logging: *default-logging
+
+volumes:
+  medical_audit_pgdata:
+    name: medical_audit_pgdata
+
+networks:
+  medical_audit_internal:
+    name: medical_audit_internal
+    driver: bridge
+  lighthouse_ai_video_net:
+    external: true
