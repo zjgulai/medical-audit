@@ -186,6 +186,16 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_postgres.add_argument("--max-cases", type=int, default=25)
     evaluate_postgres.add_argument("--top-k", type=int, default=5)
     evaluate_postgres.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    evaluate_postgres.add_argument(
+        "--index-version-status",
+        choices=("active", "candidate", "inactive"),
+        default="active",
+        help="PostgreSQL index version status to evaluate. Defaults to active.",
+    )
+    evaluate_postgres.add_argument(
+        "--index-version-key",
+        help="Optional exact index_versions.version_key to evaluate within the selected status.",
+    )
     _add_embedding_provider_args(evaluate_postgres)
 
     answer_evaluate = subparsers.add_parser(
@@ -368,6 +378,8 @@ def _evaluate_postgres_index(args: argparse.Namespace) -> int:
     search_engine = load_postgres_hybrid_search_engine(
         database_url=database_url,
         embedding_provider=embedding_provider,
+        index_version_status=args.index_version_status,
+        index_version_key=args.index_version_key,
     )
     cases = load_evaluation_cases(args.cases_file)[: args.max_cases]
     summary = evaluate_retrieval(
@@ -383,7 +395,10 @@ def _evaluate_postgres_index(args: argparse.Namespace) -> int:
             embedding_provider=embedding_provider.provider,
             embedding_model=embedding_provider.model_name,
             embedding_dimension=embedding_provider.dimension,
-            index_root=f"postgres:{args.database_url_env}",
+            index_root=(
+                f"postgres:{args.database_url_env}:"
+                f"{args.index_version_status}:{args.index_version_key or '*'}"
+            ),
         ),
     )
     if args.json_output is not None:

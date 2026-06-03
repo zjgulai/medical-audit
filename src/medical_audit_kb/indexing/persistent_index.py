@@ -14,6 +14,7 @@ from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingProvider,
+    EmbeddingVector,
 )
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
@@ -206,13 +207,14 @@ def _chunk_embedding_input(
     chunk: DocumentChunkCreate,
     summary: dict[str, object],
 ) -> ChunkEmbeddingInput:
-    chunk_id = _chunk_id(chunk)
+    source_package_version_key = str(summary["source_package_version_key"])
+    chunk_id = _chunk_id(chunk, source_package_version_key=source_package_version_key)
     metadata = {
         **chunk.metadata,
         "locator": chunk.locator,
         "source_path": str(chunk.locator.get("source_path", "")),
         "index_version_key": str(summary["index_version_key"]),
-        "source_package_version_key": str(summary["source_package_version_key"]),
+        "source_package_version_key": source_package_version_key,
         "title_path": chunk.title_path,
         "article_number": chunk.article_number,
         "page_number": chunk.page_number,
@@ -228,10 +230,10 @@ def _chunk_embedding_input(
     )
 
 
-def _chunk_id(chunk: DocumentChunkCreate) -> UUID:
+def _chunk_id(chunk: DocumentChunkCreate, *, source_package_version_key: str) -> UUID:
     return uuid5(
         PERSISTENT_CHUNK_NAMESPACE,
-        f"{chunk.source_document_id}:{chunk.chunk_index}:{chunk.locator}",
+        f"{source_package_version_key}:{chunk.source_document_id}:{chunk.chunk_index}:{chunk.locator}",
     )
 
 
@@ -281,15 +283,37 @@ def _write_embedding_records(
     provider: EmbeddingProvider,
     resume: bool,
 ) -> PersistentEmbeddingWriteResult:
-    existing_chunk_ids = (
-        _rewrite_reusable_embedding_records(path, chunks, provider=provider) if resume else set()
-    )
-    if not resume:
-        path.write_text("", encoding="utf-8")
+    reusable_vectors = _read_reusable_embedding_vectors(path, provider=provider) if resume else {}
+    path.write_text("", encoding="utf-8")
 
-    missing_chunks = tuple(chunk for chunk in chunks if chunk.chunk_id not in existing_chunk_ids)
+    missing_chunks: list[ChunkEmbeddingInput] = []
+    reused_count = 0
     created_count = 0
     with path.open("a", encoding="utf-8") as file:
+        for chunk in chunks:
+            reusable_vector = reusable_vectors.get(chunk.text)
+            if reusable_vector is None:
+                missing_chunks.append(chunk)
+                continue
+            file.write(
+                json.dumps(
+                    _embedding_record_payload(
+                        ChunkEmbeddingRecord(
+                            chunk_id=chunk.chunk_id,
+                            text=chunk.text,
+                            embedding=reusable_vector,
+                            provider=provider.provider,
+                            model_name=provider.model_name,
+                            provider_version=provider.provider_version,
+                            dimension=provider.dimension,
+                            metadata=chunk.metadata,
+                        )
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            reused_count += 1
         for batch in _chunk_batches(missing_chunks, _provider_batch_size_hint(provider)):
             records = _embedding_records_for_chunks(batch, provider=provider)
             for record in records:
@@ -297,36 +321,30 @@ def _write_embedding_records(
             created_count += len(records)
 
     return PersistentEmbeddingWriteResult(
-        embedding_count=len(existing_chunk_ids) + created_count,
-        reused_count=len(existing_chunk_ids),
+        embedding_count=reused_count + created_count,
+        reused_count=reused_count,
         created_count=created_count,
     )
 
 
-def _rewrite_reusable_embedding_records(
+def _read_reusable_embedding_vectors(
     path: Path,
-    chunks: Sequence[ChunkEmbeddingInput],
     *,
     provider: EmbeddingProvider,
-) -> set[UUID]:
+) -> dict[str, EmbeddingVector]:
     if not path.exists():
-        path.write_text("", encoding="utf-8")
-        return set()
+        return {}
 
-    current_chunk_ids = {chunk.chunk_id for chunk in chunks}
-    reusable_chunk_ids: set[UUID] = set()
-    temp_path = path.with_suffix(path.suffix + ".tmp")
-    with temp_path.open("w", encoding="utf-8") as output:
-        for row in _read_jsonl(path):
-            chunk_id = UUID(str(row.get("chunk_id", "")))
-            if chunk_id not in current_chunk_ids or chunk_id in reusable_chunk_ids:
-                continue
-            if not _embedding_row_matches_provider(row, provider):
-                continue
-            output.write(json.dumps(row, ensure_ascii=False) + "\n")
-            reusable_chunk_ids.add(chunk_id)
-    temp_path.replace(path)
-    return reusable_chunk_ids
+    reusable_vectors: dict[str, EmbeddingVector] = {}
+    for row in _read_jsonl(path):
+        if not _embedding_row_matches_provider(row, provider):
+            continue
+        text = row.get("text")
+        embedding = row.get("embedding")
+        if not isinstance(text, str) or not isinstance(embedding, list):
+            continue
+        reusable_vectors.setdefault(text, tuple(float(value) for value in embedding))
+    return reusable_vectors
 
 
 def _embedding_row_matches_provider(

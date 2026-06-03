@@ -49,10 +49,11 @@ def test_postgres_vector_index_queries_pgvector_and_maps_results(
     assert cursor.params is not None
     assert cursor.params[0] == "[1,0,0]"
     assert cursor.params[1:5] == ("openai", "kimi-for-coding", "v1", 3)
+    assert cursor.params[5] == "active"
     assert cursor.query is not None
     assert "JOIN source_documents sd ON sd.id = dc.source_document_id" in cursor.query
     assert "JOIN index_versions iv ON iv.source_package_version_id" in cursor.query
-    assert "iv.status = 'active'" in cursor.query
+    assert "iv.status = %s" in cursor.query
 
 
 def test_postgres_vector_index_validates_query_dimension() -> None:
@@ -96,7 +97,35 @@ def test_load_postgres_bm25_index_reads_document_chunks(
     assert cursor.query is not None
     assert "JOIN source_documents sd ON sd.id = dc.source_document_id" in cursor.query
     assert "JOIN index_versions iv ON iv.source_package_version_id" in cursor.query
-    assert "iv.status = 'active'" in cursor.query
+    assert "iv.status = %s" in cursor.query
+    assert cursor.params == ("active",)
+
+
+def test_postgres_indexes_can_target_candidate_version(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cursor = FakeCursor(rows=[])
+    monkeypatch.setattr(
+        "medical_audit_kb.retrieval.postgres_search.psycopg.connect",
+        lambda database_url: FakeConnection(cursor),
+    )
+    index = PostgresVectorIndex(
+        database_url="postgresql://user:pass@localhost/db",
+        provider="openai",
+        model_name="kimi-for-coding",
+        provider_version="v1",
+        dimension=3,
+        index_version_status="candidate",
+        index_version_key="full-rebuild-next",
+    )
+
+    index.search((1.0, 0.0, 0.0), top_k=1)
+
+    assert cursor.query is not None
+    assert "iv.status = %s" in cursor.query
+    assert "iv.version_key = %s" in cursor.query
+    assert cursor.params is not None
+    assert cursor.params[5:7] == ("candidate", "full-rebuild-next")
 
 
 class FakeConnection:

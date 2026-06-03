@@ -24,14 +24,19 @@ class PostgresVectorIndex:
         model_name: str,
         provider_version: str,
         dimension: int,
+        index_version_status: str = "active",
+        index_version_key: str | None = None,
     ) -> None:
         if dimension <= 0:
             raise ValueError("dimension must be positive")
+        _validate_index_version_status(index_version_status)
         self._database_url = _normalize_psycopg_database_url(database_url)
         self._provider = provider
         self._model_name = model_name
         self._provider_version = provider_version
         self._dimension = dimension
+        self._index_version_status = index_version_status
+        self._index_version_key = index_version_key
 
     def search(
         self,
@@ -55,6 +60,8 @@ class PostgresVectorIndex:
             model_name=self._model_name,
             provider_version=self._provider_version,
             dimension=self._dimension,
+            index_version_status=self._index_version_status,
+            index_version_key=self._index_version_key,
             fetch_k=_fetch_k_for_filters(top_k, filters),
         )
         results = tuple(_vector_search_result(row) for row in rows)
@@ -70,14 +77,22 @@ def load_postgres_hybrid_search_engine(
     database_url: str,
     embedding_provider: EmbeddingProvider,
     rerank_provider: RerankProvider | None = None,
+    index_version_status: str = "active",
+    index_version_key: str | None = None,
 ) -> HybridSearchEngine:
-    bm25_index = load_postgres_bm25_index(database_url)
+    bm25_index = load_postgres_bm25_index(
+        database_url,
+        index_version_status=index_version_status,
+        index_version_key=index_version_key,
+    )
     vector_index = PostgresVectorIndex(
         database_url=database_url,
         provider=embedding_provider.provider,
         model_name=embedding_provider.model_name,
         provider_version=embedding_provider.provider_version,
         dimension=embedding_provider.dimension,
+        index_version_status=index_version_status,
+        index_version_key=index_version_key,
     )
     return HybridSearchEngine(
         embedding_provider=embedding_provider,
@@ -87,22 +102,34 @@ def load_postgres_hybrid_search_engine(
     )
 
 
-def load_postgres_bm25_index(database_url: str) -> InMemoryBM25Index:
+def load_postgres_bm25_index(
+    database_url: str,
+    *,
+    index_version_status: str = "active",
+    index_version_key: str | None = None,
+) -> InMemoryBM25Index:
+    _validate_index_version_status(index_version_status)
     index = InMemoryBM25Index()
+    version_key_filter = "AND iv.version_key = %s" if index_version_key else ""
+    params: tuple[object, ...] = (
+        (index_version_status, index_version_key) if index_version_key else (index_version_status,)
+    )
     with (
         psycopg.connect(_normalize_psycopg_database_url(database_url)) as connection,
         connection.cursor() as cursor,
     ):
         cursor.execute(
-            """
+            f"""
             SELECT dc.id, dc.text, dc.metadata
             FROM document_chunks dc
             JOIN source_documents sd ON sd.id = dc.source_document_id
             JOIN index_versions iv ON iv.source_package_version_id = sd.source_package_version_id
-            WHERE iv.status = 'active'
+            WHERE iv.status = %s
               AND sd.status = 'indexed'
+              {version_key_filter}
             ORDER BY dc.id
-            """
+            """,
+            params,
         )
         index.upsert(
             tuple(
@@ -125,11 +152,38 @@ def _query_vector_rows(
     model_name: str,
     provider_version: str,
     dimension: int,
+    index_version_status: str,
+    index_version_key: str | None,
     fetch_k: int,
 ) -> tuple[tuple[object, ...], ...]:
+    version_key_filter = "AND iv.version_key = %s" if index_version_key else ""
+    params: tuple[object, ...] = (
+        (
+            vector_literal,
+            provider,
+            model_name,
+            provider_version,
+            dimension,
+            index_version_status,
+            index_version_key,
+            vector_literal,
+            fetch_k,
+        )
+        if index_version_key
+        else (
+            vector_literal,
+            provider,
+            model_name,
+            provider_version,
+            dimension,
+            index_version_status,
+            vector_literal,
+            fetch_k,
+        )
+    )
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
         cursor.execute(
-            """
+            f"""
             SELECT
                 ce.chunk_id,
                 dc.text,
@@ -147,20 +201,13 @@ def _query_vector_rows(
               AND ce.model_name = %s
               AND ce.provider_version = %s
               AND ce.dimension = %s
-              AND iv.status = 'active'
+              AND iv.status = %s
               AND sd.status = 'indexed'
+              {version_key_filter}
             ORDER BY ce.embedding <=> %s::vector
             LIMIT %s
             """,
-            (
-                vector_literal,
-                provider,
-                model_name,
-                provider_version,
-                dimension,
-                vector_literal,
-                fetch_k,
-            ),
+            params,
         )
         return tuple(cursor.fetchall())
 
@@ -209,6 +256,11 @@ def _metadata_matches(
 
 def _normalize_psycopg_database_url(database_url: str) -> str:
     return database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+
+def _validate_index_version_status(status: str) -> None:
+    if status not in {"active", "candidate", "inactive"}:
+        raise ValueError("index_version_status must be active, candidate, or inactive")
 
 
 def _vector_literal(value: EmbeddingVector) -> str:

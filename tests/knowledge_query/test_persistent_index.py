@@ -1,5 +1,7 @@
+import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from medical_audit_kb.indexing.embeddings import EmbeddingVector
 from medical_audit_kb.indexing.persistent_index import (
@@ -108,6 +110,70 @@ def test_build_persistent_index_resume_reuses_existing_embeddings(tmp_path: Path
     assert second_provider.embedded_text_count == 1
 
 
+def test_build_persistent_index_uses_package_aware_chunk_ids(tmp_path: Path) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
+    first_index_root = tmp_path / "index-a"
+    second_index_root = tmp_path / "index-b"
+
+    build_persistent_index(
+        source_root,
+        first_index_root,
+        package_version_key="package-a",
+        embedding_provider=CountingEmbeddingProvider(),
+    )
+    build_persistent_index(
+        source_root,
+        second_index_root,
+        package_version_key="package-b",
+        embedding_provider=CountingEmbeddingProvider(),
+    )
+
+    first_chunk = _read_first_jsonl(first_index_root / CHUNKS_FILE)
+    second_chunk = _read_first_jsonl(second_index_root / CHUNKS_FILE)
+    first_metadata = cast(dict[str, object], first_chunk["metadata"])
+    second_metadata = cast(dict[str, object], second_chunk["metadata"])
+    assert first_chunk["chunk_id"] != second_chunk["chunk_id"]
+    assert first_metadata["source_package_version_key"] == "package-a"
+    assert second_metadata["source_package_version_key"] == "package-b"
+
+
+def test_build_persistent_index_resume_reuses_vectors_across_package_versions(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
+    index_root = tmp_path / "index"
+    first_provider = CountingEmbeddingProvider()
+    second_provider = CountingEmbeddingProvider()
+
+    first_result = build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-a",
+        embedding_provider=first_provider,
+    )
+    first_embedding = _read_first_jsonl(index_root / EMBEDDINGS_FILE)
+    second_result = build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-b",
+        embedding_provider=second_provider,
+        resume=True,
+    )
+    second_embedding = _read_first_jsonl(index_root / EMBEDDINGS_FILE)
+
+    assert first_result.embedding_count == 1
+    assert second_result.embedding_count == 1
+    assert second_result.summary["embedding_reused_count"] == 1
+    assert second_result.summary["embedding_created_count"] == 0
+    assert second_provider.embedded_text_count == 0
+    assert first_embedding["chunk_id"] != second_embedding["chunk_id"]
+    assert first_embedding["embedding"] == second_embedding["embedding"]
+    second_metadata = cast(dict[str, object], second_embedding["metadata"])
+    assert second_metadata["source_package_version_key"] == "package-b"
+
+
 class CountingEmbeddingProvider:
     provider = "test"
     model_name = "counting"
@@ -127,3 +193,12 @@ def _write_text(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def _read_first_jsonl(path: Path) -> dict[str, object]:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            payload = json.loads(line)
+            assert isinstance(payload, dict)
+            return cast(dict[str, object], payload)
+    raise AssertionError(f"empty jsonl file: {path}")

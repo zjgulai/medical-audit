@@ -191,9 +191,15 @@ cases:
         encoding="utf-8",
     )
     monkeypatch.setenv("TEST_DATABASE_URL", "postgresql://user:pass@localhost/db")
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_load_postgres_hybrid_search_engine(**kwargs: object) -> EmptySearchEngine:
+        captured_kwargs.update(kwargs)
+        return EmptySearchEngine()
+
     monkeypatch.setattr(
         "medical_audit_kb.cli.load_postgres_hybrid_search_engine",
-        lambda **kwargs: EmptySearchEngine(),
+        fake_load_postgres_hybrid_search_engine,
     )
 
     exit_code = main(
@@ -211,12 +217,18 @@ cases:
             str(cases_file),
             "--max-cases",
             "1",
+            "--index-version-status",
+            "candidate",
+            "--index-version-key",
+            "full-rebuild-next",
         ]
     )
 
     assert exit_code == 0
     assert "知识库真实资料检索评测报告" in evaluation_report.read_text(encoding="utf-8")
     assert '"case_count": 1' in evaluation_json.read_text(encoding="utf-8")
+    assert captured_kwargs["index_version_status"] == "candidate"
+    assert captured_kwargs["index_version_key"] == "full-rebuild-next"
 
 
 def test_evaluate_answers_command_writes_answer_quality_outputs(tmp_path: Path) -> None:
