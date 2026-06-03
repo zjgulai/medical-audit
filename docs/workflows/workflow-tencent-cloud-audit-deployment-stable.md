@@ -102,7 +102,7 @@ source: human+ai
 - `failed_files = 0`
 - `pending_files = 13`
 - `index_version_status = active`
-- `active_index_version_key = full-rebuild-20260531142344`
+- `active_index_version_key = full-rebuild-20260603085815`
 
 说明：
 
@@ -304,8 +304,8 @@ medical-audit-kb index-incremental-plan \
 - `/query` 公网调用返回 `confidence=high`、`citation_count=3`、`basis_group_count=2`。
 - `/pages/preview/{chunk_id}` 可打开首条引用原文预览。
 - `/pages/chat/export?format=markdown` 可导出带引用的审计底稿。
-- `review-task-0001` 已完成状态更新与 JSON 导出 smoke。
-- `scripts/run-production-e2e-smoke.py` 完整生产 E2E 已通过，最新任务样本为 `review-task-0002`。
+- `scripts/run-production-e2e-smoke.py` 默认只读生产 E2E 已通过；默认流程不创建复核任务。
+- 复核任务创建、状态更新与导出只在显式传入 `--include-review-write` 时执行。
 - 视觉基线脚本通过 desktop/mobile 检查，未发现横向溢出或关键文案缺失。
 - 增量更新 dry-run 已通过，486 个 active source files 全部 `unchanged`，新增/修改/删除/失败均为 `0`。
 - 初始索引回滚就绪审计已执行，旧状态下生产库 `active=1`、`inactive=0`、`rollback_target=0`，真实 rollback 被安全阻止且数据库计数未变化。
@@ -323,6 +323,7 @@ medical-audit-kb index-incremental-plan \
 - rollback readiness `knowledge-query-index-rollback-readiness-after-activation-20260603` 通过，`rollback_target_count=1`。
 - 真实 rollback rehearsal 已执行：`knowledge-query-index-rollback-rehearsal-to-20260531-20260603` 将 active 临时切回 `full-rebuild-20260531142344`，reload 后查询引用版本、生产只读 E2E 和线上综合评测均通过。
 - rehearsal 已切回新 active：`knowledge-query-index-rollback-rehearsal-return-to-20260603-20260603` 将 active 恢复为 `full-rebuild-20260603085815`，reload 后查询引用版本、生产只读 E2E、线上综合评测和 rollback readiness 均通过。
+- `main` 合并后已同步部署到腾讯云，`production-e2e-smoke-readonly-after-main-deploy-20260603` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
@@ -345,7 +346,7 @@ medical-audit-kb index-incremental-plan \
 - 修复前生成的旧 candidate artifact 仍禁止写入；只有 package-aware chunk id 修复后生成并通过 readiness gate 的 fixed candidate 才允许进入受控 candidate 写入步骤。
 - 当前 fixed candidate 已完成受控写入、候选评测、active 激活、后置综合评测、生产 smoke 和真实 rollback rehearsal。
 - rehearsal 后最终状态为 active `full-rebuild-20260603085815`、inactive `full-rebuild-20260531142344`。
-- 真实 `index-rollback` 演练尚未执行；当前已有 inactive 目标 `full-rebuild-20260531142344`，执行前必须重新确认业务窗口和备份路径。
+- 真实 `index-rollback` 演练已执行并已切回新 active；当前仍有 inactive 目标 `full-rebuild-20260531142344`，再次演练前必须重新确认业务窗口和备份路径。
 - 当前远端只同步 active source subset；如果后续要求远端具备完整源文件再处理能力，需要先解决超长中文文件名归档策略。
 - `KIMI_API_KEY` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret，降低误操作风险。
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
