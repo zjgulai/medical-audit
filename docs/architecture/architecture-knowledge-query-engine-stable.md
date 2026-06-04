@@ -174,6 +174,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - HIS 快照计划入口：`medical_audit_kb.his.snapshot_plan` 和 CLI `his-snapshot-plan`，用于从通过的样本质量报告生成 `AuditDataSnapshotCreate` payload、表级 row_counts 和快照 checksum
 - HIS 快照受控入库入口：`medical_audit_kb.his.snapshot_apply` 和 CLI `his-snapshot-apply`，用于默认 dry-run 校验快照计划，并在显式 `--execute` 后写入 `audit_data_snapshots`
 - HIS 快照回滚审计入口：`medical_audit_kb.his.snapshot_rollback` 和 CLI `his-snapshot-rollback-audit`，用于默认 dry-run 计算从当前快照回退到目标快照的任务、run、疑点影响面，并在显式 `--execute` 后写入 `audit_snapshot_rollbacks`
+- HIS 生产 staging 只读验收入口：`medical_audit_kb.his.staging_acceptance` 和 CLI `his-staging-acceptance`，用于只读校验项目、source batch、staging rows、table schema、字段映射门禁、snapshot、audit task、audit run、rule version、疑点证据和可选回滚目标
 
 页面复核任务运行态：
 
@@ -181,7 +182,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - `/pages/review-tasks` 的创建、列表、状态更新和导出默认读写 PostgreSQL。
 - `/pages/audit-findings` 默认使用 `SqlAlchemyAuditFindingStore(settings.database_url)` 读取 `audit_findings` 和 `finding_evidence_items`，支持疑点 JSON 导出和创建复核任务。
 - JSON store 只保留为测试和应急替换路径，不再作为生产默认持久化。
-- 当前已完成任务级复核持久化、审计业务数据底座第一批、HIS 输入契约第一批、HIS raw staging、HIS DDL 自动解析器、HIS 样本质量报告、HIS raw staging 导入、HIS 快照计划、HIS 快照受控入库、HIS 快照回滚审计、收费合规字段映射校验器、`CHARGE-RULE-001` staging 标准输入转换、staging 驱动规则运行 CLI、疑点入库执行、`CHARGE-RULE-001` 开发期 fixture 执行器和开发期疑点清单接入；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁、正式规则发布和生产库 staging 执行验收仍属于后续案件级审计流。
+- 当前已完成任务级复核持久化、审计业务数据底座第一批、HIS 输入契约第一批、HIS raw staging、HIS DDL 自动解析器、HIS 样本质量报告、HIS raw staging 导入、HIS 快照计划、HIS 快照受控入库、HIS 快照回滚审计、HIS 生产 staging 只读验收、收费合规字段映射校验器、`CHARGE-RULE-001` staging 标准输入转换、staging 驱动规则运行 CLI、疑点入库执行、`CHARGE-RULE-001` 开发期 fixture 执行器和开发期疑点清单接入；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁和正式规则发布仍属于后续案件级审计流。
 
 该 schema 与当前 Kimi 主索引一致，但不兼容 `text-embedding-3-small` 的 `1536` 维向量。切换 embedding model 时必须新增对应 migration 或新向量表，不能在同一 `vector(1024)` 列中混写不同维度。
 

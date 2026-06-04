@@ -36,10 +36,10 @@ source: human+ai
 - 已新增 HIS 数据快照受控入库 CLI `his-snapshot-apply`，支持默认 dry-run、显式 `--execute` 写入 `audit_data_snapshots`、项目存在性校验、重复 `snapshot_key` 阻断和 Markdown/JSON 入库报告。
 - 已新增 `charge-rule-001-staging-run` CLI，支持从 HIS staging 行驱动 `CHARGE-RULE-001` dry-run，并在显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
 - 已新增 `his-snapshot-rollback-audit` CLI，支持默认 dry-run 计算快照回滚影响面，并在显式 `--execute` 后写入 `audit_snapshot_rollbacks`，不删除历史快照、任务、run 或疑点。
+- 已新增 `his-staging-acceptance` CLI，支持只读验收生产 staging 链路，覆盖项目、source batch、staging rows、table schema、字段映射门禁、snapshot、audit task、audit run、rule version、疑点证据和可选回滚目标。
 
 当前未完成：
 
-- 生产库 staging 执行验收。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
@@ -206,6 +206,7 @@ source: human+ai
 - `his-snapshot-apply` 已覆盖开发期快照计划受控入库，默认 dry-run，只在显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
 - `charge-rule-001-staging-run` 已覆盖开发期 staging 驱动规则运行，默认 dry-run，执行前校验 source batch、snapshot、audit task、audit run、rule version 一致性，显式 `--execute` 后写入疑点和规则依据证据项。
 - `his-snapshot-rollback-audit` 已覆盖开发期快照回滚审计，默认 dry-run，执行前校验项目、from/to snapshot、重复 rollback key 和影响面，显式 `--execute` 后只写审计事件，不删除历史数据。
+- `his-staging-acceptance` 已覆盖生产 staging 只读验收，执行时不写库，只输出 PASS/FAIL 报告和 JSON 证据。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
@@ -232,6 +233,7 @@ source: human+ai
 - 已建立 HIS 数据快照受控入库入口，默认不写库，执行前必须通过 plan、项目存在性和 `snapshot_key` 唯一性校验。
 - 已建立 `CHARGE-RULE-001` staging 规则运行入口，默认不写库，执行前必须通过上下文一致性、转换质量和重复疑点门禁。
 - 已建立 HIS 数据快照回滚审计入口，默认不写库，执行前必须通过项目、目标快照和重复回滚键门禁。
+- 已建立 HIS 生产 staging 只读验收入口，正式执行前必须通过数据链路、字段映射、任务运行、疑点证据和回滚目标门禁。
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。
