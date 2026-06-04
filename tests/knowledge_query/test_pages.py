@@ -4,11 +4,29 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.review_task_store import (
     JsonFileReviewTaskStore,
     SqlAlchemyReviewTaskStore,
 )
+from medical_audit_kb.audit.charge_rule_001 import (
+    DEFAULT_RULE_VERSION_KEY,
+    RULE_KEY,
+    build_audit_finding_payloads,
+    build_charge_rule_001_fixture,
+    evaluate_charge_rule_001,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
+from medical_audit_kb.db.models import (
+    AuditDataSnapshot,
+    AuditFinding,
+    AuditProject,
+    AuditRule,
+    AuditRun,
+    AuditTask,
+    FindingEvidenceItem,
+    RuleVersion,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
@@ -366,6 +384,71 @@ def test_review_task_create_fails_when_backend_is_not_ready(tmp_path: Path) -> N
     assert _review_tasks(state) == []
 
 
+def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'audit-findings.db'}"
+    state = _api_state(tmp_path)
+    state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    _seed_charge_rule_001_findings(database_url)
+    client = TestClient(create_app(state))
+
+    page_response = client.get("/pages/audit-findings")
+
+    assert page_response.status_code == 200
+    assert "疑点清单" in page_response.text
+    assert "Findings Workbench" in page_response.text
+    assert "CHARGE-RULE-001" in page_response.text
+    assert "duplicate-charge" in page_response.text
+    assert "pending-review" in page_response.text
+    assert "matched_charge_detail_ids" in page_response.text
+    assert "创建复核任务" in page_response.text
+    assert 'aria-current="page">疑点清单' in page_response.text
+    assert str(state.operation_logs[-1]["action"]) == "page-audit-findings-view"
+
+    export_response = client.get("/audit-findings/finding-fdc6a665ec5fcbf8/export")
+
+    assert export_response.status_code == 200
+    assert export_response.headers["content-disposition"] == (
+        'attachment; filename="finding-fdc6a665ec5fcbf8.json"'
+    )
+    body = export_response.json()
+    assert isinstance(body, dict)
+    assert body["format"] == "audit-finding-v1"
+    assert body["finding_key"] == "finding-fdc6a665ec5fcbf8"
+    assert body["rule_key"] == RULE_KEY
+    assert body["rule_version_key"] == DEFAULT_RULE_VERSION_KEY
+    assert body["source_record_locator"]["source_table"] == "charge_detail"
+    assert body["calculation_trace"]["matched_charge_detail_ids"] == ["CD0001", "CD0002"]
+    assert body["evidence_items"][0]["evidence_type"] == "rule-rationale"
+    assert str(state.operation_logs[-1]["action"]) == "audit-finding-export"
+
+    create_response = client.post(
+        "/pages/audit-findings/finding-fdc6a665ec5fcbf8/review-task",
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert create_response.headers["location"] == "/pages/review-tasks"
+    tasks = _review_tasks(state)
+    assert len(tasks) == 1
+    assert tasks[0]["source"] == "audit-finding"
+    dossier = tasks[0]["dossier"]
+    assert isinstance(dossier, dict)
+    assert dossier["format"] == "audit-finding-dossier-v1"
+    assert dossier["finding_key"] == "finding-fdc6a665ec5fcbf8"
+    calculation_trace = dossier["calculation_trace"]
+    assert isinstance(calculation_trace, dict)
+    assert calculation_trace["matched_charge_detail_ids"] == [
+        "CD0001",
+        "CD0002",
+    ]
+
+    linked_page_response = client.get("/pages/audit-findings")
+    assert linked_page_response.status_code == 200
+    assert "review-task-0001" in linked_page_response.text
+    assert "已创建复核任务" in linked_page_response.text
+
+
 def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
@@ -562,6 +645,123 @@ def _api_state(tmp_path: Path) -> ApiState:
 def _review_tasks(state: ApiState) -> list[dict[str, object]]:
     assert state.review_task_store is not None
     return state.review_task_store.list_tasks()
+
+
+def _seed_charge_rule_001_findings(database_url: str) -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from medical_audit_kb.db.models import Base
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = AuditProject(
+            project_key="audit-project-charge-fixture",
+            name="收费合规 fixture 专项",
+            scenario_key="charging-compliance",
+            status="fixture",
+            owner_department="审计科",
+            created_by="unit-test",
+        )
+        session.add(project)
+        session.flush()
+        snapshot = AuditDataSnapshot(
+            snapshot_key="snapshot-charge-fixture",
+            project_id=project.id,
+            source_batch_key="his-fixture-20260604",
+            time_range={"from": "2025-01-01", "to": "2025-01-31"},
+            row_counts={"charge_detail": len(build_charge_rule_001_fixture())},
+            checksum="sha256:charge-fixture",
+            status="validated",
+        )
+        session.add(snapshot)
+        session.flush()
+        task = AuditTask(
+            task_key="audit-task-charge-fixture",
+            project_id=project.id,
+            snapshot_id=snapshot.id,
+            topic="同就诊同项目重复收费",
+            department_scope={"department_codes": ["D001"]},
+            date_range={"from": "2025-01-01", "to": "2025-01-31"},
+            status="ready",
+            created_by="unit-test",
+        )
+        rule = AuditRule(
+            rule_key=RULE_KEY,
+            scenario_key="charging-compliance",
+            name="同就诊同项目重复收费",
+            status="active",
+            owner="audit-rule-team",
+        )
+        session.add_all([task, rule])
+        session.flush()
+        rule_version = RuleVersion(
+            audit_rule_id=rule.id,
+            version_key=DEFAULT_RULE_VERSION_KEY,
+            rule_key=RULE_KEY,
+            status="active",
+            logic={"fixture": "charge-rule-001-v1"},
+            evidence_links={"knowledge_topics": ["重复收费", "收费项目内涵"]},
+            created_by="unit-test",
+        )
+        session.add(rule_version)
+        session.flush()
+        run = AuditRun(
+            run_key="audit-run-charge-fixture",
+            audit_task_id=task.id,
+            snapshot_id=snapshot.id,
+            rule_version_key=rule_version.version_key,
+            knowledge_index_version_key="full-rebuild-20260603085815",
+            status="succeeded",
+            summary={"fixture": True},
+        )
+        session.add(run)
+        session.flush()
+        result = evaluate_charge_rule_001(
+            build_charge_rule_001_fixture(),
+            audit_task_key=task.task_key,
+            audit_run_key=run.run_key,
+            snapshot_key=snapshot.snapshot_key,
+            knowledge_index_version_key=run.knowledge_index_version_key,
+        )
+        payloads = build_audit_finding_payloads(
+            result,
+            audit_run_id=run.id,
+            audit_task_id=task.id,
+            rule_version_id=rule_version.id,
+            snapshot_id=snapshot.id,
+        )
+        for payload, rule_finding in zip(payloads, result.findings, strict=True):
+            finding_model = AuditFinding(
+                finding_key=payload.finding_key,
+                audit_run_id=payload.audit_run_id,
+                audit_task_id=payload.audit_task_id,
+                rule_version_id=payload.rule_version_id,
+                snapshot_id=payload.snapshot_id,
+                status=payload.status,
+                finding_type=payload.finding_type,
+                severity=payload.severity,
+                source_record_locator=payload.source_record_locator,
+                calculation_trace=payload.calculation_trace,
+                review_status=payload.review_status,
+                extra_metadata=payload.metadata,
+            )
+            session.add(finding_model)
+            session.flush()
+            session.add(
+                FindingEvidenceItem(
+                    audit_finding_id=finding_model.id,
+                    evidence_type="rule-rationale",
+                    source_package_version_key=rule_finding.source_package_version_key,
+                    index_version_key=rule_finding.knowledge_index_version_key,
+                    citation_id=f"{RULE_KEY}-fixture-rationale",
+                    locator={"rule_key": RULE_KEY},
+                    snippet=rule_finding.knowledge_evidence_snippet,
+                    extra_metadata={"source": "fixture"},
+                )
+            )
+        session.commit()
 
 
 def _search_engine(chunks: tuple[ChunkEmbeddingInput, ...]) -> HybridSearchEngine:

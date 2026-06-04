@@ -169,8 +169,9 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 
 - `ApiState.from_settings` 默认使用 `SqlAlchemyReviewTaskStore(settings.database_url)`。
 - `/pages/review-tasks` 的创建、列表、状态更新和导出默认读写 PostgreSQL。
+- `/pages/audit-findings` 默认使用 `SqlAlchemyAuditFindingStore(settings.database_url)` 读取 `audit_findings` 和 `finding_evidence_items`，支持疑点 JSON 导出和创建复核任务。
 - JSON store 只保留为测试和应急替换路径，不再作为生产默认持久化。
-- 当前已完成任务级复核持久化、审计业务数据底座第一批和 `CHARGE-RULE-001` 开发期 fixture 执行器；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁、正式规则发布和真实 HIS 数据导入仍属于后续案件级审计流。
+- 当前已完成任务级复核持久化、审计业务数据底座第一批、`CHARGE-RULE-001` 开发期 fixture 执行器和开发期疑点清单接入；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁、正式规则发布和真实 HIS 数据导入仍属于后续案件级审计流。
 
 该 schema 与当前 Kimi 主索引一致，但不兼容 `text-embedding-3-small` 的 `1536` 维向量。切换 embedding model 时必须新增对应 migration 或新向量表，不能在同一 `vector(1024)` 列中混写不同维度。
 

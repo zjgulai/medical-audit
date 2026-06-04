@@ -14,6 +14,10 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
+from medical_audit_kb.api.audit_finding_store import (
+    AuditFindingNotFoundError,
+    SqlAlchemyAuditFindingStore,
+)
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -219,6 +223,76 @@ def review_tasks_page(
             "search_backend": _search_backend_context(state),
         },
     )
+
+
+@router.get("/pages/audit-findings")
+def audit_findings_page(
+    request: Request,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    review_status: Annotated[str | None, Query()] = None,
+) -> object:
+    if review_status is not None and review_status not in REVIEW_TASK_STATUS_LABELS:
+        raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
+    findings = _audit_findings(state, review_status=review_status)
+    record_operation(
+        state,
+        "page-audit-findings-view",
+        {"finding_count": len(findings), "review_status": review_status or "all"},
+    )
+    return templates.TemplateResponse(
+        request,
+        "audit_findings.html",
+        {
+            "audit_findings": findings,
+            "audit_finding_stats": _audit_finding_stats(findings),
+            "review_status_options": REVIEW_TASK_STATUS_LABELS,
+            "selected_review_status": review_status or "",
+            "search_backend": _search_backend_context(state),
+        },
+    )
+
+
+@router.get("/audit-findings/{finding_key}/export")
+def audit_finding_export(
+    finding_key: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> Response:
+    finding = _audit_finding_by_key(state, finding_key)
+    payload = _audit_finding_export_payload(finding)
+    record_operation(
+        state,
+        "audit-finding-export",
+        {"finding_key": finding_key},
+    )
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        media_type="application/json",
+        headers=_download_headers(f"{finding_key}.json"),
+    )
+
+
+@router.post("/pages/audit-findings/{finding_key}/review-task")
+def create_audit_finding_review_task_page(
+    finding_key: str,
+    request: Request,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> RedirectResponse:
+    finding = _audit_finding_by_key(state, finding_key)
+    task = _create_review_task_from_finding(
+        state=state,
+        request=request,
+        finding=finding,
+    )
+    try:
+        _audit_finding_store(state).link_review_task(finding_key, str(task["task_id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record_operation(
+        state,
+        "audit-finding-review-task-create",
+        {"finding_key": finding_key, "task_id": str(task["task_id"])},
+    )
+    return RedirectResponse("/pages/review-tasks", status_code=303)
 
 
 @router.post("/pages/review-tasks/create")
@@ -663,6 +737,34 @@ def _create_review_task(
         "review_gate": dossier["review_gate"],
         "confidence_label": dossier["confidence_label"],
         "fallback_label": dossier["fallback_label"],
+        "source": "chat-dossier",
+        "reviewer_note": "",
+        "conclusion": "",
+        "dossier": dossier,
+    }
+    return _review_task_store(state).add_task(task)
+
+
+def _create_review_task_from_finding(
+    *,
+    state: ApiState,
+    request: Request,
+    finding: dict[str, object],
+) -> dict[str, object]:
+    now = _utc_now_iso()
+    dossier = _audit_finding_dossier_payload(finding=finding, request=request)
+    task = {
+        "task_id": _review_task_store(state).next_task_id(),
+        "created_at": now,
+        "updated_at": now,
+        "status": "pending-review",
+        "status_label": REVIEW_TASK_STATUS_LABELS["pending-review"],
+        "question": f"复核疑点 {finding['finding_key']}：{finding['finding_type']}",
+        "citation_count": len(_dict_list(finding.get("evidence_items", []))),
+        "review_gate": "疑点已绑定规则版本和计算过程，进入人工复核。",
+        "confidence_label": "中",
+        "fallback_label": "规则命中",
+        "source": "audit-finding",
         "reviewer_note": "",
         "conclusion": "",
         "dossier": dossier,
@@ -696,6 +798,27 @@ def _review_task_store(state: ApiState) -> ReviewTaskStore:
     if state.review_task_store is None:
         state.review_task_store = InMemoryReviewTaskStore()
     return state.review_task_store
+
+
+def _audit_findings(
+    state: ApiState,
+    *,
+    review_status: str | None = None,
+) -> list[dict[str, object]]:
+    return _audit_finding_store(state).list_findings(review_status=review_status)
+
+
+def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object]:
+    try:
+        return _audit_finding_store(state).get_finding(finding_key)
+    except AuditFindingNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="audit finding not found") from exc
+
+
+def _audit_finding_store(state: ApiState) -> SqlAlchemyAuditFindingStore:
+    if state.audit_finding_store is None:
+        state.audit_finding_store = SqlAlchemyAuditFindingStore(state.settings.database_url)
+    return state.audit_finding_store
 
 
 def _review_task_stats(tasks: list[dict[str, object]]) -> dict[str, object]:
@@ -734,7 +857,54 @@ def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
         "fallback_label": task["fallback_label"],
         "reviewer_note": task["reviewer_note"],
         "conclusion": task["conclusion"],
+        "source": task.get("source", "chat-dossier"),
         "dossier": task["dossier"],
+    }
+
+
+def _audit_finding_stats(findings: list[dict[str, object]]) -> dict[str, int]:
+    return {
+        "total": len(findings),
+        "open": sum(1 for item in findings if item.get("status") == "open"),
+        "pending_review": sum(
+            1 for item in findings if item.get("review_status") == "pending-review"
+        ),
+        "linked_review_task": sum(1 for item in findings if item.get("review_task_id")),
+    }
+
+
+def _audit_finding_export_payload(finding: dict[str, object]) -> dict[str, object]:
+    return {
+        "format": "audit-finding-v1",
+        "exported_at": _utc_now_iso(),
+        **finding,
+    }
+
+
+def _audit_finding_dossier_payload(
+    *,
+    finding: dict[str, object],
+    request: Request,
+) -> dict[str, object]:
+    return {
+        "format": "audit-finding-dossier-v1",
+        "generated_at": _utc_now_iso(),
+        "finding_key": finding["finding_key"],
+        "finding_type": finding["finding_type"],
+        "severity": finding["severity"],
+        "status": finding["status"],
+        "review_status": finding["review_status"],
+        "audit_task_key": finding.get("audit_task_key"),
+        "audit_run_key": finding.get("audit_run_key"),
+        "rule_key": finding.get("rule_key"),
+        "rule_version_key": finding.get("rule_version_key"),
+        "source_record_locator": finding["source_record_locator"],
+        "calculation_trace": finding["calculation_trace"],
+        "evidence_items": finding.get("evidence_items", []),
+        "finding_export_url": str(
+            request.url_for("audit_finding_export", finding_key=str(finding["finding_key"]))
+        ),
+        "review_notice": "该任务来源于结构化规则疑点，进入报告前必须完成人工复核。",
     }
 
 

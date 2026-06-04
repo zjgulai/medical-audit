@@ -26,12 +26,13 @@ source: human+ai
 - 当前复核任务台已切换为 PostgreSQL 持久化，支持任务创建、状态更新、复核意见、复核结论和任务级导出。
 - 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema；当前仍不能视为生产级案件系统。
 - 已补齐 V1.0 第一批业务数据底座：`audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`，支持项目、快照、任务、运行批次、规则版本、疑点和证据项的最小可追溯链路。
+- 已新增开发期疑点清单页 `/pages/audit-findings`，支持展示规则疑点、导出单条疑点 JSON，并从疑点创建复核任务。
 
 当前未完成：
 
 - HIS DDL、字段映射、脱敏样本导入、数据质量报告和真实数据快照生成。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
-- 生产级疑点清单页面、案件级人工复核、底稿、报告、整改跟踪。
+- 生产级案件级人工复核、底稿、报告、整改跟踪。
 - 用户、角色、科室、权限控制和审计日志。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
@@ -204,12 +205,14 @@ source: human+ai
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。
-- 后续仍需接入真实 HIS 脱敏样本、正式规则配置发布、疑点清单页面和案件级复核流。
+- 已新增开发期疑点清单页，支持读取 `audit_findings`、展示源记录定位和计算过程、导出疑点 JSON，并从疑点创建复核任务。
+- 后续仍需接入真实 HIS 脱敏样本、正式规则配置发布和案件级复核流。
 
 验收：
 
 - 开发期 fixture 已覆盖同一数据快照 + 同一规则版本复跑稳定。
 - 开发期 fixture 已覆盖疑点追溯到数据快照、运行批次、规则版本和规则依据证据项。
+- 开发期页面已覆盖疑点清单展示、单条疑点 JSON 导出、疑点创建复核任务和 `review_task_id` 回写。
 - 无法判定时进入 `needs-evidence` 或 `rule-issue`，不静默归为合规。
 
 ### Sprint 4：生产级复核与底稿
@@ -219,7 +222,7 @@ source: human+ai
 任务：
 
 - 已将 `/pages/review-tasks` 改为 PostgreSQL 持久化。
-- 支持从查询结果和疑点清单创建复核任务。
+- 已支持从查询结果和开发期疑点清单创建复核任务。
 - 支持状态流转、复核意见、结论、附件引用。
 - 支持任务级底稿 Markdown/JSON 导出。
 - 支持负责人确认。
