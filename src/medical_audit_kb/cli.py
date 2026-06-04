@@ -31,6 +31,11 @@ from medical_audit_kb.generation.answer_providers import (
     AnthropicAnswerGenerationProvider,
     OpenAICompatibleAnswerGenerationProvider,
 )
+from medical_audit_kb.his.ddl_parser import (
+    his_ddl_parse_report_json,
+    parse_his_ddl,
+    render_his_ddl_parse_report_markdown,
+)
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingProvider,
@@ -118,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         return _index_activate(args)
     if args.command == "index-rollback":
         return _index_rollback(args)
+    if args.command == "his-ddl-parse":
+        return _his_ddl_parse(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -268,6 +275,14 @@ def _build_parser() -> argparse.ArgumentParser:
     index_rollback.add_argument("--database-url-env", default=DATABASE_URL_ENV)
     index_rollback.add_argument("--output", required=True, type=Path)
     index_rollback.add_argument("--json-output", type=Path)
+
+    his_ddl_parse = subparsers.add_parser(
+        "his-ddl-parse",
+        help="Parse HIS DDL into table schema and field dictionary report artifacts.",
+    )
+    his_ddl_parse.add_argument("--ddl-file", required=True, type=Path)
+    his_ddl_parse.add_argument("--output", required=True, type=Path)
+    his_ddl_parse.add_argument("--json-output", type=Path)
 
     ui_smoke = subparsers.add_parser(
         "ui-smoke",
@@ -522,6 +537,17 @@ def _index_rollback(args: argparse.Namespace) -> int:
     if args.json_output is not None:
         _write_text(args.json_output, index_rollback_json(result))
     return 0 if result.success else 2
+
+
+def _his_ddl_parse(args: argparse.Namespace) -> int:
+    report = parse_his_ddl(args.ddl_file.read_text(encoding="utf-8"))
+    _write_text(
+        args.output,
+        render_his_ddl_parse_report_markdown(report, source_path=str(args.ddl_file)),
+    )
+    if args.json_output is not None:
+        _write_text(args.json_output, his_ddl_parse_report_json(report))
+    return 0 if report.status == "pass" else 2
 
 
 def _ui_smoke(args: argparse.Namespace) -> int:
