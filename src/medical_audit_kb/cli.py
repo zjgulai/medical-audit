@@ -67,6 +67,11 @@ from medical_audit_kb.his.snapshot_rollback import (
     his_snapshot_rollback_audit_result_json,
     render_his_snapshot_rollback_audit_markdown,
 )
+from medical_audit_kb.his.staging_acceptance import (
+    audit_his_staging_acceptance_to_database,
+    his_staging_acceptance_result_json,
+    render_his_staging_acceptance_markdown,
+)
 from medical_audit_kb.his.staging_import import (
     his_staging_import_result_json,
     import_his_sample_quality_to_staging_database,
@@ -170,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_snapshot_apply(args)
     if args.command == "his-snapshot-rollback-audit":
         return _his_snapshot_rollback_audit(args)
+    if args.command == "his-staging-acceptance":
+        return _his_staging_acceptance(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -397,6 +404,24 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
     )
+
+    his_staging_acceptance = subparsers.add_parser(
+        "his-staging-acceptance",
+        help="Run a read-only production staging acceptance audit over HIS workflow tables.",
+    )
+    his_staging_acceptance.add_argument("--project-key", required=True)
+    his_staging_acceptance.add_argument("--source-batch-key", required=True)
+    his_staging_acceptance.add_argument("--snapshot-key", required=True)
+    his_staging_acceptance.add_argument("--audit-task-key", required=True)
+    his_staging_acceptance.add_argument("--audit-run-key", required=True)
+    his_staging_acceptance.add_argument("--rule-version-key", default=DEFAULT_RULE_VERSION_KEY)
+    his_staging_acceptance.add_argument("--expected-table", action="append", default=[])
+    his_staging_acceptance.add_argument("--min-staged-rows", type=int, default=1)
+    his_staging_acceptance.add_argument("--min-findings", type=int, default=0)
+    his_staging_acceptance.add_argument("--rollback-target-snapshot-key")
+    his_staging_acceptance.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    his_staging_acceptance.add_argument("--output", required=True, type=Path)
+    his_staging_acceptance.add_argument("--json-output", type=Path)
 
     his_staging_import = subparsers.add_parser(
         "his-staging-import",
@@ -771,6 +796,28 @@ def _his_snapshot_rollback_audit(args: argparse.Namespace) -> int:
     _write_text(args.output, render_his_snapshot_rollback_audit_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, his_snapshot_rollback_audit_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _his_staging_acceptance(args: argparse.Namespace) -> int:
+    result = asyncio.run(
+        audit_his_staging_acceptance_to_database(
+            database_url=_database_url_from_env(args.database_url_env),
+            project_key=args.project_key,
+            source_batch_key=args.source_batch_key,
+            snapshot_key=args.snapshot_key,
+            audit_task_key=args.audit_task_key,
+            audit_run_key=args.audit_run_key,
+            rule_version_key=args.rule_version_key,
+            expected_tables=tuple(args.expected_table),
+            min_staged_rows=args.min_staged_rows,
+            min_findings=args.min_findings,
+            rollback_target_snapshot_key=args.rollback_target_snapshot_key,
+        )
+    )
+    _write_text(args.output, render_his_staging_acceptance_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_staging_acceptance_result_json(result))
     return 0 if result.status == "pass" else 2
 
 
