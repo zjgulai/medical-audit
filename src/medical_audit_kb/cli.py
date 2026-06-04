@@ -12,6 +12,12 @@ from medical_audit_kb.acceptance.reports import (
     build_acceptance_report,
     render_acceptance_report_markdown,
 )
+from medical_audit_kb.audit.case_review_report_gate import (
+    RESOLVED_REVIEW_STATUSES,
+    audit_case_review_report_gate_to_database,
+    case_review_report_gate_result_json,
+    render_case_review_report_gate_markdown,
+)
 from medical_audit_kb.audit.charge_rule_001 import DEFAULT_RULE_VERSION_KEY
 from medical_audit_kb.audit.charge_rule_001_staging_runner import (
     charge_rule_001_staging_run_result_json,
@@ -177,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_snapshot_rollback_audit(args)
     if args.command == "his-staging-acceptance":
         return _his_staging_acceptance(args)
+    if args.command == "case-review-report-gate":
+        return _case_review_report_gate(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -422,6 +430,34 @@ def _build_parser() -> argparse.ArgumentParser:
     his_staging_acceptance.add_argument("--database-url-env", default=DATABASE_URL_ENV)
     his_staging_acceptance.add_argument("--output", required=True, type=Path)
     his_staging_acceptance.add_argument("--json-output", type=Path)
+
+    case_review_report_gate = subparsers.add_parser(
+        "case-review-report-gate",
+        help="Run a read-only case review gate before formal report generation.",
+    )
+    case_review_report_gate.add_argument("--project-key", required=True)
+    case_review_report_gate.add_argument("--audit-task-key", required=True)
+    case_review_report_gate.add_argument("--audit-run-key", required=True)
+    case_review_report_gate.add_argument("--min-findings", type=int, default=0)
+    case_review_report_gate.add_argument(
+        "--resolved-review-status",
+        action="append",
+        default=[],
+        help="Allowed terminal review status. Repeat to override the default set.",
+    )
+    case_review_report_gate.add_argument(
+        "--skip-owner-signoff",
+        action="store_true",
+        help="Do not require audit_tasks.metadata.owner_signoff approval.",
+    )
+    case_review_report_gate.add_argument(
+        "--skip-workpaper",
+        action="store_true",
+        help="Do not require ready workpapers for confirmed violation findings.",
+    )
+    case_review_report_gate.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    case_review_report_gate.add_argument("--output", required=True, type=Path)
+    case_review_report_gate.add_argument("--json-output", type=Path)
 
     his_staging_import = subparsers.add_parser(
         "his-staging-import",
@@ -818,6 +854,30 @@ def _his_staging_acceptance(args: argparse.Namespace) -> int:
     _write_text(args.output, render_his_staging_acceptance_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, his_staging_acceptance_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _case_review_report_gate(args: argparse.Namespace) -> int:
+    resolved_statuses = (
+        tuple(args.resolved_review_status)
+        if args.resolved_review_status
+        else RESOLVED_REVIEW_STATUSES
+    )
+    result = asyncio.run(
+        audit_case_review_report_gate_to_database(
+            database_url=_database_url_from_env(args.database_url_env),
+            project_key=args.project_key,
+            audit_task_key=args.audit_task_key,
+            audit_run_key=args.audit_run_key,
+            min_findings=args.min_findings,
+            resolved_review_statuses=resolved_statuses,
+            require_owner_signoff=not args.skip_owner_signoff,
+            require_workpaper=not args.skip_workpaper,
+        )
+    )
+    _write_text(args.output, render_case_review_report_gate_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, case_review_report_gate_result_json(result))
     return 0 if result.status == "pass" else 2
 
 
