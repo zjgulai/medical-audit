@@ -79,7 +79,7 @@ flowchart TD
 - `FastAPI + Jinja + CSS` 的本地 Web 工作台。
 - `/pages/chat` 对话审证台、`/pages/query` 查询页、`/pages/review-tasks` 复核任务台、`/pages/index-admin` 索引管理页、`/pages/preview/{chunk_id}` 原文预览页。
 - `/pages/chat/export` 支持当前单轮对话的 Markdown/JSON 审计底稿导出。
-- `/pages/review-tasks` 支持把单轮对话回答创建为本地 JSON 持久化复核任务，维护复核状态、意见、结论，并导出任务级 Markdown/JSON 记录。
+- `/pages/review-tasks` 支持把单轮对话回答创建为 PostgreSQL 任务级复核记录，维护复核状态、意见、结论，并导出任务级 Markdown/JSON 记录。
 - `data/医保审核前期资料` 的抽取、切分、BM25 + vector 检索、引用型 fallback answer。
 - PostgreSQL + pgvector active index version 查询与状态隔离。
 - Kimi embedding 主索引已导入：`486` 个 indexed documents、`48985` 个 chunks、`48985` 个 embeddings、`13` 个 pending files。
@@ -98,7 +98,7 @@ flowchart TD
 - Kimi Code 当前可作为 embedding provider 使用，不能被写成已验证可用的线上答案生成模型。
 - Anthropic answer provider 当前预检未通过，不能被写成可用生产生成模型。
 - 当前 `/pages/chat` 是单轮对话审证工作台，不能被写成服务端持久化多轮会话系统。
-- 当前 `/pages/review-tasks` 是本地 JSON 持久化复核任务台，不能被写成生产级案件系统或 PostgreSQL 多实例复核流。
+- 当前 `/pages/review-tasks` 是任务级 PostgreSQL 复核任务台，不能被写成生产级案件系统、多实例强一致复核流、负责人确认流或正式报告门禁。
 - 增量计划目前支持影响分析和发布链路设计，不能把“新增源文件后自动生产级增量写入”写成已完成能力。
 
 ## 5. 核心功能需求
@@ -114,7 +114,7 @@ flowchart TD
 | KB-05 | 支持索引发布和回滚 | candidate 通过验收后才能激活；回滚只允许 active/inactive 版本 |
 | KB-06 | 支持发布后验收 | 固定检索评测、答案评测、UI smoke 预览检查结果可查询和导出 |
 | KB-07 | 支持单轮对话审计底稿导出 | Markdown/JSON 文件包含问题、回答、复核门禁、复核清单、引用、chunk/index/package 和原文预览链接 |
-| KB-08 | 支持本地复核任务沉淀 | 单轮对话回答可创建本地 JSON 持久化复核任务，维护状态、意见、结论，并导出任务级 Markdown/JSON 记录 |
+| KB-08 | 支持任务级复核任务沉淀 | 单轮对话回答可创建 PostgreSQL 复核任务，维护状态、意见、结论，并导出任务级 Markdown/JSON 记录 |
 
 ### 5.2 HIS 数据接入与审计任务
 
@@ -205,13 +205,13 @@ V1.0 的所有审计结论必须满足可追溯：
 | 版本 | 目标 | 状态 |
 | --- | --- | --- |
 | V0.1 | 知识库查询、引用回答、原文预览、索引管理 | 当前仓库主实现方向 |
-| V0.2 | PostgreSQL active 发布、回滚、验收历史和对话审证台 | 当前已进入实现和提交拆分阶段 |
+| V0.2 | PostgreSQL active 发布、回滚、验收历史、对话审证台和任务级复核持久化 | 已部署到生产并完成 E2E 验收 |
 | V1.0 | HIS 专项审计、0/1 判定、复核、底稿报告、整改跟踪 | PRD 已落地，详细设计待拆分 |
 | V1.1 | 多专题扩展、规则后台、巡检任务、更多数据源 | 不纳入 V1.0 |
 
 ## 11. 下一步执行计划
 
-1. 将知识库查询引擎当前未提交改动按原子提交计划继续收口。
-2. 以本 PRD 为母版，补充 `HIS 数据接入设计`、`首个专项审计场景 PRD`、`底稿报告模板设计` 三个子文档。
-3. 与院方确认 HIS DDL、脱敏测试集、报告模板和准确率口径。
-4. 基于首个专项场景拆解数据模型、规则表、任务模型和验收测试。
+1. 以收费合规 / 重复收费与目录限制核验为首个候选专项场景，形成子 PRD 草稿。
+2. 建立 HIS DDL、字段字典、脱敏样本、验证集和报告模板交付清单。
+3. 与院方确认 HIS 数据接入方式、脱敏测试集、报告模板和准确率口径。
+4. 基于已确认专项场景拆解数据模型、规则表、任务模型和验收测试。
