@@ -139,6 +139,82 @@ def test_his_sample_quality_command_writes_markdown_and_json_outputs(tmp_path: P
     assert '"total_row_count": 1' in json_path.read_text(encoding="utf-8")
 
 
+def test_his_snapshot_plan_command_writes_payload_outputs(tmp_path: Path) -> None:
+    ddl_file = tmp_path / "his.sql"
+    ddl_file.write_text(
+        """
+        CREATE TABLE T_CHARGE_DETAIL (
+            CHARGE_ID TEXT PRIMARY KEY,
+            VISIT_ID TEXT NOT NULL,
+            AMOUNT NUMERIC(12, 2) NOT NULL,
+            CHARGED_AT TIMESTAMP NOT NULL
+        );
+        """,
+        encoding="utf-8",
+    )
+    ddl_json_path = tmp_path / "his-ddl-report.json"
+    main(
+        [
+            "his-ddl-parse",
+            "--ddl-file",
+            str(ddl_file),
+            "--output",
+            str(tmp_path / "his-ddl-report.md"),
+            "--json-output",
+            str(ddl_json_path),
+        ]
+    )
+    sample_root = tmp_path / "samples"
+    sample_root.mkdir()
+    _write_text(
+        sample_root / "T_CHARGE_DETAIL.csv",
+        "CHARGE_ID,VISIT_ID,AMOUNT,CHARGED_AT\nC001,V001,120.50,2025-01-01 08:00:00\n",
+    )
+    quality_json_path = tmp_path / "his-sample-quality.json"
+    main(
+        [
+            "his-sample-quality",
+            "--sample-root",
+            str(sample_root),
+            "--ddl-report-json",
+            str(ddl_json_path),
+            "--output",
+            str(tmp_path / "his-sample-quality.md"),
+            "--json-output",
+            str(quality_json_path),
+        ]
+    )
+    report_path = tmp_path / "his-snapshot-plan.md"
+    json_path = tmp_path / "his-snapshot-plan.json"
+
+    exit_code = main(
+        [
+            "his-snapshot-plan",
+            "--quality-report-json",
+            str(quality_json_path),
+            "--project-id",
+            "11111111-1111-4111-8111-111111111111",
+            "--snapshot-key",
+            "snapshot-his-0001",
+            "--source-batch-key",
+            "his-batch-0001",
+            "--time-range-json",
+            '{"from":"2025-01-01","to":"2025-01-31"}',
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "HIS 数据快照计划" in report_path.read_text(encoding="utf-8")
+    json_body = json_path.read_text(encoding="utf-8")
+    assert '"can_create_snapshot": true' in json_body
+    assert '"snapshot_key": "snapshot-his-0001"' in json_body
+    assert '"source_batch_key": "his-batch-0001"' in json_body
+
+
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(

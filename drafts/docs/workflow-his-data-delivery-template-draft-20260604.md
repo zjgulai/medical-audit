@@ -180,12 +180,13 @@ N001,charge_detail,CD0100,CHARGE-RULE-001,quantity-explained-by-order,审计员A
 
 1. 使用 `his-ddl-parse` 解析 HIS DDL，生成 DDL 解析 Markdown/JSON 报告。
 2. 使用 `his-sample-quality` 校验脱敏样本字段、行数、必填空值和重复主键。
-3. 建立 `his_source_batches`、`his_table_schemas`、`his_field_mappings`。
-4. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
-5. 生成 `audit_data_snapshots`。
-6. 建立 `audit_rules` 和 `rule_versions`。
-7. 运行 `CHARGE-RULE-001`。
-8. 生成 `audit_findings` 和 `finding_evidence_items`。
+3. 使用 `his-snapshot-plan` 生成快照计划、row_counts、checksum 和 `AuditDataSnapshotCreate` payload。
+4. 建立 `his_source_batches`、`his_table_schemas`、`his_field_mappings`。
+5. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
+6. 生成并入库 `audit_data_snapshots`。
+7. 建立 `audit_rules` 和 `rule_versions`。
+8. 运行 `CHARGE-RULE-001`。
+9. 生成 `audit_findings` 和 `finding_evidence_items`。
 
 示例命令：
 
@@ -200,4 +201,13 @@ medical-audit-kb his-sample-quality \
   --ddl-report-json tmp/outputs/his-delivery/his-ddl-parse-report.json \
   --output tmp/outputs/his-delivery/his-sample-quality-report.md \
   --json-output tmp/outputs/his-delivery/his-sample-quality-report.json
+
+medical-audit-kb his-snapshot-plan \
+  --quality-report-json tmp/outputs/his-delivery/his-sample-quality-report.json \
+  --project-id 11111111-1111-4111-8111-111111111111 \
+  --snapshot-key snapshot-his-20260604-001 \
+  --source-batch-key his-batch-20260604-001 \
+  --time-range-json '{"from":"2025-01-01","to":"2025-01-31"}' \
+  --output tmp/outputs/his-delivery/his-snapshot-plan.md \
+  --json-output tmp/outputs/his-delivery/his-snapshot-plan.json
 ```
