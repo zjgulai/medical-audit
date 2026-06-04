@@ -1,9 +1,17 @@
+import asyncio
 import json
 from pathlib import Path
+from uuid import UUID
 
 from pytest import MonkeyPatch
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from medical_audit_kb.cli import main
+from medical_audit_kb.db.engine import create_schema, create_session_factory
+from medical_audit_kb.db.models import AuditDataSnapshot
+from medical_audit_kb.db.repositories import AuditWorkflowRepository
+from medical_audit_kb.domain.schemas import AuditProjectCreate
 from medical_audit_kb.generation.citations import Citation
 
 
@@ -213,6 +221,119 @@ def test_his_snapshot_plan_command_writes_payload_outputs(tmp_path: Path) -> Non
     assert '"can_create_snapshot": true' in json_body
     assert '"snapshot_key": "snapshot-his-0001"' in json_body
     assert '"source_batch_key": "his-batch-0001"' in json_body
+
+
+def test_his_snapshot_apply_command_dry_runs_then_executes(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit.db'}"
+    project_id = asyncio.run(_create_audit_project(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+
+    ddl_file = tmp_path / "his.sql"
+    ddl_file.write_text(
+        """
+        CREATE TABLE T_CHARGE_DETAIL (
+            CHARGE_ID TEXT PRIMARY KEY,
+            VISIT_ID TEXT NOT NULL,
+            AMOUNT NUMERIC(12, 2) NOT NULL,
+            CHARGED_AT TIMESTAMP NOT NULL
+        );
+        """,
+        encoding="utf-8",
+    )
+    ddl_json_path = tmp_path / "his-ddl-report.json"
+    main(
+        [
+            "his-ddl-parse",
+            "--ddl-file",
+            str(ddl_file),
+            "--output",
+            str(tmp_path / "his-ddl-report.md"),
+            "--json-output",
+            str(ddl_json_path),
+        ]
+    )
+    sample_root = tmp_path / "samples"
+    sample_root.mkdir()
+    _write_text(
+        sample_root / "T_CHARGE_DETAIL.csv",
+        "CHARGE_ID,VISIT_ID,AMOUNT,CHARGED_AT\nC001,V001,120.50,2025-01-01 08:00:00\n",
+    )
+    quality_json_path = tmp_path / "his-sample-quality.json"
+    main(
+        [
+            "his-sample-quality",
+            "--sample-root",
+            str(sample_root),
+            "--ddl-report-json",
+            str(ddl_json_path),
+            "--output",
+            str(tmp_path / "his-sample-quality.md"),
+            "--json-output",
+            str(quality_json_path),
+        ]
+    )
+    snapshot_plan_json_path = tmp_path / "his-snapshot-plan.json"
+    main(
+        [
+            "his-snapshot-plan",
+            "--quality-report-json",
+            str(quality_json_path),
+            "--project-id",
+            str(project_id),
+            "--snapshot-key",
+            "snapshot-his-0001",
+            "--source-batch-key",
+            "his-batch-0001",
+            "--output",
+            str(tmp_path / "his-snapshot-plan.md"),
+            "--json-output",
+            str(snapshot_plan_json_path),
+        ]
+    )
+
+    dry_run_report_path = tmp_path / "his-snapshot-apply-dry-run.md"
+    dry_run_json_path = tmp_path / "his-snapshot-apply-dry-run.json"
+    dry_run_exit_code = main(
+        [
+            "his-snapshot-apply",
+            "--snapshot-plan-json",
+            str(snapshot_plan_json_path),
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--output",
+            str(dry_run_report_path),
+            "--json-output",
+            str(dry_run_json_path),
+        ]
+    )
+    execute_report_path = tmp_path / "his-snapshot-apply-execute.md"
+    execute_json_path = tmp_path / "his-snapshot-apply-execute.json"
+    execute_exit_code = main(
+        [
+            "his-snapshot-apply",
+            "--snapshot-plan-json",
+            str(snapshot_plan_json_path),
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--output",
+            str(execute_report_path),
+            "--json-output",
+            str(execute_json_path),
+            "--execute",
+        ]
+    )
+
+    assert dry_run_exit_code == 0
+    assert execute_exit_code == 0
+    assert "HIS 数据快照入库报告" in dry_run_report_path.read_text(encoding="utf-8")
+    assert '"execute_requested": false' in dry_run_json_path.read_text(encoding="utf-8")
+    execute_json_body = execute_json_path.read_text(encoding="utf-8")
+    assert '"execute_requested": true' in execute_json_body
+    assert '"executed": true' in execute_json_body
+    assert asyncio.run(_audit_data_snapshot_count(database_url)) == 1
 
 
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
@@ -752,6 +873,38 @@ class FakeUiSmokeClient:
                 "details": {"matching_embedding_count": 1},
             },
         )
+
+
+async def _create_audit_project(database_url: str) -> UUID:
+    engine = create_async_engine(database_url)
+    try:
+        await create_schema(engine)
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session, session.begin():
+            project = await AuditWorkflowRepository(session).create_project(
+                AuditProjectCreate(
+                    project_key="audit-project-cli-snapshot-apply",
+                    name="CLI snapshot apply fixture",
+                    scenario_key="charging-compliance",
+                    status="fixture",
+                    owner_department="审计科",
+                    created_by="unit-test",
+                )
+            )
+            return project.id
+    finally:
+        await engine.dispose()
+
+
+async def _audit_data_snapshot_count(database_url: str) -> int:
+    engine = create_async_engine(database_url)
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session:
+            result = await session.execute(select(AuditDataSnapshot))
+            return len(result.scalars().all())
+    finally:
+        await engine.dispose()
 
 
 def _write_text(path: Path, content: str) -> Path:

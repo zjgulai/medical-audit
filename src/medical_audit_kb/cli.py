@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -42,6 +43,12 @@ from medical_audit_kb.his.sample_quality import (
     his_sample_quality_report_json,
     load_his_ddl_parse_report_json,
     render_his_sample_quality_report_markdown,
+)
+from medical_audit_kb.his.snapshot_apply import (
+    apply_his_snapshot_plan_to_database,
+    his_snapshot_apply_result_json,
+    load_his_snapshot_plan_json,
+    render_his_snapshot_apply_markdown,
 )
 from medical_audit_kb.his.snapshot_plan import (
     build_his_snapshot_plan,
@@ -142,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_sample_quality(args)
     if args.command == "his-snapshot-plan":
         return _his_snapshot_plan(args)
+    if args.command == "his-snapshot-apply":
+        return _his_snapshot_apply(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -322,6 +331,25 @@ def _build_parser() -> argparse.ArgumentParser:
     his_snapshot_plan.add_argument("--status", default="validated")
     his_snapshot_plan.add_argument("--output", required=True, type=Path)
     his_snapshot_plan.add_argument("--json-output", type=Path)
+
+    his_snapshot_apply = subparsers.add_parser(
+        "his-snapshot-apply",
+        help="Dry-run or write a validated HIS snapshot plan into audit_data_snapshots.",
+    )
+    his_snapshot_apply.add_argument("--snapshot-plan-json", required=True, type=Path)
+    his_snapshot_apply.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    his_snapshot_apply.add_argument("--output", required=True, type=Path)
+    his_snapshot_apply.add_argument("--json-output", type=Path)
+    his_snapshot_apply.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually insert audit_data_snapshots. Omit this flag to run dry-run only.",
+    )
+    his_snapshot_apply.add_argument(
+        "--create-schema",
+        action="store_true",
+        help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
+    )
 
     ui_smoke = subparsers.add_parser(
         "ui-smoke",
@@ -616,6 +644,22 @@ def _his_snapshot_plan(args: argparse.Namespace) -> int:
     if args.json_output is not None:
         _write_text(args.json_output, his_snapshot_plan_json(plan))
     return 0 if plan.status == "pass" else 2
+
+
+def _his_snapshot_apply(args: argparse.Namespace) -> int:
+    plan = load_his_snapshot_plan_json(args.snapshot_plan_json)
+    result = asyncio.run(
+        apply_his_snapshot_plan_to_database(
+            plan,
+            database_url=_database_url_from_env(args.database_url_env),
+            execute=args.execute,
+            create_schema_if_missing=args.create_schema,
+        )
+    )
+    _write_text(args.output, render_his_snapshot_apply_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_snapshot_apply_result_json(result))
+    return 0 if result.status == "pass" else 2
 
 
 def _ui_smoke(args: argparse.Namespace) -> int:
