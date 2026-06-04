@@ -169,6 +169,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - HIS DDL 解析入口：`medical_audit_kb.his.ddl_parser` 和 CLI `his-ddl-parse`，用于把离线 DDL 文本解析为表、字段、主键、时间字段、字段注释和 DDL hash
 - HIS 样本质量入口：`medical_audit_kb.his.sample_quality` 和 CLI `his-sample-quality`，用于在写入 staging 前检查脱敏 CSV/JSONL 样本的字段对齐、行数、必填空值和重复主键
 - HIS raw staging 导入入口：`medical_audit_kb.his.staging_import` 和 CLI `his-staging-import`，用于默认 dry-run 校验样本质量报告、source batch、table schema 和重复 staging 行，并在显式 `--execute` 后写入 `his_staging_rows`
+- `CHARGE-RULE-001` staging 标准输入转换入口：`medical_audit_kb.audit.charge_rule_001_staging`，用于把 `his_staging_rows` 与 `his_field_mappings` 转换为规则执行器使用的 `ChargeDetailRecord`
 - HIS 快照计划入口：`medical_audit_kb.his.snapshot_plan` 和 CLI `his-snapshot-plan`，用于从通过的样本质量报告生成 `AuditDataSnapshotCreate` payload、表级 row_counts 和快照 checksum
 - HIS 快照受控入库入口：`medical_audit_kb.his.snapshot_apply` 和 CLI `his-snapshot-apply`，用于默认 dry-run 校验快照计划，并在显式 `--execute` 后写入 `audit_data_snapshots`
 
@@ -178,7 +179,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - `/pages/review-tasks` 的创建、列表、状态更新和导出默认读写 PostgreSQL。
 - `/pages/audit-findings` 默认使用 `SqlAlchemyAuditFindingStore(settings.database_url)` 读取 `audit_findings` 和 `finding_evidence_items`，支持疑点 JSON 导出和创建复核任务。
 - JSON store 只保留为测试和应急替换路径，不再作为生产默认持久化。
-- 当前已完成任务级复核持久化、审计业务数据底座第一批、HIS 输入契约第一批、HIS raw staging、HIS DDL 自动解析器、HIS 样本质量报告、HIS raw staging 导入、HIS 快照计划、HIS 快照受控入库、收费合规字段映射校验器、`CHARGE-RULE-001` 开发期 fixture 执行器和开发期疑点清单接入；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁、正式规则发布、生产库 staging 执行验收、staging 到规则标准输入转换和快照回滚审计仍属于后续案件级审计流。
+- 当前已完成任务级复核持久化、审计业务数据底座第一批、HIS 输入契约第一批、HIS raw staging、HIS DDL 自动解析器、HIS 样本质量报告、HIS raw staging 导入、HIS 快照计划、HIS 快照受控入库、收费合规字段映射校验器、`CHARGE-RULE-001` staging 标准输入转换、`CHARGE-RULE-001` 开发期 fixture 执行器和开发期疑点清单接入；用户权限、多实例强一致编号、负责人确认、附件、正式报告门禁、正式规则发布、生产库 staging 执行验收、staging 驱动规则运行 CLI、疑点入库执行和快照回滚审计仍属于后续案件级审计流。
 
 该 schema 与当前 Kimi 主索引一致，但不兼容 `text-embedding-3-small` 的 `1536` 维向量。切换 embedding model 时必须新增对应 migration 或新向量表，不能在同一 `vector(1024)` 列中混写不同维度。
 
