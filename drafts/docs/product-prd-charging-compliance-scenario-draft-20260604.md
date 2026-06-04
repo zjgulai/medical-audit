@@ -122,6 +122,7 @@ V1.0 首个场景不做：
 - 已建立 HIS DDL 自动解析器和 CLI `his-ddl-parse`，可解析离线 DDL 的表、字段、主键、时间字段、字段注释和 DDL hash。
 - 已建立 HIS 脱敏样本质量报告 CLI `his-sample-quality`，可在写入 staging 前检查 CSV/JSONL 样本字段对齐、必填空值、重复主键和行数字段画像。
 - 已建立 HIS 数据快照计划 CLI `his-snapshot-plan`，样本质量报告通过后可生成 `AuditDataSnapshotCreate` payload、row_counts 和快照 checksum。
+- 已建立 HIS 数据快照受控入库 CLI `his-snapshot-apply`，默认 dry-run，显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
 - 该结果只证明工程闭环，不证明院方真实数据准确率。
 
 ### 8.2 院方样本验收
@@ -154,4 +155,5 @@ V1.0 首个场景不做：
 7. 已接入 HIS DDL 自动解析。
 8. 已接入脱敏样本数据质量报告。
 9. 已接入 HIS 数据快照计划。
-10. 下一步接入脱敏样本 staging 写入、快照 payload 入库执行、快照回滚审计和正式案件级复核流。
+10. 已接入 HIS 数据快照受控入库。
+11. 下一步接入脱敏样本 staging 写入、生产库快照执行验收、快照回滚审计和正式案件级复核流。

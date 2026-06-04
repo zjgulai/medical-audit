@@ -183,10 +183,11 @@ N001,charge_detail,CD0100,CHARGE-RULE-001,quantity-explained-by-order,审计员A
 3. 使用 `his-snapshot-plan` 生成快照计划、row_counts、checksum 和 `AuditDataSnapshotCreate` payload。
 4. 建立 `his_source_batches`、`his_table_schemas`、`his_field_mappings`。
 5. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
-6. 生成并入库 `audit_data_snapshots`。
-7. 建立 `audit_rules` 和 `rule_versions`。
-8. 运行 `CHARGE-RULE-001`。
-9. 生成 `audit_findings` 和 `finding_evidence_items`。
+6. 使用 `his-snapshot-apply` dry-run 校验快照计划、项目存在性和 `snapshot_key` 唯一性。
+7. 复核 dry-run 报告后显式 `--execute` 写入 `audit_data_snapshots`。
+8. 建立 `audit_rules` 和 `rule_versions`。
+9. 运行 `CHARGE-RULE-001`。
+10. 生成 `audit_findings` 和 `finding_evidence_items`。
 
 示例命令：
 
@@ -210,4 +211,17 @@ medical-audit-kb his-snapshot-plan \
   --time-range-json '{"from":"2025-01-01","to":"2025-01-31"}' \
   --output tmp/outputs/his-delivery/his-snapshot-plan.md \
   --json-output tmp/outputs/his-delivery/his-snapshot-plan.json
+
+medical-audit-kb his-snapshot-apply \
+  --snapshot-plan-json tmp/outputs/his-delivery/his-snapshot-plan.json \
+  --database-url-env MEDICAL_AUDIT_DATABASE_URL \
+  --output tmp/outputs/his-delivery/his-snapshot-apply-dry-run.md \
+  --json-output tmp/outputs/his-delivery/his-snapshot-apply-dry-run.json
+
+medical-audit-kb his-snapshot-apply \
+  --snapshot-plan-json tmp/outputs/his-delivery/his-snapshot-plan.json \
+  --database-url-env MEDICAL_AUDIT_DATABASE_URL \
+  --output tmp/outputs/his-delivery/his-snapshot-apply-execute.md \
+  --json-output tmp/outputs/his-delivery/his-snapshot-apply-execute.json \
+  --execute
 ```
