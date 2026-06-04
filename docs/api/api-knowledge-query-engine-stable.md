@@ -86,14 +86,14 @@ Query 参数：
 
 服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
 
-当前边界：该任务台已经具备数据库持久化和任务级导出，但仍不替代完整案件系统、权限系统、负责人确认、附件管理或正式报告门禁。
+当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录和任务级导出，但仍不替代完整案件系统、权限系统、附件管理、正式报告文件生成或整改跟踪。
 
 页面展示：
 
-- 任务总数、开放任务、待补证据、关闭任务统计。
+- 任务总数、开放任务、报告就绪、待补证据、关闭任务统计。
 - 复核任务列表。
-- 每个任务的问题、创建时间、更新时间、引用数量、复核门禁。
-- 复核状态、复核意见、复核结论编辑表单。
+- 每个任务的问题、创建时间、更新时间、引用数量、承办人和报告门禁预检。
+- 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人和确认时间编辑表单。
 - 任务级 Markdown/JSON 导出入口。
 
 ### `POST /pages/review-tasks/create`
@@ -114,19 +114,26 @@ Form 字段：
 
 ### `POST /pages/review-tasks/{task_id}/status`
 
-更新复核任务状态、复核意见和复核结论。
+更新复核任务状态、承办人、复核意见、复核结论、底稿状态和负责人确认记录。
 
 Form 字段：
 
 - `status`：必填，允许值为 `pending-review`、`confirmed-violation`、`rule-issue`、`data-issue`、`needs-evidence`、`not-violation`、`closed`。
+- `assigned_to`：可选，任务承办人。
 - `reviewer_note`：可选，人工复核意见。
 - `conclusion`：可选，复核结论。
+- `workpaper_status`：可选，允许值为 `missing`、`draft`、`ready`、`not-required`。
+- `workpaper_id`：可选，底稿编号或外部底稿位置。
+- `workpaper_note`：可选，底稿说明。
+- `owner_signoff_status`：可选，允许值为 `not-requested`、`requested`、`approved`、`rejected`。
+- `owner_confirmed_by`：可选，负责人确认人。
+- `owner_confirmed_at`：可选，负责人确认时间，建议使用 ISO 8601。
 
 状态码：
 
 - `303`：保存成功，跳转 `/pages/review-tasks`。
 - `404`：任务不存在。
-- `422`：状态非法或缺少状态字段。
+- `422`：状态、底稿状态、负责人确认状态非法，或缺少状态字段。
 
 ### `GET /review-tasks/{task_id}/export`
 
@@ -139,7 +146,8 @@ Query 参数：
 导出内容：
 
 - `review-task-v1` 任务元数据。
-- 任务状态、复核意见、复核结论。
+- 任务状态、承办人、复核意见、复核结论和任务级 `report_gate` 预检结果。
+- `dossier.workpaper` 底稿状态和 `dossier.owner_signoff` 负责人确认记录。
 - 创建任务时保存的 `audit-dossier-v1` 底稿快照。
 
 响应：

@@ -38,12 +38,13 @@ source: human+ai
 - 已新增 `his-snapshot-rollback-audit` CLI，支持默认 dry-run 计算快照回滚影响面，并在显式 `--execute` 后写入 `audit_snapshot_rollbacks`，不删除历史快照、任务、run 或疑点。
 - 已新增 `his-staging-acceptance` CLI，支持只读验收生产 staging 链路，覆盖项目、source batch、staging rows、table schema、字段映射门禁、snapshot、audit task、audit run、rule version、疑点证据和可选回滚目标。
 - 已新增 `case-review-report-gate` CLI，支持正式报告前只读门禁，覆盖疑点证据、复核任务绑定、复核状态闭合、复核意见/结论、确认违规底稿和负责人确认。
+- 复核任务台已新增任务级报告准备度预检、承办人、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人和确认时间字段，并进入 Markdown/JSON 导出。
 
 当前未完成：
 
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
-- 生产级案件级人工复核 UI、附件管理、报告生成和整改跟踪。
+- 生产级附件上传、正式报告文件生成和整改跟踪。
 - 用户、角色、科室、权限控制和审计日志。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
@@ -209,6 +210,7 @@ source: human+ai
 - `his-snapshot-rollback-audit` 已覆盖开发期快照回滚审计，默认 dry-run，执行前校验项目、from/to snapshot、重复 rollback key 和影响面，显式 `--execute` 后只写审计事件，不删除历史数据。
 - `his-staging-acceptance` 已覆盖生产 staging 只读验收，执行时不写库，只输出 PASS/FAIL 报告和 JSON 证据。
 - `case-review-report-gate` 已覆盖正式报告前只读门禁，执行时不写库，只基于现有疑点、证据、复核任务和任务 metadata 计算 PASS/FAIL。
+- `/pages/review-tasks` 已覆盖任务级报告准备度预检和负责人确认记录，但仍未提供附件上传、正式报告文档生成、整改跟踪或权限系统。
 - 当前仍是数据底座切片，不包含权限系统、附件上传、多实例强一致编号、报告文档生成或整改跟踪。
 
 验收：

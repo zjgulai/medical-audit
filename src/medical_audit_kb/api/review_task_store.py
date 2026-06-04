@@ -116,6 +116,10 @@ class SqlAlchemyReviewTaskStore:
                 task.reviewer_note = str(values["reviewer_note"])
             if "conclusion" in values:
                 task.conclusion = str(values["conclusion"])
+            if "assigned_to" in values:
+                task.assigned_to = _optional_str(values["assigned_to"])
+            if "dossier" in values:
+                task.dossier = _dict_value(values["dossier"])
             task.updated_at = utc_now()
             session.add(
                 ReviewAction(
@@ -268,6 +272,7 @@ def _task_to_payload(task: ReviewTask) -> dict[str, object]:
         "fallback_label": task.fallback_label,
         "reviewer_note": task.reviewer_note,
         "conclusion": task.conclusion,
+        "assigned_to": task.assigned_to,
         "source": task.source,
         "dossier": copy.deepcopy(task.dossier),
     }
