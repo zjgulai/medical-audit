@@ -233,13 +233,22 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "待复核" in page_response.text
     assert "导出任务 Markdown" in page_response.text
     assert "导出任务 JSON" in page_response.text
+    assert "报告门禁预检" in page_response.text
+    assert "底稿与负责人确认" in page_response.text
 
     update_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
         data={
             "status": "confirmed-violation",
+            "assigned_to": "审计员A",
             "reviewer_note": "引用已覆盖规则依据，需补 HIS 原始凭证。",
             "conclusion": "疑似违规线索成立，进入人工复核。",
+            "workpaper_status": "ready",
+            "workpaper_id": "workpaper-20260604-001",
+            "workpaper_note": "底稿已核对引用、原文和 HIS 凭证位置。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "审计科负责人A",
+            "owner_confirmed_at": "2026-06-04T12:00:00Z",
         },
         follow_redirects=False,
     )
@@ -248,9 +257,21 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     updated_task = _review_tasks(state)[0]
     assert updated_task["status"] == "confirmed-violation"
     assert updated_task["status_label"] == "确认违规"
+    assert updated_task["assigned_to"] == "审计员A"
     assert updated_task["reviewer_note"] == "引用已覆盖规则依据，需补 HIS 原始凭证。"
     assert updated_task["conclusion"] == "疑似违规线索成立，进入人工复核。"
+    dossier = updated_task["dossier"]
+    assert isinstance(dossier, dict)
+    assert dossier["workpaper"]["status"] == "ready"
+    assert dossier["workpaper"]["workpaper_id"] == "workpaper-20260604-001"
+    assert dossier["owner_signoff"]["status"] == "approved"
+    assert dossier["owner_signoff"]["confirmed_by"] == "审计科负责人A"
     assert str(state.operation_logs[-1]["action"]) == "review-task-status-update"
+
+    updated_page_response = client.get("/pages/review-tasks")
+    assert updated_page_response.status_code == 200
+    assert "可进入报告草稿" in updated_page_response.text
+    assert "审计员A" in updated_page_response.text
 
     json_response = client.get("/review-tasks/review-task-0001/export")
     assert json_response.status_code == 200
@@ -260,8 +281,12 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     body = json_response.json()
     assert body["format"] == "review-task-v1"
     assert body["status"] == "confirmed-violation"
+    assert body["assigned_to"] == "审计员A"
+    assert body["report_gate"]["ready_for_report"] is True
     assert body["reviewer_note"] == "引用已覆盖规则依据，需补 HIS 原始凭证。"
     assert body["conclusion"] == "疑似违规线索成立，进入人工复核。"
+    assert body["dossier"]["workpaper"]["status"] == "ready"
+    assert body["dossier"]["owner_signoff"]["status"] == "approved"
     assert body["dossier"]["format"] == "audit-dossier-v1"
     assert body["dossier"]["citations"][0]["chunk_id"] == str(LAW_CHUNK_ID)
     assert body["dossier"]["citations"][0]["index_version_key"] == "index-v1"
@@ -278,6 +303,9 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "# AuditScope 复核任务记录" in markdown_response.text
     assert "## 底稿" in markdown_response.text
     assert "确认违规 (confirmed-violation)" in markdown_response.text
+    assert "报告准备度：可进入报告草稿" in markdown_response.text
+    assert "底稿编号：workpaper-20260604-001" in markdown_response.text
+    assert "负责人确认：负责人已确认" in markdown_response.text
     assert "疑似违规线索成立，进入人工复核。" in markdown_response.text
     assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
 

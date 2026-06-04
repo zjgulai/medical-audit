@@ -32,13 +32,14 @@
         <aside class="hero-console" aria-label="复核任务状态">
           <div><span>任务总数</span><strong>{{ review_task_stats.total }}</strong></div>
           <div><span>开放任务</span><strong>{{ review_task_stats.open }}</strong></div>
-          <div><span>确认违规</span><strong>{{ review_task_stats.confirmed_violation }}</strong></div>
+          <div><span>报告就绪</span><strong>{{ review_task_stats.report_ready }}</strong></div>
         </aside>
       </section>
 
       <section class="metrics review-metrics">
         <article><strong>{{ review_task_stats.total }}</strong><span>total</span></article>
         <article><strong>{{ review_task_stats.open }}</strong><span>open</span></article>
+        <article><strong>{{ review_task_stats.report_ready }}</strong><span>report ready</span></article>
         <article><strong>{{ review_task_stats.needs_evidence }}</strong><span>needs evidence</span></article>
         <article><strong>{{ review_task_stats.closed }}</strong><span>closed</span></article>
       </section>
@@ -67,10 +68,31 @@
               <div><dt>created</dt><dd>{{ task.created_at }}</dd></div>
               <div><dt>updated</dt><dd>{{ task.updated_at }}</dd></div>
               <div><dt>citations</dt><dd>{{ task.citation_count }}</dd></div>
-              <div><dt>review gate</dt><dd>{{ task.review_gate }}</dd></div>
+              <div><dt>assignee</dt><dd>{{ task.assigned_to or '未指定' }}</dd></div>
             </dl>
 
+            <section class="review-report-gate {% if task.report_gate.ready_for_report %}ready{% else %}blocked{% endif %}" aria-label="报告门禁预检">
+              <div class="review-report-gate-head">
+                <div>
+                  <p class="eyebrow">报告门禁预检</p>
+                  <h3>{{ task.report_gate.status_label }}</h3>
+                </div>
+                <span>{% if task.report_gate.ready_for_report %}PASS{% else %}BLOCKED{% endif %}</span>
+              </div>
+              <ul class="gate-check-list">
+                {% for check in task.report_gate.checks %}
+                  <li class="{% if check.pass %}pass{% else %}fail{% endif %}">
+                    <strong>{{ check.label }}</strong>
+                    <span>{{ check.message }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </section>
+
             <form method="post" action="/pages/review-tasks/{{ task.task_id }}/status" class="review-task-form">
+              <label for="assignee-{{ task.task_id }}">承办人</label>
+              <input id="assignee-{{ task.task_id }}" name="assigned_to" value="{{ task.assigned_to }}" placeholder="审计员姓名或工号">
+
               <label for="status-{{ task.task_id }}">复核状态</label>
               <select id="status-{{ task.task_id }}" name="status">
                 {% for value, label in review_status_options.items() %}
@@ -83,6 +105,37 @@
 
               <label for="conclusion-{{ task.task_id }}">复核结论</label>
               <textarea id="conclusion-{{ task.task_id }}" name="conclusion" rows="3" placeholder="仅在证据充分后填写结论。">{{ task.conclusion }}</textarea>
+
+              <fieldset class="review-governance-fieldset">
+                <legend>底稿与负责人确认</legend>
+                <div class="review-governance-grid">
+                  <label for="workpaper-status-{{ task.task_id }}">底稿状态
+                    <select id="workpaper-status-{{ task.task_id }}" name="workpaper_status">
+                      {% for value, label in workpaper_status_options.items() %}
+                        <option value="{{ value }}" {% if task.workpaper.status == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label for="workpaper-id-{{ task.task_id }}">底稿编号
+                    <input id="workpaper-id-{{ task.task_id }}" name="workpaper_id" value="{{ task.workpaper.workpaper_id }}" placeholder="workpaper-20260604-001">
+                  </label>
+                  <label for="owner-status-{{ task.task_id }}">负责人确认
+                    <select id="owner-status-{{ task.task_id }}" name="owner_signoff_status">
+                      {% for value, label in owner_signoff_status_options.items() %}
+                        <option value="{{ value }}" {% if task.owner_signoff.status == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label for="owner-by-{{ task.task_id }}">确认人
+                    <input id="owner-by-{{ task.task_id }}" name="owner_confirmed_by" value="{{ task.owner_signoff.confirmed_by }}" placeholder="科室负责人姓名">
+                  </label>
+                  <label for="owner-at-{{ task.task_id }}">确认时间
+                    <input id="owner-at-{{ task.task_id }}" name="owner_confirmed_at" value="{{ task.owner_signoff.confirmed_at }}" placeholder="2026-06-04T12:00:00Z">
+                  </label>
+                </div>
+                <label for="workpaper-note-{{ task.task_id }}">底稿说明</label>
+                <textarea id="workpaper-note-{{ task.task_id }}" name="workpaper_note" rows="2" placeholder="记录底稿来源、附件位置、仍需补证的内容。">{{ task.workpaper.note }}</textarea>
+              </fieldset>
 
               <div class="review-task-actions">
                 <button type="submit">保存复核状态</button>

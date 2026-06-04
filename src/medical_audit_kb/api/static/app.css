@@ -2504,6 +2504,89 @@ code,
   overflow-wrap: anywhere;
 }
 
+.review-report-gate {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(156, 90, 26, 0.22);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 229, 0.88), rgba(255, 252, 242, 0.78)),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(156, 90, 26, 0.035) 18px 19px);
+}
+
+.review-report-gate.ready {
+  border-color: rgba(34, 94, 75, 0.24);
+  background:
+    linear-gradient(135deg, rgba(236, 253, 243, 0.9), rgba(255, 252, 242, 0.78)),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(34, 94, 75, 0.035) 18px 19px);
+}
+
+.review-report-gate-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.review-report-gate-head h3 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Songti SC", "STSong", serif;
+  font-size: 1.55rem;
+  letter-spacing: -0.035em;
+}
+
+.review-report-gate-head > span {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 11px;
+  border-radius: 999px;
+  color: #fff8e8;
+  background: var(--warning);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.review-report-gate.ready .review-report-gate-head > span {
+  background: var(--green);
+}
+
+.gate-check-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.gate-check-list li {
+  display: grid;
+  gap: 5px;
+  min-height: 74px;
+  align-content: center;
+  padding: 10px;
+  border: 1px solid rgba(156, 90, 26, 0.14);
+  border-radius: 15px;
+  background: rgba(255, 252, 242, 0.76);
+}
+
+.gate-check-list li.pass {
+  border-color: rgba(34, 94, 75, 0.2);
+}
+
+.gate-check-list strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.gate-check-list span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .review-task-form {
   display: grid;
   gap: 10px;
@@ -2518,6 +2601,24 @@ code,
   background: rgba(255, 255, 255, 0.9);
   font-family: var(--font-sans);
   font-size: 1rem;
+}
+
+.review-governance-fieldset {
+  display: grid;
+  gap: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 242, 0.72), rgba(246, 240, 226, 0.64));
+}
+
+.review-governance-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-governance-grid label {
+  display: grid;
+  gap: 7px;
 }
 
 .review-task-actions {
@@ -2753,6 +2854,8 @@ code,
   .decision-summary-grid,
   .query-result-summary,
   .example-question-grid,
+  .gate-check-list,
+  .review-governance-grid,
   .review-task-summary,
   .workbench-grid,
   .chat-layout,

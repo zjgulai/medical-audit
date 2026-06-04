@@ -59,6 +59,25 @@ REVIEW_TASK_STATUS_LABELS: dict[str, str] = {
     "not-violation": "未发现违规",
     "closed": "已关闭",
 }
+RESOLVED_REVIEW_TASK_STATUSES = {
+    "confirmed-violation",
+    "rule-issue",
+    "data-issue",
+    "not-violation",
+    "closed",
+}
+WORKPAPER_STATUS_LABELS: dict[str, str] = {
+    "missing": "未建底稿",
+    "draft": "底稿草稿",
+    "ready": "底稿已就绪",
+    "not-required": "无需底稿",
+}
+OWNER_SIGNOFF_STATUS_LABELS: dict[str, str] = {
+    "not-requested": "未提交确认",
+    "requested": "待负责人确认",
+    "approved": "负责人已确认",
+    "rejected": "退回复核",
+}
 
 SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
     SourceCollection.MEDICAL_INSURANCE_LAWS: {
@@ -217,9 +236,11 @@ def review_tasks_page(
         request,
         "review_tasks.html",
         {
-            "review_tasks": tuple(reversed(review_tasks)),
+            "review_tasks": tuple(_review_task_page_item(task) for task in reversed(review_tasks)),
             "review_task_stats": _review_task_stats(review_tasks),
             "review_status_options": REVIEW_TASK_STATUS_LABELS,
+            "workpaper_status_options": WORKPAPER_STATUS_LABELS,
+            "owner_signoff_status_options": OWNER_SIGNOFF_STATUS_LABELS,
             "search_backend": _search_backend_context(state),
         },
     )
@@ -339,6 +360,7 @@ async def update_review_task_status_page(
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
     form = await _urlencoded_form(request)
+    existing_task = _review_task_by_id(state, task_id)
     status = _form_required_str(form, "status")
     if status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
@@ -349,8 +371,10 @@ async def update_review_task_status_page(
         {
             "status": status,
             "status_label": REVIEW_TASK_STATUS_LABELS[status],
+            "assigned_to": _form_optional_str(form, "assigned_to"),
             "reviewer_note": _form_optional_str(form, "reviewer_note"),
             "conclusion": _form_optional_str(form, "conclusion"),
+            "dossier": _review_task_dossier_from_form(existing_task, form),
             "updated_at": _utc_now_iso(),
         },
     )
@@ -691,6 +715,12 @@ def _dict_list(value: object) -> tuple[dict[str, object], ...]:
     return tuple(item for item in value if isinstance(item, dict))
 
 
+def _dict_value(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 def _json_safe(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
@@ -738,9 +768,10 @@ def _create_review_task(
         "confidence_label": dossier["confidence_label"],
         "fallback_label": dossier["fallback_label"],
         "source": "chat-dossier",
+        "assigned_to": "",
         "reviewer_note": "",
         "conclusion": "",
-        "dossier": dossier,
+        "dossier": _with_review_task_governance_defaults(dossier),
     }
     return _review_task_store(state).add_task(task)
 
@@ -765,9 +796,10 @@ def _create_review_task_from_finding(
         "confidence_label": "中",
         "fallback_label": "规则命中",
         "source": "audit-finding",
+        "assigned_to": "",
         "reviewer_note": "",
         "conclusion": "",
-        "dossier": dossier,
+        "dossier": _with_review_task_governance_defaults(dossier),
     }
     return _review_task_store(state).add_task(task)
 
@@ -838,6 +870,9 @@ def _review_task_stats(tasks: list[dict[str, object]]) -> dict[str, object]:
         "closed": status_counts["closed"],
         "confirmed_violation": status_counts["confirmed-violation"],
         "needs_evidence": status_counts["needs-evidence"],
+        "report_ready": sum(
+            1 for task in tasks if _review_task_report_gate_context(task)["ready_for_report"]
+        ),
         "status_counts": status_counts,
     }
 
@@ -855,9 +890,11 @@ def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
         "review_gate": task["review_gate"],
         "confidence_label": task["confidence_label"],
         "fallback_label": task["fallback_label"],
+        "assigned_to": task.get("assigned_to"),
         "reviewer_note": task["reviewer_note"],
         "conclusion": task["conclusion"],
         "source": task.get("source", "chat-dossier"),
+        "report_gate": _review_task_report_gate_context(task),
         "dossier": task["dossier"],
     }
 
@@ -912,6 +949,12 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
     dossier = payload.get("dossier")
     if not isinstance(dossier, dict):
         dossier = {}
+    report_gate = _dict_value(payload.get("report_gate"))
+    report_ready_label = (
+        "可进入报告草稿" if report_gate.get("ready_for_report") else "不得进入报告草稿"
+    )
+    workpaper = _dict_value(dossier.get("workpaper"))
+    owner_signoff = _dict_value(dossier.get("owner_signoff"))
     lines = [
         "# AuditScope 复核任务记录",
         "",
@@ -919,17 +962,189 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
         f"- 创建时间：{payload['created_at']}",
         f"- 更新时间：{payload['updated_at']}",
         f"- 状态：{payload['status_label']} ({payload['status']})",
+        f"- 承办人：{payload.get('assigned_to') or '未指定'}",
         f"- 问题：{payload['question']}",
         f"- 引用数量：{payload['citation_count']}",
         f"- 复核门禁：{payload['review_gate']}",
+        f"- 报告准备度：{report_ready_label}",
         f"- 复核意见：{payload['reviewer_note'] or '未填写'}",
         f"- 复核结论：{payload['conclusion'] or '未填写'}",
+        f"- 底稿状态：{workpaper.get('status_label', '未建底稿')}",
+        f"- 底稿编号：{workpaper.get('workpaper_id') or '未填写'}",
+        f"- 负责人确认：{owner_signoff.get('status_label', '未提交确认')}",
+        f"- 确认人：{owner_signoff.get('confirmed_by') or '未填写'}",
         "",
-        "## 底稿",
+        "## 报告门禁检查",
         "",
-        _render_audit_dossier_markdown(dossier),
     ]
+    for check in _dict_list(report_gate.get("checks")):
+        lines.append(
+            f"- [{'x' if check.get('pass') else ' '}] {check.get('label')}: {check.get('message')}"
+        )
+    lines.extend(
+        [
+            "",
+            "## 底稿",
+            "",
+            _render_audit_dossier_markdown(dossier),
+        ]
+    )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    return {
+        **task,
+        "assigned_to": str(task.get("assigned_to") or ""),
+        "dossier": dossier,
+        "workpaper": _workpaper_context(dossier),
+        "owner_signoff": _owner_signoff_context(dossier),
+        "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
+    }
+
+
+def _review_task_report_gate_context(task: dict[str, object]) -> dict[str, object]:
+    status = str(task.get("status", "pending-review"))
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    workpaper = _workpaper_context(dossier)
+    owner_signoff = _owner_signoff_context(dossier)
+    reviewer_note = str(task.get("reviewer_note", "")).strip()
+    conclusion = str(task.get("conclusion", "")).strip()
+    requires_workpaper = status == "confirmed-violation"
+    checks = [
+        {
+            "key": "review-status",
+            "label": "复核状态闭合",
+            "pass": status in RESOLVED_REVIEW_TASK_STATUSES,
+            "message": REVIEW_TASK_STATUS_LABELS.get(status, status),
+        },
+        {
+            "key": "review-note",
+            "label": "复核意见完整",
+            "pass": bool(reviewer_note),
+            "message": "已填写复核意见" if reviewer_note else "缺少复核意见",
+        },
+        {
+            "key": "review-conclusion",
+            "label": "复核结论完整",
+            "pass": bool(conclusion),
+            "message": "已填写复核结论" if conclusion else "缺少复核结论",
+        },
+        {
+            "key": "workpaper",
+            "label": "确认违规底稿",
+            "pass": (not requires_workpaper) or workpaper["status"] == "ready",
+            "message": str(workpaper["status_label"]),
+        },
+        {
+            "key": "owner-signoff",
+            "label": "负责人确认",
+            "pass": bool(owner_signoff["approved"]),
+            "message": str(owner_signoff["status_label"]),
+        },
+    ]
+    return {
+        "ready_for_report": all(bool(check["pass"]) for check in checks),
+        "status_label": "可进入报告草稿"
+        if all(bool(check["pass"]) for check in checks)
+        else "不得进入报告草稿",
+        "checks": checks,
+    }
+
+
+def _review_task_dossier_from_form(
+    task: dict[str, object],
+    form: Mapping[str, Sequence[str]],
+) -> dict[str, object]:
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    workpaper_status = _form_optional_str(form, "workpaper_status") or str(
+        _dict_value(dossier.get("workpaper")).get("status", "missing")
+    )
+    owner_status = _form_optional_str(form, "owner_signoff_status") or str(
+        _dict_value(dossier.get("owner_signoff")).get("status", "not-requested")
+    )
+    if workpaper_status not in WORKPAPER_STATUS_LABELS:
+        raise HTTPException(
+            status_code=422, detail=f"unsupported workpaper_status: {workpaper_status}"
+        )
+    if owner_status not in OWNER_SIGNOFF_STATUS_LABELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported owner_signoff_status: {owner_status}",
+        )
+    dossier["workpaper"] = {
+        "status": workpaper_status,
+        "status_label": WORKPAPER_STATUS_LABELS[workpaper_status],
+        "workpaper_id": _form_optional_str(form, "workpaper_id"),
+        "note": _form_optional_str(form, "workpaper_note"),
+    }
+    dossier["owner_signoff"] = {
+        "status": owner_status,
+        "status_label": OWNER_SIGNOFF_STATUS_LABELS[owner_status],
+        "confirmed_by": _form_optional_str(form, "owner_confirmed_by"),
+        "confirmed_at": _form_optional_str(form, "owner_confirmed_at"),
+    }
+    dossier["report_gate"] = {
+        "source": "review-task-page",
+        "updated_at": _utc_now_iso(),
+    }
+    return dossier
+
+
+def _with_review_task_governance_defaults(dossier: dict[str, object]) -> dict[str, object]:
+    normalized = dict(dossier)
+    workpaper = _dict_value(normalized.get("workpaper"))
+    workpaper_status = str(workpaper.get("status", "missing"))
+    if workpaper_status not in WORKPAPER_STATUS_LABELS:
+        workpaper_status = "missing"
+    normalized["workpaper"] = {
+        "status": workpaper_status,
+        "status_label": WORKPAPER_STATUS_LABELS[workpaper_status],
+        "workpaper_id": str(workpaper.get("workpaper_id", "")),
+        "note": str(workpaper.get("note", "")),
+    }
+    owner_signoff = _dict_value(normalized.get("owner_signoff"))
+    owner_status = str(owner_signoff.get("status", "not-requested"))
+    if owner_status not in OWNER_SIGNOFF_STATUS_LABELS:
+        owner_status = "not-requested"
+    normalized["owner_signoff"] = {
+        "status": owner_status,
+        "status_label": OWNER_SIGNOFF_STATUS_LABELS[owner_status],
+        "confirmed_by": str(owner_signoff.get("confirmed_by", "")),
+        "confirmed_at": str(owner_signoff.get("confirmed_at", "")),
+    }
+    normalized.setdefault("report_gate", {"source": "review-task-page"})
+    return normalized
+
+
+def _workpaper_context(dossier: dict[str, object]) -> dict[str, object]:
+    workpaper = _dict_value(dossier.get("workpaper"))
+    status = str(workpaper.get("status", "missing"))
+    if status not in WORKPAPER_STATUS_LABELS:
+        status = "missing"
+    return {
+        "status": status,
+        "status_label": WORKPAPER_STATUS_LABELS[status],
+        "workpaper_id": str(workpaper.get("workpaper_id", "")),
+        "note": str(workpaper.get("note", "")),
+    }
+
+
+def _owner_signoff_context(dossier: dict[str, object]) -> dict[str, object]:
+    owner_signoff = _dict_value(dossier.get("owner_signoff"))
+    status = str(owner_signoff.get("status", "not-requested"))
+    if status not in OWNER_SIGNOFF_STATUS_LABELS:
+        status = "not-requested"
+    confirmed_by = str(owner_signoff.get("confirmed_by", "")).strip()
+    confirmed_at = str(owner_signoff.get("confirmed_at", "")).strip()
+    return {
+        "status": status,
+        "status_label": OWNER_SIGNOFF_STATUS_LABELS[status],
+        "confirmed_by": confirmed_by,
+        "confirmed_at": confirmed_at,
+        "approved": status == "approved" and bool(confirmed_by) and bool(confirmed_at),
+    }
 
 
 async def _urlencoded_form(request: Request) -> dict[str, tuple[str, ...]]:
