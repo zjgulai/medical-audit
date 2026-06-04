@@ -12,6 +12,12 @@ from medical_audit_kb.acceptance.reports import (
     build_acceptance_report,
     render_acceptance_report_markdown,
 )
+from medical_audit_kb.audit.charge_rule_001 import DEFAULT_RULE_VERSION_KEY
+from medical_audit_kb.audit.charge_rule_001_staging_runner import (
+    charge_rule_001_staging_run_result_json,
+    render_charge_rule_001_staging_run_markdown,
+    run_charge_rule_001_from_staging_database,
+)
 from medical_audit_kb.core.config import DATABASE_URL_ENV
 from medical_audit_kb.evaluation.answer_datasets import load_answer_evaluation_cases
 from medical_audit_kb.evaluation.answer_reports import (
@@ -159,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_snapshot_apply(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
+    if args.command == "charge-rule-001-staging-run":
+        return _charge_rule_001_staging_run(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -374,6 +382,31 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Actually insert his_staging_rows. Omit this flag to run dry-run only.",
     )
     his_staging_import.add_argument(
+        "--create-schema",
+        action="store_true",
+        help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
+    )
+
+    charge_rule_001_staging_run = subparsers.add_parser(
+        "charge-rule-001-staging-run",
+        help="Dry-run or execute CHARGE-RULE-001 from HIS staging rows into audit findings.",
+    )
+    charge_rule_001_staging_run.add_argument("--source-batch-key", required=True)
+    charge_rule_001_staging_run.add_argument("--audit-task-key", required=True)
+    charge_rule_001_staging_run.add_argument("--audit-run-key", required=True)
+    charge_rule_001_staging_run.add_argument(
+        "--rule-version-key",
+        default=DEFAULT_RULE_VERSION_KEY,
+    )
+    charge_rule_001_staging_run.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    charge_rule_001_staging_run.add_argument("--output", required=True, type=Path)
+    charge_rule_001_staging_run.add_argument("--json-output", type=Path)
+    charge_rule_001_staging_run.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually insert audit_findings. Omit this flag to run dry-run only.",
+    )
+    charge_rule_001_staging_run.add_argument(
         "--create-schema",
         action="store_true",
         help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
@@ -704,6 +737,24 @@ def _his_staging_import(args: argparse.Namespace) -> int:
     _write_text(args.output, render_his_staging_import_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, his_staging_import_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _charge_rule_001_staging_run(args: argparse.Namespace) -> int:
+    result = asyncio.run(
+        run_charge_rule_001_from_staging_database(
+            database_url=_database_url_from_env(args.database_url_env),
+            source_batch_key=args.source_batch_key,
+            audit_task_key=args.audit_task_key,
+            audit_run_key=args.audit_run_key,
+            rule_version_key=args.rule_version_key,
+            execute=args.execute,
+            create_schema_if_missing=args.create_schema,
+        )
+    )
+    _write_text(args.output, render_charge_rule_001_staging_run_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, charge_rule_001_staging_run_result_json(result))
     return 0 if result.status == "pass" else 2
 
 
