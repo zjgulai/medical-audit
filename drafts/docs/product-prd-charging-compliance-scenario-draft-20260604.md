@@ -128,6 +128,7 @@ V1.0 首个场景不做：
 - 已建立 `charge-rule-001-staging-run` CLI，可从 HIS staging 行运行 `CHARGE-RULE-001`，默认 dry-run，显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
 - 已建立 `his-snapshot-rollback-audit` CLI，可在生产 staging 验收失败时先计算快照回滚影响面，显式 `--execute` 后写入 `audit_snapshot_rollbacks` 审计事件。
 - 已建立 `his-staging-acceptance` CLI，可只读验收生产 staging 链路，输出 PASS/FAIL 报告和 JSON 证据，不写生产库。
+- 已建立 `case-review-report-gate` CLI，可在正式报告生成前只读校验疑点证据、复核任务、复核状态、复核意见/结论、确认违规底稿和负责人确认。
 - 该结果只证明工程闭环，不证明院方真实数据准确率。
 
 ### 8.2 院方样本验收
@@ -166,4 +167,5 @@ V1.0 首个场景不做：
 13. 已接入 `CHARGE-RULE-001` staging 规则运行入口和疑点入库执行。
 14. 已接入 HIS 数据快照回滚审计。
 15. 已接入生产库 staging 只读执行验收。
-16. 下一步接入正式案件级复核流。
+16. 已接入正式案件级复核报告门禁。
+17. 下一步接入复核任务 UI 的负责人确认、附件管理、报告文档生成和整改跟踪。
