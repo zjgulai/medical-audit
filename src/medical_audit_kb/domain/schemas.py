@@ -155,6 +155,20 @@ class AuditDataSnapshotCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuditSnapshotRollbackCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    rollback_key: str = Field(min_length=1, max_length=128)
+    project_id: UUID
+    from_snapshot_id: UUID
+    to_snapshot_id: UUID
+    status: str = Field(min_length=1, max_length=48)
+    reason: str = Field(min_length=1)
+    requested_by: str | None = None
+    impact_summary: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class HisSourceBatchCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

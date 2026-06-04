@@ -294,6 +294,22 @@ CREATE TABLE IF NOT EXISTS audit_data_snapshots (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit_snapshot_rollbacks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    rollback_key text NOT NULL UNIQUE,
+    project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT,
+    from_snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT,
+    to_snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT,
+    status text NOT NULL,
+    reason text NOT NULL,
+    requested_by text,
+    impact_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_audit_snapshot_rollbacks_distinct_snapshots
+        CHECK (from_snapshot_id <> to_snapshot_id)
+);
+
 CREATE TABLE IF NOT EXISTS audit_tasks (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     task_key text NOT NULL UNIQUE,
@@ -440,6 +456,14 @@ CREATE INDEX IF NOT EXISTS idx_his_field_mappings_target
 CREATE INDEX IF NOT EXISTS idx_his_field_mappings_status ON his_field_mappings (status);
 CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_project ON audit_data_snapshots (project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_status ON audit_data_snapshots (status);
+CREATE INDEX IF NOT EXISTS idx_audit_snapshot_rollbacks_project
+    ON audit_snapshot_rollbacks (project_id);
+CREATE INDEX IF NOT EXISTS idx_audit_snapshot_rollbacks_from_snapshot
+    ON audit_snapshot_rollbacks (from_snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_audit_snapshot_rollbacks_to_snapshot
+    ON audit_snapshot_rollbacks (to_snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_audit_snapshot_rollbacks_status
+    ON audit_snapshot_rollbacks (status);
 CREATE INDEX IF NOT EXISTS idx_audit_tasks_project ON audit_tasks (project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_tasks_snapshot ON audit_tasks (snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_audit_tasks_status ON audit_tasks (status);

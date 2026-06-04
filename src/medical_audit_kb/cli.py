@@ -62,6 +62,11 @@ from medical_audit_kb.his.snapshot_plan import (
     load_his_sample_quality_report_json,
     render_his_snapshot_plan_markdown,
 )
+from medical_audit_kb.his.snapshot_rollback import (
+    audit_his_snapshot_rollback_to_database,
+    his_snapshot_rollback_audit_result_json,
+    render_his_snapshot_rollback_audit_markdown,
+)
 from medical_audit_kb.his.staging_import import (
     his_staging_import_result_json,
     import_his_sample_quality_to_staging_database,
@@ -163,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_snapshot_plan(args)
     if args.command == "his-snapshot-apply":
         return _his_snapshot_apply(args)
+    if args.command == "his-snapshot-rollback-audit":
+        return _his_snapshot_rollback_audit(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -362,6 +369,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Actually insert audit_data_snapshots. Omit this flag to run dry-run only.",
     )
     his_snapshot_apply.add_argument(
+        "--create-schema",
+        action="store_true",
+        help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
+    )
+
+    his_snapshot_rollback_audit = subparsers.add_parser(
+        "his-snapshot-rollback-audit",
+        help="Dry-run or record an audit_data_snapshots rollback audit event.",
+    )
+    his_snapshot_rollback_audit.add_argument("--rollback-key", required=True)
+    his_snapshot_rollback_audit.add_argument("--project-key", required=True)
+    his_snapshot_rollback_audit.add_argument("--from-snapshot-key", required=True)
+    his_snapshot_rollback_audit.add_argument("--to-snapshot-key", required=True)
+    his_snapshot_rollback_audit.add_argument("--reason", required=True)
+    his_snapshot_rollback_audit.add_argument("--requested-by")
+    his_snapshot_rollback_audit.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    his_snapshot_rollback_audit.add_argument("--output", required=True, type=Path)
+    his_snapshot_rollback_audit.add_argument("--json-output", type=Path)
+    his_snapshot_rollback_audit.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually insert audit_snapshot_rollbacks. Omit this flag to run dry-run only.",
+    )
+    his_snapshot_rollback_audit.add_argument(
         "--create-schema",
         action="store_true",
         help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
@@ -720,6 +751,26 @@ def _his_snapshot_apply(args: argparse.Namespace) -> int:
     _write_text(args.output, render_his_snapshot_apply_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, his_snapshot_apply_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _his_snapshot_rollback_audit(args: argparse.Namespace) -> int:
+    result = asyncio.run(
+        audit_his_snapshot_rollback_to_database(
+            database_url=_database_url_from_env(args.database_url_env),
+            rollback_key=args.rollback_key,
+            project_key=args.project_key,
+            from_snapshot_key=args.from_snapshot_key,
+            to_snapshot_key=args.to_snapshot_key,
+            reason=args.reason,
+            requested_by=args.requested_by,
+            execute=args.execute,
+            create_schema_if_missing=args.create_schema,
+        )
+    )
+    _write_text(args.output, render_his_snapshot_rollback_audit_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_snapshot_rollback_audit_result_json(result))
     return 0 if result.status == "pass" else 2
 
 

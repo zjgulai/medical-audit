@@ -56,6 +56,16 @@ def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     assert "project_key text NOT NULL UNIQUE" in schema
     assert "CREATE TABLE IF NOT EXISTS audit_data_snapshots" in schema
     assert "project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_snapshot_rollbacks" in schema
+    assert (
+        "from_snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT"
+        in schema
+    )
+    assert (
+        "to_snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT"
+        in schema
+    )
+    assert "ck_audit_snapshot_rollbacks_distinct_snapshots" in schema
     assert "CREATE TABLE IF NOT EXISTS audit_tasks" in schema
     assert (
         "snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT" in schema
@@ -73,6 +83,7 @@ def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     )
     assert "chunk_id uuid REFERENCES document_chunks(id) ON DELETE SET NULL" in schema
     assert "idx_audit_tasks_project" in schema
+    assert "idx_audit_snapshot_rollbacks_project" in schema
     assert "idx_audit_runs_task" in schema
     assert "idx_audit_findings_run" in schema
     assert "idx_finding_evidence_items_finding" in schema
