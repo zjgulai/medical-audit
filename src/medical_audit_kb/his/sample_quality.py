@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from collections import Counter
 from collections.abc import Iterable
@@ -25,6 +26,7 @@ class HisSampleTableQuality(BaseModel):
 
     table_name: str
     file_path: str
+    file_sha256: str
     file_format: Literal["csv", "jsonl"]
     status: Literal["pass", "fail"]
     row_count: int
@@ -237,6 +239,7 @@ def _table_quality(
     return HisSampleTableQuality(
         table_name=expected_table.table_name if expected_table is not None else sample_file.stem,
         file_path=str(sample_file),
+        file_sha256=_file_sha256(sample_file),
         file_format="jsonl" if sample_file.suffix.lower() == ".jsonl" else "csv",
         status=status,
         row_count=len(rows),
@@ -370,3 +373,11 @@ def _normalize_table_key(value: str) -> str:
 
 def _is_empty(value: str | None) -> bool:
     return value is None or value.strip() == ""
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

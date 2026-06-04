@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
+from uuid import UUID
 
 from medical_audit_kb.acceptance.reports import (
     build_acceptance_report,
@@ -41,6 +42,12 @@ from medical_audit_kb.his.sample_quality import (
     his_sample_quality_report_json,
     load_his_ddl_parse_report_json,
     render_his_sample_quality_report_markdown,
+)
+from medical_audit_kb.his.snapshot_plan import (
+    build_his_snapshot_plan,
+    his_snapshot_plan_json,
+    load_his_sample_quality_report_json,
+    render_his_snapshot_plan_markdown,
 )
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_ddl_parse(args)
     if args.command == "his-sample-quality":
         return _his_sample_quality(args)
+    if args.command == "his-snapshot-plan":
+        return _his_snapshot_plan(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -300,6 +309,19 @@ def _build_parser() -> argparse.ArgumentParser:
     his_sample_quality.add_argument("--ddl-report-json", type=Path)
     his_sample_quality.add_argument("--output", required=True, type=Path)
     his_sample_quality.add_argument("--json-output", type=Path)
+
+    his_snapshot_plan = subparsers.add_parser(
+        "his-snapshot-plan",
+        help="Build a validated HIS audit_data_snapshots payload from a sample quality report.",
+    )
+    his_snapshot_plan.add_argument("--quality-report-json", required=True, type=Path)
+    his_snapshot_plan.add_argument("--project-id", required=True)
+    his_snapshot_plan.add_argument("--snapshot-key", required=True)
+    his_snapshot_plan.add_argument("--source-batch-key", required=True)
+    his_snapshot_plan.add_argument("--time-range-json", default="{}")
+    his_snapshot_plan.add_argument("--status", default="validated")
+    his_snapshot_plan.add_argument("--output", required=True, type=Path)
+    his_snapshot_plan.add_argument("--json-output", type=Path)
 
     ui_smoke = subparsers.add_parser(
         "ui-smoke",
@@ -580,6 +602,22 @@ def _his_sample_quality(args: argparse.Namespace) -> int:
     return 0 if report.status == "pass" else 2
 
 
+def _his_snapshot_plan(args: argparse.Namespace) -> int:
+    quality_report = load_his_sample_quality_report_json(args.quality_report_json)
+    plan = build_his_snapshot_plan(
+        quality_report,
+        project_id=UUID(args.project_id),
+        snapshot_key=args.snapshot_key,
+        source_batch_key=args.source_batch_key,
+        time_range=_json_object_arg(args.time_range_json, name="time-range-json"),
+        status=args.status,
+    )
+    _write_text(args.output, render_his_snapshot_plan_markdown(plan))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_snapshot_plan_json(plan))
+    return 0 if plan.status == "pass" else 2
+
+
 def _ui_smoke(args: argparse.Namespace) -> int:
     client = _create_api_test_client()
     postgres_response = client.get("/index/postgres-status")
@@ -738,6 +776,13 @@ def _database_url_from_env(env_name: str) -> str:
     if not database_url:
         _die(f"missing database url env: {env_name}")
     return database_url
+
+
+def _json_object_arg(value: str, *, name: str) -> dict[str, object]:
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        _die(f"{name} must be a JSON object")
+    return cast(dict[str, object], parsed)
 
 
 def _die(message: str) -> NoReturn:
