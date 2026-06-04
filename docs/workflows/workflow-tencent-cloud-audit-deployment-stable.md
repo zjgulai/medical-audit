@@ -262,7 +262,7 @@ uv run python scripts/run-production-e2e-smoke.py \
 - `/pages/chat/export` 底稿导出。
 - 现有 `kg`、`video`、`voc`、主域名回归。
 
-默认生产巡检保持只读，不创建复核任务。只有在明确需要验证本地 JSON 复核写入流时，才使用：
+默认生产巡检保持只读，不创建复核任务。只有在明确需要验证 PostgreSQL 复核写入流时，才使用：
 
 ```bash
 uv run python scripts/run-production-e2e-smoke.py \
@@ -324,6 +324,13 @@ medical-audit-kb index-incremental-plan \
 - 真实 rollback rehearsal 已执行：`knowledge-query-index-rollback-rehearsal-to-20260531-20260603` 将 active 临时切回 `full-rebuild-20260531142344`，reload 后查询引用版本、生产只读 E2E 和线上综合评测均通过。
 - rehearsal 已切回新 active：`knowledge-query-index-rollback-rehearsal-return-to-20260603-20260603` 将 active 恢复为 `full-rebuild-20260603085815`，reload 后查询引用版本、生产只读 E2E、线上综合评测和 rollback readiness 均通过。
 - `main` 合并后已同步部署到腾讯云，`production-e2e-smoke-readonly-after-main-deploy-20260603` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- PR #5 已合并并部署到腾讯云，merge commit 为 `4fd2d5032c09cdd0f306cf79150744c52e11b8b9`。
+- 部署前已创建应用备份 `/opt/medical-audit/backups/app/pre-pr5-sync-20260604T033000Z.tar.gz` 和 schema 备份 `/opt/medical-audit/backups/db/pre-pr5-schema-20260604T033000Z.sql`。
+- `sql/knowledge-query-schema.sql` 已在生产库幂等执行，`review_tasks` 已补齐 `reviewer_note` 和 `conclusion` 两列。
+- 生产只读 E2E smoke `production-e2e-smoke-readonly-after-review-task-postgres-store-20260604` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产写入型 E2E smoke `production-e2e-smoke-with-review-write-after-review-task-postgres-store-20260604` 通过；创建并关闭 `review-task-0001`，任务导出成功。
+- app 重启后 `review-task-0001` 仍可导出，数据库直接查询返回 `review_task_count=1`、`review_action_count=1`，active 计数保持 `486/48985/48985`。
+- 重启后生产只读 E2E smoke `production-e2e-smoke-readonly-after-review-task-postgres-store-restart-20260604` 通过。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：

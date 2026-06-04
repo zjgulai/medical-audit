@@ -690,6 +690,7 @@ uv run medical-audit-kb index-incremental-plan \
 - 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-write-20260603` 通过；复核任务写入流已跳过，不能把该结果解释为复核工作流写入验收。
 - 激活后线上综合评测 run `45f56a84-c4a8-4ad3-8450-e2b1cce1b786` 通过：`retrieval.case_count=52`、`retrieval.recall_at_k=1.0`、`answer.case_count=8`、`answer.pass_rate=1.0`、`ui_smoke.success=true`。
 - 生产只读 E2E smoke `production-e2e-smoke-readonly-after-activation-20260603` 通过；复核任务写入流已跳过，不能把该结果解释为复核工作流写入验收。
+- PR #5 部署后已完成 PostgreSQL 复核写入验收：`production-e2e-smoke-with-review-write-after-review-task-postgres-store-20260604` 创建并关闭 `review-task-0001`，app 重启后任务仍可导出，数据库返回 `review_task_count=1`、`review_action_count=1`。
 - rollback readiness `knowledge-query-index-rollback-readiness-after-activation-20260603` 通过：`active_count=1`、`inactive_count=1`、`rollback_target_count=1`、`safe_to_execute_rollback_rehearsal=true`。
 - 真实 rollback rehearsal 已执行到旧 active：`knowledge-query-index-rollback-rehearsal-to-20260531-20260603` 成功，旧版本 `full-rebuild-20260531142344` 临时恢复为 active，查询引用版本、生产只读 E2E 和线上综合评测 run `5bf5a0d0-57e6-4105-ad98-37d9dc70f6bd` 均通过。
 - rehearsal 已切回新 active：`knowledge-query-index-rollback-rehearsal-return-to-20260603-20260603` 成功，`full-rebuild-20260603085815` 恢复为 active，查询引用版本、生产只读 E2E 和线上综合评测 run `18b97df2-c75b-4aa3-95b7-f5e001e9c3a1` 均通过。
