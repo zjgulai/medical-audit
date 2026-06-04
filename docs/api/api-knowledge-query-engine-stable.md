@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-03
+updated: 2026-06-04
 owner: self
 source: human+ai
 ---
@@ -84,7 +84,7 @@ Query 参数：
 
 ### `GET /pages/review-tasks`
 
-服务端模板复核任务台。当前实现为进程内本地任务记录，用于把单轮对话底稿沉淀为可追踪复核项；它不替代生产级案件系统、权限系统或数据库持久化。
+服务端模板复核任务台。当前实现为本地 JSON 持久化任务记录，默认写入 `index_root/review-tasks/review-tasks.json`，用于把单轮对话底稿沉淀为可追踪复核项；它不替代生产级案件系统、权限系统或 PostgreSQL 多实例复核流。
 
 页面展示：
 

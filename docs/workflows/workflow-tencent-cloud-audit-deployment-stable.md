@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-03
+updated: 2026-06-04
 owner: self
 source: human+ai
 ---
@@ -262,7 +262,7 @@ uv run python scripts/run-production-e2e-smoke.py \
 - `/pages/chat/export` 底稿导出。
 - 现有 `kg`、`video`、`voc`、主域名回归。
 
-默认生产巡检保持只读，不创建复核任务。只有在明确需要验证进程内复核写入流时，才使用：
+默认生产巡检保持只读，不创建复核任务。只有在明确需要验证本地 JSON 复核写入流时，才使用：
 
 ```bash
 uv run python scripts/run-production-e2e-smoke.py \

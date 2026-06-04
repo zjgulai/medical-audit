@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb import __version__
+from medical_audit_kb.api.review_task_store import JsonFileReviewTaskStore, ReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
@@ -40,7 +41,7 @@ class ApiState:
     query_logs: list[dict[str, object]] = field(default_factory=list)
     operation_logs: list[dict[str, object]] = field(default_factory=list)
     preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
-    review_tasks: list[dict[str, object]] = field(default_factory=list)
+    review_task_store: ReviewTaskStore | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -48,6 +49,9 @@ class ApiState:
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
             preview_resolver=PreviewResolver(source_root=settings.data_root),
+            review_task_store=JsonFileReviewTaskStore(
+                settings.index_root / "review-tasks" / "review-tasks.json"
+            ),
         )
 
     @property
