@@ -3,8 +3,15 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
+
+from sqlalchemy import create_engine, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from medical_audit_kb.db.models import Base, ReviewAction, ReviewTask, utc_now
 
 REVIEW_TASK_ID_PREFIX = "review-task-"
 
@@ -28,6 +35,101 @@ class ReviewTaskStore(Protocol):
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
         pass
+
+
+@dataclass(slots=True)
+class SqlAlchemyReviewTaskStore:
+    database_url: str
+    create_schema: bool = False
+    _engine: Engine = field(init=False, repr=False)
+    _session_factory: sessionmaker[Session] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._engine = create_engine(
+            _sync_database_url(self.database_url),
+            connect_args=_connect_args(self.database_url),
+            pool_pre_ping=True,
+        )
+        if self.create_schema:
+            Base.metadata.create_all(self._engine)
+        self._session_factory = sessionmaker(self._engine, expire_on_commit=False)
+
+    def list_tasks(self) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            statement = select(ReviewTask).order_by(ReviewTask.created_at.desc())
+            return [_task_to_payload(task) for task in session.scalars(statement).all()]
+
+    def next_task_id(self) -> str:
+        highest = 0
+        with self._session_factory() as session:
+            for task_id in session.scalars(select(ReviewTask.external_task_id)):
+                if not task_id.startswith(REVIEW_TASK_ID_PREFIX):
+                    continue
+                suffix = task_id.removeprefix(REVIEW_TASK_ID_PREFIX)
+                if suffix.isdigit():
+                    highest = max(highest, int(suffix))
+        return f"{REVIEW_TASK_ID_PREFIX}{highest + 1:04d}"
+
+    def add_task(self, task: dict[str, object]) -> dict[str, object]:
+        with self._session_factory.begin() as session:
+            task_id = str(task.get("task_id", ""))
+            if _load_task(session, task_id) is not None:
+                raise ValueError(f"review task already exists: {task_id}")
+            review_task = ReviewTask(
+                external_task_id=task_id,
+                question=str(task.get("question", "")),
+                status=str(task.get("status", "pending-review")),
+                status_label=str(task.get("status_label", "")),
+                citation_count=_int_value(task.get("citation_count")),
+                review_gate=str(task.get("review_gate", "")),
+                confidence_label=str(task.get("confidence_label", "")),
+                fallback_label=str(task.get("fallback_label", "")),
+                reviewer_note=str(task.get("reviewer_note", "")),
+                conclusion=str(task.get("conclusion", "")),
+                created_by=str(task.get("created_by", "page-user")),
+                assigned_to=_optional_str(task.get("assigned_to")),
+                source=str(task.get("source", "chat-dossier")),
+                dossier=_dict_value(task.get("dossier")),
+            )
+            session.add(review_task)
+            session.flush()
+            return _task_to_payload(review_task)
+
+    def get_task(self, task_id: str) -> dict[str, object]:
+        with self._session_factory() as session:
+            task = _load_task(session, task_id)
+            if task is None:
+                raise ReviewTaskNotFoundError(task_id)
+            return _task_to_payload(task)
+
+    def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
+        with self._session_factory.begin() as session:
+            task = _load_task(session, task_id)
+            if task is None:
+                raise ReviewTaskNotFoundError(task_id)
+            previous_status = task.status
+            if "status" in values:
+                task.status = str(values["status"])
+            if "status_label" in values:
+                task.status_label = str(values["status_label"])
+            if "reviewer_note" in values:
+                task.reviewer_note = str(values["reviewer_note"])
+            if "conclusion" in values:
+                task.conclusion = str(values["conclusion"])
+            task.updated_at = utc_now()
+            session.add(
+                ReviewAction(
+                    review_task_id=task.id,
+                    action_type="status-update",
+                    from_status=previous_status,
+                    to_status=task.status,
+                    actor="page-user",
+                    note=task.reviewer_note,
+                    extra_metadata={"conclusion": task.conclusion},
+                )
+            )
+            session.flush()
+            return _task_to_payload(task)
 
 
 @dataclass(slots=True)
@@ -131,3 +233,69 @@ class InMemoryReviewTaskStore:
 
 def _copy_tasks(tasks: list[dict[str, object]]) -> list[dict[str, object]]:
     return [copy.deepcopy(task) for task in tasks]
+
+
+def _sync_database_url(database_url: str) -> str:
+    if database_url.startswith("postgresql+asyncpg://"):
+        return database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return database_url
+
+
+def _connect_args(database_url: str) -> dict[str, object]:
+    if database_url.startswith("sqlite:"):
+        return {"check_same_thread": False}
+    return {}
+
+
+def _load_task(session: Session, task_id: str) -> ReviewTask | None:
+    statement = select(ReviewTask).where(ReviewTask.external_task_id == task_id)
+    return session.scalar(statement)
+
+
+def _task_to_payload(task: ReviewTask) -> dict[str, object]:
+    return {
+        "task_id": task.external_task_id,
+        "created_at": _datetime_to_iso(task.created_at),
+        "updated_at": _datetime_to_iso(task.updated_at),
+        "status": task.status,
+        "status_label": task.status_label,
+        "question": task.question,
+        "citation_count": task.citation_count,
+        "review_gate": task.review_gate,
+        "confidence_label": task.confidence_label,
+        "fallback_label": task.fallback_label,
+        "reviewer_note": task.reviewer_note,
+        "conclusion": task.conclusion,
+        "dossier": copy.deepcopy(task.dossier),
+    }
+
+
+def _datetime_to_iso(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _dict_value(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    return {}

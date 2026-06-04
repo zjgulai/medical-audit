@@ -38,6 +38,9 @@ def test_pgvector_schema_includes_review_task_tables() -> None:
     assert "CREATE TABLE IF NOT EXISTS review_tasks" in schema
     assert "external_task_id text NOT NULL UNIQUE" in schema
     assert "dossier jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "reviewer_note text NOT NULL DEFAULT ''" in schema
+    assert "ADD COLUMN IF NOT EXISTS reviewer_note" in schema
+    assert "ADD COLUMN IF NOT EXISTS conclusion" in schema
     assert "CREATE TABLE IF NOT EXISTS review_actions" in schema
     assert "review_task_id uuid NOT NULL REFERENCES review_tasks(id) ON DELETE CASCADE" in schema
     assert "CREATE TABLE IF NOT EXISTS review_comments" in schema

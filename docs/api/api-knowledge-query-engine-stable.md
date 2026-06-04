@@ -84,7 +84,9 @@ Query 参数：
 
 ### `GET /pages/review-tasks`
 
-服务端模板复核任务台。当前实现为本地 JSON 持久化任务记录，默认写入 `index_root/review-tasks/review-tasks.json`，用于把单轮对话底稿沉淀为可追踪复核项；它不替代生产级案件系统、权限系统或 PostgreSQL 多实例复核流。
+服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
+
+当前边界：该任务台已经具备数据库持久化和任务级导出，但仍不替代完整案件系统、权限系统、负责人确认、附件管理或正式报告门禁。
 
 页面展示：
 

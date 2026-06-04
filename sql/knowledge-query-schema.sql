@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS review_tasks (
     review_gate text NOT NULL,
     confidence_label text NOT NULL,
     fallback_label text NOT NULL,
+    reviewer_note text NOT NULL DEFAULT '',
+    conclusion text NOT NULL DEFAULT '',
     created_by text,
     assigned_to text,
     source text NOT NULL,
@@ -164,6 +166,12 @@ CREATE TABLE IF NOT EXISTS review_tasks (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT ck_review_tasks_citation_count_non_negative CHECK (citation_count >= 0)
 );
+
+ALTER TABLE IF EXISTS review_tasks
+    ADD COLUMN IF NOT EXISTS reviewer_note text NOT NULL DEFAULT '';
+
+ALTER TABLE IF EXISTS review_tasks
+    ADD COLUMN IF NOT EXISTS conclusion text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS review_actions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
