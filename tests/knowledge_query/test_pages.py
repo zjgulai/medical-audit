@@ -235,6 +235,12 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "导出任务 JSON" in page_response.text
     assert "报告门禁预检" in page_response.text
     assert "底稿与负责人确认" in page_response.text
+    assert "附件登记与报告草稿" in page_response.text
+    assert "报告草稿需先通过门禁" in page_response.text
+
+    blocked_report_response = client.get("/review-tasks/review-task-0001/report-draft")
+    assert blocked_report_response.status_code == 409
+    assert blocked_report_response.json()["detail"] == ("review task is not ready for report draft")
 
     update_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
@@ -249,6 +255,13 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
             "owner_signoff_status": "approved",
             "owner_confirmed_by": "审计科负责人A",
             "owner_confirmed_at": "2026-06-04T12:00:00Z",
+            "attachment_manifest": (
+                "HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏\n"
+                "复核签字单 | /evidence/signoff.pdf | 负责人确认"
+            ),
+            "report_title": "同就诊同项目重复收费复核报告草稿",
+            "report_summary": "本任务确认重复收费线索成立，证据链已闭合。",
+            "rectification_request": "请责任科室核对收费明细并提交整改说明。",
         },
         follow_redirects=False,
     )
@@ -266,12 +279,17 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert dossier["workpaper"]["workpaper_id"] == "workpaper-20260604-001"
     assert dossier["owner_signoff"]["status"] == "approved"
     assert dossier["owner_signoff"]["confirmed_by"] == "审计科负责人A"
+    assert dossier["attachments"][0]["title"] == "HIS收费明细导出"
+    assert dossier["attachments"][1]["title"] == "复核签字单"
+    assert dossier["report_draft"]["title"] == "同就诊同项目重复收费复核报告草稿"
     assert str(state.operation_logs[-1]["action"]) == "review-task-status-update"
 
     updated_page_response = client.get("/pages/review-tasks")
     assert updated_page_response.status_code == 200
     assert "可进入报告草稿" in updated_page_response.text
     assert "审计员A" in updated_page_response.text
+    assert "HIS收费明细导出" in updated_page_response.text
+    assert "导出报告草稿 Markdown" in updated_page_response.text
 
     json_response = client.get("/review-tasks/review-task-0001/export")
     assert json_response.status_code == 200
@@ -287,6 +305,8 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert body["conclusion"] == "疑似违规线索成立，进入人工复核。"
     assert body["dossier"]["workpaper"]["status"] == "ready"
     assert body["dossier"]["owner_signoff"]["status"] == "approved"
+    assert body["dossier"]["attachments"][0]["title"] == "HIS收费明细导出"
+    assert body["dossier"]["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
     assert body["dossier"]["format"] == "audit-dossier-v1"
     assert body["dossier"]["citations"][0]["chunk_id"] == str(LAW_CHUNK_ID)
     assert body["dossier"]["citations"][0]["index_version_key"] == "index-v1"
@@ -306,8 +326,35 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "报告准备度：可进入报告草稿" in markdown_response.text
     assert "底稿编号：workpaper-20260604-001" in markdown_response.text
     assert "负责人确认：负责人已确认" in markdown_response.text
+    assert "附件数量：2" in markdown_response.text
+    assert "报告标题：同就诊同项目重复收费复核报告草稿" in markdown_response.text
+    assert "HIS收费明细导出" in markdown_response.text
     assert "疑似违规线索成立，进入人工复核。" in markdown_response.text
     assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
+
+    report_markdown_response = client.get("/review-tasks/review-task-0001/report-draft")
+    assert report_markdown_response.status_code == 200
+    assert report_markdown_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-report-draft.md"'
+    )
+    assert "# AuditScope 审计报告草稿" in report_markdown_response.text
+    assert "同就诊同项目重复收费复核报告草稿" in report_markdown_response.text
+    assert "HIS收费明细导出" in report_markdown_response.text
+    assert "请责任科室核对收费明细并提交整改说明。" in report_markdown_response.text
+
+    report_json_response = client.get(
+        "/review-tasks/review-task-0001/report-draft",
+        params={"format": "json"},
+    )
+    assert report_json_response.status_code == 200
+    assert report_json_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-report-draft.json"'
+    )
+    report_body = report_json_response.json()
+    assert report_body["format"] == "review-task-report-draft-v1"
+    assert report_body["report_gate"]["ready_for_report"] is True
+    assert report_body["attachments"][0]["title"] == "HIS收费明细导出"
+    assert report_body["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
 
 
 def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:

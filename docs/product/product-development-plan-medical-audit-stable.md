@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-06-04
+updated: 2026-06-05
 owner: self
 source: human+ai
 ---
@@ -39,12 +39,13 @@ source: human+ai
 - 已新增 `his-staging-acceptance` CLI，支持只读验收生产 staging 链路，覆盖项目、source batch、staging rows、table schema、字段映射门禁、snapshot、audit task、audit run、rule version、疑点证据和可选回滚目标。
 - 已新增 `case-review-report-gate` CLI，支持正式报告前只读门禁，覆盖疑点证据、复核任务绑定、复核状态闭合、复核意见/结论、确认违规底稿和负责人确认。
 - 复核任务台已新增任务级报告准备度预检、承办人、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人和确认时间字段，并进入 Markdown/JSON 导出。
+- 复核任务台已新增附件清单登记和任务级报告草稿 Markdown/JSON 导出；确认违规任务必须登记附件后才能通过报告草稿门禁。
 
 当前未完成：
 
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
-- 生产级附件上传、正式报告文件生成和整改跟踪。
+- 生产级附件文件上传、正式报告签发、整改事项生成和整改状态跟踪。
 - 用户、角色、科室、权限控制和审计日志。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
@@ -210,8 +211,8 @@ source: human+ai
 - `his-snapshot-rollback-audit` 已覆盖开发期快照回滚审计，默认 dry-run，执行前校验项目、from/to snapshot、重复 rollback key 和影响面，显式 `--execute` 后只写审计事件，不删除历史数据。
 - `his-staging-acceptance` 已覆盖生产 staging 只读验收，执行时不写库，只输出 PASS/FAIL 报告和 JSON 证据。
 - `case-review-report-gate` 已覆盖正式报告前只读门禁，执行时不写库，只基于现有疑点、证据、复核任务和任务 metadata 计算 PASS/FAIL。
-- `/pages/review-tasks` 已覆盖任务级报告准备度预检和负责人确认记录，但仍未提供附件上传、正式报告文档生成、整改跟踪或权限系统。
-- 当前仍是数据底座切片，不包含权限系统、附件上传、多实例强一致编号、报告文档生成或整改跟踪。
+- `/pages/review-tasks` 已覆盖任务级报告准备度预检、负责人确认记录、附件清单登记和报告草稿导出，但仍未提供真实附件上传、正式报告签发、整改跟踪或权限系统。
+- 当前仍是数据底座切片，不包含权限系统、真实附件上传、多实例强一致编号、正式报告签发或整改跟踪。
 
 验收：
 
@@ -260,8 +261,9 @@ source: human+ai
 
 - 已将 `/pages/review-tasks` 改为 PostgreSQL 持久化。
 - 已支持从查询结果和开发期疑点清单创建复核任务。
-- 支持状态流转、复核意见、结论、附件引用。
+- 支持状态流转、复核意见、结论、附件清单登记。
 - 支持任务级底稿 Markdown/JSON 导出。
+- 支持任务级报告草稿 Markdown/JSON 导出。
 - 支持负责人确认。
 
 验收：
@@ -277,7 +279,8 @@ source: human+ai
 任务：
 
 - 定义报告模板字段。
-- 支持任务报告导出。
+- 已支持任务级报告草稿导出；后续补正式报告签发。
+- 支持真实附件上传和附件归档。
 - 支持整改事项生成。
 - 支持整改状态流转。
 - 支持任务结案门禁。
