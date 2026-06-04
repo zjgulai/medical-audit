@@ -171,6 +171,7 @@ def test_review_tasks_page_renders_empty_state(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "复核任务台" in response.text
+    assert "本地持久化任务台" in response.text
     assert "暂无复核任务" in response.text
     assert "从对话审证创建复核任务" in response.text
     assert 'aria-current="page">复核任务' in response.text
@@ -192,8 +193,8 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     assert create_response.status_code == 303
     assert create_response.headers["location"] == "/pages/review-tasks"
-    assert len(state.review_tasks) == 1
-    task = state.review_tasks[0]
+    assert len(_review_tasks(state)) == 1
+    task = _review_tasks(state)[0]
     assert task["task_id"] == "review-task-0001"
     assert task["status"] == "pending-review"
     assert task["status_label"] == "待复核"
@@ -222,7 +223,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     )
 
     assert update_response.status_code == 303
-    updated_task = state.review_tasks[0]
+    updated_task = _review_tasks(state)[0]
     assert updated_task["status"] == "confirmed-violation"
     assert updated_task["status_label"] == "确认违规"
     assert updated_task["reviewer_note"] == "引用已覆盖规则依据，需补 HIS 原始凭证。"
@@ -259,6 +260,49 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
 
 
+def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    create_response = client.post(
+        "/pages/review-tasks/create",
+        data={"question": "医保基金审核依据"},
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert _review_tasks(state)[0]["task_id"] == "review-task-0001"
+
+    rebuilt_state = _api_state(tmp_path)
+    rebuilt_client = TestClient(create_app(rebuilt_state))
+    page_response = rebuilt_client.get("/pages/review-tasks")
+
+    assert page_response.status_code == 200
+    assert "review-task-0001" in page_response.text
+    assert "医保基金审核依据" in page_response.text
+
+    update_response = rebuilt_client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "needs-evidence",
+            "reviewer_note": "服务重启后继续复核。",
+            "conclusion": "需要补充 HIS 原始凭证。",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+
+    second_rebuilt_state = _api_state(tmp_path)
+    second_rebuilt_client = TestClient(create_app(second_rebuilt_state))
+    export_response = second_rebuilt_client.get("/review-tasks/review-task-0001/export")
+
+    assert export_response.status_code == 200
+    body = export_response.json()
+    assert body["status"] == "needs-evidence"
+    assert body["reviewer_note"] == "服务重启后继续复核。"
+    assert body["conclusion"] == "需要补充 HIS 原始凭证。"
+
+
 def test_review_task_create_fails_when_backend_is_not_ready(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.search_engine = None
@@ -271,7 +315,7 @@ def test_review_task_create_fails_when_backend_is_not_ready(tmp_path: Path) -> N
 
     assert response.status_code == 409
     assert response.json()["detail"] == "检索引擎尚未初始化。"
-    assert state.review_tasks == []
+    assert _review_tasks(state) == []
 
 
 def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None:
@@ -462,6 +506,11 @@ def _api_state(tmp_path: Path) -> ApiState:
         )
     )
     return state
+
+
+def _review_tasks(state: ApiState) -> list[dict[str, object]]:
+    assert state.review_task_store is not None
+    return state.review_task_store.list_tasks()
 
 
 def _search_engine(chunks: tuple[ChunkEmbeddingInput, ...]) -> HybridSearchEngine:

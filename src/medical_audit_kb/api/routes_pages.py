@@ -20,6 +20,11 @@ from medical_audit_kb.api.evaluation_reports import (
     list_evaluation_report_files,
 )
 from medical_audit_kb.api.postgres_status import load_postgres_index_status, row_count
+from medical_audit_kb.api.review_task_store import (
+    InMemoryReviewTaskStore,
+    ReviewTaskNotFoundError,
+    ReviewTaskStore,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.answer_builder import (
     AnswerBasisGroup,
@@ -198,17 +203,18 @@ def review_tasks_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> object:
+    review_tasks = _review_tasks(state)
     record_operation(
         state,
         "page-review-tasks-view",
-        {"task_count": len(state.review_tasks)},
+        {"task_count": len(review_tasks)},
     )
     return templates.TemplateResponse(
         request,
         "review_tasks.html",
         {
-            "review_tasks": tuple(reversed(state.review_tasks)),
-            "review_task_stats": _review_task_stats(state.review_tasks),
+            "review_tasks": tuple(reversed(review_tasks)),
+            "review_task_stats": _review_task_stats(review_tasks),
             "review_status_options": REVIEW_TASK_STATUS_LABELS,
             "search_backend": _search_backend_context(state),
         },
@@ -258,17 +264,22 @@ async def update_review_task_status_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    task = _review_task_by_id(state, task_id)
     form = await _urlencoded_form(request)
     status = _form_required_str(form, "status")
     if status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
 
-    task["status"] = status
-    task["status_label"] = REVIEW_TASK_STATUS_LABELS[status]
-    task["reviewer_note"] = _form_optional_str(form, "reviewer_note")
-    task["conclusion"] = _form_optional_str(form, "conclusion")
-    task["updated_at"] = _utc_now_iso()
+    _update_review_task(
+        state,
+        task_id,
+        {
+            "status": status,
+            "status_label": REVIEW_TASK_STATUS_LABELS[status],
+            "reviewer_note": _form_optional_str(form, "reviewer_note"),
+            "conclusion": _form_optional_str(form, "conclusion"),
+            "updated_at": _utc_now_iso(),
+        },
+    )
     record_operation(
         state,
         "review-task-status-update",
@@ -642,7 +653,7 @@ def _create_review_task(
         request=request,
     )
     task = {
-        "task_id": _next_review_task_id(state),
+        "task_id": _review_task_store(state).next_task_id(),
         "created_at": now,
         "updated_at": now,
         "status": "pending-review",
@@ -656,19 +667,35 @@ def _create_review_task(
         "conclusion": "",
         "dossier": dossier,
     }
-    state.review_tasks.append(task)
-    return task
-
-
-def _next_review_task_id(state: ApiState) -> str:
-    return f"review-task-{len(state.review_tasks) + 1:04d}"
+    return _review_task_store(state).add_task(task)
 
 
 def _review_task_by_id(state: ApiState, task_id: str) -> dict[str, object]:
-    for task in state.review_tasks:
-        if task.get("task_id") == task_id:
-            return task
-    raise HTTPException(status_code=404, detail="review task not found")
+    try:
+        return _review_task_store(state).get_task(task_id)
+    except ReviewTaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="review task not found") from exc
+
+
+def _review_tasks(state: ApiState) -> list[dict[str, object]]:
+    return _review_task_store(state).list_tasks()
+
+
+def _update_review_task(
+    state: ApiState,
+    task_id: str,
+    values: dict[str, object],
+) -> dict[str, object]:
+    try:
+        return _review_task_store(state).update_task(task_id, values)
+    except ReviewTaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="review task not found") from exc
+
+
+def _review_task_store(state: ApiState) -> ReviewTaskStore:
+    if state.review_task_store is None:
+        state.review_task_store = InMemoryReviewTaskStore()
+    return state.review_task_store
 
 
 def _review_task_stats(tasks: list[dict[str, object]]) -> dict[str, object]:

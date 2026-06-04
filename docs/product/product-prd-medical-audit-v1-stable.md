@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-v1
 status: stable
 created: 2026-06-02
-updated: 2026-06-03
+updated: 2026-06-04
 owner: self
 source: human+ai
 ---
@@ -79,7 +79,7 @@ flowchart TD
 - `FastAPI + Jinja + CSS` 的本地 Web 工作台。
 - `/pages/chat` 对话审证台、`/pages/query` 查询页、`/pages/review-tasks` 复核任务台、`/pages/index-admin` 索引管理页、`/pages/preview/{chunk_id}` 原文预览页。
 - `/pages/chat/export` 支持当前单轮对话的 Markdown/JSON 审计底稿导出。
-- `/pages/review-tasks` 支持把单轮对话回答创建为进程内复核任务，维护复核状态、意见、结论，并导出任务级 Markdown/JSON 记录。
+- `/pages/review-tasks` 支持把单轮对话回答创建为本地 JSON 持久化复核任务，维护复核状态、意见、结论，并导出任务级 Markdown/JSON 记录。
 - `data/医保审核前期资料` 的抽取、切分、BM25 + vector 检索、引用型 fallback answer。
 - PostgreSQL + pgvector active index version 查询与状态隔离。
 - Kimi embedding 主索引已导入：`486` 个 indexed documents、`48985` 个 chunks、`48985` 个 embeddings、`13` 个 pending files。
@@ -89,7 +89,7 @@ flowchart TD
 
 - HIS 数据接入与任务级数据快照。
 - 结构化规则表、规则版本、医院本地覆盖规则。
-- 生产级疑点清单、数据库持久化人工复核台、正式底稿和报告导出。
+- 生产级疑点清单、PostgreSQL 案件级人工复核台、正式底稿和报告导出。
 - 整改事项、整改状态和结案条件。
 - 用户、角色、科室关系初始化和审计日志。
 
@@ -98,7 +98,7 @@ flowchart TD
 - Kimi Code 当前可作为 embedding provider 使用，不能被写成已验证可用的线上答案生成模型。
 - Anthropic answer provider 当前预检未通过，不能被写成可用生产生成模型。
 - 当前 `/pages/chat` 是单轮对话审证工作台，不能被写成服务端持久化多轮会话系统。
-- 当前 `/pages/review-tasks` 是进程内本地复核任务台，不能被写成生产级案件系统或数据库持久化复核流。
+- 当前 `/pages/review-tasks` 是本地 JSON 持久化复核任务台，不能被写成生产级案件系统或 PostgreSQL 多实例复核流。
 - 增量计划目前支持影响分析和发布链路设计，不能把“新增源文件后自动生产级增量写入”写成已完成能力。
 
 ## 5. 核心功能需求
@@ -114,7 +114,7 @@ flowchart TD
 | KB-05 | 支持索引发布和回滚 | candidate 通过验收后才能激活；回滚只允许 active/inactive 版本 |
 | KB-06 | 支持发布后验收 | 固定检索评测、答案评测、UI smoke 预览检查结果可查询和导出 |
 | KB-07 | 支持单轮对话审计底稿导出 | Markdown/JSON 文件包含问题、回答、复核门禁、复核清单、引用、chunk/index/package 和原文预览链接 |
-| KB-08 | 支持本地复核任务沉淀 | 单轮对话回答可创建进程内复核任务，维护状态、意见、结论，并导出任务级 Markdown/JSON 记录 |
+| KB-08 | 支持本地复核任务沉淀 | 单轮对话回答可创建本地 JSON 持久化复核任务，维护状态、意见、结论，并导出任务级 Markdown/JSON 记录 |
 
 ### 5.2 HIS 数据接入与审计任务
 
