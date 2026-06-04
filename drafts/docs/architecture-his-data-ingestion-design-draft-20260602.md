@@ -255,7 +255,8 @@ HIS 数据接入设计进入正式开发前，至少满足：
 
 ## 15. 下一步
 
-1. 用本文作为信息科沟通清单，索取 DDL、字段字典和脱敏历史数据。
-2. 基于首个专项审计场景裁剪最小数据域。
-3. 建立 `his_field_mappings` 草表和虚拟数据生成脚本。
-4. 设计首个专项审计场景 PRD，明确规则输入、疑点输出和验收样本。
+1. 用 `drafts/docs/workflow-his-data-delivery-template-draft-20260604.md` 作为信息科沟通清单，索取 DDL、字段字典和脱敏历史数据。
+2. 用 `drafts/docs/product-prd-charging-compliance-scenario-draft-20260604.md` 作为首个候选专项场景草稿，向审计科确认收费合规 / 重复收费与目录限制核验是否进入 V1.0。
+3. 基于院方确认的专项场景裁剪最小数据域。
+4. 建立 `his_field_mappings` 草表和虚拟数据生成脚本。
+5. 拆解首个规则执行器，明确规则输入、疑点输出和验收样本。
