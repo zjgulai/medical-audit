@@ -268,6 +268,7 @@ def _task_to_payload(task: ReviewTask) -> dict[str, object]:
         "fallback_label": task.fallback_label,
         "reviewer_note": task.reviewer_note,
         "conclusion": task.conclusion,
+        "source": task.source,
         "dossier": copy.deepcopy(task.dossier),
     }
 

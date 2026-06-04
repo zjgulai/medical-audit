@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>疑点清单</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body class="page-audit-findings">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query">查询工作台</a>
+          <a href="/pages/audit-findings" aria-current="page">疑点清单</a>
+          <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/index-admin">索引管理</a>
+        </div>
+        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
+          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
+        </span>
+      </nav>
+
+      <section class="hero findings-hero">
+        <div>
+          <p class="eyebrow">疑点清单 · Findings Workbench</p>
+          <h1>把规则命中结果推进到人工复核。</h1>
+          <p class="lede">该页面展示结构化规则产生的疑点、源记录定位、计算过程和证据项。当前仍是开发期审计工作台，疑点进入报告前必须完成复核。</p>
+        </div>
+        <aside class="hero-console findings-console" aria-label="疑点统计">
+          <div><span>疑点总数</span><strong>{{ audit_finding_stats.total }}</strong></div>
+          <div><span>开放疑点</span><strong>{{ audit_finding_stats.open }}</strong></div>
+          <div><span>已建任务</span><strong>{{ audit_finding_stats.linked_review_task }}</strong></div>
+        </aside>
+      </section>
+
+      <section class="metrics findings-metrics">
+        <article><strong>{{ audit_finding_stats.total }}</strong><span>total findings</span></article>
+        <article><strong>{{ audit_finding_stats.open }}</strong><span>open</span></article>
+        <article><strong>{{ audit_finding_stats.pending_review }}</strong><span>pending review</span></article>
+        <article><strong>{{ audit_finding_stats.linked_review_task }}</strong><span>linked tasks</span></article>
+      </section>
+
+      <section class="panel findings-filter-panel" aria-labelledby="findings-filter-title">
+        <div>
+          <p class="eyebrow">复核筛选</p>
+          <h2 id="findings-filter-title">只按复核状态过滤，不隐藏证据字段</h2>
+          <p class="meta">审计场景下不做模糊摘要替代，列表必须暴露规则版本、源记录定位和计算过程。</p>
+        </div>
+        <form method="get" action="/pages/audit-findings" class="dense-form">
+          <label for="review-status-filter">复核状态</label>
+          <select id="review-status-filter" name="review_status">
+            <option value="" {% if not selected_review_status %}selected{% endif %}>全部</option>
+            {% for value, label in review_status_options.items() %}
+              <option value="{{ value }}" {% if selected_review_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">应用筛选</button>
+        </form>
+      </section>
+
+      <section class="audit-finding-list" aria-label="审计疑点列表">
+        {% for finding in audit_findings %}
+          <article class="panel audit-finding-card {{ finding.review_status }}">
+            <header class="audit-finding-header">
+              <div>
+                <p class="eyebrow">{{ finding.finding_key }}</p>
+                <h2>{{ finding.finding_type }} · {{ finding.rule_key }}</h2>
+              </div>
+              <span class="review-status-pill">{{ finding.review_status }}</span>
+            </header>
+
+            <dl class="audit-finding-summary">
+              <div><dt>rule version</dt><dd>{{ finding.rule_version_key }}</dd></div>
+              <div><dt>run</dt><dd>{{ finding.audit_run_key }}</dd></div>
+              <div><dt>task</dt><dd>{{ finding.audit_task_key }}</dd></div>
+              <div><dt>severity</dt><dd>{{ finding.severity }}</dd></div>
+            </dl>
+
+            <section class="finding-evidence-grid" aria-label="疑点证据摘要">
+              <div>
+                <h3>源记录定位</h3>
+                <pre>{{ finding.source_record_locator | tojson(indent=2) }}</pre>
+              </div>
+              <div>
+                <h3>计算过程</h3>
+                <pre>{{ finding.calculation_trace | tojson(indent=2) }}</pre>
+              </div>
+            </section>
+
+            <section class="finding-evidence-items" aria-label="规则依据证据项">
+              <h3>证据项</h3>
+              {% for evidence in finding.evidence_items %}
+                <article>
+                  <strong>{{ evidence.evidence_type }}</strong>
+                  <span>{{ evidence.citation_id or "无 citation_id" }}</span>
+                  <p>{{ evidence.snippet or "未记录证据片段" }}</p>
+                  <small>index: {{ evidence.index_version_key or "n/a" }} · package: {{ evidence.source_package_version_key or "n/a" }}</small>
+                </article>
+              {% else %}
+                <p class="meta">未绑定证据项；该疑点不得进入正式报告。</p>
+              {% endfor %}
+            </section>
+
+            <div class="review-task-actions finding-actions">
+              <a href="/audit-findings/{{ finding.finding_key }}/export">导出疑点 JSON</a>
+              {% if finding.review_task_id %}
+                <span class="linked-task-pill">已创建复核任务：{{ finding.review_task_id }}</span>
+              {% else %}
+                <form method="post" action="/pages/audit-findings/{{ finding.finding_key }}/review-task">
+                  <button type="submit">创建复核任务</button>
+                </form>
+              {% endif %}
+            </div>
+          </article>
+        {% else %}
+          <section class="empty-state">
+            <p class="eyebrow">暂无疑点</p>
+            <h2>先运行结构化规则。</h2>
+            <p>当前数据库没有可展示的审计疑点。下一步需要运行 `CHARGE-RULE-001` 或导入 HIS 脱敏样本后再查看。</p>
+          </section>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

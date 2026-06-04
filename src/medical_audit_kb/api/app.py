@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb import __version__
+from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
@@ -42,6 +43,7 @@ class ApiState:
     operation_logs: list[dict[str, object]] = field(default_factory=list)
     preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
     review_task_store: ReviewTaskStore | None = None
+    audit_finding_store: SqlAlchemyAuditFindingStore | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -50,6 +52,7 @@ class ApiState:
             index_pipeline=KnowledgeIndexPipeline(),
             preview_resolver=PreviewResolver(source_root=settings.data_root),
             review_task_store=SqlAlchemyReviewTaskStore(settings.database_url),
+            audit_finding_store=SqlAlchemyAuditFindingStore(settings.database_url),
         )
 
     @property
