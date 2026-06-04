@@ -29,10 +29,11 @@ source: human+ai
 - 已新增开发期疑点清单页 `/pages/audit-findings`，支持展示规则疑点、导出单条疑点 JSON，并从疑点创建复核任务。
 - 已新增 HIS 输入契约第一批：`his_source_batches`、`his_table_schemas`、`his_field_mappings`，并补齐收费合规字段映射完整性校验器。
 - 已新增 HIS DDL 自动解析器和 CLI `his-ddl-parse`，支持从离线 DDL 文本解析表、字段、主键、时间字段、字段注释、DDL hash，并生成 Markdown/JSON 解析报告。
+- 已新增 HIS 脱敏样本质量报告 CLI `his-sample-quality`，支持 CSV/JSONL 样本扫描、DDL 对齐、缺失字段、必填空值、重复主键和行数字段画像检查。
 
 当前未完成：
 
-- 脱敏样本导入、数据质量报告和真实数据快照生成。
+- 脱敏样本写入 staging、真实数据快照生成。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
@@ -191,6 +192,7 @@ source: human+ai
 - `HisIngestionRepository` 已覆盖 HIS 交付批次、表结构和字段映射的基础写入，以及按交付批次读取字段映射。
 - 收费合规字段映射校验器已覆盖必需字段缺失、重复目标字段、必需字段 nullable、敏感字段缺失脱敏规则，未通过时不得生成正式数据快照。
 - `his-ddl-parse` 已覆盖开发期 DDL 自动解析，可生成 HIS 表结构解析报告和可转入 `HisTableSchemaCreate` 的结构化负载。
+- `his-sample-quality` 已覆盖开发期脱敏样本质量报告，可在写入 staging 前检查 CSV/JSONL 样本与 DDL 的字段、行数、必填空值和主键重复。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
@@ -211,6 +213,7 @@ source: human+ai
 - 实现 HIS 脱敏样本导入。
 - 已建立收费合规 HIS 字段映射校验门禁，字段映射不完整时阻断后续快照生成。
 - 已建立 HIS DDL 自动解析入口，脱敏样本导入前先解析 DDL 并固化字段字典版本。
+- 已建立 HIS 脱敏样本质量报告入口，样本未通过字段/必填/主键质量门禁时不进入 staging 或快照生成。
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。
