@@ -11,16 +11,28 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from medical_audit_kb.db.models import (
+    AuditDataSnapshot,
+    AuditFinding,
+    AuditProject,
+    AuditRule,
+    AuditRun,
+    AuditTask,
     Base,
     ChunkEmbedding,
     DocumentChunk,
     FailedFile,
+    FindingEvidenceItem,
     ReviewAction,
     ReviewComment,
     ReviewTask,
+    RuleVersion,
     SourceDocument,
 )
-from medical_audit_kb.db.repositories import KnowledgeBaseRepository, ReviewTaskRepository
+from medical_audit_kb.db.repositories import (
+    AuditWorkflowRepository,
+    KnowledgeBaseRepository,
+    ReviewTaskRepository,
+)
 from medical_audit_kb.domain.constants import (
     DocumentStatus,
     FileErrorType,
@@ -28,12 +40,20 @@ from medical_audit_kb.domain.constants import (
     SourceCollection,
 )
 from medical_audit_kb.domain.schemas import (
+    AuditDataSnapshotCreate,
+    AuditFindingCreate,
+    AuditProjectCreate,
+    AuditRuleCreate,
+    AuditRunCreate,
+    AuditTaskCreate,
     ChunkEmbeddingCreate,
     DocumentChunkCreate,
     FailedFileCreate,
+    FindingEvidenceItemCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
     ReviewTaskCreate,
+    RuleVersionCreate,
     SourceDocumentUpsert,
     SourcePackageVersionCreate,
 )
@@ -45,6 +65,10 @@ def test_repository_creates_package_document_chunks_and_failed_file() -> None:
 
 def test_review_task_repository_creates_task_actions_and_comments() -> None:
     asyncio.run(_with_repository(_assert_review_task_repository_flow))
+
+
+def test_audit_workflow_repository_creates_traceable_task_run_findings() -> None:
+    asyncio.run(_with_repository(_assert_audit_workflow_repository_flow))
 
 
 async def _with_repository(
@@ -289,3 +313,173 @@ async def _assert_review_task_repository_flow(
     assert stored_action.extra_metadata["source"] == "unit-test"
     assert stored_comment.body == "补充 HIS 原始凭证后再进入正式报告。"
     assert stored_comment.extra_metadata["severity"] == "p1"
+
+
+async def _assert_audit_workflow_repository_flow(
+    _: KnowledgeBaseRepository,
+    session: AsyncSession,
+) -> None:
+    repository = AuditWorkflowRepository(session)
+
+    project = await repository.create_project(
+        AuditProjectCreate(
+            project_key="audit-project-0001",
+            name="收费合规专项",
+            scenario_key="charging-compliance",
+            status="draft",
+            owner_department="审计科",
+            created_by="auditor-001",
+            description="重复收费与目录限制核验。",
+            metadata={"hospital": "fixture-hospital"},
+        )
+    )
+    snapshot = await repository.create_data_snapshot(
+        AuditDataSnapshotCreate(
+            snapshot_key="snapshot-20260604-001",
+            project_id=project.id,
+            source_batch_key="his-batch-20260604",
+            time_range={"from": "2025-01-01", "to": "2025-12-31"},
+            row_counts={"charge_detail": 3},
+            checksum="sha256:fixture",
+            status="validated",
+            metadata={"deidentified": True},
+        )
+    )
+    task = await repository.create_task(
+        AuditTaskCreate(
+            task_key="audit-task-0001",
+            project_id=project.id,
+            snapshot_id=snapshot.id,
+            topic="重复收费核验",
+            department_scope={"department_codes": ["D001"]},
+            date_range={"from": "2025-01-01", "to": "2025-01-31"},
+            status="ready",
+            created_by="auditor-001",
+            metadata={"scenario": "charge-duplicate"},
+        )
+    )
+    rule = await repository.create_rule(
+        AuditRuleCreate(
+            rule_key="charge-rule-001",
+            scenario_key="charging-compliance",
+            name="同日同项目重复收费",
+            status="active",
+            owner="audit-rule-team",
+            description="同一就诊、同日、同项目重复收费疑点识别。",
+            metadata={"risk_domain": "charging"},
+        )
+    )
+    rule_version = await repository.create_rule_version(
+        RuleVersionCreate(
+            audit_rule_id=rule.id,
+            version_key="charge-rule-001@v1",
+            rule_key=rule.rule_key,
+            status="active",
+            logic={
+                "type": "group-by",
+                "keys": ["visit_id", "charge_item_code", "charge_date"],
+                "condition": "count > 1",
+            },
+            evidence_links={"knowledge_topics": ["重复收费"]},
+            created_by="rule-designer-001",
+        )
+    )
+    run = await repository.create_run(
+        AuditRunCreate(
+            run_key="audit-run-0001",
+            audit_task_id=task.id,
+            snapshot_id=snapshot.id,
+            rule_version_key=rule_version.version_key,
+            knowledge_index_version_key="full-rebuild-20260603085815",
+            status="succeeded",
+            summary={"finding_count": 1},
+            metadata={"executor": "unit-test"},
+        )
+    )
+    finding = await repository.create_finding(
+        AuditFindingCreate(
+            finding_key="finding-0001",
+            audit_run_id=run.id,
+            audit_task_id=task.id,
+            rule_version_id=rule_version.id,
+            snapshot_id=snapshot.id,
+            status="open",
+            finding_type="duplicate-charge",
+            severity="medium",
+            source_record_locator={"table": "charge_detail", "primary_key": "CD0001"},
+            calculation_trace={
+                "group_keys": {
+                    "visit_id": "V001",
+                    "charge_item_code": "P001",
+                    "charge_date": "2025-01-03",
+                },
+                "matched_rows": ["CD0001", "CD0002"],
+            },
+            review_status="pending-review",
+            metadata={"amount": 80.0},
+        )
+    )
+    evidence = await repository.add_finding_evidence_item(
+        FindingEvidenceItemCreate(
+            audit_finding_id=finding.id,
+            evidence_type="knowledge-citation",
+            source_package_version_key="20260603-production",
+            index_version_key="full-rebuild-20260603085815",
+            citation_id="citation-001",
+            locator={"article_number": "第十七条"},
+            snippet="医疗机构应按照项目内涵和计价单位收费。",
+            metadata={"confidence": "high"},
+        )
+    )
+
+    loaded_finding = await repository.get_finding_by_key("finding-0001")
+    run_findings = await repository.list_findings_for_run(run.id)
+
+    assert project.project_key == "audit-project-0001"
+    assert snapshot.project_id == project.id
+    assert task.snapshot_id == snapshot.id
+    assert rule_version.audit_rule_id == rule.id
+    assert run.audit_task_id == task.id
+    assert run.snapshot_id == snapshot.id
+    assert finding.rule_version_id == rule_version.id
+    assert evidence.audit_finding_id == finding.id
+    assert loaded_finding is not None
+    assert loaded_finding.id == finding.id
+    assert [item.id for item in run_findings] == [finding.id]
+
+    stored_project = (
+        await session.execute(select(AuditProject).where(AuditProject.id == project.id))
+    ).scalar_one()
+    stored_snapshot = (
+        await session.execute(select(AuditDataSnapshot).where(AuditDataSnapshot.id == snapshot.id))
+    ).scalar_one()
+    stored_task = (
+        await session.execute(select(AuditTask).where(AuditTask.id == task.id))
+    ).scalar_one()
+    stored_run = (await session.execute(select(AuditRun).where(AuditRun.id == run.id))).scalar_one()
+    stored_rule = (
+        await session.execute(select(AuditRule).where(AuditRule.id == rule.id))
+    ).scalar_one()
+    stored_rule_version = (
+        await session.execute(select(RuleVersion).where(RuleVersion.id == rule_version.id))
+    ).scalar_one()
+    stored_finding = (
+        await session.execute(select(AuditFinding).where(AuditFinding.id == finding.id))
+    ).scalar_one()
+    stored_evidence = (
+        await session.execute(
+            select(FindingEvidenceItem).where(FindingEvidenceItem.id == evidence.id)
+        )
+    ).scalar_one()
+
+    assert stored_project.extra_metadata["hospital"] == "fixture-hospital"
+    assert stored_snapshot.row_counts["charge_detail"] == 3
+    assert stored_task.department_scope["department_codes"] == ["D001"]
+    assert stored_run.rule_version_key == "charge-rule-001@v1"
+    assert stored_run.knowledge_index_version_key == "full-rebuild-20260603085815"
+    assert stored_rule.scenario_key == "charging-compliance"
+    assert stored_rule_version.logic["condition"] == "count > 1"
+    assert stored_finding.calculation_trace["matched_rows"] == ["CD0001", "CD0002"]
+    assert stored_finding.review_status == "pending-review"
+    assert stored_evidence.evidence_type == "knowledge-citation"
+    assert stored_evidence.snippet == "医疗机构应按照项目内涵和计价单位收费。"

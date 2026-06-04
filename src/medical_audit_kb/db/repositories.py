@@ -8,22 +8,38 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from medical_audit_kb.db.models import (
+    AuditDataSnapshot,
+    AuditFinding,
+    AuditProject,
+    AuditRule,
+    AuditRun,
+    AuditTask,
     ChunkEmbedding,
     DocumentChunk,
     FailedFile,
+    FindingEvidenceItem,
     ReviewAction,
     ReviewComment,
     ReviewTask,
+    RuleVersion,
     SourceDocument,
     SourcePackageVersion,
 )
 from medical_audit_kb.domain.schemas import (
+    AuditDataSnapshotCreate,
+    AuditFindingCreate,
+    AuditProjectCreate,
+    AuditRuleCreate,
+    AuditRunCreate,
+    AuditTaskCreate,
     ChunkEmbeddingCreate,
     DocumentChunkCreate,
     FailedFileCreate,
+    FindingEvidenceItemCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
     ReviewTaskCreate,
+    RuleVersionCreate,
     SourceDocumentUpsert,
     SourcePackageVersionCreate,
 )
@@ -197,6 +213,155 @@ class ReviewTaskRepository:
         self._session.add(comment)
         await self._session.flush()
         return comment
+
+
+class AuditWorkflowRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create_project(self, payload: AuditProjectCreate) -> AuditProject:
+        project = AuditProject(
+            project_key=payload.project_key,
+            name=payload.name,
+            scenario_key=payload.scenario_key,
+            status=payload.status,
+            owner_department=payload.owner_department,
+            created_by=payload.created_by,
+            description=payload.description,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(project)
+        await self._session.flush()
+        return project
+
+    async def create_data_snapshot(self, payload: AuditDataSnapshotCreate) -> AuditDataSnapshot:
+        snapshot = AuditDataSnapshot(
+            snapshot_key=payload.snapshot_key,
+            project_id=payload.project_id,
+            source_batch_key=payload.source_batch_key,
+            time_range=payload.time_range,
+            row_counts=payload.row_counts,
+            checksum=payload.checksum,
+            status=payload.status,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(snapshot)
+        await self._session.flush()
+        return snapshot
+
+    async def create_task(self, payload: AuditTaskCreate) -> AuditTask:
+        task = AuditTask(
+            task_key=payload.task_key,
+            project_id=payload.project_id,
+            snapshot_id=payload.snapshot_id,
+            topic=payload.topic,
+            department_scope=payload.department_scope,
+            date_range=payload.date_range,
+            status=payload.status,
+            created_by=payload.created_by,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(task)
+        await self._session.flush()
+        return task
+
+    async def create_rule(self, payload: AuditRuleCreate) -> AuditRule:
+        rule = AuditRule(
+            rule_key=payload.rule_key,
+            scenario_key=payload.scenario_key,
+            name=payload.name,
+            status=payload.status,
+            owner=payload.owner,
+            description=payload.description,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(rule)
+        await self._session.flush()
+        return rule
+
+    async def create_rule_version(self, payload: RuleVersionCreate) -> RuleVersion:
+        rule_version = RuleVersion(
+            audit_rule_id=payload.audit_rule_id,
+            version_key=payload.version_key,
+            rule_key=payload.rule_key,
+            status=payload.status,
+            logic=payload.logic,
+            evidence_links=payload.evidence_links,
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+            created_by=payload.created_by,
+        )
+        self._session.add(rule_version)
+        await self._session.flush()
+        return rule_version
+
+    async def create_run(self, payload: AuditRunCreate) -> AuditRun:
+        run = AuditRun(
+            run_key=payload.run_key,
+            audit_task_id=payload.audit_task_id,
+            snapshot_id=payload.snapshot_id,
+            rule_version_key=payload.rule_version_key,
+            knowledge_index_version_key=payload.knowledge_index_version_key,
+            status=payload.status,
+            finished_at=payload.finished_at,
+            summary=payload.summary,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(run)
+        await self._session.flush()
+        return run
+
+    async def create_finding(self, payload: AuditFindingCreate) -> AuditFinding:
+        finding = AuditFinding(
+            finding_key=payload.finding_key,
+            audit_run_id=payload.audit_run_id,
+            audit_task_id=payload.audit_task_id,
+            rule_version_id=payload.rule_version_id,
+            snapshot_id=payload.snapshot_id,
+            status=payload.status,
+            finding_type=payload.finding_type,
+            severity=payload.severity,
+            source_record_locator=payload.source_record_locator,
+            calculation_trace=payload.calculation_trace,
+            review_status=payload.review_status,
+            review_task_id=payload.review_task_id,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(finding)
+        await self._session.flush()
+        return finding
+
+    async def add_finding_evidence_item(
+        self, payload: FindingEvidenceItemCreate
+    ) -> FindingEvidenceItem:
+        evidence_item = FindingEvidenceItem(
+            audit_finding_id=payload.audit_finding_id,
+            evidence_type=payload.evidence_type,
+            chunk_id=payload.chunk_id,
+            source_package_version_key=payload.source_package_version_key,
+            index_version_key=payload.index_version_key,
+            citation_id=payload.citation_id,
+            locator=payload.locator,
+            snippet=payload.snippet,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(evidence_item)
+        await self._session.flush()
+        return evidence_item
+
+    async def get_finding_by_key(self, finding_key: str) -> AuditFinding | None:
+        result = await self._session.execute(
+            select(AuditFinding).where(AuditFinding.finding_key == finding_key)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_findings_for_run(self, audit_run_id: UUID) -> list[AuditFinding]:
+        result = await self._session.execute(
+            select(AuditFinding)
+            .where(AuditFinding.audit_run_id == audit_run_id)
+            .order_by(AuditFinding.created_at.asc())
+        )
+        return list(result.scalars().all())
 
 
 def _source_document_values(payload: SourceDocumentUpsert) -> dict[str, Any]:

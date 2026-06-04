@@ -195,6 +195,123 @@ CREATE TABLE IF NOT EXISTS review_comments (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit_projects (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_key text NOT NULL UNIQUE,
+    name text NOT NULL,
+    scenario_key text NOT NULL,
+    status text NOT NULL,
+    owner_department text,
+    created_by text,
+    description text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_data_snapshots (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_key text NOT NULL UNIQUE,
+    project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT,
+    source_batch_key text NOT NULL,
+    time_range jsonb NOT NULL DEFAULT '{}'::jsonb,
+    row_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+    checksum text,
+    status text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_tasks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_key text NOT NULL UNIQUE,
+    project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT,
+    snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT,
+    topic text NOT NULL,
+    department_scope jsonb NOT NULL DEFAULT '{}'::jsonb,
+    date_range jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status text NOT NULL,
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_key text NOT NULL UNIQUE,
+    audit_task_id uuid NOT NULL REFERENCES audit_tasks(id) ON DELETE RESTRICT,
+    snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT,
+    rule_version_key text NOT NULL,
+    knowledge_index_version_key text,
+    status text NOT NULL,
+    started_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz,
+    summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS audit_rules (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    rule_key text NOT NULL UNIQUE,
+    scenario_key text NOT NULL,
+    name text NOT NULL,
+    status text NOT NULL,
+    owner text,
+    description text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rule_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    audit_rule_id uuid NOT NULL REFERENCES audit_rules(id) ON DELETE RESTRICT,
+    version_key text NOT NULL UNIQUE,
+    rule_key text NOT NULL,
+    status text NOT NULL,
+    logic jsonb NOT NULL DEFAULT '{}'::jsonb,
+    evidence_links jsonb NOT NULL DEFAULT '{}'::jsonb,
+    effective_from timestamptz,
+    effective_to timestamptz,
+    created_by text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_rule_versions_rule_version UNIQUE (audit_rule_id, version_key)
+);
+
+CREATE TABLE IF NOT EXISTS audit_findings (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    finding_key text NOT NULL UNIQUE,
+    audit_run_id uuid NOT NULL REFERENCES audit_runs(id) ON DELETE RESTRICT,
+    audit_task_id uuid NOT NULL REFERENCES audit_tasks(id) ON DELETE RESTRICT,
+    rule_version_id uuid NOT NULL REFERENCES rule_versions(id) ON DELETE RESTRICT,
+    snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT,
+    status text NOT NULL,
+    finding_type text NOT NULL,
+    severity text NOT NULL,
+    source_record_locator jsonb NOT NULL DEFAULT '{}'::jsonb,
+    calculation_trace jsonb NOT NULL DEFAULT '{}'::jsonb,
+    review_status text NOT NULL,
+    review_task_id uuid REFERENCES review_tasks(id) ON DELETE SET NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS finding_evidence_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    audit_finding_id uuid NOT NULL REFERENCES audit_findings(id) ON DELETE CASCADE,
+    evidence_type text NOT NULL,
+    chunk_id uuid REFERENCES document_chunks(id) ON DELETE SET NULL,
+    source_package_version_key text,
+    index_version_key text,
+    citation_id text,
+    locator jsonb NOT NULL DEFAULT '{}'::jsonb,
+    snippet text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_source_documents_collection ON source_documents (source_collection);
 CREATE INDEX IF NOT EXISTS idx_source_documents_package ON source_documents (source_package_version_id);
 CREATE INDEX IF NOT EXISTS idx_source_documents_sha256 ON source_documents (sha256);
@@ -232,3 +349,26 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_task ON review_comments (review_t
 CREATE INDEX IF NOT EXISTS idx_review_comments_task_created_at
     ON review_comments (review_task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_comments_visibility ON review_comments (visibility);
+CREATE INDEX IF NOT EXISTS idx_audit_projects_status ON audit_projects (status);
+CREATE INDEX IF NOT EXISTS idx_audit_projects_scenario ON audit_projects (scenario_key);
+CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_project ON audit_data_snapshots (project_id);
+CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_status ON audit_data_snapshots (status);
+CREATE INDEX IF NOT EXISTS idx_audit_tasks_project ON audit_tasks (project_id);
+CREATE INDEX IF NOT EXISTS idx_audit_tasks_snapshot ON audit_tasks (snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_audit_tasks_status ON audit_tasks (status);
+CREATE INDEX IF NOT EXISTS idx_audit_runs_task ON audit_runs (audit_task_id);
+CREATE INDEX IF NOT EXISTS idx_audit_runs_snapshot ON audit_runs (snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_audit_runs_status ON audit_runs (status);
+CREATE INDEX IF NOT EXISTS idx_audit_rules_scenario ON audit_rules (scenario_key);
+CREATE INDEX IF NOT EXISTS idx_audit_rules_status ON audit_rules (status);
+CREATE INDEX IF NOT EXISTS idx_rule_versions_rule ON rule_versions (audit_rule_id);
+CREATE INDEX IF NOT EXISTS idx_rule_versions_status ON rule_versions (status);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_run ON audit_findings (audit_run_id);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_task ON audit_findings (audit_task_id);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_rule_version ON audit_findings (rule_version_id);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_review_status ON audit_findings (review_status);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_status ON audit_findings (status);
+CREATE INDEX IF NOT EXISTS idx_finding_evidence_items_finding
+    ON finding_evidence_items (audit_finding_id);
+CREATE INDEX IF NOT EXISTS idx_finding_evidence_items_chunk ON finding_evidence_items (chunk_id);
+CREATE INDEX IF NOT EXISTS idx_finding_evidence_items_type ON finding_evidence_items (evidence_type);

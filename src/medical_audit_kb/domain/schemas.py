@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -125,4 +126,116 @@ class ReviewCommentCreate(BaseModel):
     author: str = Field(min_length=1)
     body: str = Field(min_length=1)
     visibility: str = Field(default="internal", min_length=1, max_length=32)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditProjectCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_key: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+    scenario_key: str = Field(min_length=1, max_length=128)
+    status: str = Field(min_length=1, max_length=48)
+    owner_department: str | None = None
+    created_by: str | None = None
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditDataSnapshotCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_key: str = Field(min_length=1, max_length=128)
+    project_id: UUID
+    source_batch_key: str = Field(min_length=1, max_length=128)
+    time_range: dict[str, Any] = Field(default_factory=dict)
+    row_counts: dict[str, Any] = Field(default_factory=dict)
+    checksum: str | None = None
+    status: str = Field(min_length=1, max_length=48)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_key: str = Field(min_length=1, max_length=128)
+    project_id: UUID
+    snapshot_id: UUID
+    topic: str = Field(min_length=1)
+    department_scope: dict[str, Any] = Field(default_factory=dict)
+    date_range: dict[str, Any] = Field(default_factory=dict)
+    status: str = Field(min_length=1, max_length=48)
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditRunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_key: str = Field(min_length=1, max_length=128)
+    audit_task_id: UUID
+    snapshot_id: UUID
+    rule_version_key: str = Field(min_length=1, max_length=128)
+    knowledge_index_version_key: str | None = Field(default=None, max_length=128)
+    status: str = Field(min_length=1, max_length=48)
+    finished_at: datetime | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    rule_key: str = Field(min_length=1, max_length=128)
+    scenario_key: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+    status: str = Field(min_length=1, max_length=48)
+    owner: str | None = None
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuleVersionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    audit_rule_id: UUID
+    version_key: str = Field(min_length=1, max_length=128)
+    rule_key: str = Field(min_length=1, max_length=128)
+    status: str = Field(min_length=1, max_length=48)
+    logic: dict[str, Any] = Field(default_factory=dict)
+    evidence_links: dict[str, Any] = Field(default_factory=dict)
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
+    created_by: str | None = None
+
+
+class AuditFindingCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    finding_key: str = Field(min_length=1, max_length=128)
+    audit_run_id: UUID
+    audit_task_id: UUID
+    rule_version_id: UUID
+    snapshot_id: UUID
+    status: str = Field(min_length=1, max_length=48)
+    finding_type: str = Field(min_length=1, max_length=128)
+    severity: str = Field(min_length=1, max_length=48)
+    source_record_locator: dict[str, Any] = Field(default_factory=dict)
+    calculation_trace: dict[str, Any] = Field(default_factory=dict)
+    review_status: str = Field(min_length=1, max_length=48)
+    review_task_id: UUID | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class FindingEvidenceItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    audit_finding_id: UUID
+    evidence_type: str = Field(min_length=1, max_length=64)
+    chunk_id: UUID | None = None
+    source_package_version_key: str | None = Field(default=None, max_length=128)
+    index_version_key: str | None = Field(default=None, max_length=128)
+    citation_id: str | None = Field(default=None, max_length=128)
+    locator: dict[str, Any] = Field(default_factory=dict)
+    snippet: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -47,3 +47,32 @@ def test_pgvector_schema_includes_review_task_tables() -> None:
     assert "idx_review_tasks_status" in schema
     assert "idx_review_actions_task_created_at" in schema
     assert "idx_review_comments_task_created_at" in schema
+
+
+def test_pgvector_schema_includes_audit_workflow_tables() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS audit_projects" in schema
+    assert "project_key text NOT NULL UNIQUE" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_data_snapshots" in schema
+    assert "project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_tasks" in schema
+    assert (
+        "snapshot_id uuid NOT NULL REFERENCES audit_data_snapshots(id) ON DELETE RESTRICT" in schema
+    )
+    assert "CREATE TABLE IF NOT EXISTS audit_runs" in schema
+    assert "audit_task_id uuid NOT NULL REFERENCES audit_tasks(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_rules" in schema
+    assert "CREATE TABLE IF NOT EXISTS rule_versions" in schema
+    assert "audit_rule_id uuid NOT NULL REFERENCES audit_rules(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_findings" in schema
+    assert "rule_version_id uuid NOT NULL REFERENCES rule_versions(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS finding_evidence_items" in schema
+    assert (
+        "audit_finding_id uuid NOT NULL REFERENCES audit_findings(id) ON DELETE CASCADE" in schema
+    )
+    assert "chunk_id uuid REFERENCES document_chunks(id) ON DELETE SET NULL" in schema
+    assert "idx_audit_tasks_project" in schema
+    assert "idx_audit_runs_task" in schema
+    assert "idx_audit_findings_run" in schema
+    assert "idx_finding_evidence_items_finding" in schema
