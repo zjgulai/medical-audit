@@ -56,6 +56,12 @@ from medical_audit_kb.his.snapshot_plan import (
     load_his_sample_quality_report_json,
     render_his_snapshot_plan_markdown,
 )
+from medical_audit_kb.his.staging_import import (
+    his_staging_import_result_json,
+    import_his_sample_quality_to_staging_database,
+    load_his_staging_sample_quality_report_json,
+    render_his_staging_import_markdown,
+)
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingProvider,
@@ -151,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_snapshot_plan(args)
     if args.command == "his-snapshot-apply":
         return _his_snapshot_apply(args)
+    if args.command == "his-staging-import":
+        return _his_staging_import(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -346,6 +354,26 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Actually insert audit_data_snapshots. Omit this flag to run dry-run only.",
     )
     his_snapshot_apply.add_argument(
+        "--create-schema",
+        action="store_true",
+        help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
+    )
+
+    his_staging_import = subparsers.add_parser(
+        "his-staging-import",
+        help="Dry-run or write validated HIS sample rows into his_staging_rows.",
+    )
+    his_staging_import.add_argument("--quality-report-json", required=True, type=Path)
+    his_staging_import.add_argument("--source-batch-key", required=True)
+    his_staging_import.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    his_staging_import.add_argument("--output", required=True, type=Path)
+    his_staging_import.add_argument("--json-output", type=Path)
+    his_staging_import.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually insert his_staging_rows. Omit this flag to run dry-run only.",
+    )
+    his_staging_import.add_argument(
         "--create-schema",
         action="store_true",
         help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
@@ -659,6 +687,23 @@ def _his_snapshot_apply(args: argparse.Namespace) -> int:
     _write_text(args.output, render_his_snapshot_apply_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, his_snapshot_apply_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _his_staging_import(args: argparse.Namespace) -> int:
+    quality_report = load_his_staging_sample_quality_report_json(args.quality_report_json)
+    result = asyncio.run(
+        import_his_sample_quality_to_staging_database(
+            quality_report,
+            source_batch_key=args.source_batch_key,
+            database_url=_database_url_from_env(args.database_url_env),
+            execute=args.execute,
+            create_schema_if_missing=args.create_schema,
+        )
+    )
+    _write_text(args.output, render_his_staging_import_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_staging_import_result_json(result))
     return 0 if result.status == "pass" else 2
 
 

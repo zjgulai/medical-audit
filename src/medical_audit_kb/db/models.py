@@ -457,6 +457,10 @@ class HisSourceBatch(Base):
         back_populates="source_batch",
         cascade="all, delete-orphan",
     )
+    staging_rows: Mapped[list[HisStagingRow]] = relationship(
+        back_populates="source_batch",
+        cascade="all, delete-orphan",
+    )
 
 
 class HisTableSchema(Base):
@@ -498,6 +502,47 @@ class HisTableSchema(Base):
         back_populates="table_schema",
         cascade="all, delete-orphan",
     )
+    staging_rows: Mapped[list[HisStagingRow]] = relationship(back_populates="table_schema")
+
+
+class HisStagingRow(Base):
+    __tablename__ = "his_staging_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_batch_id",
+            "table_name",
+            "row_number",
+            name="uq_his_staging_rows_batch_table_row",
+        ),
+        Index("idx_his_staging_rows_batch", "source_batch_id"),
+        Index("idx_his_staging_rows_schema", "table_schema_id"),
+        Index("idx_his_staging_rows_table", "table_name"),
+        Index("idx_his_staging_rows_status", "status"),
+        Index("idx_his_staging_rows_hash", "row_hash"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    source_batch_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("his_source_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    table_schema_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("his_table_schemas.id", ondelete="SET NULL")
+    )
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    row_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    validation_errors: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    source_batch: Mapped[HisSourceBatch] = relationship(back_populates="staging_rows")
+    table_schema: Mapped[HisTableSchema | None] = relationship(back_populates="staging_rows")
 
 
 class HisFieldMapping(Base):

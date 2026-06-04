@@ -73,7 +73,7 @@ def build_his_sample_quality_report(
 
     for sample_file in sample_files:
         try:
-            rows = tuple(_read_sample_rows(sample_file))
+            rows = tuple(load_his_sample_rows(sample_file))
         except ValueError as exc:
             issues.append(str(exc))
             continue
@@ -167,7 +167,7 @@ def _sample_files(sample_root: Path) -> Iterable[Path]:
     )
 
 
-def _read_sample_rows(path: Path) -> list[dict[str, str]]:
+def load_his_sample_rows(path: Path) -> list[dict[str, str]]:
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return _read_csv_rows(path)

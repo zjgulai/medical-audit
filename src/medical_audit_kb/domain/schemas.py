@@ -188,6 +188,20 @@ class HisTableSchemaCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class HisStagingRowCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_batch_id: UUID
+    table_schema_id: UUID | None = None
+    table_name: str = Field(min_length=1, max_length=128)
+    row_number: int = Field(ge=1)
+    row_data: dict[str, Any] = Field(default_factory=dict)
+    row_hash: str = Field(min_length=1, max_length=128)
+    status: str = Field(min_length=1, max_length=48)
+    validation_errors: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class HisFieldMappingCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
