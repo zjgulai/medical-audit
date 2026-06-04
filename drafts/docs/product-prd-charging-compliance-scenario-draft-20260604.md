@@ -125,6 +125,7 @@ V1.0 首个场景不做：
 - 已建立 `CHARGE-RULE-001` staging 标准输入转换器，可从 `his_staging_rows` 和 `his_field_mappings` 构造 `ChargeDetailRecord`，并复用现有规则执行器输出疑点和 `needs_evidence`。
 - 已建立 HIS 数据快照计划 CLI `his-snapshot-plan`，样本质量报告通过后可生成 `AuditDataSnapshotCreate` payload、row_counts 和快照 checksum。
 - 已建立 HIS 数据快照受控入库 CLI `his-snapshot-apply`，默认 dry-run，显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
+- 已建立 `charge-rule-001-staging-run` CLI，可从 HIS staging 行运行 `CHARGE-RULE-001`，默认 dry-run，显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
 - 该结果只证明工程闭环，不证明院方真实数据准确率。
 
 ### 8.2 院方样本验收
@@ -160,4 +161,5 @@ V1.0 首个场景不做：
 10. 已接入 `CHARGE-RULE-001` staging 标准输入转换。
 11. 已接入 HIS 数据快照计划。
 12. 已接入 HIS 数据快照受控入库。
-13. 下一步接入生产库 staging 执行验收、staging 驱动规则运行入口、疑点入库执行、快照回滚审计和正式案件级复核流。
+13. 已接入 `CHARGE-RULE-001` staging 规则运行入口和疑点入库执行。
+14. 下一步接入生产库 staging 执行验收、快照回滚审计和正式案件级复核流。

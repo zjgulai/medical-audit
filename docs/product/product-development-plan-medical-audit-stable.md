@@ -34,10 +34,11 @@ source: human+ai
 - 已新增 `CHARGE-RULE-001` staging 标准输入转换器，可从 `his_staging_rows` 和 `his_field_mappings` 构造 `ChargeDetailRecord`，并复用既有规则执行器产生疑点和 `needs_evidence` 结果。
 - 已新增 HIS 数据快照计划 CLI `his-snapshot-plan`，支持在样本质量报告通过后生成 `AuditDataSnapshotCreate` payload、表级 row_counts 和快照 checksum。
 - 已新增 HIS 数据快照受控入库 CLI `his-snapshot-apply`，支持默认 dry-run、显式 `--execute` 写入 `audit_data_snapshots`、项目存在性校验、重复 `snapshot_key` 阻断和 Markdown/JSON 入库报告。
+- 已新增 `charge-rule-001-staging-run` CLI，支持从 HIS staging 行驱动 `CHARGE-RULE-001` dry-run，并在显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
 
 当前未完成：
 
-- 生产库 staging 执行验收、staging 驱动规则运行 CLI、疑点入库执行、快照回滚审计。
+- 生产库 staging 执行验收、快照回滚审计。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
@@ -202,6 +203,7 @@ source: human+ai
 - `charge_rule_001_staging` 已覆盖从 raw staging 到 `ChargeDetailRecord` 的标准输入转换，转换问题按 warning/error 分层，缺少分组字段继续进入规则的 `needs_evidence`，非法数值或日期阻断转换。
 - `his-snapshot-plan` 已覆盖开发期快照计划生成，可从通过的样本质量报告生成数据快照 payload 和稳定 checksum。
 - `his-snapshot-apply` 已覆盖开发期快照计划受控入库，默认 dry-run，只在显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
+- `charge-rule-001-staging-run` 已覆盖开发期 staging 驱动规则运行，默认 dry-run，执行前校验 source batch、snapshot、audit task、audit run、rule version 一致性，显式 `--execute` 后写入疑点和规则依据证据项。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
@@ -226,6 +228,7 @@ source: human+ai
 - 已建立 HIS 脱敏样本质量报告入口，样本未通过字段/必填/主键质量门禁时不进入 staging 或快照生成。
 - 已建立 HIS 数据快照计划入口，样本质量报告通过后才能生成 `AuditDataSnapshotCreate` payload。
 - 已建立 HIS 数据快照受控入库入口，默认不写库，执行前必须通过 plan、项目存在性和 `snapshot_key` 唯一性校验。
+- 已建立 `CHARGE-RULE-001` staging 规则运行入口，默认不写库，执行前必须通过上下文一致性、转换质量和重复疑点门禁。
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。
