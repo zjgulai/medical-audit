@@ -85,3 +85,42 @@ class FailedFileCreate(BaseModel):
     error_summary: str = Field(min_length=1)
     retry_count: int = Field(default=0, ge=0)
     status: FileQueueStatus = FileQueueStatus.OPEN
+
+
+class ReviewTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    external_task_id: str = Field(min_length=1, max_length=64)
+    question: str = Field(min_length=1)
+    status: str = Field(min_length=1, max_length=48)
+    status_label: str = Field(min_length=1, max_length=64)
+    citation_count: int = Field(default=0, ge=0)
+    review_gate: str = Field(min_length=1)
+    confidence_label: str = Field(min_length=1, max_length=32)
+    fallback_label: str = Field(min_length=1, max_length=64)
+    created_by: str | None = None
+    assigned_to: str | None = None
+    source: str = Field(min_length=1, max_length=64)
+    dossier: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewActionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    review_task_id: UUID
+    action_type: str = Field(min_length=1, max_length=64)
+    from_status: str | None = Field(default=None, max_length=48)
+    to_status: str | None = Field(default=None, max_length=48)
+    actor: str | None = None
+    note: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewCommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    review_task_id: UUID
+    author: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    visibility: str = Field(default="internal", min_length=1, max_length=32)
+    metadata: dict[str, Any] = Field(default_factory=dict)

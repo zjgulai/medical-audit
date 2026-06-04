@@ -146,6 +146,47 @@ CREATE TABLE IF NOT EXISTS index_evaluation_runs (
     CONSTRAINT ck_index_evaluation_runs_answer_case_count_non_negative CHECK (answer_case_count >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS review_tasks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_task_id text NOT NULL UNIQUE,
+    question text NOT NULL,
+    status text NOT NULL,
+    status_label text NOT NULL,
+    citation_count integer NOT NULL DEFAULT 0,
+    review_gate text NOT NULL,
+    confidence_label text NOT NULL,
+    fallback_label text NOT NULL,
+    created_by text,
+    assigned_to text,
+    source text NOT NULL,
+    dossier jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_review_tasks_citation_count_non_negative CHECK (citation_count >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS review_actions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_task_id uuid NOT NULL REFERENCES review_tasks(id) ON DELETE CASCADE,
+    action_type text NOT NULL,
+    from_status text,
+    to_status text,
+    actor text,
+    note text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS review_comments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_task_id uuid NOT NULL REFERENCES review_tasks(id) ON DELETE CASCADE,
+    author text NOT NULL,
+    body text NOT NULL,
+    visibility text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_source_documents_collection ON source_documents (source_collection);
 CREATE INDEX IF NOT EXISTS idx_source_documents_package ON source_documents (source_package_version_id);
 CREATE INDEX IF NOT EXISTS idx_source_documents_sha256 ON source_documents (sha256);
@@ -172,3 +213,14 @@ CREATE INDEX IF NOT EXISTS idx_query_logs_created_at ON query_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_query_logs_filters_gin ON query_logs USING gin (filters);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_created_at ON index_evaluation_runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_status ON index_evaluation_runs (status);
+CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks (status);
+CREATE INDEX IF NOT EXISTS idx_review_tasks_created_at ON review_tasks (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_tasks_created_by ON review_tasks (created_by);
+CREATE INDEX IF NOT EXISTS idx_review_actions_task ON review_actions (review_task_id);
+CREATE INDEX IF NOT EXISTS idx_review_actions_task_created_at
+    ON review_actions (review_task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_actions_type ON review_actions (action_type);
+CREATE INDEX IF NOT EXISTS idx_review_comments_task ON review_comments (review_task_id);
+CREATE INDEX IF NOT EXISTS idx_review_comments_task_created_at
+    ON review_comments (review_task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_comments_visibility ON review_comments (visibility);

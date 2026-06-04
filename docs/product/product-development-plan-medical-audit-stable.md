@@ -24,6 +24,7 @@ source: human+ai
 - 当前 active 计数为 `486` 个源文档、`48985` 个 chunks、`48985` 条 embeddings。
 - 已具备生产 E2E smoke、视觉基线和增量 dry-run 验收脚本。
 - 当前复核任务台已具备本地 JSON 持久化，不能视为生产级案件系统。
+- 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema，页面写入路径尚未切换到 PostgreSQL。
 
 当前未完成：
 
@@ -174,6 +175,12 @@ source: human+ai
 | 底稿报告 | `working_papers`、`audit_reports`、`report_exports` |
 | 整改 | `rectification_items`、`rectification_events` |
 | 审计日志 | `audit_log_events` |
+
+当前已落地：
+
+- `review_tasks`、`review_actions`、`review_comments` 已进入 `sql/knowledge-query-schema.sql`。
+- `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
+- 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、正式报告门禁或页面 PostgreSQL 切换。
 
 验收：
 

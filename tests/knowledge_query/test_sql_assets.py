@@ -30,3 +30,17 @@ def test_pgvector_schema_includes_evaluation_run_history_table() -> None:
     assert "report jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
     assert "idx_index_evaluation_runs_created_at" in schema
     assert "idx_index_evaluation_runs_status" in schema
+
+
+def test_pgvector_schema_includes_review_task_tables() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS review_tasks" in schema
+    assert "external_task_id text NOT NULL UNIQUE" in schema
+    assert "dossier jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "CREATE TABLE IF NOT EXISTS review_actions" in schema
+    assert "review_task_id uuid NOT NULL REFERENCES review_tasks(id) ON DELETE CASCADE" in schema
+    assert "CREATE TABLE IF NOT EXISTS review_comments" in schema
+    assert "idx_review_tasks_status" in schema
+    assert "idx_review_actions_task_created_at" in schema
+    assert "idx_review_comments_task_created_at" in schema
