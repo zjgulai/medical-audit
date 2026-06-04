@@ -27,10 +27,12 @@ source: human+ai
 - 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema；当前仍不能视为生产级案件系统。
 - 已补齐 V1.0 第一批业务数据底座：`audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`，支持项目、快照、任务、运行批次、规则版本、疑点和证据项的最小可追溯链路。
 - 已新增开发期疑点清单页 `/pages/audit-findings`，支持展示规则疑点、导出单条疑点 JSON，并从疑点创建复核任务。
+- 已新增 HIS 输入契约第一批：`his_source_batches`、`his_table_schemas`、`his_field_mappings`，并补齐收费合规字段映射完整性校验器。
 
 当前未完成：
 
-- HIS DDL、字段映射、脱敏样本导入、数据质量报告和真实数据快照生成。
+- HIS DDL 自动解析、脱敏样本导入、数据质量报告和真实数据快照生成。
+- HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
 - 用户、角色、科室、权限控制和审计日志。
@@ -184,6 +186,9 @@ source: human+ai
 - `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
 - `audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items` 已进入 `sql/knowledge-query-schema.sql`。
 - `AuditWorkflowRepository` 已覆盖项目、数据快照、审计任务、规则、规则版本、运行批次、疑点、证据项的基础写入，以及按疑点编号和运行批次追溯查询。
+- `his_source_batches`、`his_table_schemas`、`his_field_mappings` 已进入 `sql/knowledge-query-schema.sql`。
+- `HisIngestionRepository` 已覆盖 HIS 交付批次、表结构和字段映射的基础写入，以及按交付批次读取字段映射。
+- 收费合规字段映射校验器已覆盖必需字段缺失、重复目标字段、必需字段 nullable、敏感字段缺失脱敏规则，未通过时不得生成正式数据快照。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
@@ -202,6 +207,7 @@ source: human+ai
 
 - 建立规则 DSL 或规则配置最小结构。
 - 实现 HIS 脱敏样本导入。
+- 已建立收费合规 HIS 字段映射校验门禁，字段映射不完整时阻断后续快照生成。
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。

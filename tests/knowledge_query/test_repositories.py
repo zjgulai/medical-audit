@@ -22,6 +22,9 @@ from medical_audit_kb.db.models import (
     DocumentChunk,
     FailedFile,
     FindingEvidenceItem,
+    HisFieldMapping,
+    HisSourceBatch,
+    HisTableSchema,
     ReviewAction,
     ReviewComment,
     ReviewTask,
@@ -30,6 +33,7 @@ from medical_audit_kb.db.models import (
 )
 from medical_audit_kb.db.repositories import (
     AuditWorkflowRepository,
+    HisIngestionRepository,
     KnowledgeBaseRepository,
     ReviewTaskRepository,
 )
@@ -50,6 +54,9 @@ from medical_audit_kb.domain.schemas import (
     DocumentChunkCreate,
     FailedFileCreate,
     FindingEvidenceItemCreate,
+    HisFieldMappingCreate,
+    HisSourceBatchCreate,
+    HisTableSchemaCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
     ReviewTaskCreate,
@@ -69,6 +76,10 @@ def test_review_task_repository_creates_task_actions_and_comments() -> None:
 
 def test_audit_workflow_repository_creates_traceable_task_run_findings() -> None:
     asyncio.run(_with_repository(_assert_audit_workflow_repository_flow))
+
+
+def test_his_ingestion_repository_creates_batch_schema_and_field_mappings() -> None:
+    asyncio.run(_with_repository(_assert_his_ingestion_repository_flow))
 
 
 async def _with_repository(
@@ -230,6 +241,96 @@ async def _assert_repository_write_flow(
     assert stored_embedding.provider_version == "v1"
     assert stored_embedding.dimension == 3
     assert stored_embedding.embedding == [0.3, 0.2, 0.1]
+
+
+async def _assert_his_ingestion_repository_flow(
+    _: KnowledgeBaseRepository,
+    session: AsyncSession,
+) -> None:
+    audit_repository = AuditWorkflowRepository(session)
+    his_repository = HisIngestionRepository(session)
+    project = await audit_repository.create_project(
+        AuditProjectCreate(
+            project_key="audit-project-his-0001",
+            name="收费合规专项审计",
+            scenario_key="charging-compliance",
+            status="draft",
+            owner_department="审计科",
+            created_by="unit-test",
+        )
+    )
+    source_batch = await his_repository.create_source_batch(
+        HisSourceBatchCreate(
+            batch_key="his-batch-0001",
+            project_id=project.id,
+            hospital_code="hospital-a",
+            scenario_key="charging-compliance",
+            source_type="offline-export",
+            file_manifest={"files": ["charge_detail.csv"]},
+            row_counts={"charge_detail": 2},
+            checksum="sha256:demo",
+            status="received",
+        )
+    )
+    table_schema = await his_repository.create_table_schema(
+        HisTableSchemaCreate(
+            schema_key="his-schema-charge-detail-0001",
+            source_batch_id=source_batch.id,
+            table_name="T_HIS_CHARGE_DETAIL",
+            business_domain="charge_detail",
+            ddl_text="CREATE TABLE T_HIS_CHARGE_DETAIL (CHARGE_ID TEXT NOT NULL);",
+            ddl_hash="sha256:charge-detail",
+            field_dictionary={"CHARGE_ID": {"description": "charge row id"}},
+            primary_key_fields=["CHARGE_ID"],
+            time_fields=["CHARGED_AT"],
+            row_count=2,
+            status="mapped",
+        )
+    )
+    charge_id_mapping = await his_repository.add_field_mapping(
+        HisFieldMappingCreate(
+            mapping_key="his-map-charge-id-0001",
+            table_schema_id=table_schema.id,
+            source_field="CHARGE_ID",
+            target_domain="charge_detail",
+            target_field="charge_id",
+            source_data_type="TEXT",
+            target_data_type="string",
+            status="active",
+        )
+    )
+    amount_mapping = await his_repository.add_field_mapping(
+        HisFieldMappingCreate(
+            mapping_key="his-map-amount-0001",
+            table_schema_id=table_schema.id,
+            source_field="AMOUNT",
+            target_domain="charge_detail",
+            target_field="amount",
+            source_data_type="NUMERIC",
+            target_data_type="decimal",
+            nullable=True,
+            status="active",
+        )
+    )
+
+    stored_batch = (
+        await session.execute(select(HisSourceBatch).where(HisSourceBatch.id == source_batch.id))
+    ).scalar_one()
+    stored_schema = (
+        await session.execute(select(HisTableSchema).where(HisTableSchema.id == table_schema.id))
+    ).scalar_one()
+    stored_mappings = await his_repository.list_field_mappings_for_batch("his-batch-0001")
+    stored_amount_mapping = (
+        await session.execute(
+            select(HisFieldMapping).where(HisFieldMapping.id == amount_mapping.id)
+        )
+    ).scalar_one()
+
+    assert stored_batch.project_id == project.id
+    assert stored_batch.file_manifest == {"files": ["charge_detail.csv"]}
+    assert stored_schema.primary_key_fields == ["CHARGE_ID"]
+    assert [mapping.id for mapping in stored_mappings] == [amount_mapping.id, charge_id_mapping.id]
+    assert stored_amount_mapping.nullable is True
 
 
 async def _assert_review_task_repository_flow(

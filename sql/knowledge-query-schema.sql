@@ -209,6 +209,61 @@ CREATE TABLE IF NOT EXISTS audit_projects (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS his_source_batches (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_key text NOT NULL UNIQUE,
+    project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT,
+    hospital_code text NOT NULL,
+    scenario_key text NOT NULL,
+    source_type text NOT NULL,
+    exported_at timestamptz,
+    file_manifest jsonb NOT NULL DEFAULT '{}'::jsonb,
+    row_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+    checksum text,
+    status text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS his_table_schemas (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    schema_key text NOT NULL UNIQUE,
+    source_batch_id uuid NOT NULL REFERENCES his_source_batches(id) ON DELETE CASCADE,
+    table_name text NOT NULL,
+    business_domain text NOT NULL,
+    ddl_text text NOT NULL,
+    ddl_hash text NOT NULL,
+    field_dictionary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    primary_key_fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+    time_fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+    row_count integer,
+    status text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_his_table_schemas_batch_table UNIQUE (source_batch_id, table_name),
+    CONSTRAINT ck_his_table_schemas_row_count_non_negative CHECK (row_count IS NULL OR row_count >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS his_field_mappings (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    mapping_key text NOT NULL UNIQUE,
+    table_schema_id uuid NOT NULL REFERENCES his_table_schemas(id) ON DELETE CASCADE,
+    source_field text NOT NULL,
+    target_domain text NOT NULL,
+    target_field text NOT NULL,
+    source_data_type text,
+    target_data_type text,
+    transform_rule text,
+    is_required boolean NOT NULL DEFAULT true,
+    nullable boolean NOT NULL DEFAULT false,
+    deidentification_rule text,
+    status text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS audit_data_snapshots (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     snapshot_key text NOT NULL UNIQUE,
@@ -351,6 +406,16 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_task_created_at
 CREATE INDEX IF NOT EXISTS idx_review_comments_visibility ON review_comments (visibility);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_status ON audit_projects (status);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_scenario ON audit_projects (scenario_key);
+CREATE INDEX IF NOT EXISTS idx_his_source_batches_project ON his_source_batches (project_id);
+CREATE INDEX IF NOT EXISTS idx_his_source_batches_hospital ON his_source_batches (hospital_code);
+CREATE INDEX IF NOT EXISTS idx_his_source_batches_status ON his_source_batches (status);
+CREATE INDEX IF NOT EXISTS idx_his_table_schemas_batch ON his_table_schemas (source_batch_id);
+CREATE INDEX IF NOT EXISTS idx_his_table_schemas_domain ON his_table_schemas (business_domain);
+CREATE INDEX IF NOT EXISTS idx_his_table_schemas_status ON his_table_schemas (status);
+CREATE INDEX IF NOT EXISTS idx_his_field_mappings_schema ON his_field_mappings (table_schema_id);
+CREATE INDEX IF NOT EXISTS idx_his_field_mappings_target
+    ON his_field_mappings (target_domain, target_field);
+CREATE INDEX IF NOT EXISTS idx_his_field_mappings_status ON his_field_mappings (status);
 CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_project ON audit_data_snapshots (project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_data_snapshots_status ON audit_data_snapshots (status);
 CREATE INDEX IF NOT EXISTS idx_audit_tasks_project ON audit_tasks (project_id);

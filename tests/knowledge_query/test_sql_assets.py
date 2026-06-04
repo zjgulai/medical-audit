@@ -76,3 +76,25 @@ def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     assert "idx_audit_runs_task" in schema
     assert "idx_audit_findings_run" in schema
     assert "idx_finding_evidence_items_finding" in schema
+
+
+def test_pgvector_schema_includes_his_ingestion_contract_tables() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS his_source_batches" in schema
+    assert "batch_key text NOT NULL UNIQUE" in schema
+    assert "project_id uuid NOT NULL REFERENCES audit_projects(id) ON DELETE RESTRICT" in schema
+    assert "CREATE TABLE IF NOT EXISTS his_table_schemas" in schema
+    assert (
+        "source_batch_id uuid NOT NULL REFERENCES his_source_batches(id) ON DELETE CASCADE"
+        in schema
+    )
+    assert "CONSTRAINT uq_his_table_schemas_batch_table UNIQUE" in schema
+    assert "CREATE TABLE IF NOT EXISTS his_field_mappings" in schema
+    assert (
+        "table_schema_id uuid NOT NULL REFERENCES his_table_schemas(id) ON DELETE CASCADE" in schema
+    )
+    assert "deidentification_rule text" in schema
+    assert "idx_his_source_batches_project" in schema
+    assert "idx_his_table_schemas_domain" in schema
+    assert "idx_his_field_mappings_target" in schema

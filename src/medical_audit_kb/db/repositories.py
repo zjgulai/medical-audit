@@ -18,6 +18,9 @@ from medical_audit_kb.db.models import (
     DocumentChunk,
     FailedFile,
     FindingEvidenceItem,
+    HisFieldMapping,
+    HisSourceBatch,
+    HisTableSchema,
     ReviewAction,
     ReviewComment,
     ReviewTask,
@@ -36,6 +39,9 @@ from medical_audit_kb.domain.schemas import (
     DocumentChunkCreate,
     FailedFileCreate,
     FindingEvidenceItemCreate,
+    HisFieldMappingCreate,
+    HisSourceBatchCreate,
+    HisTableSchemaCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
     ReviewTaskCreate,
@@ -360,6 +366,78 @@ class AuditWorkflowRepository:
             select(AuditFinding)
             .where(AuditFinding.audit_run_id == audit_run_id)
             .order_by(AuditFinding.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+
+class HisIngestionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create_source_batch(self, payload: HisSourceBatchCreate) -> HisSourceBatch:
+        source_batch = HisSourceBatch(
+            batch_key=payload.batch_key,
+            project_id=payload.project_id,
+            hospital_code=payload.hospital_code,
+            scenario_key=payload.scenario_key,
+            source_type=payload.source_type,
+            exported_at=payload.exported_at,
+            file_manifest=payload.file_manifest,
+            row_counts=payload.row_counts,
+            checksum=payload.checksum,
+            status=payload.status,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(source_batch)
+        await self._session.flush()
+        return source_batch
+
+    async def create_table_schema(self, payload: HisTableSchemaCreate) -> HisTableSchema:
+        table_schema = HisTableSchema(
+            schema_key=payload.schema_key,
+            source_batch_id=payload.source_batch_id,
+            table_name=payload.table_name,
+            business_domain=payload.business_domain,
+            ddl_text=payload.ddl_text,
+            ddl_hash=payload.ddl_hash,
+            field_dictionary=payload.field_dictionary,
+            primary_key_fields=payload.primary_key_fields,
+            time_fields=payload.time_fields,
+            row_count=payload.row_count,
+            status=payload.status,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(table_schema)
+        await self._session.flush()
+        return table_schema
+
+    async def add_field_mapping(self, payload: HisFieldMappingCreate) -> HisFieldMapping:
+        field_mapping = HisFieldMapping(
+            mapping_key=payload.mapping_key,
+            table_schema_id=payload.table_schema_id,
+            source_field=payload.source_field,
+            target_domain=payload.target_domain,
+            target_field=payload.target_field,
+            source_data_type=payload.source_data_type,
+            target_data_type=payload.target_data_type,
+            transform_rule=payload.transform_rule,
+            is_required=payload.is_required,
+            nullable=payload.nullable,
+            deidentification_rule=payload.deidentification_rule,
+            status=payload.status,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(field_mapping)
+        await self._session.flush()
+        return field_mapping
+
+    async def list_field_mappings_for_batch(self, batch_key: str) -> list[HisFieldMapping]:
+        result = await self._session.execute(
+            select(HisFieldMapping)
+            .join(HisTableSchema)
+            .join(HisSourceBatch)
+            .where(HisSourceBatch.batch_key == batch_key)
+            .order_by(HisTableSchema.table_name.asc(), HisFieldMapping.target_field.asc())
         )
         return list(result.scalars().all())
 

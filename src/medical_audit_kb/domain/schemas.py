@@ -155,6 +155,57 @@ class AuditDataSnapshotCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class HisSourceBatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    batch_key: str = Field(min_length=1, max_length=128)
+    project_id: UUID
+    hospital_code: str = Field(min_length=1, max_length=128)
+    scenario_key: str = Field(min_length=1, max_length=128)
+    source_type: str = Field(min_length=1, max_length=64)
+    exported_at: datetime | None = None
+    file_manifest: dict[str, Any] = Field(default_factory=dict)
+    row_counts: dict[str, Any] = Field(default_factory=dict)
+    checksum: str | None = None
+    status: str = Field(min_length=1, max_length=48)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class HisTableSchemaCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_key: str = Field(min_length=1, max_length=128)
+    source_batch_id: UUID
+    table_name: str = Field(min_length=1, max_length=128)
+    business_domain: str = Field(min_length=1, max_length=128)
+    ddl_text: str = Field(min_length=1)
+    ddl_hash: str = Field(min_length=1, max_length=128)
+    field_dictionary: dict[str, Any] = Field(default_factory=dict)
+    primary_key_fields: list[str] = Field(default_factory=list)
+    time_fields: list[str] = Field(default_factory=list)
+    row_count: int | None = Field(default=None, ge=0)
+    status: str = Field(min_length=1, max_length=48)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class HisFieldMappingCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mapping_key: str = Field(min_length=1, max_length=128)
+    table_schema_id: UUID
+    source_field: str = Field(min_length=1, max_length=128)
+    target_domain: str = Field(min_length=1, max_length=128)
+    target_field: str = Field(min_length=1, max_length=128)
+    source_data_type: str | None = Field(default=None, max_length=128)
+    target_data_type: str | None = Field(default=None, max_length=128)
+    transform_rule: str | None = None
+    is_required: bool = True
+    nullable: bool = False
+    deidentification_rule: str | None = None
+    status: str = Field(min_length=1, max_length=48)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AuditTaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
