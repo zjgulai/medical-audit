@@ -25,7 +25,7 @@ source: human+ai
 - 已具备生产 E2E smoke、视觉基线和增量 dry-run 验收脚本。
 - 当前复核任务台已切换为 PostgreSQL 持久化，支持任务创建、状态更新、复核意见、复核结论和任务级导出。
 - 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema；当前仍不能视为生产级案件系统。
-- 已补齐 V1.0 第一批业务数据底座：`audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`，支持项目、快照、任务、运行批次、规则版本、疑点和证据项的最小可追溯链路。
+- 已补齐 V1.0 第一批业务数据底座：`audit_projects`、`audit_data_snapshots`、`audit_snapshot_rollbacks`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`，支持项目、快照、回滚审计、任务、运行批次、规则版本、疑点和证据项的最小可追溯链路。
 - 已新增开发期疑点清单页 `/pages/audit-findings`，支持展示规则疑点、导出单条疑点 JSON，并从疑点创建复核任务。
 - 已新增 HIS 输入契约第一批：`his_source_batches`、`his_table_schemas`、`his_field_mappings`，并补齐收费合规字段映射完整性校验器。
 - 已新增 HIS DDL 自动解析器和 CLI `his-ddl-parse`，支持从离线 DDL 文本解析表、字段、主键、时间字段、字段注释、DDL hash，并生成 Markdown/JSON 解析报告。
@@ -35,10 +35,11 @@ source: human+ai
 - 已新增 HIS 数据快照计划 CLI `his-snapshot-plan`，支持在样本质量报告通过后生成 `AuditDataSnapshotCreate` payload、表级 row_counts 和快照 checksum。
 - 已新增 HIS 数据快照受控入库 CLI `his-snapshot-apply`，支持默认 dry-run、显式 `--execute` 写入 `audit_data_snapshots`、项目存在性校验、重复 `snapshot_key` 阻断和 Markdown/JSON 入库报告。
 - 已新增 `charge-rule-001-staging-run` CLI，支持从 HIS staging 行驱动 `CHARGE-RULE-001` dry-run，并在显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
+- 已新增 `his-snapshot-rollback-audit` CLI，支持默认 dry-run 计算快照回滚影响面，并在显式 `--execute` 后写入 `audit_snapshot_rollbacks`，不删除历史快照、任务、run 或疑点。
 
 当前未完成：
 
-- 生产库 staging 执行验收、快照回滚审计。
+- 生产库 staging 执行验收。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
@@ -191,8 +192,8 @@ source: human+ai
 
 - `review_tasks`、`review_actions`、`review_comments` 已进入 `sql/knowledge-query-schema.sql`。
 - `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
-- `audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items` 已进入 `sql/knowledge-query-schema.sql`。
-- `AuditWorkflowRepository` 已覆盖项目、数据快照、审计任务、规则、规则版本、运行批次、疑点、证据项的基础写入，以及按疑点编号和运行批次追溯查询。
+- `audit_projects`、`audit_data_snapshots`、`audit_snapshot_rollbacks`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items` 已进入 `sql/knowledge-query-schema.sql`。
+- `AuditWorkflowRepository` 已覆盖项目、数据快照、快照回滚审计、审计任务、规则、规则版本、运行批次、疑点、证据项的基础写入，以及按疑点编号和运行批次追溯查询。
 - `his_source_batches`、`his_table_schemas`、`his_field_mappings` 已进入 `sql/knowledge-query-schema.sql`。
 - `HisIngestionRepository` 已覆盖 HIS 交付批次、表结构和字段映射的基础写入，以及按交付批次读取字段映射。
 - 收费合规字段映射校验器已覆盖必需字段缺失、重复目标字段、必需字段 nullable、敏感字段缺失脱敏规则，未通过时不得生成正式数据快照。
@@ -204,6 +205,7 @@ source: human+ai
 - `his-snapshot-plan` 已覆盖开发期快照计划生成，可从通过的样本质量报告生成数据快照 payload 和稳定 checksum。
 - `his-snapshot-apply` 已覆盖开发期快照计划受控入库，默认 dry-run，只在显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
 - `charge-rule-001-staging-run` 已覆盖开发期 staging 驱动规则运行，默认 dry-run，执行前校验 source batch、snapshot、audit task、audit run、rule version 一致性，显式 `--execute` 后写入疑点和规则依据证据项。
+- `his-snapshot-rollback-audit` 已覆盖开发期快照回滚审计，默认 dry-run，执行前校验项目、from/to snapshot、重复 rollback key 和影响面，显式 `--execute` 后只写审计事件，不删除历史数据。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
@@ -229,6 +231,7 @@ source: human+ai
 - 已建立 HIS 数据快照计划入口，样本质量报告通过后才能生成 `AuditDataSnapshotCreate` payload。
 - 已建立 HIS 数据快照受控入库入口，默认不写库，执行前必须通过 plan、项目存在性和 `snapshot_key` 唯一性校验。
 - 已建立 `CHARGE-RULE-001` staging 规则运行入口，默认不写库，执行前必须通过上下文一致性、转换质量和重复疑点门禁。
+- 已建立 HIS 数据快照回滚审计入口，默认不写库，执行前必须通过项目、目标快照和重复回滚键门禁。
 - 实现审计任务创建和运行批次。
 - 已实现 `CHARGE-RULE-001` 开发期最小执行器：合成收费明细 fixture、3 个重复收费正例、3 个可解释反例、2 个 `needs-evidence` 边界样本。
 - 已实现规则输出到 `AuditFindingCreate` 的转换，支持将疑点和规则依据证据项写入 `audit_findings`、`finding_evidence_items`。

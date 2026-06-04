@@ -126,6 +126,7 @@ V1.0 首个场景不做：
 - 已建立 HIS 数据快照计划 CLI `his-snapshot-plan`，样本质量报告通过后可生成 `AuditDataSnapshotCreate` payload、row_counts 和快照 checksum。
 - 已建立 HIS 数据快照受控入库 CLI `his-snapshot-apply`，默认 dry-run，显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
 - 已建立 `charge-rule-001-staging-run` CLI，可从 HIS staging 行运行 `CHARGE-RULE-001`，默认 dry-run，显式 `--execute` 后写入 `audit_findings` 和 `finding_evidence_items`。
+- 已建立 `his-snapshot-rollback-audit` CLI，可在生产 staging 验收失败时先计算快照回滚影响面，显式 `--execute` 后写入 `audit_snapshot_rollbacks` 审计事件。
 - 该结果只证明工程闭环，不证明院方真实数据准确率。
 
 ### 8.2 院方样本验收
@@ -162,4 +163,5 @@ V1.0 首个场景不做：
 11. 已接入 HIS 数据快照计划。
 12. 已接入 HIS 数据快照受控入库。
 13. 已接入 `CHARGE-RULE-001` staging 规则运行入口和疑点入库执行。
-14. 下一步接入生产库 staging 执行验收、快照回滚审计和正式案件级复核流。
+14. 已接入 HIS 数据快照回滚审计。
+15. 下一步接入生产库 staging 执行验收和正式案件级复核流。

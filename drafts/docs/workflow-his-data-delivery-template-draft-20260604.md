@@ -190,6 +190,8 @@ N001,charge_detail,CD0100,CHARGE-RULE-001,quantity-explained-by-order,审计员A
 10. 建立 `audit_tasks`、`audit_runs`、`audit_rules` 和 `rule_versions`。
 11. 使用 `charge-rule-001-staging-run` dry-run 校验 staging 转换、任务/快照/运行批次/规则版本一致性和预期疑点。
 12. 复核 dry-run 报告后显式 `--execute` 写入 `audit_findings` 和 `finding_evidence_items`。
+13. 如果生产 staging 验收失败，先使用 `his-snapshot-rollback-audit` dry-run 计算从当前快照回退到上一可用快照的影响面。
+14. 复核回滚影响面后显式 `--execute` 写入 `audit_snapshot_rollbacks` 审计事件；该命令不删除历史快照、任务、run 或疑点。
 
 示例命令：
 
@@ -257,5 +259,28 @@ medical-audit-kb charge-rule-001-staging-run \
   --database-url-env MEDICAL_AUDIT_DATABASE_URL \
   --output tmp/outputs/his-delivery/charge-rule-001-staging-run-execute.md \
   --json-output tmp/outputs/his-delivery/charge-rule-001-staging-run-execute.json \
+  --execute
+
+medical-audit-kb his-snapshot-rollback-audit \
+  --rollback-key rollback-his-20260604-001 \
+  --project-key audit-project-charge-20260604 \
+  --from-snapshot-key snapshot-his-20260604-001 \
+  --to-snapshot-key snapshot-his-previous-stable \
+  --reason "生产 staging 验收未通过，回退到上一可用快照" \
+  --requested-by audit-admin \
+  --database-url-env MEDICAL_AUDIT_DATABASE_URL \
+  --output tmp/outputs/his-delivery/his-snapshot-rollback-audit-dry-run.md \
+  --json-output tmp/outputs/his-delivery/his-snapshot-rollback-audit-dry-run.json
+
+medical-audit-kb his-snapshot-rollback-audit \
+  --rollback-key rollback-his-20260604-001 \
+  --project-key audit-project-charge-20260604 \
+  --from-snapshot-key snapshot-his-20260604-001 \
+  --to-snapshot-key snapshot-his-previous-stable \
+  --reason "生产 staging 验收未通过，回退到上一可用快照" \
+  --requested-by audit-admin \
+  --database-url-env MEDICAL_AUDIT_DATABASE_URL \
+  --output tmp/outputs/his-delivery/his-snapshot-rollback-audit-execute.md \
+  --json-output tmp/outputs/his-delivery/his-snapshot-rollback-audit-execute.json \
   --execute
 ```

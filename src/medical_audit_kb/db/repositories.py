@@ -13,6 +13,7 @@ from medical_audit_kb.db.models import (
     AuditProject,
     AuditRule,
     AuditRun,
+    AuditSnapshotRollback,
     AuditTask,
     ChunkEmbedding,
     DocumentChunk,
@@ -35,6 +36,7 @@ from medical_audit_kb.domain.schemas import (
     AuditProjectCreate,
     AuditRuleCreate,
     AuditRunCreate,
+    AuditSnapshotRollbackCreate,
     AuditTaskCreate,
     ChunkEmbeddingCreate,
     DocumentChunkCreate,
@@ -256,6 +258,30 @@ class AuditWorkflowRepository:
         self._session.add(snapshot)
         await self._session.flush()
         return snapshot
+
+    async def create_snapshot_rollback(
+        self, payload: AuditSnapshotRollbackCreate
+    ) -> AuditSnapshotRollback:
+        rollback = AuditSnapshotRollback(
+            rollback_key=payload.rollback_key,
+            project_id=payload.project_id,
+            from_snapshot_id=payload.from_snapshot_id,
+            to_snapshot_id=payload.to_snapshot_id,
+            status=payload.status,
+            reason=payload.reason,
+            requested_by=payload.requested_by,
+            impact_summary=payload.impact_summary,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(rollback)
+        await self._session.flush()
+        return rollback
+
+    async def get_snapshot_rollback_by_key(self, rollback_key: str) -> AuditSnapshotRollback | None:
+        result = await self._session.execute(
+            select(AuditSnapshotRollback).where(AuditSnapshotRollback.rollback_key == rollback_key)
+        )
+        return result.scalar_one_or_none()
 
     async def create_task(self, payload: AuditTaskCreate) -> AuditTask:
         task = AuditTask(
