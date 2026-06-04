@@ -418,6 +418,122 @@ class AuditProject(Base):
 
     data_snapshots: Mapped[list[AuditDataSnapshot]] = relationship(back_populates="project")
     audit_tasks: Mapped[list[AuditTask]] = relationship(back_populates="project")
+    his_source_batches: Mapped[list[HisSourceBatch]] = relationship(back_populates="project")
+
+
+class HisSourceBatch(Base):
+    __tablename__ = "his_source_batches"
+    __table_args__ = (
+        Index("idx_his_source_batches_project", "project_id"),
+        Index("idx_his_source_batches_hospital", "hospital_code"),
+        Index("idx_his_source_batches_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    batch_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    hospital_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    scenario_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    file_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    row_counts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    checksum: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    project: Mapped[AuditProject] = relationship(back_populates="his_source_batches")
+    table_schemas: Mapped[list[HisTableSchema]] = relationship(
+        back_populates="source_batch",
+        cascade="all, delete-orphan",
+    )
+
+
+class HisTableSchema(Base):
+    __tablename__ = "his_table_schemas"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_batch_id",
+            "table_name",
+            name="uq_his_table_schemas_batch_table",
+        ),
+        Index("idx_his_table_schemas_batch", "source_batch_id"),
+        Index("idx_his_table_schemas_domain", "business_domain"),
+        Index("idx_his_table_schemas_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    schema_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    source_batch_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("his_source_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    business_domain: Mapped[str] = mapped_column(String(128), nullable=False)
+    ddl_text: Mapped[str] = mapped_column(Text, nullable=False)
+    ddl_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    field_dictionary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    primary_key_fields: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    time_fields: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    row_count: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    source_batch: Mapped[HisSourceBatch] = relationship(back_populates="table_schemas")
+    field_mappings: Mapped[list[HisFieldMapping]] = relationship(
+        back_populates="table_schema",
+        cascade="all, delete-orphan",
+    )
+
+
+class HisFieldMapping(Base):
+    __tablename__ = "his_field_mappings"
+    __table_args__ = (
+        Index("idx_his_field_mappings_schema", "table_schema_id"),
+        Index("idx_his_field_mappings_target", "target_domain", "target_field"),
+        Index("idx_his_field_mappings_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    mapping_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    table_schema_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("his_table_schemas.id", ondelete="CASCADE"), nullable=False
+    )
+    source_field: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_domain: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_field: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_data_type: Mapped[str | None] = mapped_column(String(128))
+    target_data_type: Mapped[str | None] = mapped_column(String(128))
+    transform_rule: Mapped[str | None] = mapped_column(Text)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deidentification_rule: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    table_schema: Mapped[HisTableSchema] = relationship(back_populates="field_mappings")
 
 
 class AuditDataSnapshot(Base):
