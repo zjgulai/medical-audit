@@ -52,6 +52,40 @@ def test_acceptance_run_returns_nonzero_when_gate_fails(tmp_path: Path) -> None:
     assert "总体状态：`FAIL`" in report_path.read_text(encoding="utf-8")
 
 
+def test_his_ddl_parse_command_writes_markdown_and_json_outputs(tmp_path: Path) -> None:
+    ddl_file = tmp_path / "his.sql"
+    ddl_file.write_text(
+        """
+        CREATE TABLE T_CHARGE_DETAIL (
+            CHARGE_ID TEXT PRIMARY KEY,
+            VISIT_ID TEXT NOT NULL,
+            AMOUNT NUMERIC(12, 2) NOT NULL,
+            CHARGED_AT TIMESTAMP
+        );
+        """,
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "his-ddl-report.md"
+    json_path = tmp_path / "his-ddl-report.json"
+
+    exit_code = main(
+        [
+            "his-ddl-parse",
+            "--ddl-file",
+            str(ddl_file),
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "HIS DDL 解析报告" in report_path.read_text(encoding="utf-8")
+    assert "## T_CHARGE_DETAIL" in report_path.read_text(encoding="utf-8")
+    assert '"business_domain": "charge_detail"' in json_path.read_text(encoding="utf-8")
+
+
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(
