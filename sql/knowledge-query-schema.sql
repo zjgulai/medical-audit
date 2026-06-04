@@ -245,6 +245,23 @@ CREATE TABLE IF NOT EXISTS his_table_schemas (
     CONSTRAINT ck_his_table_schemas_row_count_non_negative CHECK (row_count IS NULL OR row_count >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS his_staging_rows (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_batch_id uuid NOT NULL REFERENCES his_source_batches(id) ON DELETE CASCADE,
+    table_schema_id uuid REFERENCES his_table_schemas(id) ON DELETE SET NULL,
+    table_name text NOT NULL,
+    row_number integer NOT NULL,
+    row_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+    row_hash text NOT NULL,
+    status text NOT NULL,
+    validation_errors jsonb NOT NULL DEFAULT '[]'::jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_his_staging_rows_batch_table_row
+        UNIQUE (source_batch_id, table_name, row_number),
+    CONSTRAINT ck_his_staging_rows_row_number_positive CHECK (row_number >= 1)
+);
+
 CREATE TABLE IF NOT EXISTS his_field_mappings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mapping_key text NOT NULL UNIQUE,
@@ -412,6 +429,11 @@ CREATE INDEX IF NOT EXISTS idx_his_source_batches_status ON his_source_batches (
 CREATE INDEX IF NOT EXISTS idx_his_table_schemas_batch ON his_table_schemas (source_batch_id);
 CREATE INDEX IF NOT EXISTS idx_his_table_schemas_domain ON his_table_schemas (business_domain);
 CREATE INDEX IF NOT EXISTS idx_his_table_schemas_status ON his_table_schemas (status);
+CREATE INDEX IF NOT EXISTS idx_his_staging_rows_batch ON his_staging_rows (source_batch_id);
+CREATE INDEX IF NOT EXISTS idx_his_staging_rows_schema ON his_staging_rows (table_schema_id);
+CREATE INDEX IF NOT EXISTS idx_his_staging_rows_table ON his_staging_rows (table_name);
+CREATE INDEX IF NOT EXISTS idx_his_staging_rows_status ON his_staging_rows (status);
+CREATE INDEX IF NOT EXISTS idx_his_staging_rows_hash ON his_staging_rows (row_hash);
 CREATE INDEX IF NOT EXISTS idx_his_field_mappings_schema ON his_field_mappings (table_schema_id);
 CREATE INDEX IF NOT EXISTS idx_his_field_mappings_target
     ON his_field_mappings (target_domain, target_field);

@@ -9,9 +9,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from medical_audit_kb.cli import main
 from medical_audit_kb.db.engine import create_schema, create_session_factory
-from medical_audit_kb.db.models import AuditDataSnapshot
-from medical_audit_kb.db.repositories import AuditWorkflowRepository
-from medical_audit_kb.domain.schemas import AuditProjectCreate
+from medical_audit_kb.db.models import AuditDataSnapshot, HisStagingRow
+from medical_audit_kb.db.repositories import AuditWorkflowRepository, HisIngestionRepository
+from medical_audit_kb.domain.schemas import (
+    AuditProjectCreate,
+    HisSourceBatchCreate,
+    HisTableSchemaCreate,
+)
 from medical_audit_kb.generation.citations import Citation
 
 
@@ -145,6 +149,107 @@ def test_his_sample_quality_command_writes_markdown_and_json_outputs(tmp_path: P
     assert exit_code == 0
     assert "HIS 脱敏样本数据质量报告" in report_path.read_text(encoding="utf-8")
     assert '"total_row_count": 1' in json_path.read_text(encoding="utf-8")
+
+
+def test_his_staging_import_command_dry_runs_then_executes(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'his-staging.db'}"
+    asyncio.run(_create_his_staging_contract(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+
+    ddl_file = tmp_path / "his.sql"
+    ddl_file.write_text(
+        """
+        CREATE TABLE T_CHARGE_DETAIL (
+            CHARGE_ID TEXT PRIMARY KEY,
+            VISIT_ID TEXT NOT NULL,
+            AMOUNT NUMERIC(12, 2) NOT NULL,
+            CHARGED_AT TIMESTAMP NOT NULL
+        );
+        """,
+        encoding="utf-8",
+    )
+    ddl_json_path = tmp_path / "his-ddl-report.json"
+    main(
+        [
+            "his-ddl-parse",
+            "--ddl-file",
+            str(ddl_file),
+            "--output",
+            str(tmp_path / "his-ddl-report.md"),
+            "--json-output",
+            str(ddl_json_path),
+        ]
+    )
+    sample_root = tmp_path / "samples"
+    sample_root.mkdir()
+    _write_text(
+        sample_root / "T_CHARGE_DETAIL.csv",
+        "CHARGE_ID,VISIT_ID,AMOUNT,CHARGED_AT\n"
+        "C001,V001,120.50,2025-01-01 08:00:00\n"
+        "C002,V002,80.00,2025-01-02 08:00:00\n",
+    )
+    quality_json_path = tmp_path / "his-sample-quality.json"
+    main(
+        [
+            "his-sample-quality",
+            "--sample-root",
+            str(sample_root),
+            "--ddl-report-json",
+            str(ddl_json_path),
+            "--output",
+            str(tmp_path / "his-sample-quality.md"),
+            "--json-output",
+            str(quality_json_path),
+        ]
+    )
+
+    dry_run_report_path = tmp_path / "his-staging-import-dry-run.md"
+    dry_run_json_path = tmp_path / "his-staging-import-dry-run.json"
+    dry_run_exit_code = main(
+        [
+            "his-staging-import",
+            "--quality-report-json",
+            str(quality_json_path),
+            "--source-batch-key",
+            "his-batch-0001",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--output",
+            str(dry_run_report_path),
+            "--json-output",
+            str(dry_run_json_path),
+        ]
+    )
+    execute_report_path = tmp_path / "his-staging-import-execute.md"
+    execute_json_path = tmp_path / "his-staging-import-execute.json"
+    execute_exit_code = main(
+        [
+            "his-staging-import",
+            "--quality-report-json",
+            str(quality_json_path),
+            "--source-batch-key",
+            "his-batch-0001",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--output",
+            str(execute_report_path),
+            "--json-output",
+            str(execute_json_path),
+            "--execute",
+        ]
+    )
+
+    assert dry_run_exit_code == 0
+    assert execute_exit_code == 0
+    assert "HIS 脱敏样本 staging 导入报告" in dry_run_report_path.read_text(encoding="utf-8")
+    assert '"execute_requested": false' in dry_run_json_path.read_text(encoding="utf-8")
+    execute_json_body = execute_json_path.read_text(encoding="utf-8")
+    assert '"execute_requested": true' in execute_json_body
+    assert '"inserted_row_count": 2' in execute_json_body
+    assert asyncio.run(_his_staging_row_count(database_url)) == 2
 
 
 def test_his_snapshot_plan_command_writes_payload_outputs(tmp_path: Path) -> None:
@@ -896,12 +1001,73 @@ async def _create_audit_project(database_url: str) -> UUID:
         await engine.dispose()
 
 
+async def _create_his_staging_contract(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    try:
+        await create_schema(engine)
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session, session.begin():
+            audit_repository = AuditWorkflowRepository(session)
+            his_repository = HisIngestionRepository(session)
+            project = await audit_repository.create_project(
+                AuditProjectCreate(
+                    project_key="audit-project-cli-his-staging",
+                    name="CLI HIS staging fixture",
+                    scenario_key="charging-compliance",
+                    status="fixture",
+                    owner_department="审计科",
+                    created_by="unit-test",
+                )
+            )
+            source_batch = await his_repository.create_source_batch(
+                HisSourceBatchCreate(
+                    batch_key="his-batch-0001",
+                    project_id=project.id,
+                    hospital_code="hospital-a",
+                    scenario_key="charging-compliance",
+                    source_type="offline-export",
+                    file_manifest={"files": ["T_CHARGE_DETAIL.csv"]},
+                    row_counts={"T_CHARGE_DETAIL": 2},
+                    checksum="sha256:batch",
+                    status="received",
+                )
+            )
+            await his_repository.create_table_schema(
+                HisTableSchemaCreate(
+                    schema_key="his-schema-cli-charge-detail",
+                    source_batch_id=source_batch.id,
+                    table_name="T_CHARGE_DETAIL",
+                    business_domain="charge_detail",
+                    ddl_text="CREATE TABLE T_CHARGE_DETAIL (CHARGE_ID TEXT NOT NULL);",
+                    ddl_hash="sha256:ddl",
+                    field_dictionary={"CHARGE_ID": {"description": "charge row id"}},
+                    primary_key_fields=["CHARGE_ID"],
+                    time_fields=["CHARGED_AT"],
+                    row_count=2,
+                    status="mapped",
+                )
+            )
+    finally:
+        await engine.dispose()
+
+
 async def _audit_data_snapshot_count(database_url: str) -> int:
     engine = create_async_engine(database_url)
     try:
         session_factory = create_session_factory(engine)
         async with session_factory() as session:
             result = await session.execute(select(AuditDataSnapshot))
+            return len(result.scalars().all())
+    finally:
+        await engine.dispose()
+
+
+async def _his_staging_row_count(database_url: str) -> int:
+    engine = create_async_engine(database_url)
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session:
+            result = await session.execute(select(HisStagingRow))
             return len(result.scalars().all())
     finally:
         await engine.dispose()

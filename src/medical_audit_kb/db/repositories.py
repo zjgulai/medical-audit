@@ -20,6 +20,7 @@ from medical_audit_kb.db.models import (
     FindingEvidenceItem,
     HisFieldMapping,
     HisSourceBatch,
+    HisStagingRow,
     HisTableSchema,
     ReviewAction,
     ReviewComment,
@@ -41,6 +42,7 @@ from medical_audit_kb.domain.schemas import (
     FindingEvidenceItemCreate,
     HisFieldMappingCreate,
     HisSourceBatchCreate,
+    HisStagingRowCreate,
     HisTableSchemaCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
@@ -430,6 +432,37 @@ class HisIngestionRepository:
         self._session.add(field_mapping)
         await self._session.flush()
         return field_mapping
+
+    async def add_staging_rows(
+        self,
+        payloads: Sequence[HisStagingRowCreate],
+    ) -> list[HisStagingRow]:
+        staging_rows = [
+            HisStagingRow(
+                source_batch_id=payload.source_batch_id,
+                table_schema_id=payload.table_schema_id,
+                table_name=payload.table_name,
+                row_number=payload.row_number,
+                row_data=payload.row_data,
+                row_hash=payload.row_hash,
+                status=payload.status,
+                validation_errors=payload.validation_errors,
+                extra_metadata=payload.metadata,
+            )
+            for payload in payloads
+        ]
+        self._session.add_all(staging_rows)
+        await self._session.flush()
+        return staging_rows
+
+    async def list_staging_rows_for_batch(self, batch_key: str) -> list[HisStagingRow]:
+        result = await self._session.execute(
+            select(HisStagingRow)
+            .join(HisSourceBatch)
+            .where(HisSourceBatch.batch_key == batch_key)
+            .order_by(HisStagingRow.table_name.asc(), HisStagingRow.row_number.asc())
+        )
+        return list(result.scalars().all())
 
     async def list_field_mappings_for_batch(self, batch_key: str) -> list[HisFieldMapping]:
         result = await self._session.execute(

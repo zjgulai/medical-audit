@@ -24,6 +24,7 @@ from medical_audit_kb.db.models import (
     FindingEvidenceItem,
     HisFieldMapping,
     HisSourceBatch,
+    HisStagingRow,
     HisTableSchema,
     ReviewAction,
     ReviewComment,
@@ -56,6 +57,7 @@ from medical_audit_kb.domain.schemas import (
     FindingEvidenceItemCreate,
     HisFieldMappingCreate,
     HisSourceBatchCreate,
+    HisStagingRowCreate,
     HisTableSchemaCreate,
     ReviewActionCreate,
     ReviewCommentCreate,
@@ -312,6 +314,30 @@ async def _assert_his_ingestion_repository_flow(
             status="active",
         )
     )
+    staging_rows = await his_repository.add_staging_rows(
+        [
+            HisStagingRowCreate(
+                source_batch_id=source_batch.id,
+                table_schema_id=table_schema.id,
+                table_name="T_HIS_CHARGE_DETAIL",
+                row_number=1,
+                row_data={"CHARGE_ID": "C001", "AMOUNT": "100.00"},
+                row_hash="sha256:row-1",
+                status="staged",
+                metadata={"source": "unit-test"},
+            ),
+            HisStagingRowCreate(
+                source_batch_id=source_batch.id,
+                table_schema_id=table_schema.id,
+                table_name="T_HIS_CHARGE_DETAIL",
+                row_number=2,
+                row_data={"CHARGE_ID": "C002", "AMOUNT": "120.00"},
+                row_hash="sha256:row-2",
+                status="staged",
+                metadata={"source": "unit-test"},
+            ),
+        ]
+    )
 
     stored_batch = (
         await session.execute(select(HisSourceBatch).where(HisSourceBatch.id == source_batch.id))
@@ -325,12 +351,19 @@ async def _assert_his_ingestion_repository_flow(
             select(HisFieldMapping).where(HisFieldMapping.id == amount_mapping.id)
         )
     ).scalar_one()
+    stored_staging_rows = await his_repository.list_staging_rows_for_batch("his-batch-0001")
+    stored_first_staging_row = (
+        await session.execute(select(HisStagingRow).where(HisStagingRow.id == staging_rows[0].id))
+    ).scalar_one()
 
     assert stored_batch.project_id == project.id
     assert stored_batch.file_manifest == {"files": ["charge_detail.csv"]}
     assert stored_schema.primary_key_fields == ["CHARGE_ID"]
     assert [mapping.id for mapping in stored_mappings] == [amount_mapping.id, charge_id_mapping.id]
     assert stored_amount_mapping.nullable is True
+    assert [row.row_number for row in stored_staging_rows] == [1, 2]
+    assert stored_first_staging_row.row_data == {"CHARGE_ID": "C001", "AMOUNT": "100.00"}
+    assert stored_first_staging_row.extra_metadata == {"source": "unit-test"}
 
 
 async def _assert_review_task_repository_flow(

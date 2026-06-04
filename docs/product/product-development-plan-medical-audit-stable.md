@@ -30,12 +30,13 @@ source: human+ai
 - 已新增 HIS 输入契约第一批：`his_source_batches`、`his_table_schemas`、`his_field_mappings`，并补齐收费合规字段映射完整性校验器。
 - 已新增 HIS DDL 自动解析器和 CLI `his-ddl-parse`，支持从离线 DDL 文本解析表、字段、主键、时间字段、字段注释、DDL hash，并生成 Markdown/JSON 解析报告。
 - 已新增 HIS 脱敏样本质量报告 CLI `his-sample-quality`，支持 CSV/JSONL 样本扫描、DDL 对齐、缺失字段、必填空值、重复主键和行数字段画像检查。
+- 已新增 HIS 脱敏样本 raw staging 导入 CLI `his-staging-import`，支持默认 dry-run、显式 `--execute` 写入 `his_staging_rows`、按 source batch 和 table schema 绑定原始行、行号、row hash 和文件来源。
 - 已新增 HIS 数据快照计划 CLI `his-snapshot-plan`，支持在样本质量报告通过后生成 `AuditDataSnapshotCreate` payload、表级 row_counts 和快照 checksum。
 - 已新增 HIS 数据快照受控入库 CLI `his-snapshot-apply`，支持默认 dry-run、显式 `--execute` 写入 `audit_data_snapshots`、项目存在性校验、重复 `snapshot_key` 阻断和 Markdown/JSON 入库报告。
 
 当前未完成：
 
-- 脱敏样本写入 staging、生产库快照执行验收、快照回滚审计。
+- 生产库 staging 执行验收、staging 到规则标准输入转换、快照回滚审计。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 生产级案件级人工复核、底稿、报告、整改跟踪。
@@ -195,6 +196,8 @@ source: human+ai
 - 收费合规字段映射校验器已覆盖必需字段缺失、重复目标字段、必需字段 nullable、敏感字段缺失脱敏规则，未通过时不得生成正式数据快照。
 - `his-ddl-parse` 已覆盖开发期 DDL 自动解析，可生成 HIS 表结构解析报告和可转入 `HisTableSchemaCreate` 的结构化负载。
 - `his-sample-quality` 已覆盖开发期脱敏样本质量报告，可在写入 staging 前检查 CSV/JSONL 样本与 DDL 的字段、行数、必填空值和主键重复。
+- `his_staging_rows` 已进入 `sql/knowledge-query-schema.sql`，用于按交付批次、表结构、表名、行号、row hash 保存 HIS 脱敏样本原始行。
+- `his-staging-import` 已覆盖开发期 raw staging 导入，默认 dry-run，只在显式 `--execute` 后写入 `his_staging_rows`，并在写入前校验样本质量报告、source batch、table schema 和重复 staging 行。
 - `his-snapshot-plan` 已覆盖开发期快照计划生成，可从通过的样本质量报告生成数据快照 payload 和稳定 checksum。
 - `his-snapshot-apply` 已覆盖开发期快照计划受控入库，默认 dry-run，只在显式 `--execute` 后写入 `audit_data_snapshots`，并在写入前校验项目存在性和 `snapshot_key` 唯一性。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
@@ -214,7 +217,7 @@ source: human+ai
 任务：
 
 - 建立规则 DSL 或规则配置最小结构。
-- 实现 HIS 脱敏样本导入。
+- 已建立 HIS 脱敏样本 raw staging 导入入口，样本通过质量门禁后才能写入 `his_staging_rows`。
 - 已建立收费合规 HIS 字段映射校验门禁，字段映射不完整时阻断后续快照生成。
 - 已建立 HIS DDL 自动解析入口，脱敏样本导入前先解析 DDL 并固化字段字典版本。
 - 已建立 HIS 脱敏样本质量报告入口，样本未通过字段/必填/主键质量门禁时不进入 staging 或快照生成。

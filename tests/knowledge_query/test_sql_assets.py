@@ -90,6 +90,14 @@ def test_pgvector_schema_includes_his_ingestion_contract_tables() -> None:
         in schema
     )
     assert "CONSTRAINT uq_his_table_schemas_batch_table UNIQUE" in schema
+    assert "CREATE TABLE IF NOT EXISTS his_staging_rows" in schema
+    assert (
+        "source_batch_id uuid NOT NULL REFERENCES his_source_batches(id) ON DELETE CASCADE"
+        in schema
+    )
+    assert "table_schema_id uuid REFERENCES his_table_schemas(id) ON DELETE SET NULL" in schema
+    assert "CONSTRAINT uq_his_staging_rows_batch_table_row" in schema
+    assert "CONSTRAINT ck_his_staging_rows_row_number_positive" in schema
     assert "CREATE TABLE IF NOT EXISTS his_field_mappings" in schema
     assert (
         "table_schema_id uuid NOT NULL REFERENCES his_table_schemas(id) ON DELETE CASCADE" in schema
@@ -97,4 +105,6 @@ def test_pgvector_schema_includes_his_ingestion_contract_tables() -> None:
     assert "deidentification_rule text" in schema
     assert "idx_his_source_batches_project" in schema
     assert "idx_his_table_schemas_domain" in schema
+    assert "idx_his_staging_rows_batch" in schema
+    assert "idx_his_staging_rows_hash" in schema
     assert "idx_his_field_mappings_target" in schema
