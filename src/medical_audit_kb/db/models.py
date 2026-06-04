@@ -389,3 +389,279 @@ class ReviewComment(Base):
     )
 
     review_task: Mapped[ReviewTask] = relationship(back_populates="comments")
+
+
+class AuditProject(Base):
+    __tablename__ = "audit_projects"
+    __table_args__ = (
+        Index("idx_audit_projects_status", "status"),
+        Index("idx_audit_projects_scenario", "scenario_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    project_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    scenario_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    owner_department: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    data_snapshots: Mapped[list[AuditDataSnapshot]] = relationship(back_populates="project")
+    audit_tasks: Mapped[list[AuditTask]] = relationship(back_populates="project")
+
+
+class AuditDataSnapshot(Base):
+    __tablename__ = "audit_data_snapshots"
+    __table_args__ = (
+        Index("idx_audit_data_snapshots_project", "project_id"),
+        Index("idx_audit_data_snapshots_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    snapshot_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_batch_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    time_range: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    row_counts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    checksum: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    project: Mapped[AuditProject] = relationship(back_populates="data_snapshots")
+    audit_tasks: Mapped[list[AuditTask]] = relationship(back_populates="snapshot")
+    audit_runs: Mapped[list[AuditRun]] = relationship(back_populates="snapshot")
+    findings: Mapped[list[AuditFinding]] = relationship(back_populates="snapshot")
+
+
+class AuditTask(Base):
+    __tablename__ = "audit_tasks"
+    __table_args__ = (
+        Index("idx_audit_tasks_project", "project_id"),
+        Index("idx_audit_tasks_snapshot", "snapshot_id"),
+        Index("idx_audit_tasks_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    task_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    snapshot_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("audit_data_snapshots.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    department_scope: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    date_range: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    project: Mapped[AuditProject] = relationship(back_populates="audit_tasks")
+    snapshot: Mapped[AuditDataSnapshot] = relationship(back_populates="audit_tasks")
+    audit_runs: Mapped[list[AuditRun]] = relationship(back_populates="audit_task")
+    findings: Mapped[list[AuditFinding]] = relationship(back_populates="audit_task")
+
+
+class AuditRun(Base):
+    __tablename__ = "audit_runs"
+    __table_args__ = (
+        Index("idx_audit_runs_task", "audit_task_id"),
+        Index("idx_audit_runs_snapshot", "snapshot_id"),
+        Index("idx_audit_runs_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    run_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    audit_task_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_tasks.id", ondelete="RESTRICT"), nullable=False
+    )
+    snapshot_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("audit_data_snapshots.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    rule_version_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    knowledge_index_version_key: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+
+    audit_task: Mapped[AuditTask] = relationship(back_populates="audit_runs")
+    snapshot: Mapped[AuditDataSnapshot] = relationship(back_populates="audit_runs")
+    findings: Mapped[list[AuditFinding]] = relationship(back_populates="audit_run")
+
+
+class AuditRule(Base):
+    __tablename__ = "audit_rules"
+    __table_args__ = (
+        Index("idx_audit_rules_scenario", "scenario_key"),
+        Index("idx_audit_rules_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    rule_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    scenario_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    owner: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    versions: Mapped[list[RuleVersion]] = relationship(back_populates="audit_rule")
+
+
+class RuleVersion(Base):
+    __tablename__ = "rule_versions"
+    __table_args__ = (
+        UniqueConstraint("audit_rule_id", "version_key", name="uq_rule_versions_rule_version"),
+        Index("idx_rule_versions_rule", "audit_rule_id"),
+        Index("idx_rule_versions_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    audit_rule_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_rules.id", ondelete="RESTRICT"), nullable=False
+    )
+    version_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    rule_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    logic: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_links: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    audit_rule: Mapped[AuditRule] = relationship(back_populates="versions")
+    findings: Mapped[list[AuditFinding]] = relationship(back_populates="rule_version")
+
+
+class AuditFinding(Base):
+    __tablename__ = "audit_findings"
+    __table_args__ = (
+        Index("idx_audit_findings_run", "audit_run_id"),
+        Index("idx_audit_findings_task", "audit_task_id"),
+        Index("idx_audit_findings_rule_version", "rule_version_id"),
+        Index("idx_audit_findings_review_status", "review_status"),
+        Index("idx_audit_findings_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    finding_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    audit_run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    audit_task_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_tasks.id", ondelete="RESTRICT"), nullable=False
+    )
+    rule_version_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("rule_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    snapshot_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("audit_data_snapshots.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    finding_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    severity: Mapped[str] = mapped_column(String(48), nullable=False)
+    source_record_locator: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    calculation_trace: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    review_status: Mapped[str] = mapped_column(String(48), nullable=False)
+    review_task_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("review_tasks.id", ondelete="SET NULL")
+    )
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    audit_run: Mapped[AuditRun] = relationship(back_populates="findings")
+    audit_task: Mapped[AuditTask] = relationship(back_populates="findings")
+    rule_version: Mapped[RuleVersion] = relationship(back_populates="findings")
+    snapshot: Mapped[AuditDataSnapshot] = relationship(back_populates="findings")
+    evidence_items: Mapped[list[FindingEvidenceItem]] = relationship(
+        back_populates="audit_finding",
+        cascade="all, delete-orphan",
+    )
+
+
+class FindingEvidenceItem(Base):
+    __tablename__ = "finding_evidence_items"
+    __table_args__ = (
+        Index("idx_finding_evidence_items_finding", "audit_finding_id"),
+        Index("idx_finding_evidence_items_chunk", "chunk_id"),
+        Index("idx_finding_evidence_items_type", "evidence_type"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    audit_finding_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_findings.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunk_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("document_chunks.id", ondelete="SET NULL")
+    )
+    source_package_version_key: Mapped[str | None] = mapped_column(String(128))
+    index_version_key: Mapped[str | None] = mapped_column(String(128))
+    citation_id: Mapped[str | None] = mapped_column(String(128))
+    locator: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    snippet: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    audit_finding: Mapped[AuditFinding] = relationship(back_populates="evidence_items")

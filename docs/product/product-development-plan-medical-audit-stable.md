@@ -25,12 +25,13 @@ source: human+ai
 - 已具备生产 E2E smoke、视觉基线和增量 dry-run 验收脚本。
 - 当前复核任务台已切换为 PostgreSQL 持久化，支持任务创建、状态更新、复核意见、复核结论和任务级导出。
 - 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema；当前仍不能视为生产级案件系统。
+- 已补齐 V1.0 第一批业务数据底座：`audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`，支持项目、快照、任务、运行批次、规则版本、疑点和证据项的最小可追溯链路。
 
 当前未完成：
 
-- HIS DDL、字段映射、脱敏数据快照、审计任务和运行批次。
-- 结构化规则表、规则版本、医院本地覆盖规则。
-- 生产级疑点清单、案件级人工复核、底稿、报告、整改跟踪。
+- HIS DDL、字段映射、脱敏样本导入、数据质量报告和真实数据快照生成。
+- 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
+- 生产级疑点清单页面、案件级人工复核、底稿、报告、整改跟踪。
 - 用户、角色、科室、权限控制和审计日志。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
@@ -167,7 +168,7 @@ source: human+ai
 | --- | --- |
 | 用户权限 | `users`、`roles`、`user_roles`、`departments` |
 | 审计项目 | `audit_projects`、`audit_tasks`、`audit_runs` |
-| 数据快照 | `data_snapshots`、`snapshot_tables`、`snapshot_files` |
+| 数据快照 | `audit_data_snapshots`、`snapshot_tables`、`snapshot_files` |
 | HIS 映射 | `his_table_mappings`、`his_field_mappings` |
 | 规则 | `audit_rules`、`rule_versions`、`rule_evidence_links` |
 | 疑点 | `audit_findings`、`finding_evidence_items` |
@@ -180,6 +181,8 @@ source: human+ai
 
 - `review_tasks`、`review_actions`、`review_comments` 已进入 `sql/knowledge-query-schema.sql`。
 - `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
+- `audit_projects`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items` 已进入 `sql/knowledge-query-schema.sql`。
+- `AuditWorkflowRepository` 已覆盖项目、数据快照、审计任务、规则、规则版本、运行批次、疑点、证据项的基础写入，以及按疑点编号和运行批次追溯查询。
 - 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
