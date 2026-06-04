@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,9 @@ from medical_audit_kb.db.models import (
     ChunkEmbedding,
     DocumentChunk,
     FailedFile,
+    ReviewAction,
+    ReviewComment,
+    ReviewTask,
     SourceDocument,
     SourcePackageVersion,
 )
@@ -17,6 +21,9 @@ from medical_audit_kb.domain.schemas import (
     ChunkEmbeddingCreate,
     DocumentChunkCreate,
     FailedFileCreate,
+    ReviewActionCreate,
+    ReviewCommentCreate,
+    ReviewTaskCreate,
     SourceDocumentUpsert,
     SourcePackageVersionCreate,
 )
@@ -127,6 +134,67 @@ class KnowledgeBaseRepository:
         self._session.add(failed_file)
         await self._session.flush()
         return failed_file
+
+
+class ReviewTaskRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create_task(self, payload: ReviewTaskCreate) -> ReviewTask:
+        task = ReviewTask(
+            external_task_id=payload.external_task_id,
+            question=payload.question,
+            status=payload.status,
+            status_label=payload.status_label,
+            citation_count=payload.citation_count,
+            review_gate=payload.review_gate,
+            confidence_label=payload.confidence_label,
+            fallback_label=payload.fallback_label,
+            created_by=payload.created_by,
+            assigned_to=payload.assigned_to,
+            source=payload.source,
+            dossier=payload.dossier,
+        )
+        self._session.add(task)
+        await self._session.flush()
+        return task
+
+    async def get_task(self, task_id: UUID) -> ReviewTask | None:
+        result = await self._session.execute(select(ReviewTask).where(ReviewTask.id == task_id))
+        return result.scalar_one_or_none()
+
+    async def list_tasks(self, *, limit: int | None = None) -> list[ReviewTask]:
+        statement = select(ReviewTask).order_by(ReviewTask.created_at.desc())
+        if limit is not None:
+            statement = statement.limit(limit)
+        result = await self._session.execute(statement)
+        return list(result.scalars().all())
+
+    async def add_action(self, payload: ReviewActionCreate) -> ReviewAction:
+        action = ReviewAction(
+            review_task_id=payload.review_task_id,
+            action_type=payload.action_type,
+            from_status=payload.from_status,
+            to_status=payload.to_status,
+            actor=payload.actor,
+            note=payload.note,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(action)
+        await self._session.flush()
+        return action
+
+    async def add_comment(self, payload: ReviewCommentCreate) -> ReviewComment:
+        comment = ReviewComment(
+            review_task_id=payload.review_task_id,
+            author=payload.author,
+            body=payload.body,
+            visibility=payload.visibility,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(comment)
+        await self._session.flush()
+        return comment
 
 
 def _source_document_values(payload: SourceDocumentUpsert) -> dict[str, Any]:

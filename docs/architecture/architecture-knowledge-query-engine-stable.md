@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: medical-audit-knowledge-query-engine
 status: stable
 created: 2026-05-31
-updated: 2026-06-02
+updated: 2026-06-04
 owner: self
 source: human+ai
 ---
@@ -162,6 +162,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - 维度约束：`ck_chunk_embeddings_dimension_1024`
 - Kimi HNSW 索引：`idx_chunk_embeddings_kimi_cosine_hnsw`
 - 过滤辅助索引：`document_chunks.metadata`、`document_chunks.locator`、`query_logs.filters` 的 GIN 索引
+- 复核数据底座：`review_tasks` 保存任务和底稿快照，`review_actions` 保存状态流转与操作流水，`review_comments` 保存人工复核评论
 
 该 schema 与当前 Kimi 主索引一致，但不兼容 `text-embedding-3-small` 的 `1536` 维向量。切换 embedding model 时必须新增对应 migration 或新向量表，不能在同一 `vector(1024)` 列中混写不同维度。
 

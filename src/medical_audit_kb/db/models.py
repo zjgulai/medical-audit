@@ -297,3 +297,93 @@ class IndexEvaluationRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+
+
+class ReviewTask(Base):
+    __tablename__ = "review_tasks"
+    __table_args__ = (
+        Index("idx_review_tasks_status", "status"),
+        Index("idx_review_tasks_created_at", "created_at"),
+        Index("idx_review_tasks_created_by", "created_by"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    external_task_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    status_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    citation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    review_gate: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    fallback_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    assigned_to: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    dossier: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    actions: Mapped[list[ReviewAction]] = relationship(
+        back_populates="review_task",
+        cascade="all, delete-orphan",
+    )
+    comments: Mapped[list[ReviewComment]] = relationship(
+        back_populates="review_task",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReviewAction(Base):
+    __tablename__ = "review_actions"
+    __table_args__ = (
+        Index("idx_review_actions_task", "review_task_id"),
+        Index("idx_review_actions_task_created_at", "review_task_id", "created_at"),
+        Index("idx_review_actions_type", "action_type"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    review_task_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("review_tasks.id"), nullable=False
+    )
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(48))
+    to_status: Mapped[str | None] = mapped_column(String(48))
+    actor: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    review_task: Mapped[ReviewTask] = relationship(back_populates="actions")
+
+
+class ReviewComment(Base):
+    __tablename__ = "review_comments"
+    __table_args__ = (
+        Index("idx_review_comments_task", "review_task_id"),
+        Index("idx_review_comments_task_created_at", "review_task_id", "created_at"),
+        Index("idx_review_comments_visibility", "visibility"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    review_task_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("review_tasks.id"), nullable=False
+    )
+    author: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    review_task: Mapped[ReviewTask] = relationship(back_populates="comments")

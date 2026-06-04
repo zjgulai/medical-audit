@@ -15,9 +15,12 @@ from medical_audit_kb.db.models import (
     ChunkEmbedding,
     DocumentChunk,
     FailedFile,
+    ReviewAction,
+    ReviewComment,
+    ReviewTask,
     SourceDocument,
 )
-from medical_audit_kb.db.repositories import KnowledgeBaseRepository
+from medical_audit_kb.db.repositories import KnowledgeBaseRepository, ReviewTaskRepository
 from medical_audit_kb.domain.constants import (
     DocumentStatus,
     FileErrorType,
@@ -28,6 +31,9 @@ from medical_audit_kb.domain.schemas import (
     ChunkEmbeddingCreate,
     DocumentChunkCreate,
     FailedFileCreate,
+    ReviewActionCreate,
+    ReviewCommentCreate,
+    ReviewTaskCreate,
     SourceDocumentUpsert,
     SourcePackageVersionCreate,
 )
@@ -35,6 +41,10 @@ from medical_audit_kb.domain.schemas import (
 
 def test_repository_creates_package_document_chunks_and_failed_file() -> None:
     asyncio.run(_with_repository(_assert_repository_write_flow))
+
+
+def test_review_task_repository_creates_task_actions_and_comments() -> None:
+    asyncio.run(_with_repository(_assert_review_task_repository_flow))
 
 
 async def _with_repository(
@@ -196,3 +206,80 @@ async def _assert_repository_write_flow(
     assert stored_embedding.provider_version == "v1"
     assert stored_embedding.dimension == 3
     assert stored_embedding.embedding == [0.3, 0.2, 0.1]
+
+
+async def _assert_review_task_repository_flow(
+    _: KnowledgeBaseRepository,
+    session: AsyncSession,
+) -> None:
+    repository = ReviewTaskRepository(session)
+    task = await repository.create_task(
+        ReviewTaskCreate(
+            external_task_id="review-task-0001",
+            question="医保基金审核依据",
+            status="pending-review",
+            status_label="待复核",
+            citation_count=3,
+            review_gate="可进入人工复核",
+            confidence_label="高",
+            fallback_label="检索直出",
+            created_by="auditor-001",
+            assigned_to="chief-auditor",
+            source="chat-dossier",
+            dossier={
+                "format": "audit-dossier-v1",
+                "question": "医保基金审核依据",
+                "citations": [{"chunk_id": "11111111-1111-4111-8111-111111111111"}],
+            },
+        )
+    )
+    action = await repository.add_action(
+        ReviewActionCreate(
+            review_task_id=task.id,
+            action_type="status-change",
+            from_status="pending-review",
+            to_status="needs-evidence",
+            actor="auditor-001",
+            note="引用已覆盖规则依据，仍需补 HIS 原始凭证。",
+            metadata={"source": "unit-test"},
+        )
+    )
+    comment = await repository.add_comment(
+        ReviewCommentCreate(
+            review_task_id=task.id,
+            author="chief-auditor",
+            body="补充 HIS 原始凭证后再进入正式报告。",
+            visibility="internal",
+            metadata={"severity": "p1"},
+        )
+    )
+
+    loaded_task = await repository.get_task(task.id)
+    listed_tasks = await repository.list_tasks()
+
+    assert task.external_task_id == "review-task-0001"
+    assert task.status == "pending-review"
+    assert task.created_by == "auditor-001"
+    assert action.to_status == "needs-evidence"
+    assert comment.visibility == "internal"
+    assert loaded_task is not None
+    assert loaded_task.id == task.id
+    assert [item.id for item in listed_tasks] == [task.id]
+
+    stored_task = (
+        await session.execute(select(ReviewTask).where(ReviewTask.id == task.id))
+    ).scalar_one()
+    stored_action = (
+        await session.execute(select(ReviewAction).where(ReviewAction.id == action.id))
+    ).scalar_one()
+    stored_comment = (
+        await session.execute(select(ReviewComment).where(ReviewComment.id == comment.id))
+    ).scalar_one()
+
+    assert stored_task.dossier["format"] == "audit-dossier-v1"
+    assert stored_task.citation_count == 3
+    assert stored_task.source == "chat-dossier"
+    assert stored_action.actor == "auditor-001"
+    assert stored_action.extra_metadata["source"] == "unit-test"
+    assert stored_comment.body == "补充 HIS 原始凭证后再进入正式报告。"
+    assert stored_comment.extra_metadata["severity"] == "p1"
