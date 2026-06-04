@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-04
+updated: 2026-06-05
 owner: self
 source: human+ai
 ---
@@ -86,15 +86,16 @@ Query 参数：
 
 服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
 
-当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录和任务级导出，但仍不替代完整案件系统、权限系统、附件管理、正式报告文件生成或整改跟踪。
+当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、任务级导出和报告草稿导出，但仍不替代完整案件系统、权限系统、真实文件上传、正式报告签发或整改跟踪。
 
 页面展示：
 
 - 任务总数、开放任务、报告就绪、待补证据、关闭任务统计。
 - 复核任务列表。
 - 每个任务的问题、创建时间、更新时间、引用数量、承办人和报告门禁预检。
-- 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人和确认时间编辑表单。
+- 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人、确认时间、附件清单、报告标题、报告摘要和整改建议编辑表单。
 - 任务级 Markdown/JSON 导出入口。
+- 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
 
 ### `POST /pages/review-tasks/create`
 
@@ -128,6 +129,10 @@ Form 字段：
 - `owner_signoff_status`：可选，允许值为 `not-requested`、`requested`、`approved`、`rejected`。
 - `owner_confirmed_by`：可选，负责人确认人。
 - `owner_confirmed_at`：可选，负责人确认时间，建议使用 ISO 8601。
+- `attachment_manifest`：可选，附件清单文本。每行格式为 `附件名称 | 位置或编号 | 说明`，当前只登记清单，不上传文件。
+- `report_title`：可选，报告草稿标题。
+- `report_summary`：可选，报告草稿摘要。
+- `rectification_request`：可选，报告草稿整改建议。
 
 状态码：
 
@@ -148,6 +153,8 @@ Query 参数：
 - `review-task-v1` 任务元数据。
 - 任务状态、承办人、复核意见、复核结论和任务级 `report_gate` 预检结果。
 - `dossier.workpaper` 底稿状态和 `dossier.owner_signoff` 负责人确认记录。
+- `dossier.attachments` 附件登记清单。
+- `dossier.report_draft` 报告草稿字段。
 - 创建任务时保存的 `audit-dossier-v1` 底稿快照。
 
 响应：
@@ -159,6 +166,32 @@ Query 参数：
 
 - `200`：导出成功。
 - `404`：任务不存在。
+
+### `GET /review-tasks/{task_id}/report-draft`
+
+导出任务级报告草稿，支持 JSON 和 Markdown 两种格式。该接口只在任务级 `report_gate.ready_for_report=true` 时可用；确认违规任务必须完成复核状态闭合、复核意见、复核结论、底稿就绪、负责人确认和附件登记。
+
+Query 参数：
+
+- `format`：`json` 或 `markdown`，默认 `markdown`。
+
+导出内容：
+
+- `review-task-report-draft-v1` 报告草稿元数据。
+- 报告标题、复核摘要、复核意见、复核结论和整改建议。
+- 底稿编号、负责人确认和附件清单。
+- `source_task` 原始任务导出快照，保留引用链、知识库版本和任务门禁。
+
+响应：
+
+- `format=json`：`application/json`，下载文件名 `{task_id}-report-draft.json`。
+- `format=markdown`：`text/markdown`，下载文件名 `{task_id}-report-draft.md`。
+
+状态码：
+
+- `200`：导出成功。
+- `404`：任务不存在。
+- `409`：任务未通过报告门禁。
 
 ### `GET /pages/query`
 

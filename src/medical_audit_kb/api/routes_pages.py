@@ -412,6 +412,32 @@ def review_task_export(
     )
 
 
+@router.get("/review-tasks/{task_id}/report-draft")
+def review_task_report_draft_export(
+    task_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "markdown",
+) -> Response:
+    task = _review_task_by_id(state, task_id)
+    payload = _review_task_report_draft_payload(task)
+    record_operation(
+        state,
+        "review-task-report-draft-export",
+        {"task_id": task_id, "format": format},
+    )
+    if format == "json":
+        return Response(
+            content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            media_type="application/json",
+            headers=_download_headers(f"{task_id}-report-draft.json"),
+        )
+    return Response(
+        content=_render_review_task_report_draft_markdown(payload),
+        media_type="text/markdown; charset=utf-8",
+        headers=_download_headers(f"{task_id}-report-draft.md"),
+    )
+
+
 @router.get("/pages/preview/{chunk_id}")
 def preview_page(
     chunk_id: UUID,
@@ -955,6 +981,8 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
     )
     workpaper = _dict_value(dossier.get("workpaper"))
     owner_signoff = _dict_value(dossier.get("owner_signoff"))
+    report_draft = _report_draft_context(dossier, payload)
+    attachments = _attachment_items(dossier)
     lines = [
         "# AuditScope 复核任务记录",
         "",
@@ -973,6 +1001,8 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
         f"- 底稿编号：{workpaper.get('workpaper_id') or '未填写'}",
         f"- 负责人确认：{owner_signoff.get('status_label', '未提交确认')}",
         f"- 确认人：{owner_signoff.get('confirmed_by') or '未填写'}",
+        f"- 附件数量：{len(attachments)}",
+        f"- 报告标题：{report_draft['title']}",
         "",
         "## 报告门禁检查",
         "",
@@ -983,6 +1013,27 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
         )
     lines.extend(
         [
+            "",
+            "## 附件清单",
+            "",
+        ]
+    )
+    if attachments:
+        for attachment in attachments:
+            lines.append(
+                f"- {attachment['title']} | {attachment.get('locator') or '未填写位置'}"
+                f" | {attachment.get('note') or '无说明'}"
+            )
+    else:
+        lines.append("- 未登记附件。")
+    lines.extend(
+        [
+            "",
+            "## 报告草稿字段",
+            "",
+            f"- 报告标题：{report_draft['title']}",
+            f"- 摘要：{report_draft['summary']}",
+            f"- 整改建议：{report_draft['rectification_request']}",
             "",
             "## 底稿",
             "",
@@ -1000,6 +1051,9 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "dossier": dossier,
         "workpaper": _workpaper_context(dossier),
         "owner_signoff": _owner_signoff_context(dossier),
+        "attachments": _attachment_items(dossier),
+        "attachment_manifest": _attachment_manifest_text(dossier),
+        "report_draft": _report_draft_context(dossier, task),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
     }
 
@@ -1009,6 +1063,7 @@ def _review_task_report_gate_context(task: dict[str, object]) -> dict[str, objec
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     workpaper = _workpaper_context(dossier)
     owner_signoff = _owner_signoff_context(dossier)
+    attachment_count = len(_attachment_items(dossier))
     reviewer_note = str(task.get("reviewer_note", "")).strip()
     conclusion = str(task.get("conclusion", "")).strip()
     requires_workpaper = status == "confirmed-violation"
@@ -1042,6 +1097,12 @@ def _review_task_report_gate_context(task: dict[str, object]) -> dict[str, objec
             "label": "负责人确认",
             "pass": bool(owner_signoff["approved"]),
             "message": str(owner_signoff["status_label"]),
+        },
+        {
+            "key": "attachments",
+            "label": "附件登记",
+            "pass": (not requires_workpaper) or attachment_count > 0,
+            "message": f"已登记 {attachment_count} 条附件" if attachment_count else "未登记附件",
         },
     ]
     return {
@@ -1085,6 +1146,15 @@ def _review_task_dossier_from_form(
         "confirmed_by": _form_optional_str(form, "owner_confirmed_by"),
         "confirmed_at": _form_optional_str(form, "owner_confirmed_at"),
     }
+    dossier["attachments"] = _parse_attachment_manifest(
+        _form_optional_str(form, "attachment_manifest")
+    )
+    dossier["report_draft"] = {
+        "title": _form_optional_str(form, "report_title"),
+        "summary": _form_optional_str(form, "report_summary"),
+        "rectification_request": _form_optional_str(form, "rectification_request"),
+        "updated_at": _utc_now_iso(),
+    }
     dossier["report_gate"] = {
         "source": "review-task-page",
         "updated_at": _utc_now_iso(),
@@ -1113,6 +1183,14 @@ def _with_review_task_governance_defaults(dossier: dict[str, object]) -> dict[st
         "status_label": OWNER_SIGNOFF_STATUS_LABELS[owner_status],
         "confirmed_by": str(owner_signoff.get("confirmed_by", "")),
         "confirmed_at": str(owner_signoff.get("confirmed_at", "")),
+    }
+    normalized["attachments"] = list(_attachment_items(normalized))
+    report_draft = _dict_value(normalized.get("report_draft"))
+    normalized["report_draft"] = {
+        "title": str(report_draft.get("title", "")).strip(),
+        "summary": str(report_draft.get("summary", "")).strip(),
+        "rectification_request": str(report_draft.get("rectification_request", "")).strip(),
+        "updated_at": str(report_draft.get("updated_at", "")).strip(),
     }
     normalized.setdefault("report_gate", {"source": "review-task-page"})
     return normalized
@@ -1145,6 +1223,156 @@ def _owner_signoff_context(dossier: dict[str, object]) -> dict[str, object]:
         "confirmed_at": confirmed_at,
         "approved": status == "approved" and bool(confirmed_by) and bool(confirmed_at),
     }
+
+
+def _attachment_items(dossier: dict[str, object]) -> tuple[dict[str, object], ...]:
+    attachments: list[dict[str, object]] = []
+    for index, item in enumerate(_dict_list(dossier.get("attachments")), start=1):
+        title = str(item.get("title", "")).strip()
+        if not title:
+            continue
+        attachments.append(
+            {
+                "attachment_id": str(item.get("attachment_id") or f"attachment-{index:03d}"),
+                "title": title,
+                "locator": str(item.get("locator", "")).strip(),
+                "note": str(item.get("note", "")).strip(),
+                "status": str(item.get("status", "registered") or "registered"),
+            }
+        )
+    return tuple(attachments)
+
+
+def _attachment_manifest_text(dossier: dict[str, object]) -> str:
+    lines = []
+    for item in _attachment_items(dossier):
+        lines.append(f"{item['title']} | {item['locator']} | {item['note']}".rstrip(" |"))
+    return "\n".join(lines)
+
+
+def _parse_attachment_manifest(raw_manifest: str) -> list[dict[str, object]]:
+    attachments: list[dict[str, object]] = []
+    for index, line in enumerate(raw_manifest.splitlines(), start=1):
+        normalized = line.strip()
+        if not normalized:
+            continue
+        parts = [part.strip() for part in normalized.split("|")]
+        if not parts[0]:
+            continue
+        attachments.append(
+            {
+                "attachment_id": f"attachment-{index:03d}",
+                "title": parts[0],
+                "locator": parts[1] if len(parts) >= 2 else "",
+                "note": parts[2] if len(parts) >= 3 else "",
+                "status": "registered",
+            }
+        )
+    return attachments
+
+
+def _report_draft_context(
+    dossier: dict[str, object],
+    task: dict[str, object],
+) -> dict[str, object]:
+    report_draft = _dict_value(dossier.get("report_draft"))
+    title = str(report_draft.get("title", "")).strip() or (
+        f"{task.get('task_id', '复核任务')} 报告草稿"
+    )
+    summary = str(report_draft.get("summary", "")).strip() or str(
+        task.get("conclusion", "未填写复核结论。")
+    )
+    rectification_request = str(report_draft.get("rectification_request", "")).strip() or (
+        "请按复核结论完成整改责任确认，并补齐正式附件归档。"
+    )
+    return {
+        "title": title,
+        "summary": summary,
+        "rectification_request": rectification_request,
+        "updated_at": str(report_draft.get("updated_at", "")),
+    }
+
+
+def _review_task_report_draft_payload(task: dict[str, object]) -> dict[str, object]:
+    task_payload = _review_task_export_payload(task)
+    report_gate = _dict_value(task_payload.get("report_gate"))
+    if not report_gate.get("ready_for_report"):
+        raise HTTPException(
+            status_code=409,
+            detail="review task is not ready for report draft",
+        )
+    dossier = _with_review_task_governance_defaults(_dict_value(task_payload.get("dossier")))
+    return {
+        "format": "review-task-report-draft-v1",
+        "generated_at": _utc_now_iso(),
+        "task_id": task_payload["task_id"],
+        "status": task_payload["status"],
+        "status_label": task_payload["status_label"],
+        "question": task_payload["question"],
+        "assigned_to": task_payload.get("assigned_to"),
+        "reviewer_note": task_payload["reviewer_note"],
+        "conclusion": task_payload["conclusion"],
+        "report_gate": report_gate,
+        "report_draft": _report_draft_context(dossier, task_payload),
+        "workpaper": _workpaper_context(dossier),
+        "owner_signoff": _owner_signoff_context(dossier),
+        "attachments": list(_attachment_items(dossier)),
+        "source_task": task_payload,
+    }
+
+
+def _render_review_task_report_draft_markdown(payload: dict[str, object]) -> str:
+    report_draft = _dict_value(payload.get("report_draft"))
+    workpaper = _dict_value(payload.get("workpaper"))
+    owner_signoff = _dict_value(payload.get("owner_signoff"))
+    attachments = _dict_list(payload.get("attachments"))
+    lines = [
+        "# AuditScope 审计报告草稿",
+        "",
+        f"- 生成时间：{payload['generated_at']}",
+        f"- 任务编号：{payload['task_id']}",
+        f"- 承办人：{payload.get('assigned_to') or '未指定'}",
+        f"- 报告标题：{report_draft.get('title')}",
+        f"- 复核状态：{payload['status_label']} ({payload['status']})",
+        f"- 底稿编号：{workpaper.get('workpaper_id') or '未填写'}",
+        f"- 负责人确认：{owner_signoff.get('status_label') or '未提交确认'}",
+        f"- 确认人：{owner_signoff.get('confirmed_by') or '未填写'}",
+        "",
+        "## 一、审计事项",
+        "",
+        str(payload["question"]),
+        "",
+        "## 二、复核摘要",
+        "",
+        str(report_draft.get("summary", "")),
+        "",
+        "## 三、复核意见与结论",
+        "",
+        f"- 复核意见：{payload.get('reviewer_note') or '未填写'}",
+        f"- 复核结论：{payload.get('conclusion') or '未填写'}",
+        "",
+        "## 四、整改建议",
+        "",
+        str(report_draft.get("rectification_request", "")),
+        "",
+        "## 五、附件清单",
+        "",
+    ]
+    if attachments:
+        for item in attachments:
+            lines.append(
+                f"- {item.get('title')} | {item.get('locator') or '未填写位置'}"
+                f" | {item.get('note') or '无说明'}"
+            )
+    else:
+        lines.append("- 未登记附件。")
+    lines.extend(
+        [
+            "",
+            "> 本文件为系统生成的报告草稿，不替代正式审计报告签发流程。",
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 async def _urlencoded_form(request: Request) -> dict[str, tuple[str, ...]]:

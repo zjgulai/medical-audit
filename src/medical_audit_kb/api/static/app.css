@@ -2621,6 +2621,30 @@ code,
   gap: 7px;
 }
 
+.review-report-draft-fieldset {
+  border-color: rgba(34, 94, 75, 0.18);
+  background:
+    linear-gradient(180deg, rgba(239, 247, 238, 0.76), rgba(255, 252, 242, 0.72));
+}
+
+.review-form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.review-report-draft-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 10px;
+}
+
+.review-report-draft-grid label {
+  display: grid;
+  gap: 7px;
+}
+
 .review-task-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2640,6 +2664,19 @@ code,
   font-size: 0.84rem;
   font-weight: 680;
   text-decoration: none;
+}
+
+.review-disabled-action {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 252, 242, 0.72);
+  font-size: 0.84rem;
+  font-weight: 760;
 }
 
 .findings-hero {
@@ -2856,6 +2893,7 @@ code,
   .example-question-grid,
   .gate-check-list,
   .review-governance-grid,
+  .review-report-draft-grid,
   .review-task-summary,
   .workbench-grid,
   .chat-layout,

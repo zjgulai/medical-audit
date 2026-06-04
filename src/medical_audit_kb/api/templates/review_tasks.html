@@ -137,10 +137,35 @@
                 <textarea id="workpaper-note-{{ task.task_id }}" name="workpaper_note" rows="2" placeholder="记录底稿来源、附件位置、仍需补证的内容。">{{ task.workpaper.note }}</textarea>
               </fieldset>
 
+              <fieldset class="review-governance-fieldset review-report-draft-fieldset">
+                <legend>附件登记与报告草稿</legend>
+                <p class="review-form-hint">附件登记为结构化清单，不上传文件。每行格式：附件名称 | 位置或编号 | 说明。</p>
+                <label for="attachment-manifest-{{ task.task_id }}">附件清单</label>
+                <textarea id="attachment-manifest-{{ task.task_id }}" name="attachment_manifest" rows="3" placeholder="HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏&#10;复核签字单 | /evidence/signoff.pdf | 负责人确认">{{ task.attachment_manifest }}</textarea>
+
+                <div class="review-report-draft-grid">
+                  <label for="report-title-{{ task.task_id }}">报告标题
+                    <input id="report-title-{{ task.task_id }}" name="report_title" value="{{ task.report_draft.title }}" placeholder="同就诊同项目重复收费复核报告草稿">
+                  </label>
+                  <label for="report-summary-{{ task.task_id }}">报告摘要
+                    <textarea id="report-summary-{{ task.task_id }}" name="report_summary" rows="3" placeholder="概述复核范围、证据链和结论边界。">{{ task.report_draft.summary }}</textarea>
+                  </label>
+                  <label for="rectification-request-{{ task.task_id }}">整改建议
+                    <textarea id="rectification-request-{{ task.task_id }}" name="rectification_request" rows="3" placeholder="说明责任科室需核对、退费、制度修订或补证动作。">{{ task.report_draft.rectification_request }}</textarea>
+                  </label>
+                </div>
+              </fieldset>
+
               <div class="review-task-actions">
                 <button type="submit">保存复核状态</button>
                 <a href="/review-tasks/{{ task.task_id }}/export?format=markdown">导出任务 Markdown</a>
                 <a href="/review-tasks/{{ task.task_id }}/export?format=json">导出任务 JSON</a>
+                {% if task.report_gate.ready_for_report %}
+                  <a href="/review-tasks/{{ task.task_id }}/report-draft?format=markdown">导出报告草稿 Markdown</a>
+                  <a href="/review-tasks/{{ task.task_id }}/report-draft?format=json">导出报告草稿 JSON</a>
+                {% else %}
+                  <span class="review-disabled-action">报告草稿需先通过门禁</span>
+                {% endif %}
               </div>
             </form>
           </article>
