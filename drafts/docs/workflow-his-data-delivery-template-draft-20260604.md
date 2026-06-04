@@ -179,12 +179,13 @@ N001,charge_detail,CD0100,CHARGE-RULE-001,quantity-explained-by-order,审计员A
 交付包通过后，进入以下工程任务：
 
 1. 使用 `his-ddl-parse` 解析 HIS DDL，生成 DDL 解析 Markdown/JSON 报告。
-2. 建立 `his_source_batches`、`his_table_schemas`、`his_field_mappings`。
-3. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
-4. 生成 `audit_data_snapshots`。
-5. 建立 `audit_rules` 和 `rule_versions`。
-6. 运行 `CHARGE-RULE-001`。
-7. 生成 `audit_findings` 和 `finding_evidence_items`。
+2. 使用 `his-sample-quality` 校验脱敏样本字段、行数、必填空值和重复主键。
+3. 建立 `his_source_batches`、`his_table_schemas`、`his_field_mappings`。
+4. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
+5. 生成 `audit_data_snapshots`。
+6. 建立 `audit_rules` 和 `rule_versions`。
+7. 运行 `CHARGE-RULE-001`。
+8. 生成 `audit_findings` 和 `finding_evidence_items`。
 
 示例命令：
 
@@ -193,4 +194,10 @@ medical-audit-kb his-ddl-parse \
   --ddl-file tmp/outputs/his-delivery/his-ddl.sql \
   --output tmp/outputs/his-delivery/his-ddl-parse-report.md \
   --json-output tmp/outputs/his-delivery/his-ddl-parse-report.json
+
+medical-audit-kb his-sample-quality \
+  --sample-root tmp/outputs/his-delivery/samples \
+  --ddl-report-json tmp/outputs/his-delivery/his-ddl-parse-report.json \
+  --output tmp/outputs/his-delivery/his-sample-quality-report.md \
+  --json-output tmp/outputs/his-delivery/his-sample-quality-report.json
 ```

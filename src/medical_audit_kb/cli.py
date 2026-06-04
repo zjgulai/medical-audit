@@ -36,6 +36,12 @@ from medical_audit_kb.his.ddl_parser import (
     parse_his_ddl,
     render_his_ddl_parse_report_markdown,
 )
+from medical_audit_kb.his.sample_quality import (
+    build_his_sample_quality_report,
+    his_sample_quality_report_json,
+    load_his_ddl_parse_report_json,
+    render_his_sample_quality_report_markdown,
+)
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingProvider,
@@ -125,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         return _index_rollback(args)
     if args.command == "his-ddl-parse":
         return _his_ddl_parse(args)
+    if args.command == "his-sample-quality":
+        return _his_sample_quality(args)
     if args.command == "ui-smoke":
         return _ui_smoke(args)
     _die(f"unsupported command: {args.command}")
@@ -283,6 +291,15 @@ def _build_parser() -> argparse.ArgumentParser:
     his_ddl_parse.add_argument("--ddl-file", required=True, type=Path)
     his_ddl_parse.add_argument("--output", required=True, type=Path)
     his_ddl_parse.add_argument("--json-output", type=Path)
+
+    his_sample_quality = subparsers.add_parser(
+        "his-sample-quality",
+        help="Validate deidentified HIS sample files against a parsed DDL report.",
+    )
+    his_sample_quality.add_argument("--sample-root", required=True, type=Path)
+    his_sample_quality.add_argument("--ddl-report-json", type=Path)
+    his_sample_quality.add_argument("--output", required=True, type=Path)
+    his_sample_quality.add_argument("--json-output", type=Path)
 
     ui_smoke = subparsers.add_parser(
         "ui-smoke",
@@ -547,6 +564,19 @@ def _his_ddl_parse(args: argparse.Namespace) -> int:
     )
     if args.json_output is not None:
         _write_text(args.json_output, his_ddl_parse_report_json(report))
+    return 0 if report.status == "pass" else 2
+
+
+def _his_sample_quality(args: argparse.Namespace) -> int:
+    ddl_report = (
+        load_his_ddl_parse_report_json(args.ddl_report_json)
+        if args.ddl_report_json is not None
+        else None
+    )
+    report = build_his_sample_quality_report(args.sample_root, ddl_report=ddl_report)
+    _write_text(args.output, render_his_sample_quality_report_markdown(report))
+    if args.json_output is not None:
+        _write_text(args.json_output, his_sample_quality_report_json(report))
     return 0 if report.status == "pass" else 2
 
 
