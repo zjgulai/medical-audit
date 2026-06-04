@@ -223,6 +223,8 @@ async def _assert_review_task_repository_flow(
             review_gate="可进入人工复核",
             confidence_label="高",
             fallback_label="检索直出",
+            reviewer_note="初始复核意见",
+            conclusion="初始复核结论",
             created_by="auditor-001",
             assigned_to="chief-auditor",
             source="chat-dossier",
@@ -260,6 +262,8 @@ async def _assert_review_task_repository_flow(
     assert task.external_task_id == "review-task-0001"
     assert task.status == "pending-review"
     assert task.created_by == "auditor-001"
+    assert task.reviewer_note == "初始复核意见"
+    assert task.conclusion == "初始复核结论"
     assert action.to_status == "needs-evidence"
     assert comment.visibility == "internal"
     assert loaded_task is not None
@@ -278,6 +282,8 @@ async def _assert_review_task_repository_flow(
 
     assert stored_task.dossier["format"] == "audit-dossier-v1"
     assert stored_task.citation_count == 3
+    assert stored_task.reviewer_note == "初始复核意见"
+    assert stored_task.conclusion == "初始复核结论"
     assert stored_task.source == "chat-dossier"
     assert stored_action.actor == "auditor-001"
     assert stored_action.extra_metadata["source"] == "unit-test"

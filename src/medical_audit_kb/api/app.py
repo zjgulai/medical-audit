@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb import __version__
-from medical_audit_kb.api.review_task_store import JsonFileReviewTaskStore, ReviewTaskStore
+from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
@@ -49,9 +49,7 @@ class ApiState:
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
             preview_resolver=PreviewResolver(source_root=settings.data_root),
-            review_task_store=JsonFileReviewTaskStore(
-                settings.index_root / "review-tasks" / "review-tasks.json"
-            ),
+            review_task_store=SqlAlchemyReviewTaskStore(settings.database_url),
         )
 
     @property

@@ -23,14 +23,14 @@ source: human+ai
 - PostgreSQL + pgvector active index 已上线，当前 active 版本为 `full-rebuild-20260603085815`。
 - 当前 active 计数为 `486` 个源文档、`48985` 个 chunks、`48985` 条 embeddings。
 - 已具备生产 E2E smoke、视觉基线和增量 dry-run 验收脚本。
-- 当前复核任务台已具备本地 JSON 持久化，不能视为生产级案件系统。
-- 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema，页面写入路径尚未切换到 PostgreSQL。
+- 当前复核任务台已切换为 PostgreSQL 持久化，支持任务创建、状态更新、复核意见、复核结论和任务级导出。
+- 已补齐 `review_tasks`、`review_actions`、`review_comments` 的 SQLAlchemy 模型、repository 基础读写和正式 SQL schema；当前仍不能视为生产级案件系统。
 
 当前未完成：
 
 - HIS DDL、字段映射、脱敏数据快照、审计任务和运行批次。
 - 结构化规则表、规则版本、医院本地覆盖规则。
-- 生产级疑点清单、人工复核、底稿、报告、整改跟踪。
+- 生产级疑点清单、案件级人工复核、底稿、报告、整改跟踪。
 - 用户、角色、科室、权限控制和审计日志。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
@@ -44,7 +44,7 @@ source: human+ai
 - 锁定首个 HIS 专项审计场景，并拿到 DDL、字段字典和脱敏样本。
 - 建立 V1.0 最小业务数据模型：审计项目、数据快照、规则版本、运行批次、疑点、复核、底稿、整改。
 - 实现第一个 0/1 合规判定场景，输出可追溯疑点证据包。
-- 将当前本地 JSON 复核任务升级为 PostgreSQL 案件级复核流。
+- 将当前 PostgreSQL 任务级复核推进为案件级复核流。
 - 形成可供院方 UAT 的任务级底稿和报告导出。
 
 ## 3. 产品取舍
@@ -180,7 +180,7 @@ source: human+ai
 
 - `review_tasks`、`review_actions`、`review_comments` 已进入 `sql/knowledge-query-schema.sql`。
 - `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
-- 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、正式报告门禁或页面 PostgreSQL 切换。
+- 当前仍是数据底座切片，不包含权限系统、负责人审核、附件、多实例强一致编号或正式报告门禁。
 
 验收：
 
@@ -215,7 +215,7 @@ source: human+ai
 
 任务：
 
-- 将 `/pages/review-tasks` 改为 PostgreSQL 持久化。
+- 已将 `/pages/review-tasks` 改为 PostgreSQL 持久化。
 - 支持从查询结果和疑点清单创建复核任务。
 - 支持状态流转、复核意见、结论、附件引用。
 - 支持任务级底稿 Markdown/JSON 导出。
@@ -223,7 +223,7 @@ source: human+ai
 
 验收：
 
-- 服务重启后复核任务不丢失，且多实例部署下不会重复编号或覆盖更新。
+- 服务重启后复核任务不丢失；多实例部署下的强一致编号和并发冲突处理仍需补齐。
 - 复核记录可追溯到用户、时间、任务、疑点、证据包。
 - 未复核疑点不能进入正式报告。
 

@@ -4,6 +4,10 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.review_task_store import (
+    JsonFileReviewTaskStore,
+    SqlAlchemyReviewTaskStore,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -303,6 +307,50 @@ def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
     assert body["conclusion"] == "需要补充 HIS 原始凭证。"
 
 
+def test_review_tasks_sqlalchemy_store_persists_review_state_across_rebuilds(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'review-tasks.db'}"
+    state = _api_state(tmp_path)
+    state.review_task_store = SqlAlchemyReviewTaskStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    create_response = client.post(
+        "/pages/review-tasks/create",
+        data={"question": "医保基金审核依据"},
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert _review_tasks(state)[0]["task_id"] == "review-task-0001"
+
+    rebuilt_state = _api_state(tmp_path)
+    rebuilt_state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    rebuilt_client = TestClient(create_app(rebuilt_state))
+    update_response = rebuilt_client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "needs-evidence",
+            "reviewer_note": "数据库重建后继续复核。",
+            "conclusion": "需要补充 HIS 原始凭证。",
+        },
+        follow_redirects=False,
+    )
+
+    assert update_response.status_code == 303
+
+    second_rebuilt_state = _api_state(tmp_path)
+    second_rebuilt_state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    second_rebuilt_client = TestClient(create_app(second_rebuilt_state))
+    export_response = second_rebuilt_client.get("/review-tasks/review-task-0001/export")
+
+    assert export_response.status_code == 200
+    body = export_response.json()
+    assert body["status"] == "needs-evidence"
+    assert body["reviewer_note"] == "数据库重建后继续复核。"
+    assert body["conclusion"] == "需要补充 HIS 原始凭证。"
+
+
 def test_review_task_create_fails_when_backend_is_not_ready(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.search_engine = None
@@ -487,6 +535,9 @@ def _api_state(tmp_path: Path) -> ApiState:
         },
     )
     state = ApiState.from_settings(settings)
+    state.review_task_store = JsonFileReviewTaskStore(
+        settings.index_root / "review-tasks" / "review-tasks.json"
+    )
     state.search_engine = _search_engine(
         (
             _chunk(

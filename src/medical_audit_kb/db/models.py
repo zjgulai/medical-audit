@@ -316,6 +316,8 @@ class ReviewTask(Base):
     review_gate: Mapped[str] = mapped_column(Text, nullable=False)
     confidence_label: Mapped[str] = mapped_column(String(32), nullable=False)
     fallback_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    reviewer_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    conclusion: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_by: Mapped[str | None] = mapped_column(Text)
     assigned_to: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(64), nullable=False)

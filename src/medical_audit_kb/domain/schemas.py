@@ -98,6 +98,8 @@ class ReviewTaskCreate(BaseModel):
     review_gate: str = Field(min_length=1)
     confidence_label: str = Field(min_length=1, max_length=32)
     fallback_label: str = Field(min_length=1, max_length=64)
+    reviewer_note: str = ""
+    conclusion: str = ""
     created_by: str | None = None
     assigned_to: str | None = None
     source: str = Field(min_length=1, max_length=64)

@@ -150,6 +150,8 @@ class ReviewTaskRepository:
             review_gate=payload.review_gate,
             confidence_label=payload.confidence_label,
             fallback_label=payload.fallback_label,
+            reviewer_note=payload.reviewer_note,
+            conclusion=payload.conclusion,
             created_by=payload.created_by,
             assigned_to=payload.assigned_to,
             source=payload.source,

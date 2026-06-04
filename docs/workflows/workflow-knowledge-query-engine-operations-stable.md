@@ -190,7 +190,7 @@ curl 'http://127.0.0.1:8000/pages/chat/export?question=超量开药的审核依�
 curl 'http://127.0.0.1:8000/pages/chat/export?question=超量开药的审核依据是什么&format=json'
 ```
 
-从对话结果创建本地复核任务：
+从对话结果创建数据库复核任务：
 
 ```bash
 curl -i -X POST http://127.0.0.1:8000/pages/review-tasks/create \
@@ -215,7 +215,7 @@ curl 'http://127.0.0.1:8000/review-tasks/review-task-0001/export?format=markdown
 curl 'http://127.0.0.1:8000/review-tasks/review-task-0001/export?format=json'
 ```
 
-当前复核任务台是本地 JSON 持久化能力，用于验证“对话回答 -> 底稿快照 -> 人工复核 -> 任务导出”闭环。服务重启后任务保留；PostgreSQL 案件级持久化、多实例并发控制、权限、负责人审核和正式报告导出仍未完成。
+当前复核任务台默认写入 PostgreSQL，用于验证“对话回答 -> 底稿快照 -> 人工复核 -> 任务导出”闭环。服务重启后任务保留；多实例强一致编号、权限、负责人审核、附件、正式报告门禁和整改闭环仍未完成。
 
 ## 8. 评测报告查看
 
