@@ -184,12 +184,13 @@ N001,charge_detail,CD0100,CHARGE-RULE-001,quantity-explained-by-order,审计员A
 4. 运行收费合规字段映射校验，确认必需字段、脱敏规则、nullable 和重复映射门禁通过。
 5. 使用 `his-staging-import` dry-run 校验样本质量报告、source batch、table schema 和重复 staging 行。
 6. 复核 dry-run 报告后显式 `--execute` 写入 `his_staging_rows`。
-7. 使用 `his-snapshot-plan` 生成快照计划、row_counts、checksum 和 `AuditDataSnapshotCreate` payload。
-8. 使用 `his-snapshot-apply` dry-run 校验快照计划、项目存在性和 `snapshot_key` 唯一性。
-9. 复核 dry-run 报告后显式 `--execute` 写入 `audit_data_snapshots`。
-10. 建立 `audit_rules` 和 `rule_versions`。
-11. 运行 `CHARGE-RULE-001`。
-12. 生成 `audit_findings` 和 `finding_evidence_items`。
+7. 使用 `CHARGE-RULE-001` staging adapter 将 `his_staging_rows` 和 `his_field_mappings` 转为 `ChargeDetailRecord` 标准输入。
+8. 使用 `his-snapshot-plan` 生成快照计划、row_counts、checksum 和 `AuditDataSnapshotCreate` payload。
+9. 使用 `his-snapshot-apply` dry-run 校验快照计划、项目存在性和 `snapshot_key` 唯一性。
+10. 复核 dry-run 报告后显式 `--execute` 写入 `audit_data_snapshots`。
+11. 建立 `audit_rules` 和 `rule_versions`。
+12. 运行 `CHARGE-RULE-001`。
+13. 生成 `audit_findings` 和 `finding_evidence_items`。
 
 示例命令：
 
