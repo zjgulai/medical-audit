@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -634,6 +634,116 @@ def test_audit_log_retention_command_signs_archive_and_detects_tampering(
     assert tamper_result["status"] == "fail"
     assert tamper_result["archive_sha256_valid"] is False
     assert "archive sha256 mismatch" in tamper_result["issues"]
+
+
+def test_audit_log_retention_command_derives_controlled_archive_layout(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention.db'}"
+    asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv("MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET", "test-signing-secret")
+    archive_root = tmp_path / "controlled-audit-log-archive"
+    report_path = tmp_path / "audit-log-retention-root.md"
+    json_path = tmp_path / "audit-log-retention-root.json"
+    expected_archive_path = (
+        archive_root / "audit-log-events" / "2026" / "06" / "05" / "retention-batch-0001.jsonl"
+    )
+    expected_signature_path = (
+        archive_root
+        / "audit-log-events"
+        / "2026"
+        / "06"
+        / "05"
+        / "retention-batch-0001.signature.json"
+    )
+
+    exit_code = main(
+        [
+            "audit-log-retention",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--retention-days",
+            "180",
+            "--now",
+            "2026-06-05T00:00:00Z",
+            "--archive-root",
+            str(archive_root),
+            "--archive-batch-key",
+            "retention-batch-0001",
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--signing-key-id",
+            "audit-log-hmac-v1",
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+            "--execute",
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    verify_json_path = tmp_path / "audit-log-root-verify.json"
+    verify_exit_code = main(
+        [
+            "audit-log-archive-verify",
+            "--archive-output",
+            str(expected_archive_path),
+            "--signature-manifest",
+            str(expected_signature_path),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--output",
+            str(tmp_path / "audit-log-root-verify.md"),
+            "--json-output",
+            str(verify_json_path),
+        ]
+    )
+    verify_result = json.loads(verify_json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert result["archive_root"] == str(archive_root)
+    assert result["archive_layout"] == "audit-log-events/YYYY/MM/DD/<batch-key>.jsonl"
+    assert result["archive_batch_key"] == "retention-batch-0001"
+    assert result["archive_output"] == str(expected_archive_path)
+    assert result["signature_manifest_output"] == str(expected_signature_path)
+    assert expected_archive_path.exists()
+    assert expected_signature_path.exists()
+    assert verify_exit_code == 0
+    assert verify_result["status"] == "pass"
+
+
+def test_audit_log_retention_command_rejects_archive_batch_path_escape(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention.db'}"
+    asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+
+    with raises(SystemExit) as exc_info:
+        main(
+            [
+                "audit-log-retention",
+                "--database-url-env",
+                "MEDICAL_AUDIT_TEST_DATABASE_URL",
+                "--retention-days",
+                "180",
+                "--now",
+                "2026-06-05T00:00:00Z",
+                "--archive-root",
+                str(tmp_path / "controlled-audit-log-archive"),
+                "--archive-batch-key",
+                "../escape",
+                "--output",
+                str(tmp_path / "audit-log-retention-root.md"),
+                "--execute",
+            ]
+        )
+
+    assert "archive_batch_key" in str(exc_info.value)
+    assert not (tmp_path / "escape.jsonl").exists()
 
 
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:

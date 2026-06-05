@@ -871,7 +871,9 @@ Kimi 主索引运行参数：
 - `--retention-days`: 默认 `180`
 - `--now`: 可选 ISO-8601 时间，用于测试或固定审计 cutoff
 - `--limit`: 单批最多处理的过期事件数，默认 `1000`
-- `--archive-output`: `--execute` 且存在过期事件时必填
+- `--archive-root`: 可选，受控归档根目录；提供后自动生成标准归档路径
+- `--archive-batch-key`: 可选，归档批次名，只允许字母、数字、点、下划线和连字符
+- `--archive-output`: 未提供 `--archive-root`，且 `--execute` 存在过期事件时必填
 - `--signature-output`: 可选，写出 detached 签名 manifest
 - `--signing-secret-env`: 可选，从环境变量读取 HMAC 签名密钥；密钥不写入 manifest
 - `--signing-key-id`: 可选，签名密钥标识；启用签名时必填
@@ -889,6 +891,9 @@ Kimi 主索引运行参数：
 - `expired_event_count`
 - `archived_event_count`
 - `deleted_event_count`
+- `archive_root`
+- `archive_layout`
+- `archive_batch_key`
 - `archive_output`
 - `archive_sha256`
 - `signature_manifest_output`
@@ -898,7 +903,7 @@ Kimi 主索引运行参数：
 - `action_counts`
 - `entity_type_counts`
 
-归档文件为原始审计事件 JSONL，用于受控证据留存，不应用 response-only 脱敏。该文件必须存放在限制访问的归档介质；普通页面查询和 API 导出仍只返回脱敏结果。签名 manifest 当前使用标准库 `HMAC-SHA256`，用于防篡改校验和链式留痕；它不等同于证书级非对称电子签章。
+归档文件为原始审计事件 JSONL，用于受控证据留存，不应用 response-only 脱敏。该文件必须存放在限制访问的归档介质；普通页面查询和 API 导出仍只返回脱敏结果。提供 `--archive-root` 后，默认路径为 `audit-log-events/YYYY/MM/DD/<batch-key>.jsonl`，签名模式默认同目录生成 `<batch-key>.signature.json`；如果同时传入 `--archive-output` 或 `--signature-output`，路径必须位于 `--archive-root` 内。签名 manifest 当前使用标准库 `HMAC-SHA256`，用于防篡改校验和链式留痕；它不等同于证书级非对称电子签章。
 
 ### `medical-audit-kb audit-log-archive-verify`
 

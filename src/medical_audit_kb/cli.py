@@ -485,6 +485,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     audit_log_retention.add_argument("--now")
     audit_log_retention.add_argument("--limit", type=int, default=1000)
+    audit_log_retention.add_argument("--archive-root", type=Path)
+    audit_log_retention.add_argument("--archive-batch-key")
     audit_log_retention.add_argument("--archive-output", type=Path)
     audit_log_retention.add_argument("--signature-output", type=Path)
     audit_log_retention.add_argument("--signing-secret-env")
@@ -942,6 +944,8 @@ def _audit_log_retention(args: argparse.Namespace) -> int:
             run_audit_log_retention_to_database(
                 database_url=_database_url_from_env(args.database_url_env),
                 retention_days=args.retention_days,
+                archive_root=args.archive_root,
+                archive_batch_key=args.archive_batch_key,
                 archive_output=args.archive_output,
                 signature_output=args.signature_output,
                 signing_secret=(
