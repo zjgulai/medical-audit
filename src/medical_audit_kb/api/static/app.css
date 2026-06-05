@@ -2553,6 +2553,28 @@ code,
   background: var(--green);
 }
 
+.review-close-gate {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(156, 90, 26, 0.2);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(255, 248, 232, 0.9), rgba(255, 252, 242, 0.74)),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(156, 90, 26, 0.03) 18px 19px);
+}
+
+.review-close-gate.ready {
+  border-color: rgba(34, 94, 75, 0.22);
+  background:
+    linear-gradient(135deg, rgba(239, 247, 238, 0.92), rgba(255, 252, 242, 0.76)),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(34, 94, 75, 0.03) 18px 19px);
+}
+
+.review-close-gate.ready .review-report-gate-head > span {
+  background: var(--green);
+}
+
 .gate-check-list {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

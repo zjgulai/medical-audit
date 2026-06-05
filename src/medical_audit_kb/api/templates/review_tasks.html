@@ -90,6 +90,24 @@
               </ul>
             </section>
 
+            <section class="review-close-gate {% if task.close_gate.ready_to_close %}ready{% else %}blocked{% endif %}" aria-label="结案门禁">
+              <div class="review-report-gate-head">
+                <div>
+                  <p class="eyebrow">结案门禁</p>
+                  <h3>{{ task.close_gate.status_label }}</h3>
+                </div>
+                <span>{% if task.close_gate.ready_to_close %}PASS{% else %}BLOCKED{% endif %}</span>
+              </div>
+              <ul class="gate-check-list">
+                {% for check in task.close_gate.checks %}
+                  <li class="{% if check.pass %}pass{% else %}fail{% endif %}">
+                    <strong>{{ check.label }}</strong>
+                    <span>{{ check.message }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </section>
+
             <form method="post" action="/pages/review-tasks/{{ task.task_id }}/status" class="review-task-form">
               <label for="assignee-{{ task.task_id }}">承办人</label>
               <input id="assignee-{{ task.task_id }}" name="assigned_to" value="{{ task.assigned_to }}" placeholder="审计员姓名或工号">
