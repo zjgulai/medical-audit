@@ -84,6 +84,7 @@ flowchart TD
 - PostgreSQL + pgvector active index version 查询与状态隔离。
 - Kimi embedding 主索引已导入：`486` 个 indexed documents、`48985` 个 chunks、`48985` 个 embeddings、`13` 个 pending files。
 - 固定检索评测集 V1：`52` cases；fallback 答案评测集 V1：`8` cases。
+- `audit_log_events` 已作为操作日志持久化底座接入，`record_operation` 可将查询、导出、索引管理和复核任务操作同步写入数据库。
 
 ### 4.2 当前未落地但属于 V1.0 的子系统
 
@@ -91,7 +92,7 @@ flowchart TD
 - 结构化规则表、规则版本、医院本地覆盖规则。
 - 生产级疑点清单、PostgreSQL 案件级人工复核台、正式底稿和报告导出。
 - 整改事项、整改状态和结案条件。
-- 用户、角色、科室关系初始化和审计日志。
+- 用户、角色、科室关系初始化、审计日志查询页和审计日志治理策略。
 
 ### 4.3 当前不能被写成已完成的能力
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 from medical_audit_kb.db.models import (
     AuditDataSnapshot,
     AuditFinding,
+    AuditLogEvent,
     AuditProject,
     AuditRule,
     AuditRun,
@@ -33,6 +34,7 @@ from medical_audit_kb.db.models import (
     SourceDocument,
 )
 from medical_audit_kb.db.repositories import (
+    AuditLogRepository,
     AuditWorkflowRepository,
     HisIngestionRepository,
     KnowledgeBaseRepository,
@@ -47,6 +49,7 @@ from medical_audit_kb.domain.constants import (
 from medical_audit_kb.domain.schemas import (
     AuditDataSnapshotCreate,
     AuditFindingCreate,
+    AuditLogEventCreate,
     AuditProjectCreate,
     AuditRuleCreate,
     AuditRunCreate,
@@ -82,6 +85,10 @@ def test_audit_workflow_repository_creates_traceable_task_run_findings() -> None
 
 def test_his_ingestion_repository_creates_batch_schema_and_field_mappings() -> None:
     asyncio.run(_with_repository(_assert_his_ingestion_repository_flow))
+
+
+def test_audit_log_repository_creates_and_filters_events() -> None:
+    asyncio.run(_with_repository(_assert_audit_log_repository_flow))
 
 
 async def _with_repository(
@@ -364,6 +371,78 @@ async def _assert_his_ingestion_repository_flow(
     assert [row.row_number for row in stored_staging_rows] == [1, 2]
     assert stored_first_staging_row.row_data == {"CHARGE_ID": "C001", "AMOUNT": "100.00"}
     assert stored_first_staging_row.extra_metadata == {"source": "unit-test"}
+
+
+async def _assert_audit_log_repository_flow(
+    _: KnowledgeBaseRepository,
+    session: AsyncSession,
+) -> None:
+    repository = AuditLogRepository(session)
+    first_event = await repository.create_event(
+        AuditLogEventCreate(
+            action="review-task-readonly-write-blocked",
+            entity_type="review-task",
+            entity_id="review-task-0001",
+            user_identifier="auditor-001",
+            role="auditor",
+            status_code=409,
+            endpoint="/pages/review-tasks/review-task-0001/status",
+            reason="review task is closed and read-only",
+            payload={
+                "attempted_action": "review-task-status-update",
+                "task_status": "closed",
+            },
+            metadata={"source": "unit-test"},
+        )
+    )
+    second_event = await repository.create_event(
+        AuditLogEventCreate(
+            action="review-task-export",
+            entity_type="review-task",
+            entity_id="review-task-0001",
+            user_identifier="auditor-001",
+            role="auditor",
+            status_code=200,
+            endpoint="/review-tasks/review-task-0001/export",
+            payload={"format": "json"},
+        )
+    )
+    other_event = await repository.create_event(
+        AuditLogEventCreate(
+            action="page-query",
+            entity_type="query",
+            entity_id="query-log-0001",
+            user_identifier="auditor-002",
+            role="auditor",
+            status_code=200,
+            endpoint="/pages/query",
+            payload={"question": "医保基金审核依据"},
+        )
+    )
+
+    review_task_events = await repository.list_events(
+        entity_type="review-task",
+        entity_id="review-task-0001",
+    )
+    blocked_events = await repository.list_events(
+        action="review-task-readonly-write-blocked",
+        entity_type="review-task",
+        entity_id="review-task-0001",
+    )
+
+    assert first_event.action == "review-task-readonly-write-blocked"
+    assert first_event.reason == "review task is closed and read-only"
+    assert first_event.extra_metadata["source"] == "unit-test"
+    assert [event.id for event in review_task_events] == [second_event.id, first_event.id]
+    assert [event.id for event in blocked_events] == [first_event.id]
+    assert other_event.entity_type == "query"
+
+    stored_event = (
+        await session.execute(select(AuditLogEvent).where(AuditLogEvent.id == first_event.id))
+    ).scalar_one()
+    assert stored_event.payload["attempted_action"] == "review-task-status-update"
+    assert stored_event.status_code == 409
+    assert stored_event.endpoint == "/pages/review-tasks/review-task-0001/status"
 
 
 async def _assert_review_task_repository_flow(

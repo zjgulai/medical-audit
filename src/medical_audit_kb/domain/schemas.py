@@ -129,6 +129,21 @@ class ReviewCommentCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuditLogEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action: str = Field(min_length=1, max_length=96)
+    entity_type: str = Field(min_length=1, max_length=64)
+    entity_id: str = Field(min_length=1, max_length=128)
+    user_identifier: str | None = None
+    role: str | None = Field(default=None, max_length=64)
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    endpoint: str | None = None
+    reason: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AuditProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

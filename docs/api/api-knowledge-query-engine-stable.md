@@ -98,7 +98,7 @@ Query 参数：
 - 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
 - 正式报告签发入口。签发会冻结当前报告草稿 Markdown 正文并保存 `sha256`，签发后不能重复签发。
 - 整改跟踪入口。正式报告签发后才能生成整改事项，整改事项绑定已签发报告编号和正文 `sha256`。
-- 结案门禁和关闭后只读锁定。确认违规、已签发或已生成整改事项的任务，必须在整改状态为 `accepted` 后才能保存为 `closed`；任务一旦进入 `closed`，状态更新、附件上传、正式报告签发和整改更新写接口均返回 `409`，并记录 `review-task-readonly-write-blocked` 操作日志，页面查看、附件下载和导出仍允许。
+- 结案门禁和关闭后只读锁定。确认违规、已签发或已生成整改事项的任务，必须在整改状态为 `accepted` 后才能保存为 `closed`；任务一旦进入 `closed`，状态更新、附件上传、正式报告签发和整改更新写接口均返回 `409`，并记录 `review-task-readonly-write-blocked` 操作日志。配置了数据库日志 store 时，该事件会同步写入 `audit_log_events`，页面查看、附件下载和导出仍允许。
 
 ### `POST /pages/review-tasks/create`
 
@@ -711,7 +711,7 @@ Kimi 主索引运行参数：
 
 ### `GET /operation/logs`
 
-返回查询、预览、索引管理和复核任务操作日志。复核任务结案后被只读锁阻断的写请求会记录为 `review-task-readonly-write-blocked`，payload 包含 `task_id`、`task_status`、`attempted_action`、`endpoint`、`status_code`、`reason`、`user_identifier` 和 `role`。
+返回查询、预览、索引管理和复核任务操作日志。当前接口返回 API 进程内最近操作；同一 `record_operation` 入口会在配置 `audit_log_store` 时把事件同步写入 `audit_log_events`。复核任务结案后被只读锁阻断的写请求会记录为 `review-task-readonly-write-blocked`，payload 包含 `task_id`、`task_status`、`attempted_action`、`endpoint`、`status_code`、`reason`、`user_identifier` 和 `role`。
 
 ### `GET /operation/logs/export`
 
