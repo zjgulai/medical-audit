@@ -2504,6 +2504,28 @@ code,
   overflow-wrap: anywhere;
 }
 
+.review-readonly-lock {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid rgba(52, 64, 84, 0.16);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(248, 250, 252, 0.92), rgba(255, 252, 242, 0.76));
+}
+
+.review-readonly-lock strong {
+  color: #101828;
+}
+
+.review-readonly-lock span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
 .review-report-gate {
   display: grid;
   gap: 14px;
