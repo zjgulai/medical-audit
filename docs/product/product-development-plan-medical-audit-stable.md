@@ -45,6 +45,7 @@ source: human+ai
 - 已新增 `audit-log-retention` CLI，支持默认 dry-run 生成保留期计划，并在显式 `--execute` 后先写原始 JSONL 归档和 `sha256`，再删除本批次保留期外的 `audit_log_events`。
 - 已新增审计日志归档签名链：`audit-log-retention --signature-output` 可写出 detached HMAC-SHA256 签名 manifest，记录 `archive_sha256`、签名主体、`key_id` 和上一签名 `sha256`；`audit-log-archive-verify` 可只读验签并识别归档篡改。
 - 已新增审计日志受控归档目录策略：`audit-log-retention --archive-root` 自动生成 `audit-log-events/YYYY/MM/DD/<batch-key>.jsonl` 和同目录签名 manifest，显式归档/签名路径不能逃出归档根目录。
+- 已新增审计日志归档根目录巡检 CLI `audit-log-archive-audit`，可递归验签 archive root 下的签名 manifest，识别归档文件缺失、路径逃逸、sha256 不匹配和签名失败。
 
 当前未完成：
 
@@ -297,6 +298,7 @@ source: human+ai
 - 已支持审计日志保留期 dry-run 计划、显式归档和归档后清理。
 - 已支持审计日志归档 HMAC-SHA256 防篡改签名 manifest 和只读验签命令。
 - 已支持审计日志 archive root 标准目录布局和路径逃逸阻断。
+- 已支持审计日志 archive root 定期巡检报告。
 - 后续补案件级归档、结案审批、全站权限校验、证书级非对称电子签章和长期留存介质接入。
 
 验收：

@@ -926,6 +926,29 @@ Kimi 主索引运行参数：
 - `previous_signature_sha256`
 - `issues`
 
+### `medical-audit-kb audit-log-archive-audit`
+
+递归巡检受控 `archive-root` 下的审计日志签名 manifest，逐个确认签名 manifest 位于归档根目录内、manifest 指向的归档文件仍位于归档根目录内、归档文件存在、归档 `sha256` 匹配且 HMAC 签名有效。该命令只读，不修改数据库、归档文件或签名 manifest。
+
+核心参数：
+
+- `--archive-root`
+- `--signing-secret-env`
+- `--min-manifest-count`: 默认 `0`；生产巡检建议设置为本期预期最小签名数量
+- `--output`
+- `--json-output`
+
+输出核心字段：
+
+- `status`
+- `manifest_count`
+- `verified_count`
+- `failed_count`
+- `missing_archive_count`
+- `path_escape_count`
+- `entries`
+- `issues`
+
 ### `medical-audit-kb ui-smoke`
 
 通过 `TestClient` 执行真实 UI 查询闭环 smoke：

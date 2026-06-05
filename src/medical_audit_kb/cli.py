@@ -15,8 +15,11 @@ from medical_audit_kb.acceptance.reports import (
 )
 from medical_audit_kb.api.audit_log_policy import AUDIT_LOG_RETENTION_DAYS
 from medical_audit_kb.audit.audit_log_retention import (
+    audit_audit_log_archive_root,
+    audit_log_archive_root_audit_result_json,
     audit_log_archive_signature_verify_result_json,
     audit_log_retention_result_json,
+    render_audit_log_archive_root_audit_markdown,
     render_audit_log_archive_signature_verify_markdown,
     render_audit_log_retention_markdown,
     run_audit_log_retention_to_database,
@@ -199,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
         return _audit_log_retention(args)
     if args.command == "audit-log-archive-verify":
         return _audit_log_archive_verify(args)
+    if args.command == "audit-log-archive-audit":
+        return _audit_log_archive_audit(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -515,6 +520,16 @@ def _build_parser() -> argparse.ArgumentParser:
     audit_log_archive_verify.add_argument("--signing-secret-env", required=True)
     audit_log_archive_verify.add_argument("--output", required=True, type=Path)
     audit_log_archive_verify.add_argument("--json-output", type=Path)
+
+    audit_log_archive_audit = subparsers.add_parser(
+        "audit-log-archive-audit",
+        help="Audit every signed audit log archive under an archive root.",
+    )
+    audit_log_archive_audit.add_argument("--archive-root", required=True, type=Path)
+    audit_log_archive_audit.add_argument("--signing-secret-env", required=True)
+    audit_log_archive_audit.add_argument("--min-manifest-count", type=int, default=0)
+    audit_log_archive_audit.add_argument("--output", required=True, type=Path)
+    audit_log_archive_audit.add_argument("--json-output", type=Path)
 
     his_staging_import = subparsers.add_parser(
         "his-staging-import",
@@ -980,6 +995,21 @@ def _audit_log_archive_verify(args: argparse.Namespace) -> int:
     _write_text(args.output, render_audit_log_archive_signature_verify_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, audit_log_archive_signature_verify_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _audit_log_archive_audit(args: argparse.Namespace) -> int:
+    try:
+        result = audit_audit_log_archive_root(
+            archive_root=args.archive_root,
+            signing_secret=_secret_from_env(args.signing_secret_env),
+            min_manifest_count=args.min_manifest_count,
+        )
+    except ValueError as exc:
+        _die(str(exc))
+    _write_text(args.output, render_audit_log_archive_root_audit_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, audit_log_archive_root_audit_result_json(result))
     return 0 if result.status == "pass" else 2
 
 
