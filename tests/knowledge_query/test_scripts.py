@@ -84,6 +84,26 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "edge-regression" in script_text
 
 
+def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
+    script_path = Path("scripts/run-audit-log-archive-audit.py")
+
+    result = subprocess.run(
+        ["python3", "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "audit-log-archive-audit" in script_text
+    assert "MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET" in script_text
+    assert "MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT" in script_text
+    assert "MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR" in script_text
+    assert "latest_json_report" in script_text
+
+
 def test_classify_knowledge_pending_files_script_writes_reports(tmp_path: Path) -> None:
     script_path = Path("scripts/classify-knowledge-pending-files.py")
     source_root = tmp_path / "source"

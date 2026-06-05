@@ -729,7 +729,7 @@ Kimi 主索引运行参数：
 
 审计日志台页面。需要认证代理或 API client 注入 `X-Role: it-admin` 或 `X-Role: department-head` 后才展示事件；未授权角色只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
 
-当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和后台调度编排。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
+当前未完成：证书级非对称签名/电子签章、长期留存介质迁移、远端定时任务实际启用和外部告警接入。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
 ## 7. CLI 命令
 
@@ -948,6 +948,8 @@ Kimi 主索引运行参数：
 - `path_escape_count`
 - `entries`
 - `issues`
+
+生产调度入口：`scripts/run-audit-log-archive-audit.py`。该脚本读取 `MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT`、`MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR`、`MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET_ENV` 和 `MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT`，生成带时间戳的 Markdown/JSON 报告，并同步维护 `audit-log-archive-audit-latest.md` 与 `audit-log-archive-audit-latest.json`。脚本退出码保持与 CLI 一致，适合作为 cron/systemd timer 的告警依据。
 
 ### `medical-audit-kb ui-smoke`
 

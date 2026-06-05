@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-04
+updated: 2026-06-05
 owner: self
 source: human+ai
 ---
@@ -52,6 +52,8 @@ source: human+ai
 - `/opt/medical-audit/app/configs/deploy/tencent-cloud/`
 - `/opt/medical-audit/backups/`
 - `/opt/medical-audit/tmp/`
+- `/opt/medical-audit/audit-log-archive/`
+- `/opt/medical-audit/audit-reports/`
 - Docker network：`medical_audit_internal`
 - Docker volume：`medical_audit_pgdata`
 - PostgreSQL/pgvector 容器：`medical_audit_pg`
@@ -79,12 +81,14 @@ source: human+ai
 - `configs/deploy/tencent-cloud/docker-compose.prod.yaml`
 - `configs/deploy/tencent-cloud/medical-audit.env.example`
 - `configs/deploy/tencent-cloud/nginx-audit-server.conf`
+- `scripts/run-audit-log-archive-audit.py`
 - `.dockerignore`
 
 密钥策略：
 
 - `ai_video.pem` 只用于本地 SSH，不进入镜像。
 - `KIMI_API_KEY` 只允许写入远端 `medical-audit.env`，权限必须为 `600`。
+- `MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 只允许写入远端 `medical-audit.env`，用于审计日志归档 HMAC 验签；不得写入 git、报告或签名 manifest。
 - 任何 `*.env`、`*.pem`、`*.key` 不允许进入 git。
 
 ## 5. 已执行上线记录
@@ -290,6 +294,47 @@ medical-audit-kb index-incremental-plan \
 - `failed_files = 0`。
 - `added_files`、`modified_files`、`deleted_files` 与预期源文件变更一致。
 - 不改变 `index_versions.active`、`source_documents`、`document_chunks`、`chunk_embeddings` 当前计数。
+
+### 7.8 审计日志归档定时巡检
+
+生产环境必须先创建受控目录，并限制为部署用户和应用容器可读写：
+
+```bash
+sudo mkdir -p /opt/medical-audit/audit-log-archive /opt/medical-audit/audit-reports
+sudo chown -R ubuntu:ubuntu /opt/medical-audit/audit-log-archive /opt/medical-audit/audit-reports
+chmod 750 /opt/medical-audit/audit-log-archive /opt/medical-audit/audit-reports
+```
+
+`configs/deploy/tencent-cloud/medical-audit.env` 必须包含：
+
+```bash
+MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT_HOST=/opt/medical-audit/audit-log-archive
+MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR_HOST=/opt/medical-audit/audit-reports
+MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET=replace-with-hmac-secret
+MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT=0
+```
+
+手动巡检：
+
+```bash
+cd /opt/medical-audit/app
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env \
+  exec -T app python scripts/run-audit-log-archive-audit.py
+```
+
+定时任务示例：
+
+```cron
+17 3 * * * cd /opt/medical-audit/app && docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml --env-file configs/deploy/tencent-cloud/medical-audit.env exec -T app python scripts/run-audit-log-archive-audit.py >> /opt/medical-audit/audit-reports/audit-log-archive-audit-cron.log 2>&1
+```
+
+告警判定：
+
+- 脚本退出码 `0`：巡检通过。
+- 脚本退出码 `2`：归档缺失、路径逃逸、sha256 不匹配、签名失败或 manifest 数量不足，必须按审计事件处理。
+- 其他非零退出码：环境错误或密钥缺失，必须先修复运行环境，不能视为无归档异常。
+- 最新机器可读报告固定为 `/opt/medical-audit/audit-reports/audit-log-archive-audit-latest.json`。
 
 ## 8. 验收标准
 
