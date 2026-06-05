@@ -19,6 +19,11 @@ from medical_audit_kb.api.audit_finding_store import (
     AuditFindingNotFoundError,
     SqlAlchemyAuditFindingStore,
 )
+from medical_audit_kb.api.audit_log_policy import (
+    audit_log_policy_payload,
+    can_read_audit_logs,
+    redact_audit_log_events,
+)
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -282,24 +287,32 @@ def audit_logs_page(
         created_to=created_to,
         limit=limit,
     )
+    user_role = request.headers.get("X-Role")
+    user_identifier_header = request.headers.get("X-User-Id")
+    can_access_audit_logs = can_read_audit_logs(user_role)
     record_operation(
         state,
-        "page-audit-logs-view",
-        {"filters": filters},
+        "page-audit-logs-view" if can_access_audit_logs else "audit-logs-access-denied",
+        {
+            "filters": filters,
+            "user_identifier": user_identifier_header or "anonymous",
+            "role": user_role or "anonymous",
+            "status_code": 200 if can_access_audit_logs else 403,
+        },
     )
-    audit_log_events = (
-        []
-        if state.audit_log_store is None
-        else state.audit_log_store.list_events(
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            user_identifier=user_identifier,
-            created_from=created_from,
-            created_to=created_to,
-            limit=limit,
+    audit_log_events = []
+    if can_access_audit_logs and state.audit_log_store is not None:
+        audit_log_events = redact_audit_log_events(
+            state.audit_log_store.list_events(
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                user_identifier=user_identifier,
+                created_from=created_from,
+                created_to=created_to,
+                limit=limit,
+            )
         )
-    )
     return templates.TemplateResponse(
         request,
         "audit_logs.html",
@@ -307,6 +320,7 @@ def audit_logs_page(
             "audit_log_events": tuple(_audit_log_page_item(event) for event in audit_log_events),
             "audit_log_summary": _audit_log_summary(audit_log_events),
             "audit_log_filters": filters,
+            "audit_log_access_allowed": can_access_audit_logs,
             "audit_log_store_ready": state.audit_log_store is not None,
             "audit_log_store_backend": (
                 "none"
@@ -314,6 +328,7 @@ def audit_logs_page(
                 else state.audit_log_store.__class__.__name__
             ),
             "audit_log_export_query": _audit_log_export_query(filters),
+            "audit_log_policy": audit_log_policy_payload(),
             "search_backend": _search_backend_context(state),
         },
     )

@@ -10,6 +10,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
+from medical_audit_kb.api.audit_log_policy import (
+    audit_log_policy_payload,
+    can_read_audit_logs,
+    redact_audit_log_events,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.answer_builder import (
     NoCitedEvidenceError,
@@ -145,6 +150,8 @@ def export_operation_logs(
 @router.get("/audit/logs")
 def audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -162,30 +169,36 @@ def audit_logs(
         created_to=created_to,
         limit=limit,
     )
+    _require_audit_log_reader(state, role=x_role, user_identifier=x_user_id)
     if state.audit_log_store is None:
         return {
             "items": [],
             "filters": filters,
             "store": {"ready": False, "backend": "none"},
+            "policy": audit_log_policy_payload(),
         }
+    events = state.audit_log_store.list_events(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        user_identifier=user_identifier,
+        created_from=created_from,
+        created_to=created_to,
+        limit=limit,
+    )
     return {
-        "items": state.audit_log_store.list_events(
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            user_identifier=user_identifier,
-            created_from=created_from,
-            created_to=created_to,
-            limit=limit,
-        ),
+        "items": redact_audit_log_events(events),
         "filters": filters,
         "store": {"ready": True, "backend": state.audit_log_store.__class__.__name__},
+        "policy": audit_log_policy_payload(),
     }
 
 
 @router.get("/audit/logs/export")
 def export_audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -194,6 +207,7 @@ def export_audit_logs(
     created_to: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 500,
 ) -> Response:
+    _require_audit_log_reader(state, role=x_role, user_identifier=x_user_id)
     if state.audit_log_store is None:
         raise HTTPException(status_code=409, detail="persistent audit log store is not configured")
 
@@ -226,9 +240,10 @@ def export_audit_logs(
     return Response(
         content=json.dumps(
             {
-                "items": items,
+                "items": redact_audit_log_events(items),
                 "filters": filters,
                 "format": "json",
+                "policy": audit_log_policy_payload(),
             },
             ensure_ascii=False,
             indent=2,
@@ -265,3 +280,27 @@ def _audit_log_filters(
         "created_to": created_to.isoformat() if created_to is not None else None,
         "limit": limit,
     }
+
+
+def _require_audit_log_reader(
+    state: ApiState,
+    *,
+    role: str | None,
+    user_identifier: str | None,
+) -> None:
+    if can_read_audit_logs(role):
+        return
+    record_operation(
+        state,
+        "audit-logs-access-denied",
+        {
+            "user_identifier": user_identifier or "anonymous",
+            "role": role or "anonymous",
+            "status_code": 403,
+            "reason": "audit log access requires governance role",
+        },
+    )
+    raise HTTPException(
+        status_code=403,
+        detail="audit log access requires it-admin or department-head role",
+    )

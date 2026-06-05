@@ -719,15 +719,17 @@ Kimi 主索引运行参数：
 
 ### `GET /audit/logs`
 
-查询持久化审计日志 `audit_log_events`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。
+查询持久化审计日志 `audit_log_events`。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。响应会对 `api_key`、`authorization`、`credential`、`password`、`secret`、`token` 等敏感字段做 response-only 脱敏，当前策略保留周期为 `180` 天。
 
 ### `GET /audit/logs/export`
 
-导出持久化审计日志 JSON，并记录 `audit-logs-export` 操作。未配置数据库日志 store 时返回 `409`。默认导出上限为 `500` 条，可按同一组过滤参数缩小范围。
+导出持久化审计日志 JSON。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。授权导出会记录 `audit-logs-export` 操作。未配置数据库日志 store 时返回 `409`。默认导出上限为 `500` 条，可按同一组过滤参数缩小范围。导出结果同样应用 response-only 脱敏策略。
 
 ### `GET /pages/audit-logs`
 
-审计日志台页面。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
+审计日志台页面。需要认证代理或 API client 注入 `X-Role: it-admin` 或 `X-Role: department-head` 后才展示事件；未授权角色只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
+
+当前未完成：审计日志后台自动清理、归档、不可抵赖签名和长期留存介质迁移。
 
 ## 7. CLI 命令
 
