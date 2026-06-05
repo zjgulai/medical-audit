@@ -84,6 +84,35 @@ class AuditLogArchiveSignatureVerifyResult(BaseModel):
     issues: tuple[str, ...]
 
 
+class AuditLogArchiveRootAuditEntry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["pass", "fail"]
+    signature_manifest: str
+    archive_output: str | None
+    archive_sha256: str | None
+    expected_archive_sha256: str | None
+    archive_sha256_valid: bool | None
+    signature_valid: bool | None
+    previous_signature_sha256: str | None
+    issues: tuple[str, ...]
+
+
+class AuditLogArchiveRootAuditResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["pass", "fail"]
+    archive_root: str
+    min_manifest_count: int
+    manifest_count: int
+    verified_count: int
+    failed_count: int
+    missing_archive_count: int
+    path_escape_count: int
+    entries: tuple[AuditLogArchiveRootAuditEntry, ...]
+    issues: tuple[str, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class AuditLogArchiveLayout:
     archive_root: Path
@@ -407,6 +436,99 @@ def audit_log_archive_signature_verify_result_json(
     return json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
 
 
+def audit_audit_log_archive_root(
+    *,
+    archive_root: Path,
+    signing_secret: str,
+    min_manifest_count: int = 0,
+) -> AuditLogArchiveRootAuditResult:
+    if min_manifest_count < 0:
+        raise ValueError("min_manifest_count must be greater than or equal to 0")
+    resolved_root = archive_root.expanduser().resolve()
+    manifest_paths = sorted(resolved_root.rglob("*.signature.json"))
+    entries = tuple(
+        _audit_archive_signature_manifest(
+            archive_root=resolved_root,
+            signature_manifest=manifest_path,
+            signing_secret=signing_secret,
+        )
+        for manifest_path in manifest_paths
+    )
+    failed_count = sum(1 for entry in entries if entry.status == "fail")
+    missing_archive_count = sum(1 for entry in entries if "archive file missing" in entry.issues)
+    path_escape_count = sum(
+        1
+        for entry in entries
+        if "archive path outside archive_root" in entry.issues
+        or "signature manifest outside archive_root" in entry.issues
+    )
+    issues: list[str] = []
+    if len(entries) < min_manifest_count:
+        issues.append("manifest count below minimum")
+    if failed_count:
+        issues.append("archive verification failures found")
+    return AuditLogArchiveRootAuditResult(
+        status="pass" if not issues else "fail",
+        archive_root=str(resolved_root),
+        min_manifest_count=min_manifest_count,
+        manifest_count=len(entries),
+        verified_count=sum(1 for entry in entries if entry.status == "pass"),
+        failed_count=failed_count,
+        missing_archive_count=missing_archive_count,
+        path_escape_count=path_escape_count,
+        entries=entries,
+        issues=tuple(issues),
+    )
+
+
+def render_audit_log_archive_root_audit_markdown(
+    result: AuditLogArchiveRootAuditResult,
+) -> str:
+    lines = [
+        "# 审计日志归档根目录巡检报告",
+        "",
+        f"- 总体状态：`{result.status.upper()}`",
+        f"- 归档根目录：`{result.archive_root}`",
+        f"- 最小签名数：`{result.min_manifest_count}`",
+        f"- 签名 manifest 数：`{result.manifest_count}`",
+        f"- 验签通过数：`{result.verified_count}`",
+        f"- 失败数：`{result.failed_count}`",
+        f"- 缺失归档数：`{result.missing_archive_count}`",
+        f"- 路径逃逸数：`{result.path_escape_count}`",
+    ]
+    if result.issues:
+        lines.extend(["", "## 阻断问题"])
+        lines.extend(f"- {issue}" for issue in result.issues)
+    lines.extend(
+        [
+            "",
+            "## 明细",
+            "",
+            "| 状态 | signature_manifest | archive_output | 问题 |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    if result.entries:
+        for entry in result.entries:
+            issues = "; ".join(entry.issues) if entry.issues else "-"
+            lines.append(
+                "| "
+                f"`{entry.status.upper()}` | "
+                f"`{entry.signature_manifest}` | "
+                f"`{entry.archive_output or '-'}` | "
+                f"{issues} |"
+            )
+    else:
+        lines.append("| - | - | - | - |")
+    return "\n".join(lines) + "\n"
+
+
+def audit_log_archive_root_audit_result_json(
+    result: AuditLogArchiveRootAuditResult,
+) -> str:
+    return json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
+
+
 def _write_jsonl_archive(
     archive_output: Path | None,
     events: tuple[dict[str, object], ...],
@@ -419,6 +541,58 @@ def _write_jsonl_archive(
     archive_output.parent.mkdir(parents=True, exist_ok=True)
     archive_output.write_text(content, encoding="utf-8")
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _audit_archive_signature_manifest(
+    *,
+    archive_root: Path,
+    signature_manifest: Path,
+    signing_secret: str,
+) -> AuditLogArchiveRootAuditEntry:
+    issues: list[str] = []
+    resolved_manifest = signature_manifest.expanduser().resolve()
+    if not _is_relative_to(resolved_manifest, archive_root):
+        issues.append("signature manifest outside archive_root")
+    archive_output: Path | None = None
+    archive_sha256: str | None = None
+    expected_archive_sha256: str | None = None
+    archive_sha256_valid: bool | None = None
+    signature_valid: bool | None = None
+    previous_signature_sha256: str | None = None
+    try:
+        manifest = AuditLogArchiveSignatureManifest.model_validate_json(
+            resolved_manifest.read_text(encoding="utf-8")
+        )
+        archive_output = Path(manifest.archive_path).expanduser().resolve()
+        expected_archive_sha256 = manifest.archive_sha256
+        previous_signature_sha256 = manifest.previous_signature_sha256
+        if not _is_relative_to(archive_output, archive_root):
+            issues.append("archive path outside archive_root")
+        elif not archive_output.exists():
+            issues.append("archive file missing")
+        else:
+            verify_result = verify_audit_log_archive_signature(
+                archive_output=archive_output,
+                signature_manifest=resolved_manifest,
+                signing_secret=signing_secret,
+            )
+            archive_sha256 = verify_result.archive_sha256
+            archive_sha256_valid = verify_result.archive_sha256_valid
+            signature_valid = verify_result.signature_valid
+            issues.extend(verify_result.issues)
+    except Exception as exc:
+        issues.append(f"signature manifest invalid: {type(exc).__name__}")
+    return AuditLogArchiveRootAuditEntry(
+        status="fail" if issues else "pass",
+        signature_manifest=str(resolved_manifest),
+        archive_output=str(archive_output) if archive_output is not None else None,
+        archive_sha256=archive_sha256,
+        expected_archive_sha256=expected_archive_sha256,
+        archive_sha256_valid=archive_sha256_valid,
+        signature_valid=signature_valid,
+        previous_signature_sha256=previous_signature_sha256,
+        issues=tuple(issues),
+    )
 
 
 def _build_archive_layout(
@@ -458,6 +632,14 @@ def _resolve_archive_path_within_root(
     except ValueError as exc:
         raise ValueError(f"{path_name} must be inside archive_root") from exc
     return resolved_target
+
+
+def _is_relative_to(target: Path, root: Path) -> bool:
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _validate_archive_batch_key(value: str) -> str:

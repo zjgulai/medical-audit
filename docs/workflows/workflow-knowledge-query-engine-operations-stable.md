@@ -980,4 +980,5 @@ JSON 报告必须满足：
 - 审计日志 API 和导出结果必须对敏感字段执行 response-only 脱敏；当前策略保留周期为 `180` 天，保留期外事件必须通过 `audit-log-retention` 先生成 dry-run 计划，显式 `--execute` 后写入受控 archive root 下的 `audit-log-events/YYYY/MM/DD/<batch-key>.jsonl`、归档 `sha256` 和 detached HMAC-SHA256 签名 manifest，再删除数据库过期行。
 - 显式传入的 `--archive-output` 或 `--signature-output` 不得逃出 `--archive-root`；`--archive-batch-key` 不得包含路径分隔符或越权路径片段。
 - 审计日志归档必须可通过 `audit-log-archive-verify` 只读验签；归档文件被篡改时必须返回 FAIL 并报告 `archive sha256 mismatch`。
+- 受控 archive root 必须可通过 `audit-log-archive-audit` 递归巡检；归档文件缺失、路径逃逸、sha256 不匹配或签名失败必须返回 FAIL 报告。
 - 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移和后台调度编排仍需单独上线。

@@ -746,6 +746,79 @@ def test_audit_log_retention_command_rejects_archive_batch_path_escape(
     assert not (tmp_path / "escape.jsonl").exists()
 
 
+def test_audit_log_archive_root_audit_verifies_signed_archives(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    archive_root = tmp_path / "controlled-audit-log-archive"
+    _create_signed_audit_log_archive_root(tmp_path, monkeypatch, archive_root)
+    report_path = tmp_path / "audit-log-archive-root-audit.md"
+    json_path = tmp_path / "audit-log-archive-root-audit.json"
+
+    exit_code = main(
+        [
+            "audit-log-archive-audit",
+            "--archive-root",
+            str(archive_root),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--min-manifest-count",
+            "1",
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert "审计日志归档根目录巡检报告" in report_path.read_text(encoding="utf-8")
+    assert result["status"] == "pass"
+    assert result["manifest_count"] == 1
+    assert result["verified_count"] == 1
+    assert result["failed_count"] == 0
+    assert result["missing_archive_count"] == 0
+
+
+def test_audit_log_archive_root_audit_fails_when_archive_is_missing(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    archive_root = tmp_path / "controlled-audit-log-archive"
+    archive_path, _signature_path = _create_signed_audit_log_archive_root(
+        tmp_path,
+        monkeypatch,
+        archive_root,
+    )
+    archive_path.unlink()
+    json_path = tmp_path / "audit-log-archive-root-audit-missing.json"
+
+    exit_code = main(
+        [
+            "audit-log-archive-audit",
+            "--archive-root",
+            str(archive_root),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--min-manifest-count",
+            "1",
+            "--output",
+            str(tmp_path / "audit-log-archive-root-audit-missing.md"),
+            "--json-output",
+            str(json_path),
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 2
+    assert result["status"] == "fail"
+    assert result["manifest_count"] == 1
+    assert result["verified_count"] == 0
+    assert result["missing_archive_count"] == 1
+    assert result["entries"][0]["issues"] == ["archive file missing"]
+
+
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(
@@ -1439,6 +1512,56 @@ async def _audit_log_event_ids(database_url: str) -> list[str]:
             return [str(event.id) for event in result.scalars().all()]
     finally:
         await engine.dispose()
+
+
+def _create_signed_audit_log_archive_root(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    archive_root: Path,
+) -> tuple[Path, Path]:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention-root-audit.db'}"
+    asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv("MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET", "test-signing-secret")
+    archive_path = (
+        archive_root / "audit-log-events" / "2026" / "06" / "05" / "retention-batch-0001.jsonl"
+    )
+    signature_path = (
+        archive_root
+        / "audit-log-events"
+        / "2026"
+        / "06"
+        / "05"
+        / "retention-batch-0001.signature.json"
+    )
+
+    exit_code = main(
+        [
+            "audit-log-retention",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--retention-days",
+            "180",
+            "--now",
+            "2026-06-05T00:00:00Z",
+            "--archive-root",
+            str(archive_root),
+            "--archive-batch-key",
+            "retention-batch-0001",
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--signing-key-id",
+            "audit-log-hmac-v1",
+            "--output",
+            str(tmp_path / "audit-log-retention-root-audit.md"),
+            "--execute",
+        ]
+    )
+
+    assert exit_code == 0
+    assert archive_path.exists()
+    assert signature_path.exists()
+    return archive_path, signature_path
 
 
 def _write_text(path: Path, content: str) -> Path:
