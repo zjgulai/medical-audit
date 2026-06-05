@@ -1166,8 +1166,9 @@ def test_persistent_audit_logs_api_filters_and_exports_events(tmp_path: Path) ->
             "entity_id": "review-task-0001",
             "user_identifier": "auditor-001",
         },
+        headers={"X-Role": "department-head"},
     )
-    export_response = client.get("/audit/logs/export")
+    export_response = client.get("/audit/logs/export", headers={"X-Role": "department-head"})
 
     assert response.status_code == 200
     body = response.json()
@@ -1182,6 +1183,51 @@ def test_persistent_audit_logs_api_filters_and_exports_events(tmp_path: Path) ->
     export_body = export_response.json()
     assert export_body["items"][0]["action"] == "audit-logs-export"
     assert any(item["entity_type"] == "review-task" for item in export_body["items"])
+
+
+def test_persistent_audit_logs_require_governance_role_and_redact_sensitive_payload(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-log-governance.db'}",
+        create_schema=True,
+    )
+    state.audit_log_store.add_event(
+        "query",
+        {
+            "question": "医保基金审核依据",
+            "user_identifier": "auditor-sensitive",
+            "role": "auditor",
+            "status_code": 200,
+            "endpoint": "/query",
+            "api_key": "secret-key",
+            "nested": {
+                "authorization": "Bearer raw-token",
+                "safe_note": "keep this note",
+            },
+        },
+    )
+    client = TestClient(create_app(state))
+
+    rejected_response = client.get("/audit/logs", headers={"X-Role": "auditor"})
+    accepted_response = client.get("/audit/logs", headers={"X-Role": "department-head"})
+    export_rejected_response = client.get("/audit/logs/export", headers={"X-Role": "auditor"})
+
+    assert rejected_response.status_code == 403
+    assert rejected_response.json()["detail"] == (
+        "audit log access requires it-admin or department-head role"
+    )
+    assert export_rejected_response.status_code == 403
+    assert accepted_response.status_code == 200
+    body = accepted_response.json()
+    assert body["policy"]["retention_days"] == 180
+    query_event = next(item for item in body["items"] if item["action"] == "query")
+    payload = cast(dict[str, object], query_event["payload"])
+    nested_payload = cast(dict[str, object], payload["nested"])
+    assert payload["api_key"] == "[REDACTED]"
+    assert nested_payload["authorization"] == "[REDACTED]"
+    assert nested_payload["safe_note"] == "keep this note"
 
 
 def test_audit_logs_page_renders_persistent_events_and_filters(tmp_path: Path) -> None:
@@ -1207,6 +1253,7 @@ def test_audit_logs_page_renders_persistent_events_and_filters(tmp_path: Path) -
     response = client.get(
         "/pages/audit-logs",
         params={"entity_type": "review-task", "entity_id": "review-task-0001"},
+        headers={"X-Role": "department-head"},
     )
 
     assert response.status_code == 200
@@ -1217,6 +1264,30 @@ def test_audit_logs_page_renders_persistent_events_and_filters(tmp_path: Path) -
     assert (
         "/audit/logs/export?entity_type=review-task&amp;entity_id=review-task-0001" in response.text
     )
+
+
+def test_audit_logs_page_hides_events_without_governance_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-log-page-denied.db'}",
+        create_schema=True,
+    )
+    state.audit_log_store.add_event(
+        "review-task-readonly-write-blocked",
+        {
+            "task_id": "review-task-0001",
+            "user_identifier": "auditor-denied",
+            "status_code": 409,
+        },
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get("/pages/audit-logs", headers={"X-Role": "auditor"})
+
+    assert response.status_code == 200
+    assert "需要审计日志权限" in response.text
+    assert "review-task-readonly-write-blocked" not in response.text
+    assert "auditor-denied" not in response.text
 
 
 def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:

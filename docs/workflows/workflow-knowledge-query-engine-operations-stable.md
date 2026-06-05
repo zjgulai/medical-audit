@@ -976,3 +976,5 @@ JSON 报告必须满足：
 - 引用定位成功率必须覆盖 Markdown/txt 行、PDF 页码、xlsx 行。
 - 评测集 `recall@5` 达到内部基线后，再进入答案生成质量评估。
 - 查询、预览、导出、索引管理和复核任务操作必须能在操作日志中追踪；配置数据库日志 store 时，同一 `record_operation` 事件必须同步写入 `audit_log_events`，并可通过 `/pages/audit-logs`、`/audit/logs` 和 `/audit/logs/export` 按任务、用户、动作和时间范围查询或导出。
+- 持久化审计日志查询和导出必须携带 `X-Role: it-admin` 或 `X-Role: department-head`；未授权访问必须记录 `audit-logs-access-denied`。
+- 审计日志 API 和导出结果必须对敏感字段执行 response-only 脱敏；当前策略保留周期为 `180` 天，自动清理和长期归档仍需单独上线。
