@@ -949,7 +949,7 @@ Kimi 主索引运行参数：
 - `entries`
 - `issues`
 
-生产调度入口：`scripts/run-audit-log-archive-audit.py`。该脚本读取 `MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT`、`MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR`、`MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET_ENV` 和 `MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT`，生成带时间戳的 Markdown/JSON 报告，并同步维护 `audit-log-archive-audit-latest.md` 与 `audit-log-archive-audit-latest.json`。脚本退出码保持与 CLI 一致，适合作为 cron/systemd timer 的告警依据。
+生产调度入口：`scripts/run-audit-log-archive-audit.py`。该脚本读取 `MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT`、`MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR`、`MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET_ENV` 和 `MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT`，生成带时间戳的 Markdown/JSON 报告，并同步维护 `audit-log-archive-audit-latest.md` 与 `audit-log-archive-audit-latest.json`。脚本退出码保持与 CLI 一致，适合作为 cron/systemd timer 的告警依据。若配置 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL`，脚本会在巡检失败或脚本异常时发送最小 JSON webhook 告警；默认成功不发送，手动验收可通过 `--send-success-alert` 测试通道。
 
 ### `medical-audit-kb ui-smoke`
 

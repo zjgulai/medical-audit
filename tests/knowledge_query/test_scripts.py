@@ -1,6 +1,11 @@
 import json
+import os
 import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 
 def test_serve_chat_workbench_script_is_valid_and_does_not_store_secret() -> None:
@@ -101,7 +106,76 @@ def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret()
     assert "MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET" in script_text
     assert "MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT" in script_text
     assert "MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR" in script_text
+    assert "MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL" in script_text
+    assert "MEDICAL_AUDIT_AUDIT_LOG_ALERT_TIMEOUT_SECONDS" in script_text
     assert "latest_json_report" in script_text
+
+
+def test_run_audit_log_archive_audit_script_sends_failure_webhook(
+    tmp_path: Path,
+) -> None:
+    script_path = Path("scripts/run-audit-log-archive-audit.py")
+    archive_root = tmp_path / "archive"
+    report_dir = tmp_path / "reports"
+    archive_root.mkdir()
+    _WebhookCaptureHandler.payloads = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _WebhookCaptureHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    webhook_url = f"http://127.0.0.1:{server.server_port}/archive-alert"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+    env["MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET"] = "test-signing-secret"
+    env["MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL"] = webhook_url
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--archive-root",
+                str(archive_root),
+                "--report-dir",
+                str(report_dir),
+                "--min-manifest-count",
+                "1",
+                "--run-id",
+                "webhook-failure",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    latest_payload = json.loads(
+        (report_dir / "audit-log-archive-audit-latest.json").read_text(encoding="utf-8")
+    )
+    stdout_payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert webhook_url not in result.stdout
+    assert webhook_url not in result.stderr
+    assert latest_payload["status"] == "fail"
+    assert latest_payload["manifest_count"] == 0
+    assert latest_payload["issues"] == ["manifest count below minimum"]
+    stdout_alert = stdout_payload["alert"]
+    assert isinstance(stdout_alert, dict)
+    assert stdout_alert["sent"] is True
+    assert _WebhookCaptureHandler.payloads
+    alert_payload = _WebhookCaptureHandler.payloads[0]
+    summary = alert_payload["summary"]
+    assert isinstance(summary, dict)
+    assert alert_payload["event_type"] == "medical_audit.audit_log_archive_audit"
+    assert alert_payload["severity"] == "critical"
+    assert alert_payload["status"] == "fail"
+    assert alert_payload["exit_code"] == 2
+    assert summary["manifest_count"] == 0
+    assert summary["failed_count"] == 0
+    assert summary["issues"] == ["manifest count below minimum"]
 
 
 def test_classify_knowledge_pending_files_script_writes_reports(tmp_path: Path) -> None:
@@ -487,6 +561,22 @@ def _write_bytes(path: Path, content: bytes) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path
+
+
+class _WebhookCaptureHandler(BaseHTTPRequestHandler):
+    payloads: ClassVar[list[dict[str, object]]] = []
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        payload = json.loads(body.decode("utf-8"))
+        if isinstance(payload, dict):
+            self.payloads.append(payload)
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:
+        return None
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:

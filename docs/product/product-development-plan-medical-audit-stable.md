@@ -46,14 +46,14 @@ source: human+ai
 - 已新增审计日志归档签名链：`audit-log-retention --signature-output` 可写出 detached HMAC-SHA256 签名 manifest，记录 `archive_sha256`、签名主体、`key_id` 和上一签名 `sha256`；`audit-log-archive-verify` 可只读验签并识别归档篡改。
 - 已新增审计日志受控归档目录策略：`audit-log-retention --archive-root` 自动生成 `audit-log-events/YYYY/MM/DD/<batch-key>.jsonl` 和同目录签名 manifest，显式归档/签名路径不能逃出归档根目录。
 - 已新增审计日志归档根目录巡检 CLI `audit-log-archive-audit`，可递归验签 archive root 下的签名 manifest，识别归档文件缺失、路径逃逸、sha256 不匹配和签名失败。
-- 已新增生产侧审计日志归档巡检脚本 `scripts/run-audit-log-archive-audit.py` 和腾讯云 Compose 挂载策略，支持按 cron/systemd timer 执行只读巡检并维护 latest JSON 报告。
+- 已新增生产侧审计日志归档巡检脚本 `scripts/run-audit-log-archive-audit.py` 和腾讯云 Compose 挂载策略，支持按 cron/systemd timer 执行只读巡检、维护 latest JSON 报告，并在配置 webhook URL 后对失败或脚本异常发送外部告警。
 
 当前未完成：
 
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 附件对象存储、病毒扫描、权限隔离、电子签章、独立整改数据库表和案件级整改归档流。
-- 用户、角色、科室、全站权限控制、证书级非对称电子签章、审计日志长期保留介质接入和外部告警接入。
+- 用户、角色、科室、全站权限控制、证书级非对称电子签章、审计日志长期保留介质接入和真实外部告警端点配置。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
 ## 2. 下一阶段目标
@@ -300,7 +300,7 @@ source: human+ai
 - 已支持审计日志归档 HMAC-SHA256 防篡改签名 manifest 和只读验签命令。
 - 已支持审计日志 archive root 标准目录布局和路径逃逸阻断。
 - 已支持审计日志 archive root 定期巡检报告。
-- 已支持生产侧 archive root 巡检脚本和部署挂载方案；腾讯云 cron 已启用，外部告警仍需上线。
+- 已支持生产侧 archive root 巡检脚本和部署挂载方案；腾讯云 cron 已启用，webhook 告警能力已具备，真实外部告警端点仍需配置和验收。
 - 后续补案件级归档、结案审批、全站权限校验、证书级非对称电子签章和长期留存介质接入。
 
 验收：
