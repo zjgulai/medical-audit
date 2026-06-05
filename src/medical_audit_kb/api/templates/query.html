@@ -10,7 +10,13 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="shell">
       <nav class="topbar" aria-label="页面导航">
-        <a class="brand" href="/pages/chat">AuditScope</a>
+        <a class="brand brand-command" href="/pages/chat" aria-label="AuditScope 医保审计证据控制台">
+          <span class="brand-mark">AS</span>
+          <span class="brand-lockup">
+            <strong>AuditScope</strong>
+            <small>医保审计证据控制台</small>
+          </span>
+        </a>
         <div class="nav-links">
           <a href="/pages/chat">对话审证</a>
           <a href="/pages/query" aria-current="page">查询工作台</a>
@@ -134,12 +140,32 @@
                 {% endif %}
               {% endfor %}
             </div>
-            <p class="meta">confidence: {{ answer.confidence }} · fallback: {{ answer.fallback_used }}</p>
+            <footer class="decision-footnote query-review-note">
+              <strong>查询提示：</strong>
+              查询页用于快速定位依据，不等同于审计结论。进入底稿前请转入对话审证页核验原文、适用条件和证据覆盖。
+            </footer>
+            <div class="query-result-actions" aria-label="查询结果后续动作">
+              <a
+                href="/pages/chat?question={{ question|urlencode }}{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+              >转入对话审证</a>
+              <form method="post" action="/pages/review-tasks/create" class="inline-task-form">
+                <input type="hidden" name="question" value="{{ question }}">
+                {% for collection in selected_collections %}
+                  <input type="hidden" name="source_collection" value="{{ collection }}">
+                {% endfor %}
+                <button type="submit">创建复核任务</button>
+              </form>
+              <span>复核任务会保留问题、回答、引用链和原文入口。</span>
+            </div>
           </article>
 
           <aside class="answer-card evidence-rail">
             <p class="eyebrow">引用依据</p>
             <h2>引用依据</h2>
+            <section class="source-review-banner query-evidence-boundary" aria-label="证据使用边界">
+              <strong>证据使用边界</strong>
+              <span>引用片段只作为线索来源；需打开原文确认条款上下文和规则版本。</span>
+            </section>
             {% for group in answer.basis_groups %}
               <section class="evidence-group">
                 <h3>{{ group.title }}</h3>
@@ -151,13 +177,25 @@
                       <dl class="citation-meta compact-citation-meta">
                         <dt>chunk</dt><dd><code>{{ item.chunk_id }}</code></dd>
                         <dt>index</dt><dd><code>{{ item.index_version_key }}</code></dd>
+                        <dt>package</dt><dd><code>{{ item.source_package_version_key }}</code></dd>
                       </dl>
-                      <a href="/pages/preview/{{ item.chunk_id }}">核验原文</a>
+                      <div class="citation-actions">
+                        <a href="/pages/preview/{{ item.chunk_id }}">核验原文</a>
+                        <button type="button" class="copy-citation-button" data-copy-value="[{{ item.citation_id }}] {{ item.snippet }}">复制引用</button>
+                      </div>
                     </li>
                   {% endfor %}
                 </ul>
               </section>
             {% endfor %}
+            <section class="dossier-checklist query-checklist" aria-label="人工复核清单">
+              <h3>人工复核清单</h3>
+              <ol>
+                <li>确认引用是否覆盖问题中的行为、对象和规则关键词。</li>
+                <li>打开原文检查条款上下文、版本和适用范围。</li>
+                <li>必要时补充 HIS 收费明细、目录编码或监管材料。</li>
+              </ol>
+            </section>
           </aside>
         </section>
       {% else %}
@@ -180,5 +218,50 @@
         </ul>
       </section>
     </main>
+    <div id="interaction-status" class="interaction-status" aria-live="polite" aria-atomic="true"></div>
+    <script>
+      const interactionStatus = document.querySelector("#interaction-status");
+      const statusTimers = new WeakMap();
+      const announceStatus = (message) => {
+        if (!interactionStatus) return;
+        window.clearTimeout(statusTimers.get(interactionStatus));
+        interactionStatus.textContent = message;
+        interactionStatus.classList.add("visible");
+        statusTimers.set(
+          interactionStatus,
+          window.setTimeout(() => {
+            interactionStatus.classList.remove("visible");
+          }, 2200),
+        );
+      };
+
+      document.querySelector(".query-form")?.addEventListener("submit", (event) => {
+        const form = event.currentTarget;
+        const button = form.querySelector('button[type="submit"]');
+        form.setAttribute("aria-busy", "true");
+        if (button) {
+          button.disabled = true;
+          button.textContent = "正在查询依据...";
+        }
+        announceStatus("正在查询知识库依据。");
+      });
+
+      document.querySelectorAll(".copy-citation-button").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const value = button.dataset.copyValue || "";
+          if (!value) return;
+          try {
+            await navigator.clipboard.writeText(value);
+            button.textContent = "已复制";
+            announceStatus("引用已复制。");
+            window.setTimeout(() => {
+              button.textContent = "复制引用";
+            }, 1400);
+          } catch {
+            announceStatus("复制失败，请手动选择引用片段。");
+          }
+        });
+      });
+    </script>
   </body>
 </html>

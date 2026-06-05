@@ -436,6 +436,15 @@ fieldset {
   background: rgba(255, 252, 242, 0.62);
 }
 
+.check input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  min-height: 18px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+  box-shadow: none;
+}
+
 button {
   width: fit-content;
   border: none;
@@ -469,7 +478,8 @@ button:hover {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 3px solid rgba(186, 79, 47, 0.58);
   outline-offset: 4px;
 }
@@ -1918,6 +1928,14 @@ button,
   box-shadow: 0 10px 24px rgba(16, 24, 40, 0.16);
 }
 
+button:disabled,
+button[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.68;
+  transform: none;
+  box-shadow: none;
+}
+
 .ghost-button {
   min-height: 34px;
   color: #344054;
@@ -1928,7 +1946,8 @@ button,
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 3px solid rgba(10, 132, 255, 0.42);
   outline-offset: 3px;
 }
@@ -2259,6 +2278,42 @@ code,
   font-size: 0.84rem;
 }
 
+.query-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  padding: 16px 0 0;
+  border-top: 1px solid rgba(16, 24, 40, 0.08);
+}
+
+.query-result-actions a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 13px;
+  border: 1px solid rgba(10, 132, 255, 0.18);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: rgba(10, 132, 255, 0.08);
+  font-size: 0.84rem;
+  font-weight: 680;
+  text-decoration: none;
+}
+
+.query-result-actions span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.query-review-note {
+  margin-top: 14px;
+  padding: 14px 0 16px;
+  border-top: 1px solid rgba(16, 24, 40, 0.08);
+  border-bottom: none;
+  background: transparent;
+}
+
 .source-card {
   align-items: flex-start;
   min-height: 94px;
@@ -2406,6 +2461,34 @@ code,
 
 .preview-checklist {
   margin-top: 18px;
+}
+
+.interaction-status {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 30;
+  max-width: min(420px, calc(100vw - 44px));
+  padding: 12px 14px;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 16px;
+  color: #101828;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 42px rgba(16, 24, 40, 0.16), inset 0 1px 0 var(--hairline);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.interaction-status.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .review-hero {
@@ -3372,7 +3455,7 @@ code,
   .decision-header h2 {
     max-width: 100%;
     overflow-wrap: anywhere;
-    word-break: break-all;
+    word-break: normal;
     font-size: clamp(1.65rem, 8.6vw, 2.08rem);
   }
 
@@ -3391,6 +3474,18 @@ code,
   .evidence-panel {
     position: static;
     max-height: none;
+  }
+
+  .conversation-main {
+    order: 1;
+  }
+
+  .command-rail {
+    order: 2;
+  }
+
+  .evidence-dossier {
+    order: 3;
   }
 
   .message {
