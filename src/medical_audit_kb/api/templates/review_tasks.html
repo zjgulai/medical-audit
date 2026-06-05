@@ -139,8 +139,8 @@
 
               <fieldset class="review-governance-fieldset review-report-draft-fieldset">
                 <legend>附件登记与报告草稿</legend>
-                <p class="review-form-hint">附件登记为结构化清单，不上传文件。每行格式：附件名称 | 位置或编号 | 说明。</p>
-                <label for="attachment-manifest-{{ task.task_id }}">附件清单</label>
+                <p class="review-form-hint">手工清单用于登记外部材料位置；真实文件请使用下方“附件归档”。每行格式：附件名称 | 位置或编号 | 说明。</p>
+                <label for="attachment-manifest-{{ task.task_id }}">手工附件清单</label>
                 <textarea id="attachment-manifest-{{ task.task_id }}" name="attachment_manifest" rows="3" placeholder="HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏&#10;复核签字单 | /evidence/signoff.pdf | 负责人确认">{{ task.attachment_manifest }}</textarea>
 
                 <div class="review-report-draft-grid">
@@ -168,6 +168,46 @@
                 {% endif %}
               </div>
             </form>
+
+            <section class="review-attachment-archive" aria-labelledby="attachment-archive-title-{{ task.task_id }}">
+              <div class="review-attachment-head">
+                <div>
+                  <p class="eyebrow">Attachment Archive</p>
+                  <h3 id="attachment-archive-title-{{ task.task_id }}">附件归档</h3>
+                </div>
+                <span>{{ task.attachments|length }} items</span>
+              </div>
+              <form method="post" action="/pages/review-tasks/{{ task.task_id }}/attachments" enctype="multipart/form-data" class="review-attachment-upload-form">
+                <label for="attachment-file-{{ task.task_id }}">上传附件文件
+                  <input id="attachment-file-{{ task.task_id }}" name="attachment_file" type="file" required>
+                </label>
+                <label for="attachment-title-{{ task.task_id }}">附件标题
+                  <input id="attachment-title-{{ task.task_id }}" name="attachment_title" placeholder="HIS收费明细导出">
+                </label>
+                <label for="attachment-note-{{ task.task_id }}">附件说明
+                  <input id="attachment-note-{{ task.task_id }}" name="attachment_note" placeholder="已脱敏、负责人确认或原始凭证位置说明">
+                </label>
+                <button type="submit">上传并归档</button>
+              </form>
+              <ul class="review-attachment-list">
+                {% for attachment in task.attachments %}
+                  <li>
+                    <div>
+                      <strong>{{ attachment.title }}</strong>
+                      <span>{{ attachment.status }} · {{ attachment.media_type or 'external' }} · {{ attachment.byte_size or 0 }} bytes</span>
+                      <small>{{ attachment.note or attachment.locator }}</small>
+                    </div>
+                    {% if attachment.download_url %}
+                      <a href="{{ attachment.download_url }}">下载归档文件</a>
+                    {% else %}
+                      <span>外部登记</span>
+                    {% endif %}
+                  </li>
+                {% else %}
+                  <li class="empty-attachment-row">尚未登记或上传附件。</li>
+                {% endfor %}
+              </ul>
+            </section>
           </article>
         {% else %}
           <section class="empty-state">

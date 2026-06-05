@@ -86,14 +86,14 @@ Query 参数：
 
 服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
 
-当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、任务级导出和报告草稿导出，但仍不替代完整案件系统、权限系统、真实文件上传、正式报告签发或整改跟踪。
+当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、附件文件归档、任务级导出和报告草稿导出，但仍不替代完整案件系统、权限系统、对象存储、病毒扫描、正式报告签发或整改跟踪。
 
 页面展示：
 
 - 任务总数、开放任务、报告就绪、待补证据、关闭任务统计。
 - 复核任务列表。
 - 每个任务的问题、创建时间、更新时间、引用数量、承办人和报告门禁预检。
-- 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人、确认时间、附件清单、报告标题、报告摘要和整改建议编辑表单。
+- 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人、确认时间、手工附件清单、附件文件上传归档、报告标题、报告摘要和整改建议编辑表单。
 - 任务级 Markdown/JSON 导出入口。
 - 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
 
@@ -129,7 +129,7 @@ Form 字段：
 - `owner_signoff_status`：可选，允许值为 `not-requested`、`requested`、`approved`、`rejected`。
 - `owner_confirmed_by`：可选，负责人确认人。
 - `owner_confirmed_at`：可选，负责人确认时间，建议使用 ISO 8601。
-- `attachment_manifest`：可选，附件清单文本。每行格式为 `附件名称 | 位置或编号 | 说明`，当前只登记清单，不上传文件。
+- `attachment_manifest`：可选，外部附件清单文本。每行格式为 `附件名称 | 位置或编号 | 说明`。该字段用于登记外部材料位置，已上传归档文件不会被状态保存表单覆盖。
 - `report_title`：可选，报告草稿标题。
 - `report_summary`：可选，报告草稿摘要。
 - `rectification_request`：可选，报告草稿整改建议。
@@ -139,6 +139,44 @@ Form 字段：
 - `303`：保存成功，跳转 `/pages/review-tasks`。
 - `404`：任务不存在。
 - `422`：状态、底稿状态、负责人确认状态非法，或缺少状态字段。
+
+### `POST /pages/review-tasks/{task_id}/attachments`
+
+上传并归档复核任务附件文件。文件保存到服务端 `settings.index_root/review-task-attachments/{task_id}/`，任务 `dossier.attachments` 写入附件元数据。
+
+Form 字段：
+
+- `attachment_file`：必填，multipart 文件字段。
+- `attachment_title`：可选，附件标题；为空时使用原始文件名。
+- `attachment_note`：可选，附件说明。
+
+归档元数据：
+
+- `attachment_id`：服务端生成的附件编号。
+- `status`：`uploaded`。
+- `original_filename`、`media_type`、`byte_size`、`sha256`、`storage_path`、`uploaded_at`。
+
+限制：
+
+- 单文件最大 `20 MiB`。
+- 空文件返回 `422`。
+- 文件路径由服务端生成，不使用客户端原始文件名作为存储路径。
+
+状态码：
+
+- `303`：上传成功，跳转 `/pages/review-tasks`。
+- `404`：任务不存在。
+- `413`：附件超过大小限制。
+- `422`：附件为空或缺少文件字段。
+
+### `GET /review-tasks/{task_id}/attachments/{attachment_id}/download`
+
+下载已归档附件。接口只读取 `settings.index_root/review-task-attachments/` 内的归档文件；没有 `storage_path` 的外部登记附件不能下载。
+
+状态码：
+
+- `200`：下载成功。
+- `404`：任务、附件元数据或归档文件不存在。
 
 ### `GET /review-tasks/{task_id}/export`
 

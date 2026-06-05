@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from uuid import UUID
 
@@ -284,11 +285,88 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert dossier["report_draft"]["title"] == "同就诊同项目重复收费复核报告草稿"
     assert str(state.operation_logs[-1]["action"]) == "review-task-status-update"
 
+    upload_content = b"charge_id,amount\nCD0001,100\n"
+    upload_response = client.post(
+        "/pages/review-tasks/review-task-0001/attachments",
+        data={
+            "attachment_title": "HIS收费明细上传归档",
+            "attachment_note": "测试上传归档文件",
+        },
+        files={
+            "attachment_file": (
+                "his-charge-detail.csv",
+                upload_content,
+                "text/csv",
+            )
+        },
+        follow_redirects=False,
+    )
+    assert upload_response.status_code == 303
+    uploaded_task = _review_tasks(state)[0]
+    uploaded_dossier = uploaded_task["dossier"]
+    assert isinstance(uploaded_dossier, dict)
+    uploaded_attachments = uploaded_dossier["attachments"]
+    assert isinstance(uploaded_attachments, list)
+    uploaded_attachment = uploaded_attachments[-1]
+    assert uploaded_attachment["status"] == "uploaded"
+    assert uploaded_attachment["title"] == "HIS收费明细上传归档"
+    assert uploaded_attachment["original_filename"] == "his-charge-detail.csv"
+    assert uploaded_attachment["byte_size"] == len(upload_content)
+    assert uploaded_attachment["sha256"] == hashlib.sha256(upload_content).hexdigest()
+    assert str(uploaded_attachment["storage_path"]).startswith(
+        "review-task-attachments/review-task-0001/"
+    )
+    archived_path = state.settings.index_root / str(uploaded_attachment["storage_path"])
+    assert archived_path.read_bytes() == upload_content
+    assert str(state.operation_logs[-1]["action"]) == "review-task-attachment-upload"
+
+    download_response = client.get(
+        f"/review-tasks/review-task-0001/attachments/"
+        f"{uploaded_attachment['attachment_id']}/download"
+    )
+    assert download_response.status_code == 200
+    assert download_response.content == upload_content
+    assert download_response.headers["content-type"].startswith("text/csv")
+    assert str(state.operation_logs[-1]["action"]) == "review-task-attachment-download"
+
+    preserve_upload_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "confirmed-violation",
+            "assigned_to": "审计员A",
+            "reviewer_note": "引用已覆盖规则依据，需补 HIS 原始凭证。",
+            "conclusion": "疑似违规线索成立，进入人工复核。",
+            "workpaper_status": "ready",
+            "workpaper_id": "workpaper-20260604-001",
+            "workpaper_note": "底稿已核对引用、原文和 HIS 凭证位置。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "审计科负责人A",
+            "owner_confirmed_at": "2026-06-04T12:00:00Z",
+            "attachment_manifest": (
+                "HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏\n"
+                "复核签字单 | /evidence/signoff.pdf | 负责人确认"
+            ),
+            "report_title": "同就诊同项目重复收费复核报告草稿",
+            "report_summary": "本任务确认重复收费线索成立，证据链已闭合。",
+            "rectification_request": "请责任科室核对收费明细并提交整改说明。",
+        },
+        follow_redirects=False,
+    )
+    assert preserve_upload_response.status_code == 303
+    preserved_dossier = _review_tasks(state)[0]["dossier"]
+    assert isinstance(preserved_dossier, dict)
+    preserved_attachments = preserved_dossier["attachments"]
+    assert isinstance(preserved_attachments, list)
+    assert preserved_attachments[-1]["status"] == "uploaded"
+    assert preserved_attachments[-1]["storage_path"] == uploaded_attachment["storage_path"]
+
     updated_page_response = client.get("/pages/review-tasks")
     assert updated_page_response.status_code == 200
     assert "可进入报告草稿" in updated_page_response.text
     assert "审计员A" in updated_page_response.text
     assert "HIS收费明细导出" in updated_page_response.text
+    assert "HIS收费明细上传归档" in updated_page_response.text
+    assert "下载归档文件" in updated_page_response.text
     assert "导出报告草稿 Markdown" in updated_page_response.text
 
     json_response = client.get("/review-tasks/review-task-0001/export")
@@ -306,6 +384,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert body["dossier"]["workpaper"]["status"] == "ready"
     assert body["dossier"]["owner_signoff"]["status"] == "approved"
     assert body["dossier"]["attachments"][0]["title"] == "HIS收费明细导出"
+    assert body["dossier"]["attachments"][2]["status"] == "uploaded"
     assert body["dossier"]["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
     assert body["dossier"]["format"] == "audit-dossier-v1"
     assert body["dossier"]["citations"][0]["chunk_id"] == str(LAW_CHUNK_ID)
@@ -326,9 +405,10 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "报告准备度：可进入报告草稿" in markdown_response.text
     assert "底稿编号：workpaper-20260604-001" in markdown_response.text
     assert "负责人确认：负责人已确认" in markdown_response.text
-    assert "附件数量：2" in markdown_response.text
+    assert "附件数量：3" in markdown_response.text
     assert "报告标题：同就诊同项目重复收费复核报告草稿" in markdown_response.text
     assert "HIS收费明细导出" in markdown_response.text
+    assert "HIS收费明细上传归档" in markdown_response.text
     assert "疑似违规线索成立，进入人工复核。" in markdown_response.text
     assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
 
@@ -354,6 +434,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert report_body["format"] == "review-task-report-draft-v1"
     assert report_body["report_gate"]["ready_for_report"] is True
     assert report_body["attachments"][0]["title"] == "HIS收费明细导出"
+    assert report_body["attachments"][2]["status"] == "uploaded"
     assert report_body["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
 
 
@@ -628,6 +709,7 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert ":focus-visible" in response.text
     assert "@media print" in response.text
     assert ".copy-citation-button" in response.text
+    assert ".review-attachment-archive" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
