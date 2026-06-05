@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, cast
@@ -33,6 +34,9 @@ class AuditLogRetentionResult(BaseModel):
     expired_event_count: int
     archived_event_count: int
     deleted_event_count: int
+    archive_root: str | None
+    archive_layout: str | None
+    archive_batch_key: str | None
     archive_output: str | None
     archive_sha256: str | None
     signature_manifest_output: str | None
@@ -80,10 +84,20 @@ class AuditLogArchiveSignatureVerifyResult(BaseModel):
     issues: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class AuditLogArchiveLayout:
+    archive_root: Path
+    archive_batch_key: str
+    archive_output: Path
+    signature_output: Path
+
+
 async def run_audit_log_retention_to_database(
     *,
     database_url: str,
     retention_days: int = AUDIT_LOG_RETENTION_DAYS,
+    archive_root: Path | None = None,
+    archive_batch_key: str | None = None,
     archive_output: Path | None = None,
     signature_output: Path | None = None,
     signing_secret: str | None = None,
@@ -100,6 +114,8 @@ async def run_audit_log_retention_to_database(
         return await run_audit_log_retention_with_engine(
             engine=engine,
             retention_days=retention_days,
+            archive_root=archive_root,
+            archive_batch_key=archive_batch_key,
             archive_output=archive_output,
             signature_output=signature_output,
             signing_secret=signing_secret,
@@ -119,6 +135,8 @@ async def run_audit_log_retention_with_engine(
     *,
     engine: AsyncEngine,
     retention_days: int = AUDIT_LOG_RETENTION_DAYS,
+    archive_root: Path | None = None,
+    archive_batch_key: str | None = None,
     archive_output: Path | None = None,
     signature_output: Path | None = None,
     signing_secret: str | None = None,
@@ -134,7 +152,33 @@ async def run_audit_log_retention_with_engine(
         raise ValueError("retention_days must be greater than 0")
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
-    signing_requested = signature_output is not None or signing_secret is not None
+    effective_now = _normalize_datetime(now or datetime.now(UTC))
+    layout: AuditLogArchiveLayout | None = None
+    if archive_root is not None:
+        layout = _build_archive_layout(
+            archive_root=archive_root,
+            archive_batch_key=archive_batch_key,
+            now=effective_now,
+        )
+        archive_output = _resolve_archive_path_within_root(
+            target=archive_output or layout.archive_output,
+            archive_root=layout.archive_root,
+            path_name="archive_output",
+        )
+        if signature_output is not None:
+            signature_output = _resolve_archive_path_within_root(
+                target=signature_output,
+                archive_root=layout.archive_root,
+                path_name="signature_output",
+            )
+        elif signing_secret is not None or signing_key_id is not None:
+            signature_output = layout.signature_output
+    signing_requested = (
+        signature_output is not None
+        or signing_secret is not None
+        or signing_key_id is not None
+        or previous_signature_sha256 is not None
+    )
     if signing_requested and not execute:
         raise ValueError("audit-log-retention archive signing requires --execute")
     if signing_requested and signature_output is None:
@@ -144,7 +188,6 @@ async def run_audit_log_retention_with_engine(
     if signing_requested and not signing_key_id:
         raise ValueError("audit-log-retention archive signing requires --signing-key-id")
     previous_signature_sha256 = _validate_optional_sha256(previous_signature_sha256)
-    effective_now = _normalize_datetime(now or datetime.now(UTC))
     cutoff = effective_now - timedelta(days=retention_days)
     if create_schema_if_missing:
         await create_schema(engine)
@@ -161,7 +204,9 @@ async def run_audit_log_retention_with_engine(
 
     expired_events = tuple(_event_to_payload(event) for event in events)
     if execute and expired_events and archive_output is None:
-        raise ValueError("audit-log-retention --execute requires --archive-output")
+        raise ValueError(
+            "audit-log-retention --execute requires --archive-output or --archive-root"
+        )
 
     archive_sha256: str | None = None
     signature_manifest_sha256: str | None = None
@@ -201,6 +246,11 @@ async def run_audit_log_retention_with_engine(
         expired_event_count=len(expired_events),
         archived_event_count=archived_event_count,
         deleted_event_count=deleted_event_count,
+        archive_root=str(layout.archive_root) if layout is not None else None,
+        archive_layout=(
+            "audit-log-events/YYYY/MM/DD/<batch-key>.jsonl" if layout is not None else None
+        ),
+        archive_batch_key=layout.archive_batch_key if layout is not None else None,
         archive_output=str(archive_output) if archive_output is not None else None,
         archive_sha256=archive_sha256,
         signature_manifest_output=str(signature_output) if signature_output is not None else None,
@@ -230,6 +280,9 @@ def render_audit_log_retention_markdown(result: AuditLogRetentionResult) -> str:
         f"- 过期事件数：`{result.expired_event_count}`",
         f"- 已归档事件数：`{result.archived_event_count}`",
         f"- 已删除事件数：`{result.deleted_event_count}`",
+        f"- 归档根目录：`{result.archive_root or '-'}`",
+        f"- 归档布局：`{result.archive_layout or '-'}`",
+        f"- 归档批次：`{result.archive_batch_key or '-'}`",
         f"- 归档文件：`{result.archive_output or '-'}`",
         f"- 归档 sha256：`{result.archive_sha256 or '-'}`",
         f"- 签名 manifest：`{result.signature_manifest_output or '-'}`",
@@ -366,6 +419,67 @@ def _write_jsonl_archive(
     archive_output.parent.mkdir(parents=True, exist_ok=True)
     archive_output.write_text(content, encoding="utf-8")
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _build_archive_layout(
+    *,
+    archive_root: Path,
+    archive_batch_key: str | None,
+    now: datetime,
+) -> AuditLogArchiveLayout:
+    resolved_root = archive_root.expanduser().resolve()
+    batch_key = _validate_archive_batch_key(
+        archive_batch_key or f"retention-{_datetime_to_batch_timestamp(now)}"
+    )
+    archive_dir = (
+        resolved_root
+        / "audit-log-events"
+        / f"{now.year:04d}"
+        / f"{now.month:02d}"
+        / f"{now.day:02d}"
+    )
+    return AuditLogArchiveLayout(
+        archive_root=resolved_root,
+        archive_batch_key=batch_key,
+        archive_output=archive_dir / f"{batch_key}.jsonl",
+        signature_output=archive_dir / f"{batch_key}.signature.json",
+    )
+
+
+def _resolve_archive_path_within_root(
+    *,
+    target: Path,
+    archive_root: Path,
+    path_name: str,
+) -> Path:
+    resolved_target = target.expanduser().resolve()
+    try:
+        resolved_target.relative_to(archive_root)
+    except ValueError as exc:
+        raise ValueError(f"{path_name} must be inside archive_root") from exc
+    return resolved_target
+
+
+def _validate_archive_batch_key(value: str) -> str:
+    normalized = value.strip()
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    if (
+        not normalized
+        or normalized in {".", ".."}
+        or "/" in normalized
+        or "\\" in normalized
+        or len(normalized) > 128
+        or any(character not in allowed for character in normalized)
+    ):
+        raise ValueError(
+            "archive_batch_key must be 1-128 characters of letters, digits, dot, "
+            "underscore, or hyphen"
+        )
+    return normalized
+
+
+def _datetime_to_batch_timestamp(value: datetime) -> str:
+    return _normalize_datetime(value).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _write_archive_signature_manifest(

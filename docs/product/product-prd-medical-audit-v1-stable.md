@@ -84,7 +84,7 @@ flowchart TD
 - PostgreSQL + pgvector active index version 查询与状态隔离。
 - Kimi embedding 主索引已导入：`486` 个 indexed documents、`48985` 个 chunks、`48985` 个 embeddings、`13` 个 pending files。
 - 固定检索评测集 V1：`52` cases；fallback 答案评测集 V1：`8` cases。
-- `audit_log_events` 已作为操作日志持久化底座接入，`record_operation` 可将查询、导出、索引管理和复核任务操作同步写入数据库；`/pages/audit-logs`、`/audit/logs`、`/audit/logs/export` 已支持按任务、用户、动作和时间范围查询与导出，并限制为 `it-admin` 和 `department-head` 可读导出，响应和导出已执行 response-only 敏感字段脱敏；`audit-log-retention` CLI 已支持保留期 dry-run 计划、显式原始 JSONL 归档、归档 `sha256` 和归档后数据库清理；审计日志归档已支持 detached HMAC-SHA256 签名 manifest、上一签名 `sha256` 链式留痕和只读验签。
+- `audit_log_events` 已作为操作日志持久化底座接入，`record_operation` 可将查询、导出、索引管理和复核任务操作同步写入数据库；`/pages/audit-logs`、`/audit/logs`、`/audit/logs/export` 已支持按任务、用户、动作和时间范围查询与导出，并限制为 `it-admin` 和 `department-head` 可读导出，响应和导出已执行 response-only 敏感字段脱敏；`audit-log-retention` CLI 已支持保留期 dry-run 计划、显式原始 JSONL 归档、归档 `sha256` 和归档后数据库清理；审计日志归档已支持 archive root 标准目录布局、detached HMAC-SHA256 签名 manifest、上一签名 `sha256` 链式留痕和只读验签。
 
 ### 4.2 当前未落地但属于 V1.0 的子系统
 
@@ -161,7 +161,7 @@ V1.0 的所有审计结论必须满足可追溯：
 | 部署 | 单院私有化部署优先，支持本地启动、离线内容包和后续整包升级 |
 | 安全 | 开发和交付默认不向外部模型服务上传患者数据 |
 | 权限 | 至少区分审计员、负责人、信息科/管理员 |
-| 审计日志 | 查询、索引发布、回滚、任务复核、报告导出必须留痕；保留期外事件必须先归档再清理，生产签名模式下必须生成 detached manifest 并支持只读验签 |
+| 审计日志 | 查询、索引发布、回滚、任务复核、报告导出必须留痕；保留期外事件必须进入受控 archive root 后再清理，生产签名模式下必须生成 detached manifest 并支持只读验签 |
 | 性能 | HIS 日均药品行数据按 `10万+` 估算，审计任务以批处理优先 |
 | 可维护性 | 规则、知识索引、数据快照和报告模板必须版本化 |
 
