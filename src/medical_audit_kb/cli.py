@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
 from uuid import UUID
@@ -11,6 +12,12 @@ from uuid import UUID
 from medical_audit_kb.acceptance.reports import (
     build_acceptance_report,
     render_acceptance_report_markdown,
+)
+from medical_audit_kb.api.audit_log_policy import AUDIT_LOG_RETENTION_DAYS
+from medical_audit_kb.audit.audit_log_retention import (
+    audit_log_retention_result_json,
+    render_audit_log_retention_markdown,
+    run_audit_log_retention_to_database,
 )
 from medical_audit_kb.audit.case_review_report_gate import (
     RESOLVED_REVIEW_STATUSES,
@@ -185,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
         return _his_staging_acceptance(args)
     if args.command == "case-review-report-gate":
         return _case_review_report_gate(args)
+    if args.command == "audit-log-retention":
+        return _audit_log_retention(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -458,6 +467,32 @@ def _build_parser() -> argparse.ArgumentParser:
     case_review_report_gate.add_argument("--database-url-env", default=DATABASE_URL_ENV)
     case_review_report_gate.add_argument("--output", required=True, type=Path)
     case_review_report_gate.add_argument("--json-output", type=Path)
+
+    audit_log_retention = subparsers.add_parser(
+        "audit-log-retention",
+        help="Dry-run or execute audit_log_events retention archive and cleanup.",
+    )
+    audit_log_retention.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    audit_log_retention.add_argument(
+        "--retention-days",
+        type=int,
+        default=AUDIT_LOG_RETENTION_DAYS,
+    )
+    audit_log_retention.add_argument("--now")
+    audit_log_retention.add_argument("--limit", type=int, default=1000)
+    audit_log_retention.add_argument("--archive-output", type=Path)
+    audit_log_retention.add_argument("--output", required=True, type=Path)
+    audit_log_retention.add_argument("--json-output", type=Path)
+    audit_log_retention.add_argument(
+        "--execute",
+        action="store_true",
+        help="Archive matching events and delete them. Omit this flag to run dry-run only.",
+    )
+    audit_log_retention.add_argument(
+        "--create-schema",
+        action="store_true",
+        help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
+    )
 
     his_staging_import = subparsers.add_parser(
         "his-staging-import",
@@ -881,6 +916,27 @@ def _case_review_report_gate(args: argparse.Namespace) -> int:
     return 0 if result.status == "pass" else 2
 
 
+def _audit_log_retention(args: argparse.Namespace) -> int:
+    try:
+        result = asyncio.run(
+            run_audit_log_retention_to_database(
+                database_url=_database_url_from_env(args.database_url_env),
+                retention_days=args.retention_days,
+                archive_output=args.archive_output,
+                now=_datetime_arg(args.now, name="now") if args.now else None,
+                limit=args.limit,
+                execute=args.execute,
+                create_schema_if_missing=args.create_schema,
+            )
+        )
+    except ValueError as exc:
+        _die(str(exc))
+    _write_text(args.output, render_audit_log_retention_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, audit_log_retention_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
 def _his_staging_import(args: argparse.Namespace) -> int:
     quality_report = load_his_staging_sample_quality_report_json(args.quality_report_json)
     result = asyncio.run(
@@ -1081,6 +1137,16 @@ def _json_object_arg(value: str, *, name: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         _die(f"{name} must be a JSON object")
     return cast(dict[str, object], parsed)
+
+
+def _datetime_arg(value: str, *, name: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        _die(f"{name} must be an ISO-8601 datetime")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _die(message: str) -> NoReturn:
