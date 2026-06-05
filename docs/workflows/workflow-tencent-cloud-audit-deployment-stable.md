@@ -144,6 +144,21 @@ source: human+ai
 5. 将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 合并进 nginx `http` 块。
 6. 执行 `nginx -t` 并 reload `ai_video_nginx`。
 
+### 5.4 审计日志归档巡检调度
+
+已在 2026-06-05 部署 PR #36 对应的归档巡检调度入口：
+
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-archive-scheduler-sync-20260605T072618Z.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-archive-scheduler-20260605T072618Z`。
+- schema 补齐前已创建数据库备份 `/opt/medical-audit/backups/db/pre-archive-scheduler-schema-apply-20260605T072958Z.sql`。
+- 已创建受控目录 `/opt/medical-audit/audit-log-archive` 和 `/opt/medical-audit/audit-reports`，权限为 `750`。
+- 已在远端 `medical-audit.env` 写入 `MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT_HOST`、`MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR_HOST`、`MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 和 `MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT`，env 权限为 `600`。
+- 已重建并重启 `medical_audit_app`，`medical_audit_pg` 仍使用独立 volume `medical_audit_pgdata`。
+- 首次重启后发现生产库缺少 `audit_log_events`，导致 `/index/search-backend` 因操作日志写入失败返回 `500`；已使用正式 `sql/knowledge-query-schema.sql` 幂等补齐 schema，补齐后 `audit_log_events` 可写入。
+- 已安装 cron 文件 `/etc/cron.d/medical-audit-archive-audit`，服务器时区为 `Asia/Shanghai`，每天 `03:17` 执行只读 archive root 巡检。
+- 手动执行同款 cron 命令已通过，latest 报告为 `/opt/medical-audit/audit-reports/audit-log-archive-audit-latest.json`，当前 `status=pass`、`manifest_count=0`、`failed_count=0`。
+- 部署后生产只读 E2E `production-e2e-smoke-after-archive-scheduler-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -376,6 +391,9 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产写入型 E2E smoke `production-e2e-smoke-with-review-write-after-review-task-postgres-store-20260604` 通过；创建并关闭 `review-task-0001`，任务导出成功。
 - app 重启后 `review-task-0001` 仍可导出，数据库直接查询返回 `review_task_count=1`、`review_action_count=1`，active 计数保持 `486/48985/48985`。
 - 重启后生产只读 E2E smoke `production-e2e-smoke-readonly-after-review-task-postgres-store-restart-20260604` 通过。
+- 审计日志归档巡检调度已部署，`/etc/cron.d/medical-audit-archive-audit` 每天 `03:17` CST 执行只读巡检，latest JSON 报告当前为 `status=pass`、`manifest_count=0`、`failed_count=0`。
+- 生产库已通过正式 schema SQL 补齐 `audit_log_events`，部署后 `/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
+- 生产只读 E2E smoke `production-e2e-smoke-after-archive-scheduler-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
@@ -401,6 +419,8 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 真实 `index-rollback` 演练已执行并已切回新 active；当前仍有 inactive 目标 `full-rebuild-20260531142344`，再次演练前必须重新确认业务窗口和备份路径。
 - 当前远端只同步 active source subset；如果后续要求远端具备完整源文件再处理能力，需要先解决超长中文文件名归档策略。
 - `KIMI_API_KEY` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret，降低误操作风险。
+- `MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret。
+- 审计日志 archive root 巡检已接入 cron，但尚未接入外部告警系统；当前只能通过 cron 退出码和 `/opt/medical-audit/audit-reports/` 报告排查。
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
 
 ## 10. 回滚方案
