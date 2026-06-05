@@ -169,6 +169,19 @@ source: human+ai
 - 手动执行 `--send-success-alert --fail-on-alert-error` 在无 webhook URL 时返回 `exit_code=2`、`audit_exit_code=0` 和 `alert.status=not-configured`，证明告警通道验收不会误判为通过。
 - 部署后生产只读 E2E `production-e2e-smoke-after-webhook-alert-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
 
+### 5.5 审计页面 UI 与证据交互部署
+
+已在 2026-06-05 部署 PR #41 对应的审计页面 UI 与证据交互一致性优化：
+
+- PR #41 已合并到 `main`，merge commit 为 `6cc17e09878a0a8baff21d8789aac8d21891c6d7`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-pr41-ui-sync-20260605T083604Z.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-pr41-ui-sync-20260605T083604Z`。
+- 已同步 `main@6cc17e09878a0a8baff21d8789aac8d21891c6d7` 到 `/opt/medical-audit/app/`，同步时显式排除 `.git/`、`.venv/`、`.codegraph/`、`tmp/`、`data/`、`archive/`、env 和密钥文件。
+- 已重建并重启 `medical_audit_app`，`medical_audit_pg` 仍使用独立 volume `medical_audit_pgdata`。
+- 部署后 `/index/search-backend` 返回 `backend=postgres`、`ready=true`、`embedding_model=kimi-for-coding`、`matching_embedding_count=48985`。
+- 部署后生产只读 E2E `production-e2e-smoke-after-pr41-ui-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
+- 部署后生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-pr41-ui-20260605` 已通过，desktop/mobile 均无横向溢出，关键文案无缺失。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -412,6 +425,9 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产库已通过正式 schema SQL 补齐 `audit_log_events`，部署后 `/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
 - 生产只读 E2E smoke `production-e2e-smoke-after-archive-scheduler-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产只读 E2E smoke `production-e2e-smoke-after-webhook-alert-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- PR #41 已合并并部署到腾讯云，merge commit 为 `6cc17e09878a0a8baff21d8789aac8d21891c6d7`。
+- 生产只读 E2E smoke `production-e2e-smoke-after-pr41-ui-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-pr41-ui-20260605` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
