@@ -981,5 +981,6 @@ JSON 报告必须满足：
 - 显式传入的 `--archive-output` 或 `--signature-output` 不得逃出 `--archive-root`；`--archive-batch-key` 不得包含路径分隔符或越权路径片段。
 - 审计日志归档必须可通过 `audit-log-archive-verify` 只读验签；归档文件被篡改时必须返回 FAIL 并报告 `archive sha256 mismatch`。
 - 受控 archive root 必须可通过 `audit-log-archive-audit` 递归巡检；归档文件缺失、路径逃逸、sha256 不匹配或签名失败必须返回 FAIL 报告。
-- 生产部署必须通过 `scripts/run-audit-log-archive-audit.py` 将 archive root 巡检接入定时任务；该脚本只读执行，生成带时间戳报告并维护 `audit-log-archive-audit-latest.json`，cron 或外部监控必须按退出码告警。
-- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移和外部告警接入仍需单独上线。
+- 生产部署必须通过 `scripts/run-audit-log-archive-audit.py` 将 archive root 巡检接入定时任务；该脚本只读执行，生成带时间戳报告并维护 `audit-log-archive-audit-latest.json`，cron 必须按退出码告警。
+- 配置 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL` 后，archive root 巡检失败或脚本异常必须发送最小 JSON webhook 告警；未配置 webhook URL 时只能依赖 cron 日志和 latest 报告。
+- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移和真实外部告警端点配置仍需单独上线。

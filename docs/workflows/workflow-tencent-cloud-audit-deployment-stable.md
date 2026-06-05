@@ -327,6 +327,10 @@ MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT_HOST=/opt/medical-audit/audit-log-archive
 MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR_HOST=/opt/medical-audit/audit-reports
 MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET=replace-with-hmac-secret
 MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT=0
+MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL=
+MEDICAL_AUDIT_AUDIT_LOG_ALERT_TIMEOUT_SECONDS=10
+MEDICAL_AUDIT_AUDIT_LOG_SEND_SUCCESS_ALERT=0
+MEDICAL_AUDIT_AUDIT_LOG_ALERT_FAIL_ON_ERROR=0
 ```
 
 手动巡检：
@@ -349,6 +353,8 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 脚本退出码 `0`：巡检通过。
 - 脚本退出码 `2`：归档缺失、路径逃逸、sha256 不匹配、签名失败或 manifest 数量不足，必须按审计事件处理。
 - 其他非零退出码：环境错误或密钥缺失，必须先修复运行环境，不能视为无归档异常。
+- 配置 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL` 后，脚本会在失败或异常时发送最小 JSON webhook 告警；默认成功不发送。
+- 手动验收外部告警通道时，可临时传入 `--send-success-alert`；若要求 webhook 失败也阻断验收，再同时传入 `--fail-on-alert-error`。
 - 最新机器可读报告固定为 `/opt/medical-audit/audit-reports/audit-log-archive-audit-latest.json`。
 
 ## 8. 验收标准
@@ -420,7 +426,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 当前远端只同步 active source subset；如果后续要求远端具备完整源文件再处理能力，需要先解决超长中文文件名归档策略。
 - `KIMI_API_KEY` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret，降低误操作风险。
 - `MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret。
-- 审计日志 archive root 巡检已接入 cron，但尚未接入外部告警系统；当前只能通过 cron 退出码和 `/opt/medical-audit/audit-reports/` 报告排查。
+- 审计日志 archive root 巡检已接入 cron，webhook 告警能力已具备；真实外部告警端点尚未配置时，只能通过 cron 退出码和 `/opt/medical-audit/audit-reports/` 报告排查。
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
 
 ## 10. 回滚方案
