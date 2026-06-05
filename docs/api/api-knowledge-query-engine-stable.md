@@ -86,7 +86,7 @@ Query 参数：
 
 服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
 
-当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、附件文件归档、任务级导出、报告草稿导出和任务级正式报告签发冻结，但仍不替代完整案件系统、权限系统、对象存储、病毒扫描、电子签章或整改跟踪。
+当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、附件文件归档、任务级导出、报告草稿导出、任务级正式报告签发冻结和签发后整改跟踪，但仍不替代完整案件系统、权限系统、对象存储、病毒扫描、电子签章或独立整改数据库表。
 
 页面展示：
 
@@ -97,6 +97,7 @@ Query 参数：
 - 任务级 Markdown/JSON 导出入口。
 - 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
 - 正式报告签发入口。签发会冻结当前报告草稿 Markdown 正文并保存 `sha256`，签发后不能重复签发。
+- 整改跟踪入口。正式报告签发后才能生成整改事项，整改事项绑定已签发报告编号和正文 `sha256`。
 
 ### `POST /pages/review-tasks/create`
 
@@ -275,6 +276,55 @@ Query 参数：
 - `200`：下载成功。
 - `404`：任务不存在。
 - `409`：任务尚未签发。
+
+### `POST /pages/review-tasks/{task_id}/rectification`
+
+生成或更新任务级整改事项。该接口只在正式报告已经签发后可用，整改事项会绑定 `dossier.signed_report.report_id` 和 `content_sha256`，用于证明整改来源来自已冻结报告正文。
+
+Form 字段：
+
+- `rectification_status`：必填，允许值为 `pending-rectification`、`in-progress`、`submitted`、`accepted`、`returned`。
+- `responsible_department`：可选，责任科室。
+- `responsible_owner`：可选，责任人。
+- `due_date`：可选，整改期限，建议使用 `YYYY-MM-DD`。
+- `action_request`：可选，整改要求；为空时沿用报告草稿中的整改建议。
+- `progress_note`：可选，本次进度说明、验收说明或退回原因。
+
+整改元数据：
+
+- `format`：`review-task-rectification-v1`。
+- `rectification_id`：服务端生成的整改编号。
+- `status`、`status_label`。
+- `responsible_department`、`responsible_owner`、`due_date`。
+- `action_request`、`progress_note`。
+- `source_report_id`、`source_report_sha256`。
+- `event_count`、`events`：每次状态保存追加一条事件，记录前后状态、时间、操作人和说明。
+
+状态码：
+
+- `303`：保存成功，跳转 `/pages/review-tasks`。
+- `404`：任务不存在。
+- `409`：正式报告尚未签发。
+- `422`：整改状态非法或缺少必填字段。
+
+### `GET /review-tasks/{task_id}/rectification/export`
+
+导出任务级整改跟踪记录，支持 JSON 和 Markdown 两种格式。
+
+Query 参数：
+
+- `format`：`json` 或 `markdown`，默认 `json`。
+
+响应：
+
+- `format=json`：`application/json`，下载文件名 `{task_id}-rectification.json`。
+- `format=markdown`：`text/markdown`，下载文件名 `{task_id}-rectification.md`。
+
+状态码：
+
+- `200`：导出成功。
+- `404`：任务不存在。
+- `409`：整改事项尚未生成。
 
 ### `GET /pages/query`
 

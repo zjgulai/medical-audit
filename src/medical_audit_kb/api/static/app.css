@@ -2825,6 +2825,76 @@ code,
   font-weight: 780;
 }
 
+.review-rectification-tracking {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(52, 64, 84, 0.14);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(246, 248, 244, 0.92), rgba(235, 241, 233, 0.72)),
+    repeating-linear-gradient(90deg, rgba(16, 24, 40, 0.025) 0 1px, transparent 1px 18px);
+}
+
+.review-rectification-tracking.created {
+  border-color: rgba(10, 132, 255, 0.2);
+  background:
+    linear-gradient(180deg, rgba(242, 247, 255, 0.9), rgba(255, 252, 242, 0.76));
+}
+
+.review-rectification-tracking .review-attachment-head > span {
+  color: #344054;
+  border-color: rgba(52, 64, 84, 0.16);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.rectification-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.rectification-summary div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.rectification-summary dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rectification-summary dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 780;
+}
+
+.review-rectification-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.review-rectification-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.review-rectification-form label:nth-of-type(5),
+.review-rectification-form label:nth-of-type(6) {
+  grid-column: span 2;
+}
+
 .findings-hero {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 244, 0.82)),
@@ -3041,8 +3111,10 @@ code,
   .review-governance-grid,
   .review-attachment-upload-form,
   .review-report-signoff-form,
+  .review-rectification-form,
   .review-report-draft-grid,
   .signed-report-summary,
+  .rectification-summary,
   .review-task-summary,
   .workbench-grid,
   .chat-layout,
@@ -3053,6 +3125,11 @@ code,
   .ops-grid,
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .review-rectification-form label:nth-of-type(5),
+  .review-rectification-form label:nth-of-type(6) {
+    grid-column: auto;
   }
 
   .hero,
