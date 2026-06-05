@@ -83,7 +83,13 @@ def main(argv: list[str] | None = None) -> int:
         result_payload=result_payload,
     )
     final_exit_code = exit_code
-    if exit_code == 0 and args.fail_on_alert_error and alert_result.get("status") == "failed":
+    alert_requested = exit_code != 0 or bool(args.send_success_alert)
+    if (
+        exit_code == 0
+        and args.fail_on_alert_error
+        and alert_requested
+        and alert_result.get("sent") is not True
+    ):
         final_exit_code = 2
 
     print(
@@ -283,10 +289,20 @@ def _maybe_send_alert(
 ) -> dict[str, object]:
     should_send = exit_code != 0 or bool(args.send_success_alert)
     if not should_send:
-        return {"configured": False, "sent": False, "reason": "audit-passed"}
+        return {
+            "configured": False,
+            "sent": False,
+            "status": "not-requested",
+            "reason": "audit-passed",
+        }
     webhook_url = os.environ.get(str(args.alert_webhook_url_env), "").strip()
     if not webhook_url:
-        return {"configured": False, "sent": False, "reason": "webhook-not-configured"}
+        return {
+            "configured": False,
+            "sent": False,
+            "status": "not-configured",
+            "reason": "webhook-not-configured",
+        }
     alert_payload = _build_alert_payload(
         args=args,
         exit_code=exit_code,

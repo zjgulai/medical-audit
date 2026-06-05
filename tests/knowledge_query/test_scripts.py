@@ -178,6 +178,46 @@ def test_run_audit_log_archive_audit_script_sends_failure_webhook(
     assert summary["issues"] == ["manifest count below minimum"]
 
 
+def test_run_audit_log_archive_audit_script_fails_success_alert_validation_without_webhook(
+    tmp_path: Path,
+) -> None:
+    script_path = Path("scripts/run-audit-log-archive-audit.py")
+    archive_root = tmp_path / "archive"
+    report_dir = tmp_path / "reports"
+    archive_root.mkdir()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+    env["MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET"] = "test-signing-secret"
+    env.pop("MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--archive-root",
+            str(archive_root),
+            "--report-dir",
+            str(report_dir),
+            "--min-manifest-count",
+            "0",
+            "--run-id",
+            "success-alert-not-configured",
+            "--send-success-alert",
+            "--fail-on-alert-error",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    stdout_payload = json.loads(result.stdout)
+    assert result.returncode == 2
+    assert stdout_payload["audit_exit_code"] == 0
+    assert stdout_payload["alert"]["status"] == "not-configured"
+    assert stdout_payload["alert"]["reason"] == "webhook-not-configured"
+
+
 def test_classify_knowledge_pending_files_script_writes_reports(tmp_path: Path) -> None:
     script_path = Path("scripts/classify-knowledge-pending-files.py")
     source_root = tmp_path / "source"
