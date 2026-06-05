@@ -447,6 +447,23 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert unsigned_report_response.status_code == 409
     assert unsigned_report_response.json()["detail"] == "review task report is not signed"
 
+    blocked_rectification_response = client.post(
+        "/pages/review-tasks/review-task-0001/rectification",
+        data={
+            "rectification_status": "pending-rectification",
+            "responsible_department": "收费管理科",
+            "responsible_owner": "科主任B",
+            "due_date": "2026-06-30",
+            "action_request": "核对重复收费并提交退费说明。",
+            "progress_note": "待正式报告签发后发起整改。",
+        },
+        follow_redirects=False,
+    )
+    assert blocked_rectification_response.status_code == 409
+    assert blocked_rectification_response.json()["detail"] == (
+        "review task report must be signed before rectification tracking"
+    )
+
     signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
         data={
@@ -500,6 +517,113 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert signed_body["format"] == "review-task-signed-report-v1"
     assert signed_body["signed_report"]["content_sha256"] == signed_report["content_sha256"]
     assert signed_body["signed_report"]["content"] == signed_content
+
+    rectification_response = client.post(
+        "/pages/review-tasks/review-task-0001/rectification",
+        data={
+            "rectification_status": "pending-rectification",
+            "responsible_department": "收费管理科",
+            "responsible_owner": "科主任B",
+            "due_date": "2026-06-30",
+            "action_request": "核对重复收费并提交退费说明。",
+            "progress_note": "已向责任科室发起整改通知。",
+        },
+        follow_redirects=False,
+    )
+    assert rectification_response.status_code == 303
+    rectification_task = _review_tasks(state)[0]
+    rectification_dossier = rectification_task["dossier"]
+    assert isinstance(rectification_dossier, dict)
+    rectification = rectification_dossier["rectification"]
+    assert isinstance(rectification, dict)
+    assert str(rectification["rectification_id"]).startswith("rectification-")
+    assert rectification["status"] == "pending-rectification"
+    assert rectification["status_label"] == "待整改"
+    assert rectification["responsible_department"] == "收费管理科"
+    assert rectification["responsible_owner"] == "科主任B"
+    assert rectification["due_date"] == "2026-06-30"
+    assert rectification["action_request"] == "核对重复收费并提交退费说明。"
+    assert rectification["progress_note"] == "已向责任科室发起整改通知。"
+    assert rectification["source_report_id"] == signed_report["report_id"]
+    assert rectification["source_report_sha256"] == signed_report["content_sha256"]
+    assert rectification["event_count"] == 1
+    events = rectification["events"]
+    assert isinstance(events, list)
+    assert events[0]["from_status"] == "not-created"
+    assert events[0]["to_status"] == "pending-rectification"
+    assert events[0]["note"] == "已向责任科室发起整改通知。"
+    assert str(state.operation_logs[-1]["action"]) == "review-task-rectification-update"
+
+    rectification_page_response = client.get("/pages/review-tasks")
+    assert rectification_page_response.status_code == 200
+    assert "整改跟踪" in rectification_page_response.text
+    assert "收费管理科" in rectification_page_response.text
+    assert "待整改" in rectification_page_response.text
+    assert "导出整改 JSON" in rectification_page_response.text
+
+    rectification_json_response = client.get("/review-tasks/review-task-0001/rectification/export")
+    assert rectification_json_response.status_code == 200
+    assert rectification_json_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-rectification.json"'
+    )
+    rectification_body = rectification_json_response.json()
+    assert rectification_body["format"] == "review-task-rectification-v1"
+    assert rectification_body["rectification"]["status"] == "pending-rectification"
+    assert (
+        rectification_body["rectification"]["source_report_sha256"]
+        == signed_report["content_sha256"]
+    )
+
+    rectification_markdown_response = client.get(
+        "/review-tasks/review-task-0001/rectification/export",
+        params={"format": "markdown"},
+    )
+    assert rectification_markdown_response.status_code == 200
+    assert rectification_markdown_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-rectification.md"'
+    )
+    assert "# AuditScope 整改跟踪记录" in rectification_markdown_response.text
+    assert "收费管理科" in rectification_markdown_response.text
+    assert str(signed_report["content_sha256"]) in rectification_markdown_response.text
+
+    task_export_after_rectification = client.get("/review-tasks/review-task-0001/export")
+    assert task_export_after_rectification.status_code == 200
+    assert task_export_after_rectification.json()["rectification"]["status"] == (
+        "pending-rectification"
+    )
+    task_markdown_after_rectification = client.get(
+        "/review-tasks/review-task-0001/export",
+        params={"format": "markdown"},
+    )
+    assert "## 整改跟踪" in task_markdown_after_rectification.text
+    assert "整改状态：待整改" in task_markdown_after_rectification.text
+
+    accepted_rectification_response = client.post(
+        "/pages/review-tasks/review-task-0001/rectification",
+        data={
+            "rectification_status": "accepted",
+            "responsible_department": "收费管理科",
+            "responsible_owner": "科主任B",
+            "due_date": "2026-06-30",
+            "action_request": "核对重复收费并提交退费说明。",
+            "progress_note": "已核验退费说明和制度修订记录。",
+        },
+        follow_redirects=False,
+    )
+    assert accepted_rectification_response.status_code == 303
+    accepted_task = _review_tasks(state)[0]
+    accepted_dossier = accepted_task["dossier"]
+    assert isinstance(accepted_dossier, dict)
+    accepted_rectification = accepted_dossier["rectification"]
+    assert isinstance(accepted_rectification, dict)
+    assert accepted_rectification["rectification_id"] == rectification["rectification_id"]
+    assert accepted_rectification["status"] == "accepted"
+    assert accepted_rectification["status_label"] == "已验收"
+    assert accepted_rectification["event_count"] == 2
+    accepted_events = accepted_rectification["events"]
+    assert isinstance(accepted_events, list)
+    assert accepted_events[-1]["from_status"] == "pending-rectification"
+    assert accepted_events[-1]["to_status"] == "accepted"
 
     duplicate_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
@@ -811,6 +935,7 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert ".copy-citation-button" in response.text
     assert ".review-attachment-archive" in response.text
     assert ".review-report-signoff" in response.text
+    assert ".review-rectification-tracking" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:

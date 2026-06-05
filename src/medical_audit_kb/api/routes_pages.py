@@ -79,6 +79,17 @@ OWNER_SIGNOFF_STATUS_LABELS: dict[str, str] = {
     "approved": "负责人已确认",
     "rejected": "退回复核",
 }
+RECTIFICATION_STATUS_LABELS: dict[str, str] = {
+    "not-created": "未生成",
+    "pending-rectification": "待整改",
+    "in-progress": "整改中",
+    "submitted": "已提交",
+    "accepted": "已验收",
+    "returned": "退回整改",
+}
+RECTIFICATION_FORM_STATUS_LABELS: dict[str, str] = {
+    key: label for key, label in RECTIFICATION_STATUS_LABELS.items() if key != "not-created"
+}
 REVIEW_TASK_ATTACHMENT_DIR = "review-task-attachments"
 REVIEW_TASK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
@@ -244,6 +255,7 @@ def review_tasks_page(
             "review_status_options": REVIEW_TASK_STATUS_LABELS,
             "workpaper_status_options": WORKPAPER_STATUS_LABELS,
             "owner_signoff_status_options": OWNER_SIGNOFF_STATUS_LABELS,
+            "rectification_status_options": RECTIFICATION_FORM_STATUS_LABELS,
             "search_backend": _search_backend_context(state),
         },
     )
@@ -573,6 +585,79 @@ def review_task_signed_report_export(
         content=str(signed_report.get("content", "")),
         media_type="text/markdown; charset=utf-8",
         headers=_download_headers(f"{task_id}-signed-report.md"),
+    )
+
+
+@router.post("/pages/review-tasks/{task_id}/rectification")
+async def update_review_task_rectification_page(
+    task_id: str,
+    request: Request,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> RedirectResponse:
+    form = await _urlencoded_form(request)
+    rectification_status = _form_required_str(form, "rectification_status")
+    if rectification_status not in RECTIFICATION_FORM_STATUS_LABELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported rectification_status: {rectification_status}",
+        )
+    task = _review_task_by_id(state, task_id)
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    if not _signed_report_context(dossier)["signed"]:
+        raise HTTPException(
+            status_code=409,
+            detail="review task report must be signed before rectification tracking",
+        )
+    rectification = _build_review_task_rectification(
+        task={**task, "dossier": dossier},
+        form=form,
+        rectification_status=rectification_status,
+    )
+    dossier["rectification"] = rectification
+    _update_review_task(
+        state,
+        task_id,
+        {
+            "dossier": dossier,
+            "updated_at": _utc_now_iso(),
+        },
+    )
+    record_operation(
+        state,
+        "review-task-rectification-update",
+        {
+            "task_id": task_id,
+            "rectification_id": rectification["rectification_id"],
+            "rectification_status": rectification["status"],
+            "event_count": rectification["event_count"],
+        },
+    )
+    return RedirectResponse("/pages/review-tasks", status_code=303)
+
+
+@router.get("/review-tasks/{task_id}/rectification/export")
+def review_task_rectification_export(
+    task_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "json",
+) -> Response:
+    task = _review_task_by_id(state, task_id)
+    payload = _review_task_rectification_payload(task)
+    record_operation(
+        state,
+        "review-task-rectification-export",
+        {"task_id": task_id, "format": format},
+    )
+    if format == "markdown":
+        return Response(
+            content=_render_review_task_rectification_markdown(payload),
+            media_type="text/markdown; charset=utf-8",
+            headers=_download_headers(f"{task_id}-rectification.md"),
+        )
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        media_type="application/json",
+        headers=_download_headers(f"{task_id}-rectification.json"),
     )
 
 
@@ -1047,11 +1132,23 @@ def _review_task_stats(tasks: list[dict[str, object]]) -> dict[str, object]:
         "report_ready": sum(
             1 for task in tasks if _review_task_report_gate_context(task)["ready_for_report"]
         ),
+        "rectification_open": sum(
+            1
+            for task in tasks
+            if _rectification_context(_dict_value(task.get("dossier")))["status"]
+            in {"pending-rectification", "in-progress", "submitted", "returned"}
+        ),
+        "rectification_accepted": sum(
+            1
+            for task in tasks
+            if _rectification_context(_dict_value(task.get("dossier")))["status"] == "accepted"
+        ),
         "status_counts": status_counts,
     }
 
 
 def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     return {
         "format": "review-task-v1",
         "task_id": task["task_id"],
@@ -1068,8 +1165,9 @@ def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
         "reviewer_note": task["reviewer_note"],
         "conclusion": task["conclusion"],
         "source": task.get("source", "chat-dossier"),
-        "report_gate": _review_task_report_gate_context(task),
-        "dossier": task["dossier"],
+        "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
+        "rectification": _rectification_context(dossier),
+        "dossier": dossier,
     }
 
 
@@ -1131,6 +1229,7 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
     owner_signoff = _dict_value(dossier.get("owner_signoff"))
     report_draft = _report_draft_context(dossier, payload)
     attachments = _attachment_items(dossier)
+    rectification = _rectification_context(dossier)
     lines = [
         "# AuditScope 复核任务记录",
         "",
@@ -1183,6 +1282,30 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
             f"- 摘要：{report_draft['summary']}",
             f"- 整改建议：{report_draft['rectification_request']}",
             "",
+            "## 整改跟踪",
+            "",
+        ]
+    )
+    if rectification["created"]:
+        lines.extend(
+            [
+                f"- 整改编号：{rectification['rectification_id']}",
+                f"- 整改状态：{rectification['status_label']}",
+                f"- 责任科室：{rectification['responsible_department'] or '未填写'}",
+                f"- 责任人：{rectification['responsible_owner'] or '未填写'}",
+                f"- 完成期限：{rectification['due_date'] or '未填写'}",
+                f"- 整改要求：{rectification['action_request'] or '未填写'}",
+                f"- 最新进展：{rectification['progress_note'] or '未填写'}",
+                f"- 关联正式报告：{rectification['source_report_id'] or '未签发'}",
+                f"- 正文 SHA256：{rectification['source_report_sha256'] or '未记录'}",
+                f"- 事件数量：{rectification['event_count']}",
+            ]
+        )
+    else:
+        lines.append("- 未生成整改事项。")
+    lines.extend(
+        [
+            "",
             "## 底稿",
             "",
             _render_audit_dossier_markdown(dossier),
@@ -1203,6 +1326,7 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "attachment_manifest": _attachment_manifest_text(dossier),
         "report_draft": _report_draft_context(dossier, task),
         "signed_report": _signed_report_context(dossier),
+        "rectification": _rectification_context(dossier),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
     }
 
@@ -1343,6 +1467,7 @@ def _with_review_task_governance_defaults(dossier: dict[str, object]) -> dict[st
         "updated_at": str(report_draft.get("updated_at", "")).strip(),
     }
     normalized["signed_report"] = _signed_report_context(normalized)
+    normalized["rectification"] = _rectification_context(normalized)
     normalized.setdefault("report_gate", {"source": "review-task-page"})
     return normalized
 
@@ -1628,6 +1753,172 @@ def _review_task_signed_report_payload(task: dict[str, object]) -> dict[str, obj
         "signed_report": signed_report,
         "source_task": task_payload,
     }
+
+
+def _rectification_context(dossier: dict[str, object]) -> dict[str, object]:
+    rectification = _dict_value(dossier.get("rectification"))
+    rectification_id = str(rectification.get("rectification_id", "")).strip()
+    status = str(rectification.get("status", "not-created")).strip()
+    if status not in RECTIFICATION_STATUS_LABELS:
+        status = "not-created"
+    created = bool(rectification_id) and status != "not-created"
+    if not created:
+        status = "not-created"
+    events = _rectification_events(rectification)
+    return {
+        "created": created,
+        "rectification_id": rectification_id if created else "",
+        "status": status,
+        "status_label": RECTIFICATION_STATUS_LABELS[status],
+        "responsible_department": str(rectification.get("responsible_department", "")).strip(),
+        "responsible_owner": str(rectification.get("responsible_owner", "")).strip(),
+        "due_date": str(rectification.get("due_date", "")).strip(),
+        "action_request": str(rectification.get("action_request", "")).strip(),
+        "progress_note": str(rectification.get("progress_note", "")).strip(),
+        "source_report_id": str(rectification.get("source_report_id", "")).strip(),
+        "source_report_sha256": str(rectification.get("source_report_sha256", "")).strip(),
+        "created_at": str(rectification.get("created_at", "")).strip(),
+        "updated_at": str(rectification.get("updated_at", "")).strip(),
+        "event_count": len(events),
+        "events": events,
+    }
+
+
+def _rectification_events(rectification: dict[str, object]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for item in _dict_list(rectification.get("events")):
+        from_status = str(item.get("from_status", "not-created")).strip()
+        to_status = str(item.get("to_status", "not-created")).strip()
+        if from_status not in RECTIFICATION_STATUS_LABELS:
+            from_status = "not-created"
+        if to_status not in RECTIFICATION_STATUS_LABELS:
+            to_status = "not-created"
+        events.append(
+            {
+                "event_id": str(item.get("event_id", "")).strip(),
+                "recorded_at": str(item.get("recorded_at", "")).strip(),
+                "from_status": from_status,
+                "from_status_label": RECTIFICATION_STATUS_LABELS[from_status],
+                "to_status": to_status,
+                "to_status_label": RECTIFICATION_STATUS_LABELS[to_status],
+                "actor": str(item.get("actor", "")).strip(),
+                "note": str(item.get("note", "")).strip(),
+            }
+        )
+    return events
+
+
+def _build_review_task_rectification(
+    *,
+    task: dict[str, object],
+    form: Mapping[str, Sequence[str]],
+    rectification_status: str,
+) -> dict[str, object]:
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    signed_report = _signed_report_context(dossier)
+    if not signed_report["signed"]:
+        raise HTTPException(
+            status_code=409,
+            detail="review task report must be signed before rectification tracking",
+        )
+    existing = _rectification_context(dossier)
+    now = _utc_now_iso()
+    report_draft = _report_draft_context(dossier, task)
+    rectification_id = str(existing["rectification_id"] or f"rectification-{uuid4().hex[:12]}")
+    previous_status = str(existing["status"] if existing["created"] else "not-created")
+    events = list(_dict_list(existing.get("events")))
+    progress_note = _form_optional_str(form, "progress_note")
+    events.append(
+        {
+            "event_id": f"rectification-event-{uuid4().hex[:12]}",
+            "recorded_at": now,
+            "from_status": previous_status,
+            "from_status_label": RECTIFICATION_STATUS_LABELS[previous_status],
+            "to_status": rectification_status,
+            "to_status_label": RECTIFICATION_STATUS_LABELS[rectification_status],
+            "actor": "page-user",
+            "note": progress_note,
+        }
+    )
+    action_request = _form_optional_str(form, "action_request") or str(
+        existing.get("action_request") or report_draft["rectification_request"]
+    )
+    return {
+        "format": "review-task-rectification-v1",
+        "rectification_id": rectification_id,
+        "status": rectification_status,
+        "status_label": RECTIFICATION_STATUS_LABELS[rectification_status],
+        "responsible_department": _form_optional_str(form, "responsible_department"),
+        "responsible_owner": _form_optional_str(form, "responsible_owner"),
+        "due_date": _form_optional_str(form, "due_date"),
+        "action_request": action_request,
+        "progress_note": progress_note,
+        "source_report_id": signed_report["report_id"],
+        "source_report_sha256": signed_report["content_sha256"],
+        "created_at": str(existing.get("created_at") or now),
+        "updated_at": now,
+        "event_count": len(events),
+        "events": events,
+    }
+
+
+def _review_task_rectification_payload(task: dict[str, object]) -> dict[str, object]:
+    task_payload = _review_task_export_payload(task)
+    dossier = _with_review_task_governance_defaults(_dict_value(task_payload.get("dossier")))
+    rectification = _rectification_context(dossier)
+    if not rectification["created"]:
+        raise HTTPException(status_code=409, detail="review task rectification is not created")
+    signed_report = _signed_report_context(dossier)
+    return {
+        "format": "review-task-rectification-v1",
+        "generated_at": _utc_now_iso(),
+        "task_id": task_payload["task_id"],
+        "status": task_payload["status"],
+        "status_label": task_payload["status_label"],
+        "question": task_payload["question"],
+        "rectification": rectification,
+        "signed_report": signed_report,
+        "source_task": task_payload,
+    }
+
+
+def _render_review_task_rectification_markdown(payload: dict[str, object]) -> str:
+    rectification = _dict_value(payload.get("rectification"))
+    events = _dict_list(rectification.get("events"))
+    lines = [
+        "# AuditScope 整改跟踪记录",
+        "",
+        f"- 生成时间：{payload['generated_at']}",
+        f"- 任务编号：{payload['task_id']}",
+        f"- 整改编号：{rectification.get('rectification_id')}",
+        f"- 整改状态：{rectification.get('status_label')} ({rectification.get('status')})",
+        f"- 责任科室：{rectification.get('responsible_department') or '未填写'}",
+        f"- 责任人：{rectification.get('responsible_owner') or '未填写'}",
+        f"- 完成期限：{rectification.get('due_date') or '未填写'}",
+        f"- 关联正式报告：{rectification.get('source_report_id') or '未签发'}",
+        f"- 正文 SHA256：{rectification.get('source_report_sha256') or '未记录'}",
+        "",
+        "## 整改要求",
+        "",
+        str(rectification.get("action_request") or "未填写"),
+        "",
+        "## 最新进展",
+        "",
+        str(rectification.get("progress_note") or "未填写"),
+        "",
+        "## 状态事件",
+        "",
+    ]
+    if events:
+        for event in events:
+            lines.append(
+                f"- {event.get('recorded_at') or '未记录时间'} | "
+                f"{event.get('from_status_label')} -> {event.get('to_status_label')} | "
+                f"{event.get('note') or '无说明'}"
+            )
+    else:
+        lines.append("- 未记录事件。")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _review_task_report_draft_payload(task: dict[str, object]) -> dict[str, object]:

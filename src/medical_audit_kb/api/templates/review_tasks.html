@@ -42,6 +42,7 @@
         <article><strong>{{ review_task_stats.report_ready }}</strong><span>report ready</span></article>
         <article><strong>{{ review_task_stats.needs_evidence }}</strong><span>needs evidence</span></article>
         <article><strong>{{ review_task_stats.closed }}</strong><span>closed</span></article>
+        <article><strong>{{ review_task_stats.rectification_open }}</strong><span>rectification open</span></article>
       </section>
 
       <section class="panel review-intake-panel" aria-labelledby="review-intake-title">
@@ -240,6 +241,60 @@
                 </form>
               {% else %}
                 <p class="review-form-hint">报告门禁通过后才能签发正式报告。</p>
+              {% endif %}
+            </section>
+
+            <section class="review-rectification-tracking {% if task.rectification.created %}created{% endif %}" aria-labelledby="rectification-title-{{ task.task_id }}">
+              <div class="review-attachment-head">
+                <div>
+                  <p class="eyebrow">Rectification</p>
+                  <h3 id="rectification-title-{{ task.task_id }}">整改跟踪</h3>
+                </div>
+                <span>{{ task.rectification.status_label }}</span>
+              </div>
+              {% if task.signed_report.signed %}
+                {% if task.rectification.created %}
+                  <dl class="rectification-summary">
+                    <div><dt>整改编号</dt><dd>{{ task.rectification.rectification_id }}</dd></div>
+                    <div><dt>责任科室</dt><dd>{{ task.rectification.responsible_department or '未填写' }}</dd></div>
+                    <div><dt>责任人</dt><dd>{{ task.rectification.responsible_owner or '未填写' }}</dd></div>
+                    <div><dt>完成期限</dt><dd>{{ task.rectification.due_date or '未填写' }}</dd></div>
+                    <div><dt>关联报告</dt><dd>{{ task.rectification.source_report_id }}</dd></div>
+                    <div><dt>事件数</dt><dd>{{ task.rectification.event_count }}</dd></div>
+                  </dl>
+                  <p class="review-form-hint">最新进展：{{ task.rectification.progress_note or '未填写' }}</p>
+                  <div class="review-task-actions">
+                    <a href="/review-tasks/{{ task.task_id }}/rectification/export?format=markdown">导出整改 Markdown</a>
+                    <a href="/review-tasks/{{ task.task_id }}/rectification/export?format=json">导出整改 JSON</a>
+                  </div>
+                {% endif %}
+                <form method="post" action="/pages/review-tasks/{{ task.task_id }}/rectification" class="review-rectification-form">
+                  <label for="rectification-status-{{ task.task_id }}">整改状态
+                    <select id="rectification-status-{{ task.task_id }}" name="rectification_status">
+                      {% for value, label in rectification_status_options.items() %}
+                        <option value="{{ value }}" {% if task.rectification.status == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label for="rectification-department-{{ task.task_id }}">责任科室
+                    <input id="rectification-department-{{ task.task_id }}" name="responsible_department" value="{{ task.rectification.responsible_department }}" placeholder="收费管理科">
+                  </label>
+                  <label for="rectification-owner-{{ task.task_id }}">责任人
+                    <input id="rectification-owner-{{ task.task_id }}" name="responsible_owner" value="{{ task.rectification.responsible_owner }}" placeholder="科室负责人">
+                  </label>
+                  <label for="rectification-due-{{ task.task_id }}">完成期限
+                    <input id="rectification-due-{{ task.task_id }}" name="due_date" value="{{ task.rectification.due_date }}" placeholder="2026-06-30">
+                  </label>
+                  <label for="rectification-action-{{ task.task_id }}">整改要求
+                    <textarea id="rectification-action-{{ task.task_id }}" name="action_request" rows="3" placeholder="说明责任科室需核对、退费、制度修订或补证动作。">{{ task.rectification.action_request or task.report_draft.rectification_request }}</textarea>
+                  </label>
+                  <label for="rectification-progress-{{ task.task_id }}">进度说明
+                    <textarea id="rectification-progress-{{ task.task_id }}" name="progress_note" rows="3" placeholder="记录整改通知、科室反馈、退费凭证、验收结论或退回原因。">{{ task.rectification.progress_note }}</textarea>
+                  </label>
+                  <button type="submit">{% if task.rectification.created %}保存整改进度{% else %}生成整改事项{% endif %}</button>
+                </form>
+              {% else %}
+                <p class="review-form-hint">正式报告签发后才能生成整改事项，确保整改来源绑定冻结报告和正文 SHA256。</p>
               {% endif %}
             </section>
           </article>
