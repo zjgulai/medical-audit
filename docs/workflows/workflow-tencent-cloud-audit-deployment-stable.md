@@ -159,6 +159,16 @@ source: human+ai
 - 手动执行同款 cron 命令已通过，latest 报告为 `/opt/medical-audit/audit-reports/audit-log-archive-audit-latest.json`，当前 `status=pass`、`manifest_count=0`、`failed_count=0`。
 - 部署后生产只读 E2E `production-e2e-smoke-after-archive-scheduler-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
 
+已在 2026-06-05 部署 PR #38 和 PR #39 对应的 webhook 告警能力：
+
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-webhook-alert-sync-20260605T075128Z.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-webhook-alert-20260605T075128Z`。
+- 已在远端 `medical-audit.env` 补充 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL`、`MEDICAL_AUDIT_AUDIT_LOG_ALERT_TIMEOUT_SECONDS`、`MEDICAL_AUDIT_AUDIT_LOG_SEND_SUCCESS_ALERT` 和 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_FAIL_ON_ERROR`。
+- 当前 `MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL` 为空，因此生产失败告警不会外发，只保留 cron 退出码、cron log 和 latest 报告。
+- 手动巡检默认路径已通过，输出 `alert.status=not-requested`。
+- 手动执行 `--send-success-alert --fail-on-alert-error` 在无 webhook URL 时返回 `exit_code=2`、`audit_exit_code=0` 和 `alert.status=not-configured`，证明告警通道验收不会误判为通过。
+- 部署后生产只读 E2E `production-e2e-smoke-after-webhook-alert-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -398,8 +408,10 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - app 重启后 `review-task-0001` 仍可导出，数据库直接查询返回 `review_task_count=1`、`review_action_count=1`，active 计数保持 `486/48985/48985`。
 - 重启后生产只读 E2E smoke `production-e2e-smoke-readonly-after-review-task-postgres-store-restart-20260604` 通过。
 - 审计日志归档巡检调度已部署，`/etc/cron.d/medical-audit-archive-audit` 每天 `03:17` CST 执行只读巡检，latest JSON 报告当前为 `status=pass`、`manifest_count=0`、`failed_count=0`。
+- webhook 告警能力已部署到 `medical_audit_app`；当前真实 webhook URL 为空，`--send-success-alert --fail-on-alert-error` 会按预期返回 `2`，防止未配置告警通道时误判验收通过。
 - 生产库已通过正式 schema SQL 补齐 `audit_log_events`，部署后 `/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
 - 生产只读 E2E smoke `production-e2e-smoke-after-archive-scheduler-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产只读 E2E smoke `production-e2e-smoke-after-webhook-alert-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
