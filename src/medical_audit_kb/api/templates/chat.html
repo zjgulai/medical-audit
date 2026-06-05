@@ -237,7 +237,7 @@
                 <label for="question">审计问题输入</label>
                 <span>问题必须能被证据回答</span>
               </div>
-              <p class="field-help">
+              <p id="chat-question-help" class="field-help">
                 建议包含审计对象、行为、目录编码或规则关键词。不要输入患者姓名、证件号、手机号等敏感标识。
               </p>
               <textarea
@@ -245,6 +245,7 @@
                 name="question"
                 rows="4"
                 placeholder="例如：门诊超量开药应核对哪些医保审核依据？"
+                aria-describedby="chat-question-help"
                 required
               >{{ question }}</textarea>
 
@@ -308,6 +309,10 @@
           </ul>
 
           {% if answer %}
+            <section class="source-review-banner evidence-review-banner" aria-label="证据使用边界">
+              <strong>证据使用边界</strong>
+              <span>引用片段只证明命中的原文内容；进入底稿前仍需打开原文，核验条款上下文、时间版本、适用对象和本地规则。</span>
+            </section>
             {% for group in answer.basis_groups %}
               <section class="evidence-group dossier-section">
                 <h3>{{ group.title }}</h3>
@@ -336,16 +341,48 @@
         </aside>
       </section>
     </main>
+    <div id="interaction-status" class="interaction-status" aria-live="polite" aria-atomic="true"></div>
     <script>
+      const interactionStatus = document.querySelector("#interaction-status");
+      const statusTimers = new WeakMap();
+      const announceStatus = (message) => {
+        if (!interactionStatus) return;
+        window.clearTimeout(statusTimers.get(interactionStatus));
+        interactionStatus.textContent = message;
+        interactionStatus.classList.add("visible");
+        statusTimers.set(
+          interactionStatus,
+          window.setTimeout(() => {
+            interactionStatus.classList.remove("visible");
+          }, 2200),
+        );
+      };
+
+      document.querySelector(".chat-form")?.addEventListener("submit", (event) => {
+        const form = event.currentTarget;
+        const button = form.querySelector('button[type="submit"]');
+        form.setAttribute("aria-busy", "true");
+        if (button) {
+          button.disabled = true;
+          button.textContent = "正在检索证据...";
+        }
+        announceStatus("正在检索知识库，并按引用证据组织回答。");
+      });
+
       document.querySelectorAll(".copy-citation-button").forEach((button) => {
         button.addEventListener("click", async () => {
           const value = button.dataset.copyValue || "";
           if (!value) return;
-          await navigator.clipboard.writeText(value);
-          button.textContent = "已复制";
-          window.setTimeout(() => {
-            button.textContent = "复制引用";
-          }, 1400);
+          try {
+            await navigator.clipboard.writeText(value);
+            button.textContent = "已复制";
+            announceStatus("引用已复制，可粘贴到底稿或复核意见。");
+            window.setTimeout(() => {
+              button.textContent = "复制引用";
+            }, 1400);
+          } catch {
+            announceStatus("复制失败，请手动选择引用片段。");
+          }
         });
       });
     </script>

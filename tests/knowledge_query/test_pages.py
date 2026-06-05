@@ -87,6 +87,12 @@ def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Pat
     assert "查询结果摘要" in response.text
     assert "核验原文" in response.text
     assert "chunk" in response.text
+    assert "package" in response.text
+    assert "复制引用" in response.text
+    assert "证据使用边界" in response.text
+    assert "人工复核清单" in response.text
+    assert "转入对话审证" in response.text
+    assert "创建复核任务" in response.text
     assert state.operation_logs[-1]["action"] == "page-query"
     assert state.query_logs[-1]["question"] == "医保基金审核依据"
 
@@ -107,6 +113,7 @@ def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -
     assert "审计问题输入" in response.text
     assert "Evidence Dossier" in response.text
     assert "证据卷宗" in response.text
+    assert "证据使用边界" in response.text
     assert "复核门禁" in response.text
     assert "人工复核清单" in response.text
     assert "可追溯回答" in response.text
