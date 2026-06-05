@@ -261,6 +261,64 @@ def review_tasks_page(
     )
 
 
+@router.get("/pages/audit-logs")
+def audit_logs_page(
+    request: Request,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    action: Annotated[str | None, Query(max_length=96)] = None,
+    entity_type: Annotated[str | None, Query(max_length=64)] = None,
+    entity_id: Annotated[str | None, Query(max_length=128)] = None,
+    user_identifier: Annotated[str | None, Query(max_length=128)] = None,
+    created_from: Annotated[datetime | None, Query()] = None,
+    created_to: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> object:
+    filters = _audit_log_filter_context(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        user_identifier=user_identifier,
+        created_from=created_from,
+        created_to=created_to,
+        limit=limit,
+    )
+    record_operation(
+        state,
+        "page-audit-logs-view",
+        {"filters": filters},
+    )
+    audit_log_events = (
+        []
+        if state.audit_log_store is None
+        else state.audit_log_store.list_events(
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            user_identifier=user_identifier,
+            created_from=created_from,
+            created_to=created_to,
+            limit=limit,
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "audit_logs.html",
+        {
+            "audit_log_events": tuple(_audit_log_page_item(event) for event in audit_log_events),
+            "audit_log_summary": _audit_log_summary(audit_log_events),
+            "audit_log_filters": filters,
+            "audit_log_store_ready": state.audit_log_store is not None,
+            "audit_log_store_backend": (
+                "none"
+                if state.audit_log_store is None
+                else state.audit_log_store.__class__.__name__
+            ),
+            "audit_log_export_query": _audit_log_export_query(filters),
+            "search_backend": _search_backend_context(state),
+        },
+    )
+
+
 @router.get("/pages/audit-findings")
 def audit_findings_page(
     request: Request,
@@ -780,6 +838,93 @@ def _search_backend_context(state: ApiState) -> dict[str, object]:
         "ready": state.search_engine is not None,
         "details": state.search_backend_details,
     }
+
+
+def _audit_log_filter_context(
+    *,
+    action: str | None,
+    entity_type: str | None,
+    entity_id: str | None,
+    user_identifier: str | None,
+    created_from: datetime | None,
+    created_to: datetime | None,
+    limit: int,
+) -> dict[str, object]:
+    return {
+        "action": action or "",
+        "entity_type": entity_type or "",
+        "entity_id": entity_id or "",
+        "user_identifier": user_identifier or "",
+        "created_from": created_from.isoformat() if created_from is not None else "",
+        "created_to": created_to.isoformat() if created_to is not None else "",
+        "limit": limit,
+    }
+
+
+def _audit_log_page_item(event: dict[str, object]) -> dict[str, object]:
+    payload = event.get("payload")
+    metadata = event.get("metadata")
+    return {
+        "event_id": event.get("event_id", ""),
+        "action": event.get("action", ""),
+        "entity_type": event.get("entity_type", ""),
+        "entity_id": event.get("entity_id", ""),
+        "user_identifier": event.get("user_identifier") or "anonymous",
+        "role": event.get("role") or "unknown",
+        "status_code": event.get("status_code") or "",
+        "endpoint": event.get("endpoint") or "",
+        "reason": event.get("reason") or "",
+        "payload": payload if isinstance(payload, dict) else {},
+        "metadata": metadata if isinstance(metadata, dict) else {},
+        "created_at": event.get("created_at", ""),
+        "severity": _audit_log_severity(event),
+    }
+
+
+def _audit_log_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    user_identifiers = {
+        str(event["user_identifier"])
+        for event in events
+        if event.get("user_identifier") not in {None, ""}
+    }
+    entity_keys = {
+        (str(event.get("entity_type")), str(event.get("entity_id")))
+        for event in events
+        if event.get("entity_type") not in {None, ""} and event.get("entity_id") not in {None, ""}
+    }
+    blocked_count = sum(1 for event in events if _audit_log_severity(event) == "blocked")
+    return {
+        "total": len(events),
+        "blocked": blocked_count,
+        "users": len(user_identifiers),
+        "entities": len(entity_keys),
+    }
+
+
+def _audit_log_export_query(filters: dict[str, object]) -> str:
+    query_items = [
+        (key, value)
+        for key in (
+            "action",
+            "entity_type",
+            "entity_id",
+            "user_identifier",
+            "created_from",
+            "created_to",
+        )
+        if (value := filters.get(key)) not in {None, ""}
+    ]
+    return urllib.parse.urlencode(query_items)
+
+
+def _audit_log_severity(event: dict[str, object]) -> str:
+    action = str(event.get("action") or "")
+    status_code = event.get("status_code")
+    if "blocked" in action or (isinstance(status_code, int) and status_code >= 400):
+        return "blocked"
+    if action.endswith("export"):
+        return "export"
+    return "normal"
 
 
 def _run_page_query(

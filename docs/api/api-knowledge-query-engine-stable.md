@@ -717,6 +717,18 @@ Kimi 主索引运行参数：
 
 导出操作日志 JSON，并记录 `operation-logs-export` 操作。
 
+### `GET /audit/logs`
+
+查询持久化审计日志 `audit_log_events`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。
+
+### `GET /audit/logs/export`
+
+导出持久化审计日志 JSON，并记录 `audit-logs-export` 操作。未配置数据库日志 store 时返回 `409`。默认导出上限为 `500` 条，可按同一组过滤参数缩小范围。
+
+### `GET /pages/audit-logs`
+
+审计日志台页面。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
+
 ## 7. CLI 命令
 
 ### `medical-audit-kb acceptance-run`

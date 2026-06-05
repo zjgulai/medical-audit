@@ -3091,6 +3091,176 @@ code,
   background: rgba(236, 253, 243, 0.78);
 }
 
+.audit-log-shell {
+  width: min(1320px, calc(100% - 32px));
+}
+
+.audit-log-hero {
+  min-height: 280px;
+  background:
+    linear-gradient(135deg, rgba(255, 252, 242, 0.96), rgba(235, 226, 209, 0.82)),
+    radial-gradient(circle at 88% 20%, rgba(34, 94, 75, 0.18), transparent 18rem),
+    radial-gradient(circle at 14% 15%, rgba(184, 70, 47, 0.12), transparent 20rem);
+}
+
+.audit-log-console strong {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  letter-spacing: -0.04em;
+}
+
+.audit-log-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.audit-log-filter-panel {
+  margin-top: 22px;
+}
+
+.audit-log-filter-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.audit-log-filter-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.audit-log-filter-form input {
+  width: 100%;
+}
+
+.audit-log-filter-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.audit-log-filter-actions a {
+  color: var(--muted);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.audit-log-timeline {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.audit-log-event {
+  position: relative;
+  overflow: hidden;
+}
+
+.audit-log-event::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  content: "";
+  background: var(--green);
+}
+
+.audit-log-event.blocked::before {
+  background: var(--danger);
+}
+
+.audit-log-event.export::before {
+  background: var(--gold);
+}
+
+.audit-log-event-header {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.audit-log-event-header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+}
+
+.audit-log-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 252, 242, 0.86);
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-weight: 900;
+}
+
+.audit-log-event.blocked .audit-log-status {
+  color: #fff8e8;
+  background: var(--danger);
+}
+
+.audit-log-kv,
+.audit-log-payload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.audit-log-kv div,
+.audit-log-payload dl div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 252, 242, 0.62);
+}
+
+.audit-log-kv dt,
+.audit-log-payload dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.audit-log-kv dd,
+.audit-log-payload dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.audit-log-payload {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.audit-log-payload summary {
+  cursor: pointer;
+  color: var(--accent-dark);
+  font-weight: 900;
+}
+
+.audit-log-payload h3 {
+  margin: 14px 0 10px;
+}
+
+.audit-log-payload dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
 @media print {
   body,
   .page-chat {
@@ -3160,6 +3330,9 @@ code,
   .signed-report-summary,
   .rectification-summary,
   .review-task-summary,
+  .audit-log-filter-form,
+  .audit-log-kv,
+  .audit-log-payload-grid,
   .workbench-grid,
   .chat-layout,
   .answer-grid,

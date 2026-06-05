@@ -16,6 +16,7 @@
           <a href="/pages/query">查询工作台</a>
           <a href="/pages/audit-findings">疑点清单</a>
           <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/audit-logs">审计日志</a>
           <a href="/pages/index-admin" aria-current="page">索引管理</a>
         </div>
         <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
@@ -259,7 +260,11 @@
 
       <section class="panel">
         <h2>操作日志</h2>
-        <p><a class="text-link" href="/operation/logs/export">导出操作日志 JSON</a></p>
+        <p>
+          <a class="text-link" href="/pages/audit-logs">查看持久化审计日志台</a>
+          ·
+          <a class="text-link" href="/operation/logs/export">导出操作日志 JSON（进程内最近）</a>
+        </p>
         <ul class="compact-list">
           {% for item in operation_logs %}
             <li>{{ item.action }}</li>
