@@ -242,6 +242,12 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     blocked_report_response = client.get("/review-tasks/review-task-0001/report-draft")
     assert blocked_report_response.status_code == 409
     assert blocked_report_response.json()["detail"] == ("review task is not ready for report draft")
+    blocked_signoff_response = client.post(
+        "/pages/review-tasks/review-task-0001/report-signoff",
+        data={"signed_by": "审计科负责人A"},
+        follow_redirects=False,
+    )
+    assert blocked_signoff_response.status_code == 409
 
     update_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
@@ -436,6 +442,100 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert report_body["attachments"][0]["title"] == "HIS收费明细导出"
     assert report_body["attachments"][2]["status"] == "uploaded"
     assert report_body["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
+
+    unsigned_report_response = client.get("/review-tasks/review-task-0001/signed-report")
+    assert unsigned_report_response.status_code == 409
+    assert unsigned_report_response.json()["detail"] == "review task report is not signed"
+
+    signoff_response = client.post(
+        "/pages/review-tasks/review-task-0001/report-signoff",
+        data={
+            "signed_by": "审计科负责人A",
+            "signoff_note": "报告正文、附件和负责人确认已核验。",
+        },
+        follow_redirects=False,
+    )
+    assert signoff_response.status_code == 303
+    signed_task = _review_tasks(state)[0]
+    signed_dossier = signed_task["dossier"]
+    assert isinstance(signed_dossier, dict)
+    signed_report = signed_dossier["signed_report"]
+    assert isinstance(signed_report, dict)
+    assert signed_report["status"] == "signed"
+    assert str(signed_report["report_id"]).startswith("signed-report-")
+    assert signed_report["signed_by"] == "审计科负责人A"
+    assert signed_report["signoff_note"] == "报告正文、附件和负责人确认已核验。"
+    signed_content = str(signed_report["content"])
+    assert "# AuditScope 审计报告草稿" in signed_content
+    assert "同就诊同项目重复收费复核报告草稿" in signed_content
+    assert (
+        signed_report["content_sha256"]
+        == hashlib.sha256(signed_content.encode("utf-8")).hexdigest()
+    )
+    assert signed_report["attachment_count"] == 3
+    assert str(state.operation_logs[-1]["action"]) == "review-task-report-signoff"
+
+    signed_page_response = client.get("/pages/review-tasks")
+    assert signed_page_response.status_code == 200
+    assert "正式报告已签发" in signed_page_response.text
+    assert "下载正式报告 Markdown" in signed_page_response.text
+    assert str(signed_report["content_sha256"]) in signed_page_response.text
+
+    signed_markdown_response = client.get("/review-tasks/review-task-0001/signed-report")
+    assert signed_markdown_response.status_code == 200
+    assert signed_markdown_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-signed-report.md"'
+    )
+    assert signed_markdown_response.text == signed_content
+
+    signed_json_response = client.get(
+        "/review-tasks/review-task-0001/signed-report",
+        params={"format": "json"},
+    )
+    assert signed_json_response.status_code == 200
+    assert signed_json_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-signed-report.json"'
+    )
+    signed_body = signed_json_response.json()
+    assert signed_body["format"] == "review-task-signed-report-v1"
+    assert signed_body["signed_report"]["content_sha256"] == signed_report["content_sha256"]
+    assert signed_body["signed_report"]["content"] == signed_content
+
+    duplicate_signoff_response = client.post(
+        "/pages/review-tasks/review-task-0001/report-signoff",
+        data={"signed_by": "审计科负责人A"},
+        follow_redirects=False,
+    )
+    assert duplicate_signoff_response.status_code == 409
+    assert duplicate_signoff_response.json()["detail"] == "review task report is already signed"
+
+    edit_after_signoff_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "confirmed-violation",
+            "assigned_to": "审计员A",
+            "reviewer_note": "签发后补充编辑不应改变正式报告。",
+            "conclusion": "疑似违规线索成立，进入人工复核。",
+            "workpaper_status": "ready",
+            "workpaper_id": "workpaper-20260604-001",
+            "workpaper_note": "底稿已核对引用、原文和 HIS 凭证位置。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "审计科负责人A",
+            "owner_confirmed_at": "2026-06-04T12:00:00Z",
+            "attachment_manifest": (
+                "HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏\n"
+                "复核签字单 | /evidence/signoff.pdf | 负责人确认"
+            ),
+            "report_title": "后续编辑不应改写已签发报告",
+            "report_summary": "后续编辑不应影响签发正文。",
+            "rectification_request": "后续编辑不应影响签发正文。",
+        },
+        follow_redirects=False,
+    )
+    assert edit_after_signoff_response.status_code == 303
+    frozen_markdown_response = client.get("/review-tasks/review-task-0001/signed-report")
+    assert frozen_markdown_response.status_code == 200
+    assert frozen_markdown_response.text == signed_content
 
 
 def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
@@ -710,6 +810,7 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert "@media print" in response.text
     assert ".copy-citation-button" in response.text
     assert ".review-attachment-archive" in response.text
+    assert ".review-report-signoff" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:

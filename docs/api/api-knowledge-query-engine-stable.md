@@ -86,7 +86,7 @@ Query 参数：
 
 服务端模板复核任务台。默认使用 PostgreSQL `review_tasks`、`review_actions` 持久化任务记录和状态流转，用于把单轮对话底稿沉淀为可追踪复核项；测试和应急路径仍保留 JSON store，但不作为生产默认存储。
 
-当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、附件文件归档、任务级导出和报告草稿导出，但仍不替代完整案件系统、权限系统、对象存储、病毒扫描、正式报告签发或整改跟踪。
+当前边界：该任务台已经具备数据库持久化、任务级报告准备度预检、负责人确认记录、附件清单登记、附件文件归档、任务级导出、报告草稿导出和任务级正式报告签发冻结，但仍不替代完整案件系统、权限系统、对象存储、病毒扫描、电子签章或整改跟踪。
 
 页面展示：
 
@@ -96,6 +96,7 @@ Query 参数：
 - 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人、确认时间、手工附件清单、附件文件上传归档、报告标题、报告摘要和整改建议编辑表单。
 - 任务级 Markdown/JSON 导出入口。
 - 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
+- 正式报告签发入口。签发会冻结当前报告草稿 Markdown 正文并保存 `sha256`，签发后不能重复签发。
 
 ### `POST /pages/review-tasks/create`
 
@@ -230,6 +231,50 @@ Query 参数：
 - `200`：导出成功。
 - `404`：任务不存在。
 - `409`：任务未通过报告门禁。
+
+### `POST /pages/review-tasks/{task_id}/report-signoff`
+
+签发任务级正式报告。该接口只在任务级报告门禁通过后可用；签发后会冻结当前报告草稿 Markdown 正文，写入 `dossier.signed_report`。
+
+Form 字段：
+
+- `signed_by`：必填，签发人。
+- `signoff_note`：可选，签发说明。
+
+签发元数据：
+
+- `format`：`review-task-signed-report-v1`。
+- `report_id`：服务端生成的正式报告编号。
+- `signed_by`、`signed_at`、`signoff_note`。
+- `content_sha256`、`content_byte_size`、`content_media_type`。
+- `attachment_count`。
+- `content`：签发时冻结的 Markdown 正文。
+
+状态码：
+
+- `303`：签发成功，跳转 `/pages/review-tasks`。
+- `404`：任务不存在。
+- `409`：任务未通过报告门禁，或该任务已经签发。
+- `422`：缺少签发人。
+
+### `GET /review-tasks/{task_id}/signed-report`
+
+下载已签发正式报告，支持 JSON 和 Markdown 两种格式。下载内容来自签发时冻结的 `dossier.signed_report.content`，不会因后续编辑报告草稿而变化。
+
+Query 参数：
+
+- `format`：`json` 或 `markdown`，默认 `markdown`。
+
+响应：
+
+- `format=json`：`application/json`，下载文件名 `{task_id}-signed-report.json`。
+- `format=markdown`：`text/markdown`，下载文件名 `{task_id}-signed-report.md`。
+
+状态码：
+
+- `200`：下载成功。
+- `404`：任务不存在。
+- `409`：任务尚未签发。
 
 ### `GET /pages/query`
 
