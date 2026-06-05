@@ -2679,6 +2679,88 @@ code,
   font-weight: 760;
 }
 
+.review-attachment-archive {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(34, 94, 75, 0.16);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 242, 0.88), rgba(239, 247, 238, 0.68));
+}
+
+.review-attachment-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.review-attachment-head h3 {
+  margin: 0;
+}
+
+.review-attachment-head > span {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 252, 242, 0.78);
+  font-size: 0.8rem;
+  font-weight: 820;
+}
+
+.review-attachment-upload-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.review-attachment-upload-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.review-attachment-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.review-attachment-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 252, 242, 0.74);
+}
+
+.review-attachment-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.review-attachment-list span,
+.review-attachment-list small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.review-attachment-list a {
+  white-space: nowrap;
+}
+
+.empty-attachment-row {
+  color: var(--muted);
+}
+
 .findings-hero {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 244, 0.82)),
@@ -2893,6 +2975,7 @@ code,
   .example-question-grid,
   .gate-check-list,
   .review-governance-grid,
+  .review-attachment-upload-form,
   .review-report-draft-grid,
   .review-task-summary,
   .workbench-grid,

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
@@ -78,6 +79,8 @@ OWNER_SIGNOFF_STATUS_LABELS: dict[str, str] = {
     "approved": "负责人已确认",
     "rejected": "退回复核",
 }
+REVIEW_TASK_ATTACHMENT_DIR = "review-task-attachments"
+REVIEW_TASK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
 SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
     SourceCollection.MEDICAL_INSURANCE_LAWS: {
@@ -384,6 +387,76 @@ async def update_review_task_status_page(
         {"task_id": task_id, "status": status},
     )
     return RedirectResponse("/pages/review-tasks", status_code=303)
+
+
+@router.post("/pages/review-tasks/{task_id}/attachments")
+async def upload_review_task_attachment_page(
+    task_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    attachment_file: Annotated[UploadFile, File()],
+    attachment_title: Annotated[str | None, Form()] = None,
+    attachment_note: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    task = _review_task_by_id(state, task_id)
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    attachment = await _archive_review_task_attachment(
+        state=state,
+        task_id=task_id,
+        upload=attachment_file,
+        title=attachment_title,
+        note=attachment_note,
+    )
+    dossier["attachments"] = [*_attachment_items(dossier), attachment]
+    _update_review_task(
+        state,
+        task_id,
+        {
+            "dossier": dossier,
+            "updated_at": _utc_now_iso(),
+        },
+    )
+    record_operation(
+        state,
+        "review-task-attachment-upload",
+        {
+            "task_id": task_id,
+            "attachment_id": attachment["attachment_id"],
+            "byte_size": attachment["byte_size"],
+            "sha256": attachment["sha256"],
+        },
+    )
+    return RedirectResponse("/pages/review-tasks", status_code=303)
+
+
+@router.get("/review-tasks/{task_id}/attachments/{attachment_id}/download")
+def download_review_task_attachment(
+    task_id: str,
+    attachment_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> FileResponse:
+    task = _review_task_by_id(state, task_id)
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    attachment = _review_task_attachment_by_id(dossier, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="review task attachment not found")
+    storage_path = str(attachment.get("storage_path", "")).strip()
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="review task attachment file not archived")
+    file_path = _resolve_review_task_attachment_path(state, storage_path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="review task attachment file not found")
+    record_operation(
+        state,
+        "review-task-attachment-download",
+        {"task_id": task_id, "attachment_id": attachment_id},
+    )
+    return FileResponse(
+        path=file_path,
+        media_type=str(attachment.get("media_type") or "application/octet-stream"),
+        filename=str(
+            attachment.get("original_filename") or attachment.get("title") or file_path.name
+        ),
+    )
 
 
 @router.get("/review-tasks/{task_id}/export")
@@ -1051,7 +1124,7 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "dossier": dossier,
         "workpaper": _workpaper_context(dossier),
         "owner_signoff": _owner_signoff_context(dossier),
-        "attachments": _attachment_items(dossier),
+        "attachments": _attachment_items_for_page(str(task.get("task_id", "")), dossier),
         "attachment_manifest": _attachment_manifest_text(dossier),
         "report_draft": _report_draft_context(dossier, task),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
@@ -1146,9 +1219,10 @@ def _review_task_dossier_from_form(
         "confirmed_by": _form_optional_str(form, "owner_confirmed_by"),
         "confirmed_at": _form_optional_str(form, "owner_confirmed_at"),
     }
-    dossier["attachments"] = _parse_attachment_manifest(
-        _form_optional_str(form, "attachment_manifest")
-    )
+    dossier["attachments"] = [
+        *_parse_attachment_manifest(_form_optional_str(form, "attachment_manifest")),
+        *_uploaded_attachment_items(dossier),
+    ]
     dossier["report_draft"] = {
         "title": _form_optional_str(form, "report_title"),
         "summary": _form_optional_str(form, "report_summary"),
@@ -1231,21 +1305,57 @@ def _attachment_items(dossier: dict[str, object]) -> tuple[dict[str, object], ..
         title = str(item.get("title", "")).strip()
         if not title:
             continue
-        attachments.append(
-            {
-                "attachment_id": str(item.get("attachment_id") or f"attachment-{index:03d}"),
-                "title": title,
-                "locator": str(item.get("locator", "")).strip(),
-                "note": str(item.get("note", "")).strip(),
-                "status": str(item.get("status", "registered") or "registered"),
-            }
-        )
+        attachment: dict[str, object] = {
+            "attachment_id": str(item.get("attachment_id") or f"attachment-{index:03d}"),
+            "title": title,
+            "locator": str(item.get("locator", "")).strip(),
+            "note": str(item.get("note", "")).strip(),
+            "status": str(item.get("status", "registered") or "registered"),
+        }
+        for key in (
+            "original_filename",
+            "media_type",
+            "sha256",
+            "storage_path",
+            "uploaded_at",
+        ):
+            value = str(item.get(key, "")).strip()
+            if value:
+                attachment[key] = value
+        byte_size = item.get("byte_size")
+        if isinstance(byte_size, int) and byte_size >= 0:
+            attachment["byte_size"] = byte_size
+        attachments.append(attachment)
+    return tuple(attachments)
+
+
+def _uploaded_attachment_items(dossier: dict[str, object]) -> tuple[dict[str, object], ...]:
+    return tuple(
+        item for item in _attachment_items(dossier) if str(item.get("storage_path", "")).strip()
+    )
+
+
+def _attachment_items_for_page(
+    task_id: str,
+    dossier: dict[str, object],
+) -> tuple[dict[str, object], ...]:
+    attachments: list[dict[str, object]] = []
+    for item in _attachment_items(dossier):
+        attachment = dict(item)
+        if str(attachment.get("storage_path", "")).strip():
+            attachment["download_url"] = (
+                f"/review-tasks/{urllib.parse.quote(task_id)}/attachments/"
+                f"{urllib.parse.quote(str(attachment['attachment_id']))}/download"
+            )
+        attachments.append(attachment)
     return tuple(attachments)
 
 
 def _attachment_manifest_text(dossier: dict[str, object]) -> str:
     lines = []
     for item in _attachment_items(dossier):
+        if str(item.get("storage_path", "")).strip():
+            continue
         lines.append(f"{item['title']} | {item['locator']} | {item['note']}".rstrip(" |"))
     return "\n".join(lines)
 
@@ -1269,6 +1379,82 @@ def _parse_attachment_manifest(raw_manifest: str) -> list[dict[str, object]]:
             }
         )
     return attachments
+
+
+async def _archive_review_task_attachment(
+    *,
+    state: ApiState,
+    task_id: str,
+    upload: UploadFile,
+    title: str | None,
+    note: str | None,
+) -> dict[str, object]:
+    content = await upload.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="attachment file is empty")
+    if len(content) > REVIEW_TASK_ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="attachment file is too large")
+
+    digest = hashlib.sha256(content).hexdigest()
+    original_filename = Path(upload.filename or "attachment").name
+    attachment_id = f"attachment-{uuid4().hex[:12]}"
+    storage_root = _review_task_attachment_root(state, task_id)
+    storage_root.mkdir(parents=True, exist_ok=True)
+    storage_filename = f"{attachment_id}{_safe_attachment_suffix(original_filename)}"
+    file_path = storage_root / storage_filename
+    file_path.write_bytes(content)
+    storage_path = file_path.relative_to(state.settings.index_root).as_posix()
+    display_title = (title or "").strip() or original_filename or attachment_id
+    return {
+        "attachment_id": attachment_id,
+        "title": display_title,
+        "locator": f"uploaded://{task_id}/{attachment_id}",
+        "note": (note or "").strip(),
+        "status": "uploaded",
+        "original_filename": original_filename,
+        "media_type": upload.content_type or "application/octet-stream",
+        "byte_size": len(content),
+        "sha256": digest,
+        "storage_path": storage_path,
+        "uploaded_at": _utc_now_iso(),
+    }
+
+
+def _review_task_attachment_root(state: ApiState, task_id: str) -> Path:
+    return state.settings.index_root / REVIEW_TASK_ATTACHMENT_DIR / _safe_path_segment(task_id)
+
+
+def _resolve_review_task_attachment_path(state: ApiState, storage_path: str) -> Path:
+    archive_root = (state.settings.index_root / REVIEW_TASK_ATTACHMENT_DIR).resolve()
+    file_path = (state.settings.index_root / storage_path).resolve()
+    try:
+        file_path.relative_to(archive_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="review task attachment path invalid") from exc
+    return file_path
+
+
+def _review_task_attachment_by_id(
+    dossier: dict[str, object],
+    attachment_id: str,
+) -> dict[str, object] | None:
+    for attachment in _attachment_items(dossier):
+        if attachment.get("attachment_id") == attachment_id:
+            return attachment
+    return None
+
+
+def _safe_attachment_suffix(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    if not suffix or len(suffix) > 16:
+        return ""
+    if all(char.isalnum() or char == "." for char in suffix):
+        return suffix
+    return ""
+
+
+def _safe_path_segment(value: str) -> str:
+    return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
 
 
 def _report_draft_context(
