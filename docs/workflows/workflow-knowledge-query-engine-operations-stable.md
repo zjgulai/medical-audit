@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-operations
 status: stable
 created: 2026-05-31
-updated: 2026-06-04
+updated: 2026-06-05
 owner: self
 source: human+ai
 ---
@@ -981,4 +981,5 @@ JSON 报告必须满足：
 - 显式传入的 `--archive-output` 或 `--signature-output` 不得逃出 `--archive-root`；`--archive-batch-key` 不得包含路径分隔符或越权路径片段。
 - 审计日志归档必须可通过 `audit-log-archive-verify` 只读验签；归档文件被篡改时必须返回 FAIL 并报告 `archive sha256 mismatch`。
 - 受控 archive root 必须可通过 `audit-log-archive-audit` 递归巡检；归档文件缺失、路径逃逸、sha256 不匹配或签名失败必须返回 FAIL 报告。
-- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移和后台调度编排仍需单独上线。
+- 生产部署必须通过 `scripts/run-audit-log-archive-audit.py` 将 archive root 巡检接入定时任务；该脚本只读执行，生成带时间戳报告并维护 `audit-log-archive-audit-latest.json`，cron 或外部监控必须按退出码告警。
+- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移、远端定时任务实际启用和外部告警接入仍需单独上线。

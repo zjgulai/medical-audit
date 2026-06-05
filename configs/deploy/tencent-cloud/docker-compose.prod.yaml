@@ -51,11 +51,17 @@ services:
       KIMI_EMBEDDING_DIMENSION: "1024"
       KIMI_EMBEDDING_BASE_URL: https://api.kimi.com/coding/v1
       KIMI_EMBEDDING_BATCH_SIZE: "16"
+      MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT: /app/audit-log-archive
+      MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR: /app/audit-reports
+      MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET_ENV: MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET
+      MEDICAL_AUDIT_AUDIT_LOG_MIN_MANIFEST_COUNT: "0"
     ports:
       - "127.0.0.1:18080:8000"
     volumes:
       - ../../../data:/app/data:ro
       - ../../../tmp/knowledge-query-indexes:/app/tmp/knowledge-query-indexes
+      - ${MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT_HOST:-/opt/medical-audit/audit-log-archive}:/app/audit-log-archive
+      - ${MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR_HOST:-/opt/medical-audit/audit-reports}:/app/audit-reports
     depends_on:
       postgres:
         condition: service_healthy
