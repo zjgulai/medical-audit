@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from medical_audit_kb.cli import main
 from medical_audit_kb.db.engine import create_schema, create_session_factory
-from medical_audit_kb.db.models import AuditDataSnapshot, HisStagingRow
+from medical_audit_kb.db.models import AuditDataSnapshot, AuditLogEvent, HisStagingRow
 from medical_audit_kb.db.repositories import AuditWorkflowRepository, HisIngestionRepository
 from medical_audit_kb.domain.schemas import (
     AuditProjectCreate,
@@ -439,6 +440,95 @@ def test_his_snapshot_apply_command_dry_runs_then_executes(
     assert '"execute_requested": true' in execute_json_body
     assert '"executed": true' in execute_json_body
     assert asyncio.run(_audit_data_snapshot_count(database_url)) == 1
+
+
+def test_audit_log_retention_command_dry_runs_without_deleting_events(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention.db'}"
+    old_event_id, _new_event_id = asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+    report_path = tmp_path / "audit-log-retention-dry-run.md"
+    json_path = tmp_path / "audit-log-retention-dry-run.json"
+
+    exit_code = main(
+        [
+            "audit-log-retention",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--retention-days",
+            "180",
+            "--now",
+            "2026-06-05T00:00:00Z",
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert "审计日志保留归档报告" in report_path.read_text(encoding="utf-8")
+    assert result["mode"] == "dry-run"
+    assert result["execute_requested"] is False
+    assert result["executed"] is False
+    assert result["expired_event_count"] == 1
+    assert result["archived_event_count"] == 0
+    assert result["deleted_event_count"] == 0
+    assert result["expired_events"][0]["event_id"] == old_event_id
+    assert asyncio.run(_audit_log_event_count(database_url)) == 2
+
+
+def test_audit_log_retention_command_archives_then_deletes_expired_events(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention.db'}"
+    old_event_id, new_event_id = asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+    report_path = tmp_path / "audit-log-retention-execute.md"
+    json_path = tmp_path / "audit-log-retention-execute.json"
+    archive_path = tmp_path / "archive" / "audit-log-retention.jsonl"
+
+    exit_code = main(
+        [
+            "audit-log-retention",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--retention-days",
+            "180",
+            "--now",
+            "2026-06-05T00:00:00Z",
+            "--archive-output",
+            str(archive_path),
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+            "--execute",
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    archive_rows = [
+        json.loads(line) for line in archive_path.read_text(encoding="utf-8").splitlines()
+    ]
+    remaining_event_ids = asyncio.run(_audit_log_event_ids(database_url))
+    assert exit_code == 0
+    assert result["mode"] == "execute"
+    assert result["execute_requested"] is True
+    assert result["executed"] is True
+    assert result["expired_event_count"] == 1
+    assert result["archived_event_count"] == 1
+    assert result["deleted_event_count"] == 1
+    assert result["archive_output"] == str(archive_path)
+    assert isinstance(result["archive_sha256"], str)
+    assert len(result["archive_sha256"]) == 64
+    assert archive_rows[0]["event_id"] == old_event_id
+    assert archive_rows[0]["payload"]["api_key"] == "raw-secret"
+    assert remaining_event_ids == [new_event_id]
 
 
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
@@ -1069,6 +1159,69 @@ async def _his_staging_row_count(database_url: str) -> int:
         async with session_factory() as session:
             result = await session.execute(select(HisStagingRow))
             return len(result.scalars().all())
+    finally:
+        await engine.dispose()
+
+
+async def _seed_audit_log_events(database_url: str) -> tuple[str, str]:
+    engine = create_async_engine(database_url)
+    try:
+        await create_schema(engine)
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session, session.begin():
+            old_event = AuditLogEvent(
+                action="query",
+                entity_type="operation",
+                entity_id="query",
+                user_identifier="auditor-old",
+                role="auditor",
+                status_code=200,
+                endpoint="/query",
+                reason=None,
+                payload={"question": "医保基金审核依据", "api_key": "raw-secret"},
+                extra_metadata={"source": "fixture"},
+                created_at=datetime(2025, 11, 30, 12, 0, 0, tzinfo=UTC),
+            )
+            new_event = AuditLogEvent(
+                action="audit-logs-export",
+                entity_type="operation",
+                entity_id="audit-logs-export",
+                user_identifier="admin-new",
+                role="it-admin",
+                status_code=200,
+                endpoint="/audit/logs/export",
+                reason=None,
+                payload={"limit": 100},
+                extra_metadata={"source": "fixture"},
+                created_at=datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC),
+            )
+            session.add_all([old_event, new_event])
+            await session.flush()
+            return str(old_event.id), str(new_event.id)
+    finally:
+        await engine.dispose()
+
+
+async def _audit_log_event_count(database_url: str) -> int:
+    engine = create_async_engine(database_url)
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session:
+            result = await session.execute(select(AuditLogEvent))
+            return len(result.scalars().all())
+    finally:
+        await engine.dispose()
+
+
+async def _audit_log_event_ids(database_url: str) -> list[str]:
+    engine = create_async_engine(database_url)
+    try:
+        session_factory = create_session_factory(engine)
+        async with session_factory() as session:
+            result = await session.execute(
+                select(AuditLogEvent).order_by(AuditLogEvent.created_at.asc())
+            )
+            return [str(event.id) for event in result.scalars().all()]
     finally:
         await engine.dispose()
 

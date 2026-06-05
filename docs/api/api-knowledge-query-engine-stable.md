@@ -719,7 +719,7 @@ Kimi 主索引运行参数：
 
 ### `GET /audit/logs`
 
-查询持久化审计日志 `audit_log_events`。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。响应会对 `api_key`、`authorization`、`credential`、`password`、`secret`、`token` 等敏感字段做 response-only 脱敏，当前策略保留周期为 `180` 天。
+查询持久化审计日志 `audit_log_events`。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。响应会对 `api_key`、`authorization`、`credential`、`password`、`secret`、`token` 等敏感字段做 response-only 脱敏，当前策略保留周期为 `180` 天，保留期外事件通过 `medical-audit-kb audit-log-retention` 执行显式归档和清理。
 
 ### `GET /audit/logs/export`
 
@@ -729,7 +729,7 @@ Kimi 主索引运行参数：
 
 审计日志台页面。需要认证代理或 API client 注入 `X-Role: it-admin` 或 `X-Role: department-head` 后才展示事件；未授权角色只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
 
-当前未完成：审计日志后台自动清理、归档、不可抵赖签名和长期留存介质迁移。
+当前未完成：审计日志不可抵赖签名、长期留存介质迁移和后台调度编排。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
 ## 7. CLI 命令
 
@@ -860,6 +860,36 @@ Kimi 主索引运行参数：
 - candidate-only 指标：`index_version_key=full-rebuild-20260603085815`，`recall@5=100%`，`citation_hit_rate=100%`，`preview_location_success_rate=100%`
 
 限制：当前 shell 未设置 `KIMI_API_KEY`，因此尚未运行固定 52 case 的真实 pgvector+Kimi 查询向量评测。
+
+### `medical-audit-kb audit-log-retention`
+
+对 `audit_log_events` 执行保留期归档和清理。默认 dry-run，只输出 Markdown/JSON 计划，不写归档文件、不删除数据库行；只有显式传入 `--execute` 时才会先写 JSONL 归档，再删除本批次过期事件。
+
+核心参数：
+
+- `--database-url-env`: 默认 `MEDICAL_AUDIT_KB_DATABASE_URL`
+- `--retention-days`: 默认 `180`
+- `--now`: 可选 ISO-8601 时间，用于测试或固定审计 cutoff
+- `--limit`: 单批最多处理的过期事件数，默认 `1000`
+- `--archive-output`: `--execute` 且存在过期事件时必填
+- `--output`
+- `--json-output`
+- `--execute`: 执行写归档和删除；不传时为 dry-run
+- `--create-schema`: 仅用于本地 fixture
+
+输出核心字段：
+
+- `mode`: `dry-run | execute`
+- `cutoff`
+- `expired_event_count`
+- `archived_event_count`
+- `deleted_event_count`
+- `archive_output`
+- `archive_sha256`
+- `action_counts`
+- `entity_type_counts`
+
+归档文件为原始审计事件 JSONL，用于受控证据留存，不应用 response-only 脱敏。该文件必须存放在限制访问的归档介质；普通页面查询和 API 导出仍只返回脱敏结果。
 
 ### `medical-audit-kb ui-smoke`
 
