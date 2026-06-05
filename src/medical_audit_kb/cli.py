@@ -15,9 +15,12 @@ from medical_audit_kb.acceptance.reports import (
 )
 from medical_audit_kb.api.audit_log_policy import AUDIT_LOG_RETENTION_DAYS
 from medical_audit_kb.audit.audit_log_retention import (
+    audit_log_archive_signature_verify_result_json,
     audit_log_retention_result_json,
+    render_audit_log_archive_signature_verify_markdown,
     render_audit_log_retention_markdown,
     run_audit_log_retention_to_database,
+    verify_audit_log_archive_signature,
 )
 from medical_audit_kb.audit.case_review_report_gate import (
     RESOLVED_REVIEW_STATUSES,
@@ -194,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
         return _case_review_report_gate(args)
     if args.command == "audit-log-retention":
         return _audit_log_retention(args)
+    if args.command == "audit-log-archive-verify":
+        return _audit_log_archive_verify(args)
     if args.command == "his-staging-import":
         return _his_staging_import(args)
     if args.command == "charge-rule-001-staging-run":
@@ -481,6 +486,11 @@ def _build_parser() -> argparse.ArgumentParser:
     audit_log_retention.add_argument("--now")
     audit_log_retention.add_argument("--limit", type=int, default=1000)
     audit_log_retention.add_argument("--archive-output", type=Path)
+    audit_log_retention.add_argument("--signature-output", type=Path)
+    audit_log_retention.add_argument("--signing-secret-env")
+    audit_log_retention.add_argument("--signing-key-id")
+    audit_log_retention.add_argument("--signing-subject")
+    audit_log_retention.add_argument("--previous-signature-sha256")
     audit_log_retention.add_argument("--output", required=True, type=Path)
     audit_log_retention.add_argument("--json-output", type=Path)
     audit_log_retention.add_argument(
@@ -493,6 +503,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Create SQLAlchemy schema before running. Intended for local fixtures only.",
     )
+
+    audit_log_archive_verify = subparsers.add_parser(
+        "audit-log-archive-verify",
+        help="Verify a signed audit log archive JSONL against its detached manifest.",
+    )
+    audit_log_archive_verify.add_argument("--archive-output", required=True, type=Path)
+    audit_log_archive_verify.add_argument("--signature-manifest", required=True, type=Path)
+    audit_log_archive_verify.add_argument("--signing-secret-env", required=True)
+    audit_log_archive_verify.add_argument("--output", required=True, type=Path)
+    audit_log_archive_verify.add_argument("--json-output", type=Path)
 
     his_staging_import = subparsers.add_parser(
         "his-staging-import",
@@ -923,6 +943,13 @@ def _audit_log_retention(args: argparse.Namespace) -> int:
                 database_url=_database_url_from_env(args.database_url_env),
                 retention_days=args.retention_days,
                 archive_output=args.archive_output,
+                signature_output=args.signature_output,
+                signing_secret=(
+                    _secret_from_env(args.signing_secret_env) if args.signing_secret_env else None
+                ),
+                signing_key_id=args.signing_key_id,
+                signing_subject=args.signing_subject,
+                previous_signature_sha256=args.previous_signature_sha256,
                 now=_datetime_arg(args.now, name="now") if args.now else None,
                 limit=args.limit,
                 execute=args.execute,
@@ -934,6 +961,21 @@ def _audit_log_retention(args: argparse.Namespace) -> int:
     _write_text(args.output, render_audit_log_retention_markdown(result))
     if args.json_output is not None:
         _write_text(args.json_output, audit_log_retention_result_json(result))
+    return 0 if result.status == "pass" else 2
+
+
+def _audit_log_archive_verify(args: argparse.Namespace) -> int:
+    try:
+        result = verify_audit_log_archive_signature(
+            archive_output=args.archive_output,
+            signature_manifest=args.signature_manifest,
+            signing_secret=_secret_from_env(args.signing_secret_env),
+        )
+    except ValueError as exc:
+        _die(str(exc))
+    _write_text(args.output, render_audit_log_archive_signature_verify_markdown(result))
+    if args.json_output is not None:
+        _write_text(args.json_output, audit_log_archive_signature_verify_result_json(result))
     return 0 if result.status == "pass" else 2
 
 
@@ -1130,6 +1172,15 @@ def _database_url_from_env(env_name: str) -> str:
     if not database_url:
         _die(f"missing database url env: {env_name}")
     return database_url
+
+
+def _secret_from_env(env_name: str) -> str:
+    import os
+
+    secret = os.getenv(env_name)
+    if not secret:
+        _die(f"missing secret env: {env_name}")
+    return secret
 
 
 def _json_object_arg(value: str, *, name: str) -> dict[str, object]:
