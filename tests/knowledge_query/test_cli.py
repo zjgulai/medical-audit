@@ -531,6 +531,111 @@ def test_audit_log_retention_command_archives_then_deletes_expired_events(
     assert remaining_event_ids == [new_event_id]
 
 
+def test_audit_log_retention_command_signs_archive_and_detects_tampering(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'audit-log-retention.db'}"
+    asyncio.run(_seed_audit_log_events(database_url))
+    monkeypatch.setenv("MEDICAL_AUDIT_TEST_DATABASE_URL", database_url)
+    monkeypatch.setenv("MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET", "test-signing-secret")
+    report_path = tmp_path / "audit-log-retention-signed.md"
+    json_path = tmp_path / "audit-log-retention-signed.json"
+    archive_path = tmp_path / "archive" / "audit-log-retention.jsonl"
+    signature_path = tmp_path / "archive" / "audit-log-retention.signature.json"
+
+    exit_code = main(
+        [
+            "audit-log-retention",
+            "--database-url-env",
+            "MEDICAL_AUDIT_TEST_DATABASE_URL",
+            "--retention-days",
+            "180",
+            "--now",
+            "2026-06-05T00:00:00Z",
+            "--archive-output",
+            str(archive_path),
+            "--signature-output",
+            str(signature_path),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--signing-key-id",
+            "audit-log-hmac-v1",
+            "--signing-subject",
+            "it-admin:retention",
+            "--previous-signature-sha256",
+            "0" * 64,
+            "--output",
+            str(report_path),
+            "--json-output",
+            str(json_path),
+            "--execute",
+        ]
+    )
+
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+    signature_text = signature_path.read_text(encoding="utf-8")
+    signature = json.loads(signature_text)
+    verify_path = tmp_path / "audit-log-archive-verify.md"
+    verify_json_path = tmp_path / "audit-log-archive-verify.json"
+    verify_exit_code = main(
+        [
+            "audit-log-archive-verify",
+            "--archive-output",
+            str(archive_path),
+            "--signature-manifest",
+            str(signature_path),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--output",
+            str(verify_path),
+            "--json-output",
+            str(verify_json_path),
+        ]
+    )
+    archive_path.write_text(
+        archive_path.read_text(encoding="utf-8") + "{}\n",
+        encoding="utf-8",
+    )
+    tamper_json_path = tmp_path / "audit-log-archive-verify-tamper.json"
+    tamper_exit_code = main(
+        [
+            "audit-log-archive-verify",
+            "--archive-output",
+            str(archive_path),
+            "--signature-manifest",
+            str(signature_path),
+            "--signing-secret-env",
+            "MEDICAL_AUDIT_ARCHIVE_SIGNING_SECRET",
+            "--output",
+            str(tmp_path / "audit-log-archive-verify-tamper.md"),
+            "--json-output",
+            str(tamper_json_path),
+        ]
+    )
+
+    verify_result = json.loads(verify_json_path.read_text(encoding="utf-8"))
+    tamper_result = json.loads(tamper_json_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert result["signature_manifest_output"] == str(signature_path)
+    assert isinstance(result["signature_manifest_sha256"], str)
+    assert len(result["signature_manifest_sha256"]) == 64
+    assert signature["algorithm"] == "hmac-sha256"
+    assert signature["key_id"] == "audit-log-hmac-v1"
+    assert signature["signing_subject"] == "it-admin:retention"
+    assert signature["previous_signature_sha256"] == "0" * 64
+    assert signature["archive_sha256"] == result["archive_sha256"]
+    assert "test-signing-secret" not in signature_text
+    assert verify_exit_code == 0
+    assert verify_result["status"] == "pass"
+    assert verify_result["signature_valid"] is True
+    assert verify_result["archive_sha256_valid"] is True
+    assert tamper_exit_code == 2
+    assert tamper_result["status"] == "fail"
+    assert tamper_result["archive_sha256_valid"] is False
+    assert "archive sha256 mismatch" in tamper_result["issues"]
+
+
 def test_index_build_and_evaluate_index_commands_write_outputs(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(

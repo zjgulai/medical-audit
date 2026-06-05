@@ -729,7 +729,7 @@ Kimi 主索引运行参数：
 
 审计日志台页面。需要认证代理或 API client 注入 `X-Role: it-admin` 或 `X-Role: department-head` 后才展示事件；未授权角色只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
 
-当前未完成：审计日志不可抵赖签名、长期留存介质迁移和后台调度编排。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
+当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和后台调度编排。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
 ## 7. CLI 命令
 
@@ -872,6 +872,11 @@ Kimi 主索引运行参数：
 - `--now`: 可选 ISO-8601 时间，用于测试或固定审计 cutoff
 - `--limit`: 单批最多处理的过期事件数，默认 `1000`
 - `--archive-output`: `--execute` 且存在过期事件时必填
+- `--signature-output`: 可选，写出 detached 签名 manifest
+- `--signing-secret-env`: 可选，从环境变量读取 HMAC 签名密钥；密钥不写入 manifest
+- `--signing-key-id`: 可选，签名密钥标识；启用签名时必填
+- `--signing-subject`: 可选，记录签名主体
+- `--previous-signature-sha256`: 可选，记录上一份签名 manifest 的 `sha256`，用于形成链式留痕
 - `--output`
 - `--json-output`
 - `--execute`: 执行写归档和删除；不传时为 dry-run
@@ -886,10 +891,35 @@ Kimi 主索引运行参数：
 - `deleted_event_count`
 - `archive_output`
 - `archive_sha256`
+- `signature_manifest_output`
+- `signature_manifest_sha256`
+- `signature_algorithm`
+- `previous_signature_sha256`
 - `action_counts`
 - `entity_type_counts`
 
-归档文件为原始审计事件 JSONL，用于受控证据留存，不应用 response-only 脱敏。该文件必须存放在限制访问的归档介质；普通页面查询和 API 导出仍只返回脱敏结果。
+归档文件为原始审计事件 JSONL，用于受控证据留存，不应用 response-only 脱敏。该文件必须存放在限制访问的归档介质；普通页面查询和 API 导出仍只返回脱敏结果。签名 manifest 当前使用标准库 `HMAC-SHA256`，用于防篡改校验和链式留痕；它不等同于证书级非对称电子签章。
+
+### `medical-audit-kb audit-log-archive-verify`
+
+验证审计日志归档 JSONL 与 detached 签名 manifest 是否匹配，并检查 HMAC 签名是否有效。该命令只读，不修改数据库或归档文件；验证失败返回退出码 `2`，并在 Markdown/JSON 报告中列出阻断问题。
+
+核心参数：
+
+- `--archive-output`
+- `--signature-manifest`
+- `--signing-secret-env`
+- `--output`
+- `--json-output`
+
+输出核心字段：
+
+- `status`
+- `archive_sha256_valid`
+- `canonical_payload_sha256_valid`
+- `signature_valid`
+- `previous_signature_sha256`
+- `issues`
 
 ### `medical-audit-kb ui-smoke`
 

@@ -977,5 +977,6 @@ JSON 报告必须满足：
 - 评测集 `recall@5` 达到内部基线后，再进入答案生成质量评估。
 - 查询、预览、导出、索引管理和复核任务操作必须能在操作日志中追踪；配置数据库日志 store 时，同一 `record_operation` 事件必须同步写入 `audit_log_events`，并可通过 `/pages/audit-logs`、`/audit/logs` 和 `/audit/logs/export` 按任务、用户、动作和时间范围查询或导出。
 - 持久化审计日志查询和导出必须携带 `X-Role: it-admin` 或 `X-Role: department-head`；未授权访问必须记录 `audit-logs-access-denied`。
-- 审计日志 API 和导出结果必须对敏感字段执行 response-only 脱敏；当前策略保留周期为 `180` 天，保留期外事件必须通过 `audit-log-retention` 先生成 dry-run 计划，显式 `--execute` 后写原始 JSONL 归档和 `sha256`，再删除数据库过期行。
-- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；不可抵赖签名、长期留存介质迁移和后台调度编排仍需单独上线。
+- 审计日志 API 和导出结果必须对敏感字段执行 response-only 脱敏；当前策略保留周期为 `180` 天，保留期外事件必须通过 `audit-log-retention` 先生成 dry-run 计划，显式 `--execute` 后写原始 JSONL 归档、归档 `sha256` 和 detached HMAC-SHA256 签名 manifest，再删除数据库过期行。
+- 审计日志归档必须可通过 `audit-log-archive-verify` 只读验签；归档文件被篡改时必须返回 FAIL 并报告 `archive sha256 mismatch`。
+- 审计日志原始归档文件必须作为受控证据保存，不适用于普通查询分发；证书级非对称电子签章、长期留存介质迁移和后台调度编排仍需单独上线。
