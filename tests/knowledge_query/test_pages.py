@@ -598,6 +598,39 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "## 整改跟踪" in task_markdown_after_rectification.text
     assert "整改状态：待整改" in task_markdown_after_rectification.text
 
+    blocked_close_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "closed",
+            "assigned_to": "审计员A",
+            "reviewer_note": "整改未验收前尝试结案。",
+            "conclusion": "疑似违规线索成立，进入人工复核。",
+            "workpaper_status": "ready",
+            "workpaper_id": "workpaper-20260604-001",
+            "workpaper_note": "底稿已核对引用、原文和 HIS 凭证位置。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "审计科负责人A",
+            "owner_confirmed_at": "2026-06-04T12:00:00Z",
+            "attachment_manifest": (
+                "HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏\n"
+                "复核签字单 | /evidence/signoff.pdf | 负责人确认"
+            ),
+            "report_title": "同就诊同项目重复收费复核报告草稿",
+            "report_summary": "本任务确认重复收费线索成立，证据链已闭合。",
+            "rectification_request": "请责任科室核对收费明细并提交整改说明。",
+        },
+        follow_redirects=False,
+    )
+    assert blocked_close_response.status_code == 409
+    assert blocked_close_response.json()["detail"] == (
+        "review task rectification must be accepted before closing"
+    )
+    assert _review_tasks(state)[0]["status"] == "confirmed-violation"
+    blocked_close_page_response = client.get("/pages/review-tasks")
+    assert blocked_close_page_response.status_code == 200
+    assert "结案门禁" in blocked_close_page_response.text
+    assert "整改未验收" in blocked_close_page_response.text
+
     accepted_rectification_response = client.post(
         "/pages/review-tasks/review-task-0001/rectification",
         data={
@@ -624,6 +657,53 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert isinstance(accepted_events, list)
     assert accepted_events[-1]["from_status"] == "pending-rectification"
     assert accepted_events[-1]["to_status"] == "accepted"
+
+    close_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "closed",
+            "assigned_to": "审计员A",
+            "reviewer_note": "整改已验收，允许结案。",
+            "conclusion": "疑似违规线索成立，整改已验收。",
+            "workpaper_status": "ready",
+            "workpaper_id": "workpaper-20260604-001",
+            "workpaper_note": "底稿已核对引用、原文和 HIS 凭证位置。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "审计科负责人A",
+            "owner_confirmed_at": "2026-06-04T12:00:00Z",
+            "attachment_manifest": (
+                "HIS收费明细导出 | /evidence/his-charge-detail.csv | 已脱敏\n"
+                "复核签字单 | /evidence/signoff.pdf | 负责人确认"
+            ),
+            "report_title": "同就诊同项目重复收费复核报告草稿",
+            "report_summary": "本任务确认重复收费线索成立，证据链已闭合。",
+            "rectification_request": "请责任科室核对收费明细并提交整改说明。",
+        },
+        follow_redirects=False,
+    )
+    assert close_response.status_code == 303
+    closed_task = _review_tasks(state)[0]
+    assert closed_task["status"] == "closed"
+    assert closed_task["status_label"] == "已关闭"
+    assert str(state.operation_logs[-1]["action"]) == "review-task-status-update"
+
+    closed_page_response = client.get("/pages/review-tasks")
+    assert closed_page_response.status_code == 200
+    assert "允许结案" in closed_page_response.text
+    assert "已关闭" in closed_page_response.text
+
+    closed_export_response = client.get("/review-tasks/review-task-0001/export")
+    assert closed_export_response.status_code == 200
+    closed_body = closed_export_response.json()
+    assert closed_body["status"] == "closed"
+    assert closed_body["close_gate"]["ready_to_close"] is True
+    assert closed_body["close_gate"]["status_label"] == "允许结案"
+    closed_markdown_response = client.get(
+        "/review-tasks/review-task-0001/export",
+        params={"format": "markdown"},
+    )
+    assert "## 结案门禁" in closed_markdown_response.text
+    assert "结案状态：允许结案" in closed_markdown_response.text
 
     duplicate_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
@@ -936,6 +1016,7 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert ".review-attachment-archive" in response.text
     assert ".review-report-signoff" in response.text
     assert ".review-rectification-tracking" in response.text
+    assert ".review-close-gate" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:

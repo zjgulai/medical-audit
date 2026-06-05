@@ -379,6 +379,8 @@ async def update_review_task_status_page(
     status = _form_required_str(form, "status")
     if status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
+    if status == "closed":
+        _ensure_review_task_can_close(existing_task)
 
     _update_review_task(
         state,
@@ -1166,6 +1168,7 @@ def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
         "conclusion": task["conclusion"],
         "source": task.get("source", "chat-dossier"),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
+        "close_gate": _review_task_close_gate_context({**task, "dossier": dossier}),
         "rectification": _rectification_context(dossier),
         "dossier": dossier,
     }
@@ -1222,6 +1225,7 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
     if not isinstance(dossier, dict):
         dossier = {}
     report_gate = _dict_value(payload.get("report_gate"))
+    close_gate = _dict_value(payload.get("close_gate"))
     report_ready_label = (
         "可进入报告草稿" if report_gate.get("ready_for_report") else "不得进入报告草稿"
     )
@@ -1306,6 +1310,18 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
     lines.extend(
         [
             "",
+            "## 结案门禁",
+            "",
+            f"- 结案状态：{close_gate.get('status_label') or '不得结案'}",
+        ]
+    )
+    for check in _dict_list(close_gate.get("checks")):
+        lines.append(
+            f"- [{'x' if check.get('pass') else ' '}] {check.get('label')}: {check.get('message')}"
+        )
+    lines.extend(
+        [
+            "",
             "## 底稿",
             "",
             _render_audit_dossier_markdown(dossier),
@@ -1328,6 +1344,7 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "signed_report": _signed_report_context(dossier),
         "rectification": _rectification_context(dossier),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
+        "close_gate": _review_task_close_gate_context({**task, "dossier": dossier}),
     }
 
 
@@ -1385,6 +1402,64 @@ def _review_task_report_gate_context(task: dict[str, object]) -> dict[str, objec
         else "不得进入报告草稿",
         "checks": checks,
     }
+
+
+def _review_task_close_gate_context(task: dict[str, object]) -> dict[str, object]:
+    status = str(task.get("status", "pending-review"))
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    signed_report = _signed_report_context(dossier)
+    rectification = _rectification_context(dossier)
+    requires_rectification = (
+        status == "confirmed-violation"
+        or bool(signed_report["signed"])
+        or bool(rectification["created"])
+    )
+    if requires_rectification:
+        checks = [
+            {
+                "key": "signed-report",
+                "label": "正式报告签发",
+                "pass": bool(signed_report["signed"]),
+                "message": "正式报告已签发" if signed_report["signed"] else "正式报告未签发",
+            },
+            {
+                "key": "rectification-created",
+                "label": "整改事项生成",
+                "pass": bool(rectification["created"]),
+                "message": "整改事项已生成" if rectification["created"] else "未生成整改事项",
+            },
+            {
+                "key": "rectification-accepted",
+                "label": "整改验收",
+                "pass": rectification["status"] == "accepted",
+                "message": "整改已验收" if rectification["status"] == "accepted" else "整改未验收",
+            },
+        ]
+    else:
+        checks = [
+            {
+                "key": "rectification-not-required",
+                "label": "整改要求",
+                "pass": True,
+                "message": "当前任务无需整改验收",
+            }
+        ]
+    ready_to_close = all(bool(check["pass"]) for check in checks)
+    return {
+        "ready_to_close": ready_to_close,
+        "status_label": "允许结案" if ready_to_close else "不得结案",
+        "requires_rectification": requires_rectification,
+        "checks": checks,
+    }
+
+
+def _ensure_review_task_can_close(task: dict[str, object]) -> None:
+    close_gate = _review_task_close_gate_context(task)
+    if not close_gate["ready_to_close"]:
+        raise HTTPException(
+            status_code=409,
+            detail="review task rectification must be accepted before closing",
+        )
 
 
 def _review_task_dossier_from_form(
