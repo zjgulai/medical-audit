@@ -376,6 +376,7 @@ async def update_review_task_status_page(
 ) -> RedirectResponse:
     form = await _urlencoded_form(request)
     existing_task = _review_task_by_id(state, task_id)
+    _ensure_review_task_writable(existing_task)
     status = _form_required_str(form, "status")
     if status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
@@ -412,6 +413,7 @@ async def upload_review_task_attachment_page(
     attachment_note: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     task = _review_task_by_id(state, task_id)
+    _ensure_review_task_writable(task)
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     attachment = await _archive_review_task_attachment(
         state=state,
@@ -535,6 +537,7 @@ async def sign_review_task_report_page(
     signed_by = _form_required_str(form, "signed_by")
     signoff_note = _form_optional_str(form, "signoff_note")
     task = _review_task_by_id(state, task_id)
+    _ensure_review_task_writable(task)
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     signed_report = _build_review_task_signed_report(
         task=task,
@@ -604,6 +607,7 @@ async def update_review_task_rectification_page(
             detail=f"unsupported rectification_status: {rectification_status}",
         )
     task = _review_task_by_id(state, task_id)
+    _ensure_review_task_writable(task)
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     if not _signed_report_context(dossier)["signed"]:
         raise HTTPException(
@@ -1345,6 +1349,7 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "rectification": _rectification_context(dossier),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
         "close_gate": _review_task_close_gate_context({**task, "dossier": dossier}),
+        "readonly": str(task.get("status", "")) == "closed",
     }
 
 
@@ -1460,6 +1465,11 @@ def _ensure_review_task_can_close(task: dict[str, object]) -> None:
             status_code=409,
             detail="review task rectification must be accepted before closing",
         )
+
+
+def _ensure_review_task_writable(task: dict[str, object]) -> None:
+    if str(task.get("status", "")).strip() == "closed":
+        raise HTTPException(status_code=409, detail="review task is closed and read-only")
 
 
 def _review_task_dossier_from_form(

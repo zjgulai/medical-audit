@@ -72,6 +72,13 @@
               <div><dt>assignee</dt><dd>{{ task.assigned_to or '未指定' }}</dd></div>
             </dl>
 
+            {% if task.readonly %}
+              <section class="review-readonly-lock" aria-label="结案只读锁">
+                <strong>该任务已结案，只读锁定。</strong>
+                <span>结案后仅允许查看和导出，状态、附件、报告签发和整改跟踪不再接受编辑。</span>
+              </section>
+            {% endif %}
+
             <section class="review-report-gate {% if task.report_gate.ready_for_report %}ready{% else %}blocked{% endif %}" aria-label="报告门禁预检">
               <div class="review-report-gate-head">
                 <div>

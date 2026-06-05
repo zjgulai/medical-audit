@@ -691,6 +691,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert closed_page_response.status_code == 200
     assert "允许结案" in closed_page_response.text
     assert "已关闭" in closed_page_response.text
+    assert "该任务已结案，只读锁定。" in closed_page_response.text
 
     closed_export_response = client.get("/review-tasks/review-task-0001/export")
     assert closed_export_response.status_code == 200
@@ -705,20 +706,53 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "## 结案门禁" in closed_markdown_response.text
     assert "结案状态：允许结案" in closed_markdown_response.text
 
-    duplicate_signoff_response = client.post(
+    locked_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
         data={"signed_by": "审计科负责人A"},
         follow_redirects=False,
     )
-    assert duplicate_signoff_response.status_code == 409
-    assert duplicate_signoff_response.json()["detail"] == "review task report is already signed"
+    assert locked_signoff_response.status_code == 409
+    assert locked_signoff_response.json()["detail"] == "review task is closed and read-only"
 
-    edit_after_signoff_response = client.post(
+    locked_attachment_response = client.post(
+        "/pages/review-tasks/review-task-0001/attachments",
+        data={
+            "attachment_title": "结案后不应归档",
+            "attachment_note": "closed task must be read-only",
+        },
+        files={
+            "attachment_file": (
+                "closed-after.csv",
+                b"charge_id,amount\nCD0002,200\n",
+                "text/csv",
+            )
+        },
+        follow_redirects=False,
+    )
+    assert locked_attachment_response.status_code == 409
+    assert locked_attachment_response.json()["detail"] == "review task is closed and read-only"
+
+    locked_rectification_response = client.post(
+        "/pages/review-tasks/review-task-0001/rectification",
+        data={
+            "rectification_status": "returned",
+            "responsible_department": "收费管理科",
+            "responsible_owner": "科主任B",
+            "due_date": "2026-06-30",
+            "action_request": "结案后不应修改整改。",
+            "progress_note": "closed task must be read-only",
+        },
+        follow_redirects=False,
+    )
+    assert locked_rectification_response.status_code == 409
+    assert locked_rectification_response.json()["detail"] == "review task is closed and read-only"
+
+    edit_after_close_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
         data={
             "status": "confirmed-violation",
             "assigned_to": "审计员A",
-            "reviewer_note": "签发后补充编辑不应改变正式报告。",
+            "reviewer_note": "结案后补充编辑应被阻断。",
             "conclusion": "疑似违规线索成立，进入人工复核。",
             "workpaper_status": "ready",
             "workpaper_id": "workpaper-20260604-001",
@@ -736,7 +770,14 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
         },
         follow_redirects=False,
     )
-    assert edit_after_signoff_response.status_code == 303
+    assert edit_after_close_response.status_code == 409
+    assert edit_after_close_response.json()["detail"] == "review task is closed and read-only"
+    locked_task = _review_tasks(state)[0]
+    assert locked_task["status"] == "closed"
+    locked_dossier = locked_task["dossier"]
+    assert isinstance(locked_dossier, dict)
+    assert len(locked_dossier["attachments"]) == 3
+    assert locked_dossier["rectification"]["status"] == "accepted"
     frozen_markdown_response = client.get("/review-tasks/review-task-0001/signed-report")
     assert frozen_markdown_response.status_code == 200
     assert frozen_markdown_response.text == signed_content
@@ -1017,6 +1058,7 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert ".review-report-signoff" in response.text
     assert ".review-rectification-tracking" in response.text
     assert ".review-close-gate" in response.text
+    assert ".review-readonly-lock" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
