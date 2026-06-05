@@ -39,14 +39,14 @@ source: human+ai
 - 已新增 `his-staging-acceptance` CLI，支持只读验收生产 staging 链路，覆盖项目、source batch、staging rows、table schema、字段映射门禁、snapshot、audit task、audit run、rule version、疑点证据和可选回滚目标。
 - 已新增 `case-review-report-gate` CLI，支持正式报告前只读门禁，覆盖疑点证据、复核任务绑定、复核状态闭合、复核意见/结论、确认违规底稿和负责人确认。
 - 复核任务台已新增任务级报告准备度预检、承办人、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人和确认时间字段，并进入 Markdown/JSON 导出。
-- 复核任务台已新增附件清单登记、附件文件归档、任务级报告草稿 Markdown/JSON 导出、正式报告签发冻结、签发后整改跟踪、任务级结案门禁和关闭后只读锁定；确认违规任务必须登记或上传附件后才能通过报告草稿门禁，签发后正式报告正文按 `sha256` 冻结，整改事项绑定已签发报告编号和正文 `sha256`，整改未验收前不得结案，结案后状态、附件、签发和整改写接口均被阻断并记录运行态操作日志。
+- 复核任务台已新增附件清单登记、附件文件归档、任务级报告草稿 Markdown/JSON 导出、正式报告签发冻结、签发后整改跟踪、任务级结案门禁和关闭后只读锁定；确认违规任务必须登记或上传附件后才能通过报告草稿门禁，签发后正式报告正文按 `sha256` 冻结，整改事项绑定已签发报告编号和正文 `sha256`，整改未验收前不得结案，结案后状态、附件、签发和整改写接口均被阻断，并通过 `audit_log_events` 支持持久化操作日志。
 
 当前未完成：
 
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 附件对象存储、病毒扫描、权限隔离、电子签章、独立整改数据库表和案件级整改归档流。
-- 用户、角色、科室、权限控制和生产级持久化审计日志。
+- 用户、角色、科室、权限控制、审计日志查询页和审计日志治理策略。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 
 ## 2. 下一阶段目标
@@ -195,7 +195,7 @@ source: human+ai
 
 - `review_tasks`、`review_actions`、`review_comments` 已进入 `sql/knowledge-query-schema.sql`。
 - `ReviewTaskRepository` 已覆盖复核任务创建、操作流水追加、评论追加、按 ID 读取和列表读取。
-- `audit_projects`、`audit_data_snapshots`、`audit_snapshot_rollbacks`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items` 已进入 `sql/knowledge-query-schema.sql`。
+- `audit_projects`、`audit_data_snapshots`、`audit_snapshot_rollbacks`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings`、`finding_evidence_items`、`audit_log_events` 已进入 `sql/knowledge-query-schema.sql`。
 - `AuditWorkflowRepository` 已覆盖项目、数据快照、快照回滚审计、审计任务、规则、规则版本、运行批次、疑点、证据项的基础写入，以及按疑点编号和运行批次追溯查询。
 - `his_source_batches`、`his_table_schemas`、`his_field_mappings` 已进入 `sql/knowledge-query-schema.sql`。
 - `HisIngestionRepository` 已覆盖 HIS 交付批次、表结构和字段映射的基础写入，以及按交付批次读取字段映射。
@@ -286,7 +286,7 @@ source: human+ai
 - 后续补独立整改数据库表、责任科室权限、整改附件、验收退回和案件级整改闭环。
 - 已支持任务级结案门禁。
 - 已支持任务级关闭后只读锁定。
-- 已支持任务级关闭后写阻断操作日志。
+- 已支持任务级关闭后写阻断操作日志，并接入 `audit_log_events` 持久化底座。
 - 后续补案件级归档、结案审批、权限校验和审计日志。
 
 验收：

@@ -695,6 +695,7 @@ def _api_state(tmp_path: Path) -> ApiState:
         },
     )
     state = ApiState.from_settings(settings)
+    state.audit_log_store = None
     state.search_engine = _search_engine(
         _chunk_id(),
         source_file.relative_to(source_root).as_posix(),

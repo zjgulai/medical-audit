@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb import __version__
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
+from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
@@ -44,6 +45,7 @@ class ApiState:
     preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
     review_task_store: ReviewTaskStore | None = None
     audit_finding_store: SqlAlchemyAuditFindingStore | None = None
+    audit_log_store: AuditLogStore | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -53,6 +55,7 @@ class ApiState:
             preview_resolver=PreviewResolver(source_root=settings.data_root),
             review_task_store=SqlAlchemyReviewTaskStore(settings.database_url),
             audit_finding_store=SqlAlchemyAuditFindingStore(settings.database_url),
+            audit_log_store=SqlAlchemyAuditLogStore(settings.database_url),
         )
 
     @property
@@ -167,6 +170,8 @@ def record_operation(
     payload: dict[str, object],
 ) -> None:
     state.operation_logs.append({"action": action, "payload": payload})
+    if state.audit_log_store is not None:
+        state.audit_log_store.add_event(action, payload)
 
 
 class PermissionHeaders(BaseModel):

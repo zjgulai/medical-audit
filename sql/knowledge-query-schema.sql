@@ -129,6 +129,23 @@ CREATE TABLE IF NOT EXISTS query_logs (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit_log_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    action text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id text NOT NULL,
+    user_identifier text,
+    role text,
+    status_code integer,
+    endpoint text,
+    reason text,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_audit_log_events_status_code
+        CHECK (status_code IS NULL OR (status_code >= 100 AND status_code <= 599))
+);
+
 CREATE TABLE IF NOT EXISTS index_evaluation_runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id uuid NOT NULL UNIQUE,
@@ -424,6 +441,14 @@ CREATE INDEX IF NOT EXISTS idx_failed_files_status ON failed_files (status);
 CREATE INDEX IF NOT EXISTS idx_pending_files_status ON pending_files (status);
 CREATE INDEX IF NOT EXISTS idx_query_logs_created_at ON query_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_query_logs_filters_gin ON query_logs USING gin (filters);
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_action ON audit_log_events (action);
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_entity
+    ON audit_log_events (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_user ON audit_log_events (user_identifier);
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_created_at
+    ON audit_log_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_payload_gin
+    ON audit_log_events USING gin (payload);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_created_at ON index_evaluation_runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_status ON index_evaluation_runs (status);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks (status);

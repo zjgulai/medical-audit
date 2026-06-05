@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
+from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
 from medical_audit_kb.api.review_task_store import (
     JsonFileReviewTaskStore,
     SqlAlchemyReviewTaskStore,
@@ -1104,6 +1105,28 @@ def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
     assert body["items"][-1]["action"] == "operation-logs-export"
 
 
+def test_operation_logs_persist_when_audit_log_store_is_configured(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'audit-log.db'}"
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    client.get("/pages/index-admin")
+    response = client.get("/operation/logs/export")
+
+    assert response.status_code == 200
+    rebuilt_store = SqlAlchemyAuditLogStore(database_url)
+    persisted_events = rebuilt_store.list_events()
+    assert [event["action"] for event in persisted_events[:2]] == [
+        "operation-logs-export",
+        "page-index-admin-view",
+    ]
+    assert persisted_events[0]["entity_type"] == "operation"
+    assert persisted_events[0]["entity_id"] == "operation-logs-export"
+    persisted_export_payload = cast(dict[str, object], persisted_events[0]["payload"])
+    assert persisted_export_payload["count"] == 1
+
+
 def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:
     client = TestClient(create_app(_api_state(tmp_path)))
 
@@ -1154,6 +1177,7 @@ def _api_state(tmp_path: Path) -> ApiState:
         },
     )
     state = ApiState.from_settings(settings)
+    state.audit_log_store = None
     state.review_task_store = JsonFileReviewTaskStore(
         settings.index_root / "review-tasks" / "review-tasks.json"
     )

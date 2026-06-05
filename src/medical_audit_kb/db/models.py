@@ -274,6 +274,33 @@ class QueryLog(Base):
     )
 
 
+class AuditLogEvent(Base):
+    __tablename__ = "audit_log_events"
+    __table_args__ = (
+        Index("idx_audit_log_events_action", "action"),
+        Index("idx_audit_log_events_entity", "entity_type", "entity_id"),
+        Index("idx_audit_log_events_user", "user_identifier"),
+        Index("idx_audit_log_events_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    action: Mapped[str] = mapped_column(String(96), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_identifier: Mapped[str | None] = mapped_column(Text)
+    role: Mapped[str | None] = mapped_column(String(64))
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    endpoint: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class IndexEvaluationRun(Base):
     __tablename__ = "index_evaluation_runs"
     __table_args__ = (

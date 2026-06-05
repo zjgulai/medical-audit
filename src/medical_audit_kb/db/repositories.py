@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from medical_audit_kb.db.models import (
     AuditDataSnapshot,
     AuditFinding,
+    AuditLogEvent,
     AuditProject,
     AuditRule,
     AuditRun,
@@ -33,6 +34,7 @@ from medical_audit_kb.db.models import (
 from medical_audit_kb.domain.schemas import (
     AuditDataSnapshotCreate,
     AuditFindingCreate,
+    AuditLogEventCreate,
     AuditProjectCreate,
     AuditRuleCreate,
     AuditRunCreate,
@@ -223,6 +225,49 @@ class ReviewTaskRepository:
         self._session.add(comment)
         await self._session.flush()
         return comment
+
+
+class AuditLogRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create_event(self, payload: AuditLogEventCreate) -> AuditLogEvent:
+        event = AuditLogEvent(
+            action=payload.action,
+            entity_type=payload.entity_type,
+            entity_id=payload.entity_id,
+            user_identifier=payload.user_identifier,
+            role=payload.role,
+            status_code=payload.status_code,
+            endpoint=payload.endpoint,
+            reason=payload.reason,
+            payload=payload.payload,
+            extra_metadata=payload.metadata,
+        )
+        self._session.add(event)
+        await self._session.flush()
+        return event
+
+    async def list_events(
+        self,
+        *,
+        action: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        user_identifier: str | None = None,
+        limit: int = 100,
+    ) -> list[AuditLogEvent]:
+        statement = select(AuditLogEvent).order_by(AuditLogEvent.created_at.desc())
+        if action is not None:
+            statement = statement.where(AuditLogEvent.action == action)
+        if entity_type is not None:
+            statement = statement.where(AuditLogEvent.entity_type == entity_type)
+        if entity_id is not None:
+            statement = statement.where(AuditLogEvent.entity_id == entity_id)
+        if user_identifier is not None:
+            statement = statement.where(AuditLogEvent.user_identifier == user_identifier)
+        result = await self._session.execute(statement.limit(limit))
+        return list(result.scalars().all())
 
 
 class AuditWorkflowRepository:
