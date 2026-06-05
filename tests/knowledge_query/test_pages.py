@@ -1090,6 +1090,8 @@ def test_static_css_includes_keyboard_focus_styles(tmp_path: Path) -> None:
     assert ".review-rectification-tracking" in response.text
     assert ".review-close-gate" in response.text
     assert ".review-readonly-lock" in response.text
+    assert ".audit-log-timeline" in response.text
+    assert ".audit-log-filter-form" in response.text
 
 
 def test_operation_logs_export_records_export_operation(tmp_path: Path) -> None:
@@ -1125,6 +1127,96 @@ def test_operation_logs_persist_when_audit_log_store_is_configured(tmp_path: Pat
     assert persisted_events[0]["entity_id"] == "operation-logs-export"
     persisted_export_payload = cast(dict[str, object], persisted_events[0]["payload"])
     assert persisted_export_payload["count"] == 1
+
+
+def test_persistent_audit_logs_api_filters_and_exports_events(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-log-api.db'}",
+        create_schema=True,
+    )
+    state.audit_log_store.add_event(
+        "review-task-readonly-write-blocked",
+        {
+            "task_id": "review-task-0001",
+            "task_status": "closed",
+            "user_identifier": "auditor-001",
+            "role": "auditor",
+            "status_code": 409,
+            "endpoint": "/pages/review-tasks/review-task-0001/status",
+            "reason": "review task is closed and read-only",
+        },
+    )
+    state.audit_log_store.add_event(
+        "query",
+        {
+            "question": "医保基金审核依据",
+            "user_identifier": "auditor-002",
+            "role": "auditor",
+            "status_code": 200,
+            "endpoint": "/query",
+        },
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/audit/logs",
+        params={
+            "entity_type": "review-task",
+            "entity_id": "review-task-0001",
+            "user_identifier": "auditor-001",
+        },
+    )
+    export_response = client.get("/audit/logs/export")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["store"]["ready"] is True
+    assert body["filters"]["entity_id"] == "review-task-0001"
+    assert body["items"][0]["action"] == "review-task-readonly-write-blocked"
+    assert body["items"][0]["user_identifier"] == "auditor-001"
+    assert export_response.status_code == 200
+    assert export_response.headers["content-disposition"] == (
+        'attachment; filename="auditscope-audit-logs.json"'
+    )
+    export_body = export_response.json()
+    assert export_body["items"][0]["action"] == "audit-logs-export"
+    assert any(item["entity_type"] == "review-task" for item in export_body["items"])
+
+
+def test_audit_logs_page_renders_persistent_events_and_filters(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-log-page.db'}",
+        create_schema=True,
+    )
+    state.audit_log_store.add_event(
+        "review-task-readonly-write-blocked",
+        {
+            "task_id": "review-task-0001",
+            "task_status": "closed",
+            "user_identifier": "auditor-001",
+            "role": "auditor",
+            "status_code": 409,
+            "endpoint": "/pages/review-tasks/review-task-0001/status",
+            "reason": "review task is closed and read-only",
+        },
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/audit-logs",
+        params={"entity_type": "review-task", "entity_id": "review-task-0001"},
+    )
+
+    assert response.status_code == 200
+    assert "审计日志台" in response.text
+    assert "review-task-readonly-write-blocked" in response.text
+    assert "auditor-001" in response.text
+    assert "409" in response.text
+    assert (
+        "/audit/logs/export?entity_type=review-task&amp;entity_id=review-task-0001" in response.text
+    )
 
 
 def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:

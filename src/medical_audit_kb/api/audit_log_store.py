@@ -23,6 +23,9 @@ class AuditLogStore(Protocol):
         action: str | None = None,
         entity_type: str | None = None,
         entity_id: str | None = None,
+        user_identifier: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
         pass
@@ -71,6 +74,9 @@ class SqlAlchemyAuditLogStore:
         action: str | None = None,
         entity_type: str | None = None,
         entity_id: str | None = None,
+        user_identifier: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
         with self._session_factory() as session:
@@ -81,6 +87,12 @@ class SqlAlchemyAuditLogStore:
                 statement = statement.where(AuditLogEvent.entity_type == entity_type)
             if entity_id is not None:
                 statement = statement.where(AuditLogEvent.entity_id == entity_id)
+            if user_identifier is not None:
+                statement = statement.where(AuditLogEvent.user_identifier == user_identifier)
+            if created_from is not None:
+                statement = statement.where(AuditLogEvent.created_at >= created_from)
+            if created_to is not None:
+                statement = statement.where(AuditLogEvent.created_at <= created_to)
             events = session.scalars(statement.limit(limit)).all()
             return [_event_to_payload(event) for event in events]
 

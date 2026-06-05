@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>审计日志台</title>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body class="page-audit-logs">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <main id="main-content" class="shell audit-log-shell">
+      <nav class="topbar" aria-label="页面导航">
+        <a class="brand" href="/pages/chat">AuditScope</a>
+        <div class="nav-links">
+          <a href="/pages/chat">对话审证</a>
+          <a href="/pages/query">查询工作台</a>
+          <a href="/pages/audit-findings">疑点清单</a>
+          <a href="/pages/review-tasks">复核任务</a>
+          <a href="/pages/audit-logs" aria-current="page">审计日志</a>
+          <a href="/pages/index-admin">索引管理</a>
+        </div>
+        <span class="status-pill {% if audit_log_store_ready %}ready{% else %}warn{% endif %}">
+          {% if audit_log_store_ready %}日志已持久化{% else %}日志未配置{% endif %}
+        </span>
+      </nav>
+
+      <section class="hero audit-log-hero">
+        <div>
+          <p class="eyebrow">Audit Trail · Evidence Control</p>
+          <h1>审计日志台</h1>
+          <p class="lede">按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件。这里展示的是数据库持久化审计链，不是进程内临时日志。</p>
+        </div>
+        <aside class="hero-console audit-log-console" aria-label="审计日志状态">
+          <div><span>Store</span><strong>{{ audit_log_store_backend }}</strong></div>
+          <div><span>Events</span><strong>{{ audit_log_summary.total }}</strong></div>
+          <div><span>Blocked</span><strong>{{ audit_log_summary.blocked }}</strong></div>
+        </aside>
+      </section>
+
+      {% if not audit_log_store_ready %}
+        <section class="notice state-notice" role="alert">
+          <strong>持久化审计日志未配置。</strong>
+          当前页面不会读取进程内 `operation_logs`，生产环境需配置数据库日志 store 并应用 `audit_log_events` 表结构。
+        </section>
+      {% endif %}
+
+      <section class="metrics audit-log-metrics">
+        <article><strong>{{ audit_log_summary.total }}</strong><span>筛选事件</span></article>
+        <article><strong>{{ audit_log_summary.blocked }}</strong><span>阻断/异常</span></article>
+        <article><strong>{{ audit_log_summary.users }}</strong><span>涉及用户</span></article>
+        <article><strong>{{ audit_log_summary.entities }}</strong><span>涉及主体</span></article>
+      </section>
+
+      <section class="panel audit-log-filter-panel" aria-labelledby="audit-log-filter-title">
+        <div class="ops-console-heading">
+          <div>
+            <p class="eyebrow">筛选 · Filter</p>
+            <h2 id="audit-log-filter-title">定位一条可复盘的操作链</h2>
+            <p class="meta">推荐先用 `entity_type + entity_id` 锁定任务，再叠加用户、动作或时间范围。导出结果可作为复核和整改过程的追踪附件。</p>
+          </div>
+          <a class="text-link" href="/audit/logs/export{% if audit_log_export_query %}?{{ audit_log_export_query }}{% endif %}">导出当前筛选 JSON</a>
+        </div>
+        <form action="/pages/audit-logs" method="get" class="audit-log-filter-form">
+          <label for="audit-log-action">动作 action
+            <input id="audit-log-action" name="action" value="{{ audit_log_filters.action }}" placeholder="review-task-readonly-write-blocked">
+          </label>
+          <label for="audit-log-entity-type">主体类型 entity_type
+            <input id="audit-log-entity-type" name="entity_type" value="{{ audit_log_filters.entity_type }}" placeholder="review-task">
+          </label>
+          <label for="audit-log-entity-id">主体 ID entity_id
+            <input id="audit-log-entity-id" name="entity_id" value="{{ audit_log_filters.entity_id }}" placeholder="review-task-0001">
+          </label>
+          <label for="audit-log-user">用户 user_identifier
+            <input id="audit-log-user" name="user_identifier" value="{{ audit_log_filters.user_identifier }}" placeholder="auditor-001">
+          </label>
+          <label for="audit-log-created-from">开始时间
+            <input id="audit-log-created-from" name="created_from" value="{{ audit_log_filters.created_from }}" placeholder="2026-06-05T00:00:00Z">
+          </label>
+          <label for="audit-log-created-to">结束时间
+            <input id="audit-log-created-to" name="created_to" value="{{ audit_log_filters.created_to }}" placeholder="2026-06-05T23:59:59Z">
+          </label>
+          <label for="audit-log-limit">返回上限
+            <input id="audit-log-limit" name="limit" value="{{ audit_log_filters.limit }}" inputmode="numeric">
+          </label>
+          <div class="audit-log-filter-actions">
+            <button type="submit">查询审计日志</button>
+            <a href="/pages/audit-logs">重置筛选</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="audit-log-timeline" aria-label="审计日志事件列表">
+        {% for event in audit_log_events %}
+          <article class="panel audit-log-event {{ event.severity }}">
+            <header class="audit-log-event-header">
+              <div>
+                <p class="eyebrow">{{ event.created_at }}</p>
+                <h2>{{ event.action }}</h2>
+              </div>
+              <span class="audit-log-status">{{ event.status_code or 'recorded' }}</span>
+            </header>
+            <dl class="audit-log-kv">
+              <div><dt>主体</dt><dd>{{ event.entity_type }} / {{ event.entity_id }}</dd></div>
+              <div><dt>用户</dt><dd>{{ event.user_identifier }} · {{ event.role }}</dd></div>
+              <div><dt>端点</dt><dd>{{ event.endpoint or '未记录' }}</dd></div>
+              <div><dt>原因</dt><dd>{{ event.reason or '未记录' }}</dd></div>
+            </dl>
+            <details class="audit-log-payload">
+              <summary>查看原始 payload 和 metadata</summary>
+              <div class="audit-log-payload-grid">
+                <section>
+                  <h3>payload</h3>
+                  <dl>
+                    {% for key, value in event.payload.items() %}
+                      <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
+                    {% else %}
+                      <div><dt>empty</dt><dd>{}</dd></div>
+                    {% endfor %}
+                  </dl>
+                </section>
+                <section>
+                  <h3>metadata</h3>
+                  <dl>
+                    {% for key, value in event.metadata.items() %}
+                      <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
+                    {% else %}
+                      <div><dt>empty</dt><dd>{}</dd></div>
+                    {% endfor %}
+                  </dl>
+                </section>
+              </div>
+            </details>
+          </article>
+        {% else %}
+          <section class="empty-state">
+            <p class="eyebrow">无匹配事件</p>
+            <h2>当前筛选条件下没有持久化审计日志。</h2>
+            <p>先确认数据库日志 store 已启用，再从对话、复核任务、导出或索引管理页面产生操作事件。</p>
+          </section>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
@@ -139,8 +142,126 @@ def export_operation_logs(
     return {"items": state.operation_logs, "format": "json"}
 
 
+@router.get("/audit/logs")
+def audit_logs(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    action: Annotated[str | None, Query(max_length=96)] = None,
+    entity_type: Annotated[str | None, Query(max_length=64)] = None,
+    entity_id: Annotated[str | None, Query(max_length=128)] = None,
+    user_identifier: Annotated[str | None, Query(max_length=128)] = None,
+    created_from: Annotated[datetime | None, Query()] = None,
+    created_to: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict[str, object]:
+    filters = _audit_log_filters(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        user_identifier=user_identifier,
+        created_from=created_from,
+        created_to=created_to,
+        limit=limit,
+    )
+    if state.audit_log_store is None:
+        return {
+            "items": [],
+            "filters": filters,
+            "store": {"ready": False, "backend": "none"},
+        }
+    return {
+        "items": state.audit_log_store.list_events(
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            user_identifier=user_identifier,
+            created_from=created_from,
+            created_to=created_to,
+            limit=limit,
+        ),
+        "filters": filters,
+        "store": {"ready": True, "backend": state.audit_log_store.__class__.__name__},
+    }
+
+
+@router.get("/audit/logs/export")
+def export_audit_logs(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    action: Annotated[str | None, Query(max_length=96)] = None,
+    entity_type: Annotated[str | None, Query(max_length=64)] = None,
+    entity_id: Annotated[str | None, Query(max_length=128)] = None,
+    user_identifier: Annotated[str | None, Query(max_length=128)] = None,
+    created_from: Annotated[datetime | None, Query()] = None,
+    created_to: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+) -> Response:
+    if state.audit_log_store is None:
+        raise HTTPException(status_code=409, detail="persistent audit log store is not configured")
+
+    filters = _audit_log_filters(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        user_identifier=user_identifier,
+        created_from=created_from,
+        created_to=created_to,
+        limit=limit,
+    )
+    record_operation(
+        state,
+        "audit-logs-export",
+        {
+            "filters": filters,
+            "limit": limit,
+        },
+    )
+    items = state.audit_log_store.list_events(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        user_identifier=user_identifier,
+        created_from=created_from,
+        created_to=created_to,
+        limit=limit,
+    )
+    return Response(
+        content=json.dumps(
+            {
+                "items": items,
+                "filters": filters,
+                "format": "json",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="auditscope-audit-logs.json"'},
+    )
+
+
 def parse_chunk_id(chunk_id: str) -> UUID:
     try:
         return UUID(chunk_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="invalid chunk_id") from exc
+
+
+def _audit_log_filters(
+    *,
+    action: str | None,
+    entity_type: str | None,
+    entity_id: str | None,
+    user_identifier: str | None,
+    created_from: datetime | None,
+    created_to: datetime | None,
+    limit: int,
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "user_identifier": user_identifier,
+        "created_from": created_from.isoformat() if created_from is not None else None,
+        "created_to": created_to.isoformat() if created_to is not None else None,
+        "limit": limit,
+    }
