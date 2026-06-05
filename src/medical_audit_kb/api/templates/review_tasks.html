@@ -208,6 +208,40 @@
                 {% endfor %}
               </ul>
             </section>
+
+            <section class="review-report-signoff {% if task.signed_report.signed %}signed{% endif %}" aria-labelledby="report-signoff-title-{{ task.task_id }}">
+              <div class="review-attachment-head">
+                <div>
+                  <p class="eyebrow">Formal Report</p>
+                  <h3 id="report-signoff-title-{{ task.task_id }}">{{ task.signed_report.status_label }}</h3>
+                </div>
+                <span>{% if task.signed_report.signed %}SIGNED{% else %}UNSIGNED{% endif %}</span>
+              </div>
+              {% if task.signed_report.signed %}
+                <dl class="signed-report-summary">
+                  <div><dt>报告编号</dt><dd>{{ task.signed_report.report_id }}</dd></div>
+                  <div><dt>签发人</dt><dd>{{ task.signed_report.signed_by }}</dd></div>
+                  <div><dt>签发时间</dt><dd>{{ task.signed_report.signed_at }}</dd></div>
+                  <div><dt>正文 SHA256</dt><dd>{{ task.signed_report.content_sha256 }}</dd></div>
+                </dl>
+                <div class="review-task-actions">
+                  <a href="/review-tasks/{{ task.task_id }}/signed-report?format=markdown">下载正式报告 Markdown</a>
+                  <a href="/review-tasks/{{ task.task_id }}/signed-report?format=json">下载正式报告 JSON</a>
+                </div>
+              {% elif task.report_gate.ready_for_report %}
+                <form method="post" action="/pages/review-tasks/{{ task.task_id }}/report-signoff" class="review-report-signoff-form">
+                  <label for="signed-by-{{ task.task_id }}">签发人
+                    <input id="signed-by-{{ task.task_id }}" name="signed_by" placeholder="审计科负责人姓名" required>
+                  </label>
+                  <label for="signoff-note-{{ task.task_id }}">签发说明
+                    <input id="signoff-note-{{ task.task_id }}" name="signoff_note" placeholder="报告正文、附件和负责人确认已核验">
+                  </label>
+                  <button type="submit">签发正式报告</button>
+                </form>
+              {% else %}
+                <p class="review-form-hint">报告门禁通过后才能签发正式报告。</p>
+              {% endif %}
+            </section>
           </article>
         {% else %}
           <section class="empty-state">

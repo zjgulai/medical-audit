@@ -511,6 +511,71 @@ def review_task_report_draft_export(
     )
 
 
+@router.post("/pages/review-tasks/{task_id}/report-signoff")
+async def sign_review_task_report_page(
+    task_id: str,
+    request: Request,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> RedirectResponse:
+    form = await _urlencoded_form(request)
+    signed_by = _form_required_str(form, "signed_by")
+    signoff_note = _form_optional_str(form, "signoff_note")
+    task = _review_task_by_id(state, task_id)
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    signed_report = _build_review_task_signed_report(
+        task=task,
+        signed_by=signed_by,
+        signoff_note=signoff_note,
+    )
+    dossier["signed_report"] = signed_report
+    _update_review_task(
+        state,
+        task_id,
+        {
+            "dossier": dossier,
+            "updated_at": _utc_now_iso(),
+        },
+    )
+    record_operation(
+        state,
+        "review-task-report-signoff",
+        {
+            "task_id": task_id,
+            "report_id": signed_report["report_id"],
+            "signed_by": signed_by,
+            "content_sha256": signed_report["content_sha256"],
+        },
+    )
+    return RedirectResponse("/pages/review-tasks", status_code=303)
+
+
+@router.get("/review-tasks/{task_id}/signed-report")
+def review_task_signed_report_export(
+    task_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "markdown",
+) -> Response:
+    task = _review_task_by_id(state, task_id)
+    payload = _review_task_signed_report_payload(task)
+    record_operation(
+        state,
+        "review-task-signed-report-export",
+        {"task_id": task_id, "format": format},
+    )
+    if format == "json":
+        return Response(
+            content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            media_type="application/json",
+            headers=_download_headers(f"{task_id}-signed-report.json"),
+        )
+    signed_report = _dict_value(payload.get("signed_report"))
+    return Response(
+        content=str(signed_report.get("content", "")),
+        media_type="text/markdown; charset=utf-8",
+        headers=_download_headers(f"{task_id}-signed-report.md"),
+    )
+
+
 @router.get("/pages/preview/{chunk_id}")
 def preview_page(
     chunk_id: UUID,
@@ -820,6 +885,16 @@ def _dict_value(value: object) -> dict[str, object]:
     return {}
 
 
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
+
+
 def _json_safe(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
@@ -1127,6 +1202,7 @@ def _review_task_page_item(task: dict[str, object]) -> dict[str, object]:
         "attachments": _attachment_items_for_page(str(task.get("task_id", "")), dossier),
         "attachment_manifest": _attachment_manifest_text(dossier),
         "report_draft": _report_draft_context(dossier, task),
+        "signed_report": _signed_report_context(dossier),
         "report_gate": _review_task_report_gate_context({**task, "dossier": dossier}),
     }
 
@@ -1266,6 +1342,7 @@ def _with_review_task_governance_defaults(dossier: dict[str, object]) -> dict[st
         "rectification_request": str(report_draft.get("rectification_request", "")).strip(),
         "updated_at": str(report_draft.get("updated_at", "")).strip(),
     }
+    normalized["signed_report"] = _signed_report_context(normalized)
     normalized.setdefault("report_gate", {"source": "review-task-page"})
     return normalized
 
@@ -1476,6 +1553,80 @@ def _report_draft_context(
         "summary": summary,
         "rectification_request": rectification_request,
         "updated_at": str(report_draft.get("updated_at", "")),
+    }
+
+
+def _signed_report_context(dossier: dict[str, object]) -> dict[str, object]:
+    signed_report = _dict_value(dossier.get("signed_report"))
+    content = str(signed_report.get("content", ""))
+    content_sha256 = str(signed_report.get("content_sha256", "")).strip()
+    status = str(signed_report.get("status", "")).strip()
+    signed = status == "signed" and bool(content_sha256) and bool(content)
+    result: dict[str, object] = {
+        "signed": signed,
+        "status": "signed" if signed else "unsigned",
+        "status_label": "正式报告已签发" if signed else "正式报告未签发",
+        "report_id": str(signed_report.get("report_id", "")).strip(),
+        "signed_by": str(signed_report.get("signed_by", "")).strip(),
+        "signed_at": str(signed_report.get("signed_at", "")).strip(),
+        "signoff_note": str(signed_report.get("signoff_note", "")).strip(),
+        "content_sha256": content_sha256,
+        "content_byte_size": _non_negative_int(signed_report.get("content_byte_size")),
+        "attachment_count": _non_negative_int(signed_report.get("attachment_count")),
+        "source_format": str(signed_report.get("source_format", "")).strip(),
+        "source_generated_at": str(signed_report.get("source_generated_at", "")).strip(),
+        "content": content,
+    }
+    return result
+
+
+def _build_review_task_signed_report(
+    *,
+    task: dict[str, object],
+    signed_by: str,
+    signoff_note: str,
+) -> dict[str, object]:
+    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
+    if _signed_report_context(dossier)["signed"]:
+        raise HTTPException(status_code=409, detail="review task report is already signed")
+    draft_payload = _review_task_report_draft_payload(task)
+    content = _render_review_task_report_draft_markdown(draft_payload)
+    content_bytes = content.encode("utf-8")
+    signed_at = _utc_now_iso()
+    report_id = f"signed-report-{uuid4().hex[:12]}"
+    return {
+        "format": "review-task-signed-report-v1",
+        "status": "signed",
+        "report_id": report_id,
+        "signed_by": signed_by,
+        "signed_at": signed_at,
+        "signoff_note": signoff_note,
+        "content_sha256": hashlib.sha256(content_bytes).hexdigest(),
+        "content_byte_size": len(content_bytes),
+        "content_media_type": "text/markdown; charset=utf-8",
+        "attachment_count": len(_dict_list(draft_payload.get("attachments"))),
+        "source_format": str(draft_payload.get("format", "")),
+        "source_generated_at": str(draft_payload.get("generated_at", "")),
+        "content": content,
+    }
+
+
+def _review_task_signed_report_payload(task: dict[str, object]) -> dict[str, object]:
+    task_payload = _review_task_export_payload(task)
+    dossier = _with_review_task_governance_defaults(_dict_value(task_payload.get("dossier")))
+    signed_report = _signed_report_context(dossier)
+    if not signed_report["signed"]:
+        raise HTTPException(status_code=409, detail="review task report is not signed")
+    return {
+        "format": "review-task-signed-report-v1",
+        "generated_at": _utc_now_iso(),
+        "task_id": task_payload["task_id"],
+        "status": task_payload["status"],
+        "status_label": task_payload["status_label"],
+        "question": task_payload["question"],
+        "report_gate": task_payload["report_gate"],
+        "signed_report": signed_report,
+        "source_task": task_payload,
     }
 
 
