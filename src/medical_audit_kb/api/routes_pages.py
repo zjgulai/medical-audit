@@ -376,7 +376,13 @@ async def update_review_task_status_page(
 ) -> RedirectResponse:
     form = await _urlencoded_form(request)
     existing_task = _review_task_by_id(state, task_id)
-    _ensure_review_task_writable(existing_task)
+    _ensure_review_task_writable(
+        state,
+        existing_task,
+        request=request,
+        attempted_action="review-task-status-update",
+        endpoint=f"/pages/review-tasks/{task_id}/status",
+    )
     status = _form_required_str(form, "status")
     if status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
@@ -407,13 +413,20 @@ async def update_review_task_status_page(
 @router.post("/pages/review-tasks/{task_id}/attachments")
 async def upload_review_task_attachment_page(
     task_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
     attachment_file: Annotated[UploadFile, File()],
     attachment_title: Annotated[str | None, Form()] = None,
     attachment_note: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     task = _review_task_by_id(state, task_id)
-    _ensure_review_task_writable(task)
+    _ensure_review_task_writable(
+        state,
+        task,
+        request=request,
+        attempted_action="review-task-attachment-upload",
+        endpoint=f"/pages/review-tasks/{task_id}/attachments",
+    )
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     attachment = await _archive_review_task_attachment(
         state=state,
@@ -537,7 +550,13 @@ async def sign_review_task_report_page(
     signed_by = _form_required_str(form, "signed_by")
     signoff_note = _form_optional_str(form, "signoff_note")
     task = _review_task_by_id(state, task_id)
-    _ensure_review_task_writable(task)
+    _ensure_review_task_writable(
+        state,
+        task,
+        request=request,
+        attempted_action="review-task-report-signoff",
+        endpoint=f"/pages/review-tasks/{task_id}/report-signoff",
+    )
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     signed_report = _build_review_task_signed_report(
         task=task,
@@ -607,7 +626,13 @@ async def update_review_task_rectification_page(
             detail=f"unsupported rectification_status: {rectification_status}",
         )
     task = _review_task_by_id(state, task_id)
-    _ensure_review_task_writable(task)
+    _ensure_review_task_writable(
+        state,
+        task,
+        request=request,
+        attempted_action="review-task-rectification-update",
+        endpoint=f"/pages/review-tasks/{task_id}/rectification",
+    )
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     if not _signed_report_context(dossier)["signed"]:
         raise HTTPException(
@@ -1467,9 +1492,31 @@ def _ensure_review_task_can_close(task: dict[str, object]) -> None:
         )
 
 
-def _ensure_review_task_writable(task: dict[str, object]) -> None:
+def _ensure_review_task_writable(
+    state: ApiState,
+    task: dict[str, object],
+    *,
+    request: Request,
+    attempted_action: str,
+    endpoint: str,
+) -> None:
     if str(task.get("status", "")).strip() == "closed":
-        raise HTTPException(status_code=409, detail="review task is closed and read-only")
+        detail = "review task is closed and read-only"
+        record_operation(
+            state,
+            "review-task-readonly-write-blocked",
+            {
+                "task_id": str(task.get("task_id", "")),
+                "task_status": "closed",
+                "attempted_action": attempted_action,
+                "endpoint": endpoint,
+                "status_code": 409,
+                "reason": detail,
+                "user_identifier": request.headers.get("X-User-Id") or "anonymous",
+                "role": request.headers.get("X-Role") or "auditor",
+            },
+        )
+        raise HTTPException(status_code=409, detail=detail)
 
 
 def _review_task_dossier_from_form(

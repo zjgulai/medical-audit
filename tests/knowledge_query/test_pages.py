@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -708,6 +709,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     locked_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
+        headers={"X-User-Id": "auditor-a", "X-Role": "auditor"},
         data={"signed_by": "审计科负责人A"},
         follow_redirects=False,
     )
@@ -716,6 +718,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     locked_attachment_response = client.post(
         "/pages/review-tasks/review-task-0001/attachments",
+        headers={"X-User-Id": "auditor-a", "X-Role": "auditor"},
         data={
             "attachment_title": "结案后不应归档",
             "attachment_note": "closed task must be read-only",
@@ -734,6 +737,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     locked_rectification_response = client.post(
         "/pages/review-tasks/review-task-0001/rectification",
+        headers={"X-User-Id": "department-head-a", "X-Role": "department-head"},
         data={
             "rectification_status": "returned",
             "responsible_department": "收费管理科",
@@ -749,6 +753,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     edit_after_close_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers={"X-User-Id": "auditor-a", "X-Role": "auditor"},
         data={
             "status": "confirmed-violation",
             "assigned_to": "审计员A",
@@ -781,6 +786,31 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     frozen_markdown_response = client.get("/review-tasks/review-task-0001/signed-report")
     assert frozen_markdown_response.status_code == 200
     assert frozen_markdown_response.text == signed_content
+    readonly_block_events = [
+        item
+        for item in state.operation_logs
+        if item["action"] == "review-task-readonly-write-blocked"
+    ]
+    readonly_block_payloads = [
+        cast(dict[str, object], event["payload"]) for event in readonly_block_events
+    ]
+    assert [payload["attempted_action"] for payload in readonly_block_payloads] == [
+        "review-task-report-signoff",
+        "review-task-attachment-upload",
+        "review-task-rectification-update",
+        "review-task-status-update",
+    ]
+    assert {payload["task_id"] for payload in readonly_block_payloads} == {"review-task-0001"}
+    assert {payload["task_status"] for payload in readonly_block_payloads} == {"closed"}
+    assert {payload["status_code"] for payload in readonly_block_payloads} == {409}
+    assert {payload["reason"] for payload in readonly_block_payloads} == {
+        "review task is closed and read-only"
+    }
+    assert readonly_block_payloads[0]["endpoint"] == (
+        "/pages/review-tasks/review-task-0001/report-signoff"
+    )
+    assert readonly_block_payloads[0]["user_identifier"] == "auditor-a"
+    assert readonly_block_payloads[2]["role"] == "department-head"
 
 
 def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
