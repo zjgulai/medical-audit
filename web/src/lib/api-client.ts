@@ -3,7 +3,17 @@ import type {
   SearchBackendStatusResponse
 } from "./api-types";
 
+function assertBackendProxyClientRuntime(): void {
+  if (typeof window === "undefined") {
+    throw new Error(
+      "Backend proxy client must be called from browser/client code; server code needs an absolute backend URL."
+    );
+  }
+}
+
 async function getJson<T>(path: string): Promise<T> {
+  assertBackendProxyClientRuntime();
+
   const response = await fetch(path, {
     headers: { Accept: "application/json" },
     cache: "no-store"

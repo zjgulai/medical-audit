@@ -44,4 +44,12 @@ describe("api-client", () => {
       "Backend request failed: GET /api/backend/index/search-backend returned 409"
     );
   });
+
+  it("raises a boundary error when called outside the browser proxy runtime", async () => {
+    vi.stubGlobal("window", undefined);
+
+    await expect(fetchBackendHealth()).rejects.toThrow(
+      "Backend proxy client must be called from browser/client code; server code needs an absolute backend URL."
+    );
+  });
 });

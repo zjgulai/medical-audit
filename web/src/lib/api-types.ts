@@ -1,3 +1,7 @@
+export type SearchBackendDetails = Record<string, unknown> & {
+  readonly matching_embedding_count?: number;
+};
+
 export type BackendHealthResponse = {
   readonly status: "ok";
   readonly version: string;
@@ -7,6 +11,5 @@ export type BackendHealthResponse = {
 export type SearchBackendStatusResponse = {
   readonly backend: string;
   readonly ready: boolean;
-  readonly details?: Record<string, unknown>;
-  readonly matching_embedding_count?: number;
+  readonly details?: SearchBackendDetails;
 };
