@@ -7,13 +7,13 @@ export default defineConfig({
     timeout: 5_000
   },
   use: {
-    baseURL: "http://127.0.0.1:3030",
+    baseURL: "http://localhost:3030",
     trace: "retain-on-failure"
   },
   webServer: {
     command: "pnpm dev",
-    url: "http://127.0.0.1:3030",
-    reuseExistingServer: !process.env.CI,
+    url: "http://localhost:3030",
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === "1",
     timeout: 120_000
   },
   projects: [

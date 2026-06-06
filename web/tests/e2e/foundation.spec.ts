@@ -4,11 +4,13 @@ test("self-check OS foundation renders navigation and core modules", async ({ pa
   await page.goto("/workspace");
 
   const primaryNavigation = page.getByRole("navigation", { name: "主导航" });
+  const guidedCheckLink = primaryNavigation.getByRole("link", { name: /^AI 引导自查/ });
 
   await expect(page.getByRole("heading", { name: "机构自查闭环总览" })).toBeVisible();
-  await expect(primaryNavigation.getByRole("link", { name: /^AI 引导自查/ })).toBeVisible();
+  await expect(guidedCheckLink).toBeVisible();
+  await expect(guidedCheckLink).toHaveAttribute("href", "/guided-check");
   await expect(primaryNavigation.getByRole("link", { name: /^专题规则库/ })).toBeVisible();
-  await expect(page.getByText("AI 自查状态机")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI 自查状态机" })).toBeVisible();
 });
 
 test("guided check route is reachable", async ({ page }) => {
