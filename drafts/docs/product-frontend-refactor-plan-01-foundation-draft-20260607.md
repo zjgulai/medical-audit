@@ -3,7 +3,7 @@ title: 前端重构第一阶段实施计划：Next.js 基座与设计系统
 doc_type: workflow
 module: frontend
 topic: self-check-os-foundation
-status: draft
+status: review
 created: 2026-06-07
 updated: 2026-06-07
 owner: self
