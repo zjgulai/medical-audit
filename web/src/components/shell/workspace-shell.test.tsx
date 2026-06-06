@@ -34,4 +34,17 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /AI 引导自查/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
+
+  it("marks parent navigation active for nested routes without activating workspace", () => {
+    usePathnameMock.mockReturnValue("/guided-check/session-1");
+
+    render(
+      <WorkspaceShell>
+        <main>嵌套路由内容</main>
+      </WorkspaceShell>
+    );
+
+    expect(screen.getByRole("link", { name: /AI 引导自查/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /今日工作台/ })).not.toHaveAttribute("aria-current");
+  });
 });

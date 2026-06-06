@@ -797,11 +797,14 @@ git commit -m "定义前端自查流程导航"
 - Create: `web/src/app/layout.tsx`
 - Create: `web/src/app/page.tsx`
 - Create: `web/src/app/(workspace)/layout.tsx`
+- Create: `web/src/app/(workspace)/workspace/page.tsx`
 - Create: `web/src/components/shell/app-sidebar.tsx`
 - Create: `web/src/components/shell/project-context-bar.tsx`
 - Create: `web/src/components/shell/workspace-shell.tsx`
 - Create: `web/src/components/ui/status-pill.tsx`
 - Test: `web/src/components/shell/workspace-shell.test.tsx`
+
+**Route readiness boundary:** Task 4 must leave the root redirect target reachable. Create only a minimal `/workspace` page here so `/` does not resolve to a user-visible 404 before Task 5. The full dashboard, module cards, workflow status grid, and planned module previews remain Task 5 scope.
 
 - [ ] **Step 1: Write failing shell test**
 
@@ -843,6 +846,19 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /今日工作台/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /AI 引导自查/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("marks parent navigation active for nested routes without activating workspace", () => {
+    usePathnameMock.mockReturnValue("/guided-check/session-1");
+
+    render(
+      <WorkspaceShell>
+        <main>嵌套路由内容</main>
+      </WorkspaceShell>
+    );
+
+    expect(screen.getByRole("link", { name: /AI 引导自查/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /今日工作台/ })).not.toHaveAttribute("aria-current");
   });
 });
 ```
@@ -1042,7 +1058,27 @@ export default function HomePage() {
 }
 ```
 
-- [ ] **Step 9: Create workspace route group layout**
+- [ ] **Step 9: Create minimal workspace page**
+
+Create `web/src/app/(workspace)/workspace/page.tsx`:
+
+```tsx
+export default function WorkspacePage() {
+  return (
+    <main className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[var(--audit-shadow-card)]">
+      <p className="text-sm font-medium text-blue-700">今日工作台</p>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">机构自查工作台</h1>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+        前端基础壳层、项目上下文和路由入口已就绪。完整工作台仪表盘将在 Task 5 接入并扩展。
+      </p>
+    </main>
+  );
+}
+```
+
+This page is a route-readiness placeholder only. Do not add Task 5 dashboard cards, workflow status panels, or module previews here.
+
+- [ ] **Step 10: Create workspace route group layout**
 
 Create `web/src/app/(workspace)/layout.tsx`:
 
@@ -1058,7 +1094,7 @@ export default function WorkspaceLayout({
 }
 ```
 
-- [ ] **Step 10: Run shell test**
+- [ ] **Step 11: Run shell test**
 
 Run:
 
@@ -1072,12 +1108,16 @@ Expected:
 PASS  src/components/shell/workspace-shell.test.tsx
 ```
 
-- [ ] **Step 11: Commit shell**
+- [ ] **Step 12: Verify route smoke intent**
+
+Run production build or production smoke before closing Task 4. Evidence must show `/workspace` exists in the Next.js route output or is reachable in a production-started app, so the root redirect no longer points to a missing route.
+
+- [ ] **Step 13: Commit shell**
 
 Run:
 
 ```bash
-git add web/src/app/layout.tsx web/src/app/page.tsx web/src/app/'(workspace)'/layout.tsx web/src/components/shell web/src/components/ui
+git add web/src/app/layout.tsx web/src/app/page.tsx web/src/app/'(workspace)'/layout.tsx web/src/app/'(workspace)'/workspace/page.tsx web/src/components/shell web/src/components/ui
 git commit -m "搭建自查工作台页面壳层"
 ```
 
