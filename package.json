@@ -1,0 +1,14 @@
+{
+  "name": "medical-audit",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "web:dev": "pnpm --filter medical-audit-web dev",
+    "web:build": "pnpm --filter medical-audit-web build",
+    "web:start": "pnpm --filter medical-audit-web start",
+    "web:lint": "pnpm --filter medical-audit-web lint",
+    "web:typecheck": "pnpm --filter medical-audit-web typecheck",
+    "web:test": "pnpm --filter medical-audit-web test",
+    "web:e2e": "pnpm --filter medical-audit-web e2e"
+  }
+}
