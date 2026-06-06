@@ -563,6 +563,7 @@ Create `web/src/lib/navigation.test.ts`:
 import { describe, expect, it } from "vitest";
 
 import { primaryNavigation } from "./navigation";
+import { workflowStages } from "./workflow";
 
 describe("primaryNavigation", () => {
   it("keeps the self-check workflow order stable", () => {
@@ -587,6 +588,27 @@ describe("primaryNavigation", () => {
       label: "AI 引导自查",
       emphasis: "primary"
     });
+  });
+});
+
+describe("workflowStages", () => {
+  it("keeps the self-check stage order stable", () => {
+    expect(workflowStages.map((stage) => stage.stage)).toEqual([
+      "intake",
+      "retrieve",
+      "analyze",
+      "clarify",
+      "finding",
+      "remediation",
+      "report"
+    ]);
+  });
+
+  it("keeps every workflow stage readable", () => {
+    for (const stage of workflowStages) {
+      expect(stage.label.trim()).not.toBe("");
+      expect(stage.description.trim()).not.toBe("");
+    }
   });
 });
 ```
@@ -713,7 +735,7 @@ export const workflowStages: readonly WorkflowStageMeta[] = [
   {
     stage: "retrieve",
     label: "检索证据",
-    description: "调用知识库检索、专题过滤和规则卡 rerank。"
+    description: "按专题规则卡筛选并排序证据。"
   },
   {
     stage: "analyze",

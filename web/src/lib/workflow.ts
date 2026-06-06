@@ -22,7 +22,7 @@ export const workflowStages: readonly WorkflowStageMeta[] = [
   {
     stage: "retrieve",
     label: "检索证据",
-    description: "调用知识库检索、专题过滤和规则卡 rerank。"
+    description: "按专题规则卡筛选并排序证据。"
   },
   {
     stage: "analyze",
