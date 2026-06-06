@@ -235,10 +235,12 @@ Expected:
 - Create: `web/tsconfig.json`
 - Create: `web/next-env.d.ts`
 - Create: `web/postcss.config.mjs`
+- Create: `web/eslint.config.mjs`
 - Create: `web/vitest.config.ts`
 - Create: `web/playwright.config.ts`
 - Create: `web/src/test/setup.ts`
 - Create: `web/src/app/globals.css`
+- Modify: `web/package.json`
 
 - [ ] **Step 1: Create Next.js config with backend proxy**
 
@@ -247,7 +249,26 @@ Create `web/next.config.ts`:
 ```ts
 import type { NextConfig } from "next";
 
-const backendBaseUrl = process.env.MEDICAL_AUDIT_API_BASE_URL ?? "http://127.0.0.1:8021";
+const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8021";
+
+const resolveBackendBaseUrl = (value: string | undefined): string => {
+  const candidate = (value?.trim() || DEFAULT_BACKEND_BASE_URL).replace(/\/+$/, "");
+  let parsed: URL;
+
+  try {
+    parsed = new URL(candidate);
+  } catch (error) {
+    throw new Error("MEDICAL_AUDIT_API_BASE_URL must be a valid URL.", { cause: error });
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("MEDICAL_AUDIT_API_BASE_URL must use http or https.");
+  }
+
+  return candidate;
+};
+
+const backendBaseUrl = resolveBackendBaseUrl(process.env.MEDICAL_AUDIT_API_BASE_URL);
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -331,11 +352,49 @@ const config = {
 export default config;
 ```
 
-- [ ] **Step 5: Create Vitest config**
+- [ ] **Step 5: Create ESLint flat config and update lint script**
+
+Create `web/eslint.config.mjs`:
+
+```js
+import { FlatCompat } from "@eslint/eslintrc";
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitalsConfig from "eslint-config-next/core-web-vitals.js";
+import nextTypescriptConfig from "eslint-config-next/typescript.js";
+
+const compat = new FlatCompat({
+  baseDirectory: import.meta.dirname
+});
+
+const eslintConfig = defineConfig([
+  ...compat.config(nextVitalsConfig),
+  ...compat.config(nextTypescriptConfig),
+  globalIgnores([
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+    "test-results/**",
+    "playwright-report/**"
+  ])
+]);
+
+export default eslintConfig;
+```
+
+Update `web/package.json`:
+
+```json
+"lint": "eslint ."
+```
+
+- [ ] **Step 6: Create Vitest config**
 
 Create `web/vitest.config.ts`:
 
 ```ts
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -349,13 +408,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": new URL("./src", import.meta.url).pathname
+      "@": fileURLToPath(new URL("./src", import.meta.url))
     }
   }
 });
 ```
 
-- [ ] **Step 6: Create Playwright config**
+- [ ] **Step 7: Create Playwright config**
 
 Create `web/playwright.config.ts`:
 
@@ -375,7 +434,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm dev",
     url: "http://127.0.0.1:3030",
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000
   },
   projects: [
@@ -387,7 +446,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 7: Create Testing Library setup**
+- [ ] **Step 8: Create Testing Library setup**
 
 Create `web/src/test/setup.ts`:
 
@@ -395,7 +454,7 @@ Create `web/src/test/setup.ts`:
 import "@testing-library/jest-dom/vitest";
 ```
 
-- [ ] **Step 8: Create global design tokens**
+- [ ] **Step 9: Create global design tokens**
 
 Create `web/src/app/globals.css`:
 
@@ -462,11 +521,12 @@ select {
 }
 ```
 
-- [ ] **Step 9: Run typecheck to verify config baseline**
+- [ ] **Step 10: Run lint and typecheck to verify config baseline**
 
 Run:
 
 ```bash
+pnpm web:lint
 pnpm web:typecheck
 ```
 
@@ -476,12 +536,12 @@ Expected:
 Done in
 ```
 
-- [ ] **Step 10: Commit configuration**
+- [ ] **Step 11: Commit configuration**
 
 Run:
 
 ```bash
-git add web/next.config.ts web/tsconfig.json web/next-env.d.ts web/postcss.config.mjs web/vitest.config.ts web/playwright.config.ts web/src/test/setup.ts web/src/app/globals.css
+git add web/package.json web/eslint.config.mjs web/next.config.ts web/tsconfig.json web/next-env.d.ts web/postcss.config.mjs web/vitest.config.ts web/playwright.config.ts web/src/test/setup.ts web/src/app/globals.css
 git commit -m "配置前端构建与测试基线"
 ```
 
