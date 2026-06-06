@@ -373,7 +373,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 6: Create global design tokens**
+- [ ] **Step 6: Create Testing Library setup**
 
 Create `web/src/test/setup.ts`:
 
@@ -456,13 +456,11 @@ Run:
 pnpm web:typecheck
 ```
 
-Expected before app files exist:
+Expected:
 
 ```text
-error TS18003: No inputs were found in config file
+Done in
 ```
-
-This failure is expected until Task 3 creates source files.
 
 - [ ] **Step 9: Commit configuration**
 
