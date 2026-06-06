@@ -43,9 +43,6 @@
    Linting and checking validity of types ...
    Collecting page data ...
    Generating static pages (0/14) ...
-   Generating static pages (3/14) 
-   Generating static pages (6/14) 
-   Generating static pages (10/14) 
  ✓ Generating static pages (14/14)
    Finalizing page optimization ...
    Collecting build traces ...
@@ -88,3 +85,8 @@ Running 2 tests using 1 worker
   ✓  2 [chromium] › tests/e2e/foundation.spec.ts:16:1 › guided check route is reachable (798ms)
 
   2 passed (5.8s)
+
+## legacy FastAPI page diff
+src/medical_audit_kb/api/templates: empty diff
+src/medical_audit_kb/api/static/app.css: empty diff
+src/medical_audit_kb/api/routes_pages.py: empty diff
