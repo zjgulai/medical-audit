@@ -809,22 +809,40 @@ Create `web/src/components/shell/workspace-shell.test.tsx`:
 
 ```tsx
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceShell } from "./workspace-shell";
 
+const { usePathnameMock } = vi.hoisted(() => ({
+  usePathnameMock: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: usePathnameMock
+}));
+
 describe("WorkspaceShell", () => {
-  it("renders the self-check OS navigation and project context", () => {
+  beforeEach(() => {
+    usePathnameMock.mockReturnValue("/workspace");
+  });
+
+  it("renders route-aware navigation and project context without owning the page h1", () => {
     render(
       <WorkspaceShell>
         <main>页面内容</main>
       </WorkspaceShell>
     );
 
+    expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
     expect(screen.getByText("医保自查 OS")).toBeInTheDocument();
     expect(screen.getByText("AI 引导自查")).toBeInTheDocument();
     expect(screen.getByText("默认自查项目")).toBeInTheDocument();
+    expect(screen.getByText("索引状态待接入")).toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
+
+    expect(screen.getByRole("link", { name: /今日工作台/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /AI 引导自查/ })).not.toHaveAttribute("aria-current");
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 });
 ```
@@ -878,13 +896,22 @@ export function StatusPill({ children, tone = "neutral" }: StatusPillProps) {
 Create `web/src/components/shell/app-sidebar.tsx`:
 
 ```tsx
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { primaryNavigation } from "@/lib/navigation";
 
+function isActivePath(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function AppSidebar() {
+  const pathname = usePathname();
+
   return (
-    <aside className="flex min-h-screen w-72 flex-col border-r border-slate-200/80 bg-white/92 px-5 py-6 shadow-[12px_0_40px_rgb(16_24_40/0.04)]">
+    <aside className="flex w-full flex-col border-b border-slate-200/80 bg-white/92 px-4 py-4 shadow-[0_12px_40px_rgb(16_24_40/0.04)] sm:px-5 md:min-h-screen md:w-72 md:border-r md:border-b-0 md:py-6 md:shadow-[12px_0_40px_rgb(16_24_40/0.04)]">
       <Link href="/workspace" className="audit-focus-ring rounded-2xl">
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-2xl bg-blue-600 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">
@@ -898,20 +925,25 @@ export function AppSidebar() {
       </Link>
 
       <nav className="mt-8 flex flex-1 flex-col gap-1.5" aria-label="主导航">
-        {primaryNavigation.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`audit-focus-ring rounded-2xl px-3 py-3 text-sm transition ${
-              item.emphasis === "primary"
-                ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
-                : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
-            }`}
-          >
-            <span className="block font-medium">{item.label}</span>
-            <span className="mt-0.5 block truncate text-xs text-slate-500">{item.description}</span>
-          </Link>
-        ))}
+        {primaryNavigation.map((item) => {
+          const isActive = isActivePath(pathname, item.href);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={isActive ? "page" : undefined}
+              className={`audit-focus-ring rounded-2xl px-3 py-3 text-sm transition ${
+                isActive
+                  ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
+                  : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
+              }`}
+            >
+              <span className="block font-medium">{item.label}</span>
+              <span className="mt-0.5 block truncate text-xs text-slate-500">{item.description}</span>
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );
@@ -927,16 +959,16 @@ import { StatusPill } from "@/components/ui/status-pill";
 
 export function ProjectContextBar() {
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/82 px-8 py-4 backdrop-blur-xl">
+    <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/82 px-4 py-4 backdrop-blur-xl sm:px-6 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">当前自查项目</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">默认自查项目</h1>
+          <div className="mt-1 text-xl font-semibold tracking-tight text-slate-950">默认自查项目</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone="info">医保基金使用合规</StatusPill>
           <StatusPill tone="warning">证据待补充</StatusPill>
-          <StatusPill tone="success">索引在线</StatusPill>
+          <StatusPill tone="neutral">索引状态待接入</StatusPill>
         </div>
       </div>
     </header>
@@ -959,11 +991,11 @@ type WorkspaceShellProps = {
 export function WorkspaceShell({ children }: WorkspaceShellProps) {
   return (
     <div className="min-h-screen bg-[var(--audit-bg)]">
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen flex-col md:flex-row">
         <AppSidebar />
         <div className="min-w-0 flex-1">
           <ProjectContextBar />
-          <div className="px-8 py-8">{children}</div>
+          <div className="px-4 py-5 sm:px-6 md:px-8 md:py-8">{children}</div>
         </div>
       </div>
     </div>
