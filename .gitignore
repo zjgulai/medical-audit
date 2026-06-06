@@ -5,6 +5,7 @@
 *.pyo
 *.log
 *.tmp
+*.tsbuildinfo
 *.pem
 *.uploading.cfg
 

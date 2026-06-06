@@ -233,6 +233,7 @@ Expected:
 
 - Create: `web/next.config.ts`
 - Create: `web/tsconfig.json`
+- Create: `web/next-env.d.ts`
 - Create: `web/postcss.config.mjs`
 - Create: `web/vitest.config.ts`
 - Create: `web/playwright.config.ts`
@@ -303,7 +304,20 @@ Create `web/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Create PostCSS config for Tailwind CSS v4**
+- [ ] **Step 3: Create Next.js TypeScript env declaration**
+
+Create `web/next-env.d.ts`:
+
+```ts
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+/// <reference path="./.next/types/routes.d.ts" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+```
+
+- [ ] **Step 4: Create PostCSS config for Tailwind CSS v4**
 
 Create `web/postcss.config.mjs`:
 
@@ -317,7 +331,7 @@ const config = {
 export default config;
 ```
 
-- [ ] **Step 4: Create Vitest config**
+- [ ] **Step 5: Create Vitest config**
 
 Create `web/vitest.config.ts`:
 
@@ -341,7 +355,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 5: Create Playwright config**
+- [ ] **Step 6: Create Playwright config**
 
 Create `web/playwright.config.ts`:
 
@@ -373,7 +387,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 6: Create Testing Library setup**
+- [ ] **Step 7: Create Testing Library setup**
 
 Create `web/src/test/setup.ts`:
 
@@ -381,7 +395,7 @@ Create `web/src/test/setup.ts`:
 import "@testing-library/jest-dom/vitest";
 ```
 
-- [ ] **Step 7: Create global design tokens**
+- [ ] **Step 8: Create global design tokens**
 
 Create `web/src/app/globals.css`:
 
@@ -448,7 +462,7 @@ select {
 }
 ```
 
-- [ ] **Step 8: Run typecheck to verify config baseline**
+- [ ] **Step 9: Run typecheck to verify config baseline**
 
 Run:
 
@@ -462,12 +476,12 @@ Expected:
 Done in
 ```
 
-- [ ] **Step 9: Commit configuration**
+- [ ] **Step 10: Commit configuration**
 
 Run:
 
 ```bash
-git add web/next.config.ts web/tsconfig.json web/postcss.config.mjs web/vitest.config.ts web/playwright.config.ts web/src/test/setup.ts web/src/app/globals.css
+git add web/next.config.ts web/tsconfig.json web/next-env.d.ts web/postcss.config.mjs web/vitest.config.ts web/playwright.config.ts web/src/test/setup.ts web/src/app/globals.css
 git commit -m "配置前端构建与测试基线"
 ```
 
