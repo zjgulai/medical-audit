@@ -2,6 +2,14 @@
   "name": "medical-audit",
   "private": true,
   "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.15"
+    }
+  },
   "scripts": {
     "web:dev": "pnpm --filter medical-audit-web dev",
     "web:build": "pnpm --filter medical-audit-web build",
