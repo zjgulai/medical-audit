@@ -39,4 +39,12 @@ describe("workspace foundation pages", () => {
       unmount();
     }
   });
+
+  it("exposes module cards for every non-workspace navigation item", () => {
+    render(<WorkspacePage />);
+
+    for (const item of primaryNavigation.filter((navigationItem) => navigationItem.href !== "/workspace")) {
+      expect(screen.getByRole("link", { name: new RegExp(item.label) })).toHaveAttribute("href", item.href);
+    }
+  });
 });

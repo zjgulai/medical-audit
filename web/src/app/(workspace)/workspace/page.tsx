@@ -14,7 +14,9 @@ export default function WorkspacePage() {
       </section>
 
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
-        {primaryNavigation.slice(1).map((item) => (
+        {primaryNavigation
+          .filter((item) => item.href !== "/workspace")
+          .map((item) => (
           <ModuleCard
             key={item.href}
             title={item.label}
