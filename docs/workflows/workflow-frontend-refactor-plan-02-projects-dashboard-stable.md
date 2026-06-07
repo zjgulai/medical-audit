@@ -3,7 +3,7 @@ title: 前端重构第二阶段实施计划：自查项目模型与今日工作�
 doc_type: workflow
 module: frontend
 topic: self-check-os-projects-dashboard
-status: review
+status: stable
 created: 2026-06-07
 updated: 2026-06-07
 owner: self
