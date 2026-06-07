@@ -9,6 +9,12 @@ __pycache__
 dist
 build
 coverage
+.next
+web/.next
+web/test-results
+web/playwright-report
+.vercel
+.superpowers
 node_modules
 tmp
 data
@@ -18,3 +24,4 @@ archive
 *.crt
 *.env
 *.log
+*.tsbuildinfo

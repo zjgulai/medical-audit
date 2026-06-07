@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --audit-bg: #f5f7fb;
+  --audit-surface: #ffffff;
+  --audit-surface-subtle: #f8fafc;
+  --audit-ink: #101828;
+  --audit-ink-muted: #667085;
+  --audit-line: #d9e2ef;
+  --audit-blue: #155eef;
+  --audit-blue-deep: #173b7a;
+  --audit-cyan: #0e9384;
+  --audit-amber: #b54708;
+  --audit-red: #b42318;
+  --audit-green: #067647;
+  --audit-radius-lg: 18px;
+  --audit-radius-md: 12px;
+  --audit-shadow-card: 0 18px 45px rgb(16 24 40 / 0.08);
+  --audit-font-sans: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --audit-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--audit-bg);
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgb(21 94 239 / 0.08), transparent 34rem),
+    linear-gradient(180deg, #f8fbff 0%, var(--audit-bg) 42%);
+  color: var(--audit-ink);
+  font-family: var(--audit-font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.audit-focus-ring:focus-visible {
+  outline: 3px solid rgb(21 94 239 / 0.28);
+  outline-offset: 2px;
+}

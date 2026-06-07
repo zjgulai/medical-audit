@@ -1,0 +1,90 @@
+## pnpm web:typecheck
+
+> medical-audit@ web:typecheck /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard
+> pnpm --filter medical-audit-web typecheck
+
+
+> medical-audit-web@0.1.0 typecheck /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard/web
+> tsc --noEmit
+
+
+## pnpm web:test
+
+> medical-audit@ web:test /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard
+> pnpm --filter medical-audit-web test
+
+
+> medical-audit-web@0.1.0 test /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard/web
+> vitest run
+
+
+ RUN  v4.1.8 /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard/web
+
+
+ Test Files  7 passed (7)
+      Tests  19 passed (19)
+   Start at  13:43:49
+   Duration  982ms (transform 361ms, setup 557ms, import 849ms, tests 296ms, environment 3.40s)
+
+
+## pnpm web:build
+
+> medical-audit@ web:build /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard
+> pnpm --filter medical-audit-web build
+
+
+> medical-audit-web@0.1.0 build /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard/web
+> next build
+
+   ▲ Next.js 15.5.19
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 995ms
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/14) ...
+   Generating static pages (3/14)
+   Generating static pages (6/14)
+   Generating static pages (10/14)
+ ✓ Generating static pages (14/14)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      146 B         102 kB
+├ ○ /_not-found                            994 B         103 kB
+├ ○ /analytics                             146 B         102 kB
+├ ○ /archive                               146 B         102 kB
+├ ○ /documents                             146 B         102 kB
+├ ○ /findings                              146 B         102 kB
+├ ○ /graph                                 146 B         102 kB
+├ ○ /guided-check                          146 B         102 kB
+├ ○ /remediation                           146 B         102 kB
+├ ○ /reports                               146 B         102 kB
+├ ○ /rules                                 146 B         102 kB
+└ ○ /workspace                           1.49 kB         104 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/752-e03d867b364e9cc7.js       45.9 kB
+  ├ chunks/a8b49153-396a2185c5bc4406.js  54.2 kB
+  └ other shared chunks (total)          1.92 kB
+
+
+○  (Static)  prerendered as static content
+
+
+## pnpm web:e2e
+
+> medical-audit@ web:e2e /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard
+> pnpm --filter medical-audit-web e2e
+
+
+> medical-audit-web@0.1.0 e2e /Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard/web
+> playwright test
+
+
+Running 2 tests using 1 worker
+
+  ✓  1 [chromium] › tests/e2e/foundation.spec.ts:3:1 › self-check OS foundation renders navigation and core modules (1.2s)
+  ✓  2 [chromium] › tests/e2e/foundation.spec.ts:19:1 › guided check route is reachable (1.2s)
+
+  2 passed (7.4s)
