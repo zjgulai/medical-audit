@@ -40,11 +40,20 @@ describe("workspace foundation pages", () => {
     }
   });
 
-  it("exposes module cards for every non-workspace navigation item", () => {
+  it("exposes the dashboard sections owned by the workspace page", () => {
     render(<WorkspacePage />);
 
-    for (const item of primaryNavigation.filter((navigationItem) => navigationItem.href !== "/workspace")) {
-      expect(screen.getByRole("link", { name: new RegExp(item.label) })).toHaveAttribute("href", item.href);
-    }
+    expect(screen.getByRole("region", { name: "项目关键指标" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前阶段：形成判断" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "需要人工处理" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "项目审计链动态" })).toBeInTheDocument();
+  });
+
+  it("renders the current self-check project dashboard", () => {
+    render(<WorkspacePage />);
+
+    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
+    expect(screen.getByText("待处理疑点")).toBeInTheDocument();
+    expect(screen.getByText("待补证据")).toBeInTheDocument();
   });
 });

@@ -26,8 +26,9 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
     expect(screen.getByText("医保自查 OS")).toBeInTheDocument();
     expect(screen.getByText("AI 引导自查")).toBeInTheDocument();
-    expect(screen.getByText("默认自查项目")).toBeInTheDocument();
-    expect(screen.getByText("索引状态待接入")).toBeInTheDocument();
+    expect(screen.getByText("医保基金使用合规专项自查")).toBeInTheDocument();
+    expect(screen.getByText("单院医保内审试运行")).toBeInTheDocument();
+    expect(screen.getByText("医保基金使用合规")).toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /今日工作台/ })).toHaveAttribute("aria-current", "page");
