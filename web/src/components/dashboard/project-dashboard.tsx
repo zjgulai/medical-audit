@@ -1,3 +1,4 @@
+import { BackendStatusCard } from "./backend-status-card";
 import { ProjectActivityList } from "./project-activity-list";
 import { ProjectMetricCard } from "./project-metric-card";
 import { ProjectQueueCard } from "./project-queue-card";
@@ -13,6 +14,7 @@ export function ProjectDashboard({ project }: ProjectDashboardProps) {
   return (
     <main className="space-y-6">
       <ProjectStatusCard project={project} />
+      <BackendStatusCard />
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="项目关键指标">
         {project.metrics.map((metric) => (
           <ProjectMetricCard key={metric.key} metric={metric} />
