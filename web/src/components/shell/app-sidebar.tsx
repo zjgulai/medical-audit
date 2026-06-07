@@ -26,7 +26,10 @@ export function AppSidebar() {
         </div>
       </Link>
 
-      <nav className="mt-8 flex flex-1 flex-col gap-1.5" aria-label="主导航">
+      <nav
+        className="mt-5 flex gap-2 overflow-x-auto pb-1 md:mt-8 md:flex-1 md:flex-col md:gap-1.5 md:overflow-x-visible md:pb-0"
+        aria-label="主导航"
+      >
         {primaryNavigation.map((item) => {
           const isActive = isActivePath(pathname, item.href);
 
@@ -35,14 +38,14 @@ export function AppSidebar() {
               key={item.href}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`audit-focus-ring rounded-2xl px-3 py-3 text-sm transition ${
+              className={`audit-focus-ring min-w-40 rounded-2xl px-3 py-3 text-sm transition md:min-w-0 ${
                 isActive
                   ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
                   : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
               }`}
             >
               <span className="block font-medium">{item.label}</span>
-              <span className="mt-0.5 block truncate text-xs text-slate-500">{item.description}</span>
+              <span className="mt-0.5 hidden truncate text-xs text-slate-500 md:block">{item.description}</span>
             </Link>
           );
         })}

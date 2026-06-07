@@ -23,8 +23,8 @@
 
  Test Files  7 passed (7)
       Tests  19 passed (19)
-   Start at  13:21:02
-   Duration  1.20s (transform 445ms, setup 693ms, import 923ms, tests 294ms, environment 4.53s)
+   Start at  13:43:49
+   Duration  982ms (transform 361ms, setup 557ms, import 849ms, tests 296ms, environment 3.40s)
 
 
 ## pnpm web:build
@@ -39,7 +39,7 @@
    ▲ Next.js 15.5.19
 
    Creating an optimized production build ...
- ✓ Compiled successfully in 1710ms
+ ✓ Compiled successfully in 995ms
    Linting and checking validity of types ...
    Collecting page data ...
    Generating static pages (0/14) ...
@@ -84,7 +84,7 @@ Route (app)                                 Size  First Load JS
 
 Running 2 tests using 1 worker
 
-  ✓  1 [chromium] › tests/e2e/foundation.spec.ts:3:1 › self-check OS foundation renders navigation and core modules (1.0s)
-  ✓  2 [chromium] › tests/e2e/foundation.spec.ts:19:1 › guided check route is reachable (1.8s)
+  ✓  1 [chromium] › tests/e2e/foundation.spec.ts:3:1 › self-check OS foundation renders navigation and core modules (1.2s)
+  ✓  2 [chromium] › tests/e2e/foundation.spec.ts:19:1 › guided check route is reachable (1.2s)
 
-  2 passed (7.9s)
+  2 passed (7.4s)

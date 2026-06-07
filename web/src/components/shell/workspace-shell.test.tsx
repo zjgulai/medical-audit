@@ -23,7 +23,7 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("navigation", { name: "主导航" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "主导航" })).toHaveClass("overflow-x-auto");
     expect(screen.getByText("医保自查 OS")).toBeInTheDocument();
     expect(screen.getByText("AI 引导自查")).toBeInTheDocument();
     expect(screen.getByText("医保基金使用合规专项自查")).toBeInTheDocument();
