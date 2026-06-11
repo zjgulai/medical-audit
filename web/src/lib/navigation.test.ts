@@ -9,7 +9,7 @@ describe("primaryNavigation", () => {
       "/workspace",
       "/pages/chat",
       "/knowledge-query",
-      "/pages/audit-findings",
+      "/findings",
       "/pages/review-tasks",
       "/pages/audit-logs",
       "/pages/index-admin"
@@ -22,6 +22,16 @@ describe("primaryNavigation", () => {
     expect(query).toMatchObject({
       label: "查询工作台",
       href: "/knowledge-query",
+      target: "workspace"
+    });
+  });
+
+  it("promotes findings to a Next-native module", () => {
+    const findings = primaryNavigation.find((item) => item.id === "findings");
+
+    expect(findings).toMatchObject({
+      label: "疑点清单",
+      href: "/findings",
       target: "workspace"
     });
   });

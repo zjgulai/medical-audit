@@ -61,3 +61,55 @@ export type QueryResponse = {
   readonly citations: readonly QueryCitation[];
   readonly query_log_index: number;
 };
+
+export type AuditFindingEvidenceItem = {
+  readonly evidence_type: string;
+  readonly chunk_id: string | null;
+  readonly source_package_version_key: string | null;
+  readonly index_version_key: string | null;
+  readonly citation_id: string | null;
+  readonly locator: Record<string, unknown>;
+  readonly snippet: string | null;
+  readonly metadata: Record<string, unknown>;
+  readonly created_at: string;
+};
+
+export type AuditFinding = {
+  readonly finding_key: string;
+  readonly status: string;
+  readonly finding_type: string;
+  readonly severity: string;
+  readonly review_status: string;
+  readonly review_task_id: string | null;
+  readonly source_record_locator: Record<string, unknown>;
+  readonly calculation_trace: Record<string, unknown>;
+  readonly metadata: Record<string, unknown>;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly audit_run_key: string | null;
+  readonly audit_task_key: string | null;
+  readonly rule_key: string | null;
+  readonly rule_version_key: string | null;
+  readonly evidence_items: readonly AuditFindingEvidenceItem[];
+};
+
+export type AuditFindingStats = {
+  readonly total: number;
+  readonly open: number;
+  readonly pending_review: number;
+  readonly linked_review_task: number;
+};
+
+export type AuditFindingsResponse = {
+  readonly items: readonly AuditFinding[];
+  readonly stats: AuditFindingStats;
+  readonly filters: {
+    readonly review_status: string | null;
+    readonly limit: number;
+  };
+  readonly review_status_options: Record<string, string>;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};

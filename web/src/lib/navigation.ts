@@ -38,10 +38,10 @@ export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "findings",
     label: "疑点清单",
-    href: "/pages/audit-findings",
+    href: "/findings",
     description: "查看疑点状态、证据强度和复核入口。",
     emphasis: "standard",
-    target: "backend"
+    target: "workspace"
   },
   {
     id: "review-tasks",

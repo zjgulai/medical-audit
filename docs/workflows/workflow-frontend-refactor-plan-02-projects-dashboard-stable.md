@@ -926,13 +926,14 @@ Current product integration correction:
 - As of 2026-06-11, the primary workspace navigation must not expose Plan 03-11 placeholder modules as first-level actions.
 - `今日工作台` remains the Next.js-owned `/workspace` dashboard.
 - `查询工作台` is now a Next.js-owned API-first route at `/knowledge-query`, backed by `POST /api/v1/query`; `/pages/query` remains the FastAPI/Jinja compatibility page.
-- Other live product actions remain integrated through existing FastAPI/Jinja backend pages: `/pages/chat`, `/pages/audit-findings`, `/pages/review-tasks`, `/pages/audit-logs`, and `/pages/index-admin`.
-- The legacy Next.js routes `/guided-check`, `/rules`, `/documents`, `/findings`, `/remediation`, `/reports`, `/analytics`, `/graph`, and `/archive` remain only as compatibility bridge pages. They must point users to the nearest live backend, Next-native, or workspace function and must not show `Plan 03` through `Plan 11` placeholder content.
+- `疑点清单` is now a Next.js-owned API-first route at `/findings`, backed by `GET /api/v1/audit-findings`; `/pages/audit-findings` remains the FastAPI/Jinja compatibility page and owns the existing review-task creation POST flow.
+- Other live product actions remain integrated through existing FastAPI/Jinja backend pages: `/pages/chat`, `/pages/review-tasks`, `/pages/audit-logs`, and `/pages/index-admin`.
+- The legacy Next.js routes `/guided-check`, `/rules`, `/documents`, `/remediation`, `/reports`, `/analytics`, `/graph`, and `/archive` remain only as compatibility bridge pages. They must point users to the nearest live backend, Next-native, or workspace function and must not show `Plan 03` through `Plan 11` placeholder content.
 
 Known deferred work:
 
 - Project CRUD and persistence move to a later backend API plan.
-- Next-native AI guided chat, rule library, findings, remediation, reports, analytics, graph, and archive modules remain deferred until they are backed by real API/domain capabilities.
+- Next-native AI guided chat, rule library, remediation, reports, analytics, graph, and archive modules remain deferred until they are backed by real API/domain capabilities.
 
 Execution:
 

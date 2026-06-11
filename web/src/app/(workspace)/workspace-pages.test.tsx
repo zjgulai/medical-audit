@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { primaryNavigation } from "@/lib/navigation";
 
@@ -15,16 +15,37 @@ import ReportsPage from "./reports/page";
 import RulesPage from "./rules/page";
 import WorkspacePage from "./workspace/page";
 
+vi.mock("@/lib/api-client", () => ({
+  fetchAuditFindings: vi.fn(async () => ({
+    items: [],
+    stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
+    filters: { review_status: null, limit: 100 },
+    review_status_options: { "pending-review": "待复核" },
+    store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
+  })),
+  fetchBackendHealth: vi.fn(async () => ({
+    status: "ok",
+    version: "0.1.0",
+    data_root: "/tmp/data"
+  })),
+  fetchSearchBackendStatus: vi.fn(async () => ({
+    backend: "postgres",
+    ready: true,
+    details: { matching_embedding_count: 48985 }
+  })),
+  runKnowledgeQuery: vi.fn()
+}));
+
 const routePages = [
   ["/workspace", WorkspacePage],
   ["/knowledge-query", KnowledgeQueryPage],
+  ["/findings", FindingsPage],
 ] as const;
 
 const legacyBridgePages = [
   ["/guided-check", GuidedCheckPage, "/pages/chat"],
   ["/rules", RulesPage, "/pages/index-admin"],
   ["/documents", DocumentsPage, "/knowledge-query"],
-  ["/findings", FindingsPage, "/pages/audit-findings"],
   ["/remediation", RemediationPage, "/pages/review-tasks"],
   ["/reports", ReportsPage, "/pages/review-tasks"],
   ["/analytics", AnalyticsPage, "/pages/index-admin"],
