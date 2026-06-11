@@ -208,6 +208,37 @@ def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> N
     assert report["issues"] == ["missing-required-backup-stamp:app,env,db,nginx,web"]
 
 
+def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_production",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    args = types.SimpleNamespace(
+        execute=False,
+        confirm_production="",
+        ssh_key="ai_video.pem",
+        ssh_user=module.DEFAULT_USER,
+        ssh_host=module.DEFAULT_HOST,
+        remote_app_dir=module.DEFAULT_REMOTE_APP_DIR,
+        remote_web_dir=module.DEFAULT_REMOTE_WEB_DIR,
+        base_url=module.DEFAULT_BASE_URL,
+        stamp="20260611T184000+0800",
+        allow_dirty=False,
+        skip_web_build=False,
+        skip_app_rebuild=False,
+        apply_schema=False,
+        skip_smoke=False,
+        include_review_write=False,
+        report="",
+    )
+
+    config = module._config_from_args(args)
+
+    assert config.report_path == Path(
+        "tmp/outputs/production-e2e-smoke-after-deploy-20260611T184000+0800.json",
+    ).resolve()
+
+
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/run-audit-log-archive-audit.py")
 

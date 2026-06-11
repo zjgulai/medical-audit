@@ -184,13 +184,15 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         raise DeployError(
             f"--execute requires --confirm-production {DEFAULT_DOMAIN}",
         )
-    report_path = Path(str(args.report)).expanduser()
-    if not str(report_path):
+    report_arg = str(args.report).strip()
+    if not report_arg:
         report_path = repo_root / "tmp" / "outputs" / (
             f"production-e2e-smoke-after-deploy-{args.stamp}.json"
         )
-    elif not report_path.is_absolute():
-        report_path = repo_root / report_path
+    else:
+        report_path = Path(report_arg).expanduser()
+        if not report_path.is_absolute():
+            report_path = repo_root / report_path
     return DeployConfig(
         repo_root=repo_root,
         ssh_key=ssh_key,
