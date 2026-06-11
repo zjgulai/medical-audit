@@ -35,16 +35,16 @@ source: human+ai
 
 ### 2026-06-11 当前事实
 
-- 当前生产部署 SHA：`9bba75812819d4b1ded636617e04a1d80374df7d Merge pull request #57 from zjgulai/codex/deploy-sync-artifact-cleanup`。
+- 当前生产部署 SHA：`47b731e049155a6ac00eaf4cd4e202deb85d4226 接入 Next 原生疑点清单`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
-- 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
+- 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
 - `ai_video_nginx` 已通过 `/opt/ai-video/deploy/lighthouse/docker-compose.prod.yml` 挂载 `/var/www/audit:/var/www/audit:ro`，静态发布只需同步宿主机 `/var/www/audit`，容器会直接读取该目录。
 - 共享 `ai_video_nginx` 已定义 `upstream medical_audit_app { server medical_audit_app:8000; }`；`audit.lute-tlz-dddd.top` server block 内 `proxy_pass` 必须使用 `http://medical_audit_app`，不得再写 `:8000`。
-- Next.js 静态前端当前包含 `/workspace` 和 `/knowledge-query`；主导航“查询工作台”指向 `/knowledge-query`，后端 `/pages/query` 保留为兼容入口，根路径 `/query` 继续作为后端 API 精确代理入口。
+- Next.js 静态前端当前包含 `/workspace`、`/knowledge-query` 和 `/findings`；主导航“查询工作台”指向 `/knowledge-query`，“疑点清单”指向 `/findings`，后端 `/pages/query` 与 `/pages/audit-findings` 保留为兼容入口，根路径 `/query` 继续作为后端 API 精确代理入口。
 
 ### 2026-06-06 当前事实
 
@@ -432,6 +432,24 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 生产 smoke `production-e2e-smoke-after-sync-artifact-cleanup-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 部署状态巡检 `tencent-cloud-deployment-state-after-sync-artifact-cleanup-20260611` 已通过，状态为 `pass`，阻断项为空。
 
+### 5.18 PR #59 Next 原生疑点清单部署
+
+已在 2026-06-11 合并并部署 PR #59：
+
+- PR #59 merge commit：`47b731e049155a6ac00eaf4cd4e202deb85d4226`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260611T220658+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260611T220658+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260611T220658+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260611T220658+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260611T220658+0800.tar.gz`。
+- 远端 `.deploy-sha=47b731e049155a6ac00eaf4cd4e202deb85d4226`，`medical_audit_app` 与 `medical_audit_pg` 均为 `healthy`。
+- Next.js 静态导出已包含 `/findings`；主导航“疑点清单”已指向 `/findings`，后端 `/pages/audit-findings` 继续作为兼容入口和复核任务 POST 表单目标。
+- 新增生产 API `GET /api/v1/audit-findings` 已通过只读联调，当前返回 `stats.total=0`、`store.ready=true`、`store.backend=SqlAlchemyAuditFindingStore`；这表示生产库当前没有规则命中疑点记录，不表示页面仍是 placeholder。
+- 生产浏览器联调 `production-next-findings-dom-api-20260611` 已通过；`/findings` 页面标题为“规则命中疑点工作台”，复核状态筛选可见，兼容页链接为 `/pages/audit-findings`。
+- 生产 smoke `production-e2e-smoke-after-next-findings-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 部署后发现远端历史 `opendesign` 目录残留 5 个 `*.uploading.cfg`，已先备份到 `/opt/medical-audit/backups/uploading-cfg-cleanup-20260611T141600Z.tar.gz`，再清理；复核后 `/opt/medical-audit/app` 下 `*.uploading.cfg` 数量为 `0`。
+- 部署状态复核确认 `src/medical_audit_kb/topics` 不存在，`/var/www/audit/findings.html` 存在，上传临时残留为 `0`。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -729,7 +747,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台和远端同步缓存清理均已部署到生产，当前 `.deploy-sha=9bba75812819d4b1ded636617e04a1d80374df7d`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理和 Next 原生疑点清单均已部署到生产，当前 `.deploy-sha=47b731e049155a6ac00eaf4cd4e202deb85d4226`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
@@ -745,6 +763,8 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/index/search-backend` 返回 `ready=true`。
 - `matching_embedding_count=48985`。
 - `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
+- `/findings` 返回 Next 原生疑点工作台，主导航“疑点清单”指向 `/findings`。
+- `/api/v1/audit-findings` 返回 `200`，且 `store.ready=true`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
