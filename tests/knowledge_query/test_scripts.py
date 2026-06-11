@@ -9,6 +9,8 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import ClassVar
 
+from pytest import MonkeyPatch
+
 
 def test_serve_chat_workbench_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/serve-chat-workbench.sh")
@@ -237,6 +239,49 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     assert config.report_path == Path(
         "tmp/outputs/production-e2e-smoke-after-deploy-20260611T184000+0800.json",
     ).resolve()
+
+
+def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_production_cleanup",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(remote_app_dir="/opt/medical-audit/app")
+
+    module._cleanup_remote_sync_artifacts(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "src_dir=/opt/medical-audit/app/src" in script
+    assert "test -d \"$src_dir\"" in script
+    assert "-name '*.pyc'" in script
+    assert "-name '*.pyo'" in script
+    assert "-name '*.uploading.cfg'" in script
+    assert "-name __pycache__ -empty" in script
+    assert "--delete-excluded" not in script
+    assert "/data" not in script
+    assert "medical-audit.env" not in script
+
+
+def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
+    script_text = Path("scripts/deploy-tencent-cloud-production.py").read_text(
+        encoding="utf-8",
+    )
+
+    backup_call = script_text.index("_create_remote_backups(config)")
+    cleanup_call = script_text.index("_cleanup_remote_sync_artifacts(config)")
+    sync_call = script_text.index("_sync_application(config)")
+
+    assert backup_call < cleanup_call < sync_call
+    assert "--delete-excluded" not in script_text
 
 
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
