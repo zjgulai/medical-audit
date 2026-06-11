@@ -35,13 +35,15 @@ source: human+ai
 
 ### 2026-06-11 当前事实
 
-- 当前生产部署 SHA：`e8e04f11 fix: 让生产外部 AI 开关尊重环境配置`。
+- 当前生产部署 SHA：`ed44c05e Merge pull request #45 from zjgulai/codex/tencent-cloud-deploy-minimal-pr`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
+- `ai_video_nginx` 当前没有将宿主机 `/var/www/audit` bind mount 到容器内；静态发布必须同步宿主机目录后再执行 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit`，否则公网会继续加载容器内旧 Next.js 静态资产。
+- 共享 `ai_video_nginx` 已定义 `upstream medical_audit_app { server medical_audit_app:8000; }`；`audit.lute-tlz-dddd.top` server block 内 `proxy_pass` 必须使用 `http://medical_audit_app`，不得再写 `:8000`。
 
 ### 2026-06-06 当前事实
 
@@ -256,6 +258,24 @@ source: human+ai
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 已通过；创建并关闭 `review-task-0003`，`review_tasks` 从 `2` 增至 `3`，`review_actions` 从 `2` 增至 `3`，任务导出成功。
 - 部署后 `docker ps` 显示 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 与其它业务容器均保持运行。
 
+### 5.9 PR #45 合并后静态前端热修与联调
+
+已在 2026-06-11 合并并部署 PR #45：
+
+- PR #45 merge commit：`ed44c05ebbb2e0003d1f2b7bc2df92e8d97b732d`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-pr45-main-deploy-20260611T172026+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-pr45-main-deploy-20260611T172026+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-pr45-main-deploy-20260611T172026+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-pr45-main-deploy-20260611T172026+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-pr45-main-deploy-20260611T172026+0800.tar.gz`。
+- 首次前后端联调发现公网仍加载旧 Next.js chunk，旧前端会请求 `/api/v1/api/v1/*` 并产生 `404`；根因是 `ai_video_nginx` 容器未挂载宿主机 `/var/www/audit`。
+- 已备份容器内旧静态目录到 `/opt/medical-audit/backups/web-container/audit-web-container-pre-pr45-static-hotfix-20260611T173930+0800.tar.gz`。
+- 已执行静态热修：`docker cp /var/www/audit/. ai_video_nginx:/var/www/audit`；热修后公网加载的 chunk 与本地 `web/out` 一致。
+- 已修正生产 audit server block 使用共享 upstream `medical_audit_app`，`nginx -t` 通过；未重启或重建共享 `ai_video_nginx`。
+- 生产写入型 E2E `production-e2e-smoke-with-review-write-after-pr45-main-deploy-20260611` 已通过，创建并关闭 `review-task-0004`。
+- 浏览器前后端联调创建 `review-task-0005`、`review-task-0006`，并通过页面表单更新承办人、复核意见、底稿编号；JSON 导出包含写入值。
+- 热修后浏览器联调覆盖 `/`、`/workspace`、`/analytics`、`/documents`、`/findings`、`/rules`、`/reports`、`/archive`、`/graph`、`/guided-check`、`/remediation`、`/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin`、`/pages/audit-findings`、`/pages/audit-logs`，未再出现旧前端 `404` 请求或控制台错误。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -264,9 +284,10 @@ source: human+ai
 2. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
 3. 将当前工作树同步到 `/opt/medical-audit/app/`。
 4. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
-5. 将 `web/out/` 同步到 `/var/www/audit/`，供 `audit.lute-tlz-dddd.top` 的 Nginx 静态根目录使用。
-6. 同步 `data/医保审核前期资料`，用于原文预览。
-7. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
+5. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。
+6. 当前 `ai_video_nginx` 未挂载宿主机 `/var/www/audit`；同步宿主机目录后必须执行 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit`，并抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致。
+7. 同步 `data/医保审核前期资料`，用于原文预览。
+8. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
 
 ### 6.2 数据库导入
 
@@ -508,10 +529,12 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接与前后端联调已部署到生产，最终 `.deploy-sha=e8e04f11`。
+- 生产认证桥接与前后端联调已部署到生产，当前 `.deploy-sha=ed44c05ebbb2e0003d1f2b7bc2df92e8d97b732d`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
+- PR #45 合并后生产写入型 E2E `production-e2e-smoke-with-review-write-after-pr45-main-deploy-20260611` 通过；创建、关闭并导出 `review-task-0004`。
+- 生产静态前端热修后，浏览器前后端联调已通过；旧 Next.js chunk 导致的 `/api/v1/api/v1/*` 404 已消除，`review-task-0005`、`review-task-0006` 已通过 UI 表单写入和导出验证。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
