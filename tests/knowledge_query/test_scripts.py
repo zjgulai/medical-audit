@@ -136,6 +136,78 @@ def test_run_production_e2e_smoke_auth_falls_back_to_admin_secret() -> None:
     assert auth.headers() == {"X-API-Key": "admin-secret"}
 
 
+def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
+    script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
+
+    result = subprocess.run(
+        ["python3", "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "<remote-audit>" in script_text
+    assert "tmp/outputs/tencent-cloud-deployment-state-latest.json" in script_text
+    assert "medical-audit.env" not in script_text
+
+
+def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path) -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    stamp = "20260611T180655+0800"
+    smoke_report = tmp_path / "production-e2e-smoke-after-pr48-deploy-20260611.json"
+    smoke_report.write_text(
+        json.dumps(
+            {
+                "status": "pass",
+                "base_url": "https://audit.lute-tlz-dddd.top",
+                "started_at": "2026-06-11T10:10:24Z",
+                "finished_at": "2026-06-11T10:10:34Z",
+                "steps": [{"name": "health"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = module._build_report(
+        remote_report=_deployment_state_fixture(stamp=stamp),
+        local_smoke_reports=module._summarize_local_smoke_reports(tmp_path, limit=3),
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["deploy_sha"] == "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
+    assert report["summary"]["audit_mount_present"] is True
+    assert report["summary"]["latest_local_smoke_status"] == "pass"
+
+
+def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_missing_backup",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+
+    report = module._build_report(
+        remote_report=_deployment_state_fixture(stamp="other-stamp"),
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp="20260611T180655+0800",
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert report["issues"] == ["missing-required-backup-stamp:app,env,db,nginx,web"]
+
+
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/run-audit-log-archive-audit.py")
 
@@ -640,6 +712,66 @@ def _candidate_import_result(index_version_key: str) -> dict[str, object]:
                     "embedding_model": "kimi-for-coding",
                 },
             },
+        },
+    }
+
+
+def _deployment_state_fixture(stamp: str) -> dict[str, object]:
+    return {
+        "deploy_sha": "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        "containers": {
+            "medical_audit_app": {
+                "status": "running",
+                "running": True,
+                "health": "healthy",
+                "compose_project": "medical-audit",
+                "compose_service": "app",
+            },
+            "medical_audit_pg": {
+                "status": "running",
+                "running": True,
+                "health": "healthy",
+                "compose_project": "medical-audit",
+                "compose_service": "postgres",
+            },
+            "ai_video_nginx": {
+                "status": "running",
+                "running": True,
+                "compose_project": "lighthouse",
+                "compose_service": "nginx",
+            },
+        },
+        "nginx": {
+            "config_test": {"passed": True},
+            "mounts": {
+                "audit_mount": {
+                    "source": "/var/www/audit",
+                    "destination": "/var/www/audit",
+                    "mode": "ro",
+                    "rw": False,
+                }
+            },
+        },
+        "local_backend": {
+            "search_backend": {
+                "ok": True,
+                "payload": {
+                    "backend": "postgres",
+                    "ready": True,
+                    "details": {"matching_embedding_count": 48985},
+                },
+            }
+        },
+        "backups": {
+            "app": [{"path": f"/opt/medical-audit/backups/app/pre-deploy-{stamp}.tar.gz"}],
+            "env": [
+                {"path": f"/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-{stamp}"}
+            ],
+            "db": [{"path": f"/opt/medical-audit/backups/db/pre-deploy-{stamp}.sql.gz"}],
+            "nginx": [{"path": f"/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-{stamp}"}],
+            "web": [
+                {"path": f"/opt/medical-audit/backups/web/audit-web-pre-deploy-{stamp}.tar.gz"}
+            ],
         },
     }
 

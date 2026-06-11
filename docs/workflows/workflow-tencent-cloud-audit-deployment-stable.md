@@ -105,6 +105,7 @@ source: human+ai
 - `configs/deploy/tencent-cloud/docker-compose.prod.yaml`
 - `configs/deploy/tencent-cloud/medical-audit.env.example`
 - `configs/deploy/tencent-cloud/nginx-audit-server.conf`
+- `scripts/audit-tencent-cloud-deployment-state.py`
 - `scripts/deploy-tencent-cloud-production.py`
 - `scripts/run-audit-log-archive-audit.py`
 - `.dockerignore`
@@ -325,6 +326,44 @@ source: human+ai
 - 自举部署后远端 `.deploy-sha=cf6c1479de0b109d5abc9ee92ac8267e549ec2f6`。
 - 生产只读 E2E `production-e2e-smoke-after-pr48-deploy-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和 `kg/video/voc/root` 边缘回归均为 `pass`。
 
+### 5.13 部署状态巡检与备份索引固化
+
+已新增只读部署状态巡检脚本：`scripts/audit-tencent-cloud-deployment-state.py`。
+
+脚本边界：
+
+- 只通过 SSH 读取远端状态，不修改生产文件、容器、数据库或 Nginx。
+- 不读取 `medical-audit.env` 内容，只检查备份文件路径、大小和修改时间。
+- 默认检查 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 状态。
+- 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
+- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count=48985`。
+- 默认汇总本地 `tmp/outputs/production-e2e-smoke*.json` 的最近结果，报告仍保存在 `tmp/outputs/`，不进入正式资产区。
+
+巡检命令：
+
+```bash
+uv run python scripts/audit-tencent-cloud-deployment-state.py \
+  --ssh-key ./ai_video.pem \
+  --expected-deploy-sha cf6c1479de0b109d5abc9ee92ac8267e549ec2f6 \
+  --required-backup-stamp 20260611T180655+0800
+```
+
+默认输出：
+
+- `tmp/outputs/tencent-cloud-deployment-state-latest.json`
+- `tmp/outputs/tencent-cloud-deployment-state-latest.md`
+
+通过条件：
+
+- 远端 `.deploy-sha` 等于期望 SHA。
+- `medical_audit_app` 和 `medical_audit_pg` 为 `healthy`。
+- `ai_video_nginx nginx -t` 通过。
+- `/var/www/audit` bind mount 存在且为只读。
+- PostgreSQL 检索后端 ready，embedding 计数为 `48985`。
+- 指定部署戳对应的 app/env/db/nginx/web 备份均存在。
+- 最近本地生产 smoke 报告不是 `fail`。
+- 首次生产巡检 `tencent-cloud-deployment-state-after-pr48-20260611` 已通过，状态为 `pass`，阻断项为空。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -361,6 +400,26 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 5. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
 
 手工同步只作为脚本失败时的排障路径。需要同步 `data/医保审核前期资料` 或 `tmp/knowledge-query-indexes/real-data-kimi-20260531` 时，先确认是否属于索引数据更新任务，不并入普通应用部署。
+
+### 6.1.1 部署后状态巡检
+
+每次生产部署、Nginx 变更、静态前端热修或写入型 E2E 后，必须执行部署状态巡检：
+
+```bash
+uv run python scripts/audit-tencent-cloud-deployment-state.py \
+  --ssh-key ./ai_video.pem \
+  --expected-deploy-sha <当前生产 .deploy-sha> \
+  --required-backup-stamp <本次部署备份戳>
+```
+
+巡检失败时先处理阻断项，不继续执行新的部署或回滚。报告中的 `issues` 是处置入口：
+
+- `deploy-sha-mismatch`：先确认是否存在“代码已合并但未部署”的正常差异。
+- `medical_audit_app-not-healthy`：先查看 app 容器日志和 healthcheck，不直接重建数据库。
+- `nginx-config-test-failed`：恢复最近的 Nginx 备份后再 reload。
+- `audit-static-bind-mount-missing`：检查共享 Nginx Compose 中 `/var/www/audit:/var/www/audit:ro`。
+- `search-backend-not-ready`：检查 PostgreSQL 容器、env 和 active index，不先动前端静态文件。
+- `missing-required-backup-stamp:*`：先补齐或确认备份，不继续写入型 E2E。
 
 ### 6.2 数据库导入
 
@@ -639,6 +698,17 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
 
 ## 10. 回滚方案
+
+回滚前置门禁：
+
+```bash
+uv run python scripts/audit-tencent-cloud-deployment-state.py \
+  --ssh-key ./ai_video.pem \
+  --expected-deploy-sha <当前生产 .deploy-sha> \
+  --required-backup-stamp <待回滚部署的备份戳>
+```
+
+只有在巡检报告能定位当前 SHA、容器状态、Nginx 状态和备份路径时，才进入回滚执行。
 
 应用回滚：
 
