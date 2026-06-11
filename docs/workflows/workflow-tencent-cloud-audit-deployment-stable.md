@@ -310,6 +310,7 @@ source: human+ai
 - 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
 - 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
 - 应用同步排除 `.deploy-sha`、`__pycache__/`、`*.pyc` 和本地缓存文件；`.deploy-sha` 只由脚本在同步后显式写入。
+- 应用同步前会在备份完成后清理远端 `remote_app_dir/src` 下的 `*.pyc`、`*.pyo`、`*.uploading.cfg` 和空 `__pycache__`，避免旧缓存或云盘上传临时文件阻断 rsync 删除空目录；不得使用 `--delete-excluded`，防止误删远端 `data/`、env、密钥或其他刻意排除资产。
 
 ### 5.12 PR #48 部署自动化入口自举部署
 

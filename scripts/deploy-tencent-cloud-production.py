@@ -85,6 +85,7 @@ def main() -> int:
             return 0
         _build_static_frontend(config)
         _create_remote_backups(config)
+        _cleanup_remote_sync_artifacts(config)
         _sync_application(config)
         _sync_static_frontend(config)
         if config.apply_schema:
@@ -301,6 +302,21 @@ def _sync_application(config: DeployConfig) -> None:
         args.extend(["--exclude", pattern])
     args.extend([f"{config.repo_root}/", remote])
     _run(args, cwd=config.repo_root)
+
+
+def _cleanup_remote_sync_artifacts(config: DeployConfig) -> None:
+    script = f"""
+set -euo pipefail
+src_dir={shlex.quote(config.remote_app_dir)}/src
+test -d "$src_dir"
+find "$src_dir" -type f \\( \
+  -name '*.pyc' -o \
+  -name '*.pyo' -o \
+  -name '*.uploading.cfg' \
+\\) -print -delete
+find "$src_dir" -type d -name __pycache__ -empty -print -delete
+"""
+    _ssh(config, script)
 
 
 def _sync_static_frontend(config: DeployConfig) -> None:
