@@ -9,26 +9,11 @@
   <body class="page-chat">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="chat-shell command-shell">
-      <nav class="topbar command-nav" aria-label="页面导航">
-        <a class="brand brand-command" href="/pages/chat" aria-label="AuditScope 对话审证台">
-          <span class="brand-mark">AS</span>
-          <span class="brand-lockup">
-            <strong>AuditScope</strong>
-            <small>医保审计证据控制台</small>
-          </span>
-        </a>
-        <div class="nav-links">
-          <a href="/pages/chat" aria-current="page">对话审证</a>
-          <a href="/pages/query">查询工作台</a>
-          <a href="/pages/audit-findings">疑点清单</a>
-          <a href="/pages/review-tasks">复核任务</a>
-          <a href="/pages/audit-logs">审计日志</a>
-          <a href="/pages/index-admin">索引管理</a>
-        </div>
-        <span class="status-pill {% if search_backend.ready %}ready{% else %}warn{% endif %}">
-          {% if search_backend.ready %}检索已就绪{% else %}检索未加载{% endif %}
-        </span>
-      </nav>
+      {% set active_nav = "chat" %}
+      {% set product_nav_class = "command-nav" %}
+      {% set product_nav_status_class = "ready" if search_backend.ready else "warn" %}
+      {% set product_nav_status_text = "检索已就绪" if search_backend.ready else "检索未加载" %}
+      {% include "_product_nav.html" %}
 
       {% if not search_backend.ready %}
         <section class="notice state-notice command-alert" role="alert">
