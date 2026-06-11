@@ -381,6 +381,22 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 生产 Playwright DOM 抽查已通过；`/workspace` 主导航的 7 个链接均指向预期路径，`/guided-check` 桥接到 `/pages/chat`。
 - 本次部署暴露部署脚本缺陷：默认 `--report` 为空时被解析成仓库目录，导致部署主体成功后 smoke 报告写入误报 `IsADirectoryError`。已修复默认 report path 解析并补充回归测试。
 
+### 5.15 PR #53 后端产品导航统一部署
+
+已在 2026-06-11 合并并部署 PR #53：
+
+- PR #53 merge commit：`5d01808229a2293be7c9466626fbb40a5d21af18`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260611T185250+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260611T185250+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260611T185250+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260611T185250+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260611T185250+0800.tar.gz`。
+- 远端 `.deploy-sha=5d01808229a2293be7c9466626fbb40a5d21af18`，`medical_audit_app` 与 `medical_audit_pg` 均为 `healthy`。
+- 后端真实功能页和原文预览页已统一使用共享 Jinja 产品导航，包含 `今日工作台 -> /workspace`、`对话审证`、`查询工作台`、`疑点清单`、`复核任务/底稿`、`审计日志` 和 `索引管理`。
+- 生产只读 E2E `production-e2e-smoke-after-backend-nav-unification-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产 Playwright DOM 抽查已通过；`/pages/chat`、`/pages/query`、`/pages/audit-findings`、`/pages/review-tasks`、`/pages/audit-logs`、`/pages/index-admin` 和 `/pages/preview/{chunk_id}` 均包含 `今日工作台 -> /workspace`。
+- 部署状态巡检 `tencent-cloud-deployment-state-after-pr53-20260611` 已通过，状态为 `pass`，阻断项为空。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -678,7 +694,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口和产品导航真实功能入口均已部署到生产，当前 `.deploy-sha=de137e136ee5686b78d0cac6337b20872ee26433`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口和后端产品导航统一均已部署到生产，当前 `.deploy-sha=5d01808229a2293be7c9466626fbb40a5d21af18`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
