@@ -20,21 +20,27 @@ const resolveBackendBaseUrl = (value: string | undefined): string => {
 };
 
 const backendBaseUrl = resolveBackendBaseUrl(process.env.MEDICAL_AUDIT_API_BASE_URL);
+const staticExportEnabled = process.env.MEDICAL_AUDIT_NEXT_EXPORT === "1";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  ...(staticExportEnabled ? { output: "export" as const } : {}),
   typescript: {
     ignoreBuildErrors: false,
     tsconfigPath: "tsconfig.json"
   },
-  async rewrites() {
-    return [
-      {
-        source: "/api/backend/:path*",
-        destination: `${backendBaseUrl}/:path*`
-      }
-    ];
-  }
+  ...(staticExportEnabled
+    ? {}
+    : {
+        async rewrites() {
+          return [
+            {
+              source: "/api/backend/:path*",
+              destination: `${backendBaseUrl}/:path*`
+            }
+          ];
+        }
+      })
 };
 
 export default nextConfig;

@@ -3,7 +3,9 @@ import os
 import subprocess
 import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import util as importlib_util
 from pathlib import Path
 from typing import ClassVar
 
@@ -87,6 +89,51 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "--include-review-write" in script_text
     assert "Default is read-only production smoke" in script_text
     assert "edge-regression" in script_text
+
+
+def test_run_production_e2e_smoke_selects_latest_review_task_id() -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    html = """
+    <a href="/review-tasks/review-task-0001/export?format=json">old</a>
+    <a href="/review-tasks/review-task-0003/export?format=json">new</a>
+    <a href="/review-tasks/review-task-0002/export?format=json">middle</a>
+    """
+
+    assert module._first_review_task_id(html) == "review-task-0003"
+
+
+def test_run_production_e2e_smoke_auth_uses_admin_secret_for_admin_requests() -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    auth = module.SmokeAuth(
+        api_key="auditor-secret",
+        admin_api_key="admin-secret",
+        api_key_env="AUDITOR_SECRET",
+        admin_api_key_env="ADMIN_SECRET",
+    )
+
+    assert auth.headers() == {"X-API-Key": "auditor-secret"}
+    assert auth.headers(admin=True) == {"X-API-Key": "admin-secret"}
+
+
+def test_run_production_e2e_smoke_auth_falls_back_to_admin_secret() -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    auth = module.SmokeAuth(
+        api_key=None,
+        admin_api_key="admin-secret",
+        api_key_env=None,
+        admin_api_key_env="ADMIN_SECRET",
+    )
+
+    assert auth.headers() == {"X-API-Key": "admin-secret"}
 
 
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
@@ -601,6 +648,16 @@ def _write_bytes(path: Path, content: bytes) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path
+
+
+def _load_script_module(name: str, path: Path) -> types.ModuleType:
+    spec = importlib_util.spec_from_file_location(name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib_util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class _WebhookCaptureHandler(BaseHTTPRequestHandler):

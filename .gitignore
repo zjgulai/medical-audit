@@ -19,6 +19,7 @@ build/
 coverage/
 .next/
 web/.next/
+web/out/
 web/test-results/
 web/playwright-report/
 .vercel/
