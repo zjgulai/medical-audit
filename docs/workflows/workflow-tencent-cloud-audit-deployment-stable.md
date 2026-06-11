@@ -35,7 +35,7 @@ source: human+ai
 
 ### 2026-06-11 当前事实
 
-- 当前生产部署 SHA：`eb7772e4 Merge pull request #47 from zjgulai/codex/tencent-cloud-nginx-audit-bind-mount`。
+- 当前生产部署 SHA：`cf6c1479 Merge pull request #48 from zjgulai/codex/tencent-cloud-deploy-automation`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
@@ -306,6 +306,24 @@ source: human+ai
 - schema 写入必须显式传入 `--apply-schema`。
 - 复核任务写入 E2E 必须显式传入 `--include-review-write`。
 - 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
+- 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
+- 应用同步排除 `.deploy-sha`、`__pycache__/`、`*.pyc` 和本地缓存文件；`.deploy-sha` 只由脚本在同步后显式写入。
+
+### 5.12 PR #48 部署自动化入口自举部署
+
+已在 2026-06-11 合并并部署 PR #48：
+
+- PR #48 merge commit：`cf6c1479de0b109d5abc9ee92ac8267e549ec2f6`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260611T180655+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260611T180655+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260611T180655+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260611T180655+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260611T180655+0800.tar.gz`。
+- 已用 `scripts/deploy-tencent-cloud-production.py --execute --confirm-production audit.lute-tlz-dddd.top` 执行首次自举部署。
+- 首次自举部署暴露脚本缺陷：`medical_audit_app` 重建后仍处于 `health: starting`，脚本立刻 curl 导致一次 `Connection reset`；生产容器随后自动转为 `healthy`。
+- 已补充部署脚本等待 health 的逻辑，避免后续部署在容器启动窗口内误报失败。
+- 自举部署后远端 `.deploy-sha=cf6c1479de0b109d5abc9ee92ac8267e549ec2f6`。
+- 生产只读 E2E `production-e2e-smoke-after-pr48-deploy-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和 `kg/video/voc/root` 边缘回归均为 `pass`。
 
 ## 6. 后续维护流程
 
@@ -584,7 +602,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修和共享 Nginx bind mount 固化均已部署到生产，当前 `.deploy-sha=eb7772e4e517c4bee179b9d340ca986012a0d438`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化和部署自动化入口均已部署到生产，当前 `.deploy-sha=cf6c1479de0b109d5abc9ee92ac8267e549ec2f6`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。

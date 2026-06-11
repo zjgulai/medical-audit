@@ -19,12 +19,15 @@ DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
 
 APP_RSYNC_EXCLUDES = (
+    ".DS_Store",
+    ".deploy-sha",
     ".git/",
     ".venv/",
     ".codegraph/",
     ".mypy_cache/",
     ".pytest_cache/",
     ".ruff_cache/",
+    "__pycache__/",
     "node_modules/",
     "web/.next/",
     "web/out/",
@@ -35,6 +38,7 @@ APP_RSYNC_EXCLUDES = (
     "data/",
     "archive/",
     "opendesign/",
+    "*.pyc",
     "*.pem",
     "*.key",
     "*.env",
@@ -353,9 +357,20 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 
 def _run_remote_post_checks(config: DeployConfig) -> None:
     sha = _run_capture(["git", "rev-parse", "HEAD"], cwd=config.repo_root).strip()
+    health_format = "{{.State.Health.Status}}"
     script = f"""
 set -euo pipefail
 cd {shlex.quote(config.remote_app_dir)}
+for attempt in $(seq 1 60); do
+  app_health="$(docker inspect medical_audit_app \
+    --format {shlex.quote(health_format)} 2>/dev/null || true)"
+  if [ "$app_health" = "healthy" ]; then
+    break
+  fi
+  sleep 2
+done
+test "$(docker inspect medical_audit_app \
+  --format {shlex.quote(health_format)})" = "healthy"
 test "$(cat .deploy-sha)" = {shlex.quote(sha)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
