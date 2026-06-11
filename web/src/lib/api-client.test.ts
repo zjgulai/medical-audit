@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchBackendHealth, fetchSearchBackendStatus, runKnowledgeQuery } from "./api-client";
+import {
+  fetchAuditFindings,
+  fetchBackendHealth,
+  fetchSearchBackendStatus,
+  runKnowledgeQuery
+} from "./api-client";
 
 describe("api-client", () => {
   afterEach(() => {
@@ -92,5 +97,29 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
+  });
+
+  it("fetches audit findings with an optional review status filter", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [],
+          stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
+          filters: { review_status: "pending-review", limit: 100 },
+          review_status_options: { "pending-review": "待复核" },
+          store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
+        })
+      }))
+    );
+
+    const result = await fetchAuditFindings("pending-review");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/audit-findings?review_status=pending-review", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.filters.review_status).toBe("pending-review");
   });
 });

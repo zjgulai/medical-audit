@@ -34,6 +34,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /今日工作台/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /对话审证/ })).toHaveAttribute("href", "/pages/chat");
     expect(screen.getByRole("link", { name: /查询工作台/ })).toHaveAttribute("href", "/knowledge-query");
+    expect(screen.getByRole("link", { name: /疑点清单/ })).toHaveAttribute("href", "/findings");
     expect(screen.getByRole("link", { name: /对话审证/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
@@ -61,5 +62,17 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getByRole("link", { name: /查询工作台/ })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("marks the Next-native findings route active", () => {
+    usePathnameMock.mockReturnValue("/findings");
+
+    render(
+      <WorkspaceShell>
+        <main>疑点清单内容</main>
+      </WorkspaceShell>
+    );
+
+    expect(screen.getByRole("link", { name: /疑点清单/ })).toHaveAttribute("aria-current", "page");
   });
 });

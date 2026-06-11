@@ -983,6 +983,29 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert 'aria-current="page">疑点清单' in page_response.text
     assert str(state.operation_logs[-1]["action"]) == "page-audit-findings-view"
 
+    api_response = client.get("/audit-findings")
+
+    assert api_response.status_code == 200
+    api_body = api_response.json()
+    assert api_body["stats"]["total"] == 3
+    assert api_body["stats"]["pending_review"] == 3
+    assert api_body["stats"]["linked_review_task"] == 0
+    assert api_body["review_status_options"]["pending-review"] == "待复核"
+    assert api_body["store"]["ready"] is True
+    assert api_body["items"][0]["finding_type"] == "duplicate-charge"
+    assert api_body["items"][0]["evidence_items"][0]["evidence_type"] == "rule-rationale"
+    assert str(state.operation_logs[-1]["action"]) == "audit-findings-list"
+
+    filtered_response = client.get("/audit-findings", params={"review_status": "closed"})
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["items"] == []
+
+    invalid_filter_response = client.get(
+        "/audit-findings",
+        params={"review_status": "unsupported"},
+    )
+    assert invalid_filter_response.status_code == 422
+
     export_response = client.get("/audit-findings/finding-fdc6a665ec5fcbf8/export")
 
     assert export_response.status_code == 200

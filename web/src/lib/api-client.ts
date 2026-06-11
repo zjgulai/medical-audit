@@ -1,4 +1,5 @@
 import type {
+  AuditFindingsResponse,
   BackendHealthResponse,
   QueryRequest,
   QueryResponse,
@@ -60,4 +61,15 @@ export function fetchSearchBackendStatus(): Promise<SearchBackendStatusResponse>
 
 export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse> {
   return postJson<QueryResponse>("/api/v1/query", payload);
+}
+
+export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {
+  const params = new URLSearchParams();
+  if (reviewStatus) {
+    params.set("review_status", reviewStatus);
+  }
+  const queryString = params.toString();
+  return getJson<AuditFindingsResponse>(
+    `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
+  );
 }
