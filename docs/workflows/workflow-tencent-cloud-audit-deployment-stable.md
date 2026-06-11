@@ -35,7 +35,7 @@ source: human+ai
 
 ### 2026-06-11 当前事实
 
-- 当前生产部署 SHA：`ed44c05e Merge pull request #45 from zjgulai/codex/tencent-cloud-deploy-minimal-pr`。
+- 当前生产部署 SHA：`eb7772e4 Merge pull request #47 from zjgulai/codex/tencent-cloud-nginx-audit-bind-mount`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
@@ -105,6 +105,7 @@ source: human+ai
 - `configs/deploy/tencent-cloud/docker-compose.prod.yaml`
 - `configs/deploy/tencent-cloud/medical-audit.env.example`
 - `configs/deploy/tencent-cloud/nginx-audit-server.conf`
+- `scripts/deploy-tencent-cloud-production.py`
 - `scripts/run-audit-log-archive-audit.py`
 - `.dockerignore`
 
@@ -291,18 +292,57 @@ source: human+ai
 - 宿主机 `/var/www/audit` 与容器内 `/var/www/audit` 文件哈希一致：`804851688fd72af83d3285071f1b98ecbb7993893400f98da4ef94d4f7a29963`。
 - 生产只读 E2E `production-e2e-smoke-after-nginx-bind-mount-20260611` 已通过；`kg`、`video`、`voc` 和主域名回归均返回 `200`。
 
+### 5.11 部署自动化入口固化
+
+已新增正式部署脚本：`scripts/deploy-tencent-cloud-production.py`。
+
+脚本边界：
+
+- 默认模式只执行本地与远端只读预检，不写生产。
+- 写入生产必须同时传入 `--execute --confirm-production audit.lute-tlz-dddd.top`。
+- SSH key 默认读取项目根目录 `ai_video.pem`，也可通过 `MEDICAL_AUDIT_DEPLOY_SSH_KEY` 或 `--ssh-key` 指定。
+- 写入流程会先创建 app、env、db、nginx、web 备份，再同步应用代码和 `web/out/`。
+- 默认会执行 `pnpm web:build:static`、重建 `medical_audit_app` 并运行生产只读 smoke。
+- schema 写入必须显式传入 `--apply-schema`。
+- 复核任务写入 E2E 必须显式传入 `--include-review-write`。
+- 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
 
-1. 在本地完成全量验证。
-2. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
-3. 将当前工作树同步到 `/opt/medical-audit/app/`。
-4. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
-5. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
-6. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
-7. 同步 `data/医保审核前期资料`，用于原文预览。
-8. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
+首选使用正式脚本做预检：
+
+```bash
+uv run python scripts/deploy-tencent-cloud-production.py \
+  --ssh-key ./ai_video.pem
+```
+
+预检通过后再执行生产写入：
+
+```bash
+uv run python scripts/deploy-tencent-cloud-production.py \
+  --execute \
+  --confirm-production audit.lute-tlz-dddd.top \
+  --ssh-key ./ai_video.pem
+```
+
+常用开关：
+
+- schema 变更部署：追加 `--apply-schema`。
+- 只同步静态前端或文档、不重建 app：追加 `--skip-app-rebuild`。
+- 已提前生成 `web/out/`：追加 `--skip-web-build`。
+- 验证复核写入链路：追加 `--include-review-write`；执行前必须确认数据库备份已完成。
+
+脚本执行的同步规则：
+
+1. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
+2. 将当前工作树同步到 `/opt/medical-audit/app/`。
+3. 排除 `.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
+4. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
+5. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
+
+手工同步只作为脚本失败时的排障路径。需要同步 `data/医保审核前期资料` 或 `tmp/knowledge-query-indexes/real-data-kimi-20260531` 时，先确认是否属于索引数据更新任务，不并入普通应用部署。
 
 ### 6.2 数据库导入
 
@@ -544,7 +584,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接与前后端联调已部署到生产，当前 `.deploy-sha=ed44c05ebbb2e0003d1f2b7bc2df92e8d97b732d`。
+- 生产认证桥接、静态前端热修和共享 Nginx bind mount 固化均已部署到生产，当前 `.deploy-sha=eb7772e4e517c4bee179b9d340ca986012a0d438`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
