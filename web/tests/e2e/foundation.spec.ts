@@ -13,11 +13,20 @@ test("self-check OS foundation renders navigation and core modules", async ({ pa
   await expect(page.getByRole("heading", { name: "当前阶段：形成判断" })).toBeVisible();
   await expect(chatLink).toBeVisible();
   await expect(chatLink).toHaveAttribute("href", "/pages/chat");
-  await expect(primaryNavigation.getByRole("link", { name: /^查询工作台/ })).toHaveAttribute("href", "/pages/query");
+  await expect(primaryNavigation.getByRole("link", { name: /^查询工作台/ })).toHaveAttribute("href", "/knowledge-query");
   await expect(primaryNavigation.getByRole("link", { name: /^索引管理/ })).toHaveAttribute(
     "href",
     "/pages/index-admin"
   );
+});
+
+test("Next-native query workbench is reachable", async ({ page }) => {
+  await page.goto("/knowledge-query");
+
+  await expect(page.getByRole("heading", { name: "引用优先的知识查询" })).toBeVisible();
+  await expect(page.getByLabel("审计问题")).toBeVisible();
+  await expect(page.getByRole("button", { name: "执行查询" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开后端兼容页" })).toHaveAttribute("href", "/pages/query");
 });
 
 test("legacy guided check route no longer renders a plan placeholder", async ({ page }) => {

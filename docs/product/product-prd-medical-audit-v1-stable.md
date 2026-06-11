@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-v1
 status: stable
 created: 2026-06-02
-updated: 2026-06-05
+updated: 2026-06-11
 owner: self
 source: human+ai
 ---
@@ -76,8 +76,9 @@ flowchart TD
 
 当前代码仓库已形成以下能力：
 
-- `FastAPI + Jinja + CSS` 的本地 Web 工作台。
-- `/pages/chat` 对话审证台、`/pages/query` 查询页、`/pages/review-tasks` 复核任务台、`/pages/index-admin` 索引管理页、`/pages/preview/{chunk_id}` 原文预览页。
+- `Next.js` 今日工作台与 API-first 查询工作台，以及 `FastAPI + Jinja + CSS` 后端兼容工作台。
+- `/knowledge-query` Next 原生查询工作台已接入 `POST /api/v1/query`；`/pages/query` 保留为后端兼容查询页。
+- `/pages/chat` 对话审证台、`/pages/review-tasks` 复核任务台、`/pages/index-admin` 索引管理页、`/pages/preview/{chunk_id}` 原文预览页。
 - `/pages/chat/export` 支持当前单轮对话的 Markdown/JSON 审计底稿导出。
 - `/pages/review-tasks` 支持把单轮对话回答创建为 PostgreSQL 任务级复核记录，维护复核状态、意见、结论，并导出任务级 Markdown/JSON 记录。
 - `data/医保审核前期资料` 的抽取、切分、BM25 + vector 检索、引用型 fallback answer。

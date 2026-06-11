@@ -8,12 +8,22 @@ describe("primaryNavigation", () => {
     expect(primaryNavigation.map((item) => item.href)).toEqual([
       "/workspace",
       "/pages/chat",
-      "/pages/query",
+      "/knowledge-query",
       "/pages/audit-findings",
       "/pages/review-tasks",
       "/pages/audit-logs",
       "/pages/index-admin"
     ]);
+  });
+
+  it("promotes query workbench to a Next-native module", () => {
+    const query = primaryNavigation.find((item) => item.id === "query");
+
+    expect(query).toMatchObject({
+      label: "查询工作台",
+      href: "/knowledge-query",
+      target: "workspace"
+    });
   });
 
   it("marks evidence chat as the core live module", () => {
