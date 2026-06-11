@@ -992,6 +992,10 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert api_body["stats"]["linked_review_task"] == 0
     assert api_body["review_status_options"]["pending-review"] == "待复核"
     assert api_body["store"]["ready"] is True
+    assert api_body["generation_readiness"]["status"] == "generated"
+    assert api_body["generation_readiness"]["ready"] is True
+    assert api_body["generation_readiness"]["has_findings"] is True
+    assert api_body["generation_readiness"]["table_counts"]["audit_findings"] == 3
     assert api_body["items"][0]["finding_type"] == "duplicate-charge"
     assert api_body["items"][0]["evidence_items"][0]["evidence_type"] == "rule-rationale"
     assert str(state.operation_logs[-1]["action"]) == "audit-findings-list"
@@ -1048,6 +1052,29 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert linked_page_response.status_code == 200
     assert "review-task-0001" in linked_page_response.text
     assert "已创建复核任务" in linked_page_response.text
+
+
+def test_audit_findings_api_reports_blocked_generation_readiness(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'empty-audit-findings.db'}"
+    state = _api_state(tmp_path)
+    state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    response = client.get("/audit-findings")
+
+    assert response.status_code == 200
+    body = response.json()
+    readiness = body["generation_readiness"]
+    assert body["items"] == []
+    assert readiness["status"] == "blocked"
+    assert readiness["ready"] is False
+    assert readiness["has_findings"] is False
+    assert readiness["table_counts"]["audit_projects"] == 0
+    assert readiness["table_counts"]["his_staging_rows"] == 0
+    assert readiness["table_counts"]["audit_findings"] == 0
+    blocking_codes = {item["code"] for item in readiness["blocking_reasons"]}
+    assert "missing-audit_projects" in blocking_codes
+    assert "missing-his_staging_rows" in blocking_codes
 
 
 def test_preview_page_renders_source_context_after_query(tmp_path: Path) -> None:

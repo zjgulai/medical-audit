@@ -169,6 +169,7 @@ def audit_findings(
             "stats": _audit_finding_stats([]),
             "filters": {"review_status": review_status, "limit": limit},
             "review_status_options": REVIEW_STATUS_LABELS,
+            "generation_readiness": _audit_finding_store_unavailable_readiness(),
             "store": {"ready": False, "backend": "none"},
         }
 
@@ -186,6 +187,7 @@ def audit_findings(
         "stats": _audit_finding_stats(findings),
         "filters": {"review_status": review_status, "limit": limit},
         "review_status_options": REVIEW_STATUS_LABELS,
+        "generation_readiness": state.audit_finding_store.generation_readiness(),
         "store": {"ready": True, "backend": state.audit_finding_store.__class__.__name__},
     }
 
@@ -333,6 +335,23 @@ def _audit_finding_stats(findings: list[dict[str, object]]) -> dict[str, int]:
             1 for item in findings if item.get("review_status") == "pending-review"
         ),
         "linked_review_task": sum(1 for item in findings if item.get("review_task_id")),
+    }
+
+
+def _audit_finding_store_unavailable_readiness() -> dict[str, object]:
+    return {
+        "status": "blocked",
+        "ready": False,
+        "has_findings": False,
+        "table_counts": {},
+        "prerequisites": [],
+        "blocking_reasons": [
+            {
+                "code": "audit-finding-store-unavailable",
+                "message": "疑点 store 未初始化，无法读取规则生成链路状态。",
+            }
+        ],
+        "next_actions": ["检查 MEDICAL_AUDIT_KB_DATABASE_URL 和审计疑点 store 初始化。"],
     }
 
 

@@ -21,6 +21,19 @@ vi.mock("@/lib/api-client", () => ({
     stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
     filters: { review_status: null, limit: 100 },
     review_status_options: { "pending-review": "待复核" },
+    generation_readiness: {
+      status: "blocked",
+      ready: false,
+      has_findings: false,
+      table_counts: { audit_projects: 0, his_staging_rows: 0, audit_findings: 0 },
+      prerequisites: [
+        { key: "audit_projects", label: "审计项目", count: 0, ready: false, required: true }
+      ],
+      blocking_reasons: [
+        { code: "missing-audit_projects", message: "审计项目为空，无法从规则运行生成疑点。" }
+      ],
+      next_actions: ["导入脱敏 HIS 样本。"]
+    },
     store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
   })),
   fetchBackendHealth: vi.fn(async () => ({

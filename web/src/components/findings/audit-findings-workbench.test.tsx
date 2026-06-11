@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAuditFindings } from "@/lib/api-client";
+import type { AuditFindingGenerationReadiness } from "@/lib/api-types";
 
 import { AuditFindingsWorkbench } from "./audit-findings-workbench";
 
@@ -10,6 +11,37 @@ vi.mock("@/lib/api-client", () => ({
 }));
 
 const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
+
+const generatedReadiness = {
+  status: "generated",
+  ready: true,
+  has_findings: true,
+  table_counts: { audit_findings: 1 },
+  prerequisites: [],
+  blocking_reasons: [],
+  next_actions: ["从疑点清单创建人工复核任务，完成复核后再进入底稿或报告。"]
+} satisfies AuditFindingGenerationReadiness;
+
+const blockedReadiness = {
+  status: "blocked",
+  ready: false,
+  has_findings: false,
+  table_counts: { audit_projects: 0, his_staging_rows: 0, audit_findings: 0 },
+  prerequisites: [
+    { key: "audit_projects", label: "审计项目", count: 0, ready: false, required: true },
+    { key: "his_staging_rows", label: "HIS staging 行", count: 0, ready: false, required: true }
+  ],
+  blocking_reasons: [
+    { code: "missing-audit_projects", message: "审计项目为空，无法从规则运行生成疑点。" },
+    {
+      code: "missing-his_staging_rows",
+      message: "HIS staging 行为空，无法从规则运行生成疑点。"
+    }
+  ],
+  next_actions: [
+    "导入脱敏 HIS 样本，生成 his_source_batches、his_table_schemas、his_field_mappings 和 his_staging_rows。"
+  ]
+} satisfies AuditFindingGenerationReadiness;
 
 describe("AuditFindingsWorkbench", () => {
   afterEach(() => {
@@ -53,6 +85,7 @@ describe("AuditFindingsWorkbench", () => {
       stats: { total: 1, open: 1, pending_review: 1, linked_review_task: 0 },
       filters: { review_status: null, limit: 100 },
       review_status_options: { "pending-review": "待复核", closed: "已关闭" },
+      generation_readiness: generatedReadiness,
       store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
     });
 
@@ -92,5 +125,25 @@ describe("AuditFindingsWorkbench", () => {
         screen.getByText("疑点清单加载失败。请确认后端数据库和审计疑点表已就绪。")
       ).toBeInTheDocument();
     });
+  });
+
+  it("explains why no generated findings are available", async () => {
+    fetchAuditFindingsMock.mockResolvedValue({
+      items: [],
+      stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
+      filters: { review_status: null, limit: 100 },
+      review_status_options: { "pending-review": "待复核" },
+      generation_readiness: blockedReadiness,
+      store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
+    });
+
+    render(<AuditFindingsWorkbench />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "疑点生成链路未就绪" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("审计项目")).toBeInTheDocument();
+    expect(screen.getByText("HIS staging 行")).toBeInTheDocument();
+    expect(screen.getByText("blocked")).toBeInTheDocument();
   });
 });
