@@ -39,7 +39,7 @@ source: human+ai
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
-- 当前生产 `audit_projects`、`his_source_batches`、`his_staging_rows`、`audit_tasks`、`audit_runs`、`rule_versions`、`audit_findings` 均为 `0`；`/api/v1/audit-findings.generation_readiness.status=blocked`，这表示疑点生成链路缺少业务数据底座，不表示 `/findings` 仍是 placeholder。
+- 当前生产已写入受控脱敏 fixture 链路：`audit_projects=1`、`his_source_batches=1`、`his_table_schemas=1`、`his_field_mappings=9`、`his_staging_rows=3`、`audit_data_snapshots=1`、`audit_tasks=1`、`audit_runs=1`、`audit_rules=1`、`rule_versions=1`、`audit_findings=1`、`finding_evidence_items=1`；`/api/v1/audit-findings.generation_readiness.status=generated`。该数据来自 `production-fixture-bootstrap`，只证明规则生成链路和页面联通，不代表真实医院疑点或客户数据。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
@@ -468,6 +468,20 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 证据边界：本次没有写入任何 HIS 样本、规则上下文或疑点数据；只把缺失前置数据做成产品可见诊断。
 - 部署状态复核确认 `src/medical_audit_kb/topics` 不存在，`/var/www/audit/findings.html` 存在，上传临时残留为 `0`。
 
+### 5.20 CHARGE-RULE-001 fixture bootstrap 与疑点写入
+
+已在 2026-06-11 执行受控 fixture 数据链路写入：
+
+- fixture 写入前已创建数据库备份 `/opt/medical-audit/backups/db/pre-charge-rule-fixture-bootstrap-20260611T231102+0800.sql.gz`。
+- bootstrap 写入 `audit-project-charge-fixture-v1`、`his-batch-charge-fixture-v1`、`his-schema-charge-detail-fixture-v1`、9 个 active field mappings、3 条 `his_staging_rows`、`snapshot-charge-fixture-v1`、`audit-task-charge-fixture-v1`、`CHARGE-RULE-001`、`CHARGE-RULE-001@v1` 和 `audit-run-charge-fixture-v1`。
+- bootstrap 后 dry-run 通过：`finding_count=1`、`needs_evidence_count=1`、`created_finding_count=0`。
+- 疑点写入前已创建数据库备份 `/opt/medical-audit/backups/db/pre-charge-rule-fixture-execute-20260611T231356+0800.sql.gz`。
+- execute 写入成功：`created_finding_count=1`、`created_evidence_item_count=1`，finding key 为 `finding-f044ebd309b659dc`。
+- 生产只读联调 `production-charge-rule-fixture-execute-20260611` 已通过；`/findings` 显示 `duplicate-charge` 和 `audit-run-charge-fixture-v1`，导出链接 `/audit-findings/finding-f044ebd309b659dc/export` 可用。
+- 导出接口返回 `format=audit-finding-v1`、`rule_key=CHARGE-RULE-001`、`rule_version_key=CHARGE-RULE-001@v1` 和 1 条证据项。
+- 证据边界：该数据为 `production-fixture-bootstrap` 受控脱敏 fixture，只证明规则生成链路和页面联通，不代表真实医院疑点或客户数据。
+- 远端状态复核确认 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`，`medical_audit_app` 与 `medical_audit_pg` healthy，`*.uploading.cfg=0`。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -765,13 +779,14 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单和疑点生成链路就绪诊断均已部署到生产，当前 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断均已部署到生产，CHARGE-RULE-001 受控 fixture 疑点生成联调已完成；当前 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`，fixture finding 为 `finding-f044ebd309b659dc`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
 - PR #45 合并后生产写入型 E2E `production-e2e-smoke-with-review-write-after-pr45-main-deploy-20260611` 通过；创建、关闭并导出 `review-task-0004`。
 - 生产静态前端热修后，浏览器前后端联调已通过；旧 Next.js chunk 导致的 `/api/v1/api/v1/*` 404 已消除，`review-task-0005`、`review-task-0006` 已通过 UI 表单写入和导出验证。
 - 共享 `ai_video_nginx` 已完成 `/var/www/audit:/var/www/audit:ro` bind mount 固化；`production-e2e-smoke-after-nginx-bind-mount-20260611` 通过，`kg`、`video`、`voc`、主域名回归均为 `200`。
+- CHARGE-RULE-001 受控 fixture 已写入生产并生成 1 条疑点；`/api/v1/audit-findings.generation_readiness.status=generated`，`/findings` 显示 `finding-f044ebd309b659dc`，导出接口返回 1 条证据项。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
@@ -784,6 +799,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/findings` 返回 Next 原生疑点工作台，主导航“疑点清单”指向 `/findings`。
 - `/api/v1/audit-findings` 返回 `200`，且 `store.ready=true`。
 - 生产未导入 HIS 业务数据底座时，`/api/v1/audit-findings.generation_readiness.status` 必须明确返回 `blocked`，页面必须显示缺失的前置数据，而不是只显示低信息量空态。
+- 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
