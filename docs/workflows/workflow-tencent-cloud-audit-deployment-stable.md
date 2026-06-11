@@ -42,7 +42,7 @@ source: human+ai
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
-- `ai_video_nginx` 当前没有将宿主机 `/var/www/audit` bind mount 到容器内；静态发布必须同步宿主机目录后再执行 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit`，否则公网会继续加载容器内旧 Next.js 静态资产。
+- `ai_video_nginx` 已通过 `/opt/ai-video/deploy/lighthouse/docker-compose.prod.yml` 挂载 `/var/www/audit:/var/www/audit:ro`，静态发布只需同步宿主机 `/var/www/audit`，容器会直接读取该目录。
 - 共享 `ai_video_nginx` 已定义 `upstream medical_audit_app { server medical_audit_app:8000; }`；`audit.lute-tlz-dddd.top` server block 内 `proxy_pass` 必须使用 `http://medical_audit_app`，不得再写 `:8000`。
 
 ### 2026-06-06 当前事实
@@ -276,6 +276,21 @@ source: human+ai
 - 浏览器前后端联调创建 `review-task-0005`、`review-task-0006`，并通过页面表单更新承办人、复核意见、底稿编号；JSON 导出包含写入值。
 - 热修后浏览器联调覆盖 `/`、`/workspace`、`/analytics`、`/documents`、`/findings`、`/rules`、`/reports`、`/archive`、`/graph`、`/guided-check`、`/remediation`、`/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin`、`/pages/audit-findings`、`/pages/audit-logs`，未再出现旧前端 `404` 请求或控制台错误。
 
+### 5.10 共享 Nginx 静态目录 bind mount 固化
+
+已在 2026-06-11 将临时 `docker cp` 静态热修升级为正式 bind mount：
+
+- 变更文件：`/opt/ai-video/deploy/lighthouse/docker-compose.prod.yml`。
+- 新增挂载：`/var/www/audit:/var/www/audit:ro`。
+- 变更前备份：`/opt/medical-audit/backups/ai-video-nginx-bind-mount/docker-compose.prod.yml.pre-audit-bind-mount-20260611T175105+0800`。
+- 变更前容器静态资产备份：`/opt/medical-audit/backups/ai-video-nginx-bind-mount/audit-web-container-pre-bind-mount-20260611T175105+0800.tar.gz`。
+- 变更前容器 inspect 备份：`/opt/medical-audit/backups/ai-video-nginx-bind-mount/ai_video_nginx.inspect.pre-compose-recreate-20260611T175148+0800.json`。
+- 由于原 `ai_video_nginx` 缺少 Compose 标签，`docker compose up --force-recreate nginx` 首次因容器名冲突被阻止；已先备份 inspect，再 `docker stop` + `docker rm` 旧无状态 Nginx 容器，并用 Compose 创建新的 `ai_video_nginx`。
+- 新 `ai_video_nginx` 已带 `com.docker.compose.project=lighthouse`、`com.docker.compose.service=nginx` 标签，后续可由 Compose 正常管理。
+- `docker exec ai_video_nginx nginx -t` 通过。
+- 宿主机 `/var/www/audit` 与容器内 `/var/www/audit` 文件哈希一致：`804851688fd72af83d3285071f1b98ecbb7993893400f98da4ef94d4f7a29963`。
+- 生产只读 E2E `production-e2e-smoke-after-nginx-bind-mount-20260611` 已通过；`kg`、`video`、`voc` 和主域名回归均返回 `200`。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -284,8 +299,8 @@ source: human+ai
 2. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
 3. 将当前工作树同步到 `/opt/medical-audit/app/`。
 4. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
-5. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。
-6. 当前 `ai_video_nginx` 未挂载宿主机 `/var/www/audit`；同步宿主机目录后必须执行 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit`，并抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致。
+5. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
+6. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
 7. 同步 `data/医保审核前期资料`，用于原文预览。
 8. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
 
@@ -535,6 +550,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
 - PR #45 合并后生产写入型 E2E `production-e2e-smoke-with-review-write-after-pr45-main-deploy-20260611` 通过；创建、关闭并导出 `review-task-0004`。
 - 生产静态前端热修后，浏览器前后端联调已通过；旧 Next.js chunk 导致的 `/api/v1/api/v1/*` 404 已消除，`review-task-0005`、`review-task-0006` 已通过 UI 表单写入和导出验证。
+- 共享 `ai_video_nginx` 已完成 `/var/www/audit:/var/www/audit:ro` bind mount 固化；`production-e2e-smoke-after-nginx-bind-mount-20260611` 通过，`kg`、`video`、`voc`、主域名回归均为 `200`。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
