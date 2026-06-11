@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-05
+updated: 2026-06-11
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,26 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-06-11 当前事实
+
+- 当前生产部署 SHA：`e8e04f11 fix: 让生产外部 AI 开关尊重环境配置`。
+- `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
+- `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
+- 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`。
+- 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
+- `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
+- `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
+
+### 2026-06-06 当前事实
+
+- `medical_audit_app` 容器仍在运行，宿主机 `127.0.0.1:18080` 可访问。
+- `medical_audit_pg` 容器健康，服务器内 `/index/search-backend` 返回 `backend=postgres`、`ready=true`。
+- `ai_video_nginx` 与 `medical_audit_app` 位于同一 Docker 网络，可通过容器名路由。
+- 公网 `https://audit.lute-tlz-dddd.top/health` 已恢复到 medical_audit 应用。
+- 2026-06-06 曾出现反代漂移：`audit.lute-tlz-dddd.top` 落到 AI video fallback。根因是共享 `ai_video_nginx` 的宿主机源配置 `/opt/ai-video/deploy/lighthouse/nginx.conf` 缺少 `audit.lute-tlz-dddd.top` HTTPS server block。
+- 已在用户确认后备份并修复宿主机源配置，新增 `audit.lute-tlz-dddd.top` server block 指向 `medical_audit_app:8000`，`nginx -t` 和 reload 成功。
+- 反代修复后发现生产镜像滞后于本地专题代码；已重建并重启 `medical_audit_app`，医保基金使用合规专题入口和专题查询参数已上线。
 
 已核验：
 
@@ -64,7 +84,7 @@ source: human+ai
 - `vector` extension 已存在。
 - public schema 当前表数量：`10`。
 
-已完成公网发布：
+历史公网发布基线：
 
 - `medical_audit_app` 已启动，监听宿主机 `127.0.0.1:18080`，不直接暴露公网端口。
 - `medical_audit_pg` 使用独立 volume `medical_audit_pgdata`，不复用其它项目数据库。
@@ -72,6 +92,8 @@ source: human+ai
 - `ai_video_nginx` 已加入 `audit.lute-tlz-dddd.top` HTTPS 反代块。
 - Let's Encrypt 证书已扩展 SAN，包含 `audit.lute-tlz-dddd.top`。
 - 公网入口：`https://audit.lute-tlz-dddd.top/pages/chat`。
+
+注意：2026-06-06 修复说明了一个运维约束：`ai_video_nginx` 内 `/etc/nginx/nginx.conf` 是宿主机只读 bind mount，后续必须修改 `/opt/ai-video/deploy/lighthouse/nginx.conf` 并先执行 `nginx -t`，不能尝试在容器内覆盖正式配置文件。
 
 ## 4. 部署资产
 
@@ -182,15 +204,69 @@ source: human+ai
 - 部署后生产只读 E2E `production-e2e-smoke-after-pr41-ui-20260605` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
 - 部署后生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-pr41-ui-20260605` 已通过，desktop/mobile 均无横向溢出，关键文案无缺失。
 
+### 5.6 医保基金使用合规专题入口部署
+
+已在 2026-06-06 部署医保基金使用合规专题入口与运行时专题过滤：
+
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-fund-topic-sync-20260606T111200+0800.tar.gz`。
+- 已同步当前本地已验证的构建资产到 `/opt/medical-audit/app/`，同步时排除 `.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、env、密钥和设计草稿。
+- 已重建并重启 `medical_audit_app`，`medical_audit_pg` 仍使用独立 volume `medical_audit_pgdata`。
+- 部署后 `/pages/chat?audit_topic=fund-usage-compliance` 显示“医保基金使用合规”专题入口，表单提交后保留 `audit_topic=fund-usage-compliance`。
+- 部署后公网 `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`。
+- 首条专题引用来自 active index `full-rebuild-20260603085815`，并可打开 `/pages/preview/{chunk_id}` 原文预览。
+- 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 已通过。
+- 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 已通过，desktop/mobile 均无横向溢出，关键文案无缺失。
+- 证据边界：当前专题查询使用运行时分类过滤，不代表 `audit_topic/subtopic/risk_category` 已写入 active index。
+
+### 5.7 医保基金使用合规专题映射优先查询部署
+
+已在 2026-06-06 部署 active topic mapping 优先查询链路：
+
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-query-topic-mapping-sync-20260606T145146+0800.tar.gz`。
+- 已同步本地已验证构建资产到 `/opt/medical-audit/app/`，同步时排除生产 env、密钥、data、tmp 和 archive。
+- 已用正式 compose 重建并重启 `medical_audit_app`，`medical_audit_pg` 保持 healthy，未重建数据库 volume。
+- 部署后公网 `/query` 专题请求返回 `topic_filter_source=active-mapping`、`confidence=high`、`citation_count=3`、`basis_group_count=2`。
+- 部署后 `/pages/chat?...&audit_topic=fund-usage-compliance` 保留专题入口、专题参数和证据卷宗，首条引用原文预览返回 `200`。
+- 证据边界：专题查询已优先消费 active mapping，但 9 张规则知识卡仍处于候选/评审状态，不得标记为 `stable`。
+
+### 5.8 生产认证桥接与前后端联调部署
+
+已在 2026-06-11 部署生产认证桥接、前端静态资产和当前分支验证版本：
+
+- 最终生产部署 SHA：`e8e04f11 fix: 让生产外部 AI 开关尊重环境配置`。
+- 应用代码同步基线：`8ac8ae5e test: 支持生产 E2E 认证参数`；后续追加 Compose 配置修复并将远端 `.deploy-sha` 更新为 `e8e04f11`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260611T153843+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260611T153843+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260611T153843+0800.sql`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260611T153843+0800` 和认证桥接专项备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-auth-bridge-20260611T153911`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260611T153843+0800.tar.gz`。
+- 已补齐远端 `MEDICAL_AUDIT_KB_ADMIN_API_SECRET`，env 权限保持 `600`。
+- 已在 `audit.lute-tlz-dddd.top` 反代块内注入内部 `X-API-Key`，并补齐 `/review-tasks/` legacy 导出反代；`nginx -t` 与 reload 均通过。
+- 已同步后端应用代码到 `/opt/medical-audit/app/`，同步时排除 `.git/`、`.venv/`、`node_modules/`、`web/.next/`、`web/out/`、`tmp/`、`data/`、`archive/`、`opendesign/`、`*.pem`、`*.key`、`*.env`。
+- 已用 `pnpm web:build:static` 生成本地 `web/out/`，并同步到 `/var/www/audit/`。
+- 已幂等执行 `sql/knowledge-query-schema.sql`。
+- 首次生产 E2E 发现 `/api/v1/query` 返回 `500`，根因为容器内 `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI=0` 阻断 query embedding；已将 Compose 覆盖项移除，改由远端 env 控制，并备份 env 到 `/opt/medical-audit/backups/env/medical-audit.env.pre-external-ai-20260611T154614`。
+- 已只重建 `medical_audit_app`，未重建 `medical_audit_pg`，未删除或重建 `medical_audit_pgdata`。
+- 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 已通过；覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和 `kg/video/voc/root` 边缘回归。
+- 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 已通过，desktop/mobile 均无横向溢出，关键文案无缺失。
+- 写入型 E2E 首次执行前已创建数据库备份 `/opt/medical-audit/backups/db/pre-review-write-e2e-20260611T160312+0800.sql`；首次失败点为 E2E harness 从历史页面链接误选已关闭的 `review-task-0001`，导致状态更新被只读锁定返回 `409`，不是生产写入链路不可用。
+- 首次失败期间创建的 `review-task-0002` 已通过同款状态更新探针关闭，记录为 `production e2e smoke direct probe`。
+- 已提交 E2E harness 修复 `d290f24a test: 修复生产写入 E2E 任务选择`，从页面所有导出链接中选择编号最大的最新任务。
+- 写入型 E2E 复跑前已创建数据库备份 `/opt/medical-audit/backups/db/pre-review-write-e2e-20260611T160744+0800.sql`。
+- 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 已通过；创建并关闭 `review-task-0003`，`review_tasks` 从 `2` 增至 `3`，`review_actions` 从 `2` 增至 `3`，任务导出成功。
+- 部署后 `docker ps` 显示 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 与其它业务容器均保持运行。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
 
 1. 在本地完成全量验证。
-2. 将当前工作树同步到 `/opt/medical-audit/app/`。
-3. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
-4. 同步 `data/医保审核前期资料`，用于原文预览。
-5. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
+2. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
+3. 将当前工作树同步到 `/opt/medical-audit/app/`。
+4. 排除 `.git/`、`.venv/`、`tmp/debug/`、缓存、密钥和本地临时文件。
+5. 将 `web/out/` 同步到 `/var/www/audit/`，供 `audit.lute-tlz-dddd.top` 的 Nginx 静态根目录使用。
+6. 同步 `data/医保审核前期资料`，用于原文预览。
+7. 同步 `tmp/knowledge-query-indexes/real-data-kimi-20260531`，用于一次性导入 pgvector。
 
 ### 6.2 数据库导入
 
@@ -297,9 +373,9 @@ uv run python scripts/run-production-e2e-smoke.py \
 默认覆盖范围：
 
 - TLS 证书 SAN。
-- `/health` 和 `/index/search-backend`。
+- `/health` 和公网 `/api/v1/index/search-backend`，由 Nginx 转发到后端 `/index/search-backend`。
 - `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin`。
-- `/query` 引用型回答。
+- 公网 `/api/v1/query` 引用型回答，由 Nginx 转发到后端 `/query`。
 - `/pages/preview/{chunk_id}` 原文预览。
 - `/pages/chat/export` 底稿导出。
 - 现有 `kg`、`video`、`voc`、主域名回归。
@@ -428,6 +504,14 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - PR #41 已合并并部署到腾讯云，merge commit 为 `6cc17e09878a0a8baff21d8789aac8d21891c6d7`。
 - 生产只读 E2E smoke `production-e2e-smoke-after-pr41-ui-20260605` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-pr41-ui-20260605` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
+- 医保基金使用合规专题入口已部署到生产，`/pages/chat?audit_topic=fund-usage-compliance` 可见专题入口且提交后保留专题参数。
+- `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
+- 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
+- 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
+- 生产认证桥接与前后端联调已部署到生产，最终 `.deploy-sha=e8e04f11`。
+- 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
+- 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：

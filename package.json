@@ -13,6 +13,7 @@
   "scripts": {
     "web:dev": "pnpm --filter medical-audit-web dev",
     "web:build": "pnpm --filter medical-audit-web build",
+    "web:build:static": "pnpm --filter medical-audit-web build:static",
     "web:start": "pnpm --filter medical-audit-web start",
     "web:lint": "pnpm --filter medical-audit-web lint",
     "web:typecheck": "pnpm --filter medical-audit-web typecheck",

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import socket
 import ssl
@@ -34,12 +35,36 @@ class SmokeError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HttpResponse:
     status: int
     url: str
     text: str
     headers: dict[str, str]
+
+
+@dataclass(frozen=True)
+class SmokeAuth:
+    api_key: str | None
+    admin_api_key: str | None
+    api_key_env: str | None
+    admin_api_key_env: str | None
+
+    def headers(self, *, admin: bool = False) -> dict[str, str]:
+        token = self.admin_api_key if admin else self.api_key
+        if token is None:
+            token = self.api_key if admin else self.admin_api_key
+        if token is None:
+            return {}
+        return {"X-API-Key": token}
+
+    def to_report_dict(self) -> dict[str, object]:
+        return {
+            "api_key_env": self.api_key_env,
+            "admin_api_key_env": self.admin_api_key_env,
+            "api_key_configured": self.api_key is not None,
+            "admin_api_key_configured": self.admin_api_key is not None,
+        }
 
 
 def main() -> int:
@@ -51,6 +76,7 @@ def main() -> int:
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     try:
+        auth = _auth_from_args(args)
         _run_step(
             steps,
             "tls-certificate-san",
@@ -69,6 +95,7 @@ def main() -> int:
             "search-backend",
             lambda: _check_search_backend(
                 base_url,
+                auth=auth,
                 expected_matching_embeddings=int(args.expected_matching_embeddings),
                 timeout_seconds=float(args.timeout_seconds),
             ),
@@ -76,13 +103,14 @@ def main() -> int:
         _run_step(
             steps,
             "page-rendering",
-            lambda: _check_pages(base_url, timeout_seconds=float(args.timeout_seconds)),
+            lambda: _check_pages(base_url, auth=auth, timeout_seconds=float(args.timeout_seconds)),
         )
         query_details = _run_step(
             steps,
             "query-api-with-citations",
             lambda: _check_query_api(
                 base_url,
+                auth=auth,
                 question=str(args.question),
                 timeout_seconds=float(args.timeout_seconds),
             ),
@@ -93,6 +121,7 @@ def main() -> int:
             "citation-preview",
             lambda: _check_preview(
                 base_url,
+                auth=auth,
                 chunk_id=first_chunk_id,
                 timeout_seconds=float(args.timeout_seconds),
             ),
@@ -102,6 +131,7 @@ def main() -> int:
             "chat-dossier-export",
             lambda: _check_chat_export(
                 base_url,
+                auth=auth,
                 question=str(args.question),
                 timeout_seconds=float(args.timeout_seconds),
             ),
@@ -112,6 +142,7 @@ def main() -> int:
                 "review-flow-create-update-export",
                 lambda: _check_review_task_flow(
                     base_url,
+                    auth=auth,
                     question=str(args.question),
                     timeout_seconds=float(args.timeout_seconds),
                 ),
@@ -131,6 +162,7 @@ def main() -> int:
             question=str(args.question),
             started_at=started_at,
             steps=steps,
+            auth=auth if "auth" in locals() else None,
         )
         _write_report(report_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -142,6 +174,7 @@ def main() -> int:
         question=str(args.question),
         started_at=started_at,
         steps=steps,
+        auth=auth,
     )
     _write_report(report_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -160,6 +193,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         default="tmp/outputs/production-e2e-smoke-latest.json",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help=(
+            "Environment variable containing the auditor API secret. "
+            "The secret value is never written to the report."
+        ),
+    )
+    parser.add_argument(
+        "--admin-api-key-env",
+        default=None,
+        help=(
+            "Environment variable containing the it-admin API secret. "
+            "The secret value is never written to the report."
+        ),
     )
     parser.add_argument(
         "--regression-url",
@@ -184,6 +233,35 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.set_defaults(include_review_write=False)
     return parser.parse_args()
+
+
+def _auth_from_args(args: argparse.Namespace) -> SmokeAuth:
+    api_key_env = _optional_env_name(args.api_key_env)
+    admin_api_key_env = _optional_env_name(args.admin_api_key_env)
+    api_key = _secret_from_env(api_key_env)
+    admin_api_key = _secret_from_env(admin_api_key_env)
+    return SmokeAuth(
+        api_key=api_key,
+        admin_api_key=admin_api_key,
+        api_key_env=api_key_env,
+        admin_api_key_env=admin_api_key_env,
+    )
+
+
+def _optional_env_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _secret_from_env(env_name: str | None) -> str | None:
+    if env_name is None:
+        return None
+    value = os.getenv(env_name, "").strip()
+    if not value:
+        raise SmokeError(f"environment variable {env_name} is empty or unset")
+    return value
 
 
 def _run_step(
@@ -241,10 +319,16 @@ def _check_health(base_url: str, *, timeout_seconds: float) -> dict[str, object]
 def _check_search_backend(
     base_url: str,
     *,
+    auth: SmokeAuth,
     expected_matching_embeddings: int,
     timeout_seconds: float,
 ) -> dict[str, object]:
-    payload = _get_json(f"{base_url}/index/search-backend", timeout_seconds=timeout_seconds)
+    payload = _get_json(
+        f"{base_url}/api/v1/index/search-backend",
+        auth=auth,
+        admin=True,
+        timeout_seconds=timeout_seconds,
+    )
     details = _ensure_dict(payload.get("details"))
     matching = _int_value(details.get("matching_embedding_count"))
     _require(payload.get("backend") == "postgres", "search backend is not postgres")
@@ -261,10 +345,15 @@ def _check_search_backend(
     }
 
 
-def _check_pages(base_url: str, *, timeout_seconds: float) -> dict[str, object]:
+def _check_pages(base_url: str, *, auth: SmokeAuth, timeout_seconds: float) -> dict[str, object]:
     pages: dict[str, object] = {}
     for path, required_texts in REQUIRED_PAGES.items():
-        response = _get_text(f"{base_url}{path}", timeout_seconds=timeout_seconds)
+        response = _get_text(
+            f"{base_url}{path}",
+            auth=auth,
+            admin=path == "/pages/index-admin",
+            timeout_seconds=timeout_seconds,
+        )
         _require(response.status == 200, f"{path} returned {response.status}")
         missing = [text for text in required_texts if text not in response.text]
         _require(not missing, f"{path} missing texts: {missing}")
@@ -275,6 +364,7 @@ def _check_pages(base_url: str, *, timeout_seconds: float) -> dict[str, object]:
 def _check_query_api(
     base_url: str,
     *,
+    auth: SmokeAuth,
     question: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
@@ -282,11 +372,13 @@ def _check_query_api(
         "question": question,
         "top_k": 5,
     }
+    headers = {"Content-Type": "application/json"}
+    headers.update(auth.headers())
     response = _request_json(
-        f"{base_url}/query",
+        f"{base_url}/api/v1/query",
         method="POST",
         body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "X-Role": "auditor"},
+        headers=headers,
         timeout_seconds=timeout_seconds,
     )
     citations = _ensure_list(response.get("citations"))
@@ -309,10 +401,15 @@ def _check_query_api(
 def _check_preview(
     base_url: str,
     *,
+    auth: SmokeAuth,
     chunk_id: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
-    response = _get_text(f"{base_url}/pages/preview/{chunk_id}", timeout_seconds=timeout_seconds)
+    response = _get_text(
+        f"{base_url}/pages/preview/{chunk_id}",
+        auth=auth,
+        timeout_seconds=timeout_seconds,
+    )
     _require(response.status == 200, f"preview returned {response.status}")
     _require(
         "原文证据预览" in response.text or "source" in response.text.lower(),
@@ -324,11 +421,16 @@ def _check_preview(
 def _check_chat_export(
     base_url: str,
     *,
+    auth: SmokeAuth,
     question: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
     query = urllib.parse.urlencode({"question": question, "format": "markdown"})
-    response = _get_text(f"{base_url}/pages/chat/export?{query}", timeout_seconds=timeout_seconds)
+    response = _get_text(
+        f"{base_url}/pages/chat/export?{query}",
+        auth=auth,
+        timeout_seconds=timeout_seconds,
+    )
     _require(response.status == 200, f"chat export returned {response.status}")
     _require(
         "引用" in response.text or "citation" in response.text.lower(),
@@ -344,12 +446,15 @@ def _check_chat_export(
 def _check_review_task_flow(
     base_url: str,
     *,
+    auth: SmokeAuth,
     question: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
     create_response = _post_form(
         f"{base_url}/pages/review-tasks/create",
         {"question": question},
+        auth=auth,
+        admin=True,
         timeout_seconds=timeout_seconds,
     )
     _require(create_response.status == 200, f"review task create returned {create_response.status}")
@@ -361,11 +466,15 @@ def _check_review_task_flow(
             "reviewer_note": "production e2e smoke",
             "conclusion": "deployment e2e passed",
         },
+        auth=auth,
+        admin=True,
         timeout_seconds=timeout_seconds,
     )
     _require(update_response.status == 200, f"review task update returned {update_response.status}")
     export_response = _get_json(
         f"{base_url}/review-tasks/{task_id}/export?format=json",
+        auth=auth,
+        admin=True,
         timeout_seconds=timeout_seconds,
     )
     _require(str(export_response.get("task_id")) == task_id, "review export task id mismatch")
@@ -390,14 +499,33 @@ def _check_regression_urls(
 
 
 def _first_review_task_id(html: str) -> str:
-    match = re.search(r"/review-tasks/([^/]+)/export\?format=json", html)
-    if match is None:
+    task_ids: list[str] = re.findall(r"/review-tasks/([^/]+)/export\?format=json", html)
+    if not task_ids:
         raise SmokeError("no review task export link found")
-    return match.group(1)
+    return str(max(task_ids, key=_review_task_sort_key))
 
 
-def _get_json(url: str, *, timeout_seconds: float) -> dict[str, object]:
-    return _request_json(url, method="GET", timeout_seconds=timeout_seconds)
+def _review_task_sort_key(task_id: str) -> tuple[int, str]:
+    prefix = "review" + "-" + "task" + "-"
+    suffix = task_id.removeprefix(prefix)
+    if task_id.startswith(prefix) and suffix.isdigit():
+        return (int(suffix), task_id)
+    return (-1, task_id)
+
+
+def _get_json(
+    url: str,
+    *,
+    auth: SmokeAuth | None = None,
+    admin: bool = False,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    return _request_json(
+        url,
+        method="GET",
+        headers=_auth_headers(auth, admin=admin),
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _request_json(
@@ -420,24 +548,45 @@ def _request_json(
     return _ensure_dict(payload)
 
 
-def _get_text(url: str, *, timeout_seconds: float) -> HttpResponse:
-    return _request(url, method="GET", timeout_seconds=timeout_seconds)
+def _get_text(
+    url: str,
+    *,
+    auth: SmokeAuth | None = None,
+    admin: bool = False,
+    timeout_seconds: float,
+) -> HttpResponse:
+    return _request(
+        url,
+        method="GET",
+        headers=_auth_headers(auth, admin=admin),
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _post_form(
     url: str,
     data: dict[str, str],
     *,
+    auth: SmokeAuth | None = None,
+    admin: bool = False,
     timeout_seconds: float,
 ) -> HttpResponse:
     encoded = urllib.parse.urlencode(data).encode("utf-8")
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    headers.update(_auth_headers(auth, admin=admin))
     return _request(
         url,
         method="POST",
         body=encoded,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers=headers,
         timeout_seconds=timeout_seconds,
     )
+
+
+def _auth_headers(auth: SmokeAuth | None, *, admin: bool = False) -> dict[str, str]:
+    if auth is None:
+        return {}
+    return auth.headers(admin=admin)
 
 
 def _request(
@@ -482,11 +631,13 @@ def _report(
     question: str,
     started_at: str,
     steps: list[dict[str, object]],
+    auth: SmokeAuth | None,
 ) -> dict[str, object]:
     return {
         "status": status,
         "base_url": base_url,
         "question": question,
+        "auth": auth.to_report_dict() if auth else {},
         "started_at": started_at,
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "steps": steps,

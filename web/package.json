@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --port 3030",
     "build": "next build",
+    "build:static": "MEDICAL_AUDIT_NEXT_EXPORT=1 next build",
     "start": "next start --port 3030",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
