@@ -9,26 +9,10 @@
   <body class="page-audit-logs">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <main id="main-content" class="shell audit-log-shell">
-      <nav class="topbar" aria-label="页面导航">
-        <a class="brand brand-command" href="/pages/chat" aria-label="AuditScope 医保审计证据控制台">
-          <span class="brand-mark">AS</span>
-          <span class="brand-lockup">
-            <strong>AuditScope</strong>
-            <small>医保审计证据控制台</small>
-          </span>
-        </a>
-        <div class="nav-links">
-          <a href="/pages/chat">对话审证</a>
-          <a href="/pages/query">查询工作台</a>
-          <a href="/pages/audit-findings">疑点清单</a>
-          <a href="/pages/review-tasks">复核任务</a>
-          <a href="/pages/audit-logs" aria-current="page">审计日志</a>
-          <a href="/pages/index-admin">索引管理</a>
-        </div>
-        <span class="status-pill {% if audit_log_store_ready and audit_log_access_allowed %}ready{% else %}warn{% endif %}">
-          {% if not audit_log_access_allowed %}权限受限{% elif audit_log_store_ready %}日志已持久化{% else %}日志未配置{% endif %}
-        </span>
-      </nav>
+      {% set active_nav = "audit-logs" %}
+      {% set product_nav_status_class = "ready" if audit_log_store_ready and audit_log_access_allowed else "warn" %}
+      {% set product_nav_status_text = "权限受限" if not audit_log_access_allowed else "日志已持久化" if audit_log_store_ready else "日志未配置" %}
+      {% include "_product_nav.html" %}
 
       <section class="hero audit-log-hero">
         <div>

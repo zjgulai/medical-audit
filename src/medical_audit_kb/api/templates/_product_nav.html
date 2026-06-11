@@ -1,0 +1,21 @@
+<nav class="topbar {{ product_nav_class|default('') }}" aria-label="页面导航">
+  <a class="brand brand-command" href="/workspace" aria-label="AuditScope 今日工作台">
+    <span class="brand-mark">AS</span>
+    <span class="brand-lockup">
+      <strong>AuditScope</strong>
+      <small>医保审计证据控制台</small>
+    </span>
+  </a>
+  <div class="nav-links">
+    <a href="/workspace"{% if active_nav == "workspace" %} aria-current="page"{% endif %}>今日工作台</a>
+    <a href="/pages/chat"{% if active_nav == "chat" %} aria-current="page"{% endif %}>对话审证</a>
+    <a href="/pages/query"{% if active_nav == "query" %} aria-current="page"{% endif %}>查询工作台</a>
+    <a href="/pages/audit-findings"{% if active_nav == "audit-findings" %} aria-current="page"{% endif %}>疑点清单</a>
+    <a href="/pages/review-tasks"{% if active_nav == "review-tasks" %} aria-current="page"{% endif %}>复核任务/底稿</a>
+    <a href="/pages/audit-logs"{% if active_nav == "audit-logs" %} aria-current="page"{% endif %}>审计日志</a>
+    <a href="/pages/index-admin"{% if active_nav == "index-admin" %} aria-current="page"{% endif %}>索引管理</a>
+  </div>
+  <span class="status-pill {{ product_nav_status_class }}">
+    {{ product_nav_status_text }}
+  </span>
+</nav>

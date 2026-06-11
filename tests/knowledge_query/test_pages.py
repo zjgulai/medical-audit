@@ -68,6 +68,45 @@ def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
     assert 'aria-current="page">对话审证' in response.text
 
 
+def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'product-nav.db'}"
+    state = _api_state(tmp_path)
+    state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    client = TestClient(create_app(state))
+    client.get("/pages/query", params={"question": "医保基金审核依据"})
+    expected_links = (
+        ('href="/workspace"', "今日工作台"),
+        ('href="/pages/chat"', "对话审证"),
+        ('href="/pages/query"', "查询工作台"),
+        ('href="/pages/audit-findings"', "疑点清单"),
+        ('href="/pages/review-tasks"', "复核任务/底稿"),
+        ('href="/pages/audit-logs"', "审计日志"),
+        ('href="/pages/index-admin"', "索引管理"),
+    )
+    pages = (
+        ("/pages/chat", "对话审证"),
+        ("/pages/query", "查询工作台"),
+        ("/pages/audit-findings", "疑点清单"),
+        ("/pages/review-tasks", "复核任务/底稿"),
+        ("/pages/audit-logs", "审计日志"),
+        ("/pages/index-admin", "索引管理"),
+        (f"/pages/preview/{LAW_CHUNK_ID}", None),
+    )
+
+    for path, current_label in pages:
+        response = client.get(path, headers={"X-Role": "it-admin"})
+
+        assert response.status_code == 200
+        assert 'aria-label="页面导航"' in response.text
+        assert 'aria-label="AuditScope 今日工作台"' in response.text
+        for href, label in expected_links:
+            assert href in response.text
+            assert label in response.text
+        if current_label is not None:
+            assert f'aria-current="page">{current_label}</a>' in response.text
+
+
 def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
