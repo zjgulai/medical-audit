@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchAuditFindings } from "@/lib/api-client";
-import type { AuditFinding, AuditFindingsResponse } from "@/lib/api-types";
+import type {
+  AuditFinding,
+  AuditFindingGenerationReadiness,
+  AuditFindingsResponse
+} from "@/lib/api-types";
 
 const STATUS_LABEL_FALLBACK: Record<string, string> = {
   "pending-review": "待复核",
@@ -11,6 +15,12 @@ const STATUS_LABEL_FALLBACK: Record<string, string> = {
   "confirmed-violation": "确认违规",
   "not-violation": "排除违规",
   closed: "已关闭"
+};
+
+const READINESS_STATUS_LABELS: Record<string, string> = {
+  blocked: "疑点生成链路未就绪",
+  "ready-to-run": "规则运行待执行",
+  generated: "疑点已生成"
 };
 
 type LoadState =
@@ -121,7 +131,11 @@ export function AuditFindingsWorkbench() {
       ) : null}
 
       {loadState.status === "ready" ? (
-        <FindingsList findings={loadState.data.items} reviewStatusOptions={reviewStatusOptions} />
+        <FindingsList
+          findings={loadState.data.items}
+          readiness={loadState.data.generation_readiness}
+          reviewStatusOptions={reviewStatusOptions}
+        />
       ) : null}
     </main>
   );
@@ -138,9 +152,11 @@ function FindingStatCard({ label, value }: { readonly label: string; readonly va
 
 function FindingsList({
   findings,
+  readiness,
   reviewStatusOptions
 }: {
   readonly findings: readonly AuditFinding[];
+  readonly readiness: AuditFindingGenerationReadiness;
   readonly reviewStatusOptions: Record<string, string>;
 }) {
   if (findings.length === 0) {
@@ -148,6 +164,7 @@ function FindingsList({
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
         <h2 className="text-xl font-semibold tracking-tight text-slate-950">暂无疑点</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">当前筛选条件下没有可展示的规则命中记录。</p>
+        <GenerationReadinessPanel readiness={readiness} />
       </section>
     );
   }
@@ -237,6 +254,75 @@ function FindingsList({
         </article>
       ))}
     </section>
+  );
+}
+
+function GenerationReadinessPanel({
+  readiness
+}: {
+  readonly readiness: AuditFindingGenerationReadiness;
+}) {
+  const statusLabel = READINESS_STATUS_LABELS[readiness.status] ?? readiness.status;
+  const missingPrerequisites = readiness.prerequisites.filter((item) => !item.ready);
+
+  return (
+    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">{statusLabel}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            {readiness.status === "blocked"
+              ? "规则疑点需要先完成业务数据底座、HIS staging 和规则运行上下文。"
+              : "规则运行上下文已具备，等待受控执行后写入疑点。"}
+          </p>
+        </div>
+        <span
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+            readiness.ready
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+          }`}
+        >
+          {readiness.ready ? "ready" : "blocked"}
+        </span>
+      </div>
+
+      {missingPrerequisites.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase text-slate-500">缺失前置数据</h4>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {missingPrerequisites.map((item) => (
+              <div key={item.key} className="rounded-xl border border-amber-200 bg-white px-3 py-2">
+                <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                <div className="mt-1 font-mono text-xs text-amber-700">{item.key}: {item.count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {readiness.blocking_reasons.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase text-slate-500">阻断原因</h4>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+            {readiness.blocking_reasons.slice(0, 4).map((reason) => (
+              <li key={reason.code}>{reason.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {readiness.next_actions.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase text-slate-500">下一步</h4>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+            {readiness.next_actions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -109,6 +109,15 @@ describe("api-client", () => {
           stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
           filters: { review_status: "pending-review", limit: 100 },
           review_status_options: { "pending-review": "待复核" },
+          generation_readiness: {
+            status: "blocked",
+            ready: false,
+            has_findings: false,
+            table_counts: { audit_findings: 0 },
+            prerequisites: [],
+            blocking_reasons: [],
+            next_actions: []
+          },
           store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
         })
       }))

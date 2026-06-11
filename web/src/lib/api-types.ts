@@ -100,6 +100,29 @@ export type AuditFindingStats = {
   readonly linked_review_task: number;
 };
 
+export type AuditFindingGenerationPrerequisite = {
+  readonly key: string;
+  readonly label: string;
+  readonly count: number;
+  readonly ready: boolean;
+  readonly required: boolean;
+};
+
+export type AuditFindingGenerationBlockingReason = {
+  readonly code: string;
+  readonly message: string;
+};
+
+export type AuditFindingGenerationReadiness = {
+  readonly status: "generated" | "ready-to-run" | "blocked" | string;
+  readonly ready: boolean;
+  readonly has_findings: boolean;
+  readonly table_counts: Record<string, number>;
+  readonly prerequisites: readonly AuditFindingGenerationPrerequisite[];
+  readonly blocking_reasons: readonly AuditFindingGenerationBlockingReason[];
+  readonly next_actions: readonly string[];
+};
+
 export type AuditFindingsResponse = {
   readonly items: readonly AuditFinding[];
   readonly stats: AuditFindingStats;
@@ -108,6 +131,7 @@ export type AuditFindingsResponse = {
     readonly limit: number;
   };
   readonly review_status_options: Record<string, string>;
+  readonly generation_readiness: AuditFindingGenerationReadiness;
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;

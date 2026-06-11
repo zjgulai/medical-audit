@@ -3,17 +3,25 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from medical_audit_kb.db.models import (
+    AuditDataSnapshot,
     AuditFinding,
+    AuditProject,
+    AuditRule,
     AuditRun,
     AuditTask,
     Base,
     FindingEvidenceItem,
+    HisFieldMapping,
+    HisSourceBatch,
+    HisStagingRow,
+    HisTableSchema,
     ReviewTask,
     RuleVersion,
 )
@@ -21,6 +29,25 @@ from medical_audit_kb.db.models import (
 
 class AuditFindingNotFoundError(KeyError):
     pass
+
+
+_GENERATION_REQUIRED_TABLES: tuple[tuple[str, str, type[Any]], ...] = (
+    ("audit_projects", "审计项目", AuditProject),
+    ("his_source_batches", "HIS 数据批次", HisSourceBatch),
+    ("his_table_schemas", "HIS 表结构", HisTableSchema),
+    ("his_field_mappings", "HIS 字段映射", HisFieldMapping),
+    ("his_staging_rows", "HIS staging 行", HisStagingRow),
+    ("audit_data_snapshots", "审计数据快照", AuditDataSnapshot),
+    ("audit_tasks", "审计任务", AuditTask),
+    ("audit_runs", "规则运行批次", AuditRun),
+    ("audit_rules", "审计规则", AuditRule),
+    ("rule_versions", "规则版本", RuleVersion),
+)
+
+_GENERATION_OUTPUT_TABLES: tuple[tuple[str, str, type[Any]], ...] = (
+    ("audit_findings", "规则疑点", AuditFinding),
+    ("finding_evidence_items", "疑点证据项", FindingEvidenceItem),
+)
 
 
 @dataclass(slots=True)
@@ -62,6 +89,56 @@ class SqlAlchemyAuditFindingStore:
                 statement = statement.where(AuditFinding.review_status == review_status)
             return [_finding_to_payload(session, finding) for finding in session.scalars(statement)]
 
+    def generation_readiness(self) -> dict[str, object]:
+        with self._session_factory() as session:
+            table_counts = {
+                table_key: _count_rows(session, model)
+                for table_key, _, model in (
+                    *_GENERATION_REQUIRED_TABLES,
+                    *_GENERATION_OUTPUT_TABLES,
+                )
+            }
+
+        prerequisites = [
+            {
+                "key": table_key,
+                "label": label,
+                "count": table_counts[table_key],
+                "ready": table_counts[table_key] > 0,
+                "required": True,
+            }
+            for table_key, label, _ in _GENERATION_REQUIRED_TABLES
+        ]
+        missing_prerequisites = [
+            item for item in prerequisites if not bool(item["ready"])
+        ]
+        finding_count = table_counts["audit_findings"]
+        if finding_count > 0:
+            status = "generated"
+            blocking_reasons: list[dict[str, str]] = []
+        elif missing_prerequisites:
+            status = "blocked"
+            blocking_reasons = [
+                {
+                    "code": f"missing-{item['key']}",
+                    "message": f"{item['label']}为空，无法从规则运行生成疑点。",
+                }
+                for item in missing_prerequisites
+            ]
+        else:
+            status = "ready-to-run"
+            blocking_reasons = []
+
+        return {
+            "status": status,
+            "ready": status != "blocked",
+            "has_findings": finding_count > 0,
+            "table_counts": table_counts,
+            "prerequisites": prerequisites,
+            "blocking_reasons": blocking_reasons,
+            "next_actions": _generation_next_actions(status),
+        }
+
     def get_finding(self, finding_key: str) -> dict[str, object]:
         with self._session_factory() as session:
             finding = _load_finding(session, finding_key)
@@ -84,6 +161,26 @@ class SqlAlchemyAuditFindingStore:
             finding.updated_at = _utc_now()
             session.flush()
             return _finding_to_payload(session, finding)
+
+
+def _count_rows(session: Session, model: type[Any]) -> int:
+    return int(session.scalar(select(func.count()).select_from(model)) or 0)
+
+
+def _generation_next_actions(status: str) -> list[str]:
+    if status == "generated":
+        return ["从疑点清单创建人工复核任务，完成复核后再进入底稿或报告。"]
+    if status == "ready-to-run":
+        return [
+            "先执行 charge-rule-001-staging-run dry-run，确认 planned finding_count。",
+            "确认数据库备份和业务窗口后，再追加 --execute 写入 audit_findings。",
+        ]
+    return [
+        "导入脱敏 HIS 样本，生成 his_source_batches、his_table_schemas、"
+        "his_field_mappings 和 his_staging_rows。",
+        "创建 audit_data_snapshots、audit_tasks、audit_runs，"
+        "并激活 CHARGE-RULE-001 的 rule_versions。",
+    ]
 
 
 def _load_finding(session: Session, finding_key: str) -> AuditFinding | None:
