@@ -13,6 +13,7 @@ import psycopg
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
 from medical_audit_kb.api.audit_finding_store import (
@@ -475,10 +476,15 @@ async def update_review_task_status_page(
             "updated_at": _utc_now_iso(),
         },
     )
+    synced_findings = _sync_audit_finding_review_status(state, task_id, status)
     record_operation(
         state,
         "review-task-status-update",
-        {"task_id": task_id, "status": status},
+        {
+            "task_id": task_id,
+            "status": status,
+            "synced_audit_finding_count": len(synced_findings),
+        },
     )
     return RedirectResponse("/pages/review-tasks", status_code=303)
 
@@ -1297,6 +1303,19 @@ def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object
         raise HTTPException(status_code=404, detail="audit finding not found") from exc
 
 
+def _sync_audit_finding_review_status(
+    state: ApiState,
+    review_task_id: str,
+    review_status: str,
+) -> list[dict[str, object]]:
+    if state.audit_finding_store is None:
+        return []
+    try:
+        return state.audit_finding_store.sync_review_task_status(review_task_id, review_status)
+    except (SQLAlchemyError, ValueError):
+        return []
+
+
 def _audit_finding_store(state: ApiState) -> SqlAlchemyAuditFindingStore:
     if state.audit_finding_store is None:
         state.audit_finding_store = SqlAlchemyAuditFindingStore(state.settings.database_url)
@@ -1513,9 +1532,69 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
             "",
             "## 底稿",
             "",
-            _render_audit_dossier_markdown(dossier),
+            _render_review_task_dossier_markdown(dossier),
         ]
     )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_review_task_dossier_markdown(dossier: dict[str, object]) -> str:
+    if dossier.get("format") == "audit-finding-dossier-v1":
+        return _render_audit_finding_dossier_markdown(dossier)
+    return _render_audit_dossier_markdown(dossier)
+
+
+def _render_audit_finding_dossier_markdown(dossier: dict[str, object]) -> str:
+    evidence_items = _dict_list(dossier.get("evidence_items"))
+    lines = [
+        "# AuditScope 规则疑点底稿导出",
+        "",
+        f"- 生成时间：{dossier.get('generated_at') or '未记录'}",
+        f"- 疑点编号：{dossier.get('finding_key') or '未记录'}",
+        f"- 疑点类型：{dossier.get('finding_type') or '未记录'}",
+        f"- 严重程度：{dossier.get('severity') or '未记录'}",
+        f"- 疑点状态：{dossier.get('status') or '未记录'}",
+        f"- 复核状态：{dossier.get('review_status') or '未记录'}",
+        f"- 审计任务：{dossier.get('audit_task_key') or '未记录'}",
+        f"- 规则运行：{dossier.get('audit_run_key') or '未记录'}",
+        f"- 规则：{dossier.get('rule_key') or '未记录'}",
+        f"- 规则版本：{dossier.get('rule_version_key') or '未记录'}",
+        f"- 证据项数量：{len(evidence_items)}",
+        "",
+        f"> {dossier.get('review_notice') or '该疑点需要人工复核。'}",
+        "",
+        "## 源记录定位",
+        "",
+        "```json",
+        json.dumps(dossier.get("source_record_locator", {}), ensure_ascii=False, indent=2),
+        "```",
+        "",
+        "## 计算过程",
+        "",
+        "```json",
+        json.dumps(dossier.get("calculation_trace", {}), ensure_ascii=False, indent=2),
+        "```",
+        "",
+        "## 证据项",
+        "",
+    ]
+    if evidence_items:
+        for item in evidence_items:
+            lines.extend(
+                [
+                    f"### {item.get('citation_id') or item.get('evidence_type') or '证据项'}",
+                    "",
+                    f"- 类型：{item.get('evidence_type') or '未记录'}",
+                    f"- chunk: `{item.get('chunk_id') or 'n/a'}`",
+                    f"- index: `{item.get('index_version_key') or 'n/a'}`",
+                    f"- package: `{item.get('source_package_version_key') or 'n/a'}`",
+                    "",
+                    str(item.get("snippet") or "未记录证据片段。"),
+                    "",
+                ]
+            )
+    else:
+        lines.append("- 未绑定证据项。")
     return "\n".join(lines).rstrip() + "\n"
 
 

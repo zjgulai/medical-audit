@@ -162,6 +162,36 @@ class SqlAlchemyAuditFindingStore:
             session.flush()
             return _finding_to_payload(session, finding)
 
+    def sync_review_task_status(
+        self,
+        review_task_external_id: str,
+        review_status: str,
+    ) -> list[dict[str, object]]:
+        with self._session_factory.begin() as session:
+            review_task = session.scalar(
+                select(ReviewTask).where(ReviewTask.external_task_id == review_task_external_id)
+            )
+            if review_task is None:
+                raise ValueError(f"review task does not exist: {review_task_external_id}")
+            findings = list(
+                session.scalars(
+                    select(AuditFinding)
+                    .options(
+                        selectinload(AuditFinding.audit_run),
+                        selectinload(AuditFinding.audit_task),
+                        selectinload(AuditFinding.rule_version),
+                        selectinload(AuditFinding.evidence_items),
+                    )
+                    .where(AuditFinding.review_task_id == review_task.id)
+                )
+            )
+            now = _utc_now()
+            for finding in findings:
+                finding.review_status = review_status
+                finding.updated_at = now
+            session.flush()
+            return [_finding_to_payload(session, finding) for finding in findings]
+
 
 def _count_rows(session: Session, model: type[Any]) -> int:
     return int(session.scalar(select(func.count()).select_from(model)) or 0)

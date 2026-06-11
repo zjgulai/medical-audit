@@ -1048,9 +1048,41 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
         "CD0002",
     ]
 
+    task_markdown_response = client.get(
+        "/review-tasks/review-task-0001/export",
+        params={"format": "markdown"},
+    )
+    assert task_markdown_response.status_code == 200
+    assert "AuditScope 规则疑点底稿导出" in task_markdown_response.text
+    assert "finding-fdc6a665ec5fcbf8" in task_markdown_response.text
+    assert "matched_charge_detail_ids" in task_markdown_response.text
+
+    update_response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        data={
+            "status": "confirmed-violation",
+            "assigned_to": "fixture-auditor",
+            "reviewer_note": "规则疑点复核状态同步测试。",
+            "conclusion": "确认规则命中。",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+    assert state.operation_logs[-1]["payload"]["synced_audit_finding_count"] == 1
+
+    synced_response = client.get(
+        "/audit-findings",
+        params={"review_status": "confirmed-violation"},
+    )
+    assert synced_response.status_code == 200
+    synced_items = synced_response.json()["items"]
+    assert [item["finding_key"] for item in synced_items] == ["finding-fdc6a665ec5fcbf8"]
+    assert synced_items[0]["review_status"] == "confirmed-violation"
+
     linked_page_response = client.get("/pages/audit-findings")
     assert linked_page_response.status_code == 200
     assert "review-task-0001" in linked_page_response.text
+    assert "confirmed-violation" in linked_page_response.text
     assert "已创建复核任务" in linked_page_response.text
 
 
