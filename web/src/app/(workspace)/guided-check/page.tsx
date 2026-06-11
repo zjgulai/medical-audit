@@ -1,13 +1,12 @@
-export default function GuidedCheckPage() {
-  return <ModulePreview title="AI 引导自查" stage="自查向导 + 多轮对话 + 证据侧栏" />;
-}
+import { BackendFeatureBridge } from "@/components/shell/backend-feature-bridge";
 
-function ModulePreview({ title, stage }: { readonly title: string; readonly stage: string }) {
+export default function GuidedCheckPage() {
   return (
-    <main className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[var(--audit-shadow-card)]">
-      <p className="text-sm font-medium text-blue-700">Plan 03 接入真实功能</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{title}</h1>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{stage}</p>
-    </main>
+    <BackendFeatureBridge
+      title="AI 引导自查"
+      targetHref="/pages/chat"
+      targetLabel="对话审证"
+      reason="当前已上线的自查问答、引用证据和复核任务创建能力集中在对话审证页。"
+    />
   );
 }

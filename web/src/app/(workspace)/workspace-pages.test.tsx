@@ -16,25 +16,41 @@ import WorkspacePage from "./workspace/page";
 
 const routePages = [
   ["/workspace", WorkspacePage],
-  ["/guided-check", GuidedCheckPage],
-  ["/rules", RulesPage],
-  ["/documents", DocumentsPage],
-  ["/findings", FindingsPage],
-  ["/remediation", RemediationPage],
-  ["/reports", ReportsPage],
-  ["/analytics", AnalyticsPage],
-  ["/graph", GraphPage],
-  ["/archive", ArchivePage]
+] as const;
+
+const legacyBridgePages = [
+  ["/guided-check", GuidedCheckPage, "/pages/chat"],
+  ["/rules", RulesPage, "/pages/index-admin"],
+  ["/documents", DocumentsPage, "/pages/query"],
+  ["/findings", FindingsPage, "/pages/audit-findings"],
+  ["/remediation", RemediationPage, "/pages/review-tasks"],
+  ["/reports", ReportsPage, "/pages/review-tasks"],
+  ["/analytics", AnalyticsPage, "/pages/index-admin"],
+  ["/graph", GraphPage, "/workspace"],
+  ["/archive", ArchivePage, "/pages/audit-logs"]
 ] as const;
 
 describe("workspace foundation pages", () => {
-  it("keeps every sidebar target backed by a page with one h1", () => {
-    expect(routePages.map(([href]) => href)).toEqual(primaryNavigation.map((item) => item.href));
+  it("keeps Next-owned sidebar targets backed by a page with one h1", () => {
+    expect(routePages.map(([href]) => href)).toEqual(
+      primaryNavigation.filter((item) => item.target === "workspace").map((item) => item.href)
+    );
 
     for (const [href, Page] of routePages) {
       const { unmount } = render(<Page />);
 
       expect(screen.getAllByRole("heading", { level: 1 }), href).toHaveLength(1);
+
+      unmount();
+    }
+  });
+
+  it("keeps legacy plan routes as bridges to real production pages", () => {
+    for (const [href, Page, targetHref] of legacyBridgePages) {
+      const { container, unmount } = render(<Page />);
+
+      expect(container.textContent, href).not.toMatch(/Plan \d+/);
+      expect(screen.getByRole("link"), href).toHaveAttribute("href", targetHref);
 
       unmount();
     }

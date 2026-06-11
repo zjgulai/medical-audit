@@ -1,71 +1,70 @@
 export type NavigationEmphasis = "primary" | "standard";
+export type NavigationTarget = "workspace" | "backend";
 
 export type NavigationItem = {
+  readonly id: string;
   readonly label: string;
   readonly href: string;
   readonly description: string;
   readonly emphasis: NavigationEmphasis;
+  readonly target: NavigationTarget;
 };
 
 export const primaryNavigation: readonly NavigationItem[] = [
   {
+    id: "workspace",
     label: "今日工作台",
     href: "/workspace",
     description: "查看项目状态、待办疑点、补证任务和索引健康。",
-    emphasis: "standard"
+    emphasis: "standard",
+    target: "workspace"
   },
   {
-    label: "AI 引导自查",
-    href: "/guided-check",
-    description: "通过自查向导、多轮对话和证据侧栏完成政策问答与材料自查。",
-    emphasis: "primary"
+    id: "chat",
+    label: "对话审证",
+    href: "/pages/chat",
+    description: "围绕审核问题生成引用型回答，并进入人工复核。",
+    emphasis: "primary",
+    target: "backend"
   },
   {
-    label: "专题规则库",
-    href: "/rules",
-    description: "查看医保基金使用合规、身份骗保等专题规则卡。",
-    emphasis: "standard"
+    id: "query",
+    label: "查询工作台",
+    href: "/pages/query",
+    description: "检索政策、规则、风险清单和引用原文。",
+    emphasis: "standard",
+    target: "backend"
   },
   {
-    label: "材料与文档检索",
-    href: "/documents",
-    description: "检索源文档、上传材料、定位引用原文。",
-    emphasis: "standard"
-  },
-  {
+    id: "findings",
     label: "疑点清单",
-    href: "/findings",
-    description: "管理风险等级、证据强度、待补条件和人工确认状态。",
-    emphasis: "standard"
+    href: "/pages/audit-findings",
+    description: "查看疑点状态、证据强度和复核入口。",
+    emphasis: "standard",
+    target: "backend"
   },
   {
-    label: "补证整改",
-    href: "/remediation",
-    description: "跟踪补证任务、整改建议、处理记录和关闭原因。",
-    emphasis: "standard"
+    id: "review-tasks",
+    label: "复核任务/底稿",
+    href: "/pages/review-tasks",
+    description: "维护复核任务、附件、报告草稿、签发与整改跟踪。",
+    emphasis: "standard",
+    target: "backend"
   },
   {
-    label: "底稿/报告",
-    href: "/reports",
-    description: "生成自查底稿、整改记录和专题报告。",
-    emphasis: "standard"
+    id: "audit-logs",
+    label: "审计日志",
+    href: "/pages/audit-logs",
+    description: "追踪查询、导出、复核和索引操作记录。",
+    emphasis: "standard",
+    target: "backend"
   },
   {
-    label: "AI 数据分析",
-    href: "/analytics",
-    description: "查看风险分布、规则命中热区和整改进度。",
-    emphasis: "standard"
-  },
-  {
-    label: "知识图谱",
-    href: "/graph",
-    description: "展示项目内人员、材料、规则、疑点和整改关系。",
-    emphasis: "standard"
-  },
-  {
-    label: "项目档案",
-    href: "/archive",
-    description: "归档项目画像、会话、材料、疑点、报告和操作日志。",
-    emphasis: "standard"
+    id: "index-admin",
+    label: "索引管理",
+    href: "/pages/index-admin",
+    description: "查看索引版本、后端状态、失败文件和评测记录。",
+    emphasis: "standard",
+    target: "backend"
   }
 ];
