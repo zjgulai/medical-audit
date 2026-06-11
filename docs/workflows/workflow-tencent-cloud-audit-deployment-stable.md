@@ -35,10 +35,11 @@ source: human+ai
 
 ### 2026-06-11 当前事实
 
-- 当前生产部署 SHA：`47b731e049155a6ac00eaf4cd4e202deb85d4226 接入 Next 原生疑点清单`。
+- 当前生产部署 SHA：`3c45e46875ec4f9ca10fd07f91bf00d0f4caa461 显示疑点生成链路就绪诊断`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
+- 当前生产 `audit_projects`、`his_source_batches`、`his_staging_rows`、`audit_tasks`、`audit_runs`、`rule_versions`、`audit_findings` 均为 `0`；`/api/v1/audit-findings.generation_readiness.status=blocked`，这表示疑点生成链路缺少业务数据底座，不表示 `/findings` 仍是 placeholder。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
@@ -450,6 +451,23 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 部署后发现远端历史 `opendesign` 目录残留 5 个 `*.uploading.cfg`，已先备份到 `/opt/medical-audit/backups/uploading-cfg-cleanup-20260611T141600Z.tar.gz`，再清理；复核后 `/opt/medical-audit/app` 下 `*.uploading.cfg` 数量为 `0`。
 - 部署状态复核确认 `src/medical_audit_kb/topics` 不存在，`/var/www/audit/findings.html` 存在，上传临时残留为 `0`。
 
+### 5.19 PR #61 疑点生成链路就绪诊断部署
+
+已在 2026-06-11 合并并部署 PR #61：
+
+- PR #61 merge commit：`3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260611T225009+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260611T225009+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260611T225009+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260611T225009+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260611T225009+0800.tar.gz`。
+- 远端 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`，`medical_audit_app` 与 `medical_audit_pg` 均为 `healthy`。
+- 生产 smoke `production-e2e-smoke-after-generation-readiness-20260611` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产只读联调 `production-findings-generation-readiness-20260611` 已通过；`/findings` 显示“疑点生成链路未就绪”，`/api/v1/audit-findings` 返回 `generation_readiness.status=blocked`、`ready=false`、`has_findings=false`。
+- 生产 API 复核确认 `audit_projects`、`his_source_batches`、`his_table_schemas`、`his_field_mappings`、`his_staging_rows`、`audit_data_snapshots`、`audit_tasks`、`audit_runs`、`audit_rules`、`rule_versions`、`audit_findings` 和 `finding_evidence_items` 均为 `0`。
+- 证据边界：本次没有写入任何 HIS 样本、规则上下文或疑点数据；只把缺失前置数据做成产品可见诊断。
+- 部署状态复核确认 `src/medical_audit_kb/topics` 不存在，`/var/www/audit/findings.html` 存在，上传临时残留为 `0`。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -747,7 +765,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理和 Next 原生疑点清单均已部署到生产，当前 `.deploy-sha=47b731e049155a6ac00eaf4cd4e202deb85d4226`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单和疑点生成链路就绪诊断均已部署到生产，当前 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
@@ -765,6 +783,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
 - `/findings` 返回 Next 原生疑点工作台，主导航“疑点清单”指向 `/findings`。
 - `/api/v1/audit-findings` 返回 `200`，且 `store.ready=true`。
+- 生产未导入 HIS 业务数据底座时，`/api/v1/audit-findings.generation_readiness.status` 必须明确返回 `blocked`，页面必须显示缺失的前置数据，而不是只显示低信息量空态。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
