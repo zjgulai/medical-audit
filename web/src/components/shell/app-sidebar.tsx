@@ -32,20 +32,34 @@ export function AppSidebar() {
       >
         {primaryNavigation.map((item) => {
           const isActive = isActivePath(pathname, item.href);
+          const className = `audit-focus-ring min-w-40 rounded-2xl px-3 py-3 text-sm transition md:min-w-0 ${
+            isActive
+              ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
+              : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
+          }`;
+          const content = (
+            <>
+              <span className="block font-medium">{item.label}</span>
+              <span className="mt-0.5 hidden truncate text-xs text-slate-500 md:block">{item.description}</span>
+            </>
+          );
+
+          if (item.target === "backend") {
+            return (
+              <a key={item.id} href={item.href} aria-current={isActive ? "page" : undefined} className={className}>
+                {content}
+              </a>
+            );
+          }
 
           return (
             <Link
-              key={item.href}
+              key={item.id}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`audit-focus-ring min-w-40 rounded-2xl px-3 py-3 text-sm transition md:min-w-0 ${
-                isActive
-                  ? "bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
-                  : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
-              }`}
+              className={className}
             >
-              <span className="block font-medium">{item.label}</span>
-              <span className="mt-0.5 hidden truncate text-xs text-slate-500 md:block">{item.description}</span>
+              {content}
             </Link>
           );
         })}

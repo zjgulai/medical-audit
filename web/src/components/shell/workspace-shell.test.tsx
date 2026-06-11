@@ -25,19 +25,20 @@ describe("WorkspaceShell", () => {
 
     expect(screen.getByRole("navigation", { name: "主导航" })).toHaveClass("overflow-x-auto");
     expect(screen.getByText("医保自查 OS")).toBeInTheDocument();
-    expect(screen.getByText("AI 引导自查")).toBeInTheDocument();
+    expect(screen.getByText("对话审证")).toBeInTheDocument();
     expect(screen.getByText("医保基金使用合规专项自查")).toBeInTheDocument();
     expect(screen.getByText("单院医保内审试运行")).toBeInTheDocument();
     expect(screen.getByText("医保基金使用合规")).toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /今日工作台/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /AI 引导自查/ })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /对话审证/ })).toHaveAttribute("href", "/pages/chat");
+    expect(screen.getByRole("link", { name: /对话审证/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
-  it("marks parent navigation active for nested routes without activating workspace", () => {
-    usePathnameMock.mockReturnValue("/guided-check/session-1");
+  it("marks backend route active if the shell is rendered around it", () => {
+    usePathnameMock.mockReturnValue("/pages/chat");
 
     render(
       <WorkspaceShell>
@@ -45,7 +46,7 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("link", { name: /AI 引导自查/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /对话审证/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /今日工作台/ })).not.toHaveAttribute("aria-current");
   });
 });

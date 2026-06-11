@@ -5,7 +5,7 @@ module: frontend
 topic: self-check-os-projects-dashboard
 status: stable
 created: 2026-06-07
-updated: 2026-06-07
+updated: 2026-06-11
 owner: self
 source: human+ai
 ---
@@ -921,12 +921,17 @@ Spec coverage:
 - Adds live read-only health status without claiming project persistence.
 - Preserves legacy Jinja fallback.
 
+Current product integration correction:
+
+- As of 2026-06-11, the primary workspace navigation must not expose Plan 03-11 placeholder modules as first-level actions.
+- `今日工作台` remains the Next.js-owned `/workspace` dashboard.
+- Live product actions are integrated through existing FastAPI/Jinja backend pages: `/pages/chat`, `/pages/query`, `/pages/audit-findings`, `/pages/review-tasks`, `/pages/audit-logs`, and `/pages/index-admin`.
+- The legacy Next.js routes `/guided-check`, `/rules`, `/documents`, `/findings`, `/remediation`, `/reports`, `/analytics`, `/graph`, and `/archive` remain only as compatibility bridge pages. They must point users to the nearest live backend or workspace function and must not show `Plan 03` through `Plan 11` placeholder content.
+
 Known deferred work:
 
 - Project CRUD and persistence move to a later backend API plan.
-- AI guided multi-round chat remains Plan 03.
-- Rule library real views remain Plan 04.
-- Materials, findings, remediation, reports, analytics, graph, and archive remain downstream.
+- Next-native AI guided chat, rule library, materials, findings, remediation, reports, analytics, graph, and archive modules remain deferred until they are backed by real API/domain capabilities.
 
 Execution:
 

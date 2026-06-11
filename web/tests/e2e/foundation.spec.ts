@@ -4,21 +4,26 @@ test("self-check OS foundation renders navigation and core modules", async ({ pa
   await page.goto("/workspace");
 
   const primaryNavigation = page.getByRole("navigation", { name: "主导航" });
-  const guidedCheckLink = primaryNavigation.getByRole("link", { name: /^AI 引导自查/ });
+  const chatLink = primaryNavigation.getByRole("link", { name: /^对话审证/ });
 
   await expect(page.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeVisible();
   await expect(page.getByText("待处理疑点")).toBeVisible();
   await expect(page.getByText("待补证据")).toBeVisible();
   await expect(page.getByRole("heading", { name: "后端与索引联通" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "当前阶段：形成判断" })).toBeVisible();
-  await expect(guidedCheckLink).toBeVisible();
-  await expect(guidedCheckLink).toHaveAttribute("href", "/guided-check");
-  await expect(primaryNavigation.getByRole("link", { name: /^专题规则库/ })).toBeVisible();
+  await expect(chatLink).toBeVisible();
+  await expect(chatLink).toHaveAttribute("href", "/pages/chat");
+  await expect(primaryNavigation.getByRole("link", { name: /^查询工作台/ })).toHaveAttribute("href", "/pages/query");
+  await expect(primaryNavigation.getByRole("link", { name: /^索引管理/ })).toHaveAttribute(
+    "href",
+    "/pages/index-admin"
+  );
 });
 
-test("guided check route is reachable", async ({ page }) => {
+test("legacy guided check route no longer renders a plan placeholder", async ({ page }) => {
   await page.goto("/guided-check");
 
   await expect(page.getByRole("heading", { name: "AI 引导自查" })).toBeVisible();
-  await expect(page.getByText("自查向导 + 多轮对话 + 证据侧栏")).toBeVisible();
+  await expect(page.getByText(/Plan 03/)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "打开对话审证" })).toHaveAttribute("href", "/pages/chat");
 });
