@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchBackendHealth, fetchSearchBackendStatus } from "./api-client";
+import { fetchBackendHealth, fetchSearchBackendStatus, runKnowledgeQuery } from "./api-client";
 
 describe("api-client", () => {
   afterEach(() => {
@@ -51,5 +51,46 @@ describe("api-client", () => {
     await expect(fetchBackendHealth()).rejects.toThrow(
       "Backend proxy client must be called from browser/client code; server code needs an absolute backend URL."
     );
+  });
+
+  it("posts knowledge query requests through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          question: "医保基金审核依据",
+          answer: "应核验证据链。",
+          confidence: "high",
+          fallback_used: true,
+          basis_groups: [],
+          citations: [],
+          query_log_index: 0
+        })
+      }))
+    );
+
+    const result = await runKnowledgeQuery({
+      question: "医保基金审核依据",
+      top_k: 5,
+      source_collections: ["medical-insurance-laws"]
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/query", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      body: JSON.stringify({
+        question: "医保基金审核依据",
+        top_k: 5,
+        source_collections: ["medical-insurance-laws"]
+      }),
+      cache: "no-store"
+    });
+    expect(result.answer).toBe("应核验证据链。");
   });
 });

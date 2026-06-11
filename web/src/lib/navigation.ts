@@ -30,10 +30,10 @@ export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "query",
     label: "查询工作台",
-    href: "/pages/query",
+    href: "/knowledge-query",
     description: "检索政策、规则、风险清单和引用原文。",
     emphasis: "standard",
-    target: "backend"
+    target: "workspace"
   },
   {
     id: "findings",

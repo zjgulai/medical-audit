@@ -9,6 +9,7 @@ import DocumentsPage from "./documents/page";
 import FindingsPage from "./findings/page";
 import GraphPage from "./graph/page";
 import GuidedCheckPage from "./guided-check/page";
+import KnowledgeQueryPage from "./knowledge-query/page";
 import RemediationPage from "./remediation/page";
 import ReportsPage from "./reports/page";
 import RulesPage from "./rules/page";
@@ -16,12 +17,13 @@ import WorkspacePage from "./workspace/page";
 
 const routePages = [
   ["/workspace", WorkspacePage],
+  ["/knowledge-query", KnowledgeQueryPage],
 ] as const;
 
 const legacyBridgePages = [
   ["/guided-check", GuidedCheckPage, "/pages/chat"],
   ["/rules", RulesPage, "/pages/index-admin"],
-  ["/documents", DocumentsPage, "/pages/query"],
+  ["/documents", DocumentsPage, "/knowledge-query"],
   ["/findings", FindingsPage, "/pages/audit-findings"],
   ["/remediation", RemediationPage, "/pages/review-tasks"],
   ["/reports", ReportsPage, "/pages/review-tasks"],
