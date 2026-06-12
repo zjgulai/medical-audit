@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-11
+updated: 2026-06-12
 owner: self
 source: human+ai
 ---
@@ -41,6 +41,7 @@ source: human+ai
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
 - 当前生产已写入受控脱敏 fixture 链路：`audit_projects=1`、`his_source_batches=1`、`his_table_schemas=1`、`his_field_mappings=9`、`his_staging_rows=3`、`audit_data_snapshots=1`、`audit_tasks=1`、`audit_runs=1`、`audit_rules=1`、`rule_versions=1`、`audit_findings=1`、`finding_evidence_items=1`；`/api/v1/audit-findings.generation_readiness.status=generated`。该数据来自 `production-fixture-bootstrap`，只证明规则生成链路和页面联通，不代表真实医院疑点或客户数据。
 - fixture finding `finding-f044ebd309b659dc` 已创建并链接 `review-task-0007`；当前疑点复核状态为 `confirmed-violation`，复核任务报告门禁为 `ready_for_report=true`，任务 Markdown 导出和报告草稿 JSON/Markdown 导出均可用。
+- `review-task-0007` 已完成受控 fixture 正式报告签发和整改跟踪验收：正式报告 `signed-report-03cb4bed3dd4`、正文 SHA256 `f16561b3f5fbab81497fb3313782609d40867cf10bee7f6d53c3ae75687c3bd5`、整改事项 `rectification-44526138b71e`、整改状态 `accepted`、结案门禁 `ready_to_close=true`；任务状态仍保留为 `confirmed-violation`，未执行结案。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
@@ -503,6 +504,22 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 部署状态巡检 `tencent-cloud-deployment-state-after-pr64-review-sync-20260612` 已通过；远端 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在。
 - 证据边界：`review-task-0007` 仍是受控脱敏 fixture 任务，只证明疑点、复核、底稿和报告草稿链路打通，不代表真实医院违规结论。
 
+### 5.22 PR #64 后续：正式报告签发与整改跟踪 fixture 验证
+
+已在 2026-06-12 对 `review-task-0007` 执行受控 fixture 正式报告签发和整改跟踪写入：
+
+- 签发前已创建数据库备份 `/opt/medical-audit/backups/db/pre-pr64-review-task-0007-signoff-rectification-20260612T100832+0800.sql.gz`。
+- 已通过生产页面表单签发正式报告，签发人 `fixture-signoff-owner`，签发时间 `2026-06-12T02:10:22Z`。
+- 正式报告导出已通过：`/review-tasks/review-task-0007/signed-report?format=json` 返回 `format=review-task-signed-report-v1`、`signed=true`、`report_id=signed-report-03cb4bed3dd4`、`content_sha256=f16561b3f5fbab81497fb3313782609d40867cf10bee7f6d53c3ae75687c3bd5`、`attachment_count=2`；Markdown 导出返回 `review-task-0007`、`fixture-signoff-owner` 和 `finding-f044ebd309b659dc`。
+- 整改写入前已创建数据库备份 `/opt/medical-audit/backups/db/pre-pr64-review-task-0007-rectification-20260612T101600+0800.sql.gz`。
+- 已生成整改事项 `rectification-44526138b71e`，整改状态 `accepted`，责任科室 `fixture-charge-office`，责任人 `fixture-owner`，完成期限 `2026-06-30`。
+- 整改导出已通过：`/review-tasks/review-task-0007/rectification/export?format=json` 返回 `format=review-task-rectification-v1`、`event_count=1`、`source_report_id=signed-report-03cb4bed3dd4`、`source_report_sha256=f16561b3f5fbab81497fb3313782609d40867cf10bee7f6d53c3ae75687c3bd5`；Markdown 导出返回 `AuditScope 整改跟踪记录`、`已验收 (accepted)` 和责任科室信息。
+- 任务整体导出显示 `close_gate.ready_to_close=true`、`status_label=允许结案`，但任务状态仍为 `confirmed-violation`，本轮未执行结案。
+- 生产只读复核确认 `/api/v1/audit-findings` 统计为总数 `1`、待复核 `0`、已建任务 `1`，`finding-f044ebd309b659dc.review_status=confirmed-violation`、`review_task_id=review-task-0007`。
+- 数据库只读复核确认 `review_tasks=7`、`review_actions=10`、`review-task-0007.status=confirmed-violation`、`audit_findings.review_status=confirmed-violation`。
+- `/pages/review-tasks` 浏览器联调已通过：页面可见 `review-task-0007`、`正式报告已签发`、`整改已验收`、`允许结案`、`signed-report-03cb4bed3dd4` 和 `rectification-44526138b71e`。
+- 证据边界：本节只证明受控脱敏 fixture 的签发、整改、导出和结案门禁链路可用，不代表真实医院审计报告、真实整改验收或客户授权证据。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -800,7 +817,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成和疑点复核任务状态同步均已部署到生产；当前 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成、疑点复核任务状态同步、正式报告签发和整改跟踪 fixture 验证均已完成；当前 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
@@ -809,6 +826,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 共享 `ai_video_nginx` 已完成 `/var/www/audit:/var/www/audit:ro` bind mount 固化；`production-e2e-smoke-after-nginx-bind-mount-20260611` 通过，`kg`、`video`、`voc`、主域名回归均为 `200`。
 - CHARGE-RULE-001 受控 fixture 已写入生产并生成 1 条疑点；`/api/v1/audit-findings.generation_readiness.status=generated`，`/findings` 显示 `finding-f044ebd309b659dc`，导出接口返回 1 条证据项。
 - 受控 fixture 疑点已创建复核任务并完成状态同步；`/api/v1/audit-findings` 中 `finding-f044ebd309b659dc.review_status=confirmed-violation`，`review-task-0007` 任务 Markdown 和报告草稿 JSON/Markdown 导出均可用。
+- 受控 fixture 复核任务已完成正式报告签发与整改跟踪验收；`signed-report-03cb4bed3dd4`、`rectification-44526138b71e`、签发报告 JSON/Markdown、整改 JSON/Markdown 和 `close_gate.ready_to_close=true` 均已验证，任务未结案。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
@@ -823,6 +841,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产未导入 HIS 业务数据底座时，`/api/v1/audit-findings.generation_readiness.status` 必须明确返回 `blocked`，页面必须显示缺失的前置数据，而不是只显示低信息量空态。
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
+- 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
