@@ -1,22 +1,140 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { MouseEvent, useEffect, useMemo, useState } from "react";
+
 import { StatusPill } from "@/components/ui/status-pill";
+import { findNavigationItemById, findNavigationItemForPath } from "@/lib/navigation";
 import { currentSelfCheckProject } from "@/lib/projects";
+
+const defaultTabIds = ["ai-chat", "documents", "analytics"] as const;
 
 export function ProjectContextBar() {
   const project = currentSelfCheckProject;
+  const pathname = usePathname();
+  const router = useRouter();
+  const activeItem = useMemo(() => findNavigationItemForPath(pathname), [pathname]);
+  const [openTabIds, setOpenTabIds] = useState<readonly string[]>(() => {
+    if (activeItem) {
+      return [activeItem.id];
+    }
+    return defaultTabIds;
+  });
+
+  useEffect(() => {
+    if (!activeItem) {
+      return;
+    }
+
+    setOpenTabIds((current) => (current.includes(activeItem.id) ? current : [...current, activeItem.id]));
+  }, [activeItem]);
+
+  const openTabs = openTabIds
+    .map((id) => findNavigationItemById(id))
+    .filter((item): item is NonNullable<typeof item> => item !== undefined);
+
+  const pageTitle = activeItem?.label ?? "今日工作台";
+
+  function navigateToTab(tabId: string) {
+    const target = findNavigationItemById(tabId);
+    if (!target) {
+      router.push("/workspace");
+      return;
+    }
+
+    if (target.target === "backend") {
+      window.location.href = target.href;
+      return;
+    }
+
+    router.push(target.href);
+  }
+
+  function closeTab(event: MouseEvent<HTMLButtonElement>, tabId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setOpenTabIds((current) => {
+      const next = current.filter((id) => id !== tabId);
+      if (activeItem?.id === tabId) {
+        navigateToTab(next[0] ?? "documents");
+      }
+      return next.length > 0 ? next : ["documents"];
+    });
+  }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/82 px-4 py-4 backdrop-blur-xl sm:px-6 md:px-8">
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">当前自查项目</p>
-          <div className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{project.name}</div>
-          <p className="mt-1 text-xs text-slate-500">{project.organizationName}</p>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-slate-500">当前模块</p>
+          <div className="mt-1 text-xl font-semibold text-slate-950">{pageTitle}</div>
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {project.name} · {project.organizationName}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone="info">{project.auditTopic}</StatusPill>
           <StatusPill tone="success">项目进行中</StatusPill>
           <StatusPill tone="warning">AI 结论需人工确认</StatusPill>
+          <div className="ml-1 flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+            <span className="grid size-6 place-items-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+              审
+            </span>
+            <span className="text-xs font-semibold text-slate-700">审计员</span>
+          </div>
         </div>
+      </div>
+
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="已打开模块">
+        {openTabs.map((tab) => {
+          const isActive = activeItem?.id === tab.id;
+          const tabClassName = `audit-focus-ring inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm ${
+            isActive
+              ? "border-blue-200 bg-blue-50 text-blue-700"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+          }`;
+          const label = (
+            <>
+              <span className="font-medium">{tab.label}</span>
+              <button
+                className="audit-focus-ring -mr-1 grid size-5 place-items-center rounded-md text-xs hover:bg-white"
+                type="button"
+                aria-label={`关闭${tab.label}`}
+                onClick={(event) => closeTab(event, tab.id)}
+              >
+                ×
+              </button>
+            </>
+          );
+
+          if (tab.target === "backend") {
+            return (
+              <a
+                key={tab.id}
+                href={tab.href}
+                role="tab"
+                aria-selected={isActive}
+                className={tabClassName}
+              >
+                {label}
+              </a>
+            );
+          }
+
+          return (
+            <Link
+              key={tab.id}
+              href={tab.href}
+              role="tab"
+              aria-selected={isActive}
+              className={tabClassName}
+            >
+              {label}
+            </Link>
+          );
+        })}
       </div>
     </header>
   );

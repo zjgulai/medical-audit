@@ -1,55 +1,75 @@
 import { describe, expect, it } from "vitest";
 
-import { primaryNavigation } from "./navigation";
+import { findNavigationItemForPath, primaryNavigation, secondaryNavigation } from "./navigation";
 import { workflowStages } from "./workflow";
 
 describe("primaryNavigation", () => {
-  it("keeps the self-check workflow order stable", () => {
+  it("keeps the AI audit portal module order stable", () => {
     expect(primaryNavigation.map((item) => item.href)).toEqual([
-      "/workspace",
-      "/pages/chat",
-      "/knowledge-query",
-      "/findings",
-      "/pages/review-tasks",
-      "/pages/audit-logs",
-      "/pages/index-admin"
+      "/chat",
+      "/agents",
+      "/agent-market",
+      "/knowledge-base",
+      "/documents",
+      "/analytics",
+      "/graph",
+      "/reports",
+      "/projects"
     ]);
   });
 
-  it("promotes query workbench to a Next-native module", () => {
-    const query = primaryNavigation.find((item) => item.id === "query");
+  it("keeps the portal at nine primary modules", () => {
+    expect(primaryNavigation).toHaveLength(9);
+  });
 
-    expect(query).toMatchObject({
-      label: "查询工作台",
-      href: "/knowledge-query",
+  it("promotes document search to a Next-native module", () => {
+    const documents = primaryNavigation.find((item) => item.id === "documents");
+
+    expect(documents).toMatchObject({
+      label: "文档检索",
+      href: "/documents",
       target: "workspace"
     });
   });
 
-  it("promotes findings to a Next-native module", () => {
-    const findings = primaryNavigation.find((item) => item.id === "findings");
+  it("keeps data analysis and project management as first-class modules", () => {
+    const analytics = primaryNavigation.find((item) => item.id === "analytics");
+    const projects = primaryNavigation.find((item) => item.id === "projects");
 
-    expect(findings).toMatchObject({
-      label: "疑点清单",
-      href: "/findings",
+    expect(analytics).toMatchObject({
+      label: "AI 数据分析",
+      href: "/analytics",
+      target: "workspace"
+    });
+    expect(projects).toMatchObject({
+      label: "项目管理",
+      href: "/projects",
       target: "workspace"
     });
   });
 
   it("marks evidence chat as the core live module", () => {
-    const chat = primaryNavigation.find((item) => item.href === "/pages/chat");
+    const chat = primaryNavigation.find((item) => item.href === "/chat");
 
     expect(chat).toMatchObject({
-      label: "对话审证",
+      label: "AI 对话",
       emphasis: "primary",
-      target: "backend"
+      target: "workspace"
     });
   });
 
-  it("does not expose placeholder plan routes as primary navigation", () => {
+  it("does not expose legacy bridge routes as primary navigation", () => {
     expect(primaryNavigation.map((item) => item.href)).not.toEqual(
-      expect.arrayContaining(["/guided-check", "/rules", "/analytics", "/graph", "/archive"])
+      expect.arrayContaining(["/guided-check", "/rules", "/remediation", "/archive"])
     );
+  });
+
+  it("keeps secondary workspace routes addressable outside the primary sidebar", () => {
+    expect(secondaryNavigation.map((item) => item.href)).toEqual(["/guided-check", "/rules", "/remediation", "/archive"]);
+    expect(findNavigationItemForPath("/rules")).toMatchObject({
+      label: "专题规则库",
+      target: "workspace"
+    });
   });
 });
 

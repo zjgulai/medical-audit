@@ -150,7 +150,7 @@ export const currentSelfCheckProject: SelfCheckProject = {
     {
       id: "ACT-003",
       title: "索引健康等待前端联通检测",
-      description: "Plan 02 只做只读健康展示，不执行索引变更。",
+      description: "第二阶段只做只读健康展示，不执行索引变更。",
       timeLabel: "昨天 18:10"
     }
   ]
