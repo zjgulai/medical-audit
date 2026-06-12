@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>复核任务台</title>
+    <title>AI智能审计管理系统 · 审计底稿/报告</title>
     <link rel="stylesheet" href="/static/app.css">
   </head>
   <body class="page-review-tasks">
@@ -16,9 +16,9 @@
 
       <section class="hero review-hero">
         <div>
-          <p class="eyebrow">人工复核台 · Review Desk</p>
-          <h1>把证据回答沉淀成可复核任务。</h1>
-          <p class="lede">复核任务保存问题、底稿、引用链、复核状态、意见和结论。当前版本为本地持久化任务台，不替代生产级案件系统。</p>
+          <p class="eyebrow">审计底稿/报告 · Review Desk</p>
+          <h1>把证据回答沉淀成底稿和报告记录。</h1>
+          <p class="lede">复核任务保存问题、底稿、引用链、复核状态、意见和结论。当前版本为门户化复核工作区，不替代生产级案件系统。</p>
         </div>
         <aside class="hero-console" aria-label="复核任务状态">
           <div><span>任务总数</span><strong>{{ review_task_stats.total }}</strong></div>
@@ -42,7 +42,7 @@
           <h2 id="review-intake-title">从对话审证创建复核任务</h2>
           <p class="meta">先在对话审证页形成引用型回答，再点击“创建复核任务”。任务进入此列表后再做状态、意见和结论维护。</p>
         </div>
-        <p><a class="text-link" href="/pages/chat">返回对话审证</a></p>
+        <p><a class="text-link" href="/chat">返回 AI 对话</a></p>
       </section>
 
       <section class="review-task-list" aria-label="复核任务列表">
@@ -319,7 +319,7 @@
             <p class="eyebrow">暂无复核任务</p>
             <h2>先从对话审证页创建任务。</h2>
             <p>当前没有保存的复核任务。复核任务用于把单轮证据回答沉淀为可追踪的人工复核记录。</p>
-            <p><a class="text-link" href="/pages/chat">进入对话审证</a></p>
+            <p><a class="text-link" href="/chat">进入 AI 对话</a></p>
           </section>
         {% endfor %}
       </section>

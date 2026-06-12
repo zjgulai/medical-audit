@@ -1,21 +1,40 @@
-<nav class="topbar {{ product_nav_class|default('') }}" aria-label="页面导航">
-  <a class="brand brand-command" href="/workspace" aria-label="AuditScope 今日工作台">
-    <span class="brand-mark">AS</span>
+<nav class="topbar portal-topbar {{ product_nav_class|default('') }}" aria-label="AI智能审计管理系统门户导航">
+  <a class="brand brand-command" href="/workspace" aria-label="AI智能审计管理系统门户首页">
+    <span class="brand-mark">AI</span>
     <span class="brand-lockup">
-      <strong>AuditScope</strong>
-      <small>医保审计证据控制台</small>
+      <strong>AI智能审计管理系统</strong>
+      <small>AuditScope Portal</small>
     </span>
   </a>
   <div class="nav-links">
-    <a href="/workspace"{% if active_nav == "workspace" %} aria-current="page"{% endif %}>今日工作台</a>
-    <a href="/pages/chat"{% if active_nav == "chat" %} aria-current="page"{% endif %}>对话审证</a>
-    <a href="/pages/query"{% if active_nav == "query" %} aria-current="page"{% endif %}>查询工作台</a>
-    <a href="/pages/audit-findings"{% if active_nav == "audit-findings" %} aria-current="page"{% endif %}>疑点清单</a>
-    <a href="/pages/review-tasks"{% if active_nav == "review-tasks" %} aria-current="page"{% endif %}>复核任务/底稿</a>
-    <a href="/pages/audit-logs"{% if active_nav == "audit-logs" %} aria-current="page"{% endif %}>审计日志</a>
-    <a href="/pages/index-admin"{% if active_nav == "index-admin" %} aria-current="page"{% endif %}>索引管理</a>
+    <a href="/chat"{% if active_nav == "chat" %} aria-current="page"{% endif %}>AI 对话</a>
+    <a href="/agents"{% if active_nav == "agents" %} aria-current="page"{% endif %}>我的智能体</a>
+    <a href="/agent-market"{% if active_nav == "agent-market" %} aria-current="page"{% endif %}>智能体广场</a>
+    <a href="/knowledge-base"{% if active_nav == "knowledge-base" %} aria-current="page"{% endif %}>知识库</a>
+    <a href="/documents"{% if active_nav == "query" %} aria-current="page"{% endif %}>文档检索</a>
+    <a href="/analytics"{% if active_nav == "analytics" %} aria-current="page"{% endif %}>AI 数据分析</a>
+    <a href="/graph"{% if active_nav == "graph" %} aria-current="page"{% endif %}>知识图谱</a>
+    <a href="/reports"{% if active_nav == "review-tasks" %} aria-current="page"{% endif %}>审计底稿/报告</a>
+    <a href="/projects"{% if active_nav == "projects" %} aria-current="page"{% endif %}>项目管理</a>
   </div>
   <span class="status-pill {{ product_nav_status_class }}">
     {{ product_nav_status_text }}
   </span>
 </nav>
+<div class="portal-tabbar" role="tablist" aria-label="已打开模块">
+  {% if active_nav == "chat" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/pages/chat">AI 对话</a>
+  {% elif active_nav == "review-tasks" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/pages/review-tasks">审计底稿/报告</a>
+  {% elif active_nav == "query" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/documents">文档检索</a>
+  {% elif active_nav == "audit-findings" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/findings">疑点清单</a>
+  {% elif active_nav == "audit-logs" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/pages/audit-logs">审计日志</a>
+  {% elif active_nav == "index-admin" %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/pages/index-admin">索引管理</a>
+  {% else %}
+    <a class="portal-tab active" role="tab" aria-selected="true" href="/workspace">今日工作台</a>
+  {% endif %}
+</div>
