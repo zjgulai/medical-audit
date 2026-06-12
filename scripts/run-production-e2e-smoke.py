@@ -24,9 +24,9 @@ DEFAULT_REGRESSION_URLS = (
     "https://lute-tlz-dddd.top/",
 )
 REQUIRED_PAGES = {
-    "/pages/chat": ("医保审核对话审证台", "对话审证", "检索后端"),
-    "/pages/query": ("医保审核知识库查询", "查询工作台"),
-    "/pages/review-tasks": ("复核任务台", "人工复核台"),
+    "/pages/chat": ("AI智能审计管理系统", "AI 对话", "检索后端"),
+    "/pages/query": ("医保审核知识库查询", "文档检索"),
+    "/pages/review-tasks": ("AI智能审计管理系统", "审计底稿/报告"),
     "/pages/index-admin": ("索引管理", "检索后端"),
 }
 
