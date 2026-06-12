@@ -33,13 +33,14 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-11 当前事实
+### 2026-06-12 当前事实
 
-- 当前生产部署 SHA：`3c45e46875ec4f9ca10fd07f91bf00d0f4caa461 显示疑点生成链路就绪诊断`。
+- 当前生产部署 SHA：`9f98c8d36ea72a660c69f27b41a156f5a292b23a 修复疑点复核任务状态同步`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
 - 当前生产已写入受控脱敏 fixture 链路：`audit_projects=1`、`his_source_batches=1`、`his_table_schemas=1`、`his_field_mappings=9`、`his_staging_rows=3`、`audit_data_snapshots=1`、`audit_tasks=1`、`audit_runs=1`、`audit_rules=1`、`rule_versions=1`、`audit_findings=1`、`finding_evidence_items=1`；`/api/v1/audit-findings.generation_readiness.status=generated`。该数据来自 `production-fixture-bootstrap`，只证明规则生成链路和页面联通，不代表真实医院疑点或客户数据。
+- fixture finding `finding-f044ebd309b659dc` 已创建并链接 `review-task-0007`；当前疑点复核状态为 `confirmed-violation`，复核任务报告门禁为 `ready_for_report=true`，任务 Markdown 导出和报告草稿 JSON/Markdown 导出均可用。
 - 生产认证桥接已采用 Nginx 内部注入 `X-API-Key`，secret 只保存在远端 Nginx 配置与 env 中，未进入 Git、镜像或本地文档。
 - `MEDICAL_AUDIT_KB_ALLOW_EXTERNAL_AI` 已改为由远端 `medical-audit.env` 控制；当前生产 env 显式为 `1`，用于支持 query embedding，出站前 PII 扫描仍由 `egress_policy` 执行。
 - `ai_video_nginx` 仍为共享公网入口；本次只修改 `audit.lute-tlz-dddd.top` 对应 server block，没有重启或改动 `ai_video_frontend`、`voc_superset`、`promptforge_app` 等其它业务容器。
@@ -482,6 +483,26 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 证据边界：该数据为 `production-fixture-bootstrap` 受控脱敏 fixture，只证明规则生成链路和页面联通，不代表真实医院疑点或客户数据。
 - 远端状态复核确认 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`，`medical_audit_app` 与 `medical_audit_pg` healthy，`*.uploading.cfg=0`。
 
+### 5.21 PR #64 疑点复核任务状态同步部署
+
+已在 2026-06-12 合并并部署 PR #64：
+
+- PR #64 merge commit：`9f98c8d36ea72a660c69f27b41a156f5a292b23a`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-20260612T095022+0800.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-20260612T095022+0800`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-20260612T095022+0800.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-20260612T095022+0800`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-20260612T095022+0800.tar.gz`。
+- 已用正式部署脚本重建并重启 `medical_audit_app`，未重建或删除 `medical_audit_pgdata`。
+- 生产只读 smoke `production-deploy-after-pr64-finding-review-sync-20260612` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 部署后 `review-task-0007` 的任务 Markdown 导出已从 `500` 修复为 `200`，返回 `AuditScope 规则疑点底稿导出`、`finding-f044ebd309b659dc`、`matched_charge_detail_ids` 和 `workpaper-fixture-20260612-0007`。
+- 复核任务状态同步前已创建专项数据库备份 `/opt/medical-audit/backups/db/pre-pr64-review-task-0007-resync-20260612T095430+0800.sql.gz`。
+- 已重存 `review-task-0007` 的 `confirmed-violation` 状态以触发新同步逻辑；`review_actions` 从 `7` 增至 `8`，`audit_findings.review_status` 已从 `pending-review` 同步为 `confirmed-violation`。
+- `/findings` 浏览器抽查已通过：疑点统计为总数 `1`、待复核 `0`、已建任务 `1`，`finding-f044ebd309b659dc` 显示“确认违规”和“已创建复核任务：review-task-0007”。
+- `review-task-0007/report-draft?format=json` 和 `format=markdown` 均可导出，报告门禁 `ready_for_report=true`，附件登记为 `2` 条。
+- 部署状态巡检 `tencent-cloud-deployment-state-after-pr64-review-sync-20260612` 已通过；远端 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在。
+- 证据边界：`review-task-0007` 仍是受控脱敏 fixture 任务，只证明疑点、复核、底稿和报告草稿链路打通，不代表真实医院违规结论。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -779,7 +800,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断均已部署到生产，CHARGE-RULE-001 受控 fixture 疑点生成联调已完成；当前 `.deploy-sha=3c45e46875ec4f9ca10fd07f91bf00d0f4caa461`，fixture finding 为 `finding-f044ebd309b659dc`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成和疑点复核任务状态同步均已部署到生产；当前 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
@@ -787,6 +808,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产静态前端热修后，浏览器前后端联调已通过；旧 Next.js chunk 导致的 `/api/v1/api/v1/*` 404 已消除，`review-task-0005`、`review-task-0006` 已通过 UI 表单写入和导出验证。
 - 共享 `ai_video_nginx` 已完成 `/var/www/audit:/var/www/audit:ro` bind mount 固化；`production-e2e-smoke-after-nginx-bind-mount-20260611` 通过，`kg`、`video`、`voc`、主域名回归均为 `200`。
 - CHARGE-RULE-001 受控 fixture 已写入生产并生成 1 条疑点；`/api/v1/audit-findings.generation_readiness.status=generated`，`/findings` 显示 `finding-f044ebd309b659dc`，导出接口返回 1 条证据项。
+- 受控 fixture 疑点已创建复核任务并完成状态同步；`/api/v1/audit-findings` 中 `finding-f044ebd309b659dc.review_status=confirmed-violation`，`review-task-0007` 任务 Markdown 和报告草稿 JSON/Markdown 导出均可用。
 - 回归抽查 `kg`、`video`、`voc`、`lute-tlz-dddd.top` 均返回正常状态。
 
 部署验收必须同时满足：
@@ -800,6 +822,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/api/v1/audit-findings` 返回 `200`，且 `store.ready=true`。
 - 生产未导入 HIS 业务数据底座时，`/api/v1/audit-findings.generation_readiness.status` 必须明确返回 `blocked`，页面必须显示缺失的前置数据，而不是只显示低信息量空态。
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
+- 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
