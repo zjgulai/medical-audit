@@ -12,7 +12,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
         <AppSidebar />
         <div className="min-w-0 flex-1">
           <ProjectContextBar />
-          <div className="px-4 py-5 sm:px-6 md:px-8 md:py-8">{children}</div>
+          <div className="px-4 py-5 sm:px-6 md:px-8 md:py-6">{children}</div>
         </div>
       </div>
     </div>

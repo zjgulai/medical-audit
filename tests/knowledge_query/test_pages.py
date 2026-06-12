@@ -52,7 +52,7 @@ def test_query_page_renders_form_and_source_filters(tmp_path: Path) -> None:
     assert "检索已就绪" in response.text
     assert "来源过滤" in response.text
     assert 'href="#main-content"' in response.text
-    assert 'aria-current="page">查询工作台' in response.text
+    assert 'aria-current="page">文档检索' in response.text
     assert 'aria-describedby="question-help"' in response.text
     assert "required" in response.text
     assert SourceCollection.MEDICAL_INSURANCE_LAWS.value in response.text
@@ -64,8 +64,8 @@ def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "医保审核对话审证台" in response.text
-    assert 'aria-current="page">对话审证' in response.text
+    assert "AI智能审计管理系统 · AI 对话" in response.text
+    assert 'aria-current="page">AI 对话' in response.text
 
 
 def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
@@ -76,21 +76,23 @@ def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
     client = TestClient(create_app(state))
     client.get("/pages/query", params={"question": "医保基金审核依据"})
     expected_links = (
-        ('href="/workspace"', "今日工作台"),
-        ('href="/pages/chat"', "对话审证"),
-        ('href="/pages/query"', "查询工作台"),
-        ('href="/pages/audit-findings"', "疑点清单"),
-        ('href="/pages/review-tasks"', "复核任务/底稿"),
-        ('href="/pages/audit-logs"', "审计日志"),
-        ('href="/pages/index-admin"', "索引管理"),
+        ('href="/chat"', "AI 对话"),
+        ('href="/agents"', "我的智能体"),
+        ('href="/agent-market"', "智能体广场"),
+        ('href="/knowledge-base"', "知识库"),
+        ('href="/documents"', "文档检索"),
+        ('href="/analytics"', "AI 数据分析"),
+        ('href="/graph"', "知识图谱"),
+        ('href="/reports"', "审计底稿/报告"),
+        ('href="/projects"', "项目管理"),
     )
     pages = (
-        ("/pages/chat", "对话审证"),
-        ("/pages/query", "查询工作台"),
-        ("/pages/audit-findings", "疑点清单"),
-        ("/pages/review-tasks", "复核任务/底稿"),
-        ("/pages/audit-logs", "审计日志"),
-        ("/pages/index-admin", "索引管理"),
+        ("/pages/chat", "AI 对话"),
+        ("/pages/query", "文档检索"),
+        ("/pages/audit-findings", None),
+        ("/pages/review-tasks", "审计底稿/报告"),
+        ("/pages/audit-logs", None),
+        ("/pages/index-admin", None),
         (f"/pages/preview/{LAW_CHUNK_ID}", None),
     )
 
@@ -98,8 +100,8 @@ def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
         response = client.get(path, headers={"X-Role": "it-admin"})
 
         assert response.status_code == 200
-        assert 'aria-label="页面导航"' in response.text
-        assert 'aria-label="AuditScope 今日工作台"' in response.text
+        assert 'aria-label="AI智能审计管理系统门户导航"' in response.text
+        assert 'aria-label="AI智能审计管理系统门户首页"' in response.text
         for href, label in expected_links:
             assert href in response.text
             assert label in response.text
@@ -143,8 +145,8 @@ def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -
     response = client.get("/pages/chat", params={"question": "医保基金审核依据"})
 
     assert response.status_code == 200
-    assert "医保审核对话审证台" in response.text
-    assert "AuditScope" in response.text
+    assert "AI智能审计管理系统 · AI 对话" in response.text
+    assert "AI智能审计管理系统" in response.text
     assert "Evidence Command Center" in response.text
     assert "本地证据优先" in response.text
     assert "人工复核门禁" in response.text
@@ -241,11 +243,11 @@ def test_review_tasks_page_renders_empty_state(tmp_path: Path) -> None:
     response = client.get("/pages/review-tasks")
 
     assert response.status_code == 200
-    assert "复核任务台" in response.text
-    assert "本地持久化任务台" in response.text
+    assert "AI智能审计管理系统 · 审计底稿/报告" in response.text
+    assert "门户化复核工作区" in response.text
     assert "暂无复核任务" in response.text
     assert "从对话审证创建复核任务" in response.text
-    assert 'aria-current="page">复核任务' in response.text
+    assert 'aria-current="page">审计底稿/报告' in response.text
     assert state.operation_logs[-1]["action"] == "page-review-tasks-view"
 
 
@@ -980,7 +982,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert "pending-review" in page_response.text
     assert "matched_charge_detail_ids" in page_response.text
     assert "创建复核任务" in page_response.text
-    assert 'aria-current="page">疑点清单' in page_response.text
+    assert 'role="tab" aria-selected="true" href="/findings">疑点清单' in page_response.text
     assert str(state.operation_logs[-1]["action"]) == "page-audit-findings-view"
 
     api_response = client.get("/audit-findings")
@@ -1168,7 +1170,7 @@ def test_index_admin_page_renders_operational_status_and_records_log(tmp_path: P
     assert "数据库 chunks" in response.text
     assert "检索已就绪" in response.text
     assert 'href="#main-content"' in response.text
-    assert 'aria-current="page">索引管理' in response.text
+    assert 'role="tab" aria-selected="true" href="/pages/index-admin">索引管理' in response.text
     assert "index-v1" in response.text
     assert "全量法律/broken.pdf" in response.text
     assert "风险负面清单/case.png" in response.text
