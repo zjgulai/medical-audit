@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-12
+updated: 2026-06-13
 owner: self
 source: human+ai
 ---
@@ -112,6 +112,7 @@ source: human+ai
 - `scripts/audit-tencent-cloud-deployment-state.py`
 - `scripts/deploy-tencent-cloud-production.py`
 - `scripts/run-audit-log-archive-audit.py`
+- `scripts/run-production-frontend-acceptance.mjs`
 - `.dockerignore`
 
 密钥策略：
@@ -698,6 +699,19 @@ uv run python scripts/run-production-e2e-smoke.py \
   --report tmp/outputs/production-e2e-smoke-with-review-write-latest.json
 ```
 
+### 7.6.1 生产前端语义验收
+
+静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行只读前端语义验收：
+
+```bash
+pnpm --dir web exec node ../scripts/run-production-frontend-acceptance.mjs \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --output tmp/outputs/production-frontend-acceptance-latest.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest
+```
+
+该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。脚本只读，不提交业务表单。
+
 ### 7.7 增量更新 dry-run 演练
 
 新增源文档后，先只生成增量计划，不直接构建或激活索引：
@@ -842,6 +856,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
+- 生产前端语义验收 `scripts/run-production-frontend-acceptance.mjs` 返回 `status=pass`，P0/P1 均为 `0`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
