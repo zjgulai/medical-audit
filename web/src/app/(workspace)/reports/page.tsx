@@ -32,13 +32,13 @@ const openRectificationCount = rectificationSummaries.filter((item) => item.stat
 
 export default function ReportsPage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">审计底稿/报告</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">底稿生成与报告记录</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">审计底稿/报告</p>
+            <h1 className="audit-page-title">底稿生成与报告记录</h1>
+            <p className="audit-copy mt-2 max-w-3xl">
               把复核结论、底稿、附件、负责人确认和整改事项组织成可追溯的报告首页。
             </p>
           </div>
@@ -55,12 +55,12 @@ export default function ReportsPage() {
         <ol className="mt-6 grid gap-4 lg:grid-cols-3">
           {reportWorkflowSteps.map((step, index) => (
             <li key={step.title}>
-              <a className="audit-focus-ring block h-full rounded-2xl border border-slate-200 bg-slate-50 p-4 hover:bg-blue-50/60" href={step.href}>
-                <span className="grid size-8 place-items-center rounded-xl bg-blue-600 text-sm font-semibold text-white">
+              <a className="audit-focus-ring audit-action-card h-full p-4" href={step.href}>
+                <span className="grid size-8 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-sm font-semibold text-white">
                   {index + 1}
                 </span>
-                <h2 className="mt-4 text-base font-semibold text-slate-950">{step.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{step.description}</p>
+                <h2 className="audit-card-title mt-4">{step.title}</h2>
+                <p className="audit-copy mt-2">{step.description}</p>
               </a>
             </li>
           ))}
@@ -68,27 +68,27 @@ export default function ReportsPage() {
 
         <section className="mt-6" aria-labelledby="report-records-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="report-records-title" className="text-lg font-semibold text-slate-950">
+            <h2 id="report-records-title" className="audit-section-title">
               历史生成记录
             </h2>
-            <a className="audit-focus-ring rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/pages/review-tasks">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/review-tasks">
               打开复核任务台
             </a>
           </div>
 
-          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
-            <table className="w-full table-fixed text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-4 hidden md:block">
+            <table className="audit-table table-fixed">
+              <thead>
                 <tr>
-                  <th className="w-[28%] px-4 py-3 font-semibold">名称</th>
-                  <th className="w-[12%] px-4 py-3 font-semibold">状态</th>
-                  <th className="w-[20%] px-4 py-3 font-semibold">编号/来源</th>
-                  <th className="w-[14%] px-4 py-3 font-semibold">负责人</th>
-                  <th className="w-[11%] px-4 py-3 font-semibold">纳入/附录</th>
-                  <th className="w-[15%] px-4 py-3 font-semibold">操作</th>
+                  <th className="w-[28%]">名称</th>
+                  <th className="w-[12%]">状态</th>
+                  <th className="w-[20%]">编号/来源</th>
+                  <th className="w-[14%]">负责人</th>
+                  <th className="w-[11%]">纳入/附录</th>
+                  <th className="w-[15%]">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {reportEntries.map((entry) => (
                   <ReportRow key={entry.id} entry={entry} />
                 ))}
@@ -105,7 +105,7 @@ export default function ReportsPage() {
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="report-gate-title">
           <div>
-            <h2 id="report-gate-title" className="text-lg font-semibold text-slate-950">
+            <h2 id="report-gate-title" className="audit-section-title">
               报告门禁预检
             </h2>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -115,10 +115,10 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <aside className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-            <p className="text-sm font-semibold text-blue-700">报告正文规则</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-950">只纳入已确认违规问题</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+          <aside className="audit-callout p-5">
+            <p className="audit-kicker">报告正文规则</p>
+            <h3 className="audit-section-title mt-2">只纳入已确认违规问题</h3>
+            <p className="audit-copy mt-2">
               附录展示复核分布、附件清单和整改请求；AI 对话内容只能作为引用材料和底稿草稿来源。
             </p>
           </aside>
@@ -126,8 +126,8 @@ export default function ReportsPage() {
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">底稿证据来源</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">底稿证据来源</h2>
           <div className="mt-4 space-y-3">
             {reportEvidenceSources.map((source) => (
               <EvidenceSourceCard key={source.id} source={source} />
@@ -135,8 +135,8 @@ export default function ReportsPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">整改跟踪</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">整改跟踪</h2>
           <div className="mt-4 space-y-3">
             {rectificationSummaries.map((item) => (
               <RectificationCard key={item.id} item={item} />
@@ -144,10 +144,10 @@ export default function ReportsPage() {
           </div>
         </section>
 
-        <a className="audit-focus-ring block rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" href="/graph">
-          <p className="text-sm font-semibold text-blue-700">知识图谱</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">查看报告证据链</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">报告、复核、疑点和整改之间的关系已在图谱页只读展示。</p>
+        <a className="audit-focus-ring audit-action-card p-5" href="/graph">
+          <p className="audit-kicker">知识图谱</p>
+          <h2 className="audit-section-title mt-2">查看报告证据链</h2>
+          <p className="audit-copy mt-2">报告、复核、疑点和整改之间的关系已在图谱页只读展示。</p>
         </a>
       </aside>
     </main>
@@ -156,9 +156,9 @@ export default function ReportsPage() {
 
 function ReportMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
     </div>
   );
 }
@@ -166,29 +166,29 @@ function ReportMetric({ label, value }: { readonly label: string; readonly value
 function ReportRow({ entry }: { readonly entry: ReportEntry }) {
   return (
     <tr>
-      <td className="px-4 py-3">
-        <p className="font-semibold text-slate-950">{entry.title}</p>
-        <p className="mt-1 text-xs text-slate-500">{entry.gateSummary}</p>
+      <td>
+        <p className="font-semibold text-[var(--audit-ink)]">{entry.title}</p>
+        <p className="audit-meta mt-1">{entry.gateSummary}</p>
       </td>
-      <td className="px-4 py-3">
+      <td>
         <StatusPill tone={entry.status === "已签发" ? "success" : entry.status === "门禁阻断" ? "danger" : "neutral"}>
           {entry.status}
         </StatusPill>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <p className="break-words font-medium text-slate-900">{entry.reportNo}</p>
-        <p className="mt-1 text-xs text-slate-500">{entry.source}</p>
+      <td className="text-[var(--audit-ink-muted)]">
+        <p className="break-words font-medium text-[var(--audit-ink)]">{entry.reportNo}</p>
+        <p className="audit-meta mt-1">{entry.source}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">
+      <td className="text-[var(--audit-ink-muted)]">
         <p>{entry.owner}</p>
-        <p className="mt-1 text-xs text-slate-500">{entry.updatedAt}</p>
+        <p className="audit-meta mt-1">{entry.updatedAt}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">
+      <td className="text-[var(--audit-ink-muted)]">
         <p>{entry.includedFindingCount} 条</p>
-        <p className="mt-1 text-xs text-slate-500">{entry.appendixCount} 个附录</p>
+        <p className="audit-meta mt-1">{entry.appendixCount} 个附录</p>
       </td>
-      <td className="px-4 py-3">
-        <a className="audit-focus-ring inline-flex min-w-20 items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={entry.href}>
+      <td>
+        <a className="audit-focus-ring audit-btn audit-btn-primary min-w-20" href={entry.href}>
           查看详情
         </a>
       </td>
@@ -198,45 +198,45 @@ function ReportRow({ entry }: { readonly entry: ReportEntry }) {
 
 function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold leading-6 text-slate-950">{entry.title}</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{entry.gateSummary}</p>
+          <h3 className="audit-compact-title">{entry.title}</h3>
+          <p className="audit-meta mt-1">{entry.gateSummary}</p>
         </div>
         <StatusPill tone={entry.status === "已签发" ? "success" : entry.status === "门禁阻断" ? "danger" : "neutral"}>
           {entry.status}
         </StatusPill>
       </div>
 
-      <dl className="mt-4 grid gap-3 text-xs text-slate-600">
+      <dl className="audit-meta mt-4 grid gap-3">
         <div>
-          <dt className="font-semibold text-slate-500">编号</dt>
-          <dd className="mt-1 break-words font-medium text-slate-900">{entry.reportNo}</dd>
+          <dt className="font-semibold">编号</dt>
+          <dd className="mt-1 break-words font-medium text-[var(--audit-ink)]">{entry.reportNo}</dd>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <dt className="font-semibold text-slate-500">负责人</dt>
-            <dd className="mt-1 text-slate-900">{entry.owner}</dd>
+            <dt className="font-semibold">负责人</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.owner}</dd>
           </div>
           <div>
-            <dt className="font-semibold text-slate-500">更新时间</dt>
-            <dd className="mt-1 text-slate-900">{entry.updatedAt}</dd>
+            <dt className="font-semibold">更新时间</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.updatedAt}</dd>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <dt className="font-semibold text-slate-500">纳入疑点</dt>
-            <dd className="mt-1 text-slate-900">{entry.includedFindingCount} 条</dd>
+            <dt className="font-semibold">纳入疑点</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.includedFindingCount} 条</dd>
           </div>
           <div>
-            <dt className="font-semibold text-slate-500">附录</dt>
-            <dd className="mt-1 text-slate-900">{entry.appendixCount} 个</dd>
+            <dt className="font-semibold">附录</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.appendixCount} 个</dd>
           </div>
         </div>
       </dl>
 
-      <a className="audit-focus-ring mt-4 inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={entry.href}>
+      <a className="audit-focus-ring audit-btn audit-btn-primary mt-4 w-full" href={entry.href}>
         查看详情
       </a>
     </article>
@@ -245,26 +245,26 @@ function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
 
 function GateCard({ item }: { readonly item: ReportGateItem }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-950">{item.label}</h3>
-          <p className="mt-1 text-xs text-slate-500">责任人：{item.owner}</p>
+          <h3 className="audit-card-title">{item.label}</h3>
+          <p className="audit-meta mt-1">责任人：{item.owner}</p>
         </div>
         <StatusPill tone={getGateTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <p className="audit-copy mt-3">{item.detail}</p>
     </article>
   );
 }
 
 function EvidenceSourceCard({ source }: { readonly source: ReportEvidenceSource }) {
   return (
-    <a className="audit-focus-ring block rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-blue-50/70" href={source.href}>
+    <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={source.href}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-950">{source.title}</p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="audit-compact-title">{source.title}</p>
+          <p className="audit-meta mt-1">
             {source.kind} · {source.reference}
           </p>
         </div>
@@ -278,14 +278,14 @@ function EvidenceSourceCard({ source }: { readonly source: ReportEvidenceSource 
 
 function RectificationCard({ item }: { readonly item: RectificationSummary }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">
             {item.department} · {item.dueDate}
           </p>
-          <p className="mt-2 text-xs text-slate-500">{item.reportNo}</p>
+          <p className="audit-meta mt-2">{item.reportNo}</p>
         </div>
         <StatusPill tone={item.status === "已整改" ? "success" : item.status === "整改中" ? "info" : "warning"}>
           {item.status}

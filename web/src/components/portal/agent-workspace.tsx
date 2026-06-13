@@ -42,34 +42,34 @@ export function AgentWorkspace() {
   }
 
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">我的智能体</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">提示词型审计智能体</h1>
+            <p className="audit-kicker">我的智能体</p>
+            <h1 className="audit-page-title">提示词型审计智能体</h1>
           </div>
           <StatusPill tone="info">一体一提示词</StatusPill>
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           {agents.map((agent) => (
-            <article key={agent.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <article key={agent.id} className="audit-panel-muted p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-950">{agent.name}</h2>
-                  <p className="mt-1 text-xs text-slate-500">{agent.topic}</p>
+                  <h2 className="audit-card-title">{agent.name}</h2>
+                  <p className="mt-1 audit-meta">{agent.topic}</p>
                 </div>
                 <StatusPill tone={agent.category === "业务类" ? "success" : "neutral"}>{agent.category}</StatusPill>
               </div>
-              <p className="mt-4 line-clamp-4 text-sm leading-6 text-slate-700">{agent.prompt}</p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span>{agent.knowledgeBase}</span>
-                <span>{agent.projectName}</span>
-                <span>{agent.updatedAt}</span>
+              <p className="mt-4 line-clamp-4 audit-copy">{agent.prompt}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="audit-chip">{agent.knowledgeBase}</span>
+                <span className="audit-chip">{agent.projectName}</span>
+                <span className="audit-chip">{agent.updatedAt}</span>
               </div>
               <a
-                className="audit-focus-ring mt-4 inline-flex rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                className="audit-focus-ring audit-btn audit-btn-primary mt-4"
                 href={`/chat?agent=${agent.id}`}
               >
                 进入对话
@@ -79,22 +79,22 @@ export function AgentWorkspace() {
         </div>
       </section>
 
-      <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-        <h2 className="text-lg font-semibold text-slate-950">新增智能体</h2>
+      <aside className="audit-panel-rail p-5">
+        <h2 className="audit-section-title">新增智能体</h2>
         <form className="mt-4 space-y-4" onSubmit={submitAgent}>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">名称</span>
+            <span className="audit-label">名称</span>
             <input
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="如：目录限制核验助手"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">分类</span>
+            <span className="audit-label">分类</span>
             <select
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={category}
               onChange={(event) => setCategory(event.target.value as AgentCategory)}
             >
@@ -106,23 +106,23 @@ export function AgentWorkspace() {
             </select>
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">审计专题</span>
+            <span className="audit-label">审计专题</span>
             <input
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={topic}
               onChange={(event) => setTopic(event.target.value)}
             />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">提示词</span>
+            <span className="audit-label">提示词</span>
             <textarea
-              className="audit-focus-ring mt-2 min-h-32 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6"
+              className="audit-focus-ring audit-input mt-2 min-h-32 resize-y px-3 py-2 leading-6"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="写清审计对象、证据约束、输出格式和人工复核边界。"
             />
           </label>
-          <button className="audit-focus-ring w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700" type="submit">
+          <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
             新增智能体
           </button>
         </form>

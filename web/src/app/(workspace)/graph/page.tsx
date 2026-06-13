@@ -20,13 +20,13 @@ const pendingRelationCount = graphRelations.filter((relation) => relation.streng
 
 export default function GraphPage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">知识图谱</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">知识图谱入口</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">知识图谱</p>
+            <h1 className="audit-page-title">知识图谱入口</h1>
+            <p className="audit-copy mt-2 max-w-3xl">
               医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。
             </p>
           </div>
@@ -40,18 +40,18 @@ export default function GraphPage() {
           <GraphMetric label="待补关系" value={`${pendingRelationCount} 条`} />
         </div>
 
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-labelledby="graph-preview-title">
+        <section className="audit-panel-muted mt-6 p-4" aria-labelledby="graph-preview-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="graph-preview-title" className="text-lg font-semibold text-slate-950">
+              <h2 id="graph-preview-title" className="audit-section-title">
                 医保基金使用合规专项图谱
               </h2>
-              <p className="mt-1 text-sm text-slate-500">SELF-CHECK-FUND-20260607 · 证据链静态预览</p>
+              <p className="audit-meta mt-1">SELF-CHECK-FUND-20260607 · 证据链静态预览</p>
             </div>
             <StatusPill tone="success">证据链覆盖</StatusPill>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="audit-table-shell mt-4 bg-white">
             <svg
               className="h-[32rem] w-full text-slate-700"
               role="img"
@@ -87,7 +87,7 @@ export default function GraphPage() {
         </section>
 
         <section className="mt-6" aria-labelledby="graph-relations-title">
-          <h2 id="graph-relations-title" className="text-lg font-semibold text-slate-950">
+          <h2 id="graph-relations-title" className="audit-section-title">
             证据链关系
           </h2>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -99,27 +99,27 @@ export default function GraphPage() {
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">节点覆盖</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">节点覆盖</h2>
           <div className="mt-4 grid grid-cols-2 gap-2">
             {kindStats.map((item) => (
-              <div key={item.kind} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs font-semibold text-slate-500">{item.kind}</p>
-                <p className="mt-1 text-base font-semibold text-slate-950">{item.count}</p>
+              <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
+                <p className="audit-meta font-semibold">{item.kind}</p>
+                <p className="audit-metric-value-sm mt-1">{item.count}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">节点证据</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">节点证据</h2>
           <div className="mt-4 space-y-3">
             {graphNodes.map((node) => (
-              <a key={node.id} className="audit-focus-ring block rounded-xl border border-slate-200 bg-slate-50 p-3 hover:bg-blue-50/70" href={node.href}>
+              <a key={node.id} className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-slate-950">{node.label}</p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="audit-compact-title">{node.label}</p>
+                    <p className="audit-meta mt-1">
                       {node.kind} · {node.metric}
                     </p>
                   </div>
@@ -130,10 +130,10 @@ export default function GraphPage() {
           </div>
         </section>
 
-        <a className="audit-focus-ring block rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-[var(--audit-shadow-card)]" href="/documents">
-          <p className="text-sm font-semibold text-blue-700">文档检索</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">核验证据来源</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">图谱中的文档、知识库和引用材料继续由统一检索页承载。</p>
+        <a className="audit-focus-ring audit-callout block p-5" href="/documents">
+          <p className="audit-kicker">文档检索</p>
+          <h2 className="audit-section-title mt-2">核验证据来源</h2>
+          <p className="audit-copy mt-2">图谱中的文档、知识库和引用材料继续由统一检索页承载。</p>
         </a>
       </aside>
     </main>
@@ -142,9 +142,9 @@ export default function GraphPage() {
 
 function GraphMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
     </div>
   );
 }
@@ -169,17 +169,17 @@ function GraphSvgNode({ node }: { readonly node: GraphNode }) {
 
 function RelationCard({ relation }: { readonly relation: GraphRelation }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-950">{relation.source}</p>
-          <p className="mt-1 text-xs text-slate-500">{relation.evidence}</p>
+          <p className="audit-compact-title">{relation.source}</p>
+          <p className="audit-meta mt-1">{relation.evidence}</p>
         </div>
         <StatusPill tone={getRelationTone(relation.strength)}>{relation.strength}</StatusPill>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-full border border-blue-100 bg-white px-3 py-1 font-semibold text-blue-700">{relation.relation}</span>
-        <span className="font-semibold text-slate-950">{relation.target}</span>
+        <span className="audit-chip audit-chip-info">{relation.relation}</span>
+        <span className="font-semibold text-[var(--audit-ink)]">{relation.target}</span>
       </div>
     </article>
   );

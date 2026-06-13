@@ -285,24 +285,24 @@ export function DataAnalysisWorkbench() {
   }
 
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">AI 数据分析</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">上传表格分析</h1>
+            <p className="audit-kicker">AI 数据分析</p>
+            <h1 className="audit-page-title">上传表格分析</h1>
           </div>
           <StatusPill tone="warning">分析线索</StatusPill>
         </div>
 
-        <label className="audit-focus-ring mt-6 block rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 p-6">
-          <span className="block text-base font-semibold text-slate-950">选择 `.csv` 或 `.xlsx` 文件</span>
-          <span className="mt-2 block text-sm leading-6 text-slate-600">
+        <label className="audit-focus-ring audit-upload-drop mt-6 p-6">
+          <span className="audit-card-title block">选择 `.csv` 或 `.xlsx` 文件</span>
+          <span className="audit-copy mt-2 block">
             CSV 会即时展示字段、行数和空值概览；XLSX 先进入上传接收状态。
           </span>
           <input
             aria-label="上传审计表格"
-            className="mt-4 block w-full text-sm text-slate-700"
+            className="mt-4 block w-full text-sm text-[var(--audit-ink-muted)]"
             accept=".csv,.xlsx"
             type="file"
             onChange={handleFileChange}
@@ -310,26 +310,26 @@ export function DataAnalysisWorkbench() {
         </label>
 
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-700">HIS staging</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">可接入</p>
+          <div className="audit-panel-muted p-4">
+            <p className="audit-label">HIS staging</p>
+            <p className="audit-metric-value mt-2">可接入</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-700">规则疑点</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">1</p>
+          <div className="audit-panel-muted p-4">
+            <p className="audit-label">规则疑点</p>
+            <p className="audit-metric-value mt-2">1</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-700">待复核线索</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">开放</p>
+          <div className="audit-panel-muted p-4">
+            <p className="audit-label">待复核线索</p>
+            <p className="audit-metric-value mt-2">开放</p>
           </div>
         </div>
 
         {profile && (
-          <section aria-live="polite" className="mt-5 rounded-2xl border border-slate-200 bg-white p-5">
+          <section aria-live="polite" className="audit-panel-muted mt-5 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-950">{profile.name}</h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <h2 className="audit-section-title">{profile.name}</h2>
+                <p className="audit-meta mt-1">
                   {profile.extension.toUpperCase()} · {profile.sizeKb} KB
                 </p>
               </div>
@@ -337,32 +337,32 @@ export function DataAnalysisWorkbench() {
                 {profile.status === "parsed" ? "已分析" : profile.status === "error" ? "失败" : "已接收"}
               </StatusPill>
             </div>
-            <p className="mt-4 text-sm leading-6 text-slate-700">{profile.message}</p>
+            <p className="audit-copy mt-4">{profile.message}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Metric label="字段数" value={String(profile.columns.length)} />
               <Metric label="数据行" value={String(profile.rowCount)} />
               <Metric label="重复行" value={String(profile.duplicateRowCount)} />
             </div>
             {profile.columns.length > 0 && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full min-w-[42rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-slate-500">
+              <div className="audit-table-shell mt-4 overflow-x-auto">
+                <table className="audit-table min-w-[42rem]">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2 font-semibold">字段</th>
-                      <th className="px-3 py-2 font-semibold">类型</th>
-                      <th className="px-3 py-2 font-semibold">空值</th>
-                      <th className="px-3 py-2 font-semibold">去重值</th>
-                      <th className="px-3 py-2 font-semibold">审计提示</th>
+                      <th>字段</th>
+                      <th>类型</th>
+                      <th>空值</th>
+                      <th>去重值</th>
+                      <th>审计提示</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                  <tbody className="divide-y divide-[var(--audit-line-soft)]">
                     {profile.columns.map((column) => (
                       <tr key={column.name}>
-                        <td className="px-3 py-2 font-semibold text-slate-950">{column.name}</td>
-                        <td className="px-3 py-2 text-slate-700">{column.type}</td>
-                        <td className="px-3 py-2 text-slate-700">{column.emptyCount}</td>
-                        <td className="px-3 py-2 text-slate-700">{column.uniqueCount}</td>
-                        <td className="px-3 py-2 text-slate-600">{column.auditHint}</td>
+                        <td className="font-semibold text-[var(--audit-ink)]">{column.name}</td>
+                        <td className="text-[var(--audit-ink-muted)]">{column.type}</td>
+                        <td className="text-[var(--audit-ink-muted)]">{column.emptyCount}</td>
+                        <td className="text-[var(--audit-ink-muted)]">{column.uniqueCount}</td>
+                        <td className="text-[var(--audit-ink-muted)]">{column.auditHint}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -372,7 +372,7 @@ export function DataAnalysisWorkbench() {
             {profile.auditSignals.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {profile.auditSignals.map((signal) => (
-                  <span key={signal} className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                  <span key={signal} className="audit-chip audit-chip-info">
                     {signal}
                   </span>
                 ))}
@@ -384,10 +384,10 @@ export function DataAnalysisWorkbench() {
             </div>
             {profile.columns.some((column) => column.sampleValues.length > 0) && (
               <div className="mt-5">
-                <h3 className="text-sm font-semibold text-slate-950">样例值</h3>
+                <h3 className="audit-compact-title">样例值</h3>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {profile.columns.slice(0, 6).map((column) => (
-                    <span key={column.name} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                    <span key={column.name} className="audit-chip">
                       {column.name}: {column.sampleValues.join(" / ") || "空"}
                     </span>
                   ))}
@@ -397,7 +397,7 @@ export function DataAnalysisWorkbench() {
             {profile.columns.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {profile.columns.map((column) => (
-                  <span key={column.name} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+                  <span key={column.name} className="audit-chip">
                     {column.name}
                   </span>
                 ))}
@@ -408,15 +408,15 @@ export function DataAnalysisWorkbench() {
       </section>
 
       <aside className="space-y-4">
-        <a className="audit-focus-ring block rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" href="/findings">
-          <p className="text-sm font-semibold text-blue-700">审计数据分析入口</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">查看规则命中疑点</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">进入已上线的疑点清单、源记录定位和计算过程。</p>
+        <a className="audit-focus-ring audit-action-card p-5" href="/findings">
+          <p className="audit-kicker">审计数据分析入口</p>
+          <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
+          <p className="audit-copy mt-2">进入已上线的疑点清单、源记录定位和计算过程。</p>
         </a>
-        <a className="audit-focus-ring block rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" href="/pages/index-admin">
-          <p className="text-sm font-semibold text-blue-700">索引与数据状态</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">查看知识库运行态</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">运维发布、回滚和验收仍保留在索引管理后台。</p>
+        <a className="audit-focus-ring audit-action-card p-5" href="/pages/index-admin">
+          <p className="audit-kicker">索引与数据状态</p>
+          <h2 className="audit-section-title mt-2">查看知识库运行态</h2>
+          <p className="audit-copy mt-2">运维发布、回滚和验收仍保留在索引管理后台。</p>
         </a>
       </aside>
     </main>
@@ -425,18 +425,18 @@ export function DataAnalysisWorkbench() {
 
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <p className="text-xs font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+    <div className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
+      <p className="audit-meta font-semibold">{label}</p>
+      <p className="audit-metric-value-sm mt-1">{value}</p>
     </div>
   );
 }
 
 function AnalysisList({ title, items }: { readonly title: string; readonly items: readonly string[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+    <section className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
+      <h3 className="audit-compact-title">{title}</h3>
+      <ul className="audit-copy mt-3 space-y-2">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}

@@ -11,13 +11,13 @@ export function ModuleCard({ title, description, href, badge }: ModuleCardProps)
   return (
     <Link
       href={href}
-      className="audit-focus-ring block rounded-[var(--audit-radius-lg)] border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)] transition hover:-translate-y-0.5 hover:border-blue-200"
+      className="audit-focus-ring audit-action-card p-5"
     >
-      <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+      <span className="audit-chip audit-chip-info">
         {badge}
       </span>
-      <h2 className="mt-4 text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+      <h2 className="audit-card-title mt-4">{title}</h2>
+      <p className="audit-copy mt-2">{description}</p>
     </Link>
   );
 }

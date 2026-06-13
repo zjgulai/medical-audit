@@ -8,14 +8,14 @@ export function WorkflowProgressCard({ project }: WorkflowProgressCardProps) {
   const progress = getProjectStageProgress(project);
 
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
-      <p className="text-sm font-medium text-blue-700">AI 自查状态机</p>
-      <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">当前阶段：{projectStageLabels[project.stage]}</h2>
+    <section className="audit-panel p-5">
+      <p className="audit-kicker">AI 自查状态机</p>
+      <h2 className="mt-2 audit-section-title">当前阶段：{projectStageLabels[project.stage]}</h2>
       <div className="mt-5">
-        <div className="h-2 rounded-full bg-slate-100">
-          <div className="h-2 rounded-full bg-blue-600" style={{ width: `${progress.percent}%` }} />
+        <div className="h-2 rounded-full bg-[var(--audit-surface-subtle)]">
+          <div className="h-2 rounded-full bg-[var(--audit-primary)]" style={{ width: `${progress.percent}%` }} />
         </div>
-        <p className="mt-3 text-sm text-slate-600">
+        <p className="mt-3 audit-copy">
           {projectStageLabels[project.stage]} · {progress.currentIndex}/{progress.total} · {progress.percent}%
         </p>
       </div>
@@ -23,8 +23,10 @@ export function WorkflowProgressCard({ project }: WorkflowProgressCardProps) {
         {Object.entries(projectStageLabels).map(([stage, label]) => (
           <div
             key={stage}
-            className={`rounded-2xl border px-3 py-2 text-sm ${
-              stage === project.stage ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-slate-50 text-slate-600"
+            className={`rounded-[var(--audit-radius-md)] border px-3 py-2 text-sm ${
+              stage === project.stage
+                ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] font-semibold text-[var(--audit-primary)]"
+                : "border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] text-[var(--audit-ink-muted)]"
             }`}
           >
             {label}
