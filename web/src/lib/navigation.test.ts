@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { findNavigationItemForPath, primaryNavigation, secondaryNavigation } from "./navigation";
+import {
+  findNavigationItemForPath,
+  navigationGroups,
+  primaryNavigation,
+  secondaryNavigation,
+  systemNavigation
+} from "./navigation";
 import { workflowStages } from "./workflow";
 
 describe("primaryNavigation", () => {
@@ -69,6 +75,36 @@ describe("primaryNavigation", () => {
     expect(findNavigationItemForPath("/rules")).toMatchObject({
       label: "专题规则库",
       target: "workspace"
+    });
+  });
+
+  it("groups the sidebar around audit workbench concepts", () => {
+    expect(navigationGroups.map((group) => group.label)).toEqual([
+      "审计任务",
+      "智能体",
+      "常用工具",
+      "审计资源",
+      "系统管理"
+    ]);
+    expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
+      "/workspace",
+      "/chat",
+      "/guided-check",
+      "/projects",
+      "/remediation",
+      "/reports"
+    ]);
+    expect(navigationGroups[4].items).toEqual(systemNavigation);
+  });
+
+  it("keeps workbench home and backend system routes addressable for tabs", () => {
+    expect(findNavigationItemForPath("/workspace")).toMatchObject({
+      label: "今日工作台",
+      target: "workspace"
+    });
+    expect(findNavigationItemForPath("/pages/index-admin")).toMatchObject({
+      label: "索引管理",
+      target: "backend"
     });
   });
 });

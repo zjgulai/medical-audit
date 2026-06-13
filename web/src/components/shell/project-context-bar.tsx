@@ -8,7 +8,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { findNavigationItemById, findNavigationItemForPath } from "@/lib/navigation";
 import { currentSelfCheckProject } from "@/lib/projects";
 
-const defaultTabIds = ["ai-chat", "documents", "analytics"] as const;
+const defaultTabIds = ["workspace", "ai-chat", "analytics"] as const;
 
 export function ProjectContextBar() {
   const project = currentSelfCheckProject;
@@ -58,9 +58,9 @@ export function ProjectContextBar() {
     setOpenTabIds((current) => {
       const next = current.filter((id) => id !== tabId);
       if (activeItem?.id === tabId) {
-        navigateToTab(next[0] ?? "documents");
+        navigateToTab(next[0] ?? "workspace");
       }
-      return next.length > 0 ? next : ["documents"];
+      return next.length > 0 ? next : ["workspace"];
     });
   }
 
@@ -71,10 +71,15 @@ export function ProjectContextBar() {
           <p className="audit-meta font-semibold">当前模块</p>
           <div className="audit-section-title mt-1">{pageTitle}</div>
           <p className="audit-meta mt-1 truncate">
-            {project.name} · {project.organizationName}
+            {activeItem?.description ?? "查看当前审计项目状态。"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {activeItem?.id !== "workspace" && (
+            <Link className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href="/workspace">
+              返回工作台
+            </Link>
+          )}
           <StatusPill tone="info">{project.auditTopic}</StatusPill>
           <StatusPill tone="success">项目进行中</StatusPill>
           <StatusPill tone="warning">AI 结论需人工确认</StatusPill>
@@ -85,6 +90,10 @@ export function ProjectContextBar() {
             <span className="text-xs font-semibold text-[var(--audit-ink-muted)]">审计员</span>
           </div>
         </div>
+      </div>
+
+      <div className="mt-2 audit-meta truncate">
+        {project.name} / {project.organizationName}
       </div>
 
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="已打开模块">

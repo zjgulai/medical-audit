@@ -37,6 +37,8 @@ export function ProjectManagementWorkbench() {
     );
   });
   const selectedProject = portalProjectSummaries.find((item) => item.id === selectedProjectId) ?? portalProjectSummaries[0];
+  const activeProjectCount = portalProjectSummaries.filter((item) => item.status === "进行中").length;
+  const pendingProjectCount = portalProjectSummaries.filter((item) => item.status === "待启动").length;
 
   function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,16 +63,33 @@ export function ProjectManagementWorkbench() {
   }
 
   return (
-    <main className="audit-page-grid audit-page-grid--rail min-w-0">
+    <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">项目空间</h2>
+        <p className="audit-copy mt-2">按审计专题切换项目，成员表随当前项目上下文展示。</p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <SidebarMetric label="进行中" value={String(activeProjectCount)} />
+          <SidebarMetric label="待启动" value={String(pendingProjectCount)} />
+        </div>
+        <div className="mt-5 space-y-3">
+          {portalProjectSummaries.map((item) => (
+            <ProjectNavigatorItem
+              key={item.id}
+              item={item}
+              selected={item.id === selectedProject.id}
+              onSelect={() => setSelectedProjectId(item.id)}
+            />
+          ))}
+        </div>
+      </aside>
+
       <section className="min-w-0 space-y-5">
         <div className="audit-panel min-w-0 p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="audit-kicker">项目管理</p>
               <h1 className="audit-page-title">审计项目管理</h1>
-              <p className="audit-meta mt-2">
-                {project.organizationName} · {project.dateRange}
-              </p>
+              <p className="audit-meta mt-2">{project.organizationName} / {project.dateRange}</p>
             </div>
             <StatusPill tone="success">项目进行中</StatusPill>
           </div>
@@ -109,7 +128,7 @@ export function ProjectManagementWorkbench() {
                     <td>
                       <p className="font-semibold text-[var(--audit-ink)]">{item.name}</p>
                       <p className="audit-meta mt-1">
-                        {item.organizationName} · {item.auditTopic}
+                        {item.organizationName} / {item.auditTopic}
                       </p>
                     </td>
                     <td className="text-[var(--audit-ink-muted)]">{item.id === selectedProject.id ? members.length : item.memberCount}</td>
@@ -172,45 +191,105 @@ export function ProjectManagementWorkbench() {
         </div>
       </section>
 
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">新增成员</h2>
-        <form className="mt-4 space-y-4" onSubmit={submitMember}>
-          <label className="block">
-            <span className="audit-label">姓名</span>
-            <input
-              className="audit-focus-ring audit-input mt-2 px-3 py-2"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="成员姓名"
-            />
-          </label>
-          <label className="block">
-            <span className="audit-label">角色</span>
-            <select
-              className="audit-focus-ring audit-input mt-2 px-3 py-2"
-              value={role}
-              onChange={(event) => setRole(event.target.value as PortalProjectMember["role"])}
-            >
-              {memberRoles.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="audit-label">部门</span>
-            <input
-              className="audit-focus-ring audit-input mt-2 px-3 py-2"
-              value={department}
-              onChange={(event) => setDepartment(event.target.value)}
-            />
-          </label>
-          <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
-            添加成员
-          </button>
-        </form>
+      <aside className="min-w-0 space-y-4">
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">当前项目</h2>
+          <p className="audit-card-title mt-4">{selectedProject.name}</p>
+          <p className="audit-copy mt-2">{selectedProject.organizationName}</p>
+          <div className="mt-4 space-y-2">
+            <SummaryRow label="审计专题" value={selectedProject.auditTopic} />
+            <SummaryRow label="当前成员" value={String(members.length)} />
+            <SummaryRow label="项目创建人" value={selectedProject.creator} />
+          </div>
+        </section>
+
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">新增成员</h2>
+          <form className="mt-4 space-y-4" onSubmit={submitMember}>
+            <label className="block">
+              <span className="audit-label">姓名</span>
+              <input
+                className="audit-focus-ring audit-input mt-2 px-3 py-2"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="成员姓名"
+              />
+            </label>
+            <label className="block">
+              <span className="audit-label">角色</span>
+              <select
+                className="audit-focus-ring audit-input mt-2 px-3 py-2"
+                value={role}
+                onChange={(event) => setRole(event.target.value as PortalProjectMember["role"])}
+              >
+                {memberRoles.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="audit-label">部门</span>
+              <input
+                className="audit-focus-ring audit-input mt-2 px-3 py-2"
+                value={department}
+                onChange={(event) => setDepartment(event.target.value)}
+              />
+            </label>
+            <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
+              添加成员
+            </button>
+          </form>
+        </section>
       </aside>
     </main>
+  );
+}
+
+function SidebarMetric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
+      <p className="audit-meta font-semibold">{label}</p>
+      <p className="audit-metric-value-sm mt-1">{value}</p>
+    </div>
+  );
+}
+
+function ProjectNavigatorItem({
+  item,
+  selected,
+  onSelect
+}: {
+  readonly item: PortalProjectSummary;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      className={`audit-focus-ring block w-full rounded-[var(--audit-radius-md)] border p-3 text-left ${
+        selected
+          ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)]"
+          : "border-[var(--audit-line)] bg-white hover:bg-[var(--audit-surface-muted)]"
+      }`}
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{item.auditTopic}</span>
+      <span className="audit-meta mt-1 block truncate">{item.creator} / {item.createdAt}</span>
+      <span className="mt-2 inline-flex">
+        <StatusPill tone={projectStatusTone[item.status]}>{item.status}</StatusPill>
+      </span>
+    </button>
+  );
+}
+
+function SummaryRow({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[var(--audit-radius-md)] bg-[var(--audit-surface-muted)] px-3 py-2">
+      <span className="text-sm text-[var(--audit-ink-muted)]">{label}</span>
+      <span className="truncate text-sm font-semibold text-[var(--audit-ink)]">{value}</span>
+    </div>
   );
 }

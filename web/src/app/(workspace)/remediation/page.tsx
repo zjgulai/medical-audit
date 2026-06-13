@@ -19,8 +19,18 @@ const averageProgress = Math.round(remediationCases.reduce((sum, item) => sum + 
 
 export default function RemediationPage() {
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">整改事项</h2>
+        <p className="audit-copy mt-2">按责任科室和验收状态跟踪报告后的整改闭环。</p>
+        <div className="mt-5 space-y-3">
+          {remediationCases.map((item) => (
+            <RemediationIndexCard key={item.id} item={item} />
+          ))}
+        </div>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">补证整改</p>
@@ -49,51 +59,19 @@ export default function RemediationPage() {
             </a>
           </div>
 
-          <div className="audit-table-shell mt-4 hidden md:block">
-            <table className="audit-table table-fixed">
-              <thead>
-                <tr>
-                  <th scope="col" className="w-[25%]">
-                    整改事项
-                  </th>
-                  <th scope="col" className="w-[12%]">
-                    状态
-                  </th>
-                  <th scope="col" className="w-[16%]">
-                    责任科室
-                  </th>
-                  <th scope="col" className="w-[18%]">
-                    来源
-                  </th>
-                  <th scope="col" className="w-[14%]">
-                    进度
-                  </th>
-                  <th scope="col" className="w-[15%]">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--audit-line-soft)]">
-                {remediationCases.map((item) => (
-                  <RemediationRow key={item.id} item={item} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:hidden">
+          <div className="mt-4 grid gap-3">
             {remediationCases.map((item) => (
               <RemediationCard key={item.id} item={item} />
             ))}
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="evidence-requests-title">
+        <section className="mt-6 grid gap-5" aria-labelledby="evidence-requests-title">
           <div>
             <h2 id="evidence-requests-title" className="audit-section-title">
               补证请求
             </h2>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="mt-4 grid gap-3">
               {remediationEvidenceRequests.map((request) => (
                 <EvidenceRequestCard key={request.id} request={request} />
               ))}
@@ -110,7 +88,7 @@ export default function RemediationPage() {
         </section>
       </section>
 
-      <aside className="space-y-4">
+      <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">关闭门禁</h2>
           <div className="mt-4 space-y-3">
@@ -139,43 +117,29 @@ export default function RemediationPage() {
   );
 }
 
+function RemediationIndexCard({ item }: { readonly item: RemediationCase }) {
+  return (
+    <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={item.href}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.title}</h3>
+          <p className="audit-meta mt-1">{item.department} / {item.dueDate}</p>
+        </div>
+        <StatusPill tone={getRemediationStatusTone(item.status)}>{item.status}</StatusPill>
+      </div>
+      <div className="mt-3">
+        <ProgressBar value={item.progress} />
+      </div>
+    </a>
+  );
+}
+
 function RemediationMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="audit-panel-muted p-4">
       <p className="audit-label">{label}</p>
       <p className="audit-metric-value mt-2">{value}</p>
     </div>
-  );
-}
-
-function RemediationRow({ item }: { readonly item: RemediationCase }) {
-  return (
-    <tr>
-      <td>
-        <p className="font-semibold text-[var(--audit-ink)]">{item.title}</p>
-        <p className="audit-meta mt-1">{item.nextAction}</p>
-      </td>
-      <td>
-        <StatusPill tone={getRemediationStatusTone(item.status)}>{item.status}</StatusPill>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p className="font-medium text-[var(--audit-ink)]">{item.department}</p>
-        <p className="audit-meta mt-1">责任方：{item.owner}</p>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p className="break-words font-medium text-[var(--audit-ink)]">{item.reportNo}</p>
-        <p className="audit-meta mt-1 break-words">{item.sourceFinding}</p>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <ProgressBar value={item.progress} />
-        <p className="audit-meta mt-2">{item.evidenceStatus}</p>
-      </td>
-      <td>
-        <a className="audit-focus-ring audit-btn audit-btn-primary min-w-24" href={item.href}>
-          查看详情
-        </a>
-      </td>
-    </tr>
   );
 }
 
@@ -225,7 +189,7 @@ function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenc
         <div>
           <h3 className="audit-card-title">{request.title}</h3>
           <p className="audit-meta mt-1">
-            {request.kind} · {request.owner} · {request.dueDate}
+            {request.kind} / {request.owner} / {request.dueDate}
           </p>
         </div>
         <StatusPill tone={getEvidenceStatusTone(request.status)}>{request.status}</StatusPill>

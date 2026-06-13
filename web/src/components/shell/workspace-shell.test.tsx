@@ -84,7 +84,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("aria-current", "page");
   });
 
-  it("labels secondary workspace routes without adding them to the primary sidebar", () => {
+  it("keeps secondary workspace routes reachable from the sidebar and active tabs", () => {
     usePathnameMock.mockReturnValue("/rules");
 
     render(
@@ -94,7 +94,7 @@ describe("WorkspaceShell", () => {
     );
 
     expect(screen.getAllByText("专题规则库").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /专题规则库/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /专题规则库/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("tab", { name: /专题规则库/ })).toHaveAttribute("href", "/rules");
   });
 });

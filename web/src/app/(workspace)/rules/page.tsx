@@ -14,8 +14,18 @@ const blockedGateCount = ruleControlGates.filter((gate) => gate.status === "阻�
 
 export default function RulesPage() {
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">来源覆盖</h2>
+        <p className="audit-copy mt-2">按监管两库、医保目录、风险清单和对话沉淀查看规则覆盖。</p>
+        <div className="mt-5 space-y-3">
+          {ruleSourceCoverages.map((source) => (
+            <SourceCoverageCard key={source.id} source={source} />
+          ))}
+        </div>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">专题规则库</p>
@@ -44,51 +54,19 @@ export default function RulesPage() {
             </a>
           </div>
 
-          <div className="audit-table-shell mt-4 hidden md:block">
-            <table className="audit-table table-fixed">
-              <thead>
-                <tr>
-                  <th scope="col" className="w-[24%]">
-                    规则
-                  </th>
-                  <th scope="col" className="w-[12%]">
-                    状态
-                  </th>
-                  <th scope="col" className="w-[18%]">
-                    来源
-                  </th>
-                  <th scope="col" className="w-[24%]">
-                    适用范围
-                  </th>
-                  <th scope="col" className="w-[10%]">
-                    疑点
-                  </th>
-                  <th scope="col" className="w-[12%]">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--audit-line-soft)]">
-                {ruleLibraryItems.map((rule) => (
-                  <RuleRow key={rule.id} rule={rule} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:hidden">
+          <div className="mt-4 grid gap-3">
             {ruleLibraryItems.map((rule) => (
               <RuleCard key={rule.id} rule={rule} />
             ))}
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="rule-runs-title">
+        <section className="mt-6 grid gap-5" aria-labelledby="rule-runs-title">
           <div>
             <h2 id="rule-runs-title" className="audit-section-title">
               最近运行
             </h2>
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3">
               {ruleRunSnapshots.map((snapshot) => (
                 <RunSnapshotCard key={snapshot.id} snapshot={snapshot} />
               ))}
@@ -105,16 +83,7 @@ export default function RulesPage() {
         </section>
       </section>
 
-      <aside className="space-y-4">
-        <section className="audit-panel-rail p-5">
-          <h2 className="audit-section-title">来源覆盖</h2>
-          <div className="mt-4 space-y-3">
-            {ruleSourceCoverages.map((source) => (
-              <SourceCoverageCard key={source.id} source={source} />
-            ))}
-          </div>
-        </section>
-
+      <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">发布门禁</h2>
           <div className="mt-4 space-y-3">
@@ -140,39 +109,6 @@ function RulesMetric({ label, value }: { readonly label: string; readonly value:
       <p className="audit-label">{label}</p>
       <p className="audit-metric-value mt-2">{value}</p>
     </div>
-  );
-}
-
-function RuleRow({ rule }: { readonly rule: RuleLibraryItem }) {
-  return (
-    <tr>
-      <td>
-        <p className="font-semibold text-[var(--audit-ink)]">{rule.name}</p>
-        <p className="audit-meta mt-1">{rule.code}</p>
-      </td>
-      <td>
-        <StatusPill tone={getRuleStatusTone(rule.status)}>{rule.status}</StatusPill>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p className="font-medium text-[var(--audit-ink)]">{rule.domain}</p>
-        <p className="audit-meta mt-1 break-words">{rule.sourceCollection}</p>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">{rule.evidenceScope}</td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p>{rule.findingCount} 条</p>
-        <p className="audit-meta mt-1">{rule.evidenceCount} 个依据</p>
-      </td>
-      <td>
-        <div className="flex flex-col gap-2">
-          <a className="audit-focus-ring audit-btn audit-btn-primary min-w-20" href={rule.href}>
-            查看
-          </a>
-          <a className="audit-focus-ring audit-btn audit-btn-secondary min-w-20" href={rule.chatHref}>
-            审证
-          </a>
-        </div>
-      </td>
-    </tr>
   );
 }
 

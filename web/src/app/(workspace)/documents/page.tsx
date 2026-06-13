@@ -8,19 +8,32 @@ import {
 } from "@/lib/portal-data";
 
 export default function DocumentsPage() {
+  const totalDocuments = documentCategoryStats.reduce((sum, category) => sum + category.documentCount, 0);
+
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">文档源</h2>
+        <p className="audit-copy mt-2">按审计材料来源组织检索范围，首期只读展示来源覆盖。</p>
+        <div className="mt-5 space-y-3">
+          {documentCategoryStats.map((category) => (
+            <DocumentSourceCard key={category.id} category={category} />
+          ))}
+        </div>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">文档检索</p>
             <h1 className="audit-page-title">材料与知识库统一检索</h1>
+            <p className="audit-copy mt-2 max-w-3xl">围绕当前审计项目检索对话文档、知识库文档和可引用材料。</p>
           </div>
           <StatusPill tone="success">引用优先</StatusPill>
         </div>
 
-        <form className="audit-panel-muted mt-6 p-4" action="/knowledge-query">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_9rem]">
+        <form className="audit-panel-muted mt-6 p-5" action="/knowledge-query">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_8rem]">
             <label className="block">
               <span className="audit-label">审计问题或文档关键词</span>
               <input
@@ -47,18 +60,10 @@ export default function DocumentsPage() {
           </div>
         </form>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-4">
-          {documentCategoryStats.map((category) => (
-            <article key={category.id} className="audit-panel-muted p-4">
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="audit-card-title">{category.name}</h2>
-                <StatusPill tone={category.scope === "公开知识库" ? "neutral" : "info"}>{category.scope}</StatusPill>
-              </div>
-              <p className="audit-metric-value mt-4">{category.documentCount.toLocaleString()}</p>
-              <p className="audit-meta mt-1">{category.sourceCollection}</p>
-              <p className="audit-copy mt-3">{category.description}</p>
-            </article>
-          ))}
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <Metric label="可检索材料" value={totalDocuments.toLocaleString()} />
+          <Metric label="结果分组" value="2" />
+          <Metric label="引用入口" value="已开启" />
         </div>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -67,7 +72,7 @@ export default function DocumentsPage() {
         </div>
       </section>
 
-      <aside className="space-y-4">
+      <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">搜索历史</h2>
           <div className="mt-4 space-y-2">
@@ -83,6 +88,12 @@ export default function DocumentsPage() {
           </div>
         </section>
 
+        <a className="audit-focus-ring audit-action-card p-5" href="/knowledge-base">
+          <p className="audit-kicker">知识库</p>
+          <h2 className="audit-section-title mt-2">查看索引覆盖</h2>
+          <p className="audit-copy mt-2">确认个人、系统、公开知识库的文档数、字符数和应用绑定。</p>
+        </a>
+
         <a className="audit-focus-ring audit-callout block p-5" href="/chat">
           <p className="audit-kicker">AI 对话</p>
           <h2 className="audit-section-title mt-2">带着材料进入审证</h2>
@@ -93,10 +104,29 @@ export default function DocumentsPage() {
   );
 }
 
+function DocumentSourceCard({ category }: { readonly category: (typeof documentCategoryStats)[number] }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{category.name}</h3>
+          <p className="audit-meta mt-1 truncate">{category.sourceCollection}</p>
+        </div>
+        <StatusPill tone={category.scope === "公开知识库" ? "neutral" : "info"}>{category.scope}</StatusPill>
+      </div>
+      <p className="audit-metric-value-sm mt-3">{category.documentCount.toLocaleString()}</p>
+      <p className="audit-copy mt-2">{category.description}</p>
+    </article>
+  );
+}
+
 function DocumentList({ title, documents }: { readonly title: string; readonly documents: readonly PortalDocumentItem[] }) {
   return (
-    <section className="audit-panel-muted p-4">
-      <h2 className="audit-section-title">{title}</h2>
+    <section className="audit-panel-muted min-w-0 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="audit-section-title">{title}</h2>
+        <StatusPill tone="neutral">{documents.length} 份</StatusPill>
+      </div>
       <div className="mt-4 space-y-3">
         {documents.map((document) => (
           <article key={document.id} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
@@ -104,7 +134,7 @@ function DocumentList({ title, documents }: { readonly title: string; readonly d
               <div>
                 <h3 className="audit-card-title">{document.title}</h3>
                 <p className="audit-meta mt-1">
-                  {document.libraryName} · {document.owner} · {document.updatedAt}
+                  {document.libraryName} / {document.owner} / {document.updatedAt}
                 </p>
               </div>
               <StatusPill tone={document.status === "可审证" ? "success" : document.status === "待补引用" ? "warning" : "neutral"}>
@@ -127,5 +157,14 @@ function DocumentList({ title, documents }: { readonly title: string; readonly d
         ))}
       </div>
     </section>
+  );
+}
+
+function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
+      <p className="audit-meta font-semibold">{label}</p>
+      <p className="audit-metric-value-sm mt-1">{value}</p>
+    </div>
   );
 }

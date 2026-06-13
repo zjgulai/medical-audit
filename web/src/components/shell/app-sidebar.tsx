@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { primaryNavigation } from "@/lib/navigation";
+import { navigationGroups, type NavigationItem } from "@/lib/navigation";
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -24,11 +24,62 @@ const recentConversations = [
   }
 ] as const;
 
+function NavigationLink({ item, pathname }: { readonly item: NavigationItem; readonly pathname: string }) {
+  const isActive = isActivePath(pathname, item.href);
+  const className = `audit-focus-ring flex min-w-32 items-center gap-2 rounded-[var(--audit-radius-md)] px-2.5 py-2 text-sm transition md:min-w-0 ${
+    isActive
+      ? "bg-[var(--audit-primary-soft)] text-[var(--audit-primary)] ring-1 ring-[var(--audit-primary-line)]"
+      : "text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] hover:text-[var(--audit-ink)]"
+  }`;
+  const content = (
+    <>
+      <span
+        aria-hidden="true"
+        className={`grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] text-[11px] font-semibold ${
+          isActive ? "bg-[var(--audit-primary)] text-white" : "bg-[var(--audit-surface-subtle)] text-[var(--audit-ink-subtle)]"
+        }`}
+      >
+        {item.symbol}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{item.label}</span>
+        <span className="hidden truncate text-[11px] leading-4 text-[var(--audit-ink-subtle)] lg:block">
+          {item.description}
+        </span>
+      </span>
+    </>
+  );
+
+  if (item.target === "backend") {
+    return (
+      <a
+        href={item.href}
+        title={item.description}
+        aria-current={isActive ? "page" : undefined}
+        className={className}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href}
+      title={item.description}
+      aria-current={isActive ? "page" : undefined}
+      className={className}
+    >
+      {content}
+    </Link>
+  );
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-full flex-col border-b border-[var(--audit-line)] bg-white px-4 py-4 shadow-[0_10px_24px_rgb(16_24_40/0.035)] sm:px-5 md:min-h-screen md:w-60 md:border-r md:border-b-0 md:py-5 md:shadow-[8px_0_24px_rgb(16_24_40/0.035)] lg:w-64">
+    <aside className="flex w-full flex-col border-b border-[var(--audit-line)] bg-white px-4 py-4 shadow-[0_10px_24px_rgb(16_24_40/0.035)] sm:px-5 md:min-h-screen md:w-64 md:border-r md:border-b-0 md:py-5 md:shadow-[8px_0_24px_rgb(16_24_40/0.035)] lg:w-72">
       <Link href="/workspace" className="audit-focus-ring rounded-xl" aria-label="打开门户首页">
         <div className="flex items-center gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-sm font-semibold text-white shadow-[0_8px_18px_rgb(23_92_211/0.16)]">
@@ -41,60 +92,18 @@ export function AppSidebar() {
         </div>
       </Link>
 
-      <nav
-        className="mt-5 flex gap-2 overflow-x-auto pb-1 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
-        aria-label="主导航"
-      >
-        {primaryNavigation.map((item) => {
-          const isActive = isActivePath(pathname, item.href);
-          const className = `audit-focus-ring flex min-w-32 items-center gap-2 rounded-[var(--audit-radius-md)] px-2.5 py-2.5 text-sm transition md:min-w-0 ${
-            isActive
-              ? "bg-[var(--audit-primary-soft)] text-[var(--audit-primary)] ring-1 ring-[var(--audit-primary-line)]"
-              : "text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] hover:text-[var(--audit-ink)]"
-          }`;
-          const content = (
-            <>
-              <span
-                aria-hidden="true"
-                className={`grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] text-[11px] font-semibold ${
-                  isActive ? "bg-[var(--audit-primary)] text-white" : "bg-[var(--audit-surface-subtle)] text-[var(--audit-ink-subtle)]"
-                }`}
-              >
-                {item.symbol}
-              </span>
-              <span className="truncate font-medium">{item.label}</span>
-            </>
-          );
-
-          if (item.target === "backend") {
-            return (
-              <a
-                key={item.id}
-                href={item.href}
-                title={item.description}
-                aria-current={isActive ? "page" : undefined}
-                className={className}
-              >
-                {content}
-              </a>
-            );
-          }
-
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              title={item.description}
-              aria-current={isActive ? "page" : undefined}
-              className={className}
-            >
-              {content}
-            </Link>
-          );
-        })}
+      <nav className="mt-5 flex gap-3 overflow-x-auto pb-1 md:flex-col md:gap-4 md:overflow-x-visible md:pb-0" aria-label="主导航">
+        {navigationGroups.map((group) => (
+          <section key={group.id} className="flex min-w-56 flex-col gap-1 md:min-w-0">
+            <h2 className="px-2 text-[11px] font-semibold leading-5 text-[var(--audit-ink-subtle)]">{group.label}</h2>
+            {group.items.map((item) => (
+              <NavigationLink key={item.id} item={item} pathname={pathname} />
+            ))}
+          </section>
+        ))}
       </nav>
 
-      <div className="mt-5 border-t border-[var(--audit-line)] pt-4 md:mt-auto">
+      <div className="mt-5 border-t border-[var(--audit-line)] pt-4">
         <div className="flex items-center justify-between gap-3">
           <p className="audit-meta font-semibold">历史对话</p>
           <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-xs font-semibold text-[var(--audit-primary)] hover:bg-[var(--audit-primary-soft)]" href="/chat">

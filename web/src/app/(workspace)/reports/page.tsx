@@ -32,8 +32,26 @@ const openRectificationCount = rectificationSummaries.filter((item) => item.stat
 
 export default function ReportsPage() {
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">报告链路</h2>
+        <p className="audit-copy mt-2">复核、门禁、签发和整改保持同一条审计链。</p>
+        <ol className="mt-5 space-y-3">
+          {reportWorkflowSteps.map((step, index) => (
+            <li key={step.title}>
+              <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={step.href}>
+                <span className="grid size-7 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-xs font-semibold text-white">
+                  {index + 1}
+                </span>
+                <h3 className="mt-3 text-sm font-semibold text-[var(--audit-ink)]">{step.title}</h3>
+                <p className="audit-copy mt-2">{step.description}</p>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">审计底稿/报告</p>
@@ -52,20 +70,6 @@ export default function ReportsPage() {
           <ReportMetric label="待整改" value={`${openRectificationCount} 项`} />
         </div>
 
-        <ol className="mt-6 grid gap-4 lg:grid-cols-3">
-          {reportWorkflowSteps.map((step, index) => (
-            <li key={step.title}>
-              <a className="audit-focus-ring audit-action-card h-full p-4" href={step.href}>
-                <span className="grid size-8 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-sm font-semibold text-white">
-                  {index + 1}
-                </span>
-                <h2 className="audit-card-title mt-4">{step.title}</h2>
-                <p className="audit-copy mt-2">{step.description}</p>
-              </a>
-            </li>
-          ))}
-        </ol>
-
         <section className="mt-6" aria-labelledby="report-records-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="report-records-title" className="audit-section-title">
@@ -76,39 +80,19 @@ export default function ReportsPage() {
             </a>
           </div>
 
-          <div className="audit-table-shell mt-4 hidden md:block">
-            <table className="audit-table table-fixed">
-              <thead>
-                <tr>
-                  <th className="w-[28%]">名称</th>
-                  <th className="w-[12%]">状态</th>
-                  <th className="w-[20%]">编号/来源</th>
-                  <th className="w-[14%]">负责人</th>
-                  <th className="w-[11%]">纳入/附录</th>
-                  <th className="w-[15%]">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--audit-line-soft)]">
-                {reportEntries.map((entry) => (
-                  <ReportRow key={entry.id} entry={entry} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:hidden">
+          <div className="mt-4 grid gap-3">
             {reportEntries.map((entry) => (
               <ReportRecordCard key={entry.id} entry={entry} />
             ))}
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="report-gate-title">
+        <section className="mt-6 grid gap-5" aria-labelledby="report-gate-title">
           <div>
             <h2 id="report-gate-title" className="audit-section-title">
               报告门禁预检
             </h2>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="mt-4 grid gap-3">
               {reportGateItems.map((item) => (
                 <GateCard key={item.id} item={item} />
               ))}
@@ -125,7 +109,7 @@ export default function ReportsPage() {
         </section>
       </section>
 
-      <aside className="space-y-4">
+      <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">底稿证据来源</h2>
           <div className="mt-4 space-y-3">
@@ -160,39 +144,6 @@ function ReportMetric({ label, value }: { readonly label: string; readonly value
       <p className="audit-label">{label}</p>
       <p className="audit-metric-value mt-2">{value}</p>
     </div>
-  );
-}
-
-function ReportRow({ entry }: { readonly entry: ReportEntry }) {
-  return (
-    <tr>
-      <td>
-        <p className="font-semibold text-[var(--audit-ink)]">{entry.title}</p>
-        <p className="audit-meta mt-1">{entry.gateSummary}</p>
-      </td>
-      <td>
-        <StatusPill tone={entry.status === "已签发" ? "success" : entry.status === "门禁阻断" ? "danger" : "neutral"}>
-          {entry.status}
-        </StatusPill>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p className="break-words font-medium text-[var(--audit-ink)]">{entry.reportNo}</p>
-        <p className="audit-meta mt-1">{entry.source}</p>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p>{entry.owner}</p>
-        <p className="audit-meta mt-1">{entry.updatedAt}</p>
-      </td>
-      <td className="text-[var(--audit-ink-muted)]">
-        <p>{entry.includedFindingCount} 条</p>
-        <p className="audit-meta mt-1">{entry.appendixCount} 个附录</p>
-      </td>
-      <td>
-        <a className="audit-focus-ring audit-btn audit-btn-primary min-w-20" href={entry.href}>
-          查看详情
-        </a>
-      </td>
-    </tr>
   );
 }
 
@@ -265,7 +216,7 @@ function EvidenceSourceCard({ source }: { readonly source: ReportEvidenceSource 
         <div>
           <p className="audit-compact-title">{source.title}</p>
           <p className="audit-meta mt-1">
-            {source.kind} · {source.reference}
+            {source.kind} / {source.reference}
           </p>
         </div>
         <StatusPill tone={source.status === "已纳入" ? "success" : source.status === "待补证" ? "warning" : "neutral"}>
@@ -283,7 +234,7 @@ function RectificationCard({ item }: { readonly item: RectificationSummary }) {
         <div>
           <h3 className="audit-compact-title">{item.title}</h3>
           <p className="audit-meta mt-1">
-            {item.department} · {item.dueDate}
+            {item.department} / {item.dueDate}
           </p>
           <p className="audit-meta mt-2">{item.reportNo}</p>
         </div>
