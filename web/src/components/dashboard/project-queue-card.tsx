@@ -15,21 +15,21 @@ export function ProjectQueueCard({ project }: ProjectQueueCardProps) {
   const items = getOpenProjectQueueItems(project);
 
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <section className="audit-panel p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-blue-700">待办队列</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">需要人工处理</h2>
+          <p className="audit-kicker">待办队列</p>
+          <h2 className="mt-2 audit-section-title">需要人工处理</h2>
         </div>
         <StatusPill tone="warning">{items.length} 项打开</StatusPill>
       </div>
       <div className="mt-5 space-y-3">
         {items.map((item) => (
-          <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <article key={item.id} className="audit-panel-muted p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-950">{item.title}</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="audit-compact-title">{item.title}</p>
+                <p className="mt-1 audit-meta">
                   {item.owner} · {item.dueLabel}
                 </p>
               </div>

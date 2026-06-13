@@ -28,15 +28,15 @@ export function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-full flex-col border-b border-slate-200 bg-white px-4 py-4 shadow-[0_12px_32px_rgb(16_24_40/0.04)] sm:px-5 md:min-h-screen md:w-60 md:border-r md:border-b-0 md:py-5 md:shadow-[10px_0_32px_rgb(16_24_40/0.04)] lg:w-64">
+    <aside className="flex w-full flex-col border-b border-[var(--audit-line)] bg-white px-4 py-4 shadow-[0_10px_24px_rgb(16_24_40/0.035)] sm:px-5 md:min-h-screen md:w-60 md:border-r md:border-b-0 md:py-5 md:shadow-[8px_0_24px_rgb(16_24_40/0.035)] lg:w-64">
       <Link href="/workspace" className="audit-focus-ring rounded-xl" aria-label="打开门户首页">
         <div className="flex items-center gap-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">
+          <div className="grid size-10 shrink-0 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-sm font-semibold text-white shadow-[0_8px_18px_rgb(23_92_211/0.16)]">
             AI
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-950">AI智能审计管理系统</p>
-            <p className="text-xs text-slate-500">AuditScope Portal</p>
+            <p className="text-sm font-semibold text-[var(--audit-ink)]">AI智能审计管理系统</p>
+            <p className="audit-meta">AuditScope Portal</p>
           </div>
         </div>
       </Link>
@@ -47,17 +47,17 @@ export function AppSidebar() {
       >
         {primaryNavigation.map((item) => {
           const isActive = isActivePath(pathname, item.href);
-          const className = `audit-focus-ring flex min-w-36 items-center gap-2 rounded-xl px-2.5 py-2.5 text-sm transition md:min-w-0 ${
+          const className = `audit-focus-ring flex min-w-32 items-center gap-2 rounded-[var(--audit-radius-md)] px-2.5 py-2.5 text-sm transition md:min-w-0 ${
             isActive
-              ? "bg-blue-50 text-blue-700 ring-1 ring-blue-100"
-              : "text-slate-700 hover:bg-slate-50 hover:text-slate-950"
+              ? "bg-[var(--audit-primary-soft)] text-[var(--audit-primary)] ring-1 ring-[var(--audit-primary-line)]"
+              : "text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] hover:text-[var(--audit-ink)]"
           }`;
           const content = (
             <>
               <span
                 aria-hidden="true"
-                className={`grid size-7 shrink-0 place-items-center rounded-lg text-[11px] font-semibold ${
-                  isActive ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                className={`grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] text-[11px] font-semibold ${
+                  isActive ? "bg-[var(--audit-primary)] text-white" : "bg-[var(--audit-surface-subtle)] text-[var(--audit-ink-subtle)]"
                 }`}
               >
                 {item.symbol}
@@ -94,10 +94,10 @@ export function AppSidebar() {
         })}
       </nav>
 
-      <div className="mt-5 border-t border-slate-200 pt-4 md:mt-auto">
+      <div className="mt-5 border-t border-[var(--audit-line)] pt-4 md:mt-auto">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-slate-500">历史对话</p>
-          <a className="audit-focus-ring rounded-lg px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50" href="/chat">
+          <p className="audit-meta font-semibold">历史对话</p>
+          <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-xs font-semibold text-[var(--audit-primary)] hover:bg-[var(--audit-primary-soft)]" href="/chat">
             新建
           </a>
         </div>
@@ -105,7 +105,7 @@ export function AppSidebar() {
           {recentConversations.map((conversation) => (
             <a
               key={conversation.title}
-              className="audit-focus-ring block truncate rounded-lg px-2 py-2 text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+              className="audit-focus-ring block truncate rounded-[var(--audit-radius-sm)] px-2 py-2 text-xs text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] hover:text-[var(--audit-ink)]"
               href={conversation.href}
             >
               {conversation.title}

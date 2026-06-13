@@ -64,19 +64,19 @@ export function AuditFindingsWorkbench() {
 
   return (
     <main className="space-y-5">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-blue-700">疑点清单</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+            <p className="audit-kicker">疑点清单</p>
+            <h1 className="audit-page-title">
               规则命中疑点工作台
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="mt-3 max-w-3xl audit-copy">
               展示结构化规则产生的疑点、源记录定位、计算过程和证据项，并把需要人工判断的线索推进到复核任务。
             </p>
           </div>
           <a
-            className="audit-focus-ring rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="audit-focus-ring audit-btn audit-btn-neutral"
             href="/pages/audit-findings"
           >
             打开后端兼容页
@@ -91,13 +91,13 @@ export function AuditFindingsWorkbench() {
         <FindingStatCard label="已建任务" value={data?.stats.linked_review_task ?? "-"} />
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
+      <section className="audit-panel p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <label className="min-w-56 text-sm font-semibold text-slate-950" htmlFor="review-status">
+          <label className="min-w-56 audit-label" htmlFor="review-status">
             复核状态
             <select
               id="review-status"
-              className="audit-focus-ring mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-950"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2.5"
               value={reviewStatus}
               onChange={(event) => setReviewStatus(event.target.value)}
             >
@@ -109,7 +109,7 @@ export function AuditFindingsWorkbench() {
               ))}
             </select>
           </label>
-          <div className="text-right text-xs leading-5 text-slate-500">
+          <div className="text-right audit-meta">
             <div>store: {data?.store.backend ?? "loading"}</div>
             <div>{data?.store.ready ? "persistent" : "pending"}</div>
           </div>
@@ -117,15 +117,15 @@ export function AuditFindingsWorkbench() {
       </section>
 
       {loadState.status === "loading" ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950">正在加载疑点</h2>
-          <p className="mt-2 text-sm text-slate-600">读取规则命中结果和证据项。</p>
+        <section className="audit-panel p-6">
+          <h2 className="audit-section-title">正在加载疑点</h2>
+          <p className="mt-2 audit-copy">读取规则命中结果和证据项。</p>
         </section>
       ) : null}
 
       {loadState.status === "error" ? (
-        <section className="rounded-[28px] border border-red-200 bg-red-50 p-6 text-red-900">
-          <h2 className="text-xl font-semibold tracking-tight">加载失败</h2>
+        <section className="rounded-[var(--audit-radius-lg)] border border-red-200 bg-red-50 p-6 text-red-900">
+          <h2 className="audit-section-title text-red-900">加载失败</h2>
           <p className="mt-2 text-sm leading-6">{loadState.message}</p>
         </section>
       ) : null}
@@ -143,9 +143,9 @@ export function AuditFindingsWorkbench() {
 
 function FindingStatCard({ label, value }: { readonly label: string; readonly value: number | string }) {
   return (
-    <article className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[var(--audit-shadow-card)]">
-      <div className="text-xs font-medium uppercase text-slate-500">{label}</div>
-      <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
+    <article className="audit-panel p-4">
+      <div className="audit-label">{label}</div>
+      <div className="mt-2 audit-metric-value">{value}</div>
     </article>
   );
 }
@@ -161,9 +161,9 @@ function FindingsList({
 }) {
   if (findings.length === 0) {
     return (
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
-        <h2 className="text-xl font-semibold tracking-tight text-slate-950">暂无疑点</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">当前筛选条件下没有可展示的规则命中记录。</p>
+      <section className="audit-panel p-6">
+        <h2 className="audit-section-title">暂无疑点</h2>
+        <p className="mt-2 audit-copy">当前筛选条件下没有可展示的规则命中记录。</p>
         <GenerationReadinessPanel readiness={readiness} />
       </section>
     );
@@ -174,12 +174,12 @@ function FindingsList({
       {findings.map((finding) => (
         <article
           key={finding.finding_key}
-          className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]"
+          className="audit-panel p-5"
         >
           <header className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-medium uppercase text-slate-500">{finding.finding_key}</p>
-              <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+              <p className="audit-meta font-mono">{finding.finding_key}</p>
+              <h2 className="mt-1 audit-section-title">
                 {finding.finding_type} · {finding.rule_key ?? "未绑定规则"}
               </h2>
             </div>
@@ -201,28 +201,28 @@ function FindingsList({
           </div>
 
           <section className="mt-4" aria-label={`${finding.finding_key} 证据项`}>
-            <h3 className="text-sm font-semibold text-slate-950">证据项</h3>
+            <h3 className="audit-card-title">证据项</h3>
             <div className="mt-2 space-y-2">
               {finding.evidence_items.map((evidence) => (
                 <article
                   key={`${evidence.evidence_type}-${evidence.citation_id ?? evidence.created_at}`}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                  className="audit-panel-muted p-3"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2 audit-meta font-semibold text-[var(--audit-ink-muted)]">
                     <span>{evidence.evidence_type}</span>
                     <span>{evidence.citation_id ?? "无 citation_id"}</span>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                  <p className="mt-2 audit-copy">
                     {evidence.snippet ?? "未记录证据片段"}
                   </p>
-                  <div className="mt-2 text-xs text-slate-500">
+                  <div className="mt-2 audit-meta">
                     index: {evidence.index_version_key ?? "n/a"} · package:{" "}
                     {evidence.source_package_version_key ?? "n/a"}
                   </div>
                 </article>
               ))}
               {finding.evidence_items.length === 0 ? (
-                <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                <p className="audit-panel-muted p-3 audit-copy">
                   未绑定证据项；该疑点不得进入正式报告。
                 </p>
               ) : null}
@@ -231,7 +231,7 @@ function FindingsList({
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <a
-              className="audit-focus-ring rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="audit-focus-ring audit-btn audit-btn-neutral"
               href={`/audit-findings/${finding.finding_key}/export`}
             >
               导出疑点 JSON
@@ -243,7 +243,7 @@ function FindingsList({
             ) : (
               <form method="post" action={`/pages/audit-findings/${finding.finding_key}/review-task`}>
                 <button
-                  className="audit-focus-ring rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
+                  className="audit-focus-ring audit-btn audit-btn-primary"
                   type="submit"
                 >
                   创建复核任务
@@ -266,11 +266,11 @@ function GenerationReadinessPanel({
   const missingPrerequisites = readiness.prerequisites.filter((item) => !item.ready);
 
   return (
-    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="audit-panel-muted mt-5 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{statusLabel}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
+          <h3 className="audit-card-title">{statusLabel}</h3>
+          <p className="mt-1 audit-copy">
             {readiness.status === "blocked"
               ? "规则疑点需要先完成业务数据底座、HIS staging 和规则运行上下文。"
               : "规则运行上下文已具备，等待受控执行后写入疑点。"}
@@ -289,12 +289,12 @@ function GenerationReadinessPanel({
 
       {missingPrerequisites.length > 0 ? (
         <div className="mt-4">
-          <h4 className="text-xs font-semibold uppercase text-slate-500">缺失前置数据</h4>
+          <h4 className="audit-label">缺失前置数据</h4>
           <div className="mt-2 grid gap-2 md:grid-cols-2">
             {missingPrerequisites.map((item) => (
-              <div key={item.key} className="rounded-xl border border-amber-200 bg-white px-3 py-2">
-                <div className="text-sm font-semibold text-slate-900">{item.label}</div>
-                <div className="mt-1 font-mono text-xs text-amber-700">{item.key}: {item.count}</div>
+              <div key={item.key} className="rounded-[var(--audit-radius-md)] border border-amber-200 bg-white px-3 py-2">
+                <div className="audit-compact-title">{item.label}</div>
+                <div className="mt-1 font-mono text-xs leading-5 text-amber-700">{item.key}: {item.count}</div>
               </div>
             ))}
           </div>
@@ -303,8 +303,8 @@ function GenerationReadinessPanel({
 
       {readiness.blocking_reasons.length > 0 ? (
         <div className="mt-4">
-          <h4 className="text-xs font-semibold uppercase text-slate-500">阻断原因</h4>
-          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+          <h4 className="audit-label">阻断原因</h4>
+          <ul className="mt-2 space-y-1 audit-copy">
             {readiness.blocking_reasons.slice(0, 4).map((reason) => (
               <li key={reason.code}>{reason.message}</li>
             ))}
@@ -314,8 +314,8 @@ function GenerationReadinessPanel({
 
       {readiness.next_actions.length > 0 ? (
         <div className="mt-4">
-          <h4 className="text-xs font-semibold uppercase text-slate-500">下一步</h4>
-          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+          <h4 className="audit-label">下一步</h4>
+          <ul className="mt-2 space-y-1 audit-copy">
             {readiness.next_actions.map((action) => (
               <li key={action}>{action}</li>
             ))}
@@ -328,18 +328,18 @@ function GenerationReadinessPanel({
 
 function FindingSummaryItem({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <dt className="text-xs font-medium uppercase text-slate-500">{label}</dt>
-      <dd className="mt-1 break-words font-semibold text-slate-900">{value}</dd>
+    <div className="audit-panel-muted p-3">
+      <dt className="audit-meta font-mono">{label}</dt>
+      <dd className="mt-1 break-words audit-compact-title">{value}</dd>
     </div>
   );
 }
 
 function JsonPanel({ title, value }: { readonly title: string; readonly value: Record<string, unknown> }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
-      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-slate-700">
+    <section className="audit-panel-muted p-3">
+      <h3 className="audit-card-title">{title}</h3>
+      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-[var(--audit-ink-muted)]">
         {JSON.stringify(value, null, 2)}
       </pre>
     </section>

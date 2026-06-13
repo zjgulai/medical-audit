@@ -38,25 +38,25 @@ const sourceCollectionOptions = [
 
 export default function ChatPortalPage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">AI 对话</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">选择智能体后进入审证对话</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">AI 对话</p>
+            <h1 className="audit-page-title">选择智能体后进入审证对话</h1>
+            <p className="mt-3 max-w-3xl audit-copy">
               门户页负责选择提示词型智能体、限定知识来源和组织审计问题；可追溯回答、引用和原文预览仍由后端审证深页执行。
             </p>
           </div>
           <StatusPill tone="success">引用约束</StatusPill>
         </div>
 
-        <form className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5" action="/pages/chat" method="get">
+        <form className="audit-panel-muted mt-6 p-5" action="/pages/chat" method="get">
           <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">智能体</span>
+              <span className="audit-label">智能体</span>
               <select
-                className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                className="audit-focus-ring audit-input mt-2 bg-white px-3 py-2.5"
                 name="agent"
                 defaultValue={defaultAuditAgents[0]?.id}
               >
@@ -69,9 +69,9 @@ export default function ChatPortalPage() {
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">审计问题</span>
+              <span className="audit-label">审计问题</span>
               <input
-                className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                className="audit-focus-ring audit-input mt-2 bg-white px-3 py-2.5"
                 name="question"
                 placeholder="例如：门诊超量开药应核对哪些医保审核依据？"
                 required
@@ -80,14 +80,14 @@ export default function ChatPortalPage() {
           </div>
 
           <fieldset className="mt-5">
-            <legend className="text-sm font-semibold text-slate-700">知识来源</legend>
+            <legend className="audit-label">知识来源</legend>
             <div className="mt-3 grid gap-3 lg:grid-cols-4">
               {sourceCollectionOptions.map((source) => (
-                <label key={source.value} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+                <label key={source.value} className="flex items-start gap-3 rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-4 text-sm">
                   <input className="mt-1 size-4" type="checkbox" name="source_collection" value={source.value} />
                   <span>
-                    <span className="block font-semibold text-slate-950">{source.title}</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">
+                    <span className="block audit-compact-title">{source.title}</span>
+                    <span className="mt-1 block audit-meta">
                       {source.description}
                     </span>
                   </span>
@@ -97,10 +97,10 @@ export default function ChatPortalPage() {
           </fieldset>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <button className="audit-focus-ring rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700" type="submit">
+            <button className="audit-focus-ring audit-btn audit-btn-primary" type="submit">
               进入审证对话
             </button>
-            <a className="audit-focus-ring rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/pages/chat">
+            <a className="audit-focus-ring audit-btn audit-btn-neutral" href="/pages/chat">
               打开后端深页
             </a>
           </div>
@@ -108,17 +108,17 @@ export default function ChatPortalPage() {
 
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
           {defaultAuditAgents.map((agent) => (
-            <article key={agent.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <article key={agent.id} className="audit-panel-muted p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-950">{agent.name}</h2>
-                  <p className="mt-1 text-xs text-slate-500">{agent.topic}</p>
+                  <h2 className="audit-card-title">{agent.name}</h2>
+                  <p className="mt-1 audit-meta">{agent.topic}</p>
                 </div>
                 <StatusPill tone={agent.category === "业务类" ? "success" : "neutral"}>{agent.category}</StatusPill>
               </div>
-              <p className="mt-4 text-sm leading-6 text-slate-700">{agent.prompt}</p>
+              <p className="mt-4 audit-copy">{agent.prompt}</p>
               <a
-                className="audit-focus-ring mt-4 inline-flex rounded-xl bg-white px-3 py-2 text-sm font-semibold text-blue-700 ring-1 ring-blue-100 hover:bg-blue-50"
+                className="audit-focus-ring audit-btn audit-btn-secondary mt-4"
                 href={`/pages/chat?agent=${agent.id}`}
               >
                 用此智能体提问
@@ -129,13 +129,13 @@ export default function ChatPortalPage() {
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">推荐问题</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">推荐问题</h2>
           <div className="mt-4 space-y-2">
             {recommendedQuestions.map((question) => (
               <a
                 key={question}
-                className="audit-focus-ring block rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                className="audit-focus-ring audit-action-card px-3 py-2 audit-copy"
                 href={`/pages/chat?question=${encodeURIComponent(question)}`}
               >
                 {question}
@@ -144,11 +144,11 @@ export default function ChatPortalPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">证据边界</h2>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">证据边界</h2>
+          <ul className="mt-4 space-y-3">
             {evidenceRules.map((rule) => (
-              <li key={rule} className="rounded-xl bg-slate-50 px-3 py-2">
+              <li key={rule} className="audit-panel-muted px-3 py-2 audit-copy">
                 {rule}
               </li>
             ))}

@@ -61,14 +61,14 @@ export function ProjectManagementWorkbench() {
   }
 
   return (
-    <main className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <main className="audit-page-grid audit-page-grid--rail min-w-0">
       <section className="min-w-0 space-y-5">
-        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+        <div className="audit-panel min-w-0 p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-blue-700">项目管理</p>
-              <h1 className="mt-2 text-3xl font-semibold text-slate-950">审计项目管理</h1>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="audit-kicker">项目管理</p>
+              <h1 className="audit-page-title">审计项目管理</h1>
+              <p className="audit-meta mt-2">
                 {project.organizationName} · {project.dateRange}
               </p>
             </div>
@@ -76,11 +76,11 @@ export function ProjectManagementWorkbench() {
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-950">项目列表</h2>
+            <h2 className="audit-section-title">项目列表</h2>
             <label className="block w-full min-w-0 sm:min-w-64 sm:max-w-80">
               <span className="sr-only">搜索项目</span>
               <input
-                className="audit-focus-ring w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                className="audit-focus-ring audit-input px-3 py-2"
                 value={projectQuery}
                 onChange={(event) => setProjectQuery(event.target.value)}
                 placeholder="搜索项目、专题、创建人"
@@ -89,38 +89,38 @@ export function ProjectManagementWorkbench() {
             </label>
           </div>
 
-          <div className="mt-4 max-w-full overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[58rem] text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-4 max-w-full overflow-x-auto">
+            <table className="audit-table min-w-[58rem]">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 font-semibold">序号</th>
-                  <th className="px-4 py-3 font-semibold">项目名称</th>
-                  <th className="px-4 py-3 font-semibold">成员数</th>
-                  <th className="px-4 py-3 font-semibold">创建人</th>
-                  <th className="px-4 py-3 font-semibold">创建时间</th>
-                  <th className="px-4 py-3 font-semibold">状态</th>
-                  <th className="px-4 py-3 font-semibold">操作</th>
+                  <th>序号</th>
+                  <th>项目名称</th>
+                  <th>成员数</th>
+                  <th>创建人</th>
+                  <th>创建时间</th>
+                  <th>状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {filteredProjects.map((item, index) => (
-                  <tr key={item.id} className={item.id === selectedProject.id ? "bg-blue-50/60" : undefined}>
-                    <td className="px-4 py-3 text-slate-500">{index + 1}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-950">{item.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">
+                  <tr key={item.id} className={item.id === selectedProject.id ? "audit-row-selected" : undefined}>
+                    <td className="text-[var(--audit-ink-subtle)]">{index + 1}</td>
+                    <td>
+                      <p className="font-semibold text-[var(--audit-ink)]">{item.name}</p>
+                      <p className="audit-meta mt-1">
                         {item.organizationName} · {item.auditTopic}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{item.id === selectedProject.id ? members.length : item.memberCount}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.creator}</td>
-                    <td className="px-4 py-3 text-slate-700">{item.createdAt}</td>
-                    <td className="px-4 py-3">
+                    <td className="text-[var(--audit-ink-muted)]">{item.id === selectedProject.id ? members.length : item.memberCount}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{item.creator}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{item.createdAt}</td>
+                    <td>
                       <StatusPill tone={projectStatusTone[item.status]}>{item.status}</StatusPill>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <button
-                        className="audit-focus-ring rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                        className="audit-focus-ring audit-btn audit-btn-secondary"
                         type="button"
                         onClick={() => setSelectedProjectId(item.id)}
                         aria-pressed={item.id === selectedProject.id}
@@ -135,33 +135,33 @@ export function ProjectManagementWorkbench() {
           </div>
         </div>
 
-        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+        <div className="audit-panel min-w-0 p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-blue-700">项目成员</p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-950">{selectedProject.name}</h2>
-              <p className="mt-2 text-sm text-slate-500">角色展示和新增入口先用于首期项目空间组织，权限生效后置。</p>
+              <p className="audit-kicker">项目成员</p>
+              <h2 className="audit-section-title mt-2">{selectedProject.name}</h2>
+              <p className="audit-copy mt-2">角色展示和新增入口先用于首期项目空间组织，权限生效后置。</p>
             </div>
             <StatusPill tone={projectStatusTone[selectedProject.status]}>{selectedProject.status}</StatusPill>
           </div>
 
-          <div className="mt-6 max-w-full overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[42rem] text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-6 max-w-full overflow-x-auto">
+            <table className="audit-table min-w-[42rem]">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 font-semibold">成员</th>
-                  <th className="px-4 py-3 font-semibold">角色</th>
-                  <th className="px-4 py-3 font-semibold">部门</th>
-                  <th className="px-4 py-3 font-semibold">状态</th>
+                  <th>成员</th>
+                  <th>角色</th>
+                  <th>部门</th>
+                  <th>状态</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {members.map((member) => (
                   <tr key={member.id}>
-                    <td className="px-4 py-3 font-semibold text-slate-950">{member.name}</td>
-                    <td className="px-4 py-3 text-slate-700">{member.role}</td>
-                    <td className="px-4 py-3 text-slate-700">{member.department}</td>
-                    <td className="px-4 py-3">
+                    <td className="font-semibold text-[var(--audit-ink)]">{member.name}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{member.role}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{member.department}</td>
+                    <td>
                       <StatusPill tone={member.status === "在项目中" ? "success" : "warning"}>{member.status}</StatusPill>
                     </td>
                   </tr>
@@ -172,22 +172,22 @@ export function ProjectManagementWorkbench() {
         </div>
       </section>
 
-      <aside className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-        <h2 className="text-lg font-semibold text-slate-950">新增成员</h2>
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">新增成员</h2>
         <form className="mt-4 space-y-4" onSubmit={submitMember}>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">姓名</span>
+            <span className="audit-label">姓名</span>
             <input
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="成员姓名"
             />
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">角色</span>
+            <span className="audit-label">角色</span>
             <select
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={role}
               onChange={(event) => setRole(event.target.value as PortalProjectMember["role"])}
             >
@@ -199,14 +199,14 @@ export function ProjectManagementWorkbench() {
             </select>
           </label>
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">部门</span>
+            <span className="audit-label">部门</span>
             <input
-              className="audit-focus-ring mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              className="audit-focus-ring audit-input mt-2 px-3 py-2"
               value={department}
               onChange={(event) => setDepartment(event.target.value)}
             />
           </label>
-          <button className="audit-focus-ring w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700" type="submit">
+          <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
             添加成员
           </button>
         </form>

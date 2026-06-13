@@ -21,13 +21,13 @@ const latestArchiveRun = archiveAuditRuns[0];
 
 export default function ArchivePage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">项目档案</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">项目档案与审计日志归档</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">项目档案</p>
+            <h1 className="audit-page-title">项目档案与审计日志归档</h1>
+            <p className="audit-copy mt-2 max-w-3xl">
               汇总项目档案包、审计日志归档、签名链和归档前阻断原因，保留到后台审计日志台的受控入口。
             </p>
           </div>
@@ -44,41 +44,41 @@ export default function ArchivePage() {
         <section className="mt-6" aria-labelledby="archive-package-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="archive-package-title" className="text-lg font-semibold text-slate-950">
+              <h2 id="archive-package-title" className="audit-section-title">
                 项目档案包
               </h2>
-              <p className="mt-1 text-sm text-slate-500">归档前检查直接继承报告、整改和审计日志链路状态。</p>
+              <p className="audit-copy mt-1">归档前检查直接继承报告、整改和审计日志链路状态。</p>
             </div>
-            <a className="audit-focus-ring rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/pages/audit-logs">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/audit-logs">
               打开审计日志台
             </a>
           </div>
 
-          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
-            <table className="w-full table-fixed text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-4 hidden md:block">
+            <table className="audit-table table-fixed">
+              <thead>
                 <tr>
-                  <th scope="col" className="w-[23%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[23%]">
                     档案包
                   </th>
-                  <th scope="col" className="w-[12%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[12%]">
                     状态
                   </th>
-                  <th scope="col" className="w-[17%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[17%]">
                     报告/签发
                   </th>
-                  <th scope="col" className="w-[23%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[23%]">
                     范围与校验
                   </th>
-                  <th scope="col" className="w-[10%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[10%]">
                     留存
                   </th>
-                  <th scope="col" className="w-[15%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[15%]">
                     操作
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {archivePackages.map((item) => (
                   <ArchivePackageRow key={item.id} item={item} />
                 ))}
@@ -95,7 +95,7 @@ export default function ArchivePage() {
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="archive-policy-title">
           <div>
-            <h2 id="archive-policy-title" className="text-lg font-semibold text-slate-950">
+            <h2 id="archive-policy-title" className="audit-section-title">
               审计日志治理策略
             </h2>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -105,13 +105,13 @@ export default function ArchivePage() {
             </div>
           </div>
 
-          <aside className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-            <p className="text-sm font-semibold text-blue-700">受控导出</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-950">审计日志不进入普通检索</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+          <aside className="audit-callout p-5">
+            <p className="audit-kicker">受控导出</p>
+            <h3 className="audit-section-title mt-2">审计日志不进入普通检索</h3>
+            <p className="audit-copy mt-2">
               原始日志归档作为受控证据保存，查询和导出必须经过审计日志权限校验。
             </p>
-            <a className="audit-focus-ring mt-4 inline-flex rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/audit/logs/export">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary mt-4" href="/audit/logs/export">
               导出日志 JSON
             </a>
           </aside>
@@ -119,8 +119,8 @@ export default function ArchivePage() {
       </section>
 
       <aside className="min-w-0 space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">归档巡检</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">归档巡检</h2>
           <div className="mt-4 space-y-3">
             {archiveAuditRuns.map((item) => (
               <ArchiveAuditRunCard key={item.id} item={item} />
@@ -128,8 +128,8 @@ export default function ArchivePage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">签名链</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">签名链</h2>
           <div className="mt-4 space-y-3">
             {archiveSignatureItems.map((item) => (
               <ArchiveSignatureCard key={item.id} item={item} />
@@ -137,8 +137,8 @@ export default function ArchivePage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">入档动态</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">入档动态</h2>
           <div className="mt-4 space-y-3">
             {archiveTimeline.map((item) => (
               <ArchiveTimelineCard key={item.id} item={item} />
@@ -152,9 +152,9 @@ export default function ArchivePage() {
 
 function ArchiveMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
     </div>
   );
 }
@@ -162,28 +162,28 @@ function ArchiveMetric({ label, value }: { readonly label: string; readonly valu
 function ArchivePackageRow({ item }: { readonly item: ArchivePackage }) {
   return (
     <tr>
-      <td className="px-4 py-3">
-        <p className="font-semibold text-slate-950">{item.projectName}</p>
-        <p className="mt-1 break-words text-xs text-slate-500">{item.archiveNo}</p>
+      <td>
+        <p className="font-semibold text-[var(--audit-ink)]">{item.projectName}</p>
+        <p className="audit-meta mt-1 break-words">{item.archiveNo}</p>
       </td>
-      <td className="px-4 py-3">
+      <td>
         <StatusPill tone={getArchivePackageTone(item.status)}>{item.status}</StatusPill>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <p className="break-words font-medium text-slate-900">{item.reportNo}</p>
-        <p className="mt-1 text-xs text-slate-500">签发：{item.signedAt}</p>
+      <td className="text-[var(--audit-ink-muted)]">
+        <p className="break-words font-medium text-[var(--audit-ink)]">{item.reportNo}</p>
+        <p className="audit-meta mt-1">签发：{item.signedAt}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <p className="leading-6 text-slate-900">{item.archiveScope}</p>
-        <p className="mt-1 leading-5 text-slate-500">{item.evidenceSummary}</p>
+      <td className="text-[var(--audit-ink-muted)]">
+        <p className="leading-6 text-[var(--audit-ink)]">{item.archiveScope}</p>
+        <p className="audit-meta mt-1">{item.evidenceSummary}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">{item.retainedUntil}</td>
-      <td className="px-4 py-3">
+      <td className="text-[var(--audit-ink-muted)]">{item.retainedUntil}</td>
+      <td>
         <div className="grid gap-2">
-          <a className="audit-focus-ring inline-flex justify-center whitespace-nowrap rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={item.href}>
+          <a className="audit-focus-ring audit-btn audit-btn-primary whitespace-nowrap" href={item.href}>
             查看档案
           </a>
-          <a className="audit-focus-ring inline-flex justify-center whitespace-nowrap rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href={item.logHref}>
+          <a className="audit-focus-ring audit-btn audit-btn-secondary whitespace-nowrap" href={item.logHref}>
             查看日志
           </a>
         </div>
@@ -194,39 +194,39 @@ function ArchivePackageRow({ item }: { readonly item: ArchivePackage }) {
 
 function ArchivePackageCard({ item }: { readonly item: ArchivePackage }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold leading-6 text-slate-950">{item.projectName}</h3>
-          <p className="mt-1 break-words text-xs text-slate-500">{item.archiveNo}</p>
+          <h3 className="audit-compact-title">{item.projectName}</h3>
+          <p className="audit-meta mt-1 break-words">{item.archiveNo}</p>
         </div>
         <StatusPill tone={getArchivePackageTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.archiveScope}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <p className="audit-copy mt-3">{item.archiveScope}</p>
+      <dl className="audit-meta mt-4 grid grid-cols-2 gap-3">
         <div>
-          <dt className="font-semibold text-slate-500">报告</dt>
-          <dd className="mt-1 break-words text-slate-900">{item.reportNo}</dd>
+          <dt className="font-semibold">报告</dt>
+          <dd className="mt-1 break-words text-[var(--audit-ink)]">{item.reportNo}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">签发</dt>
-          <dd className="mt-1 text-slate-900">{item.signedAt}</dd>
+          <dt className="font-semibold">签发</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.signedAt}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">责任方</dt>
-          <dd className="mt-1 text-slate-900">{item.owner}</dd>
+          <dt className="font-semibold">责任方</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.owner}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">留存</dt>
-          <dd className="mt-1 text-slate-900">{item.retainedUntil}</dd>
+          <dt className="font-semibold">留存</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.retainedUntil}</dd>
         </div>
       </dl>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.evidenceSummary}</p>
+      <p className="audit-copy mt-3">{item.evidenceSummary}</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <a className="audit-focus-ring inline-flex justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={item.href}>
+        <a className="audit-focus-ring audit-btn audit-btn-primary" href={item.href}>
           查看档案
         </a>
-        <a className="audit-focus-ring inline-flex justify-center rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href={item.logHref}>
+        <a className="audit-focus-ring audit-btn audit-btn-secondary" href={item.logHref}>
           查看日志
         </a>
       </div>
@@ -236,64 +236,64 @@ function ArchivePackageCard({ item }: { readonly item: ArchivePackage }) {
 
 function ArchivePolicyCard({ item }: { readonly item: ArchivePolicyItem }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs font-semibold text-slate-500">{item.label}</p>
-      <h3 className="mt-2 break-words text-base font-semibold text-slate-950">{item.value}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>
+    <article className="audit-panel-muted p-4">
+      <p className="audit-meta font-semibold">{item.label}</p>
+      <h3 className="audit-card-title mt-2 break-words">{item.value}</h3>
+      <p className="audit-copy mt-2">{item.detail}</p>
     </article>
   );
 }
 
 function ArchiveAuditRunCard({ item }: { readonly item: ArchiveAuditRun }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">{item.time}</p>
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">{item.time}</p>
         </div>
         <StatusPill tone={getArchiveRunTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+      <dl className="audit-meta mt-3 grid grid-cols-2 gap-2">
         <div>
-          <dt className="font-semibold text-slate-500">manifest</dt>
-          <dd className="mt-1 text-slate-900">{item.manifestCount}</dd>
+          <dt className="font-semibold">manifest</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.manifestCount}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">failed</dt>
-          <dd className="mt-1 text-slate-900">{item.failedCount}</dd>
+          <dt className="font-semibold">failed</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.failedCount}</dd>
         </div>
       </dl>
-      <p className="mt-3 break-words text-xs text-slate-500">{item.archiveRoot}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <p className="audit-meta mt-3 break-words">{item.archiveRoot}</p>
+      <p className="audit-copy mt-2">{item.detail}</p>
     </article>
   );
 }
 
 function ArchiveSignatureCard({ item }: { readonly item: ArchiveSignatureItem }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="break-words text-sm font-semibold text-slate-950">{item.label}</h3>
+        <h3 className="audit-compact-title break-words">{item.label}</h3>
         <StatusPill tone={getSignatureTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <p className="mt-2 break-words font-mono text-xs text-slate-500">{item.sha256}</p>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <p className="audit-meta mt-2 break-words font-mono">{item.sha256}</p>
+      <p className="audit-copy mt-3">{item.detail}</p>
     </article>
   );
 }
 
 function ArchiveTimelineCard({ item }: { readonly item: ArchiveTimelineItem }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">{item.time}</p>
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">{item.time}</p>
         </div>
         <StatusPill tone={item.status === "待补证" ? "warning" : "success"}>{item.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <p className="audit-copy mt-3">{item.detail}</p>
     </article>
   );
 }

@@ -19,13 +19,13 @@ const averageProgress = Math.round(remediationCases.reduce((sum, item) => sum + 
 
 export default function RemediationPage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <main className="audit-page-grid audit-page-grid--rail">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-700">补证整改</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-950">整改事项与补证闭环</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">补证整改</p>
+            <h1 className="audit-page-title">整改事项与补证闭环</h1>
+            <p className="audit-copy mt-2 max-w-3xl">
               把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。
             </p>
           </div>
@@ -41,39 +41,39 @@ export default function RemediationPage() {
 
         <section className="mt-6" aria-labelledby="remediation-ledger-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="remediation-ledger-title" className="text-lg font-semibold text-slate-950">
+            <h2 id="remediation-ledger-title" className="audit-section-title">
               整改台账
             </h2>
-            <a className="audit-focus-ring rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/reports">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/reports">
               查看报告来源
             </a>
           </div>
 
-          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
-            <table className="w-full table-fixed text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-4 hidden md:block">
+            <table className="audit-table table-fixed">
+              <thead>
                 <tr>
-                  <th scope="col" className="w-[25%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[25%]">
                     整改事项
                   </th>
-                  <th scope="col" className="w-[12%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[12%]">
                     状态
                   </th>
-                  <th scope="col" className="w-[16%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[16%]">
                     责任科室
                   </th>
-                  <th scope="col" className="w-[18%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[18%]">
                     来源
                   </th>
-                  <th scope="col" className="w-[14%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[14%]">
                     进度
                   </th>
-                  <th scope="col" className="w-[15%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[15%]">
                     操作
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {remediationCases.map((item) => (
                   <RemediationRow key={item.id} item={item} />
                 ))}
@@ -90,7 +90,7 @@ export default function RemediationPage() {
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" aria-labelledby="evidence-requests-title">
           <div>
-            <h2 id="evidence-requests-title" className="text-lg font-semibold text-slate-950">
+            <h2 id="evidence-requests-title" className="audit-section-title">
               补证请求
             </h2>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -100,10 +100,10 @@ export default function RemediationPage() {
             </div>
           </div>
 
-          <aside className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-            <p className="text-sm font-semibold text-blue-700">关闭规则</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-950">验收前不得结案</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+          <aside className="audit-callout p-5">
+            <p className="audit-kicker">关闭规则</p>
+            <h3 className="audit-section-title mt-2">验收前不得结案</h3>
+            <p className="audit-copy mt-2">
               整改说明、补证材料和负责人确认全部通过后，才能进入项目归档检查。
             </p>
           </aside>
@@ -111,8 +111,8 @@ export default function RemediationPage() {
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">关闭门禁</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">关闭门禁</h2>
           <div className="mt-4 space-y-3">
             {remediationClosureGates.map((gate) => (
               <ClosureGateCard key={gate.id} gate={gate} />
@@ -120,8 +120,8 @@ export default function RemediationPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-lg font-semibold text-slate-950">整改动态</h2>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">整改动态</h2>
           <div className="mt-4 space-y-3">
             {remediationTimeline.map((item) => (
               <TimelineCard key={item.id} item={item} />
@@ -129,10 +129,10 @@ export default function RemediationPage() {
           </div>
         </section>
 
-        <a className="audit-focus-ring block rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" href="/graph">
-          <p className="text-sm font-semibold text-blue-700">知识图谱</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">查看整改证据链</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">整改事项已经和报告、复核、疑点、项目归档关系连通。</p>
+        <a className="audit-focus-ring audit-action-card p-5" href="/graph">
+          <p className="audit-kicker">知识图谱</p>
+          <h2 className="audit-section-title mt-2">查看整改证据链</h2>
+          <p className="audit-copy mt-2">整改事项已经和报告、复核、疑点、项目归档关系连通。</p>
         </a>
       </aside>
     </main>
@@ -141,9 +141,9 @@ export default function RemediationPage() {
 
 function RemediationMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
     </div>
   );
 }
@@ -151,27 +151,27 @@ function RemediationMetric({ label, value }: { readonly label: string; readonly 
 function RemediationRow({ item }: { readonly item: RemediationCase }) {
   return (
     <tr>
-      <td className="px-4 py-3">
-        <p className="font-semibold text-slate-950">{item.title}</p>
-        <p className="mt-1 text-xs text-slate-500">{item.nextAction}</p>
+      <td>
+        <p className="font-semibold text-[var(--audit-ink)]">{item.title}</p>
+        <p className="audit-meta mt-1">{item.nextAction}</p>
       </td>
-      <td className="px-4 py-3">
+      <td>
         <StatusPill tone={getRemediationStatusTone(item.status)}>{item.status}</StatusPill>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <p className="font-medium text-slate-900">{item.department}</p>
-        <p className="mt-1 text-xs text-slate-500">责任方：{item.owner}</p>
+      <td className="text-[var(--audit-ink-muted)]">
+        <p className="font-medium text-[var(--audit-ink)]">{item.department}</p>
+        <p className="audit-meta mt-1">责任方：{item.owner}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">
-        <p className="break-words font-medium text-slate-900">{item.reportNo}</p>
-        <p className="mt-1 break-words text-xs text-slate-500">{item.sourceFinding}</p>
+      <td className="text-[var(--audit-ink-muted)]">
+        <p className="break-words font-medium text-[var(--audit-ink)]">{item.reportNo}</p>
+        <p className="audit-meta mt-1 break-words">{item.sourceFinding}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">
+      <td className="text-[var(--audit-ink-muted)]">
         <ProgressBar value={item.progress} />
-        <p className="mt-2 text-xs text-slate-500">{item.evidenceStatus}</p>
+        <p className="audit-meta mt-2">{item.evidenceStatus}</p>
       </td>
-      <td className="px-4 py-3">
-        <a className="audit-focus-ring inline-flex min-w-24 items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={item.href}>
+      <td>
+        <a className="audit-focus-ring audit-btn audit-btn-primary min-w-24" href={item.href}>
           查看详情
         </a>
       </td>
@@ -181,37 +181,37 @@ function RemediationRow({ item }: { readonly item: RemediationCase }) {
 
 function RemediationCard({ item }: { readonly item: RemediationCase }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold leading-6 text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">{item.reportNo}</p>
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">{item.reportNo}</p>
         </div>
         <StatusPill tone={getRemediationStatusTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.nextAction}</p>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <p className="audit-copy mt-3">{item.nextAction}</p>
+      <dl className="audit-meta mt-4 grid grid-cols-2 gap-3">
         <div>
-          <dt className="font-semibold text-slate-500">责任科室</dt>
-          <dd className="mt-1 text-slate-900">{item.department}</dd>
+          <dt className="font-semibold">责任科室</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.department}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">期限</dt>
-          <dd className="mt-1 text-slate-900">{item.dueDate}</dd>
+          <dt className="font-semibold">期限</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.dueDate}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">来源</dt>
-          <dd className="mt-1 break-words text-slate-900">{item.sourceFinding}</dd>
+          <dt className="font-semibold">来源</dt>
+          <dd className="mt-1 break-words text-[var(--audit-ink)]">{item.sourceFinding}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500">补证</dt>
-          <dd className="mt-1 text-slate-900">{item.evidenceStatus}</dd>
+          <dt className="font-semibold">补证</dt>
+          <dd className="mt-1 text-[var(--audit-ink)]">{item.evidenceStatus}</dd>
         </div>
       </dl>
       <div className="mt-4">
         <ProgressBar value={item.progress} />
       </div>
-      <a className="audit-focus-ring mt-4 inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={item.href}>
+      <a className="audit-focus-ring audit-btn audit-btn-primary mt-4 w-full" href={item.href}>
         查看详情
       </a>
     </article>
@@ -220,18 +220,18 @@ function RemediationCard({ item }: { readonly item: RemediationCase }) {
 
 function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenceRequest }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-950">{request.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <h3 className="audit-card-title">{request.title}</h3>
+          <p className="audit-meta mt-1">
             {request.kind} · {request.owner} · {request.dueDate}
           </p>
         </div>
         <StatusPill tone={getEvidenceStatusTone(request.status)}>{request.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{request.detail}</p>
-      <a className="audit-focus-ring mt-4 inline-flex rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href={request.href}>
+      <p className="audit-copy mt-3">{request.detail}</p>
+      <a className="audit-focus-ring audit-btn audit-btn-secondary mt-4" href={request.href}>
         查看材料
       </a>
     </article>
@@ -240,32 +240,32 @@ function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenc
 
 function ClosureGateCard({ gate }: { readonly gate: RemediationClosureGate }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{gate.label}</h3>
-          <p className="mt-1 text-xs text-slate-500">责任方：{gate.owner}</p>
+          <h3 className="audit-compact-title">{gate.label}</h3>
+          <p className="audit-meta mt-1">责任方：{gate.owner}</p>
         </div>
         <StatusPill tone={getGateTone(gate.status)}>{gate.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{gate.detail}</p>
+      <p className="audit-copy mt-3">{gate.detail}</p>
     </article>
   );
 }
 
 function TimelineCard({ item }: { readonly item: RemediationTimelineItem }) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
-          <p className="mt-1 text-xs text-slate-500">{item.time}</p>
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">{item.time}</p>
         </div>
         <StatusPill tone={item.status === "已记录" ? "success" : item.status === "已阻断" ? "danger" : "warning"}>
           {item.status}
         </StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <p className="audit-copy mt-3">{item.detail}</p>
     </article>
   );
 }
@@ -274,11 +274,11 @@ function ProgressBar({ value }: { readonly value: number }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-semibold text-slate-500">进度</span>
-        <span className="font-semibold text-slate-950">{value}%</span>
+        <span className="font-semibold text-[var(--audit-ink-subtle)]">进度</span>
+        <span className="font-semibold text-[var(--audit-ink)]">{value}%</span>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-        <div className={`h-full rounded-full bg-blue-600 ${getProgressWidthClass(value)}`} />
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--audit-surface-subtle)]">
+        <div className={`h-full rounded-full bg-[var(--audit-primary)] ${getProgressWidthClass(value)}`} />
       </div>
     </div>
   );

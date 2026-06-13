@@ -65,12 +65,12 @@ export function ProjectContextBar() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 md:px-8">
+    <header className="sticky top-0 z-20 border-b border-[var(--audit-line)] bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-6 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-500">当前模块</p>
-          <div className="mt-1 text-xl font-semibold text-slate-950">{pageTitle}</div>
-          <p className="mt-1 truncate text-xs text-slate-500">
+          <p className="audit-meta font-semibold">当前模块</p>
+          <div className="audit-section-title mt-1">{pageTitle}</div>
+          <p className="audit-meta mt-1 truncate">
             {project.name} · {project.organizationName}
           </p>
         </div>
@@ -78,11 +78,11 @@ export function ProjectContextBar() {
           <StatusPill tone="info">{project.auditTopic}</StatusPill>
           <StatusPill tone="success">项目进行中</StatusPill>
           <StatusPill tone="warning">AI 结论需人工确认</StatusPill>
-          <div className="ml-1 flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
-            <span className="grid size-6 place-items-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+          <div className="ml-1 flex items-center gap-2 rounded-full border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-2 py-1">
+            <span className="grid size-6 place-items-center rounded-full bg-[var(--audit-ink)] text-xs font-semibold text-white">
               审
             </span>
-            <span className="text-xs font-semibold text-slate-700">审计员</span>
+            <span className="text-xs font-semibold text-[var(--audit-ink-muted)]">审计员</span>
           </div>
         </div>
       </div>
@@ -92,8 +92,8 @@ export function ProjectContextBar() {
           const isActive = activeItem?.id === tab.id;
           const tabClassName = `audit-focus-ring inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm ${
             isActive
-              ? "border-blue-200 bg-blue-50 text-blue-700"
-              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+              ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] text-[var(--audit-primary)]"
+              : "border-[var(--audit-line)] bg-white text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] hover:text-[var(--audit-ink)]"
           }`;
           const label = (
             <>

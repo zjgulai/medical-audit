@@ -21,14 +21,14 @@ const highRiskCount = guidedCheckRiskSignals.filter((signal) => signal.status ==
 
 export default function GuidedCheckPage() {
   return (
-    <main className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <main className="audit-page-grid audit-page-grid--rail">
       <section className="space-y-5">
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+        <section className="audit-panel p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-blue-700">AI 引导自查</p>
-              <h1 className="mt-2 text-3xl font-semibold text-slate-950">AI 引导自查工作台</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              <p className="audit-kicker">AI 引导自查</p>
+              <h1 className="audit-page-title">AI 引导自查工作台</h1>
+              <p className="audit-copy mt-2 max-w-3xl">
                 按项目范围、数据、规则、审证对话、底稿报告串联自查路径；AI 只给出带引用的审证问题和复核建议，不直接生成正式结论。
               </p>
             </div>
@@ -43,24 +43,24 @@ export default function GuidedCheckPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <a className="audit-focus-ring inline-flex rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700" href="/chat">
+            <a className="audit-focus-ring audit-btn audit-btn-primary" href="/chat">
               进入 AI 审证对话
             </a>
-            <a className="audit-focus-ring inline-flex rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/analytics">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/analytics">
               上传自查数据
             </a>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]" aria-labelledby="guided-steps-title">
+        <section className="audit-panel p-6" aria-labelledby="guided-steps-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="guided-steps-title" className="text-lg font-semibold text-slate-950">
+              <h2 id="guided-steps-title" className="audit-section-title">
                 自查路径
               </h2>
-              <p className="mt-1 text-sm text-slate-500">每一步只展示当前项目的真实去向，阻断项必须先补证。</p>
+              <p className="audit-copy mt-1">每一步只展示当前项目的真实去向，阻断项必须先补证。</p>
             </div>
-            <a className="audit-focus-ring rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/projects">
+            <a className="audit-focus-ring audit-btn audit-btn-neutral" href="/projects">
               查看项目
             </a>
           </div>
@@ -72,41 +72,41 @@ export default function GuidedCheckPage() {
           </ol>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]" aria-labelledby="guided-questions-title">
+        <section className="audit-panel p-6" aria-labelledby="guided-questions-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="guided-questions-title" className="text-lg font-semibold text-slate-950">
+              <h2 id="guided-questions-title" className="audit-section-title">
                 AI 提问模板
               </h2>
-              <p className="mt-1 text-sm text-slate-500">一个智能体对应一个提示词，自查页只组织问题和证据边界。</p>
+              <p className="audit-copy mt-1">一个智能体对应一个提示词，自查页只组织问题和证据边界。</p>
             </div>
-            <a className="audit-focus-ring rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50" href="/agents">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/agents">
               管理智能体
             </a>
           </div>
 
-          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
-            <table className="w-full table-fixed text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
+          <div className="audit-table-shell mt-4 hidden md:block">
+            <table className="audit-table table-fixed">
+              <thead>
                 <tr>
-                  <th scope="col" className="w-[16%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[16%]">
                     场景
                   </th>
-                  <th scope="col" className="w-[38%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[38%]">
                     自查问题
                   </th>
-                  <th scope="col" className="w-[18%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[18%]">
                     智能体
                   </th>
-                  <th scope="col" className="w-[14%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[14%]">
                     状态
                   </th>
-                  <th scope="col" className="w-[14%] px-4 py-3 font-semibold">
+                  <th scope="col" className="w-[14%]">
                     操作
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
                 {guidedCheckQuestions.map((question) => (
                   <QuestionRow key={question.id} question={question} />
                 ))}
@@ -123,8 +123,8 @@ export default function GuidedCheckPage() {
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" aria-labelledby="guided-evidence-title">
-          <h2 id="guided-evidence-title" className="text-lg font-semibold text-slate-950">
+        <section className="audit-panel-rail p-5" aria-labelledby="guided-evidence-title">
+          <h2 id="guided-evidence-title" className="audit-section-title">
             证据门禁
           </h2>
           <div className="mt-4 space-y-3">
@@ -134,8 +134,8 @@ export default function GuidedCheckPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" aria-labelledby="guided-risk-title">
-          <h2 id="guided-risk-title" className="text-lg font-semibold text-slate-950">
+        <section className="audit-panel-rail p-5" aria-labelledby="guided-risk-title">
+          <h2 id="guided-risk-title" className="audit-section-title">
             风险预检
           </h2>
           <div className="mt-4 space-y-3">
@@ -145,8 +145,8 @@ export default function GuidedCheckPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[var(--audit-shadow-card)]" aria-labelledby="guided-timeline-title">
-          <h2 id="guided-timeline-title" className="text-lg font-semibold text-slate-950">
+        <section className="audit-panel-rail p-5" aria-labelledby="guided-timeline-title">
+          <h2 id="guided-timeline-title" className="audit-section-title">
             自查动态
           </h2>
           <div className="mt-4 space-y-4">
@@ -156,10 +156,10 @@ export default function GuidedCheckPage() {
           </div>
         </section>
 
-        <a className="audit-focus-ring block rounded-2xl border border-blue-100 bg-blue-50 p-5" href="/findings">
-          <p className="text-sm font-semibold text-blue-700">下一步</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">查看规则命中疑点</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">自查问题进入 AI 对话后，仍需回到疑点工作台做人工复核。</p>
+        <a className="audit-focus-ring audit-callout block p-5" href="/findings">
+          <p className="audit-kicker">下一步</p>
+          <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
+          <p className="audit-copy mt-2">自查问题进入 AI 对话后，仍需回到疑点工作台做人工复核。</p>
         </a>
       </aside>
     </main>
@@ -168,26 +168,26 @@ export default function GuidedCheckPage() {
 
 function GuidedMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
     </div>
   );
 }
 
 function GuidedStepRow({ step }: { readonly step: GuidedCheckStep }) {
   return (
-    <li className="grid gap-3 rounded-2xl border border-slate-200 p-4 sm:grid-cols-[3.5rem_minmax(0,1fr)_7rem] sm:items-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold text-white">{step.order}</div>
+    <li className="grid gap-3 rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4 sm:grid-cols-[3.5rem_minmax(0,1fr)_7rem] sm:items-center">
+      <div className="flex size-12 items-center justify-center rounded-[var(--audit-radius-md)] bg-[var(--audit-ink)] text-sm font-semibold text-white">{step.order}</div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-semibold text-slate-950">{step.title}</h3>
+          <h3 className="audit-card-title">{step.title}</h3>
           <StatusPill tone={getStepTone(step.status)}>{step.status}</StatusPill>
         </div>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{step.detail}</p>
-        <p className="mt-1 text-xs font-semibold text-slate-500">责任人：{step.owner}</p>
+        <p className="audit-copy mt-1">{step.detail}</p>
+        <p className="audit-meta mt-1 font-semibold">责任人：{step.owner}</p>
       </div>
-      <a className="audit-focus-ring inline-flex justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href={step.href}>
+      <a className="audit-focus-ring audit-btn audit-btn-neutral" href={step.href}>
         打开
       </a>
     </li>
@@ -197,17 +197,17 @@ function GuidedStepRow({ step }: { readonly step: GuidedCheckStep }) {
 function QuestionRow({ question }: { readonly question: GuidedCheckQuestion }) {
   return (
     <tr>
-      <td className="px-4 py-3">
-        <p className="font-semibold text-slate-950">{question.domain}</p>
-        <p className="mt-1 break-words text-xs text-slate-500">{question.knowledgeScope}</p>
+      <td>
+        <p className="font-semibold text-[var(--audit-ink)]">{question.domain}</p>
+        <p className="audit-meta mt-1 break-words">{question.knowledgeScope}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">{question.question}</td>
-      <td className="px-4 py-3 text-slate-700">{question.agentName}</td>
-      <td className="px-4 py-3">
+      <td className="text-[var(--audit-ink-muted)]">{question.question}</td>
+      <td className="text-[var(--audit-ink-muted)]">{question.agentName}</td>
+      <td>
         <StatusPill tone={getQuestionTone(question.status)}>{question.status}</StatusPill>
       </td>
-      <td className="px-4 py-3">
-        <a className="audit-focus-ring inline-flex whitespace-nowrap rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={question.chatHref}>
+      <td>
+        <a className="audit-focus-ring audit-btn audit-btn-primary whitespace-nowrap" href={question.chatHref}>
           进入对话
         </a>
       </td>
@@ -217,16 +217,16 @@ function QuestionRow({ question }: { readonly question: GuidedCheckQuestion }) {
 
 function QuestionCard({ question }: { readonly question: GuidedCheckQuestion }) {
   return (
-    <article className="rounded-2xl border border-slate-200 p-4">
+    <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-950">{question.domain}</p>
+        <p className="audit-compact-title">{question.domain}</p>
         <StatusPill tone={getQuestionTone(question.status)}>{question.status}</StatusPill>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-700">{question.question}</p>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="audit-copy mt-3">{question.question}</p>
+      <p className="audit-meta mt-2">
         {question.agentName} · {question.knowledgeScope}
       </p>
-      <a className="audit-focus-ring mt-4 inline-flex rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700" href={question.chatHref}>
+      <a className="audit-focus-ring audit-btn audit-btn-primary mt-4" href={question.chatHref}>
         进入对话
       </a>
     </article>
@@ -235,41 +235,41 @@ function QuestionCard({ question }: { readonly question: GuidedCheckQuestion }) 
 
 function EvidenceCard({ item }: { readonly item: GuidedCheckEvidenceItem }) {
   return (
-    <a className="audit-focus-ring block rounded-2xl border border-slate-200 p-4 hover:bg-slate-50" href={item.href}>
+    <a className="audit-focus-ring block rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4 hover:bg-[var(--audit-primary-soft)]" href={item.href}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-950">{item.title}</p>
+        <p className="audit-compact-title">{item.title}</p>
         <StatusPill tone={getEvidenceTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <p className="mt-1 text-xs font-semibold text-slate-500">{item.source}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{item.blocker}</p>
+      <p className="audit-meta mt-1 font-semibold">{item.source}</p>
+      <p className="audit-copy mt-2">{item.blocker}</p>
     </a>
   );
 }
 
 function RiskCard({ signal }: { readonly signal: GuidedCheckRiskSignal }) {
   return (
-    <a className="audit-focus-ring block rounded-2xl border border-slate-200 p-4 hover:bg-slate-50" href={signal.href}>
+    <a className="audit-focus-ring block rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4 hover:bg-[var(--audit-primary-soft)]" href={signal.href}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-950">{signal.label}</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-950">{signal.value}</p>
+          <p className="audit-compact-title">{signal.label}</p>
+          <p className="audit-metric-value mt-1">{signal.value}</p>
         </div>
         <StatusPill tone={getRiskTone(signal.status)}>{signal.status}</StatusPill>
       </div>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{signal.detail}</p>
+      <p className="audit-copy mt-2">{signal.detail}</p>
     </a>
   );
 }
 
 function TimelineItem({ item }: { readonly item: GuidedCheckTimelineItem }) {
   return (
-    <article className="border-l-2 border-slate-200 pl-4">
+    <article className="border-l-2 border-[var(--audit-line)] pl-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs font-semibold text-slate-500">{item.time}</p>
+        <p className="audit-meta font-semibold">{item.time}</p>
         <StatusPill tone={getTimelineTone(item.status)}>{item.status}</StatusPill>
       </div>
-      <h3 className="mt-2 text-sm font-semibold text-slate-950">{item.title}</h3>
-      <p className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</p>
+      <h3 className="audit-compact-title mt-2">{item.title}</h3>
+      <p className="audit-copy mt-1">{item.detail}</p>
     </article>
   );
 }

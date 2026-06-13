@@ -87,12 +87,12 @@ export function KnowledgeQueryWorkbench() {
 
   return (
     <main className="space-y-5">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-blue-700">查询工作台</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">引用优先的知识查询</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+            <p className="audit-kicker">查询工作台</p>
+            <h1 className="audit-page-title">引用优先的知识查询</h1>
+            <p className="mt-3 max-w-3xl audit-copy">
               直接调用 FastAPI 查询接口，返回可核验引用、原文预览和证据分组。查询结果只作为审证线索，
               进入底稿前仍需人工复核。
             </p>
@@ -102,10 +102,10 @@ export function KnowledgeQueryWorkbench() {
 
         <form className="mt-6 space-y-5" onSubmit={submitQuery}>
           <label className="block" htmlFor="knowledge-query-question">
-            <span className="text-sm font-semibold text-slate-950">审计问题</span>
+            <span className="audit-label">审计问题</span>
             <textarea
               id="knowledge-query-question"
-              className="audit-focus-ring mt-2 min-h-28 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-950"
+              className="audit-focus-ring audit-input mt-2 min-h-28 resize-y px-4 py-3 leading-6"
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               required
@@ -113,18 +113,20 @@ export function KnowledgeQueryWorkbench() {
           </label>
 
           <fieldset className="space-y-3">
-            <legend className="text-sm font-semibold text-slate-950">来源过滤</legend>
+            <legend className="audit-label">来源过滤</legend>
             <div className="grid gap-3 lg:grid-cols-4">
               {SOURCE_COLLECTION_OPTIONS.map((option) => {
                 const checked = selectedCollections.includes(option.value);
                 return (
                   <label
-                    className={`audit-focus-ring block rounded-2xl border p-4 text-sm transition ${
-                      checked ? "border-blue-200 bg-blue-50 text-blue-950" : "border-slate-200 bg-slate-50"
+                    className={`audit-focus-ring block rounded-[var(--audit-radius-lg)] border p-4 text-sm transition ${
+                      checked
+                        ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] text-[var(--audit-primary)]"
+                        : "border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] text-[var(--audit-ink-muted)]"
                     }`}
                     key={option.value}
                   >
-                    <span className="flex items-center gap-2 font-semibold text-slate-950">
+                    <span className="flex items-center gap-2 font-semibold text-[var(--audit-ink)]">
                       <input
                         checked={checked}
                         className="size-4"
@@ -133,7 +135,7 @@ export function KnowledgeQueryWorkbench() {
                       />
                       {option.label}
                     </span>
-                    <span className="mt-2 block text-xs leading-5 text-slate-600">{option.description}</span>
+                    <span className="mt-2 block audit-meta">{option.description}</span>
                   </label>
                 );
               })}
@@ -142,14 +144,14 @@ export function KnowledgeQueryWorkbench() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="audit-focus-ring rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+              className="audit-focus-ring audit-btn audit-btn-primary"
               disabled={queryState.status === "loading"}
               type="submit"
             >
               {queryState.status === "loading" ? "查询中" : "执行查询"}
             </button>
             <a
-              className="audit-focus-ring rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="audit-focus-ring audit-btn audit-btn-neutral"
               href="/pages/query"
             >
               打开后端兼容页
@@ -159,17 +161,17 @@ export function KnowledgeQueryWorkbench() {
       </section>
 
       {queryState.status === "idle" && (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950">等待查询</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+        <section className="audit-panel p-6">
+          <h2 className="audit-section-title">等待查询</h2>
+          <p className="mt-2 audit-copy">
             提交后会展示答案、证据分组和每条引用的原文预览入口。
           </p>
         </section>
       )}
 
       {queryState.status === "error" && (
-        <section className="rounded-[28px] border border-red-200 bg-red-50 p-6">
-          <h2 className="text-xl font-semibold tracking-tight text-red-900">查询未完成</h2>
+        <section className="rounded-[var(--audit-radius-lg)] border border-red-200 bg-red-50 p-6">
+          <h2 className="audit-section-title text-red-900">查询未完成</h2>
           <p className="mt-2 text-sm leading-6 text-red-800">{queryState.message}</p>
         </section>
       )}
@@ -187,51 +189,51 @@ function QueryResultPanel({
   readonly result: QueryResponse;
 }) {
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--audit-shadow-card)]">
+    <section className="audit-panel p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-blue-700">查询结果摘要</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{result.question}</h2>
+          <p className="audit-kicker">查询结果摘要</p>
+          <h2 className="mt-2 max-w-3xl audit-section-title">{result.question}</h2>
         </div>
         <StatusPill tone={result.citations.length > 0 ? "success" : "warning"}>
           {result.citations.length} 条引用
         </StatusPill>
       </div>
 
-      <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+      <div className="audit-panel-muted mt-5 p-4 audit-copy">
         {result.answer}
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2 text-xs text-slate-500">
-        <span>confidence: {result.confidence}</span>
-        <span>fallback: {result.fallback_used ? "yes" : "no"}</span>
-        <span>query_log_index: {result.query_log_index}</span>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <span className="audit-chip">confidence: {result.confidence}</span>
+        <span className="audit-chip">fallback: {result.fallback_used ? "yes" : "no"}</span>
+        <span className="audit-chip">query_log_index: {result.query_log_index}</span>
       </div>
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[1fr_22rem]">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">引用证据</h3>
-          <div className="mt-3 divide-y divide-slate-200 rounded-2xl border border-slate-200">
+          <h3 className="audit-card-title">引用证据</h3>
+          <div className="audit-table-shell mt-3 divide-y divide-[var(--audit-line-soft)]">
             {result.citations.map((citation) => (
               <CitationRow citation={citation} key={citation.citation_id} />
             ))}
           </div>
         </div>
 
-        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-950">证据分组</h3>
+        <aside className="audit-panel-muted p-4">
+          <h3 className="audit-card-title">证据分组</h3>
           <div className="mt-3 space-y-3">
             {result.basis_groups.map((group) => (
               <div key={`${group.evidence_type}-${group.title}`}>
-                <p className="text-sm font-semibold text-slate-900">{group.title}</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="audit-compact-title">{group.title}</p>
+                <p className="mt-1 audit-meta">
                   {group.evidence_type} · {group.items.length} 条依据
                 </p>
               </div>
             ))}
           </div>
           <a
-            className="audit-focus-ring mt-5 inline-flex rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
+            className="audit-focus-ring audit-btn audit-btn-primary mt-5"
             href={chatHref}
           >
             转入对话审证
@@ -247,20 +249,20 @@ function CitationRow({ citation }: { readonly citation: QueryCitation }) {
     <article className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-950">
+          <p className="audit-compact-title">
             {citation.marker} · {citation.evidence_type}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{locatorSummary(citation.locator)}</p>
+          <p className="mt-1 audit-meta">{locatorSummary(citation.locator)}</p>
         </div>
         <a
-          className="audit-focus-ring rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs"
           href={`/pages/preview/${citation.chunk_id}`}
         >
           核验原文
         </a>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-700">{citation.snippet}</p>
-      <p className="mt-3 break-all font-mono text-xs text-slate-500">chunk: {citation.chunk_id}</p>
+      <p className="mt-3 audit-copy">{citation.snippet}</p>
+      <p className="mt-3 break-all font-mono text-xs leading-5 text-[var(--audit-ink-subtle)]">chunk: {citation.chunk_id}</p>
     </article>
   );
 }
