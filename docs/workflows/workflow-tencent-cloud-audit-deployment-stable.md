@@ -33,9 +33,24 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-13 当前事实
+
+- 当前远端 `main` merge commit：`596d6967ba5b6c3d2a7d2253c8a31b264fb7ae82`，来自 PR #70 `集成审计门户核心工作台`。
+- 当前生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990 放宽部署前共享网关漂移阻断`；该提交已作为 `main` 的祖先保留，避免生产领先主干。
+- `medical_audit_app` 容器 healthy，宿主机仍仅暴露 `127.0.0.1:18080->8000`。
+- `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
+- 公网 `/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 生产前端已升级为 `AI智能审计管理系统` 门户壳层，静态页面包含 `/workspace`、`/chat`、`/agents`、`/agent-market`、`/knowledge-base`、`/documents`、`/analytics`、`/graph`、`/rules`、`/reports`、`/remediation`、`/archive`、`/projects`、`/guided-check`、`/knowledge-query` 和 `/findings`。
+- 生产 read-only smoke `production-e2e-smoke-after-p5-reference-shell-20260613` 已通过，覆盖 TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归。
+- 生产前端验收 `production-frontend-acceptance-after-p5-reference-shell-20260613` 已通过，20 个路由桌面/移动检查 `p0_count=0`、`p1_count=0`。
+- 生产状态审计 `production-state-audit-after-p5-reference-shell-20260613` 已通过，确认备份戳 `p5-reference-shell-20260613`、远端 `.deploy-sha` 和 active search backend 均符合预期。
+- 部署同步脚本已显式排除 `.kiro/`、`.playwright-mcp/`、`drafts/`、`ref/`、`opendesign/`、`tmp/`、密钥和 env 文件，避免参考材料、草稿、临时产物或密钥进入生产应用目录。
+- 本地缺少 `KIMI_API_KEY` 时，本地 `/index/search-backend/postgres` 会返回 `409 missing embedding api key env: KIMI_API_KEY`；这是本地运行态密钥缺口，不表示生产 search backend 不可用。
+- 当前答案生成仍为 citation fallback：检索、引用、预览和底稿导出可用，但不能表述为外部生成式大模型答案已完成。
+
 ### 2026-06-12 当前事实
 
-- 当前生产部署 SHA：`9f98c8d36ea72a660c69f27b41a156f5a292b23a 修复疑点复核任务状态同步`。
+- 当时生产部署 SHA：`9f98c8d36ea72a660c69f27b41a156f5a292b23a 修复疑点复核任务状态同步`。
 - `medical_audit_app` 容器 healthy，宿主机仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `https://audit.lute-tlz-dddd.top/` 返回 `200`，`/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`，`/api/v1/audit-findings` 返回 `200` 且 store 为 `SqlAlchemyAuditFindingStore`。
@@ -521,6 +536,26 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - `/pages/review-tasks` 浏览器联调已通过：页面可见 `review-task-0007`、`正式报告已签发`、`整改已验收`、`允许结案`、`signed-report-03cb4bed3dd4` 和 `rectification-44526138b71e`。
 - 证据边界：本节只证明受控脱敏 fixture 的签发、整改、导出和结案门禁链路可用，不代表真实医院审计报告、真实整改验收或客户授权证据。
 
+### 5.23 PR #70 AI 智能审计门户核心工作台部署
+
+已在 2026-06-13 部署并合并 PR #70：
+
+- PR #70 merge commit：`596d6967ba5b6c3d2a7d2253c8a31b264fb7ae82`。
+- 生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990`。
+- 同步前已创建应用备份 `/opt/medical-audit/backups/app/pre-deploy-p5-reference-shell-20260613.tar.gz`。
+- 同步前已创建 env 备份 `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-p5-reference-shell-20260613`。
+- 同步前已创建数据库备份 `/opt/medical-audit/backups/db/pre-deploy-p5-reference-shell-20260613.sql.gz`。
+- 同步前已创建 Nginx 备份 `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-p5-reference-shell-20260613`。
+- 同步前已创建 Web 静态资产备份 `/opt/medical-audit/backups/web/audit-web-pre-deploy-p5-reference-shell-20260613.tar.gz`。
+- 已用正式部署脚本重建并重启 `medical_audit_app`，未重建或删除 `medical_audit_pgdata`。
+- 已将部署同步排除规则补齐为排除 `.kiro/`、`.playwright-mcp/`、`drafts/`、`ref/`、`opendesign/`、`tmp/`、密钥和 env 文件；本次参考附件和草稿未同步到生产。
+- 部署期间共享 `ai_video_nginx` 曾出现无关 upstream 漂移导致 `nginx -t` warning；部署脚本已将共享网关全局配置漂移降级为 warning，最终仍以 app health、公网 smoke、前端验收和部署状态审计作为发布门禁。
+- 生产只读 smoke `production-e2e-smoke-after-p5-reference-shell-20260613` 已通过；TLS、health、PostgreSQL 检索、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产前端验收 `production-frontend-acceptance-after-p5-reference-shell-20260613` 已通过；20 个路由桌面/移动检查 `p0_count=0`、`p1_count=0`。
+- 生产状态审计 `production-state-audit-after-p5-reference-shell-20260613` 已通过；远端 `.deploy-sha=32027049eb7fa2b9d336af217a228b0f21dca990`，`medical_audit_app` 与 `medical_audit_pg` healthy，`/var/www/audit` 只读 bind mount 存在，active search backend 仍为 `matching_embedding_count=48985`。
+- 公网页面截图抽查已通过：`/analytics`、`/documents`、`/rules` 均返回 `200`，无横向溢出、无 console error、无 failed request。
+- 证据边界：当前生产问答仍使用 citation fallback；检索、引用、预览和底稿导出可用，但不能表述为外部生成式大模型答案已完成。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -831,7 +866,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成、疑点复核任务状态同步、正式报告签发和整改跟踪 fixture 验证均已完成；当前 `.deploy-sha=9f98c8d36ea72a660c69f27b41a156f5a292b23a`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成、疑点复核任务状态同步、正式报告签发、整改跟踪 fixture 验证和 AI 智能审计门户核心工作台部署均已完成；当前 `.deploy-sha=32027049eb7fa2b9d336af217a228b0f21dca990`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
