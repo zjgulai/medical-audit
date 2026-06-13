@@ -235,8 +235,19 @@ function readFileText(file: File) {
   });
 }
 
+type AnalysisTab = "code" | "terminal" | "chart" | "data" | "report";
+
+const analysisTabs: readonly { readonly id: AnalysisTab; readonly label: string }[] = [
+  { id: "code", label: "代码" },
+  { id: "terminal", label: "终端" },
+  { id: "chart", label: "图表" },
+  { id: "data", label: "数据" },
+  { id: "report", label: "分析报告" }
+];
+
 export function DataAnalysisWorkbench() {
   const [profile, setProfile] = useState<UploadProfile | null>(null);
+  const [activeTab, setActiveTab] = useState<AnalysisTab>("data");
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -284,18 +295,235 @@ export function DataAnalysisWorkbench() {
     });
   }
 
+  function renderTabContent() {
+    if (!profile) {
+      return (
+        <div className="audit-panel-muted p-6 text-center">
+          <h2 className="audit-section-title">等待上传数据文件</h2>
+          <p className="audit-copy mx-auto mt-2 max-w-xl">
+            选择 CSV 文件后，系统会在本地生成字段画像、质量提示和审计初步分析。XLSX 首期先进入待后端解析状态。
+          </p>
+        </div>
+      );
+    }
+
+    if (activeTab === "code") {
+      return (
+        <section className="audit-panel-muted p-5">
+          <h2 className="audit-section-title">{profile.name}</h2>
+          <p className="audit-copy mt-2">首期展示可复核的分析步骤，不自动执行生产级代码。</p>
+          <pre className="mt-4 overflow-x-auto rounded-[var(--audit-radius-md)] bg-[#101828] p-4 text-xs leading-6 text-white">
+{`load_file("${profile.name}")
+profile_columns()
+check_empty_cells()
+detect_duplicate_rows()
+map_audit_signals()`}</pre>
+        </section>
+      );
+    }
+
+    if (activeTab === "terminal") {
+      return (
+        <section className="audit-panel-muted p-5">
+          <h2 className="audit-section-title">{profile.name}</h2>
+          <div className="mt-4 space-y-2 font-mono text-xs text-[var(--audit-ink-muted)]">
+            <p>[ok] 文件入口校验通过</p>
+            <p>[ok] 字段数: {profile.columns.length}</p>
+            <p>[ok] 数据行: {profile.rowCount}</p>
+            <p>{profile.status === "parsed" ? "[ok] 本地 CSV 预检完成" : "[wait] 等待后端工作簿解析服务"}</p>
+          </div>
+        </section>
+      );
+    }
+
+    if (activeTab === "chart") {
+      const maxValue = Math.max(profile.rowCount, profile.emptyCellCount, profile.duplicateRowCount, 1);
+      const chartRows = [
+        { label: "数据行", value: profile.rowCount },
+        { label: "空值单元", value: profile.emptyCellCount },
+        { label: "重复行", value: profile.duplicateRowCount }
+      ];
+
+      return (
+        <section className="audit-panel-muted p-5">
+          <h2 className="audit-section-title">{profile.name}</h2>
+          <div className="mt-5 space-y-4">
+            {chartRows.map((row) => (
+              <div key={row.label}>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <span className="font-semibold text-[var(--audit-ink)]">{row.label}</span>
+                  <span className="font-mono text-[var(--audit-ink-muted)]">{row.value}</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                  <div
+                    className="h-full rounded-full bg-[var(--audit-primary)]"
+                    style={{ width: `${Math.max(6, Math.round((row.value / maxValue) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    if (activeTab === "report") {
+      return (
+        <section className="audit-panel-muted p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="audit-section-title">{profile.name}</h2>
+              <p className="audit-copy mt-2">{profile.message}</p>
+            </div>
+            <StatusPill tone={profile.status === "parsed" ? "success" : profile.status === "error" ? "danger" : "info"}>
+              {profile.status === "parsed" ? "已生成" : profile.status === "error" ? "失败" : "待解析"}
+            </StatusPill>
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <AnalysisList title="数据质量提示" items={profile.qualityFindings} />
+            <AnalysisList title="审计初步分析" items={profile.recommendations} />
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section aria-live="polite" className="audit-panel-muted p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="audit-section-title">{profile.name}</h2>
+            <p className="audit-meta mt-1">
+              {profile.extension.toUpperCase()} / {profile.sizeKb} KB
+            </p>
+          </div>
+          <StatusPill tone={profile.status === "parsed" ? "success" : profile.status === "error" ? "danger" : "info"}>
+            {profile.status === "parsed" ? "已分析" : profile.status === "error" ? "失败" : "已接收"}
+          </StatusPill>
+        </div>
+        <p className="audit-copy mt-4">{profile.message}</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <Metric label="字段数" value={String(profile.columns.length)} />
+          <Metric label="数据行" value={String(profile.rowCount)} />
+          <Metric label="重复行" value={String(profile.duplicateRowCount)} />
+        </div>
+        {profile.columns.length > 0 && (
+          <div className="audit-table-shell mt-4">
+            <table className="audit-table table-fixed">
+              <thead>
+                <tr>
+                  <th className="w-[23%]">字段</th>
+                  <th className="w-[14%]">类型</th>
+                  <th className="w-[13%]">空值</th>
+                  <th className="w-[13%]">去重值</th>
+                  <th className="w-[37%]">审计提示</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--audit-line-soft)]">
+                {profile.columns.map((column) => (
+                  <tr key={column.name}>
+                    <td className="break-words font-semibold text-[var(--audit-ink)]">{column.name}</td>
+                    <td className="break-words text-[var(--audit-ink-muted)]">{column.type}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{column.emptyCount}</td>
+                    <td className="text-[var(--audit-ink-muted)]">{column.uniqueCount}</td>
+                    <td className="break-words text-[var(--audit-ink-muted)]">{column.auditHint}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {profile.auditSignals.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {profile.auditSignals.map((signal) => (
+              <span key={signal} className="audit-chip audit-chip-info">
+                {signal}
+              </span>
+            ))}
+          </div>
+        )}
+        {profile.columns.some((column) => column.sampleValues.length > 0) && (
+          <div className="mt-5">
+            <h3 className="audit-compact-title">样例值</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {profile.columns.slice(0, 6).map((column) => (
+                <span key={column.name} className="audit-chip">
+                  {column.name}: {column.sampleValues.join(" / ") || "空"}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <AnalysisList title="数据质量提示" items={profile.qualityFindings} />
+          <AnalysisList title="审计初步分析" items={profile.recommendations} />
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 gap-4 xl:grid-cols-[16rem_minmax(0,1fr)_16rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">数据分析助手</h2>
+        <p className="audit-copy mt-2">按参考工作台组织上传、预检、产物和报告。首期不执行生产级自动审计。</p>
+        <div className="mt-5 space-y-3">
+          {[
+            ["da_list_files", profile ? "完成" : "等待"],
+            ["da_preview_data", profile?.status === "parsed" ? "完成" : "等待"],
+            ["da_profile_columns", profile?.columns.length ? "完成" : "等待"],
+            ["da_write_report", profile ? "草稿" : "等待"]
+          ].map(([tool, status]) => (
+            <div key={tool} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
+              <p className="font-mono text-xs font-semibold text-[var(--audit-primary)]">{tool}</p>
+              <p className="audit-meta mt-1">状态：{status}</p>
+            </div>
+          ))}
+        </div>
+        <label className="mt-5 block">
+          <span className="audit-label">分析要求</span>
+          <textarea
+            className="audit-focus-ring audit-input mt-2 min-h-28 resize-y px-3 py-2"
+            defaultValue="识别字段质量，判断是否具备重复收费、目录限制或医保支付核验基础。"
+          />
+        </label>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">AI 数据分析</p>
-            <h1 className="audit-page-title">上传表格分析</h1>
+            <h1 className="audit-page-title">上传表格分析工作台</h1>
+            <p className="audit-copy mt-2 max-w-3xl">
+              左侧记录分析过程，中间展示代码、终端、图表、数据和报告，右侧管理上传文件。
+            </p>
           </div>
           <StatusPill tone="warning">分析线索</StatusPill>
         </div>
 
-        <label className="audit-focus-ring audit-upload-drop mt-6 p-6">
+        <div className="mt-6 flex flex-wrap gap-2 border-b border-[var(--audit-line)] pb-3" role="tablist" aria-label="分析产物">
+          {analysisTabs.map((tab) => (
+            <button
+              key={tab.id}
+              className={`audit-focus-ring rounded-[var(--audit-radius-md)] px-3 py-2 text-sm font-semibold ${
+                activeTab === tab.id
+                  ? "bg-[var(--audit-primary)] text-white"
+                  : "bg-[var(--audit-surface-muted)] text-[var(--audit-ink-muted)] hover:text-[var(--audit-ink)]"
+              }`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5">{renderTabContent()}</div>
+      </section>
+
+      <aside className="min-w-0 space-y-4">
+        <label className="audit-focus-ring audit-upload-drop p-5">
           <span className="audit-card-title block">选择 `.csv` 或 `.xlsx` 文件</span>
           <span className="audit-copy mt-2 block">
             CSV 会即时展示字段、行数和空值概览；XLSX 先进入上传接收状态。
@@ -309,105 +537,13 @@ export function DataAnalysisWorkbench() {
           />
         </label>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-3">
-          <div className="audit-panel-muted p-4">
-            <p className="audit-label">HIS staging</p>
-            <p className="audit-metric-value mt-2">可接入</p>
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">数据文件</h2>
+          <div className="mt-4 space-y-2">
+            <FileRow name={profile?.name ?? "尚未上传文件"} status={profile ? "当前文件" : "等待上传"} />
+            <FileRow name="HIS staging 明细" status="审计数据入口" />
           </div>
-          <div className="audit-panel-muted p-4">
-            <p className="audit-label">规则疑点</p>
-            <p className="audit-metric-value mt-2">1</p>
-          </div>
-          <div className="audit-panel-muted p-4">
-            <p className="audit-label">待复核线索</p>
-            <p className="audit-metric-value mt-2">开放</p>
-          </div>
-        </div>
-
-        {profile && (
-          <section aria-live="polite" className="audit-panel-muted mt-5 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="audit-section-title">{profile.name}</h2>
-                <p className="audit-meta mt-1">
-                  {profile.extension.toUpperCase()} · {profile.sizeKb} KB
-                </p>
-              </div>
-              <StatusPill tone={profile.status === "parsed" ? "success" : profile.status === "error" ? "danger" : "info"}>
-                {profile.status === "parsed" ? "已分析" : profile.status === "error" ? "失败" : "已接收"}
-              </StatusPill>
-            </div>
-            <p className="audit-copy mt-4">{profile.message}</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Metric label="字段数" value={String(profile.columns.length)} />
-              <Metric label="数据行" value={String(profile.rowCount)} />
-              <Metric label="重复行" value={String(profile.duplicateRowCount)} />
-            </div>
-            {profile.columns.length > 0 && (
-              <div className="audit-table-shell mt-4 overflow-x-auto">
-                <table className="audit-table min-w-[42rem]">
-                  <thead>
-                    <tr>
-                      <th>字段</th>
-                      <th>类型</th>
-                      <th>空值</th>
-                      <th>去重值</th>
-                      <th>审计提示</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--audit-line-soft)]">
-                    {profile.columns.map((column) => (
-                      <tr key={column.name}>
-                        <td className="font-semibold text-[var(--audit-ink)]">{column.name}</td>
-                        <td className="text-[var(--audit-ink-muted)]">{column.type}</td>
-                        <td className="text-[var(--audit-ink-muted)]">{column.emptyCount}</td>
-                        <td className="text-[var(--audit-ink-muted)]">{column.uniqueCount}</td>
-                        <td className="text-[var(--audit-ink-muted)]">{column.auditHint}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {profile.auditSignals.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {profile.auditSignals.map((signal) => (
-                  <span key={signal} className="audit-chip audit-chip-info">
-                    {signal}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <AnalysisList title="数据质量提示" items={profile.qualityFindings} />
-              <AnalysisList title="审计初步分析" items={profile.recommendations} />
-            </div>
-            {profile.columns.some((column) => column.sampleValues.length > 0) && (
-              <div className="mt-5">
-                <h3 className="audit-compact-title">样例值</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {profile.columns.slice(0, 6).map((column) => (
-                    <span key={column.name} className="audit-chip">
-                      {column.name}: {column.sampleValues.join(" / ") || "空"}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {profile.columns.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {profile.columns.map((column) => (
-                  <span key={column.name} className="audit-chip">
-                    {column.name}
-                  </span>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-      </section>
-
-      <aside className="space-y-4">
+        </section>
         <a className="audit-focus-ring audit-action-card p-5" href="/findings">
           <p className="audit-kicker">审计数据分析入口</p>
           <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
@@ -420,6 +556,15 @@ export function DataAnalysisWorkbench() {
         </a>
       </aside>
     </main>
+  );
+}
+
+function FileRow({ name, status }: { readonly name: string; readonly status: string }) {
+  return (
+    <div className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
+      <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">{name}</p>
+      <p className="audit-meta mt-1">{status}</p>
+    </div>
   );
 }
 

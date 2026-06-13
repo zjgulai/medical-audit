@@ -1,5 +1,5 @@
 import { StatusPill } from "@/components/ui/status-pill";
-import { knowledgeBases } from "@/lib/portal-data";
+import { KnowledgeBaseCard, knowledgeBases } from "@/lib/portal-data";
 
 const totalDocumentCount = knowledgeBases.reduce((sum, kb) => sum + kb.documentCount, 0);
 const totalCharacterCount = knowledgeBases.reduce((sum, kb) => sum + kb.characterCount, 0);
@@ -7,17 +7,28 @@ const totalLinkedAppCount = knowledgeBases.reduce((sum, kb) => sum + kb.linkedAp
 
 export default function KnowledgeBasePage() {
   return (
-    <main className="audit-page-grid audit-page-grid--rail min-w-0">
+    <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">知识库目录</h2>
+        <p className="audit-copy mt-2">首期不在前台变更索引，只展示范围、负责人和可检索状态。</p>
+        <div className="mt-5 space-y-3">
+          {knowledgeBases.map((kb) => (
+            <KnowledgeBaseDirectoryItem key={kb.id} kb={kb} />
+          ))}
+        </div>
+      </aside>
+
       <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="audit-kicker">知识库</p>
             <h1 className="audit-page-title">个人、系统、公开知识库</h1>
+            <p className="audit-copy mt-2 max-w-3xl">查看当前项目可引用的知识资产，不在门户中直接发布或回滚索引。</p>
           </div>
           <StatusPill tone="info">首期只读</StatusPill>
         </div>
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <div className="mt-6 grid gap-4">
           {knowledgeBases.map((kb) => (
             <article key={kb.id} className="audit-panel-muted min-w-0 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -38,8 +49,13 @@ export default function KnowledgeBasePage() {
           ))}
         </div>
 
-        <div className="audit-table-shell mt-6 max-w-full overflow-x-auto">
-          <table className="audit-table min-w-[52rem]">
+        <section className="audit-panel-muted mt-6 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="audit-section-title">知识资产明细</h2>
+            <StatusPill tone="neutral">{knowledgeBases.length} 个知识库</StatusPill>
+          </div>
+          <div className="audit-table-shell mt-4 max-w-full overflow-x-auto">
+            <table className="audit-table min-w-[52rem]">
             <thead>
               <tr>
                 <th>知识库</th>
@@ -62,8 +78,9 @@ export default function KnowledgeBasePage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+        </section>
       </section>
 
       <aside className="min-w-0 space-y-4">
@@ -87,6 +104,25 @@ export default function KnowledgeBasePage() {
         </a>
       </aside>
     </main>
+  );
+}
+
+function KnowledgeBaseDirectoryItem({ kb }: { readonly kb: KnowledgeBaseCard }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{kb.name}</h3>
+          <p className="audit-meta mt-1">{kb.scope}</p>
+        </div>
+        <StatusPill tone={kb.status === "可检索" ? "success" : "neutral"}>{kb.status}</StatusPill>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+        <span className="text-[var(--audit-ink-muted)]">文档数</span>
+        <span className="font-semibold text-[var(--audit-ink)]">{kb.documentCount.toLocaleString()}</span>
+      </div>
+      <p className="audit-meta mt-2">负责人：{kb.owner}</p>
+    </article>
   );
 }
 

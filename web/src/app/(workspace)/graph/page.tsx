@@ -20,8 +20,21 @@ const pendingRelationCount = graphRelations.filter((relation) => relation.streng
 
 export default function GraphPage() {
   return (
-    <main className="audit-page-grid audit-page-grid--rail">
-      <section className="audit-panel p-6">
+    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
+      <aside className="audit-panel-rail min-w-0 p-5">
+        <h2 className="audit-section-title">节点覆盖</h2>
+        <p className="audit-copy mt-2">按审计链路查看项目、知识、规则、疑点、复核和整改覆盖。</p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          {kindStats.map((item) => (
+            <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2">
+              <p className="audit-meta font-semibold">{item.kind}</p>
+              <p className="audit-metric-value-sm mt-1">{item.count}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <section className="audit-panel min-w-0 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">知识图谱</p>
@@ -98,19 +111,7 @@ export default function GraphPage() {
         </section>
       </section>
 
-      <aside className="space-y-4">
-        <section className="audit-panel-rail p-5">
-          <h2 className="audit-section-title">节点覆盖</h2>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {kindStats.map((item) => (
-              <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
-                <p className="audit-meta font-semibold">{item.kind}</p>
-                <p className="audit-metric-value-sm mt-1">{item.count}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
+      <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">节点证据</h2>
           <div className="mt-4 space-y-3">
@@ -120,7 +121,7 @@ export default function GraphPage() {
                   <div>
                     <p className="audit-compact-title">{node.label}</p>
                     <p className="audit-meta mt-1">
-                      {node.kind} · {node.metric}
+                      {node.kind} / {node.metric}
                     </p>
                   </div>
                   <StatusPill tone={getNodeStatusTone(node.status)}>{node.status}</StatusPill>

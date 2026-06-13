@@ -32,7 +32,7 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await expect(chatLink).toHaveAttribute("href", "/chat");
   await expect(primaryNavigation.getByRole("link", { name: /我的智能体/ })).toHaveAttribute("href", "/agents");
   await expect(primaryNavigation.getByRole("link", { name: /智能体广场/ })).toHaveAttribute("href", "/agent-market");
-  await expect(primaryNavigation.getByRole("link", { name: /知识库/ })).toHaveAttribute("href", "/knowledge-base");
+  await expect(primaryNavigation.getByRole("link", { name: /^知识库/ })).toHaveAttribute("href", "/knowledge-base");
   await expect(primaryNavigation.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
   await expect(primaryNavigation.getByRole("link", { name: /AI 数据分析/ })).toHaveAttribute("href", "/analytics");
   await expect(primaryNavigation.getByRole("link", { name: /知识图谱/ })).toHaveAttribute("href", "/graph");
@@ -98,7 +98,7 @@ test("project management exposes project list and member workflow", async ({ pag
   await expect(page.getByRole("heading", { name: "项目列表" })).toBeVisible();
   await expect(page.getByText("项目名称")).toBeVisible();
   await expect(page.getByText("成员数")).toBeVisible();
-  await expect(page.getByText("创建人")).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "创建人" })).toBeVisible();
   await expect(page.getByText("创建时间")).toBeVisible();
   await expect(page.getByText("医保目录限制条件核验")).toBeVisible();
 
@@ -203,7 +203,9 @@ test("rules homepage exposes sources, runs and release gates", async ({ page }) 
   await expect(page.getByRole("heading", { name: "发布门禁" })).toBeVisible();
   await expect(page.getByText("字段可运行")).toBeVisible();
   await expect(page.getByRole("link", { name: "打开索引管理" })).toHaveAttribute("href", "/pages/index-admin");
-  await expect(page.getByRole("link", { name: "查看" }).first()).toHaveAttribute("href", "/findings?rule=CHARGE-RULE-001");
+  await expect(
+    page.locator("article").filter({ hasText: "CHARGE-RULE-001" }).getByRole("link", { name: "查看", exact: true })
+  ).toHaveAttribute("href", "/findings?rule=CHARGE-RULE-001");
 });
 
 test("report homepage exposes gates, evidence and remediation", async ({ page }) => {
@@ -286,7 +288,7 @@ test("guided check homepage exposes steps, prompts and evidence gates", async ({
   await expect(page.getByRole("heading", { name: "风险预检" })).toBeVisible();
   await expect(page.getByText("重复收费线索")).toBeVisible();
   await expect(page.getByRole("heading", { name: "自查动态" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入 AI 审证对话" })).toHaveAttribute("href", "/chat");
+  await expect(page.getByRole("link", { name: "进入 AI 审证对话", exact: true })).toHaveAttribute("href", "/chat");
   await expect(page.getByRole("link", { name: "进入对话" }).first()).toHaveAttribute(
     "href",
     /\/chat\?agent=agent-duplicate-charge/

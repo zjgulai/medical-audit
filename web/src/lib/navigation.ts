@@ -11,6 +11,22 @@ export type NavigationItem = {
   readonly target: NavigationTarget;
 };
 
+export type NavigationGroup = {
+  readonly id: string;
+  readonly label: string;
+  readonly items: readonly NavigationItem[];
+};
+
+export const workspaceHomeNavigation: NavigationItem = {
+  id: "workspace",
+  label: "今日工作台",
+  href: "/workspace",
+  symbol: "台",
+  description: "查看当前项目、待办事项、风险线索和工作进展。",
+  emphasis: "standard",
+  target: "workspace"
+};
+
 export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "ai-chat",
@@ -134,7 +150,81 @@ export const secondaryNavigation: readonly NavigationItem[] = [
   }
 ];
 
-const workspaceNavigation = [...primaryNavigation, ...secondaryNavigation] as const;
+export const systemNavigation: readonly NavigationItem[] = [
+  {
+    id: "index-admin",
+    label: "索引管理",
+    href: "/pages/index-admin",
+    symbol: "索",
+    description: "进入后端索引发布、回滚、重载和验收控制台。",
+    emphasis: "standard",
+    target: "backend"
+  },
+  {
+    id: "audit-logs",
+    label: "审计日志",
+    href: "/pages/audit-logs",
+    symbol: "志",
+    description: "查看查询、导出、复核和索引操作留痕。",
+    emphasis: "standard",
+    target: "backend"
+  }
+];
+
+const workspaceNavigation = [
+  workspaceHomeNavigation,
+  ...primaryNavigation,
+  ...secondaryNavigation,
+  ...systemNavigation
+] as const;
+
+function requireNavigationItemById(id: string): NavigationItem {
+  const item = workspaceNavigation.find((navigationItem) => navigationItem.id === id);
+  if (!item) {
+    throw new Error(`Missing navigation item: ${id}`);
+  }
+  return item;
+}
+
+export const navigationGroups: readonly NavigationGroup[] = [
+  {
+    id: "audit-task",
+    label: "审计任务",
+    items: [
+      requireNavigationItemById("workspace"),
+      requireNavigationItemById("ai-chat"),
+      requireNavigationItemById("guided-check"),
+      requireNavigationItemById("projects"),
+      requireNavigationItemById("remediation"),
+      requireNavigationItemById("reports")
+    ]
+  },
+  {
+    id: "agents",
+    label: "智能体",
+    items: [requireNavigationItemById("my-agents"), requireNavigationItemById("agent-market")]
+  },
+  {
+    id: "tools",
+    label: "常用工具",
+    items: [requireNavigationItemById("analytics"), requireNavigationItemById("graph")]
+  },
+  {
+    id: "resources",
+    label: "审计资源",
+    items: [
+      requireNavigationItemById("knowledge-base"),
+      requireNavigationItemById("documents"),
+      requireNavigationItemById("rules"),
+      requireNavigationItemById("archive")
+    ]
+  },
+  {
+    id: "system",
+    label: "系统管理",
+    items: systemNavigation
+  }
+];
 
 export function findNavigationItemById(id: string): NavigationItem | undefined {
   return workspaceNavigation.find((item) => item.id === id);

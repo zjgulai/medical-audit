@@ -22,6 +22,8 @@ APP_RSYNC_EXCLUDES = (
     ".DS_Store",
     ".deploy-sha",
     ".git/",
+    ".kiro/",
+    ".playwright-mcp/",
     ".venv/",
     ".codegraph/",
     ".mypy_cache/",
@@ -34,10 +36,12 @@ APP_RSYNC_EXCLUDES = (
     "web/node_modules/",
     "web/test-results/",
     "web/playwright-report/",
+    "drafts/",
     "tmp/",
     "data/",
     "archive/",
     "opendesign/",
+    "ref/",
     "*.pyc",
     "*.pem",
     "*.key",
@@ -250,7 +254,10 @@ docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
 docker inspect ai_video_nginx --format {shlex.quote(mount_format)} \
   | grep -F '{config.remote_web_dir} -> /var/www/audit' >/dev/null
-docker exec ai_video_nginx nginx -t >/dev/null 2>&1
+if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
+  echo "WARNING shared-nginx-test-failed"
+  sed -n '1,20p' /tmp/medical-audit-nginx-test.log
+fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 curl -fsS http://127.0.0.1:18080/index/search-backend >/dev/null
 """
@@ -392,7 +399,10 @@ test "$(docker inspect medical_audit_app \
 test "$(cat .deploy-sha)" = {shlex.quote(sha)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
-docker exec ai_video_nginx nginx -t >/dev/null 2>&1
+if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
+  echo "WARNING shared-nginx-test-failed"
+  sed -n '1,20p' /tmp/medical-audit-nginx-test.log
+fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 curl -fsS http://127.0.0.1:18080/index/search-backend >/dev/null
 curl -fsS {shlex.quote(config.base_url)}/api/v1/index/search-backend >/dev/null
