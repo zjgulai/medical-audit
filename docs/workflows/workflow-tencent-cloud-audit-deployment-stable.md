@@ -63,6 +63,35 @@ source: human+ai
 - 当前生产健康和写入型 smoke 通过不等于 V1.0 完成：门户壳层、检索、引用、预览和任务级复核写入链路可用；真实医院数据验收、真实生成模型、真实权限系统和案件级合规闭环仍需单独完成。
 - `query-api-with-citations` 仍返回 `fallback_used=true`，只能证明引用型 fallback 链路健康，不能证明真实生成模型能力可用。
 
+### 2026-06-14 no-fallback 生成模型门禁复核
+
+- PR #73 `接入答案生成 provider 并强化 no-fallback 生产门禁` 已进入 Ready for review，merge state 为 `CLEAN`。
+- PR #73 只提供代码门禁能力，不等于生产真实生成模型已经启用。
+- 本地门禁已复核通过：`uv run ruff check src tests scripts`、`uv run mypy src`、`uv run pytest -q`。
+- 生产 `.deploy-sha` 仍为 `89fe9215a2617bd3d933d2274739561e403c3c28`，未部署 PR #73，未写入 `MEDICAL_AUDIT_KB_ANSWER_*`。
+- 生产容器当前只有 `KIMI_API_KEY` 存在；`MOONSHOT_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 均未设置。
+- 现有 `KIMI_API_KEY` 对 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 的常规 Chat Completions endpoint 返回 `401 Invalid Authentication`。
+- 现有 `KIMI_API_KEY` 对 `https://api.kimi.com/coding/v1` 返回 `403 access_terminated_error`，错误说明该路径仅面向 Coding Agents，不能作为普通审计问答 chat provider。
+- 本机 `ANTHROPIC_API_KEY` 存在，但 `answer-provider-smoke` 使用 `claude-haiku-4-5-20251001` 和 `claude-sonnet-4-6` 均返回 `401 invalid x-api-key`；不能迁移到生产。
+- 当前 no-fallback smoke 报告 `tmp/outputs/production-e2e-smoke-require-generated-answer-after-pr73-review-20260614.json` 为 `status=fail`，失败点仅为 `query-api-with-citations`：`query response used fallback answer instead of generated answer`。TLS、health、search backend、page rendering 和 audit logs permission 均通过。
+
+生产启用真实生成模型前必须先满足：
+
+1. 提供一个只用于服务端的有效 chat provider key，不得写入 Git、PR、日志或前端。
+2. 在本机或生产容器内运行 `answer-provider-smoke`，确认 `success=true`、`citation_marker_present=true`、`required_term_present=true`。
+3. 备份远端 `configs/deploy/tencent-cloud/medical-audit.env`，再写入 `MEDICAL_AUDIT_KB_ANSWER_PROVIDER`、`MEDICAL_AUDIT_KB_ANSWER_API_KEY_ENV`、`MEDICAL_AUDIT_KB_ANSWER_MODEL`、`MEDICAL_AUDIT_KB_ANSWER_BASE_URL`、`MEDICAL_AUDIT_KB_ANSWER_MAX_OUTPUT_TOKENS` 和 `MEDICAL_AUDIT_KB_ANSWER_TEMPERATURE`。
+4. 部署 PR #73 后运行：
+
+```bash
+python3 scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --expected-matching-embeddings 0 \
+  --require-generated-answer \
+  --report tmp/outputs/production-e2e-smoke-require-generated-answer-latest.json
+```
+
+未满足以上前置条件时，禁止把 `fallback_used=true` 的 smoke 结果表述为真实生成模型验收通过。
+
 ### 2026-06-13 当前事实
 
 - 当前远端 `main` merge commit：`596d6967ba5b6c3d2a7d2253c8a31b264fb7ae82`，来自 PR #70 `集成审计门户核心工作台`。
@@ -956,6 +985,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 当前远端只同步 active source subset；如果后续要求远端具备完整源文件再处理能力，需要先解决超长中文文件名归档策略。
 - `KIMI_API_KEY` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret，降低误操作风险。
 - `MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 当前写入远端 env，后续应迁移到服务器级 secret 管理或 Docker secret。
+- 真实生成模型启用仍被 chat provider key 阻塞；未通过 `answer-provider-smoke` 前，不得配置 `MEDICAL_AUDIT_KB_ANSWER_*` 或部署 no-fallback 验收。
 - 审计日志 archive root 巡检已接入 cron，webhook 告警能力已具备；真实外部告警端点尚未配置时，只能通过 cron 退出码和 `/opt/medical-audit/audit-reports/` 报告排查。
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
 
@@ -994,6 +1024,8 @@ nginx 回滚：
 
 - 不复用其它项目数据库。
 - 不把 `KIMI_API_KEY` 写入 git。
+- 不把任何 chat provider key 写入 git、PR 评论、报告正文、前端静态文件或客户端可见配置。
+- 不在 `answer-provider-smoke` 未通过时写入 `MEDICAL_AUDIT_KB_ANSWER_*` 并声称 no-fallback 已启用。
 - 不把 `data/` 打进镜像。
 - 不直接覆盖 nginx 配置而不备份。
 - 不在证书 SAN 未包含 `audit` 时声称 HTTPS 已完成。

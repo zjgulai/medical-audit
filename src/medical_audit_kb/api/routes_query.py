@@ -66,7 +66,11 @@ def query(
     )
     results = state.search_engine.search(payload.question, filters=filters, top_k=payload.top_k)
     try:
-        answer = build_citation_backed_answer(payload.question, results)
+        answer = build_citation_backed_answer(
+            payload.question,
+            results,
+            generation_provider=state.answer_generation_provider,
+        )
     except NoCitedEvidenceError as exc:
         raise HTTPException(status_code=404, detail="no cited evidence found") from exc
     for citation in answer.citations:

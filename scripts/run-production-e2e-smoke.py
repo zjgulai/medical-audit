@@ -127,6 +127,7 @@ def main() -> int:
                 base_url,
                 auth=auth,
                 question=str(args.question),
+                require_generated_answer=bool(args.require_generated_answer),
                 timeout_seconds=float(args.timeout_seconds),
             ),
         )
@@ -250,6 +251,11 @@ def _parse_args() -> argparse.Namespace:
         dest="include_review_write",
         action="store_false",
         help="Deprecated compatibility flag. Production smoke is read-only by default.",
+    )
+    parser.add_argument(
+        "--require-generated-answer",
+        action="store_true",
+        help="Fail when /query returns fallback_used=true.",
     )
     parser.set_defaults(include_review_write=False)
     return parser.parse_args()
@@ -449,6 +455,7 @@ def _check_query_api(
     *,
     auth: SmokeAuth,
     question: str,
+    require_generated_answer: bool,
     timeout_seconds: float,
 ) -> dict[str, object]:
     payload = {
@@ -467,6 +474,11 @@ def _check_query_api(
     citations = _ensure_list(response.get("citations"))
     basis_groups = _ensure_list(response.get("basis_groups"))
     _require(response.get("confidence") in {"medium", "high"}, "query confidence is too low")
+    if require_generated_answer:
+        _require(
+            response.get("fallback_used") is False,
+            "query response used fallback answer instead of generated answer",
+        )
     _require(bool(citations), "query response has no citations")
     _require(bool(basis_groups), "query response has no basis groups")
     first_citation = _ensure_dict(citations[0])
