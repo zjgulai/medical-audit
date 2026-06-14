@@ -35,26 +35,27 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 当前生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990`
+- 当前生产部署 SHA：`281981ce072b549ebbcc4332db6d5ae1a06801e5`
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
 - PostgreSQL 检索后端：`backend=postgres`，`ready=true`。
 - Kimi embedding：`embedding_model=kimi-for-coding`，`embedding_dimension=1024`。
 - 当前匹配 embeddings：`48985`。
-- 最新本地生产 smoke 报告：`tmp/outputs/production-e2e-smoke-phase1-review-write-20260614.json`，状态 `pass`。
-- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-phase1-20260614.json`，状态 `pass`。
+- 最新项目成员生产写入 smoke 报告：`tmp/outputs/production-project-member-write-smoke-20260614.json`，状态 `pass`。
+- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-project-member-write-20260614.json`，状态 `pass`。
+- 项目成员写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`，`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
+- 项目成员生产写入结果：`CATALOG-LIMIT-202606` 新增 `member-custom-e152673f93f9`，成员数从 `4` 增至 `5`，数据库 `audit_project_members` 当前自定义记录数为 `1`。
 
-生产结论：当前生产检索、引用、预览、静态门户和任务级复核写入链路可用；不能据此宣称真实医院审计、真实生成模型、真实权限体系或案件级合规闭环已完成。
+生产结论：当前生产检索、引用、预览、静态门户、任务级复核写入链路和项目成员持久化写入链路可用；不能据此宣称真实医院审计、真实生成模型、真实权限体系或案件级合规闭环已完成。
 
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit`
-- 当前分支：`codex/product-integration-debt-phase2`
-- 本地 HEAD：Phase 2.1 至 Phase 2.4 本地集成提交链，尚未部署到生产。
-- 本地 `origin/main`：`596d6967 合并审计门户核心工作台`
-- 当前分支相对 `origin/main`：包含产品集成债务 Phase 2 本地改造；生产仍运行 `32027049eb7fa2b9d336af217a228b0f21dca990`。
-- 当前生产部署 SHA 位于 `codex/reference-workspace-shell-p0`，并作为当前主线历史的祖先保留。
+- 当前分支：`codex/project-member-production-acceptance`
+- 分支基线：`origin/main=0b67ae9b1d16196d57344fea184ee688b2ab1646`
+- 当前生产运行代码 SHA：`281981ce072b549ebbcc4332db6d5ae1a06801e5`
+- `origin/main` 最新提交 `0b67ae9b1d16196d57344fea184ee688b2ab1646` 为 docs-only 状态同步，生产运行代码仍为上一部署 SHA。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -66,7 +67,7 @@ source: human+ai
   - `opendesign/`
   - `ref/`
 
-仓库结论：当前本地状态适合继续做文档和计划同步；进入功能开发前，必须从明确的主线或新 `codex/` 分支开始，避免把历史 worktree、参考材料和草稿混入交付分支。
+仓库结论：当前本地状态适合继续做生产验收状态同步；进入功能开发前，仍必须从明确的主线或新 `codex/` 分支开始，避免把历史 worktree、参考材料和草稿混入交付分支。
 
 ### 2.3 产品状态
 
@@ -77,15 +78,15 @@ source: human+ai
 - 知识库查询引擎已具备检索、引用型回答、原文预览、索引管理、评测和回滚治理。
 - 复核任务台已具备任务级持久化、报告准备度预检、附件归档、正式报告签发冻结、整改跟踪和结案只读锁。
 - HIS 数据底座、staging、snapshot、字段映射校验、`CHARGE-RULE-001` fixture 与 staging 执行路径已具备工程基础。
-- 智能体持久化已在本地 Phase 2.1 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
-- 项目成员持久化已在本地 Phase 2.2 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
+- 智能体持久化已在本地 Phase 2.1 完成并通过 API、前端和浏览器联调验收；生产 `/api/v1/agents` 已返回 `SqlAlchemyAgentStore` 和默认智能体，但尚未执行生产写入型 E2E。
+- 项目成员持久化已完成生产写入型 E2E；`/api/v1/projects` 和 `/api/v1/projects/{project_key}/members` 均返回 `SqlAlchemyProjectMemberStore`，新增成员刷新后仍可读，数据库 `audit_project_members` 已落表。
 - AI 数据分析表格上传解析已在本地 Phase 2.3 完成，CSV、XLSX 和 XLSM 由 FastAPI 后端解析并返回字段画像；尚未部署到生产。
 - 文档检索页已在本地 Phase 2.4 接入后端 `/query`，可按来源过滤返回引用、证据分组和原文入口；尚未部署到生产。
 
 未完成：
 
-- 智能体持久化尚未执行生产部署和生产库 `audit_agents` schema 应用。
-- 项目成员持久化尚未执行生产部署和生产库 `audit_project_members` schema 应用。
+- 智能体持久化尚未执行生产写入型 E2E；`audit_agents` 表当前无自定义记录。
+- 项目成员真实权限、邀请审批、成员禁用/移除和权限生效仍未完成；本轮只验证成员新增持久化。
 - AI 数据分析上传文件尚未进入正式存储、病毒扫描、脱敏留存或历史分析记录。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
@@ -301,7 +302,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 | 编号 | 类型 | 债务 | 当前证据 | 影响 | 处置计划 | 完成门禁 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents`、`/projects` 已完成本地持久化；`/analytics` 已完成本地后端上传解析；`/documents` 已接入 `/query`；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 继续补知识库、图谱、报告、整改页面 API，生产部署 Phase 2.1-2.4 | 新增/查询/刷新后数据仍存在；上传解析和文档检索走后端；前端测试和 API 测试通过 |
+| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/projects` 项目成员已完成生产写入验收；`/agents` 生产 API 可读但未做写入 E2E；`/analytics` 和 `/documents` 仍需补生产级验收；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 继续补智能体生产写入验收、表格上传生产验收、文档检索生产业务验收和知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传解析和文档检索走后端；前端测试和 API 测试通过 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | Kimi chat 403，Anthropic 401，fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 决定可用 chat provider 或保持引用 fallback 为产品边界 | `answer-provider-smoke` 和真实生成评测 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key` | 无法满足生产级审计系统权限边界 | 建立用户/角色/部门模型和会话认证，替换静态 header 口径 | 未授权路径 403；审计日志记录访问拒绝 |
@@ -375,10 +376,10 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 优先顺序：
 
-1. 智能体 CRUD 和提示词版本：本地 Phase 2.1 已完成；生产部署和 schema 应用待执行。
-2. 项目成员管理 API 和页面持久化：本地 Phase 2.2 已完成；生产部署和 schema 应用待执行。
-3. 表格上传分析后端和工作簿解析任务：本地 Phase 2.3 已完成；生产部署、上传留存和历史记录待后续阶段。
-4. 文档检索 API-first 接入：本地 Phase 2.4 已完成；生产部署、搜索历史持久化和权限模型待后续阶段。
+1. 智能体 CRUD 和提示词版本：本地 Phase 2.1 已完成；生产 API/schema 可读，生产写入型 E2E 待执行。
+2. 项目成员管理 API 和页面持久化：生产写入型 E2E 已完成；真实权限、邀请审批、禁用/移除和成员权限生效待后续阶段。
+3. 表格上传分析后端和工作簿解析任务：本地 Phase 2.3 已完成；生产上传 E2E、上传留存和历史记录待后续阶段。
+4. 文档检索 API-first 接入：本地 Phase 2.4 已完成；生产业务检索验收、搜索历史持久化和权限模型待后续阶段。
 5. 知识库、图谱、报告、整改页面逐步接真实 API。
 
 完成门禁：
