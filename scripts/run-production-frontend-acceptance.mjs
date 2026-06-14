@@ -53,6 +53,7 @@ const routeChecks = [
   { route: "/pages/query", requiredText: [/医保审计知识查询|医保审核知识库查询/, /文档检索/] },
   { route: "/pages/review-tasks", requiredText: [/AI智能审计管理系统/, /审计底稿\/报告/] },
   { route: "/pages/index-admin", requiredText: [/索引管理/, /检索后端/] },
+  { route: "/pages/audit-logs", requiredText: [/审计日志台/, /审计日志/] },
 ];
 
 const placeholderPatterns = [
@@ -72,6 +73,8 @@ function parseArgs(argv) {
     output: DEFAULT_OUTPUT,
     screenshotDir: DEFAULT_SCREENSHOT_DIR,
     timeoutMs: 45_000,
+    adminRole: "it-admin",
+    adminApiKeyEnv: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -87,6 +90,12 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === "--timeout-ms" && next) {
       options.timeoutMs = Number(next);
+      index += 1;
+    } else if (arg === "--admin-role" && next) {
+      options.adminRole = next;
+      index += 1;
+    } else if (arg === "--admin-api-key-env" && next) {
+      options.adminApiKeyEnv = next;
       index += 1;
     } else if (arg === "--help") {
       printHelp();
@@ -109,6 +118,8 @@ Options:
   --output <path>           Default: ${DEFAULT_OUTPUT}
   --screenshot-dir <path>   Default: ${DEFAULT_SCREENSHOT_DIR}
   --timeout-ms <number>     Default: 45000
+  --admin-role <role>       Role for admin API checks (default: it-admin)
+  --admin-api-key-env <name> Env var for admin API key (optional)
 `);
 }
 
@@ -118,6 +129,18 @@ function resolveRepoPath(value) {
 
 function compactText(value) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function readOptionalEnv(name) {
+  if (!name) {
+    return null;
+  }
+  const value = process.env[name];
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 async function snapshot(page) {
@@ -211,11 +234,90 @@ function classify(check, routeCheck, data) {
   return issues;
 }
 
+async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(bodyText);
+    } catch {
+      body = null;
+    }
+    return {
+      status: response.status,
+      body,
+      bodyText,
+      contentType: response.headers.get("content-type") ?? "unknown",
+      location: response.headers.get("location") ?? null,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, timeoutMs }) {
+  const checks = {};
+  const endpoints = [
+    { path: "/audit/logs", requireItems: true },
+    { path: "/audit/logs/export", requireItems: false },
+  ];
+
+  for (const item of endpoints) {
+    const denied = await fetchWithTimeout(`${baseUrl}${item.path}`, {
+      timeoutMs,
+      headers: { Accept: "application/json" },
+    });
+    const allowed = await fetchWithTimeout(`${baseUrl}${item.path}`, {
+      timeoutMs,
+      headers: {
+        Accept: "application/json",
+        "X-Role": adminRole,
+        ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
+      },
+    });
+
+    if (item.requireItems && !Array.isArray(allowed.body?.items)) {
+      throw new Error(`${item.path} should return JSON with items`);
+    }
+
+    checks[item.path] = {
+      denied_status: denied.status,
+      denied_content_type: denied.contentType,
+      allowed_status: allowed.status,
+      allowed_content_type: allowed.contentType,
+      denied_body_sample: denied.bodyText.slice(0, 220),
+      allowed_body_sample: allowed.bodyText.slice(0, 220),
+    };
+
+    if (denied.status !== 403) {
+      throw new Error(`${item.path} should return 403 without role`);
+    }
+    if (allowed.status !== 200) {
+      throw new Error(`${item.path} should return 200 with role`);
+    }
+  }
+
+  return checks;
+}
+
 async function run() {
   const options = parseArgs(process.argv.slice(2));
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
+  const adminApiKey = readOptionalEnv(options.adminApiKeyEnv);
+  const adminRole = options.adminRole || "it-admin";
+  let apiCheckResult = null;
+  let apiCheckError = null;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.mkdirSync(screenshotDir, { recursive: true });
 
@@ -283,6 +385,16 @@ async function run() {
       }
       await context.close();
     }
+    try {
+      apiCheckResult = await checkAuditLogApiPermissions({
+        baseUrl,
+        adminRole,
+        adminApiKey,
+        timeoutMs: options.timeoutMs,
+      });
+    } catch (error) {
+      apiCheckError = error instanceof Error ? error.message : String(error);
+    }
   } finally {
     await browser.close();
   }
@@ -293,14 +405,17 @@ async function run() {
   const p1 = checks.flatMap((check) =>
     check.issues.filter((item) => item.severity === "P1").map((item) => ({ route: check.route, viewport: check.viewport, ...item })),
   );
+  const status = p0.length === 0 && p1.length === 0 && !apiCheckError ? "pass" : "fail";
+
   const report = {
-    status: p0.length === 0 && p1.length === 0 ? "pass" : "fail",
+    status,
     generated_at: new Date().toISOString(),
     base_url: baseUrl,
     summary: {
       route_count: routeChecks.length,
       check_count: checks.length,
       viewports: viewports.map((viewport) => viewport.name),
+      api_checks: apiCheckResult || { error: apiCheckError },
       p0,
       p1,
     },

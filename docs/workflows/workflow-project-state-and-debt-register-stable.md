@@ -125,6 +125,7 @@ source: human+ai
 - 状态：`pass`
 - 覆盖：`20` 个路由，桌面和移动共 `40` 次检查。
 - 结果：`p0=[]`，`p1=[]`。
+- 最新一次语义验收：`tmp/outputs/production-frontend-acceptance-latest.json`，状态 `pass`；`check_count=42`（21 个路由×2 viewport），`summary.api_checks` 中 `/audit/logs` 与 `/audit/logs/export` 均满足 `denied_status=403`、`allowed_status=200`，`p0=[]`、`p1=[]`。
 
 生产写入型验收：
 
@@ -384,6 +385,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 - 刷新页面后新增数据仍存在。
 - API 测试、前端测试和最小 E2E 均通过。
+- 生产前端变更必须执行 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin`，且 `p0=[]`、`p1=[]`、审计日志查询和导出 API 均满足无角色 `403`、管理员角色 `200`。
 - 页面文案不再暗示未完成能力已经完成。
 
 ### Phase 3：真实 HIS 审计 MVP

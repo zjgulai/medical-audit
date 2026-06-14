@@ -769,13 +769,30 @@ uv run python scripts/run-production-e2e-smoke.py \
 静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行只读前端语义验收：
 
 ```bash
-pnpm --dir web exec node ../scripts/run-production-frontend-acceptance.mjs \
+pnpm production:frontend-acceptance -- \
   --base-url https://audit.lute-tlz-dddd.top \
   --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --admin-role it-admin
 ```
 
-该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。脚本只读，不提交业务表单。
+标准复用模板：
+
+```bash
+pnpm production:frontend-acceptance -- \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --output tmp/outputs/production-frontend-acceptance-latest.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --admin-role it-admin
+```
+
+该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。
+
+该脚本新增以下 API 鉴权闭环：
+
+- `/audit/logs` 和 `/audit/logs/export`：无 `X-Role` 期望 `403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
+- 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=403`、`allowed_status=200`。
+- 无需提交业务数据；脚本只读。
 
 ### 7.7 增量更新 dry-run 演练
 
@@ -921,7 +938,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
-- 生产前端语义验收 `scripts/run-production-frontend-acceptance.mjs` 返回 `status=pass`，P0/P1 均为 `0`。
+- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=403` 且 `allowed_status=200`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
