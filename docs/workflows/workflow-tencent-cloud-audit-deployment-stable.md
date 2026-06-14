@@ -73,6 +73,16 @@ source: human+ai
 - 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-agent-write-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 边界：本轮只验证新增提示词型智能体和持久化；提示词版本治理、上下架、删除/停用、权限生效和复杂智能体编排仍未完成。
 
+### 2026-06-14 AI 数据分析生产上传验收
+
+- 验收范围：`/api/v1/analytics/table-upload` 生产上传解析链路。
+- 生产上传报告：`tmp/outputs/production-analytics-upload-smoke-20260614.json`，状态 `pass`。
+- CSV 上传结果：`production-analytics-e2e.csv` 返回 `200`、`status=parsed`、`row_count=4`、`column_count=7`、`duplicate_row_count=1`、`empty_cell_count=1`，识别金额/费用、患者/就诊、日期/时间、项目/药品/目录、医保支付和数量字段。
+- XLSX 上传结果：`production-analytics-e2e.xlsx` 返回 `200`、`status=parsed`、`sheet_name=审计数据`、`row_count=4`、`column_count=7`、`duplicate_row_count=1`、`empty_cell_count=1`，识别同等审计信号。
+- 非法扩展验证：`.txt` 上传返回 `422 unsupported table file extension`。
+- 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-analytics-upload-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 边界：本轮只验证瞬时上传解析，不保存上传文件，不写入数据库业务表；病毒扫描、脱敏留存、对象存储、历史分析记录和正式工作簿治理仍未完成。
+
 ### 2026-06-14 Phase 1 历史基线事实
 
 - 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
