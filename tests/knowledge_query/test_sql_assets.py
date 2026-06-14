@@ -63,6 +63,20 @@ def test_pgvector_schema_includes_audit_agent_table() -> None:
     assert "idx_audit_agents_updated_at" in schema
 
 
+def test_pgvector_schema_includes_project_member_table() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS audit_project_members" in schema
+    assert "member_key text NOT NULL UNIQUE" in schema
+    assert "project_key text NOT NULL" in schema
+    assert "department text NOT NULL" in schema
+    assert "CONSTRAINT ck_audit_project_members_role" in schema
+    assert "CONSTRAINT ck_audit_project_members_status" in schema
+    assert "idx_audit_project_members_project" in schema
+    assert "idx_audit_project_members_role" in schema
+    assert "idx_audit_project_members_status" in schema
+
+
 def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
 

@@ -7,6 +7,10 @@ from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.project_member_store import (
+    PROJECT_MEMBER_ID_PREFIX,
+    SqlAlchemyProjectMemberStore,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -103,6 +107,86 @@ def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    projects_response = client.get("/projects")
+
+    assert projects_response.status_code == 200
+    projects_body = projects_response.json()
+    assert projects_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
+    assert projects_body["roles"] == ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"]
+    assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
+    assert projects_body["items"][0]["member_count"] == 3
+
+    members_response = client.get("/projects/CATALOG-LIMIT-202606/members")
+
+    assert members_response.status_code == 200
+    members_body = members_response.json()
+    assert members_body["project_key"] == "CATALOG-LIMIT-202606"
+    assert len(members_body["items"]) == 4
+    assert members_body["items"][0]["source"] == "system-default"
+
+    create_response = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers={"X-User-Id": "auditor-1"},
+        json={
+            "name": "赵审计",
+            "role": "审计员",
+            "department": "医保办",
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["id"].startswith(PROJECT_MEMBER_ID_PREFIX)
+    assert created["project_key"] == "CATALOG-LIMIT-202606"
+    assert created["status"] == "待确认"
+    assert created["created_by"] == "auditor-1"
+    assert state.operation_logs[-1]["action"] == "project-member-create"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()[
+        "items"
+    ]
+    persisted_projects = second_client.get("/projects").json()["items"]
+    catalog_project = next(
+        item for item in persisted_projects if item["id"] == "CATALOG-LIMIT-202606"
+    )
+
+    assert persisted_members[0]["id"] == created["id"]
+    assert persisted_members[0]["name"] == "赵审计"
+    assert any(item["id"] == "member-catalog-owner" for item in persisted_members)
+    assert catalog_project["member_count"] == 5
+
+
+def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    missing_response = client.get("/projects/UNKNOWN/members")
+    invalid_role_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        json={
+            "name": "未知角色",
+            "role": "访客",
+            "department": "医保办",
+        },
+    )
+
+    assert missing_response.status_code == 404
+    assert invalid_role_response.status_code == 422
 
 
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:

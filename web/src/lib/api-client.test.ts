@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createAuditAgent,
+  createProjectMember,
   fetchAuditFindings,
   fetchAgents,
   fetchBackendHealth,
+  fetchProjectMembers,
+  fetchProjects,
   fetchSearchBackendStatus,
   runKnowledgeQuery
 } from "./api-client";
@@ -224,5 +227,124 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.item.id).toBe("agent-custom-001");
+  });
+
+  it("fetches projects through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "SELF-CHECK-FUND-20260607",
+              name: "医保基金使用合规专项自查",
+              audit_topic: "医保基金使用合规",
+              organization_name: "单院医保内审试运行",
+              member_count: 3,
+              creator: "项目负责人",
+              created_at: "2026-06-07",
+              status: "进行中",
+              operation_label: "进入项目",
+              source: "system-default"
+            }
+          ],
+          roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
+          statuses: ["在项目中", "待确认"],
+          store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+        })
+      }))
+    );
+
+    const result = await fetchProjects();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.items[0].id).toBe("SELF-CHECK-FUND-20260607");
+  });
+
+  it("fetches project members through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "member-auditor",
+              project_key: "SELF-CHECK-FUND-20260607",
+              name: "审计员",
+              role: "审计员",
+              department: "内审部",
+              status: "在项目中",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            }
+          ],
+          project_key: "SELF-CHECK-FUND-20260607",
+          roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
+          statuses: ["在项目中", "待确认"],
+          store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+        })
+      }))
+    );
+
+    const result = await fetchProjectMembers("SELF-CHECK-FUND-20260607");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/SELF-CHECK-FUND-20260607/members", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.items[0].id).toBe("member-auditor");
+  });
+
+  it("creates project members through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "member-custom-001",
+            project_key: "CATALOG-LIMIT-202606",
+            name: "赵审计",
+            role: "审计员",
+            department: "医保办",
+            status: "待确认",
+            created_by: "next-knowledge-query",
+            updated_at: "2026-06-14T00:00:00Z",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+        })
+      }))
+    );
+
+    const result = await createProjectMember("CATALOG-LIMIT-202606", {
+      name: "赵审计",
+      role: "审计员",
+      department: "医保办"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/CATALOG-LIMIT-202606/members", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      body: JSON.stringify({
+        name: "赵审计",
+        role: "审计员",
+        department: "医保办"
+      }),
+      cache: "no-store"
+    });
+    expect(result.item.id).toBe("member-custom-001");
   });
 });

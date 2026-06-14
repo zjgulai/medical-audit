@@ -51,9 +51,9 @@ source: human+ai
 
 - 当前工作区：`/Users/pray/project/medical_audit`
 - 当前分支：`codex/product-integration-debt-phase2`
-- 本地 HEAD：`dca8b2fe31bd2476dfc22e9f59f3f71cb0088da0`
+- 本地 HEAD：`c6bf99fe93e8a8fd3076ffd32c0008791ab0fb13`
 - 本地 `origin/main`：`596d6967 合并审计门户核心工作台`
-- 当前分支相对 `origin/main`：ahead 2，且存在 Phase 2.1 未提交工作区改动。
+- 当前分支相对 `origin/main`：ahead 3，且存在 Phase 2.2 未提交工作区改动。
 - 当前生产部署 SHA 位于 `codex/reference-workspace-shell-p0`，并作为当前主线历史的祖先保留。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
@@ -78,11 +78,12 @@ source: human+ai
 - 复核任务台已具备任务级持久化、报告准备度预检、附件归档、正式报告签发冻结、整改跟踪和结案只读锁。
 - HIS 数据底座、staging、snapshot、字段映射校验、`CHARGE-RULE-001` fixture 与 staging 执行路径已具备工程基础。
 - 智能体持久化已在本地 Phase 2.1 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
+- 项目成员持久化已在本地 Phase 2.2 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
 
 未完成：
 
 - 智能体持久化尚未执行生产部署和生产库 `audit_agents` schema 应用。
-- 项目成员新增只写前端 state，未接入项目/成员/权限 API。
+- 项目成员持久化尚未执行生产部署和生产库 `audit_project_members` schema 应用。
 - AI 数据分析只完成浏览器本地 CSV 预检；XLSX 和正式工作簿解析仍等待后端。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
@@ -172,6 +173,46 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 本轮未对生产 PostgreSQL 应用 `audit_agents` schema。
 - 本轮 FastAPI 联调使用本地临时 SQLite agent store，仅证明前后端协议和持久化行为。
 
+### 2.6 Phase 2.2 本地验收状态
+
+验收日期：`2026-06-14`
+
+本轮 Phase 2.2 已完成，结论为 `pass`，范围限定为本地开发和联调环境。
+
+后端集成：
+
+- 新增 `audit_project_members` SQLAlchemy 模型和正式 SQL schema。
+- 新增 `SqlAlchemyProjectMemberStore`、`InMemoryProjectMemberStore` 和项目成员 API。
+- `/projects` 返回系统默认项目，并按自定义成员数量更新 `member_count`。
+- `/projects/{project_key}/members` 返回系统默认成员和自定义成员；默认项标记为 `source=system-default`，自定义项标记为 `source=custom`。
+- 新增自定义成员写入持久化 store，刷新或重新创建 store 后仍可读取。
+
+前端集成：
+
+- `ProjectManagementWorkbench` 启动时读取 `/api/v1/projects`。
+- 切换项目时读取 `/api/v1/projects/{project_key}/members`。
+- 新增成员必须通过 `createProjectMember` POST 后端成功后才进入页面列表。
+- 后端不可用时只显示默认内容和错误状态，不再伪造本地新增成功。
+
+本地验收：
+
+- `uv run ruff check src tests scripts`：通过。
+- `uv run mypy src`：通过，`77` 个源码文件无类型错误。
+- `uv run pytest`：通过，`247 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`10` 个 test files、`57` 个 tests。
+- `pnpm --dir web build:static`：通过，静态构建生成 `20/20` 页面。
+- 本地浏览器联调：Next `127.0.0.1:3030` + FastAPI `127.0.0.1:8021`，`/projects` 页面显示项目后端连接、成员后端连接和新增自定义成员。
+- 刷新级 API 校验：FastAPI 与 Next 代理均返回 `store.ready=true`；`CATALOG-LIMIT-202606` 自定义成员排在默认成员前，项目成员数从 `4` 增至 `5`。
+- 浏览器截图：`tmp/screenshots/tmp-screenshot-projects-phase2-member-persistence-20260614.png`。
+
+边界：
+
+- 本轮未执行生产部署。
+- 本轮未对生产 PostgreSQL 应用 `audit_project_members` schema。
+- 本轮 FastAPI 联调使用本地临时 SQLite project member store，仅证明前后端协议和持久化行为。
+
 ## 3. 债务分级
 
 | 等级 | 定义 | 处理原则 |
@@ -259,7 +300,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 优先顺序：
 
 1. 智能体 CRUD 和提示词版本：本地 Phase 2.1 已完成；生产部署和 schema 应用待执行。
-2. 项目成员管理 API 和页面持久化。
+2. 项目成员管理 API 和页面持久化：本地 Phase 2.2 已完成；生产部署和 schema 应用待执行。
 3. 表格上传分析后端和工作簿解析任务。
 4. 文档、知识库、图谱、报告、整改页面逐步接真实 API。
 

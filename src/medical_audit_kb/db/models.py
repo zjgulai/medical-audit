@@ -447,6 +447,34 @@ class AuditAgent(Base):
     )
 
 
+class AuditProjectMember(Base):
+    __tablename__ = "audit_project_members"
+    __table_args__ = (
+        Index("idx_audit_project_members_project", "project_key"),
+        Index("idx_audit_project_members_role", "role"),
+        Index("idx_audit_project_members_status", "status"),
+        Index("idx_audit_project_members_updated_at", "updated_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    member_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    project_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(String(48), nullable=False)
+    department: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="待确认")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
 class AuditProject(Base):
     __tablename__ = "audit_projects"
     __table_args__ = (

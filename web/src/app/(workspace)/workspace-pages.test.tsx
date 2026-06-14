@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditAgent } from "@/lib/api-client";
+import { createAuditAgent, createProjectMember } from "@/lib/api-client";
 import { primaryNavigation } from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
@@ -48,6 +48,30 @@ vi.mock("@/lib/api-client", () => ({
     store: { ready: true, backend: "SqlAlchemyAgentStore" }
     })
   ),
+  createProjectMember: vi.fn(
+    async (
+      projectId: string,
+      payload: {
+        readonly name: string;
+        readonly role: string;
+        readonly department: string;
+      }
+    ) => ({
+      item: {
+        id: "member-custom-test",
+        project_key: projectId,
+        name: payload.name,
+        role: payload.role,
+        department: payload.department,
+        status: "待确认",
+        created_by: "next-knowledge-query",
+        updated_at: "2026-06-14T00:00:00Z",
+        source: "custom",
+        metadata: {}
+      },
+      store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+    })
+  ),
   fetchAuditFindings: vi.fn(async () => ({
     items: [],
     stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
@@ -72,6 +96,104 @@ vi.mock("@/lib/api-client", () => ({
     status: "ok",
     version: "0.1.0",
     data_root: "/tmp/data"
+  })),
+  fetchProjectMembers: vi.fn(async (projectId: string) => ({
+    items:
+      projectId === "CATALOG-LIMIT-202606"
+        ? [
+            {
+              id: "member-catalog-owner",
+              project_key: "CATALOG-LIMIT-202606",
+              name: "业务专家",
+              role: "业务专家",
+              department: "医保办",
+              status: "在项目中",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            },
+            {
+              id: "member-catalog-it",
+              project_key: "CATALOG-LIMIT-202606",
+              name: "信息科接口人",
+              role: "信息科",
+              department: "信息科",
+              status: "待确认",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            }
+          ]
+        : [
+            {
+              id: "member-auditor",
+              project_key: "SELF-CHECK-FUND-20260607",
+              name: "审计员",
+              role: "审计员",
+              department: "内审部",
+              status: "在项目中",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            },
+            {
+              id: "member-owner",
+              project_key: "SELF-CHECK-FUND-20260607",
+              name: "项目负责人",
+              role: "项目负责人",
+              department: "内审部",
+              status: "在项目中",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            },
+            {
+              id: "member-it",
+              project_key: "SELF-CHECK-FUND-20260607",
+              name: "信息科接口人",
+              role: "信息科",
+              department: "信息科",
+              status: "待确认",
+              created_by: "system",
+              source: "system-default",
+              metadata: {}
+            }
+          ],
+    project_key: projectId,
+    roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
+    statuses: ["在项目中", "待确认"],
+    store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+  })),
+  fetchProjects: vi.fn(async () => ({
+    items: [
+      {
+        id: "SELF-CHECK-FUND-20260607",
+        name: "医保基金使用合规专项自查",
+        audit_topic: "医保基金使用合规",
+        organization_name: "单院医保内审试运行",
+        member_count: 3,
+        creator: "项目负责人",
+        created_at: "2026-06-07",
+        status: "进行中",
+        operation_label: "进入项目",
+        source: "system-default"
+      },
+      {
+        id: "CATALOG-LIMIT-202606",
+        name: "医保目录限制条件核验",
+        audit_topic: "目录限制",
+        organization_name: "单院医保内审试运行",
+        member_count: 4,
+        creator: "业务专家",
+        created_at: "2026-06-09",
+        status: "待启动",
+        operation_label: "查看成员",
+        source: "system-default"
+      }
+    ],
+    roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
+    statuses: ["在项目中", "待确认"],
+    store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
   })),
   fetchAgents: vi.fn(async () => ({
     items: [
@@ -250,10 +372,16 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("发现 1 条完全重复行。")).toBeInTheDocument();
   });
 
-  it("renders project list and member management controls", () => {
+  it("renders project list and creates project members through the backend API", async () => {
     render(<ProjectsPage />);
 
     expect(screen.getByRole("heading", { name: "审计项目管理" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("项目后端已连接")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("成员后端已连接")).toBeInTheDocument();
+    });
     expect(screen.getByRole("heading", { name: "项目列表" })).toBeInTheDocument();
     expect(screen.getByText("项目名称")).toBeInTheDocument();
     expect(screen.getByText("成员数")).toBeInTheDocument();
@@ -262,14 +390,23 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("医保目录限制条件核验")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看成员" }));
-    expect(screen.getByRole("heading", { name: "医保目录限制条件核验" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "医保目录限制条件核验" })).toBeInTheDocument();
+    });
 
     fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "赵审计" } });
     fireEvent.change(screen.getByLabelText("部门"), { target: { value: "医保办" } });
     fireEvent.click(screen.getByRole("button", { name: "添加成员" }));
 
+    await waitFor(() => {
+      expect(createProjectMember).toHaveBeenCalledWith("CATALOG-LIMIT-202606", {
+        name: "赵审计",
+        role: "审计员",
+        department: "医保办"
+      });
+    });
     expect(screen.getByText("赵审计")).toBeInTheDocument();
-    expect(screen.getByText("医保办")).toBeInTheDocument();
+    expect(screen.getAllByText("医保办").length).toBeGreaterThan(0);
     expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
 

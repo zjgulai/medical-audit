@@ -182,3 +182,71 @@ export type AgentCreateResponse = {
     readonly backend: string;
   };
 };
+
+export type ApiProjectStatus = "进行中" | "待启动" | "已归档";
+export type ApiProjectMemberRole = "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
+export type ApiProjectMemberStatus = "在项目中" | "待确认";
+
+export type ProjectSummaryApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly audit_topic: string;
+  readonly organization_name: string;
+  readonly member_count: number;
+  readonly creator: string;
+  readonly created_at: string;
+  readonly status: ApiProjectStatus;
+  readonly operation_label: string;
+  readonly source: "system-default" | string;
+};
+
+export type ProjectMemberApiItem = {
+  readonly id: string;
+  readonly project_key: string;
+  readonly name: string;
+  readonly role: ApiProjectMemberRole;
+  readonly department: string;
+  readonly status: ApiProjectMemberStatus;
+  readonly created_by: string | null;
+  readonly created_at?: string;
+  readonly updated_at?: string;
+  readonly source: "custom" | "system-default" | string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type ProjectsResponse = {
+  readonly items: readonly ProjectSummaryApiItem[];
+  readonly roles: readonly ApiProjectMemberRole[];
+  readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ProjectMembersResponse = {
+  readonly items: readonly ProjectMemberApiItem[];
+  readonly project_key: string;
+  readonly roles: readonly ApiProjectMemberRole[];
+  readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ProjectMemberCreateRequest = {
+  readonly name: string;
+  readonly role: ApiProjectMemberRole;
+  readonly department: string;
+  readonly status?: ApiProjectMemberStatus;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type ProjectMemberCreateResponse = {
+  readonly item: ProjectMemberApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};

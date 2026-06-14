@@ -13,6 +13,10 @@ from medical_audit_kb import __version__
 from medical_audit_kb.api.agent_store import AgentStore, SqlAlchemyAgentStore
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
+from medical_audit_kb.api.project_member_store import (
+    ProjectMemberStore,
+    SqlAlchemyProjectMemberStore,
+)
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
@@ -48,6 +52,7 @@ class ApiState:
     audit_finding_store: SqlAlchemyAuditFindingStore | None = None
     audit_log_store: AuditLogStore | None = None
     agent_store: AgentStore | None = None
+    project_member_store: ProjectMemberStore | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -59,6 +64,7 @@ class ApiState:
             audit_finding_store=SqlAlchemyAuditFindingStore(settings.database_url),
             audit_log_store=SqlAlchemyAuditLogStore(settings.database_url),
             agent_store=SqlAlchemyAgentStore(settings.database_url),
+            project_member_store=SqlAlchemyProjectMemberStore(settings.database_url),
         )
 
     @property
@@ -108,11 +114,13 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
     from medical_audit_kb.api.routes_preview import router as preview_router
+    from medical_audit_kb.api.routes_projects import router as projects_router
     from medical_audit_kb.api.routes_query import router as query_router
 
     app.include_router(pages_router)
     app.include_router(query_router)
     app.include_router(agents_router)
+    app.include_router(projects_router)
     app.include_router(index_router)
     app.include_router(preview_router)
     return app

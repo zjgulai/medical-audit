@@ -4,6 +4,10 @@ import type {
   AgentsResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  ProjectMemberCreateRequest,
+  ProjectMemberCreateResponse,
+  ProjectMembersResponse,
+  ProjectsResponse,
   QueryRequest,
   QueryResponse,
   SearchBackendStatusResponse
@@ -83,4 +87,22 @@ export function fetchAgents(): Promise<AgentsResponse> {
 
 export function createAuditAgent(payload: AgentCreateRequest): Promise<AgentCreateResponse> {
   return postJson<AgentCreateResponse>("/api/v1/agents", payload);
+}
+
+export function fetchProjects(): Promise<ProjectsResponse> {
+  return getJson<ProjectsResponse>("/api/v1/projects");
+}
+
+export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
+  return getJson<ProjectMembersResponse>(`/api/v1/projects/${encodeURIComponent(projectId)}/members`);
+}
+
+export function createProjectMember(
+  projectId: string,
+  payload: ProjectMemberCreateRequest
+): Promise<ProjectMemberCreateResponse> {
+  return postJson<ProjectMemberCreateResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
+    payload
+  );
 }
