@@ -1,9 +1,17 @@
 import type {
+  AgentCreateRequest,
+  AgentCreateResponse,
+  AgentsResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  ProjectMemberCreateRequest,
+  ProjectMemberCreateResponse,
+  ProjectMembersResponse,
+  ProjectsResponse,
   QueryRequest,
   QueryResponse,
-  SearchBackendStatusResponse
+  SearchBackendStatusResponse,
+  TableAnalysisUploadResponse
 } from "./api-types";
 
 function assertBackendProxyClientRuntime(): void {
@@ -51,6 +59,27 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function postForm<T>(path: string, formData: FormData): Promise<T> {
+  assertBackendProxyClientRuntime();
+
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "X-Role": "auditor",
+      "X-User-Id": "next-knowledge-query"
+    },
+    body: formData,
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 export function fetchBackendHealth(): Promise<BackendHealthResponse> {
   return getJson<BackendHealthResponse>("/api/backend/health");
 }
@@ -71,5 +100,37 @@ export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindings
   const queryString = params.toString();
   return getJson<AuditFindingsResponse>(
     `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData);
+}
+
+export function fetchAgents(): Promise<AgentsResponse> {
+  return getJson<AgentsResponse>("/api/v1/agents");
+}
+
+export function createAuditAgent(payload: AgentCreateRequest): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>("/api/v1/agents", payload);
+}
+
+export function fetchProjects(): Promise<ProjectsResponse> {
+  return getJson<ProjectsResponse>("/api/v1/projects");
+}
+
+export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
+  return getJson<ProjectMembersResponse>(`/api/v1/projects/${encodeURIComponent(projectId)}/members`);
+}
+
+export function createProjectMember(
+  projectId: string,
+  payload: ProjectMemberCreateRequest
+): Promise<ProjectMemberCreateResponse> {
+  return postJson<ProjectMemberCreateResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
+    payload
   );
 }

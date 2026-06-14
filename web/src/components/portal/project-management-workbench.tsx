@@ -1,8 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
+import { createProjectMember, fetchProjectMembers, fetchProjects } from "@/lib/api-client";
+import type { ProjectMemberApiItem, ProjectSummaryApiItem } from "@/lib/api-types";
 import {
   defaultProjectMembers,
   portalProjectSummaries,
@@ -11,23 +13,28 @@ import {
 } from "@/lib/portal-data";
 import { currentSelfCheckProject } from "@/lib/projects";
 
-const memberRoles: readonly PortalProjectMember["role"][] = ["审计员", "业务专家", "信息科", "只读观察员"];
+const memberRoles: readonly PortalProjectMember["role"][] = ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"];
 const projectStatusTone: Record<PortalProjectSummary["status"], "neutral" | "warning" | "success"> = {
   进行中: "success",
   待启动: "warning",
   已归档: "neutral"
 };
+type StoreStatus = "loading" | "ready" | "fallback" | "saving";
 
 export function ProjectManagementWorkbench() {
   const project = currentSelfCheckProject;
+  const [projects, setProjects] = useState<readonly PortalProjectSummary[]>(portalProjectSummaries);
   const [selectedProjectId, setSelectedProjectId] = useState(project.id);
-  const [members, setMembers] = useState<readonly PortalProjectMember[]>(defaultProjectMembers);
+  const [members, setMembers] = useState<readonly PortalProjectMember[]>(defaultMembersForProject(project.id));
   const [projectQuery, setProjectQuery] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<PortalProjectMember["role"]>("审计员");
   const [department, setDepartment] = useState("内审部");
+  const [projectStoreStatus, setProjectStoreStatus] = useState<StoreStatus>("loading");
+  const [memberStoreStatus, setMemberStoreStatus] = useState<StoreStatus>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const normalizedProjectQuery = projectQuery.trim().toLowerCase();
-  const filteredProjects = portalProjectSummaries.filter((item) => {
+  const filteredProjects = projects.filter((item) => {
     if (!normalizedProjectQuery) {
       return true;
     }
@@ -36,11 +43,65 @@ export function ProjectManagementWorkbench() {
       value.toLowerCase().includes(normalizedProjectQuery)
     );
   });
-  const selectedProject = portalProjectSummaries.find((item) => item.id === selectedProjectId) ?? portalProjectSummaries[0];
-  const activeProjectCount = portalProjectSummaries.filter((item) => item.status === "进行中").length;
-  const pendingProjectCount = portalProjectSummaries.filter((item) => item.status === "待启动").length;
+  const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? projects[0] ?? portalProjectSummaries[0];
+  const activeProjectCount = projects.filter((item) => item.status === "进行中").length;
+  const pendingProjectCount = projects.filter((item) => item.status === "待启动").length;
 
-  function submitMember(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchProjects()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        const nextProjects = response.items.map(apiProjectToPortalProject);
+        if (nextProjects.length > 0) {
+          setProjects(nextProjects);
+          setSelectedProjectId((current) =>
+            nextProjects.some((item) => item.id === current) ? current : nextProjects[0].id
+          );
+        }
+        setProjectStoreStatus(response.store.ready ? "ready" : "fallback");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setProjectStoreStatus("fallback");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    setMemberStoreStatus("loading");
+
+    fetchProjectMembers(selectedProjectId)
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        setMembers(response.items.map(apiMemberToPortalMember));
+        setMemberStoreStatus(response.store.ready ? "ready" : "fallback");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setMembers(defaultMembersForProject(selectedProjectId));
+        setMemberStoreStatus("fallback");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedProjectId]);
+
+  async function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedName = name.trim();
     const normalizedDepartment = department.trim();
@@ -49,17 +110,27 @@ export function ProjectManagementWorkbench() {
       return;
     }
 
-    setMembers((current) => [
-      ...current,
-      {
-        id: `member-${Date.now()}`,
+    setMemberStoreStatus("saving");
+    setErrorMessage(null);
+    try {
+      const response = await createProjectMember(selectedProject.id, {
         name: normalizedName,
         role,
-        department: normalizedDepartment,
-        status: "待确认"
-      }
-    ]);
-    setName("");
+        department: normalizedDepartment
+      });
+      const nextMember = apiMemberToPortalMember(response.item);
+      setMembers((current) => [nextMember, ...current.filter((member) => member.id !== nextMember.id)]);
+      setProjects((current) =>
+        current.map((item) =>
+          item.id === selectedProject.id ? { ...item, memberCount: item.memberCount + 1 } : item
+        )
+      );
+      setName("");
+      setMemberStoreStatus(response.store.ready ? "ready" : "fallback");
+    } catch {
+      setMemberStoreStatus("fallback");
+      setErrorMessage("成员未保存，后端项目成员接口暂不可用。");
+    }
   }
 
   return (
@@ -91,7 +162,12 @@ export function ProjectManagementWorkbench() {
               <h1 className="audit-page-title">审计项目管理</h1>
               <p className="audit-meta mt-2">{project.organizationName} / {project.dateRange}</p>
             </div>
-            <StatusPill tone="success">项目进行中</StatusPill>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone="success">项目进行中</StatusPill>
+              <StatusPill tone={projectStoreStatus === "ready" ? "success" : "neutral"}>
+                {projectStoreStatusLabel(projectStoreStatus)}
+              </StatusPill>
+            </div>
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -161,7 +237,12 @@ export function ProjectManagementWorkbench() {
               <h2 className="audit-section-title mt-2">{selectedProject.name}</h2>
               <p className="audit-copy mt-2">角色展示和新增入口先用于首期项目空间组织，权限生效后置。</p>
             </div>
-            <StatusPill tone={projectStatusTone[selectedProject.status]}>{selectedProject.status}</StatusPill>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill tone={projectStatusTone[selectedProject.status]}>{selectedProject.status}</StatusPill>
+              <StatusPill tone={memberStoreStatus === "ready" ? "success" : "neutral"}>
+                {memberStoreStatusLabel(memberStoreStatus)}
+              </StatusPill>
+            </div>
           </div>
 
           <div className="audit-table-shell mt-6 max-w-full overflow-x-auto">
@@ -237,14 +318,77 @@ export function ProjectManagementWorkbench() {
                 onChange={(event) => setDepartment(event.target.value)}
               />
             </label>
-            <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
-              添加成员
+            {errorMessage ? (
+              <p className="text-sm font-semibold text-[var(--audit-red)]" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
+            <button
+              className="audit-focus-ring audit-btn audit-btn-primary w-full"
+              type="submit"
+              disabled={memberStoreStatus === "saving"}
+            >
+              {memberStoreStatus === "saving" ? "保存中" : "添加成员"}
             </button>
           </form>
         </section>
       </aside>
     </main>
   );
+}
+
+function apiProjectToPortalProject(project: ProjectSummaryApiItem): PortalProjectSummary {
+  return {
+    id: project.id,
+    name: project.name,
+    auditTopic: project.audit_topic,
+    organizationName: project.organization_name,
+    memberCount: project.member_count,
+    creator: project.creator,
+    createdAt: project.created_at,
+    status: project.status,
+    operationLabel: project.operation_label
+  };
+}
+
+function apiMemberToPortalMember(member: ProjectMemberApiItem): PortalProjectMember {
+  return {
+    id: member.id,
+    name: member.name,
+    role: member.role,
+    department: member.department,
+    status: member.status
+  };
+}
+
+function defaultMembersForProject(projectId: string): readonly PortalProjectMember[] {
+  if (projectId === currentSelfCheckProject.id) {
+    return defaultProjectMembers;
+  }
+  return [];
+}
+
+function projectStoreStatusLabel(status: StoreStatus): string {
+  if (status === "ready") {
+    return "项目后端已连接";
+  }
+  if (status === "loading") {
+    return "项目连接中";
+  }
+  return "项目默认内容";
+}
+
+function memberStoreStatusLabel(status: StoreStatus): string {
+  if (status === "ready") {
+    return "成员后端已连接";
+  }
+  if (status === "saving") {
+    return "成员保存中";
+  }
+  if (status === "loading") {
+    return "成员连接中";
+  }
+  return "成员默认内容";
 }
 
 function SidebarMetric({ label, value }: { readonly label: string; readonly value: string }) {

@@ -1,12 +1,15 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
+import { createAuditAgent, fetchAgents } from "@/lib/api-client";
+import type { AuditAgentApiItem } from "@/lib/api-types";
 import { AgentCategory, AuditAgent, auditAgentTemplates, defaultAuditAgents } from "@/lib/portal-data";
 
 const agentCategories: readonly AgentCategory[] = ["业务类", "效率类", "研究类"];
 type AgentCategoryFilter = "全部" | AgentCategory;
+type AgentStoreStatus = "loading" | "ready" | "fallback" | "saving";
 
 export function AgentWorkspace() {
   const [agents, setAgents] = useState<readonly AuditAgent[]>(defaultAuditAgents);
@@ -16,10 +19,41 @@ export function AgentWorkspace() {
   const [category, setCategory] = useState<AgentCategory>("业务类");
   const [topic, setTopic] = useState("医保基金使用合规");
   const [prompt, setPrompt] = useState("");
+  const [storeStatus, setStoreStatus] = useState<AgentStoreStatus>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const filteredAgents = categoryFilter === "全部" ? agents : agents.filter((agent) => agent.category === categoryFilter);
-  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? agents[0];
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? defaultAuditAgents[0];
 
-  function submitAgent(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchAgents()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        const nextAgents = response.items.map(apiAgentToPortalAgent);
+        if (nextAgents.length > 0) {
+          setAgents(nextAgents);
+          setSelectedAgentId((current) =>
+            nextAgents.some((agent) => agent.id === current) ? current : nextAgents[0].id
+          );
+        }
+        setStoreStatus(response.store.ready ? "ready" : "fallback");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setStoreStatus("fallback");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  async function submitAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedName = name.trim();
     const normalizedPrompt = prompt.trim();
@@ -29,21 +63,27 @@ export function AgentWorkspace() {
       return;
     }
 
-    const nextAgent: AuditAgent = {
-      id: `agent-${Date.now()}`,
-      name: normalizedName,
-      category,
-      topic: normalizedTopic,
-      prompt: normalizedPrompt,
-      knowledgeBase: "项目默认知识库",
-      projectName: "医保基金使用合规专项自查",
-      updatedAt: "刚刚"
-    };
-
-    setAgents((current) => [nextAgent, ...current]);
-    setSelectedAgentId(nextAgent.id);
-    setName("");
-    setPrompt("");
+    setStoreStatus("saving");
+    setErrorMessage(null);
+    try {
+      const response = await createAuditAgent({
+        name: normalizedName,
+        category,
+        topic: normalizedTopic,
+        prompt: normalizedPrompt,
+        knowledge_base: "项目默认知识库",
+        project_name: "医保基金使用合规专项自查"
+      });
+      const nextAgent = apiAgentToPortalAgent(response.item);
+      setAgents((current) => [nextAgent, ...current.filter((agent) => agent.id !== nextAgent.id)]);
+      setSelectedAgentId(nextAgent.id);
+      setName("");
+      setPrompt("");
+      setStoreStatus(response.store.ready ? "ready" : "fallback");
+    } catch {
+      setStoreStatus("fallback");
+      setErrorMessage("智能体未保存，后端持久化接口暂不可用。");
+    }
   }
 
   return (
@@ -87,7 +127,12 @@ export function AgentWorkspace() {
             <h1 className="audit-page-title">提示词型审计智能体</h1>
             <p className="audit-copy mt-2 max-w-3xl">按参考工作台组织智能体、提示词、知识库绑定和审证入口。</p>
           </div>
-          <StatusPill tone="info">一体一提示词</StatusPill>
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone="info">一体一提示词</StatusPill>
+            <StatusPill tone={storeStatus === "ready" ? "success" : "neutral"}>
+              {agentStoreStatusLabel(storeStatus)}
+            </StatusPill>
+          </div>
         </div>
 
         <section className="audit-panel-muted mt-6 p-5">
@@ -181,8 +226,17 @@ export function AgentWorkspace() {
                 placeholder="写清审计对象、证据约束、输出格式和人工复核边界。"
               />
             </label>
-            <button className="audit-focus-ring audit-btn audit-btn-primary w-full" type="submit">
-              新增智能体
+            {errorMessage ? (
+              <p className="text-sm font-semibold text-[var(--audit-red)]" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
+            <button
+              className="audit-focus-ring audit-btn audit-btn-primary w-full"
+              type="submit"
+              disabled={storeStatus === "saving"}
+            >
+              {storeStatus === "saving" ? "保存中" : "新增智能体"}
             </button>
           </form>
         </section>
@@ -201,6 +255,39 @@ export function AgentWorkspace() {
       </aside>
     </main>
   );
+}
+
+function apiAgentToPortalAgent(agent: AuditAgentApiItem): AuditAgent {
+  return {
+    id: agent.id,
+    name: agent.name,
+    category: agent.category,
+    topic: agent.topic,
+    prompt: agent.prompt,
+    knowledgeBase: agent.knowledge_base,
+    projectName: agent.project_name,
+    updatedAt: formatAgentUpdatedAt(agent.updated_at)
+  };
+}
+
+function formatAgentUpdatedAt(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    return value.slice(0, 10);
+  }
+  return value;
+}
+
+function agentStoreStatusLabel(status: AgentStoreStatus): string {
+  if (status === "ready") {
+    return "后端已连接";
+  }
+  if (status === "saving") {
+    return "保存中";
+  }
+  if (status === "loading") {
+    return "连接中";
+  }
+  return "默认内容";
 }
 
 function AgentListItem({

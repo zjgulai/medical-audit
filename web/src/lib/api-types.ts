@@ -14,6 +14,33 @@ export type SearchBackendStatusResponse = {
   readonly details?: SearchBackendDetails;
 };
 
+export type TableAnalysisColumnType = "数值" | "日期" | "标识" | "文本" | "空列";
+
+export type TableAnalysisColumnProfile = {
+  readonly name: string;
+  readonly type: TableAnalysisColumnType;
+  readonly empty_count: number;
+  readonly unique_count: number;
+  readonly sample_values: readonly string[];
+  readonly audit_hint: string;
+};
+
+export type TableAnalysisUploadResponse = {
+  readonly name: string;
+  readonly size_kb: number;
+  readonly extension: string;
+  readonly status: "parsed";
+  readonly sheet_name: string | null;
+  readonly columns: readonly TableAnalysisColumnProfile[];
+  readonly row_count: number;
+  readonly empty_cell_count: number;
+  readonly duplicate_row_count: number;
+  readonly message: string;
+  readonly quality_findings: readonly string[];
+  readonly audit_signals: readonly string[];
+  readonly recommendations: readonly string[];
+};
+
 export type SourceCollection =
   | "medical-insurance-laws"
   | "supervision-rules-knowledge"
@@ -132,6 +159,119 @@ export type AuditFindingsResponse = {
   };
   readonly review_status_options: Record<string, string>;
   readonly generation_readiness: AuditFindingGenerationReadiness;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ApiAgentCategory = "效率类" | "业务类" | "研究类";
+
+export type AuditAgentApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly category: ApiAgentCategory;
+  readonly topic: string;
+  readonly prompt: string;
+  readonly knowledge_base: string;
+  readonly project_name: string;
+  readonly status: string;
+  readonly created_by: string | null;
+  readonly created_at?: string;
+  readonly updated_at: string;
+  readonly source: "custom" | "system-default" | string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type AgentsResponse = {
+  readonly items: readonly AuditAgentApiItem[];
+  readonly categories: readonly ApiAgentCategory[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentCreateRequest = {
+  readonly name: string;
+  readonly category: ApiAgentCategory;
+  readonly topic: string;
+  readonly prompt: string;
+  readonly knowledge_base?: string;
+  readonly project_name?: string;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type AgentCreateResponse = {
+  readonly item: AuditAgentApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ApiProjectStatus = "进行中" | "待启动" | "已归档";
+export type ApiProjectMemberRole = "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
+export type ApiProjectMemberStatus = "在项目中" | "待确认";
+
+export type ProjectSummaryApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly audit_topic: string;
+  readonly organization_name: string;
+  readonly member_count: number;
+  readonly creator: string;
+  readonly created_at: string;
+  readonly status: ApiProjectStatus;
+  readonly operation_label: string;
+  readonly source: "system-default" | string;
+};
+
+export type ProjectMemberApiItem = {
+  readonly id: string;
+  readonly project_key: string;
+  readonly name: string;
+  readonly role: ApiProjectMemberRole;
+  readonly department: string;
+  readonly status: ApiProjectMemberStatus;
+  readonly created_by: string | null;
+  readonly created_at?: string;
+  readonly updated_at?: string;
+  readonly source: "custom" | "system-default" | string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type ProjectsResponse = {
+  readonly items: readonly ProjectSummaryApiItem[];
+  readonly roles: readonly ApiProjectMemberRole[];
+  readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ProjectMembersResponse = {
+  readonly items: readonly ProjectMemberApiItem[];
+  readonly project_key: string;
+  readonly roles: readonly ApiProjectMemberRole[];
+  readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ProjectMemberCreateRequest = {
+  readonly name: string;
+  readonly role: ApiProjectMemberRole;
+  readonly department: string;
+  readonly status?: ApiProjectMemberStatus;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type ProjectMemberCreateResponse = {
+  readonly item: ProjectMemberApiItem;
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;

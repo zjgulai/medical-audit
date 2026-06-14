@@ -1,11 +1,18 @@
 import json
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 
+from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.project_member_store import (
+    PROJECT_MEMBER_ID_PREFIX,
+    SqlAlchemyProjectMemberStore,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -33,6 +40,243 @@ def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["data_root"] == str(tmp_path / "data")
+
+
+def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    list_response = client.get("/agents")
+
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["store"]["backend"] == "SqlAlchemyAgentStore"
+    assert list_body["categories"] == ["业务类", "效率类", "研究类"]
+    assert [item["id"] for item in list_body["items"][:3]] == [
+        "agent-citation-check",
+        "agent-duplicate-charge",
+        "agent-report-draft",
+    ]
+
+    create_response = client.post(
+        "/agents",
+        headers={"X-User-Id": "auditor-1"},
+        json={
+            "name": "目录限制核验助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "仅基于目录限制字段和引用依据输出待补证问题。",
+            "knowledge_base": "医保目录库",
+            "project_name": "医保目录限制条件核验",
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["id"].startswith(AGENT_ID_PREFIX)
+    assert created["created_by"] == "auditor-1"
+    assert created["source"] == "custom"
+    assert state.operation_logs[-1]["action"] == "agent-create"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.agent_store = SqlAlchemyAgentStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_items = second_client.get("/agents").json()["items"]
+
+    assert persisted_items[0]["id"] == created["id"]
+    assert persisted_items[0]["name"] == "目录限制核验助手"
+    assert any(item["id"] == "agent-citation-check" for item in persisted_items)
+
+
+def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'agents.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/agents",
+        json={
+            "name": "未知分类助手",
+            "category": "其他",
+            "topic": "医保基金使用合规",
+            "prompt": "输出审计问题。",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    projects_response = client.get("/projects")
+
+    assert projects_response.status_code == 200
+    projects_body = projects_response.json()
+    assert projects_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
+    assert projects_body["roles"] == ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"]
+    assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
+    assert projects_body["items"][0]["member_count"] == 3
+
+    members_response = client.get("/projects/CATALOG-LIMIT-202606/members")
+
+    assert members_response.status_code == 200
+    members_body = members_response.json()
+    assert members_body["project_key"] == "CATALOG-LIMIT-202606"
+    assert len(members_body["items"]) == 4
+    assert members_body["items"][0]["source"] == "system-default"
+
+    create_response = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers={"X-User-Id": "auditor-1"},
+        json={
+            "name": "赵审计",
+            "role": "审计员",
+            "department": "医保办",
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["id"].startswith(PROJECT_MEMBER_ID_PREFIX)
+    assert created["project_key"] == "CATALOG-LIMIT-202606"
+    assert created["status"] == "待确认"
+    assert created["created_by"] == "auditor-1"
+    assert state.operation_logs[-1]["action"] == "project-member-create"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()[
+        "items"
+    ]
+    persisted_projects = second_client.get("/projects").json()["items"]
+    catalog_project = next(
+        item for item in persisted_projects if item["id"] == "CATALOG-LIMIT-202606"
+    )
+
+    assert persisted_members[0]["id"] == created["id"]
+    assert persisted_members[0]["name"] == "赵审计"
+    assert any(item["id"] == "member-catalog-owner" for item in persisted_members)
+    assert catalog_project["member_count"] == 5
+
+
+def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    missing_response = client.get("/projects/UNKNOWN/members")
+    invalid_role_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        json={
+            "name": "未知角色",
+            "role": "访客",
+            "department": "医保办",
+        },
+    )
+
+    assert missing_response.status_code == 404
+    assert invalid_role_response.status_code == 422
+
+
+def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/analytics/table-upload",
+        files={
+            "file": (
+                "charge-sample.csv",
+                "\n".join(
+                    [
+                        "patient_id,visit_date,item_code,charge_amount,insurance_pay",
+                        "P001,2026-01-01,A100,120.00,80.00",
+                        "P001,2026-01-01,A100,120.00,80.00",
+                        "P002,2026-01-02,B200,,50.00",
+                    ]
+                ),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "charge-sample.csv"
+    assert body["extension"] == "csv"
+    assert body["status"] == "parsed"
+    assert body["row_count"] == 3
+    assert body["duplicate_row_count"] == 1
+    assert body["empty_cell_count"] == 1
+    assert body["audit_signals"] == [
+        "金额/费用字段",
+        "患者/就诊字段",
+        "日期/时间字段",
+        "项目/药品/目录字段",
+        "医保支付字段",
+    ]
+    assert body["columns"][0]["type"] == "标识"
+    assert "发现 1 条完全重复行。" in body["quality_findings"]
+    assert state.operation_logs[-1]["action"] == "analytics-table-upload"
+
+
+def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "收费明细"
+    worksheet.append(["患者编号", "结算日期", "项目编码", "收费金额"])
+    worksheet.append(["P001", "2026-01-01", "A100", 120])
+    worksheet.append(["P002", "2026-01-02", "B200", 80])
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    response = client.post(
+        "/analytics/table-upload",
+        files={
+            "file": (
+                "charge-workbook.xlsx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "charge-workbook.xlsx"
+    assert body["extension"] == "xlsx"
+    assert body["sheet_name"] == "收费明细"
+    assert body["row_count"] == 2
+    assert body["columns"][3]["name"] == "收费金额"
+    assert body["columns"][3]["type"] == "数值"
+    assert body["message"] == "后端已完成 XLSX 工作簿（sheet: 收费明细）的字段画像。"
+
+
+def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/analytics/table-upload",
+        files={"file": ("charges.txt", "not,a,supported,file", "text/plain")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported table file extension"
 
 
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:

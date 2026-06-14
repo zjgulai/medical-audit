@@ -1,3 +1,4 @@
+import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
 import { KnowledgeBaseCard, knowledgeBases } from "@/lib/portal-data";
 
@@ -11,6 +12,9 @@ export default function KnowledgeBasePage() {
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">知识库目录</h2>
         <p className="audit-copy mt-2">首期不在前台变更索引，只展示范围、负责人和可检索状态。</p>
+        <div className="mt-3">
+          <SearchBackendStatusPill />
+        </div>
         <div className="mt-5 space-y-3">
           {knowledgeBases.map((kb) => (
             <KnowledgeBaseDirectoryItem key={kb.id} kb={kb} />

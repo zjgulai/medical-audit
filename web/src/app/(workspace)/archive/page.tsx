@@ -1,3 +1,4 @@
+import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   archiveAuditRuns,
@@ -25,6 +26,9 @@ export default function ArchivePage() {
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">档案包索引</h2>
         <p className="audit-copy mt-2">归档前检查继承报告、整改、日志和签名链状态。</p>
+        <div className="mt-3">
+          <SearchBackendStatusPill />
+        </div>
         <div className="mt-5 space-y-3">
           {archivePackages.map((item) => (
             <ArchiveIndexCard key={item.id} item={item} />

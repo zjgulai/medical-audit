@@ -1,11 +1,12 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import { fetchAuditFindings } from "@/lib/api-client";
 import { StatusPill } from "@/components/ui/status-pill";
-import {
-  rectificationSummaries,
-  reportEntries,
-  reportEvidenceSources,
-  reportGateItems
-} from "@/lib/portal-data";
+import { rectificationSummaries, reportEntries, reportEvidenceSources, reportGateItems } from "@/lib/portal-data";
 import type { RectificationSummary, ReportEntry, ReportEvidenceSource, ReportGateItem } from "@/lib/portal-data";
+import type { AuditFinding } from "@/lib/api-types";
 
 const reportWorkflowSteps = [
   {
@@ -25,12 +26,91 @@ const reportWorkflowSteps = [
   }
 ] as const;
 
-const signedReportCount = reportEntries.filter((entry) => entry.status === "已签发").length;
-const blockedReportCount = reportEntries.filter((entry) => entry.status === "门禁阻断").length;
-const includedFindingCount = reportEntries.reduce((sum, entry) => sum + entry.includedFindingCount, 0);
-const openRectificationCount = rectificationSummaries.filter((item) => item.status !== "已整改").length;
+type ReportPageDashboardData = {
+  readonly reportEntries: readonly ReportEntry[];
+  readonly reportEvidenceSources: readonly ReportEvidenceSource[];
+};
+
+type LoadState =
+  | { readonly status: "fallback" }
+  | { readonly status: "backend" }
+  | { readonly status: "error" };
+
+const initialDashboardData: ReportPageDashboardData = {
+  reportEntries,
+  reportEvidenceSources
+};
+
+const reviewStatusLabel: Record<string, string> = {
+  "pending-review": "待复核",
+  "needs-evidence": "需补证",
+  "confirmed-violation": "确认违规",
+  "rule-issue": "规则问题",
+  "data-issue": "数据问题",
+  "not-violation": "未发现违规",
+  closed: "已关闭"
+};
 
 export default function ReportsPage() {
+  const [dashboardData, setDashboardData] = useState<ReportPageDashboardData>(initialDashboardData);
+  const [loadState, setLoadState] = useState<LoadState>({ status: "fallback" });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchAuditFindings()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        if (response.items.length === 0) {
+          return;
+        }
+        const mappedEntries = mapFindingsToReportEntries(response.items);
+        const mappedEvidenceSources = mapFindingsToEvidenceSources(response.items);
+        setDashboardData({
+          reportEntries: mappedEntries,
+          reportEvidenceSources: mappedEvidenceSources
+        });
+        setLoadState({ status: "backend" });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadState({ status: "error" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const signedReportCount = useMemo(
+    () => dashboardData.reportEntries.filter((entry) => entry.status === "已签发").length,
+    [dashboardData]
+  );
+  const blockedReportCount = useMemo(
+    () => dashboardData.reportEntries.filter((entry) => entry.status === "门禁阻断").length,
+    [dashboardData]
+  );
+  const includedFindingCount = useMemo(
+    () => dashboardData.reportEntries.reduce((sum, entry) => sum + entry.includedFindingCount, 0),
+    [dashboardData]
+  );
+  const openRectificationCount = useMemo(
+    () => rectificationSummaries.filter((item) => item.status !== "已整改").length,
+    []
+  );
+  const dataSourceTag = useMemo(() => {
+    if (loadState.status === "backend") {
+      return "后端驱动";
+    }
+    if (loadState.status === "error") {
+      return "样例模式（后端异常）";
+    }
+    return "样例数据";
+  }, [loadState]);
+
   return (
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
@@ -60,7 +140,9 @@ export default function ReportsPage() {
               把复核结论、底稿、附件、负责人确认和整改事项组织成可追溯的报告首页。
             </p>
           </div>
-          <StatusPill tone="warning">人工门禁</StatusPill>
+          <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>
+            {dataSourceTag}
+          </StatusPill>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -81,7 +163,7 @@ export default function ReportsPage() {
           </div>
 
           <div className="mt-4 grid gap-3">
-            {reportEntries.map((entry) => (
+            {dashboardData.reportEntries.map((entry) => (
               <ReportRecordCard key={entry.id} entry={entry} />
             ))}
           </div>
@@ -113,7 +195,7 @@ export default function ReportsPage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">底稿证据来源</h2>
           <div className="mt-4 space-y-3">
-            {reportEvidenceSources.map((source) => (
+            {dashboardData.reportEvidenceSources.map((source) => (
               <EvidenceSourceCard key={source.id} source={source} />
             ))}
           </div>
@@ -136,6 +218,60 @@ export default function ReportsPage() {
       </aside>
     </main>
   );
+}
+
+function mapFindingsToReportEntries(items: readonly AuditFinding[]): readonly ReportEntry[] {
+  return items.map((finding, index) => {
+    const status = mapFindingReviewStatusToReportStatus(finding.review_status);
+    const evidenceCount = finding.evidence_items.length;
+    const findingStatusLabel = reviewStatusLabel[finding.review_status] ?? finding.review_status;
+
+    return {
+      id: finding.finding_key,
+      title: `${finding.finding_type} · ${finding.finding_key}`,
+      status,
+      reportNo: makeReportNo(finding.finding_key, finding.updated_at),
+      owner: "审计员",
+      source: finding.review_task_id ?? finding.audit_task_key ?? `task-${String(index + 1).padStart(3, "0")}`,
+      includedFindingCount: status === "门禁阻断" || status === "草稿" ? 0 : 1,
+      appendixCount: evidenceCount,
+      gateSummary: `${findingStatusLabel}（疑点类型：${finding.finding_type}）`,
+      updatedAt: formatDate(finding.updated_at),
+      href: "/pages/review-tasks"
+    };
+  });
+}
+
+function mapFindingsToEvidenceSources(items: readonly AuditFinding[]): readonly ReportEvidenceSource[] {
+  const sourceItems = items.slice(0, 6).map((finding) => ({
+    id: `source-${finding.finding_key}`,
+    title: finding.finding_key,
+    kind: "疑点" as const,
+    reference: `${finding.finding_type} · ${finding.evidence_items.length} 条证据`,
+    status: finding.evidence_items.length > 0 ? ("已纳入" as const) : ("待补证" as const),
+    href: "/findings"
+  }));
+  return sourceItems.length > 0 ? sourceItems : reportEvidenceSources;
+}
+
+function makeReportNo(findingKey: string, updatedAt: string): string {
+  const prefix = formatDate(updatedAt).replace(/-/g, "");
+  const suffix = findingKey.slice(-6).toUpperCase();
+  return `REPORT-${prefix}-${suffix}`;
+}
+
+function formatDate(value: string): string {
+  return value.includes("T") ? value.split("T")[0] : value.slice(0, 10);
+}
+
+function mapFindingReviewStatusToReportStatus(reviewStatus: string): ReportEntry["status"] {
+  if (reviewStatus === "pending-review") {
+    return "草稿";
+  }
+  if (reviewStatus === "needs-evidence") {
+    return "门禁阻断";
+  }
+  return "已签发";
 }
 
 function ReportMetric({ label, value }: { readonly label: string; readonly value: string }) {

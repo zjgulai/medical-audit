@@ -212,6 +212,40 @@ CREATE TABLE IF NOT EXISTS review_comments (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS audit_agents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_key text NOT NULL UNIQUE,
+    name text NOT NULL,
+    category text NOT NULL,
+    topic text NOT NULL,
+    prompt text NOT NULL,
+    knowledge_base text NOT NULL,
+    project_name text NOT NULL,
+    status text NOT NULL DEFAULT 'active',
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_audit_agents_category CHECK (category IN ('业务类', '效率类', '研究类'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_project_members (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    member_key text NOT NULL UNIQUE,
+    project_key text NOT NULL,
+    name text NOT NULL,
+    role text NOT NULL,
+    department text NOT NULL,
+    status text NOT NULL DEFAULT '待确认',
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_audit_project_members_role
+        CHECK (role IN ('项目负责人', '审计员', '业务专家', '信息科', '只读观察员')),
+    CONSTRAINT ck_audit_project_members_status CHECK (status IN ('在项目中', '待确认'))
+);
+
 CREATE TABLE IF NOT EXISTS audit_projects (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     project_key text NOT NULL UNIQUE,
@@ -462,6 +496,15 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_task ON review_comments (review_t
 CREATE INDEX IF NOT EXISTS idx_review_comments_task_created_at
     ON review_comments (review_task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_comments_visibility ON review_comments (visibility);
+CREATE INDEX IF NOT EXISTS idx_audit_agents_category ON audit_agents (category);
+CREATE INDEX IF NOT EXISTS idx_audit_agents_status ON audit_agents (status);
+CREATE INDEX IF NOT EXISTS idx_audit_agents_updated_at ON audit_agents (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_project_members_project
+    ON audit_project_members (project_key);
+CREATE INDEX IF NOT EXISTS idx_audit_project_members_role ON audit_project_members (role);
+CREATE INDEX IF NOT EXISTS idx_audit_project_members_status ON audit_project_members (status);
+CREATE INDEX IF NOT EXISTS idx_audit_project_members_updated_at
+    ON audit_project_members (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_status ON audit_projects (status);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_scenario ON audit_projects (scenario_key);
 CREATE INDEX IF NOT EXISTS idx_his_source_batches_project ON his_source_batches (project_id);

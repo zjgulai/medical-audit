@@ -1,3 +1,4 @@
+import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
 import { graphNodes, graphRelations, GraphNode, GraphNodeKind, GraphRelation } from "@/lib/portal-data";
 
@@ -24,6 +25,9 @@ export default function GraphPage() {
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">节点覆盖</h2>
         <p className="audit-copy mt-2">按审计链路查看项目、知识、规则、疑点、复核和整改覆盖。</p>
+        <div className="mt-3">
+          <SearchBackendStatusPill />
+        </div>
         <div className="mt-5 grid grid-cols-2 gap-2">
           {kindStats.map((item) => (
             <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2">

@@ -28,6 +28,7 @@ REQUIRED_PAGES = {
     "/pages/query": ("医保审核知识库查询", "文档检索"),
     "/pages/review-tasks": ("AI智能审计管理系统", "审计底稿/报告"),
     "/pages/index-admin": ("索引管理", "检索后端"),
+    "/pages/audit-logs": ("审计日志台", "审计日志"),
 }
 
 
@@ -49,19 +50,24 @@ class SmokeAuth:
     admin_api_key: str | None
     api_key_env: str | None
     admin_api_key_env: str | None
+    admin_role: str = "it-admin"
 
     def headers(self, *, admin: bool = False) -> dict[str, str]:
         token = self.admin_api_key if admin else self.api_key
         if token is None:
             token = self.api_key if admin else self.admin_api_key
-        if token is None:
-            return {}
-        return {"X-API-Key": token}
+        headers: dict[str, str] = {}
+        if token is not None:
+            headers["X-API-Key"] = token
+        if admin:
+            headers["X-Role"] = self.admin_role
+        return headers
 
     def to_report_dict(self) -> dict[str, object]:
         return {
             "api_key_env": self.api_key_env,
             "admin_api_key_env": self.admin_api_key_env,
+            "admin_role": self.admin_role,
             "api_key_configured": self.api_key is not None,
             "admin_api_key_configured": self.admin_api_key is not None,
         }
@@ -104,6 +110,15 @@ def main() -> int:
             steps,
             "page-rendering",
             lambda: _check_pages(base_url, auth=auth, timeout_seconds=float(args.timeout_seconds)),
+        )
+        _run_step(
+            steps,
+            "audit-logs-permission",
+            lambda: _check_audit_log_permissions(
+                base_url,
+                auth=auth,
+                timeout_seconds=float(args.timeout_seconds),
+            ),
         )
         query_details = _run_step(
             steps,
@@ -211,6 +226,11 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--admin-role",
+        default="it-admin",
+        help="Role used for backend admin checks.",
+    )
+    parser.add_argument(
         "--regression-url",
         action="append",
         default=list(DEFAULT_REGRESSION_URLS),
@@ -240,9 +260,11 @@ def _auth_from_args(args: argparse.Namespace) -> SmokeAuth:
     admin_api_key_env = _optional_env_name(args.admin_api_key_env)
     api_key = _secret_from_env(api_key_env)
     admin_api_key = _secret_from_env(admin_api_key_env)
+    admin_role = _optional_env_name(args.admin_role) or "it-admin"
     return SmokeAuth(
         api_key=api_key,
         admin_api_key=admin_api_key,
+        admin_role=admin_role,
         api_key_env=api_key_env,
         admin_api_key_env=admin_api_key_env,
     )
@@ -351,7 +373,7 @@ def _check_pages(base_url: str, *, auth: SmokeAuth, timeout_seconds: float) -> d
         response = _get_text(
             f"{base_url}{path}",
             auth=auth,
-            admin=path == "/pages/index-admin",
+            admin=path in {"/pages/index-admin", "/pages/audit-logs"},
             timeout_seconds=timeout_seconds,
         )
         _require(response.status == 200, f"{path} returned {response.status}")
@@ -359,6 +381,67 @@ def _check_pages(base_url: str, *, auth: SmokeAuth, timeout_seconds: float) -> d
         _require(not missing, f"{path} missing texts: {missing}")
         pages[path] = {"status": response.status, "bytes": len(response.text.encode())}
     return {"pages": pages}
+
+
+def _check_audit_log_permissions(
+    base_url: str,
+    *,
+    auth: SmokeAuth,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    denied_response = _get_text(
+        f"{base_url}/pages/audit-logs",
+        timeout_seconds=timeout_seconds,
+    )
+    _require(
+        "需要审计日志权限后才能查看事件" in denied_response.text,
+        "audit logs page should show permission-denied state without role",
+    )
+
+    allowed_response = _get_text(
+        f"{base_url}/pages/audit-logs",
+        auth=auth,
+        admin=True,
+        timeout_seconds=timeout_seconds,
+    )
+    _require(
+        "需要审计日志权限后才能查看事件" not in allowed_response.text,
+        "audit logs page still shows permission-denied under admin role",
+    )
+    _require(
+        "审计日志台" in allowed_response.text and "audit-log-shell" in allowed_response.text,
+        "audit logs page missing expected admin shell",
+    )
+
+    unauthorized_api = _request(
+        f"{base_url}/audit/logs",
+        method="GET",
+        timeout_seconds=timeout_seconds,
+    )
+    _require(unauthorized_api.status == 403, "audit logs API should return 403 without role")
+
+    authorized_api = _get_json(
+        f"{base_url}/audit/logs",
+        auth=auth,
+        admin=True,
+        timeout_seconds=timeout_seconds,
+    )
+    _require(
+        isinstance(authorized_api.get("items"), list),
+        "audit logs API should return items list",
+    )
+    store = authorized_api.get("store", {})
+    _require(isinstance(store, dict), "audit logs API should include store metadata")
+    filters = authorized_api.get("filters", {})
+    _require(isinstance(filters, dict), "audit logs API should include filters metadata")
+
+    return {
+        "audit_logs_page_denied_bytes": len(denied_response.text.encode()),
+        "audit_logs_page_allowed_bytes": len(allowed_response.text.encode()),
+        "audit_logs_api_item_count": len(authorized_api["items"]),
+        "audit_log_store_ready": bool(store.get("ready")),
+        "audit_log_filter_fields": list(filters.keys()),
+    }
 
 
 def _check_query_api(

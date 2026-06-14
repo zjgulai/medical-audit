@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-13
+updated: 2026-06-14
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,36 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-06-14 当前事实
+
+- 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
+- 写入前只读状态审计命令：`python3 scripts/audit-tencent-cloud-deployment-state.py --ssh-key ai_video.pem`。
+- 写入前审计采集时间：`2026-06-14T10:53:45+0800`。
+- 写入前审计状态：`status=pass`，`issues=[]`。
+- 写入后只读状态审计采集时间：`2026-06-14T10:58:09+0800`。
+- 写入后审计状态：`status=pass`，`issues=[]`。
+- 当前生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`，Compose project 为 `medical-audit`。
+- `medical_audit_pg` 容器 `running` 且 `health=healthy`，Compose project 为 `medical-audit`。
+- 共享公网入口 `ai_video_nginx` 仍在运行，Compose project 为 `lighthouse`。
+- Nginx 配置测试通过，`/var/www/audit` 到 `ai_video_nginx` 的 bind mount 存在且为只读。
+- 生产本地后端 `/health` 返回 `status=ok`、`version=0.1.0`。
+- 生产检索后端返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`、`embedding_dimension=1024`、`api_key_env=KIMI_API_KEY`。
+- 远端最新备份类别覆盖 `app`、`env`、`db`、`nginx` 和 `web`；写入型 E2E 前已新增 DB 备份 `/opt/medical-audit/backups/db/pre-review-write-smoke-phase1-20260614T105417+0800.sql.gz`。
+- 写入前 DB 备份已执行 `gzip -t` 校验通过，权限为 `600`，大小约 `490M`，`sha256=169eeec6a99ff09e1a0a277d75f2f70620d01ff6b71dd03ea4c68a7b98cbb777`。
+- 生产只读 smoke 报告 `tmp/outputs/production-e2e-smoke-phase1-readonly-20260614.json` 为 `status=pass`，覆盖 `8` 个步骤。
+- 生产写入型 smoke 报告 `tmp/outputs/production-e2e-smoke-phase1-review-write-20260614.json` 为 `status=pass`，覆盖 `9` 个步骤。
+- 写入型 smoke 已创建并更新 `review-task-0011`，`create_status=200`，`update_status=200`。
+- 生产前端语义验收报告 `tmp/outputs/production-frontend-acceptance-phase1-20260614.json` 为 `status=pass`，覆盖 `20` 个路由、桌面和移动共 `40` 次检查，`p0=[]`，`p1=[]`。
+- 本地 Phase 1 代码基线：`uv run ruff check src tests scripts` 通过，`uv run mypy src` 通过，`uv run pytest` 结果为 `241 passed, 1 warning`。
+- 本地 Phase 1 前端基线：`pnpm --dir web lint`、`typecheck`、`test` 和 `build:static` 均通过；前端测试为 `10` 个 test files、`51` 个 tests，通过；静态构建生成 `20/20` 页面。
+- 远端 DB 备份目录已确认无残留 `*.uploading` 文件。
+- 当前本地分支为 `codex/post-deploy-doc-sync`，本地 HEAD 为 `912965d6 同步腾讯云生产部署记录`，相对本地 `origin/main` ahead 1。
+- 当前本地存在 `.kiro/`、`.playwright-mcp/`、`drafts/analysis/analysis-production-acceptance-p0-p1-*.md`、`drafts/analysis/analysis-reference-material-*.md`、`opendesign/` 和 `ref/` 等未跟踪资料；部署脚本已排除这些目录，不能把它们同步到生产。
+- `ai_video.pem` 仍作为腾讯云 SSH key 保留在项目本地；禁止删除，禁止提交到 Git。
+- 当前生产健康和写入型 smoke 通过不等于 V1.0 完成：门户壳层、检索、引用、预览和任务级复核写入链路可用；真实医院数据验收、真实生成模型、真实权限系统和案件级合规闭环仍需单独完成。
+- `query-api-with-citations` 仍返回 `fallback_used=true`，只能证明引用型 fallback 链路健康，不能证明真实生成模型能力可用。
 
 ### 2026-06-13 当前事实
 
@@ -739,13 +769,30 @@ uv run python scripts/run-production-e2e-smoke.py \
 静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行只读前端语义验收：
 
 ```bash
-pnpm --dir web exec node ../scripts/run-production-frontend-acceptance.mjs \
+pnpm production:frontend-acceptance -- \
   --base-url https://audit.lute-tlz-dddd.top \
   --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --admin-role it-admin
 ```
 
-该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。脚本只读，不提交业务表单。
+标准复用模板：
+
+```bash
+pnpm production:frontend-acceptance -- \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --output tmp/outputs/production-frontend-acceptance-latest.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --admin-role it-admin
+```
+
+该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。
+
+该脚本新增以下 API 鉴权闭环：
+
+- `/audit/logs` 和 `/audit/logs/export`：无 `X-Role` 期望 `403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
+- 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=403`、`allowed_status=200`。
+- 无需提交业务数据；脚本只读。
 
 ### 7.7 增量更新 dry-run 演练
 
@@ -891,7 +938,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
-- 生产前端语义验收 `scripts/run-production-frontend-acceptance.mjs` 返回 `status=pass`，P0/P1 均为 `0`。
+- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=403` 且 `allowed_status=200`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。

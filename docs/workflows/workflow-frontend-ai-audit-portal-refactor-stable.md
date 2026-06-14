@@ -216,6 +216,12 @@ uv run ruff check src tests scripts
 uv run python scripts/run-production-e2e-smoke.py \
   --base-url https://audit.lute-tlz-dddd.top \
   --report tmp/outputs/production-e2e-smoke-after-ai-audit-portal.json
+
+pnpm production:frontend-acceptance -- \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --output tmp/outputs/production-frontend-acceptance-latest.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --admin-role it-admin
 ```
 
 视觉检查必须覆盖：
