@@ -33,6 +33,24 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-14 PR #73 部署后当前事实
+
+- PR #73 `接入答案生成 provider 并强化 no-fallback 生产门禁` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`281981ce072b549ebbcc4332db6d5ae1a06801e5`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`pr73-answer-gate-20260614`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
+- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-pr73-answer-gate-deploy-20260614.json` 为 `status=pass`。
+- 部署后普通生产 smoke 复核报告 `tmp/outputs/production-e2e-smoke-after-pr73-answer-gate-deploy-verification-retry-20260614.json` 为 `status=pass`，覆盖 TLS、health、search backend、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-pr73-answer-gate-deploy-20260614.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 部署状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-pr73-answer-gate-deploy-retry-20260614.json` 为 `status=pass`，`issues=[]`。
+- 生产容器未设置 `MEDICAL_AUDIT_KB_ANSWER_*`；当前只有既有 `KIMI_API_KEY` 存在，`MOONSHOT_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 和 `DEEPSEEK_API_KEY` 均未设置。
+- no-fallback 生产 smoke 报告 `tmp/outputs/production-e2e-smoke-require-generated-answer-after-pr73-deploy-20260614.json` 为 `status=fail`，失败点仅为 `query-api-with-citations`，错误为 `query response used fallback answer instead of generated answer`。
+- `query-api-with-citations` 普通链路仍返回 `fallback_used=true`；这证明检索引用 fallback 链路可用，不证明真实生成模型能力可用。
+- 部署后曾出现一次普通 smoke `query-api-with-citations` 读超时，报告为 `tmp/outputs/production-e2e-smoke-after-pr73-answer-gate-deploy-verification-20260614.json`；随后直接请求生产 `/query` 约 `2.94s` 返回 `200`，普通 smoke 复核通过。该现象记录为短期稳定性观察项，不作为当前部署失败结论。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+
 ### 2026-06-14 当前事实
 
 - 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
@@ -65,22 +83,23 @@ source: human+ai
 
 ### 2026-06-14 no-fallback 生成模型门禁复核
 
-- PR #73 `接入答案生成 provider 并强化 no-fallback 生产门禁` 已进入 Ready for review，merge state 为 `CLEAN`。
-- PR #73 只提供代码门禁能力，不等于生产真实生成模型已经启用。
+- PR #73 `接入答案生成 provider 并强化 no-fallback 生产门禁` 已合并并部署到生产。
+- PR #73 只提供代码门禁能力和 no-fallback 验收能力，不等于生产真实生成模型已经启用。
 - 本地门禁已复核通过：`uv run ruff check src tests scripts`、`uv run mypy src`、`uv run pytest -q`。
-- 生产 `.deploy-sha` 仍为 `89fe9215a2617bd3d933d2274739561e403c3c28`，未部署 PR #73，未写入 `MEDICAL_AUDIT_KB_ANSWER_*`。
+- PR #73 部署前生产 `.deploy-sha` 曾为 `89fe9215a2617bd3d933d2274739561e403c3c28`；部署后生产 `.deploy-sha` 为 `281981ce072b549ebbcc4332db6d5ae1a06801e5`。
+- 生产未写入 `MEDICAL_AUDIT_KB_ANSWER_*`，因此 no-fallback 门禁仍应失败。
 - 生产容器当前只有 `KIMI_API_KEY` 存在；`MOONSHOT_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 均未设置。
 - 现有 `KIMI_API_KEY` 对 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 的常规 Chat Completions endpoint 返回 `401 Invalid Authentication`。
 - 现有 `KIMI_API_KEY` 对 `https://api.kimi.com/coding/v1` 返回 `403 access_terminated_error`，错误说明该路径仅面向 Coding Agents，不能作为普通审计问答 chat provider。
 - 本机 `ANTHROPIC_API_KEY` 存在，但 `answer-provider-smoke` 使用 `claude-haiku-4-5-20251001` 和 `claude-sonnet-4-6` 均返回 `401 invalid x-api-key`；不能迁移到生产。
-- 当前 no-fallback smoke 报告 `tmp/outputs/production-e2e-smoke-require-generated-answer-after-pr73-review-20260614.json` 为 `status=fail`，失败点仅为 `query-api-with-citations`：`query response used fallback answer instead of generated answer`。TLS、health、search backend、page rendering 和 audit logs permission 均通过。
+- 当前 no-fallback smoke 报告 `tmp/outputs/production-e2e-smoke-require-generated-answer-after-pr73-deploy-20260614.json` 为 `status=fail`，失败点仅为 `query-api-with-citations`：`query response used fallback answer instead of generated answer`。TLS、health、search backend、page rendering 和 audit logs permission 均通过。
 
 生产启用真实生成模型前必须先满足：
 
 1. 提供一个只用于服务端的有效 chat provider key，不得写入 Git、PR、日志或前端。
 2. 在本机或生产容器内运行 `answer-provider-smoke`，确认 `success=true`、`citation_marker_present=true`、`required_term_present=true`。
 3. 备份远端 `configs/deploy/tencent-cloud/medical-audit.env`，再写入 `MEDICAL_AUDIT_KB_ANSWER_PROVIDER`、`MEDICAL_AUDIT_KB_ANSWER_API_KEY_ENV`、`MEDICAL_AUDIT_KB_ANSWER_MODEL`、`MEDICAL_AUDIT_KB_ANSWER_BASE_URL`、`MEDICAL_AUDIT_KB_ANSWER_MAX_OUTPUT_TOKENS` 和 `MEDICAL_AUDIT_KB_ANSWER_TEMPERATURE`。
-4. 部署 PR #73 后运行：
+4. 写入 provider env 并重启生产应用后运行：
 
 ```bash
 python3 scripts/run-production-e2e-smoke.py \
