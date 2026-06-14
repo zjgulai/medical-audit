@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditAgent, createProjectMember, uploadAnalysisTable } from "@/lib/api-client";
+import { createAuditAgent, createProjectMember, runKnowledgeQuery, uploadAnalysisTable } from "@/lib/api-client";
 import { primaryNavigation } from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
@@ -313,7 +313,49 @@ vi.mock("@/lib/api-client", () => ({
     ready: true,
     details: { matching_embedding_count: 48985 }
   })),
-  runKnowledgeQuery: vi.fn()
+  runKnowledgeQuery: vi.fn(async (payload: { readonly question: string }) => ({
+    question: payload.question,
+    answer: "应核验诊疗记录、收费明细和政策依据。",
+    confidence: "high",
+    fallback_used: true,
+    basis_groups: [
+      {
+        evidence_type: "law",
+        title: "法规依据",
+        items: [
+          {
+            citation_id: "C1",
+            chunk_id: "chunk-doc-001",
+            snippet: "医疗机构应当保留医保基金审核依据。",
+            locator: {
+              source_path: "全量法律/law.md",
+              line_start: 1,
+              line_end: 1
+            },
+            index_version_key: "index-v1",
+            source_package_version_key: "package-v1"
+          }
+        ]
+      }
+    ],
+    citations: [
+      {
+        citation_id: "C1",
+        marker: "[C1]",
+        chunk_id: "chunk-doc-001",
+        evidence_type: "law",
+        snippet: "医疗机构应当保留医保基金审核依据。",
+        locator: {
+          source_path: "全量法律/law.md",
+          line_start: 1,
+          line_end: 1
+        },
+        index_version_key: "index-v1",
+        source_package_version_key: "package-v1"
+      }
+    ],
+    query_log_index: 0
+  }))
 }));
 
 const routePages = [
@@ -544,21 +586,44 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("法规政策、医保目录、监管规则和风险负面清单组成的系统检索底座。").length).toBeGreaterThan(0);
   });
 
-  it("renders the document search homepage with history and document groups", () => {
+  it("runs document search through the backend query API and renders citations", async () => {
     render(<DocumentsPage />);
 
     expect(screen.getByRole("heading", { name: "材料与知识库统一检索" })).toBeInTheDocument();
     expect(screen.getByLabelText("审计问题或文档关键词")).toBeInTheDocument();
-    expect(screen.getByLabelText("仅标题")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索历史" })).toBeInTheDocument();
     expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
     expect(screen.getByText("监管两库")).toBeInTheDocument();
     expect(screen.getByText("risk-negative-list")).toBeInTheDocument();
+    expect(screen.getByText("等待检索")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /监管两库/ }));
+    fireEvent.change(screen.getByLabelText("审计问题或文档关键词"), {
+      target: { value: "医保基金审核依据" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "执行检索" }));
+
+    await waitFor(() => {
+      expect(runKnowledgeQuery).toHaveBeenCalledWith({
+        question: "医保基金审核依据",
+        top_k: 8,
+        source_collections: ["supervision-rules-knowledge"]
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "医保基金审核依据" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("应核验诊疗记录、收费明细和政策依据。")).toBeInTheDocument();
+    expect(screen.getByText("医疗机构应当保留医保基金审核依据。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "核验原文" })).toHaveAttribute("href", "/pages/preview/chunk-doc-001");
     expect(screen.getByRole("heading", { name: "对话文档" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "知识库文档" })).toBeInTheDocument();
     expect(screen.getByText("重复收费疑点复核对话")).toBeInTheDocument();
     expect(screen.getByText("医保目录限制条件资料包")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "转入 AI 对话" })[0]).toHaveAttribute("href", "/chat");
+    expect(screen.getAllByRole("link", { name: "转入 AI 对话" })[0]).toHaveAttribute(
+      "href",
+      expect.stringContaining("/chat?question=")
+    );
   });
 
   it("renders the read-only knowledge graph coverage view", () => {

@@ -51,7 +51,7 @@ source: human+ai
 
 - 当前工作区：`/Users/pray/project/medical_audit`
 - 当前分支：`codex/product-integration-debt-phase2`
-- 本地 HEAD：Phase 2.1 至 Phase 2.3 本地集成提交链，尚未部署到生产。
+- 本地 HEAD：Phase 2.1 至 Phase 2.4 本地集成提交链，尚未部署到生产。
 - 本地 `origin/main`：`596d6967 合并审计门户核心工作台`
 - 当前分支相对 `origin/main`：包含产品集成债务 Phase 2 本地改造；生产仍运行 `32027049eb7fa2b9d336af217a228b0f21dca990`。
 - 当前生产部署 SHA 位于 `codex/reference-workspace-shell-p0`，并作为当前主线历史的祖先保留。
@@ -80,6 +80,7 @@ source: human+ai
 - 智能体持久化已在本地 Phase 2.1 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
 - 项目成员持久化已在本地 Phase 2.2 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
 - AI 数据分析表格上传解析已在本地 Phase 2.3 完成，CSV、XLSX 和 XLSM 由 FastAPI 后端解析并返回字段画像；尚未部署到生产。
+- 文档检索页已在本地 Phase 2.4 接入后端 `/query`，可按来源过滤返回引用、证据分组和原文入口；尚未部署到生产。
 
 未完成：
 
@@ -255,6 +256,38 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 本轮未建立上传文件持久化、历史分析记录、病毒扫描、脱敏留存或对象存储。
 - 本轮表格解析为本地瞬时分析能力，仅证明前后端上传解析协议和字段画像展示。
 
+### 2.8 Phase 2.4 本地验收状态
+
+验收日期：`2026-06-14`
+
+本轮 Phase 2.4 已完成，结论为 `pass`，范围限定为本地开发和联调环境。
+
+前端集成：
+
+- `/documents` 已从静态跳转页调整为客户端 API-first 文档检索工作台。
+- 文档源卡片可作为 `source_collections` 过滤条件传给后端 `/query`。
+- 执行检索后展示后端返回的答案、引用数、引用片段、证据分组和 `/pages/preview/{chunk_id}` 原文入口。
+- 搜索历史保留为本页快捷填充，不再伪装为后端历史记录。
+- 对话文档和知识库文档示例列表保留为只读入口，继续作为静态示例资产。
+
+本地验收：
+
+- `uv run ruff check src tests scripts`：通过。
+- `uv run mypy src`：通过，`78` 个源码文件无类型错误。
+- `uv run pytest`：通过，`250 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`10` 个 test files、`58` 个 tests。
+- `pnpm --dir web build:static`：通过，静态构建生成 `20/20` 页面。
+- 本地浏览器联调：Next `127.0.0.1:3030` + FastAPI `127.0.0.1:8021`，使用本地 fake search engine 验证 `/documents` 选择来源、提交检索、渲染引用和原文入口。
+- 浏览器截图：`tmp/screenshots/tmp-screenshot-documents-phase24-api-search-20260614.png`。
+
+边界：
+
+- 本轮未执行生产部署。
+- 本轮未新增文档持久化、搜索历史持久化、文档权限模型或个人知识库上传能力。
+- 本轮浏览器联调使用本地 fake search engine，仅证明前端页面、Next 代理和 `/query` 协议闭环。
+
 ## 3. 债务分级
 
 | 等级 | 定义 | 处理原则 |
@@ -267,7 +300,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 | 编号 | 类型 | 债务 | 当前证据 | 影响 | 处置计划 | 完成门禁 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents`、`/projects` 已完成本地持久化；`/analytics` 已完成本地后端上传解析；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 继续补文档、知识库、图谱、报告、整改页面 API，生产部署 Phase 2.1-2.3 | 新增/查询/刷新后数据仍存在；上传解析走后端；前端测试和 API 测试通过 |
+| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents`、`/projects` 已完成本地持久化；`/analytics` 已完成本地后端上传解析；`/documents` 已接入 `/query`；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 继续补知识库、图谱、报告、整改页面 API，生产部署 Phase 2.1-2.4 | 新增/查询/刷新后数据仍存在；上传解析和文档检索走后端；前端测试和 API 测试通过 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | Kimi chat 403，Anthropic 401，fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 决定可用 chat provider 或保持引用 fallback 为产品边界 | `answer-provider-smoke` 和真实生成评测 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key` | 无法满足生产级审计系统权限边界 | 建立用户/角色/部门模型和会话认证，替换静态 header 口径 | 未授权路径 403；审计日志记录访问拒绝 |
@@ -344,7 +377,8 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 1. 智能体 CRUD 和提示词版本：本地 Phase 2.1 已完成；生产部署和 schema 应用待执行。
 2. 项目成员管理 API 和页面持久化：本地 Phase 2.2 已完成；生产部署和 schema 应用待执行。
 3. 表格上传分析后端和工作簿解析任务：本地 Phase 2.3 已完成；生产部署、上传留存和历史记录待后续阶段。
-4. 文档、知识库、图谱、报告、整改页面逐步接真实 API。
+4. 文档检索 API-first 接入：本地 Phase 2.4 已完成；生产部署、搜索历史持久化和权限模型待后续阶段。
+5. 知识库、图谱、报告、整改页面逐步接真实 API。
 
 完成门禁：
 
