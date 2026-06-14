@@ -83,6 +83,16 @@ source: human+ai
 - 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-analytics-upload-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 边界：本轮只验证瞬时上传解析，不保存上传文件，不写入数据库业务表；病毒扫描、脱敏留存、对象存储、历史分析记录和正式工作簿治理仍未完成。
 
+### 2026-06-14 文档检索生产查询验收
+
+- 验收范围：`/api/v1/query` 生产查询、来源过滤、引用证据、证据分组和 `/pages/preview/{chunk_id}` 原文预览链路。
+- 生产查询报告：`tmp/outputs/production-documents-query-smoke-20260614.json`，状态 `pass`。
+- 全库重复收费查询：返回 `200`，`citation_count=3`，证据类型为 `rule_basis`，首个引用预览页返回 `200`。
+- 法规政策过滤查询：`source_collections=["medical-insurance-laws"]` 返回 `200`，`citation_count=3`，证据类型为 `legal_basis`，首个引用预览页返回 `200`。
+- 医保目录过滤查询：`source_collections=["medical-insurance-catalog"]` 返回 `200`，`citation_count=3`，证据类型为 `catalog_basis`，首个引用预览页返回 `200`。
+- 验收后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-documents-query-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 边界：`/api/v1/query` 会写入进程内查询日志和 preview reference，但不写入数据库业务表；本轮未完成搜索历史持久化、个人知识库上传、文档权限模型，也未补充响应中的 `source_collection` 直接回显字段。
+
 ### 2026-06-14 Phase 1 历史基线事实
 
 - 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
