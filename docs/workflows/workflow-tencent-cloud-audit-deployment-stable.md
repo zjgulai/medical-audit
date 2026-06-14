@@ -51,7 +51,18 @@ source: human+ai
 - 部署后曾出现一次普通 smoke `query-api-with-citations` 读超时，报告为 `tmp/outputs/production-e2e-smoke-after-pr73-answer-gate-deploy-verification-20260614.json`；随后直接请求生产 `/query` 约 `2.94s` 返回 `200`，普通 smoke 复核通过。该现象记录为短期稳定性观察项，不作为当前部署失败结论。
 - `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
 
-### 2026-06-14 当前事实
+### 2026-06-14 项目成员生产写入验收
+
+- 验收范围：项目成员管理 API 和生产 PostgreSQL `audit_project_members` 持久化写入。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`。
+- 备份校验：`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
+- 生产 API 写入报告：`tmp/outputs/production-project-member-write-smoke-20260614.json`，状态 `pass`。
+- 写入结果：`CATALOG-LIMIT-202606` 新增成员 `member-custom-e152673f93f9`，`created_by=codex-production-e2e-20260614`，成员数从 `4` 增至 `5`。
+- 数据库直查：`audit_project_members` 当前自定义记录数为 `1`，记录为 `member-custom-e152673f93f9|CATALOG-LIMIT-202606|生产联调审计员|审计员|codex-production-e2e-20260614`。
+- 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-project-member-write-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 边界：本轮只验证项目成员新增和持久化；真实权限生效、邀请审批、成员禁用/移除和组织级用户体系仍未完成。
+
+### 2026-06-14 Phase 1 历史基线事实
 
 - 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
 - 写入前只读状态审计命令：`python3 scripts/audit-tencent-cloud-deployment-state.py --ssh-key ai_video.pem`。
@@ -59,7 +70,7 @@ source: human+ai
 - 写入前审计状态：`status=pass`，`issues=[]`。
 - 写入后只读状态审计采集时间：`2026-06-14T10:58:09+0800`。
 - 写入后审计状态：`status=pass`，`issues=[]`。
-- 当前生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990`。
+- 当时生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`，Compose project 为 `medical-audit`。
 - `medical_audit_pg` 容器 `running` 且 `health=healthy`，Compose project 为 `medical-audit`。
 - 共享公网入口 `ai_video_nginx` 仍在运行，Compose project 为 `lighthouse`。
@@ -114,7 +125,7 @@ python3 scripts/run-production-e2e-smoke.py \
 ### 2026-06-13 当前事实
 
 - 当前远端 `main` merge commit：`596d6967ba5b6c3d2a7d2253c8a31b264fb7ae82`，来自 PR #70 `集成审计门户核心工作台`。
-- 当前生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990 放宽部署前共享网关漂移阻断`；该提交已作为 `main` 的祖先保留，避免生产领先主干。
+- 当时生产部署 SHA：`32027049eb7fa2b9d336af217a228b0f21dca990 放宽部署前共享网关漂移阻断`；该提交已作为 `main` 的祖先保留，避免生产领先主干。
 - `medical_audit_app` 容器 healthy，宿主机仍仅暴露 `127.0.0.1:18080->8000`。
 - `medical_audit_pg` 容器 healthy，继续使用独立 volume `medical_audit_pgdata`。
 - 公网 `/api/v1/index/search-backend` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
