@@ -120,7 +120,10 @@ def test_run_production_e2e_smoke_auth_uses_admin_secret_for_admin_requests() ->
     )
 
     assert auth.headers() == {"X-API-Key": "auditor-secret"}
-    assert auth.headers(admin=True) == {"X-API-Key": "admin-secret"}
+    assert auth.headers(admin=True) == {
+        "X-API-Key": "admin-secret",
+        "X-Role": "it-admin",
+    }
 
 
 def test_run_production_e2e_smoke_auth_falls_back_to_admin_secret() -> None:

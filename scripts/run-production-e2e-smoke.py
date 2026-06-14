@@ -48,9 +48,9 @@ class HttpResponse:
 class SmokeAuth:
     api_key: str | None
     admin_api_key: str | None
-    admin_role: str
     api_key_env: str | None
     admin_api_key_env: str | None
+    admin_role: str = "it-admin"
 
     def headers(self, *, admin: bool = False) -> dict[str, str]:
         token = self.admin_api_key if admin else self.api_key
@@ -426,7 +426,10 @@ def _check_audit_log_permissions(
         admin=True,
         timeout_seconds=timeout_seconds,
     )
-    _require(isinstance(authorized_api.get("items"), list), "audit logs API should return items list")
+    _require(
+        isinstance(authorized_api.get("items"), list),
+        "audit logs API should return items list",
+    )
     store = authorized_api.get("store", {})
     _require(isinstance(store, dict), "audit logs API should include store metadata")
     filters = authorized_api.get("filters", {})
