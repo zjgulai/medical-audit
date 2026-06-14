@@ -62,6 +62,17 @@ source: human+ai
 - 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-project-member-write-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 边界：本轮只验证项目成员新增和持久化；真实权限生效、邀请审批、成员禁用/移除和组织级用户体系仍未完成。
 
+### 2026-06-14 智能体生产写入验收
+
+- 验收范围：提示词型智能体 API 和生产 PostgreSQL `audit_agents` 持久化写入。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-agent-write-smoke-20260614T215017+0800.sql.gz`。
+- 备份校验：`gzip -t` 通过，权限 `600`，大小 `512951265` bytes，`sha256=5d06dd8919f71f7d73446203424e8907dd1fc7677fc2a3d40e819bf6109026db`。
+- 生产 API 写入报告：`tmp/outputs/production-agent-write-smoke-20260614.json`，状态 `pass`。
+- 写入结果：新增智能体 `agent-custom-ec210547464a`，`created_by=codex-production-agent-e2e-20260614`，智能体列表从 `3` 增至 `4`。
+- 数据库直查：`audit_agents` 当前自定义记录数为 `1`，记录为 `agent-custom-ec210547464a|生产联调提示词助手|业务类|项目成员生产验收后的证据复核|codex-production-agent-e2e-20260614`。
+- 写入后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-agent-write-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 边界：本轮只验证新增提示词型智能体和持久化；提示词版本治理、上下架、删除/停用、权限生效和复杂智能体编排仍未完成。
+
 ### 2026-06-14 Phase 1 历史基线事实
 
 - 本轮已完成 Phase 1 基线复核、生产只读 smoke、生产前端语义验收和生产写入型 E2E smoke；未执行部署、schema 写入或远端配置修改。
