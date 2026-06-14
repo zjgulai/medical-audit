@@ -966,7 +966,11 @@ def _run_page_query(
         top_k=5,
     )
     try:
-        answer = build_citation_backed_answer(question, results)
+        answer = build_citation_backed_answer(
+            question,
+            results,
+            generation_provider=state.answer_generation_provider,
+        )
     except NoCitedEvidenceError:
         return None, "没有找到可引用依据。"
 

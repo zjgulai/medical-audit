@@ -9,6 +9,7 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
 from pytest import MonkeyPatch
 
 
@@ -89,6 +90,7 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "citation-preview" in script_text
     assert "review-flow-create-update-export" in script_text
     assert "--include-review-write" in script_text
+    assert "--require-generated-answer" in script_text
     assert "Default is read-only production smoke" in script_text
     assert "edge-regression" in script_text
 
@@ -139,6 +141,41 @@ def test_run_production_e2e_smoke_auth_falls_back_to_admin_secret() -> None:
     )
 
     assert auth.headers() == {"X-API-Key": "admin-secret"}
+
+
+def test_run_production_e2e_smoke_can_require_generated_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_generated_answer",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    auth = module.SmokeAuth(
+        api_key=None,
+        admin_api_key=None,
+        api_key_env=None,
+        admin_api_key_env=None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_request_json",
+        lambda *args, **kwargs: {
+            "confidence": "high",
+            "fallback_used": True,
+            "citations": [{"chunk_id": "chunk-1"}],
+            "basis_groups": [{"title": "法规依据"}],
+        },
+    )
+
+    with pytest.raises(module.SmokeError, match="fallback answer"):
+        module._check_query_api(
+            "https://audit.lute-tlz-dddd.top",
+            auth=auth,
+            question="医保基金审核依据",
+            require_generated_answer=True,
+            timeout_seconds=1,
+        )
 
 
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:

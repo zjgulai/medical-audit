@@ -475,7 +475,11 @@ def _run_ui_smoke_check(
 
     try:
         results = state.search_engine.search(question, top_k=top_k)
-        answer = build_citation_backed_answer(question, results)
+        answer = build_citation_backed_answer(
+            question,
+            results,
+            generation_provider=state.answer_generation_provider,
+        )
     except NoCitedEvidenceError as exc:
         return {"success": False, "question": question, "error": str(exc)}
 

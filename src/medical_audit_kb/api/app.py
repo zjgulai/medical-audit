@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -19,6 +20,11 @@ from medical_audit_kb.api.project_member_store import (
 )
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
+from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
+from medical_audit_kb.generation.answer_providers import (
+    AnthropicAnswerGenerationProvider,
+    OpenAICompatibleAnswerGenerationProvider,
+)
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
 from medical_audit_kb.preview.resolver import PreviewResolver
@@ -53,6 +59,7 @@ class ApiState:
     audit_log_store: AuditLogStore | None = None
     agent_store: AgentStore | None = None
     project_member_store: ProjectMemberStore | None = None
+    answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -65,6 +72,7 @@ class ApiState:
             audit_log_store=SqlAlchemyAuditLogStore(settings.database_url),
             agent_store=SqlAlchemyAgentStore(settings.database_url),
             project_member_store=SqlAlchemyProjectMemberStore(settings.database_url),
+            answer_generation_provider=answer_generation_provider_from_settings(settings),
         )
 
     @property
@@ -126,6 +134,44 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
     app.include_router(index_router)
     app.include_router(preview_router)
     return app
+
+
+def answer_generation_provider_from_settings(
+    settings: KnowledgeQuerySettings,
+) -> AnswerGenerationProvider | None:
+    provider = os.getenv("MEDICAL_AUDIT_KB_ANSWER_PROVIDER", "fallback").strip().lower()
+    if provider in {"", "fallback", "none"}:
+        return None
+
+    api_key_env = os.getenv(
+        "MEDICAL_AUDIT_KB_ANSWER_API_KEY_ENV",
+        settings.model_provider.api_key_env,
+    ).strip()
+    model_name = os.getenv(
+        "MEDICAL_AUDIT_KB_ANSWER_MODEL",
+        settings.model_provider.chat_model,
+    ).strip()
+    max_output_tokens = int(os.getenv("MEDICAL_AUDIT_KB_ANSWER_MAX_OUTPUT_TOKENS", "600"))
+    temperature = float(os.getenv("MEDICAL_AUDIT_KB_ANSWER_TEMPERATURE", "0"))
+
+    if provider == "anthropic":
+        return AnthropicAnswerGenerationProvider.from_env(
+            api_key_env=api_key_env,
+            model_name=model_name,
+            base_url=os.getenv("MEDICAL_AUDIT_KB_ANSWER_BASE_URL", "https://api.anthropic.com"),
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+    if provider == "openai":
+        return OpenAICompatibleAnswerGenerationProvider.from_env(
+            api_key_env=api_key_env,
+            model_name=model_name,
+            base_url=os.getenv("MEDICAL_AUDIT_KB_ANSWER_BASE_URL", "https://api.openai.com/v1"),
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+
+    raise ValueError(f"unsupported answer provider: {provider}")
 
 
 def get_api_state(request: Request) -> ApiState:

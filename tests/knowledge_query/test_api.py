@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from medical_audit_kb.api.project_member_store import (
 )
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
 from medical_audit_kb.indexing.index_activation import (
@@ -300,6 +302,30 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     logs_response = client.get("/query/logs")
     assert logs_response.status_code == 200
     assert logs_response.json()["items"][0]["user_identifier"] == "auditor-1"
+
+
+def test_query_endpoint_uses_configured_answer_generation_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.app.answer_generation_provider_from_settings",
+        lambda _settings: StaticApiAnswerProvider(),
+        raising=False,
+    )
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fallback_used"] is False
+    assert body["answer"] == "生成模型回答：应核验医保基金审核依据 [C1]。"
 
 
 def test_query_endpoint_blocks_unknown_role(tmp_path: Path) -> None:
@@ -991,6 +1017,15 @@ def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
 
 def _chunk_id() -> UUID:
     return uuid4()
+
+
+class StaticApiAnswerProvider:
+    provider = "fake"
+    model_name = "fake-chat"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        return f"生成模型回答：应核验医保基金审核依据 {citations[0].marker}。"
 
 
 def _write_text(path: Path, content: str) -> Path:
