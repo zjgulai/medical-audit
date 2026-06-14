@@ -81,29 +81,38 @@ describe("workspace foundation pages", () => {
     }
   });
 
-  it("exposes the dashboard sections owned by the workspace page", () => {
+  it("exposes the dashboard sections owned by the workspace page", async () => {
     render(<WorkspacePage />);
 
     expect(screen.getByRole("region", { name: "项目关键指标" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前阶段：形成判断" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "需要人工处理" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目审计链动态" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+    });
   });
 
-  it("renders the current self-check project dashboard", () => {
+  it("renders the current self-check project dashboard", async () => {
     render(<WorkspacePage />);
 
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
     expect(screen.getByText("待处理疑点")).toBeInTheDocument();
     expect(screen.getByText("待补证据")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+    });
   });
 
-  it("keeps legacy real routes outside the primary portal navigation", () => {
+  it("keeps legacy real routes outside the primary portal navigation", async () => {
     render(<KnowledgeQueryPage />);
     expect(screen.getByRole("heading", { name: "引用优先的知识查询" })).toBeInTheDocument();
 
     render(<FindingsPage />);
     expect(screen.getByRole("heading", { name: "规则命中疑点工作台" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "疑点生成链路未就绪" })).toBeInTheDocument();
+    });
   });
 
   it("renders the AI chat portal handoff to backend evidence chat", () => {
