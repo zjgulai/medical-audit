@@ -1,3 +1,4 @@
+import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   ruleControlGates,
@@ -18,6 +19,9 @@ export default function RulesPage() {
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">来源覆盖</h2>
         <p className="audit-copy mt-2">按监管两库、医保目录、风险清单和对话沉淀查看规则覆盖。</p>
+        <div className="mt-3">
+          <SearchBackendStatusPill />
+        </div>
         <div className="mt-5 space-y-3">
           {ruleSourceCoverages.map((source) => (
             <SourceCoverageCard key={source.id} source={source} />

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import nextConfig from "../../next.config";
 
 import {
   findNavigationItemForPath,
@@ -106,6 +107,24 @@ describe("primaryNavigation", () => {
       label: "索引管理",
       target: "backend"
     });
+  });
+
+  it("keeps backend system routes as /pages proxied routes", async () => {
+    if (typeof nextConfig.rewrites !== "function") {
+      throw new Error("nextConfig.rewrites must be a function in test env.");
+    }
+
+    const rules = (await nextConfig.rewrites()) as readonly { readonly source: string; readonly destination: string }[];
+    const pagesRewrite = rules.find((rule) => rule.source === "/pages/:path*");
+
+    expect(pagesRewrite).toMatchObject({
+      source: "/pages/:path*",
+      destination: "http://127.0.0.1:8021/pages/:path*"
+    });
+    for (const item of systemNavigation) {
+      expect(item.target).toBe("backend");
+      expect(item.href).toMatch(/^\/pages\//);
+    }
   });
 });
 

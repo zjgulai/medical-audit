@@ -1,8 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditAgent, createProjectMember, runKnowledgeQuery, uploadAnalysisTable } from "@/lib/api-client";
-import { primaryNavigation } from "@/lib/navigation";
+import {
+  createAuditAgent,
+  createProjectMember,
+  fetchSearchBackendStatus,
+  runKnowledgeQuery,
+  uploadAnalysisTable
+} from "@/lib/api-client";
+import { primaryNavigation, secondaryNavigation, workspaceHomeNavigation } from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
 import AgentsPage from "./agents/page";
@@ -370,6 +376,15 @@ const routePages = [
   ["/projects", ProjectsPage]
 ] as const;
 
+const allWorkspaceRoutePages = [
+  [workspaceHomeNavigation.href, WorkspacePage],
+  ...routePages,
+  ["/guided-check", GuidedCheckPage],
+  ["/rules", RulesPage],
+  ["/remediation", RemediationPage],
+  ["/archive", ArchivePage],
+] as const;
+
 describe("workspace foundation pages", () => {
   it("keeps Next-owned portal targets backed by a page with one h1", () => {
     expect(routePages.map(([href]) => href)).toEqual(
@@ -381,6 +396,22 @@ describe("workspace foundation pages", () => {
 
       expect(screen.getAllByRole("heading", { level: 1 }), href).toHaveLength(1);
 
+      unmount();
+    }
+  });
+
+  it("covers every workspace navigation target with an implemented page", () => {
+    const configuredWorkspaceRoutes = [
+      workspaceHomeNavigation,
+      ...primaryNavigation,
+      ...secondaryNavigation
+    ].map((item) => item.href);
+
+    expect(allWorkspaceRoutePages.map(([href]) => href).sort()).toEqual(configuredWorkspaceRoutes.sort());
+
+    for (const [, Page] of allWorkspaceRoutePages) {
+      const { unmount } = render(<Page />);
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
       unmount();
     }
   });
@@ -572,7 +603,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("目录限制核验助手").length).toBeGreaterThan(0);
   });
 
-  it("renders read-only knowledge base asset metrics", () => {
+  it("renders read-only knowledge base asset metrics", async () => {
     render(<KnowledgeBasePage />);
 
     expect(screen.getByRole("heading", { name: "个人、系统、公开知识库" })).toBeInTheDocument();
@@ -584,6 +615,20 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("关联应用数").length).toBeGreaterThan(0);
     expect(screen.getAllByText("系统医保审计知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("法规政策、医保目录、监管规则和风险负面清单组成的系统检索底座。").length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+    });
+  });
+
+  it("falls back to sample knowledge base when search backend probe fails", async () => {
+    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
+
+    render(<KnowledgeBasePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "个人、系统、公开知识库" })).toBeInTheDocument();
   });
 
   it("runs document search through the backend query API and renders citations", async () => {
@@ -626,7 +671,7 @@ describe("workspace foundation pages", () => {
     );
   });
 
-  it("renders the read-only knowledge graph coverage view", () => {
+  it("renders the read-only knowledge graph coverage view", async () => {
     render(<GraphPage />);
 
     expect(screen.getByRole("heading", { name: "知识图谱入口" })).toBeInTheDocument();
@@ -644,6 +689,20 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("整改").length).toBeGreaterThan(0);
     expect(screen.getAllByText("FINDING-F044EBD309B659DC").length).toBeGreaterThan(0);
     expect(screen.getAllByText("review-task-0007").length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps graph sample topology when search backend probe fails", async () => {
+    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
+
+    render(<GraphPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "知识图谱入口" })).toBeInTheDocument();
   });
 
   it("renders the report homepage with gates, evidence and remediation", () => {
@@ -685,7 +744,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/pages/review-tasks");
   });
 
-  it("renders the archive homepage with packages, audit runs and signature chain", () => {
+  it("renders the archive homepage with packages, audit runs and signature chain", async () => {
     render(<ArchivePage />);
 
     expect(screen.getByRole("heading", { name: "项目档案与审计日志归档" })).toBeInTheDocument();
@@ -708,9 +767,24 @@ describe("workspace foundation pages", () => {
       "href",
       "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0001"
     );
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+    });
   });
 
-  it("renders the rules homepage with sources, runs and release gates", () => {
+  it("keeps archive samples when search backend probe fails", async () => {
+    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
+
+    render(<ArchivePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "项目档案与审计日志归档" })).toBeInTheDocument();
+    expect(screen.getByText("ARCHIVE-SELF-CHECK-FUND-202606")).toBeInTheDocument();
+  });
+
+  it("renders the rules homepage with sources, runs and release gates", async () => {
     render(<RulesPage />);
 
     expect(screen.getByRole("heading", { name: "审计规则与依据总览" })).toBeInTheDocument();
@@ -727,5 +801,20 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("link", { name: "打开索引管理" })).toHaveAttribute("href", "/pages/index-admin");
     expect(screen.getAllByRole("link", { name: "查看" })[0]).toHaveAttribute("href", "/findings?rule=CHARGE-RULE-001");
     expect(screen.getAllByRole("link", { name: "审证" })[0]).toHaveAttribute("href", expect.stringContaining("/chat?question="));
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps rule samples when search backend probe fails", async () => {
+    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
+
+    render(<RulesPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "审计规则与依据总览" })).toBeInTheDocument();
+    expect(screen.getAllByText("CHARGE-RULE-001").length).toBeGreaterThan(0);
   });
 });
