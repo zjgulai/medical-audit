@@ -9,7 +9,8 @@ import {
   fetchProjectMembers,
   fetchProjects,
   fetchSearchBackendStatus,
-  runKnowledgeQuery
+  runKnowledgeQuery,
+  uploadAnalysisTable
 } from "./api-client";
 
 describe("api-client", () => {
@@ -172,6 +173,47 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("agent-citation-check");
+  });
+
+  it("uploads analysis tables through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          name: "charge-sample.csv",
+          size_kb: 1,
+          extension: "csv",
+          status: "parsed",
+          sheet_name: null,
+          columns: [],
+          row_count: 0,
+          empty_cell_count: 0,
+          duplicate_row_count: 0,
+          message: "后端已完成 CSV 文件的字段画像。",
+          quality_findings: [],
+          audit_signals: [],
+          recommendations: []
+        })
+      }))
+    );
+
+    const file = new File(["patient_id"], "charge-sample.csv", { type: "text/csv" });
+    const result = await uploadAnalysisTable(file);
+    const fetchCall = vi.mocked(fetch).mock.calls[0];
+
+    expect(fetchCall[0]).toBe("/api/v1/analytics/table-upload");
+    expect(fetchCall[1]).toMatchObject({
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      cache: "no-store"
+    });
+    expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
+    expect(result.name).toBe("charge-sample.csv");
   });
 
   it("creates audit agents through the versioned API proxy", async () => {

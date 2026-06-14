@@ -3,12 +3,15 @@
 import { ChangeEvent, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
+import { uploadAnalysisTable } from "@/lib/api-client";
+import type { TableAnalysisColumnType, TableAnalysisUploadResponse } from "@/lib/api-types";
 
 type UploadProfile = {
   readonly name: string;
   readonly sizeKb: number;
   readonly extension: string;
-  readonly status: "parsed" | "queued" | "error";
+  readonly status: "parsed" | "error";
+  readonly sheetName: string | null;
   readonly columns: readonly ColumnProfile[];
   readonly rowCount: number;
   readonly emptyCellCount: number;
@@ -21,219 +24,12 @@ type UploadProfile = {
 
 type ColumnProfile = {
   readonly name: string;
-  readonly type: "数值" | "日期" | "标识" | "文本" | "空列";
+  readonly type: TableAnalysisColumnType;
   readonly emptyCount: number;
   readonly uniqueCount: number;
   readonly sampleValues: readonly string[];
   readonly auditHint: string;
 };
-
-function parseCsvRows(text: string) {
-  const rows: string[][] = [];
-  let field = "";
-  let row: string[] = [];
-  let inQuotes = false;
-  const normalizedText = text.replace(/^\uFEFF/, "");
-
-  for (let index = 0; index < normalizedText.length; index += 1) {
-    const char = normalizedText[index];
-    const nextChar = normalizedText[index + 1];
-
-    if (char === '"' && inQuotes && nextChar === '"') {
-      field += '"';
-      index += 1;
-      continue;
-    }
-
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (char === "," && !inQuotes) {
-      row.push(field);
-      field = "";
-      continue;
-    }
-
-    if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && nextChar === "\n") {
-        index += 1;
-      }
-      row.push(field);
-      rows.push(row);
-      field = "";
-      row = [];
-      continue;
-    }
-
-    field += char;
-  }
-
-  row.push(field);
-  rows.push(row);
-
-  return rows
-    .map((cells) => cells.map((cell) => cell.trim()))
-    .filter((cells) => cells.some((cell) => cell !== ""));
-}
-
-function normalizeRow(row: readonly string[], columnCount: number) {
-  return Array.from({ length: columnCount }, (_, index) => row[index]?.trim() ?? "");
-}
-
-function inferColumnType(name: string, values: readonly string[]): ColumnProfile["type"] {
-  const nonEmptyValues = values.filter(Boolean);
-  const normalizedName = name.toLowerCase();
-
-  if (nonEmptyValues.length === 0) {
-    return "空列";
-  }
-
-  if (/id|编号|编码|身份证|患者|就诊|病历|patient|visit|code/.test(normalizedName)) {
-    return "标识";
-  }
-
-  const numericCount = nonEmptyValues.filter((value) => /^-?\d+(\.\d+)?$/.test(value.replace(/,/g, ""))).length;
-  if (numericCount / nonEmptyValues.length >= 0.8) {
-    return "数值";
-  }
-
-  const dateCount = nonEmptyValues.filter((value) => !Number.isNaN(Date.parse(value.replace(/\./g, "-")))).length;
-  if (dateCount / nonEmptyValues.length >= 0.8) {
-    return "日期";
-  }
-
-  return "文本";
-}
-
-function inferAuditHint(name: string) {
-  if (/金额|费用|price|amount|cost|fee|charge|total/i.test(name)) {
-    return "金额字段，可用于收费合规和异常金额核验";
-  }
-  if (/患者|病人|patient|姓名|身份证|就诊|visit/i.test(name)) {
-    return "对象字段，可用于同人同次就诊聚合";
-  }
-  if (/日期|时间|date|time|结算|发生/i.test(name)) {
-    return "时间字段，可用于限定审计期间和同日重复核验";
-  }
-  if (/项目|药品|目录|item|drug|catalog|编码|code/i.test(name)) {
-    return "项目字段，可用于目录限制和重复收费核验";
-  }
-  if (/科室|department|dept/i.test(name)) {
-    return "组织字段，可用于科室维度分布分析";
-  }
-  if (/医保|结算|支付|报销|insurance|fund/i.test(name)) {
-    return "医保字段，可用于支付范围和报销口径核验";
-  }
-  if (/数量|qty|quantity|num/i.test(name)) {
-    return "数量字段，可用于数量异常和金额复算";
-  }
-  return "通用字段";
-}
-
-function buildAuditSignals(columnNames: readonly string[]) {
-  const signalRules = [
-    { label: "金额/费用字段", pattern: /金额|费用|price|amount|cost|fee|charge|total/i },
-    { label: "患者/就诊字段", pattern: /患者|病人|patient|姓名|身份证|就诊|visit/i },
-    { label: "日期/时间字段", pattern: /日期|时间|date|time|结算|发生/i },
-    { label: "项目/药品/目录字段", pattern: /项目|药品|目录|item|drug|catalog|编码|code/i },
-    { label: "医保支付字段", pattern: /医保|结算|支付|报销|insurance|fund/i },
-    { label: "数量字段", pattern: /数量|qty|quantity|num/i }
-  ] as const;
-
-  return signalRules.filter((rule) => columnNames.some((name) => rule.pattern.test(name))).map((rule) => rule.label);
-}
-
-function parseCsv(text: string) {
-  const parsedRows = parseCsvRows(text);
-  const rawColumns = parsedRows[0] ?? [];
-  const columns = rawColumns.map((cell, index) => cell || `field_${index + 1}`);
-  const normalizedRows = parsedRows.slice(1).map((row) => normalizeRow(row, columns.length));
-  const duplicateRowCount = normalizedRows.length - new Set(normalizedRows.map((row) => JSON.stringify(row))).size;
-
-  const columnProfiles = columns.map((column, index): ColumnProfile => {
-    const values = normalizedRows.map((row) => row[index] ?? "");
-    const nonEmptyValues = values.filter(Boolean);
-
-    return {
-      name: column,
-      type: inferColumnType(column, values),
-      emptyCount: values.length - nonEmptyValues.length,
-      uniqueCount: new Set(nonEmptyValues).size,
-      sampleValues: Array.from(new Set(nonEmptyValues)).slice(0, 3),
-      auditHint: inferAuditHint(column)
-    };
-  });
-
-  const emptyCellCount = normalizedRows.reduce((count, row) => {
-    return count + row.filter((cell) => cell.trim() === "").length;
-  }, 0);
-  const highEmptyColumns = columnProfiles.filter((column) => normalizedRows.length > 0 && column.emptyCount / normalizedRows.length >= 0.3);
-  const duplicateColumnNames = columns.filter((column, index) => columns.indexOf(column) !== index);
-  const auditSignals = buildAuditSignals(columns);
-  const duplicateChargeSignals = ["金额/费用字段", "患者/就诊字段", "日期/时间字段", "项目/药品/目录字段"] as const;
-  const hasDuplicateChargeBase = duplicateChargeSignals.every((signal) =>
-    auditSignals.includes(signal)
-  );
-  const qualityFindings = [
-    normalizedRows.length > 0 ? `识别到 ${normalizedRows.length} 行数据和 ${columns.length} 个字段。` : "仅识别到表头，未发现可分析数据行。",
-    emptyCellCount > 0 ? `发现 ${emptyCellCount} 个空值单元，需要确认是否为业务允许缺失。` : "未发现空值单元。",
-    duplicateRowCount > 0 ? `发现 ${duplicateRowCount} 条完全重复行。` : "未发现完全重复行。",
-    duplicateColumnNames.length > 0 ? `存在重复字段名：${Array.from(new Set(duplicateColumnNames)).join("、")}。` : "字段名未发现重复。"
-  ];
-  const recommendations = [
-    hasDuplicateChargeBase
-      ? "重复收费核验字段基础完整，可按患者/就诊、项目、日期和金额形成初筛分组。"
-      : "重复收费核验字段不完整，需补齐患者/就诊、项目、日期和金额字段后再进入正式审计判断。",
-    auditSignals.includes("医保支付字段")
-      ? "已识别医保支付字段，可进一步核对支付范围、报销口径和目录限制条件。"
-      : "未识别医保支付字段，当前更适合做文件质量预检和通用异常线索整理。",
-    highEmptyColumns.length > 0
-      ? `优先核对高空值字段：${highEmptyColumns.map((column) => column.name).join("、")}。`
-      : "字段完整度未触发高空值预警。"
-  ];
-
-  return {
-    columns: columnProfiles,
-    rowCount: normalizedRows.length,
-    emptyCellCount,
-    duplicateRowCount,
-    qualityFindings,
-    auditSignals,
-    recommendations
-  };
-}
-
-function buildQueuedProfile(name: string, sizeKb: number, extension: string): UploadProfile {
-  return {
-    name,
-    sizeKb,
-    extension,
-    status: "queued",
-    columns: [],
-    rowCount: 0,
-    emptyCellCount: 0,
-    duplicateRowCount: 0,
-    message: "已接收文件。当前前端先完成文件级预检，工作簿 sheet 解析需由后端分析服务接管。",
-    qualityFindings: ["文件格式已通过上传入口校验。", "尚未读取 sheet 表头和数据行，不能生成字段级审计判断。"],
-    auditSignals: ["待后端解析"],
-    recommendations: ["确认工作簿中审计明细所在 sheet、表头行和字段字典，再进入正式分析。"]
-  };
-}
-
-function readFileText(file: File) {
-  if (typeof file.text === "function") {
-    return file.text();
-  }
-
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
-}
 
 type AnalysisTab = "code" | "terminal" | "chart" | "data" | "report";
 
@@ -245,8 +41,56 @@ const analysisTabs: readonly { readonly id: AnalysisTab; readonly label: string 
   { id: "report", label: "分析报告" }
 ];
 
+function fileExtension(fileName: string) {
+  return fileName.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function mapUploadProfile(response: TableAnalysisUploadResponse): UploadProfile {
+  return {
+    name: response.name,
+    sizeKb: response.size_kb,
+    extension: response.extension,
+    status: response.status,
+    sheetName: response.sheet_name,
+    columns: response.columns.map((column) => ({
+      name: column.name,
+      type: column.type,
+      emptyCount: column.empty_count,
+      uniqueCount: column.unique_count,
+      sampleValues: column.sample_values,
+      auditHint: column.audit_hint
+    })),
+    rowCount: response.row_count,
+    emptyCellCount: response.empty_cell_count,
+    duplicateRowCount: response.duplicate_row_count,
+    message: response.message,
+    qualityFindings: response.quality_findings,
+    auditSignals: response.audit_signals,
+    recommendations: response.recommendations
+  };
+}
+
+function buildErrorProfile(file: File, message: string): UploadProfile {
+  return {
+    name: file.name,
+    sizeKb: Math.max(1, Math.round(file.size / 1024)),
+    extension: fileExtension(file.name),
+    status: "error",
+    sheetName: null,
+    columns: [],
+    rowCount: 0,
+    emptyCellCount: 0,
+    duplicateRowCount: 0,
+    message,
+    qualityFindings: ["后端未返回字段画像，当前文件不能进入审计判断。"],
+    auditSignals: [],
+    recommendations: ["检查文件格式、大小和后端分析服务状态后重新上传。"]
+  };
+}
+
 export function DataAnalysisWorkbench() {
   const [profile, setProfile] = useState<UploadProfile | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("data");
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -256,52 +100,36 @@ export function DataAnalysisWorkbench() {
       return;
     }
 
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const baseProfile = {
-      name: file.name,
-      sizeKb: Math.max(1, Math.round(file.size / 1024)),
-      extension,
-      columns: [],
-      rowCount: 0,
-      emptyCellCount: 0,
-      duplicateRowCount: 0,
-      qualityFindings: [],
-      auditSignals: [],
-      recommendations: []
-    };
-
-    if (extension === "csv") {
-      try {
-        const parsed = parseCsv(await readFileText(file));
-        setProfile({
-          ...baseProfile,
-          ...parsed,
-          status: "parsed",
-          message: "已完成本地字段概览。"
-        });
-      } catch {
-        setProfile({
-          ...baseProfile,
-          status: "error",
-          message: "CSV 读取失败，请检查文件编码或重新上传。"
-        });
-      }
-      return;
+    setIsUploading(true);
+    setProfile(null);
+    try {
+      const result = await uploadAnalysisTable(file);
+      setProfile(mapUploadProfile(result));
+    } catch {
+      setProfile(buildErrorProfile(file, "后端表格分析失败，请检查文件格式或稍后重试。"));
+    } finally {
+      setIsUploading(false);
     }
-
-    setProfile({
-      ...baseProfile,
-      ...buildQueuedProfile(file.name, Math.max(1, Math.round(file.size / 1024)), extension)
-    });
   }
 
   function renderTabContent() {
+    if (isUploading) {
+      return (
+        <div className="audit-panel-muted p-6 text-center">
+          <h2 className="audit-section-title">正在上传并分析数据文件</h2>
+          <p className="audit-copy mx-auto mt-2 max-w-xl">
+            后端正在读取工作簿、生成字段画像、质量提示和审计初步分析。
+          </p>
+        </div>
+      );
+    }
+
     if (!profile) {
       return (
         <div className="audit-panel-muted p-6 text-center">
           <h2 className="audit-section-title">等待上传数据文件</h2>
           <p className="audit-copy mx-auto mt-2 max-w-xl">
-            选择 CSV 文件后，系统会在本地生成字段画像、质量提示和审计初步分析。XLSX 首期先进入待后端解析状态。
+            选择 CSV 或 XLSX 文件后，后端会生成字段画像、质量提示和审计初步分析。
           </p>
         </div>
       );
@@ -330,7 +158,7 @@ map_audit_signals()`}</pre>
             <p>[ok] 文件入口校验通过</p>
             <p>[ok] 字段数: {profile.columns.length}</p>
             <p>[ok] 数据行: {profile.rowCount}</p>
-            <p>{profile.status === "parsed" ? "[ok] 本地 CSV 预检完成" : "[wait] 等待后端工作簿解析服务"}</p>
+            <p>{profile.status === "parsed" ? "[ok] 后端表格解析完成" : "[error] 后端表格解析失败"}</p>
           </div>
         </section>
       );
@@ -375,8 +203,8 @@ map_audit_signals()`}</pre>
               <h2 className="audit-section-title">{profile.name}</h2>
               <p className="audit-copy mt-2">{profile.message}</p>
             </div>
-            <StatusPill tone={profile.status === "parsed" ? "success" : profile.status === "error" ? "danger" : "info"}>
-              {profile.status === "parsed" ? "已生成" : profile.status === "error" ? "失败" : "待解析"}
+            <StatusPill tone={profile.status === "parsed" ? "success" : "danger"}>
+              {profile.status === "parsed" ? "已生成" : "失败"}
             </StatusPill>
           </div>
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -394,10 +222,11 @@ map_audit_signals()`}</pre>
             <h2 className="audit-section-title">{profile.name}</h2>
             <p className="audit-meta mt-1">
               {profile.extension.toUpperCase()} / {profile.sizeKb} KB
+              {profile.sheetName ? ` / ${profile.sheetName}` : ""}
             </p>
           </div>
-          <StatusPill tone={profile.status === "parsed" ? "success" : profile.status === "error" ? "danger" : "info"}>
-            {profile.status === "parsed" ? "已分析" : profile.status === "error" ? "失败" : "已接收"}
+          <StatusPill tone={profile.status === "parsed" ? "success" : "danger"}>
+            {profile.status === "parsed" ? "已分析" : "失败"}
           </StatusPill>
         </div>
         <p className="audit-copy mt-4">{profile.message}</p>
@@ -468,10 +297,16 @@ map_audit_signals()`}</pre>
         <p className="audit-copy mt-2">按参考工作台组织上传、预检、产物和报告。首期不执行生产级自动审计。</p>
         <div className="mt-5 space-y-3">
           {[
-            ["da_list_files", profile ? "完成" : "等待"],
-            ["da_preview_data", profile?.status === "parsed" ? "完成" : "等待"],
-            ["da_profile_columns", profile?.columns.length ? "完成" : "等待"],
-            ["da_write_report", profile ? "草稿" : "等待"]
+            ["da_list_files", isUploading ? "处理中" : profile ? "完成" : "等待"],
+            [
+              "da_preview_data",
+              isUploading ? "处理中" : profile?.status === "parsed" ? "完成" : profile ? "失败" : "等待"
+            ],
+            [
+              "da_profile_columns",
+              isUploading ? "处理中" : profile?.columns.length ? "完成" : profile ? "失败" : "等待"
+            ],
+            ["da_write_report", isUploading ? "处理中" : profile?.status === "parsed" ? "草稿" : profile ? "失败" : "等待"]
           ].map(([tool, status]) => (
             <div key={tool} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
               <p className="font-mono text-xs font-semibold text-[var(--audit-primary)]">{tool}</p>
@@ -497,7 +332,9 @@ map_audit_signals()`}</pre>
               左侧记录分析过程，中间展示代码、终端、图表、数据和报告，右侧管理上传文件。
             </p>
           </div>
-          <StatusPill tone="warning">分析线索</StatusPill>
+          <StatusPill tone={isUploading ? "info" : profile?.status === "parsed" ? "success" : profile?.status === "error" ? "danger" : "warning"}>
+            {isUploading ? "分析中" : profile?.status === "parsed" ? "已分析" : profile?.status === "error" ? "失败" : "分析线索"}
+          </StatusPill>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2 border-b border-[var(--audit-line)] pb-3" role="tablist" aria-label="分析产物">
@@ -524,14 +361,14 @@ map_audit_signals()`}</pre>
 
       <aside className="min-w-0 space-y-4">
         <label className="audit-focus-ring audit-upload-drop p-5">
-          <span className="audit-card-title block">选择 `.csv` 或 `.xlsx` 文件</span>
+          <span className="audit-card-title block">选择 `.csv`、`.xlsx` 或 `.xlsm` 文件</span>
           <span className="audit-copy mt-2 block">
-            CSV 会即时展示字段、行数和空值概览；XLSX 先进入上传接收状态。
+            表格会交由后端解析，生成字段、行数、空值、重复行和审计线索概览。
           </span>
           <input
             aria-label="上传审计表格"
             className="mt-4 block w-full text-sm text-[var(--audit-ink-muted)]"
-            accept=".csv,.xlsx"
+            accept=".csv,.xlsx,.xlsm"
             type="file"
             onChange={handleFileChange}
           />
@@ -540,7 +377,10 @@ map_audit_signals()`}</pre>
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">数据文件</h2>
           <div className="mt-4 space-y-2">
-            <FileRow name={profile?.name ?? "尚未上传文件"} status={profile ? "当前文件" : "等待上传"} />
+            <FileRow
+              name={profile?.name ?? "尚未上传文件"}
+              status={isUploading ? "分析中" : profile?.status === "parsed" ? "已分析" : profile ? "失败" : "等待上传"}
+            />
             <FileRow name="HIS staging 明细" status="审计数据入口" />
           </div>
         </section>

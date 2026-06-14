@@ -14,6 +14,33 @@ export type SearchBackendStatusResponse = {
   readonly details?: SearchBackendDetails;
 };
 
+export type TableAnalysisColumnType = "数值" | "日期" | "标识" | "文本" | "空列";
+
+export type TableAnalysisColumnProfile = {
+  readonly name: string;
+  readonly type: TableAnalysisColumnType;
+  readonly empty_count: number;
+  readonly unique_count: number;
+  readonly sample_values: readonly string[];
+  readonly audit_hint: string;
+};
+
+export type TableAnalysisUploadResponse = {
+  readonly name: string;
+  readonly size_kb: number;
+  readonly extension: string;
+  readonly status: "parsed";
+  readonly sheet_name: string | null;
+  readonly columns: readonly TableAnalysisColumnProfile[];
+  readonly row_count: number;
+  readonly empty_cell_count: number;
+  readonly duplicate_row_count: number;
+  readonly message: string;
+  readonly quality_findings: readonly string[];
+  readonly audit_signals: readonly string[];
+  readonly recommendations: readonly string[];
+};
+
 export type SourceCollection =
   | "medical-insurance-laws"
   | "supervision-rules-knowledge"

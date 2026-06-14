@@ -111,6 +111,7 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
         return Response(content=svg, media_type="image/svg+xml")
 
     from medical_audit_kb.api.routes_agents import router as agents_router
+    from medical_audit_kb.api.routes_analytics import router as analytics_router
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
     from medical_audit_kb.api.routes_preview import router as preview_router
@@ -120,6 +121,7 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
     app.include_router(pages_router)
     app.include_router(query_router)
     app.include_router(agents_router)
+    app.include_router(analytics_router)
     app.include_router(projects_router)
     app.include_router(index_router)
     app.include_router(preview_router)

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditAgent, createProjectMember } from "@/lib/api-client";
+import { createAuditAgent, createProjectMember, uploadAnalysisTable } from "@/lib/api-client";
 import { primaryNavigation } from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
@@ -72,6 +72,71 @@ vi.mock("@/lib/api-client", () => ({
       store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
     })
   ),
+  uploadAnalysisTable: vi.fn(async (file: File) => ({
+    name: file.name,
+    size_kb: Math.max(1, Math.round(file.size / 1024)),
+    extension: "csv",
+    status: "parsed",
+    sheet_name: null,
+    columns: [
+      {
+        name: "patient_id",
+        type: "标识",
+        empty_count: 0,
+        unique_count: 2,
+        sample_values: ["P001", "P002"],
+        audit_hint: "对象字段，可用于同人同次就诊聚合"
+      },
+      {
+        name: "visit_date",
+        type: "日期",
+        empty_count: 0,
+        unique_count: 2,
+        sample_values: ["2026-01-01", "2026-01-02"],
+        audit_hint: "时间字段，可用于限定审计期间和同日重复核验"
+      },
+      {
+        name: "item_code",
+        type: "标识",
+        empty_count: 0,
+        unique_count: 2,
+        sample_values: ["A100", "B200"],
+        audit_hint: "项目字段，可用于目录限制和重复收费核验"
+      },
+      {
+        name: "charge_amount",
+        type: "数值",
+        empty_count: 1,
+        unique_count: 1,
+        sample_values: ["120.00"],
+        audit_hint: "金额字段，可用于收费合规和异常金额核验"
+      },
+      {
+        name: "insurance_pay",
+        type: "数值",
+        empty_count: 0,
+        unique_count: 2,
+        sample_values: ["80.00", "50.00"],
+        audit_hint: "医保字段，可用于支付范围和报销口径核验"
+      }
+    ],
+    row_count: 3,
+    empty_cell_count: 1,
+    duplicate_row_count: 1,
+    message: "后端已完成 CSV 文件的字段画像。",
+    quality_findings: [
+      "识别到 3 行数据和 5 个字段。",
+      "发现 1 个空值单元，需要确认是否为业务允许缺失。",
+      "发现 1 条完全重复行。",
+      "字段名未发现重复。"
+    ],
+    audit_signals: ["金额/费用字段", "患者/就诊字段", "日期/时间字段", "项目/药品/目录字段", "医保支付字段"],
+    recommendations: [
+      "重复收费核验字段基础完整，可按患者/就诊、项目、日期和金额形成初筛分组。",
+      "已识别医保支付字段，可进一步核对支付范围、报销口径和目录限制条件。",
+      "优先核对高空值字段：charge_amount。"
+    ]
+  })),
   fetchAuditFindings: vi.fn(async () => ({
     items: [],
     stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
@@ -362,6 +427,9 @@ describe("workspace foundation pages", () => {
 
     fireEvent.change(input, { target: { files: [file] } });
 
+    await waitFor(() => {
+      expect(uploadAnalysisTable).toHaveBeenCalledWith(file);
+    });
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "charge-sample.csv" })).toBeInTheDocument();
     });
