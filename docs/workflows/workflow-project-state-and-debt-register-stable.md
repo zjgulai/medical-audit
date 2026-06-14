@@ -50,10 +50,10 @@ source: human+ai
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit`
-- 当前分支：`codex/post-deploy-doc-sync`
-- 本地 HEAD：`912965d6 同步腾讯云生产部署记录`
+- 当前分支：`codex/product-integration-debt-phase2`
+- 本地 HEAD：`dca8b2fe31bd2476dfc22e9f59f3f71cb0088da0`
 - 本地 `origin/main`：`596d6967 合并审计门户核心工作台`
-- 当前分支相对 `origin/main`：ahead 1。
+- 当前分支相对 `origin/main`：ahead 2，且存在 Phase 2.1 未提交工作区改动。
 - 当前生产部署 SHA 位于 `codex/reference-workspace-shell-p0`，并作为当前主线历史的祖先保留。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
@@ -77,10 +77,11 @@ source: human+ai
 - 知识库查询引擎已具备检索、引用型回答、原文预览、索引管理、评测和回滚治理。
 - 复核任务台已具备任务级持久化、报告准备度预检、附件归档、正式报告签发冻结、整改跟踪和结案只读锁。
 - HIS 数据底座、staging、snapshot、字段映射校验、`CHARGE-RULE-001` fixture 与 staging 执行路径已具备工程基础。
+- 智能体持久化已在本地 Phase 2.1 完成并通过 API、前端和浏览器联调验收；尚未部署到生产。
 
 未完成：
 
-- 智能体新增只写前端 state，未接入后端持久化。
+- 智能体持久化尚未执行生产部署和生产库 `audit_agents` schema 应用。
 - 项目成员新增只写前端 state，未接入项目/成员/权限 API。
 - AI 数据分析只完成浏览器本地 CSV 预检；XLSX 和正式工作簿解析仍等待后端。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
@@ -133,6 +134,43 @@ source: human+ai
 - 写入后状态审计：`pass`，`medical_audit_app` 和 `medical_audit_pg` 保持 healthy，检索后端仍 `ready=true`。
 
 Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务级写入型 smoke 均已通过；下一阶段应进入 Phase 2 产品集成债务治理。
+
+### 2.5 Phase 2.1 本地验收状态
+
+验收日期：`2026-06-14`
+
+本轮 Phase 2.1 已完成，结论为 `pass`，范围限定为本地开发和联调环境。
+
+后端集成：
+
+- 新增 `audit_agents` SQLAlchemy 模型和正式 SQL schema。
+- 新增 `SqlAlchemyAgentStore`、`InMemoryAgentStore` 和 `/agents` GET/POST API。
+- `/agents` 返回系统默认智能体和自定义智能体；默认项标记为 `source=system-default`，自定义项标记为 `source=custom`。
+- 新增自定义智能体写入持久化 store，刷新或重新创建 store 后仍可读取。
+
+前端集成：
+
+- `AgentWorkspace` 启动时读取 `/api/v1/agents`。
+- 新增智能体必须通过 `createAuditAgent` POST 后端成功后才进入页面列表。
+- 后端不可用时只显示默认内容和错误状态，不再伪造本地新增成功。
+
+本地验收：
+
+- `uv run ruff check src tests scripts`：通过。
+- `uv run mypy src`：通过，`75` 个源码文件无类型错误。
+- `uv run pytest`：通过，`244 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`10` 个 test files、`54` 个 tests。
+- `pnpm --dir web build:static`：通过，静态构建生成 `20/20` 页面。
+- 本地浏览器联调：Next `127.0.0.1:3030` + FastAPI `127.0.0.1:8021`，`/agents` 页面显示默认智能体、后端连接状态和新增自定义智能体；刷新级 API 校验返回 `store.ready=true`。
+- 浏览器截图：`tmp/screenshots/tmp-screenshot-agents-phase2-agent-persistence-20260614.png`。
+
+边界：
+
+- 本轮未执行生产部署。
+- 本轮未对生产 PostgreSQL 应用 `audit_agents` schema。
+- 本轮 FastAPI 联调使用本地临时 SQLite agent store，仅证明前后端协议和持久化行为。
 
 ## 3. 债务分级
 
@@ -220,7 +258,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 优先顺序：
 
-1. 智能体 CRUD 和提示词版本。
+1. 智能体 CRUD 和提示词版本：本地 Phase 2.1 已完成；生产部署和 schema 应用待执行。
 2. 项目成员管理 API 和页面持久化。
 3. 表格上传分析后端和工作簿解析任务。
 4. 文档、知识库、图谱、报告、整改页面逐步接真实 API。

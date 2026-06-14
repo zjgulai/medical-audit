@@ -137,3 +137,48 @@ export type AuditFindingsResponse = {
     readonly backend: string;
   };
 };
+
+export type ApiAgentCategory = "效率类" | "业务类" | "研究类";
+
+export type AuditAgentApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly category: ApiAgentCategory;
+  readonly topic: string;
+  readonly prompt: string;
+  readonly knowledge_base: string;
+  readonly project_name: string;
+  readonly status: string;
+  readonly created_by: string | null;
+  readonly created_at?: string;
+  readonly updated_at: string;
+  readonly source: "custom" | "system-default" | string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type AgentsResponse = {
+  readonly items: readonly AuditAgentApiItem[];
+  readonly categories: readonly ApiAgentCategory[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentCreateRequest = {
+  readonly name: string;
+  readonly category: ApiAgentCategory;
+  readonly topic: string;
+  readonly prompt: string;
+  readonly knowledge_base?: string;
+  readonly project_name?: string;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type AgentCreateResponse = {
+  readonly item: AuditAgentApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};

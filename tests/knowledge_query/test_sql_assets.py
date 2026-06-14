@@ -49,6 +49,20 @@ def test_pgvector_schema_includes_review_task_tables() -> None:
     assert "idx_review_comments_task_created_at" in schema
 
 
+def test_pgvector_schema_includes_audit_agent_table() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS audit_agents" in schema
+    assert "agent_key text NOT NULL UNIQUE" in schema
+    assert "prompt text NOT NULL" in schema
+    assert "knowledge_base text NOT NULL" in schema
+    assert "project_name text NOT NULL" in schema
+    assert "CONSTRAINT ck_audit_agents_category" in schema
+    assert "idx_audit_agents_category" in schema
+    assert "idx_audit_agents_status" in schema
+    assert "idx_audit_agents_updated_at" in schema
+
+
 def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
 

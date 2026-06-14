@@ -1,4 +1,7 @@
 import type {
+  AgentCreateRequest,
+  AgentCreateResponse,
+  AgentsResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
   QueryRequest,
@@ -72,4 +75,12 @@ export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindings
   return getJson<AuditFindingsResponse>(
     `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
   );
+}
+
+export function fetchAgents(): Promise<AgentsResponse> {
+  return getJson<AgentsResponse>("/api/v1/agents");
+}
+
+export function createAuditAgent(payload: AgentCreateRequest): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>("/api/v1/agents", payload);
 }

@@ -418,6 +418,35 @@ class ReviewComment(Base):
     review_task: Mapped[ReviewTask] = relationship(back_populates="comments")
 
 
+class AuditAgent(Base):
+    __tablename__ = "audit_agents"
+    __table_args__ = (
+        Index("idx_audit_agents_category", "category"),
+        Index("idx_audit_agents_status", "status"),
+        Index("idx_audit_agents_updated_at", "updated_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    agent_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(48), nullable=False)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    knowledge_base: Mapped[str] = mapped_column(Text, nullable=False)
+    project_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="active")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
 class AuditProject(Base):
     __tablename__ = "audit_projects"
     __table_args__ = (

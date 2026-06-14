@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
@@ -33,6 +34,75 @@ def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["data_root"] == str(tmp_path / "data")
+
+
+def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    list_response = client.get("/agents")
+
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["store"]["backend"] == "SqlAlchemyAgentStore"
+    assert list_body["categories"] == ["业务类", "效率类", "研究类"]
+    assert [item["id"] for item in list_body["items"][:3]] == [
+        "agent-citation-check",
+        "agent-duplicate-charge",
+        "agent-report-draft",
+    ]
+
+    create_response = client.post(
+        "/agents",
+        headers={"X-User-Id": "auditor-1"},
+        json={
+            "name": "目录限制核验助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "仅基于目录限制字段和引用依据输出待补证问题。",
+            "knowledge_base": "医保目录库",
+            "project_name": "医保目录限制条件核验",
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["id"].startswith(AGENT_ID_PREFIX)
+    assert created["created_by"] == "auditor-1"
+    assert created["source"] == "custom"
+    assert state.operation_logs[-1]["action"] == "agent-create"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.agent_store = SqlAlchemyAgentStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_items = second_client.get("/agents").json()["items"]
+
+    assert persisted_items[0]["id"] == created["id"]
+    assert persisted_items[0]["name"] == "目录限制核验助手"
+    assert any(item["id"] == "agent-citation-check" for item in persisted_items)
+
+
+def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'agents.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/agents",
+        json={
+            "name": "未知分类助手",
+            "category": "其他",
+            "topic": "医保基金使用合规",
+            "prompt": "输出审计问题。",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:

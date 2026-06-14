@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createAuditAgent,
   fetchAuditFindings,
+  fetchAgents,
   fetchBackendHealth,
   fetchSearchBackendStatus,
   runKnowledgeQuery
@@ -130,5 +132,97 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.filters.review_status).toBe("pending-review");
+  });
+
+  it("fetches audit agents through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "agent-citation-check",
+              name: "引用依据核验助手",
+              category: "业务类",
+              topic: "医保基金使用合规",
+              prompt: "只基于引用回答。",
+              knowledge_base: "系统医保审计知识库",
+              project_name: "医保基金使用合规专项自查",
+              status: "active",
+              created_by: "system",
+              updated_at: "2026-06-12",
+              source: "system-default",
+              metadata: {}
+            }
+          ],
+          categories: ["业务类", "效率类", "研究类"],
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await fetchAgents();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.items[0].id).toBe("agent-citation-check");
+  });
+
+  it("creates audit agents through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "agent-custom-001",
+            name: "目录限制核验助手",
+            category: "业务类",
+            topic: "医保目录限制条件核验",
+            prompt: "仅基于目录限制字段输出待补证问题。",
+            knowledge_base: "医保目录库",
+            project_name: "医保目录限制条件核验",
+            status: "active",
+            created_by: "next-knowledge-query",
+            updated_at: "2026-06-14T00:00:00Z",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await createAuditAgent({
+      name: "目录限制核验助手",
+      category: "业务类",
+      topic: "医保目录限制条件核验",
+      prompt: "仅基于目录限制字段输出待补证问题。",
+      knowledge_base: "医保目录库",
+      project_name: "医保目录限制条件核验"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      body: JSON.stringify({
+        name: "目录限制核验助手",
+        category: "业务类",
+        topic: "医保目录限制条件核验",
+        prompt: "仅基于目录限制字段输出待补证问题。",
+        knowledge_base: "医保目录库",
+        project_name: "医保目录限制条件核验"
+      }),
+      cache: "no-store"
+    });
+    expect(result.item.id).toBe("agent-custom-001");
   });
 });

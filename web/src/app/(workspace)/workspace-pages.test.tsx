@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { createAuditAgent } from "@/lib/api-client";
 import { primaryNavigation } from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
@@ -21,6 +22,32 @@ import RulesPage from "./rules/page";
 import WorkspacePage from "./workspace/page";
 
 vi.mock("@/lib/api-client", () => ({
+  createAuditAgent: vi.fn(
+    async (payload: {
+      readonly name: string;
+      readonly category: string;
+      readonly topic: string;
+      readonly prompt: string;
+      readonly knowledge_base?: string;
+      readonly project_name?: string;
+    }) => ({
+    item: {
+      id: "agent-custom-test",
+      name: payload.name,
+      category: payload.category,
+      topic: payload.topic,
+      prompt: payload.prompt,
+      knowledge_base: payload.knowledge_base ?? "项目默认知识库",
+      project_name: payload.project_name ?? "医保基金使用合规专项自查",
+      status: "active",
+      created_by: "next-knowledge-query",
+      updated_at: "2026-06-14T00:00:00Z",
+      source: "custom",
+      metadata: {}
+    },
+    store: { ready: true, backend: "SqlAlchemyAgentStore" }
+    })
+  ),
   fetchAuditFindings: vi.fn(async () => ({
     items: [],
     stats: { total: 0, open: 0, pending_review: 0, linked_review_task: 0 },
@@ -45,6 +72,54 @@ vi.mock("@/lib/api-client", () => ({
     status: "ok",
     version: "0.1.0",
     data_root: "/tmp/data"
+  })),
+  fetchAgents: vi.fn(async () => ({
+    items: [
+      {
+        id: "agent-citation-check",
+        name: "引用依据核验助手",
+        category: "业务类",
+        topic: "医保基金使用合规",
+        prompt: "只基于命中的法规、目录、规则和风险清单回答；没有引用时输出待补证据。",
+        knowledge_base: "系统医保审计知识库",
+        project_name: "医保基金使用合规专项自查",
+        status: "active",
+        created_by: "system",
+        updated_at: "2026-06-12",
+        source: "system-default",
+        metadata: {}
+      },
+      {
+        id: "agent-duplicate-charge",
+        name: "重复收费复核助手",
+        category: "业务类",
+        topic: "收费明细复核",
+        prompt: "围绕同就诊、同项目、同日期的重复收费线索，列出应核验的执行记录、数量和例外情形。",
+        knowledge_base: "规则库与风险清单",
+        project_name: "医保基金使用合规专项自查",
+        status: "active",
+        created_by: "system",
+        updated_at: "2026-06-11",
+        source: "system-default",
+        metadata: {}
+      },
+      {
+        id: "agent-report-draft",
+        name: "底稿摘要助手",
+        category: "效率类",
+        topic: "审计底稿",
+        prompt: "把已复核的引用、疑点和附件清单整理为底稿摘要，保留待人工确认标记。",
+        knowledge_base: "项目复核资料",
+        project_name: "医保基金使用合规专项自查",
+        status: "active",
+        created_by: "system",
+        updated_at: "2026-06-10",
+        source: "system-default",
+        metadata: {}
+      }
+    ],
+    categories: ["业务类", "效率类", "研究类"],
+    store: { ready: true, backend: "SqlAlchemyAgentStore" }
   })),
   fetchSearchBackendStatus: vi.fn(async () => ({
     backend: "postgres",
@@ -198,7 +273,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
 
-  it("filters agent marketplace templates and keeps agent chat handoff in the portal", () => {
+  it("filters agent marketplace templates and keeps agent chat handoff in the portal", async () => {
     render(<AgentMarketPage />);
 
     expect(screen.getByRole("heading", { name: "医疗审计场景模板" })).toBeInTheDocument();
@@ -216,8 +291,38 @@ describe("workspace foundation pages", () => {
     expect(screen.queryByText("政策口径对比")).not.toBeInTheDocument();
 
     render(<AgentsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("后端已连接")).toBeInTheDocument();
+    });
     expect(screen.getAllByText("医保基金使用合规专项自查").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "进入对话" })[0]).toHaveAttribute("href", "/chat?agent=agent-citation-check");
+  });
+
+  it("creates a custom audit agent through the backend API", async () => {
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("后端已连接")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "目录限制核验助手" } });
+    fireEvent.change(screen.getByLabelText("审计专题"), { target: { value: "医保目录限制条件核验" } });
+    fireEvent.change(screen.getByLabelText("提示词"), {
+      target: { value: "仅基于目录限制字段和引用依据输出待补证问题。" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "新增智能体" }));
+
+    await waitFor(() => {
+      expect(createAuditAgent).toHaveBeenCalledWith({
+        name: "目录限制核验助手",
+        category: "业务类",
+        topic: "医保目录限制条件核验",
+        prompt: "仅基于目录限制字段和引用依据输出待补证问题。",
+        knowledge_base: "项目默认知识库",
+        project_name: "医保基金使用合规专项自查"
+      });
+    });
+    expect(screen.getAllByText("目录限制核验助手").length).toBeGreaterThan(0);
   });
 
   it("renders read-only knowledge base asset metrics", () => {
