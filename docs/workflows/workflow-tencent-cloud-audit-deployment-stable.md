@@ -1106,6 +1106,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
 - 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=403` 且 `allowed_status=200`。
 - `/documents` 个人上传链路必须证明 DB 行、宿主机留存文件 `sha256`、本人可读、其他普通审计员不可读和管理员可读全部上传同时成立；个人上传未入索引时必须明确显示 `index_status=not-indexed`。
+- 索引管理写接口拒绝审计必须证明普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，且持久化审计日志中可按 `action=index-admin-access-denied` 与 `user_identifier` 查到对应事件。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
@@ -1126,6 +1127,19 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 真实生成模型启用仍被 chat provider key 阻塞；未通过 `answer-provider-smoke` 前，不得配置 `MEDICAL_AUDIT_KB_ANSWER_*` 或部署 no-fallback 验收。
 - 审计日志 archive root 巡检已接入 cron，webhook 告警能力已具备；真实外部告警端点尚未配置时，只能通过 cron 退出码和 `/opt/medical-audit/audit-reports/` 报告排查。
 - nginx 仍由共享 `ai_video_nginx` 承载公网入口；新增域名必须继续走备份、`nginx -t`、reload、回归抽查四步。
+
+### 2026-06-15 索引管理拒绝审计部署
+
+- 部署提交：`a3111bf615995bd03a95514c49447cd82087e5ab`。
+- 部署戳：`index-admin-denial-audit-20260615`。
+- 变更范围：索引管理写接口非 `it-admin` 拒绝时记录 `index-admin-access-denied`，并保留 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-index-admin-denial-audit-20260615.sql.gz`，大小 `1025901424` bytes。
+- 已重建并重启 `medical_audit_app`；`medical_audit_pg` 保持 running/healthy，未重建或删除 `medical_audit_pgdata`。
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-index-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=a3111bf615995bd03a95514c49447cd82087e5ab`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
+- 专项权限 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`；普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，管理员角色查询持久化审计日志返回 `matching_count=1`。
+- 证据边界：本轮只证明索引管理写接口拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
 
 ## 10. 回滚方案
 
