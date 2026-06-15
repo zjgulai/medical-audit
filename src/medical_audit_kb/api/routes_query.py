@@ -15,6 +15,7 @@ from medical_audit_kb.api.audit_log_policy import (
     can_read_audit_logs,
     redact_audit_log_events,
 )
+from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.answer_builder import (
     NoCitedEvidenceError,
@@ -79,14 +80,27 @@ def query(
             citation_text=citation.snippet,
         )
 
+    filter_payload = _query_filter_payload(payload)
+    retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     log_entry = {
         "user_identifier": x_user_id or "anonymous",
         "role": x_role or "auditor",
         "question": payload.question,
-        "retrieved_chunk_ids": [str(citation.chunk_id) for citation in answer.citations],
+        "filters": filter_payload,
+        "retrieved_chunk_ids": retrieved_chunk_ids,
         "citation_count": len(answer.citations),
     }
     state.query_logs.append(log_entry)
+    persisted_log, query_history_error = try_add_query_history(
+        state.query_history_store,
+        {
+            "user_identifier": x_user_id or "anonymous",
+            "question": payload.question,
+            "filters": filter_payload,
+            "answer_summary": answer.answer[:500],
+            "retrieved_chunk_ids": retrieved_chunk_ids,
+        },
+    )
     record_operation(
         state,
         "query",
@@ -94,6 +108,8 @@ def query(
             "question": payload.question,
             "citation_count": len(answer.citations),
             "user_identifier": x_user_id or "anonymous",
+            "query_log_id": persisted_log.get("id") if persisted_log else None,
+            "query_history_error": query_history_error,
         },
     )
 
@@ -134,14 +150,50 @@ def query(
             for citation in answer.citations
         ],
         "query_log_index": len(state.query_logs) - 1,
+        "query_log_id": persisted_log.get("id") if persisted_log else None,
     }
 
 
 @router.get("/query/logs")
 def query_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict[str, object]:
-    return {"items": state.query_logs}
+    if state.query_history_store is not None:
+        history_items, query_history_error = try_list_query_history(
+            state.query_history_store,
+            limit=limit,
+        )
+        if query_history_error is not None:
+            record_operation(state, "query-history-list-failed", query_history_error)
+            return {
+                "items": list(reversed(state.query_logs[-limit:])),
+                "store": {
+                    "ready": False,
+                    "backend": state.query_history_store.__class__.__name__,
+                    "error": query_history_error,
+                },
+            }
+        assert history_items is not None
+        return {
+            "items": history_items,
+            "store": {"ready": True, "backend": state.query_history_store.__class__.__name__},
+        }
+    return {
+        "items": list(reversed(state.query_logs[-limit:])),
+        "store": {"ready": False, "backend": "memory"},
+    }
+
+
+def _query_filter_payload(payload: QueryRequest) -> dict[str, object]:
+    return {
+        "top_k": payload.top_k,
+        "source_collections": [item.value for item in payload.source_collections],
+        "years": list(payload.years),
+        "regions": list(payload.regions),
+        "document_types": list(payload.document_types),
+        "business_topics": list(payload.business_topics),
+    }
 
 
 @router.get("/operation/logs")

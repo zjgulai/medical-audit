@@ -22,6 +22,7 @@ from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
     SqlAlchemyProjectMemberStore,
 )
+from medical_audit_kb.api.query_history_store import QueryHistoryStore, SqlAlchemyQueryHistoryStore
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
@@ -64,6 +65,7 @@ class ApiState:
     agent_store: AgentStore | None = None
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
+    query_history_store: QueryHistoryStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
@@ -82,6 +84,7 @@ class ApiState:
                 upload_root=settings.analytics_upload_root
                 or settings.index_root / "analytics-uploads",
             ),
+            query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
         )
 

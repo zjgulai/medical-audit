@@ -9,6 +9,7 @@ import {
   fetchBackendHealth,
   fetchProjectMembers,
   fetchProjects,
+  fetchQueryHistory,
   fetchSearchBackendStatus,
   runKnowledgeQuery,
   uploadAnalysisTable
@@ -104,6 +105,38 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
+  });
+
+  it("fetches persisted query history through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "query-history-001",
+              user_identifier: "next-knowledge-query",
+              question: "医保基金审核依据",
+              filters: { top_k: 8, source_collections: ["medical-insurance-laws"] },
+              answer_summary: "应核验证据链。",
+              retrieved_chunk_ids: ["chunk-doc-001"],
+              citation_count: 1,
+              created_at: "2026-06-15T00:00:00Z"
+            }
+          ],
+          store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
+        })
+      }))
+    );
+
+    const result = await fetchQueryHistory();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/query/logs?limit=8", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.items[0].question).toBe("医保基金审核依据");
   });
 
   it("fetches audit findings with an optional review status filter", async () => {

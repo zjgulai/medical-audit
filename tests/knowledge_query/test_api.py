@@ -19,6 +19,10 @@ from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_ID_PREFIX,
     SqlAlchemyProjectMemberStore,
 )
+from medical_audit_kb.api.query_history_store import (
+    InMemoryQueryHistoryStore,
+    SqlAlchemyQueryHistoryStore,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
@@ -340,6 +344,76 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     logs_response = client.get("/query/logs")
     assert logs_response.status_code == 200
     assert logs_response.json()["items"][0]["user_identifier"] == "auditor-1"
+    assert logs_response.json()["items"][0]["filters"]["top_k"] == 2
+
+
+def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'query-history.db'}"
+    state = _api_state(tmp_path)
+    state.query_history_store = SqlAlchemyQueryHistoryStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "source_collections": ["medical-insurance-laws"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query_log_id"]
+
+    history_response = client.get("/query/logs?limit=5")
+    assert history_response.status_code == 200
+    history_body = history_response.json()
+    assert history_body["store"]["backend"] == "SqlAlchemyQueryHistoryStore"
+    assert history_body["items"][0]["id"] == body["query_log_id"]
+    assert history_body["items"][0]["question"] == "医保基金审核依据"
+    assert history_body["items"][0]["filters"]["source_collections"] == ["medical-insurance-laws"]
+    assert history_body["items"][0]["citation_count"] == 1
+    assert history_body["items"][0]["answer_summary"]
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_items = second_client.get("/query/logs").json()["items"]
+    assert persisted_items[0]["id"] == body["query_log_id"]
+
+
+def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.query_history_store = FailingQueryHistoryStore()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["query_log_id"] is None
+    assert state.operation_logs[-1]["payload"]["query_history_error"] == {
+        "error_type": "RuntimeError",
+        "message": "query history store operation failed",
+    }
+
+    logs_response = client.get("/query/logs")
+    assert logs_response.status_code == 200
+    logs_body = logs_response.json()
+    assert logs_body["store"] == {
+        "ready": False,
+        "backend": "FailingQueryHistoryStore",
+        "error": {
+            "error_type": "RuntimeError",
+            "message": "query history store operation failed",
+        },
+    }
+    assert logs_body["items"][0]["question"] == "医保基金审核依据"
 
 
 def test_query_endpoint_uses_configured_answer_generation_provider(
@@ -1007,6 +1081,7 @@ def _api_state(tmp_path: Path) -> ApiState:
     state.analytics_upload_store = InMemoryAnalyticsUploadStore(
         upload_root=settings.index_root / "analytics-uploads"
     )
+    state.query_history_store = InMemoryQueryHistoryStore()
     state.search_engine = _search_engine(
         _chunk_id(),
         source_file.relative_to(source_root).as_posix(),
@@ -1067,6 +1142,15 @@ class StaticApiAnswerProvider:
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
         return f"生成模型回答：应核验医保基金审核依据 {citations[0].marker}。"
+
+
+class FailingQueryHistoryStore:
+    def add_query(self, _values: dict[str, object]) -> dict[str, object]:
+        raise RuntimeError("history database unavailable")
+
+    def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
+        _ = limit
+        raise RuntimeError("history database unavailable")
 
 
 def _write_text(path: Path, content: str) -> Path:

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
+from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
 from medical_audit_kb.api.review_task_store import (
     JsonFileReviewTaskStore,
     SqlAlchemyReviewTaskStore,
@@ -1471,6 +1472,7 @@ def _api_state(tmp_path: Path) -> ApiState:
     )
     state = ApiState.from_settings(settings)
     state.audit_log_store = None
+    state.query_history_store = InMemoryQueryHistoryStore()
     state.review_task_store = JsonFileReviewTaskStore(
         settings.index_root / "review-tasks" / "review-tasks.json"
     )

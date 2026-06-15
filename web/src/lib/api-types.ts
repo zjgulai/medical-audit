@@ -119,6 +119,30 @@ export type QueryResponse = {
   readonly basis_groups: readonly QueryBasisGroup[];
   readonly citations: readonly QueryCitation[];
   readonly query_log_index: number;
+  readonly query_log_id?: string | null;
+};
+
+export type QueryHistoryItem = {
+  readonly id: string;
+  readonly user_identifier: string | null;
+  readonly question: string;
+  readonly filters: {
+    readonly top_k?: number;
+    readonly source_collections?: readonly SourceCollection[];
+    readonly [key: string]: unknown;
+  };
+  readonly answer_summary: string | null;
+  readonly retrieved_chunk_ids: readonly string[];
+  readonly citation_count: number;
+  readonly created_at: string;
+};
+
+export type QueryHistoryResponse = {
+  readonly items: readonly QueryHistoryItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
 };
 
 export type AuditFindingEvidenceItem = {

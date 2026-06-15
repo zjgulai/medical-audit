@@ -63,10 +63,10 @@ source: human+ai
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit`
-- 当前本地工作分支：`codex/analytics-retention-production-sync`
+- 当前本地工作分支：`codex/documents-search-history-persistence`
 - GitHub `main` 最新提交：`cbd93324119b28a7097712ea7b50b2d96b72de31`
 - 当前生产运行代码 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`
-- 本轮已执行生产部署、schema apply、上传留存写入型 E2E 和生产前端验收。
+- 本轮已完成文档检索搜索历史持久化本地实现和联调，未执行生产部署。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -94,13 +94,14 @@ source: human+ai
 - AI 数据分析表格上传解析已完成生产上传 E2E；CSV 和 XLSX 由 FastAPI 后端解析并返回字段画像、质量提示、重复行和审计信号。
 - AI 数据分析上传留存和历史记录已完成生产部署与写入型 E2E；上传后写入 `analytics_upload_records`，原始文件按 `sha256` 可追溯留存在受控目录，前端 `/analytics` 可展示最近上传历史。
 - 文档检索页已完成生产查询 E2E；`/api/v1/query` 可按来源过滤返回引用、证据分组和原文入口，`/pages/preview/{chunk_id}` 生产预览可打开。
+- 文档检索搜索历史持久化已完成本地实现和联调；`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 读取历史，`/documents` 可展示、刷新和回填历史。
 
 未完成：
 
 - 智能体提示词版本治理、上下架、删除/停用和权限生效仍未完成；本轮只验证新增提示词型智能体持久化。
 - 项目成员真实权限、邀请审批、成员禁用/移除和权限生效仍未完成；本轮只验证成员新增持久化。
 - AI 数据分析病毒扫描、脱敏改写、对象存储、下载权限隔离、正式工作簿治理和长期存储生命周期策略仍未完成。
-- 文档检索搜索历史持久化、个人知识库上传、文档权限模型和响应中的 `source_collection` 直接回显仍未完成；当前只验证生产查询、证据分组和预览可用。
+- 文档检索搜索历史持久化尚未生产部署和写入型 E2E；个人知识库上传、文档权限模型和响应中的 `source_collection` 直接回显仍未完成。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
 - Kimi 当前只验证为 embedding provider；线上答案生成模型未验证通过。
@@ -374,6 +375,44 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 上传留存文件当前由容器写出，宿主机文件权限为 `root:root 644`；功能可用，但人工清理需要 sudo 或后续补容器用户/文件权限治理。
 - 本轮未实现病毒扫描、脱敏改写、对象存储、下载权限隔离、正式工作簿治理或长期存储生命周期策略。
 
+### 2.11 Phase 2.6 文档检索搜索历史本地验收状态
+
+验收日期：`2026-06-15`
+
+本轮 Phase 2.6 已完成本地实现和联调，结论为 `pass`，范围限定为本地开发和联调环境。
+
+后端集成：
+
+- 新增 `QueryHistoryStore` 抽象、`SqlAlchemyQueryHistoryStore` 和 `InMemoryQueryHistoryStore`。
+- 复用既有 `query_logs` 表持久化搜索历史，不新增平行表。
+- `/query` 写入查询问题、过滤条件、答案摘要和引用 chunk，并在响应中返回 `query_log_id`。
+- `GET /query/logs?limit=` 返回最近搜索历史和 store 状态；持久化 store 不可用或读取失败时回退进程内历史并显式标记 `store.ready=false`。
+- 历史写入失败不阻断主检索结果，只在 operation payload 中记录结构化 `query_history_error`。
+
+前端集成：
+
+- `/documents` 页面加载 `GET /api/v1/query/logs?limit=8`。
+- 查询成功后刷新历史列表。
+- 点击历史项可回填问题和来源集合过滤条件。
+- 历史读取失败不阻断文档检索，只显示历史不可用状态。
+
+本地验收：
+
+- `uv run pytest`：通过，`255 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- `uv run ruff check src tests scripts`：通过。
+- `uv run mypy src`：通过，`80` 个源码文件无类型错误。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`10` 个 test files、`66` 个 tests。
+- `pnpm web:build:static`：通过，静态构建生成 `20/20` 页面。
+- 本地浏览器联调：Next `127.0.0.1:3030` + FastAPI `127.0.0.1:8021`，使用本地 fixture search engine 和 `tmp/debug` SQLite 验证 `/documents` 初始历史为空、提交检索后历史刷新、刷新页面后历史仍从 `SqlAlchemyQueryHistoryStore` 回读。
+- 浏览器截图：`tmp/screenshots/tmp-screenshot-documents-history-persistence-20260615.png`。
+
+边界：
+
+- 本节只记录本地实现验收；尚未生产部署、schema apply 或生产写入型 E2E。
+- 本轮未实现个人知识库上传、文档权限模型或响应中的 `source_collection` 直接回显。
+
 ## 3. 债务分级
 
 | 等级 | 定义 | 处理原则 |
@@ -386,7 +425,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 | 编号 | 类型 | 债务 | 当前证据 | 影响 | 处置计划 | 完成门禁 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询验收；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补文档搜索历史/个人知识库/权限模型、上传文件病毒扫描/脱敏/对象存储治理、知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过 |
+| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询验收，搜索历史持久化已完成本地验收但未生产部署；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步完成文档搜索历史生产部署验收，再补个人知识库/权限模型、上传文件病毒扫描/脱敏/对象存储治理、知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | Kimi chat 403，Anthropic 401，fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 决定可用 chat provider 或保持引用 fallback 为产品边界 | `answer-provider-smoke` 和真实生成评测 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key` | 无法满足生产级审计系统权限边界 | 建立用户/角色/部门模型和会话认证，替换静态 header 口径 | 未授权路径 403；审计日志记录访问拒绝 |
@@ -463,7 +502,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 1. 智能体 CRUD 和提示词版本：生产写入型 E2E 已完成；提示词版本治理、上下架、删除/停用和权限生效待后续阶段。
 2. 项目成员管理 API 和页面持久化：生产写入型 E2E 已完成；真实权限、邀请审批、禁用/移除和成员权限生效待后续阶段。
 3. 表格上传分析后端和工作簿解析任务：生产上传解析、上传留存和历史记录写入型 E2E 已完成；病毒扫描、脱敏改写、对象存储、下载权限隔离和正式工作簿治理待后续阶段。
-4. 文档检索 API-first 接入：生产查询验收已完成；搜索历史持久化、个人知识库上传、权限模型和来源集合回显待后续阶段。
+4. 文档检索 API-first 接入：生产查询验收已完成；搜索历史持久化已完成本地验收，待生产部署和写入型 E2E；个人知识库上传、权限模型和来源集合回显待后续阶段。
 5. 知识库、图谱、报告、整改页面逐步接真实 API。
 
 完成门禁：

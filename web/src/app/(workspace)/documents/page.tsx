@@ -1,14 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
-import { runKnowledgeQuery } from "@/lib/api-client";
-import type { QueryCitation, QueryResponse, SourceCollection } from "@/lib/api-types";
+import { fetchQueryHistory, runKnowledgeQuery } from "@/lib/api-client";
+import type { QueryCitation, QueryHistoryItem, QueryResponse, SourceCollection } from "@/lib/api-types";
 import {
   conversationDocuments,
   documentCategoryStats,
-  documentSearchHistory,
   knowledgeDocuments,
   PortalDocumentItem
 } from "@/lib/portal-data";
@@ -18,6 +17,7 @@ type DocumentSearchState =
   | { readonly status: "loading" }
   | { readonly status: "success"; readonly result: QueryResponse }
   | { readonly status: "error"; readonly message: string };
+type HistoryStatus = "loading" | "ready" | "unavailable";
 
 const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
   "medical-insurance-laws",
@@ -31,6 +31,24 @@ export default function DocumentsPage() {
   const [query, setQuery] = useState("");
   const [selectedCollections, setSelectedCollections] = useState<readonly SourceCollection[]>([]);
   const [searchState, setSearchState] = useState<DocumentSearchState>({ status: "idle" });
+  const [history, setHistory] = useState<readonly QueryHistoryItem[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>("loading");
+
+  const refreshHistory = useCallback(async () => {
+    setHistoryStatus("loading");
+    try {
+      const result = await fetchQueryHistory();
+      setHistory(result.items);
+      setHistoryStatus(result.store.ready ? "ready" : "unavailable");
+    } catch {
+      setHistory([]);
+      setHistoryStatus("unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   const selectedScopeText = useMemo(() => {
     if (selectedCollections.length === 0) {
@@ -58,6 +76,7 @@ export default function DocumentsPage() {
         source_collections: selectedCollections
       });
       setSearchState({ status: "success", result });
+      await refreshHistory();
     } catch {
       setSearchState({ status: "error", message: "检索失败。请确认后端检索已就绪后重试。" });
     }
@@ -74,8 +93,9 @@ export default function DocumentsPage() {
     );
   }
 
-  function runHistorySearch(item: string) {
-    setQuery(item);
+  function runHistorySearch(item: QueryHistoryItem) {
+    setQuery(item.question);
+    setSelectedCollections(historySourceCollections(item));
     setSearchState({ status: "idle" });
   }
 
@@ -158,18 +178,30 @@ export default function DocumentsPage() {
 
       <aside className="min-w-0 space-y-4">
         <section className="audit-panel-rail p-5">
-          <h2 className="audit-section-title">搜索历史</h2>
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="audit-section-title">搜索历史</h2>
+            <StatusPill tone={historyStatus === "ready" ? "success" : historyStatus === "loading" ? "info" : "warning"}>
+              {historyStatus === "ready" ? "已连接" : historyStatus === "loading" ? "读取中" : "不可用"}
+            </StatusPill>
+          </div>
           <div className="mt-4 space-y-2">
-            {documentSearchHistory.map((item) => (
-              <button
-                className="audit-focus-ring block w-full rounded-[var(--audit-radius-md)] bg-[var(--audit-surface-muted)] px-3 py-2 text-left text-sm text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-subtle)] hover:text-[var(--audit-ink)]"
-                key={item}
-                onClick={() => runHistorySearch(item)}
-                type="button"
-              >
-                {item}
-              </button>
-            ))}
+            {history.length > 0 ? (
+              history.map((item) => (
+                <button
+                  className="audit-focus-ring block w-full rounded-[var(--audit-radius-md)] bg-[var(--audit-surface-muted)] px-3 py-2 text-left hover:bg-[var(--audit-surface-subtle)]"
+                  key={item.id}
+                  onClick={() => runHistorySearch(item)}
+                  type="button"
+                >
+                  <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{item.question}</span>
+                  <span className="audit-meta mt-1 block">
+                    {item.citation_count} 条引用 / {formatDateTime(item.created_at)}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="audit-copy">暂无持久化搜索记录。</p>
+            )}
           </div>
         </section>
 
@@ -368,6 +400,29 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
 
 function isSourceCollection(value: string): value is SourceCollection {
   return SOURCE_COLLECTIONS.includes(value as SourceCollection);
+}
+
+function historySourceCollections(item: QueryHistoryItem): readonly SourceCollection[] {
+  const sourceCollections = item.filters.source_collections;
+  if (!Array.isArray(sourceCollections)) {
+    return [];
+  }
+  return sourceCollections.filter((value): value is SourceCollection =>
+    typeof value === "string" && isSourceCollection(value)
+  );
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function locatorSummary(locator: Record<string, unknown>): string {

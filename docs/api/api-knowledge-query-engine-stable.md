@@ -390,6 +390,7 @@ Query 参数：
 - `basis_groups`：按证据类型分组的依据。
 - `citations`：引用列表，含 `chunk_id`、locator、索引版本和资料包版本。
 - `query_log_index`：本次查询日志索引。
+- `query_log_id`：持久化查询历史 ID；当查询历史 store 不可用或写入失败时为 `null`，主查询结果不因历史写入失败而中断。
 
 错误：
 
@@ -399,13 +400,41 @@ Query 参数：
 
 ### `GET /query/logs`
 
-返回查询日志：
+返回最近查询日志，默认 `limit=20`，允许范围 `1..100`：
 
 ```json
 {
-  "items": []
+  "items": [
+    {
+      "id": "47de2cc5-8d88-43e9-888b-42775d2060e4",
+      "user_identifier": "next-knowledge-query",
+      "question": "医保基金审核依据如何留痕？",
+      "filters": {
+        "top_k": 8,
+        "source_collections": [],
+        "years": [],
+        "regions": [],
+        "document_types": [],
+        "business_topics": []
+      },
+      "answer_summary": "问题：医保基金审核依据如何留痕？...",
+      "retrieved_chunk_ids": ["11111111-1111-4111-8111-111111111111"],
+      "citation_count": 1,
+      "created_at": "2026-06-15T03:14:48Z"
+    }
+  ],
+  "store": {
+    "ready": true,
+    "backend": "SqlAlchemyQueryHistoryStore"
+  }
 }
 ```
+
+说明：
+
+- PostgreSQL 后端使用既有 `query_logs` 表持久化查询问题、过滤条件、答案摘要和引用 chunk。
+- 如果服务未配置查询历史 store，接口回退返回进程内最近日志，`store.ready=false`、`store.backend="memory"`。
+- 如果查询历史 store 读取失败，接口同样回退到进程内最近日志，`store.ready=false`，并返回结构化 `error.error_type`，不暴露数据库连接串或异常正文。
 
 ## 4. 数据分析接口
 

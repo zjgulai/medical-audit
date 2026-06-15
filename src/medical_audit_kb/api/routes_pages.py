@@ -31,6 +31,7 @@ from medical_audit_kb.api.evaluation_reports import (
     list_evaluation_report_files,
 )
 from medical_audit_kb.api.postgres_status import load_postgres_index_status, row_count
+from medical_audit_kb.api.query_history_store import try_add_query_history
 from medical_audit_kb.api.review_task_store import (
     InMemoryReviewTaskStore,
     ReviewTaskNotFoundError,
@@ -986,19 +987,40 @@ def _run_page_query(
         "basis_groups": answer.basis_groups,
         "citations": answer.citations,
     }
+    retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
+    filter_payload = {
+        "top_k": 5,
+        "source_collections": [item.value for item in selected_collections],
+    }
     state.query_logs.append(
         {
             "user_identifier": "page-user",
             "role": "auditor",
             "question": question,
-            "retrieved_chunk_ids": [str(citation.chunk_id) for citation in answer.citations],
+            "filters": filter_payload,
+            "retrieved_chunk_ids": retrieved_chunk_ids,
             "citation_count": len(answer.citations),
         }
+    )
+    persisted_log, query_history_error = try_add_query_history(
+        state.query_history_store,
+        {
+            "user_identifier": "page-user",
+            "question": question,
+            "filters": filter_payload,
+            "answer_summary": answer.answer[:500],
+            "retrieved_chunk_ids": retrieved_chunk_ids,
+        },
     )
     record_operation(
         state,
         operation_name,
-        {"question": question, "citation_count": len(answer.citations)},
+        {
+            "question": question,
+            "citation_count": len(answer.citations),
+            "query_log_id": persisted_log.get("id") if persisted_log else None,
+            "query_history_error": query_history_error,
+        },
     )
     return answer_payload, None
 
