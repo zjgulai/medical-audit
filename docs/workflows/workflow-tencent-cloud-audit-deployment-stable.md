@@ -33,10 +33,38 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-15 AI 数据分析留存历史部署后当前事实
+### 2026-06-15 文档检索搜索历史部署后当前事实
+
+- PR #81 `codex/documents-search-history-persistence` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`9bc399468a80d540097c16239736ee18bcbcfc27`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`documents-history-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 本轮部署前已确认生产 `public.query_logs` 表存在，因此未执行额外 schema apply。
+- 远端备份包括：
+  - `/opt/medical-audit/backups/app/pre-deploy-documents-history-20260615.tar.gz`
+  - `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-documents-history-20260615`
+  - `/opt/medical-audit/backups/db/pre-deploy-documents-history-20260615.sql.gz`
+  - `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-documents-history-20260615`
+  - `/opt/medical-audit/backups/web/audit-web-pre-deploy-documents-history-20260615.tar.gz`
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；部署后状态审计显示 Nginx 配置测试通过。
+- 部署脚本 post-check 曾出现共享 Nginx 配置告警：`host not found in upstream "melwater_web"`；该告警来自同机共享入口的其它业务 upstream，不属于 `medical_audit` 容器、数据库或静态资产部署失败。随后专用部署状态审计为 `status=pass`、`issues=[]`。
+- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-documents-history-deploy-20260615.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-documents-history-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-documents-history-deploy-20260615.json` 为 `status=pass`，`route_count=21`、`check_count=42`、`p0_count=0`、`p1_count=0`；`/audit/logs` 和 `/audit/logs/export` 均满足无角色 `403`、管理员角色 `200`。
+- 生产 `/documents` 写入型 E2E 报告 `tmp/outputs/production-documents-history-write-e2e-20260615.json` 为 `status=pass`；写入查询 `文档搜索历史生产写入验收 20260615T1138` 后返回 `query_log_id=e2126ff7-e0d4-4253-8ee9-284ecb3b17a4`，历史读取后端为 `SqlAlchemyQueryHistoryStore`，最新历史记录从 PostgreSQL 回读成功。
+- 生产 `/documents` 浏览器验收截图 `tmp/screenshots/production-documents-history-e2e-20260615.png` 已确认页面显示 `搜索历史`、`已连接` 和本轮唯一验收问题，且未显示 `暂无持久化搜索记录。`。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+
+边界：
+
+- 本轮完成文档检索搜索历史生产部署和写入型 E2E，不等于完成个人知识库上传、文档权限模型或响应中的 `source_collection` 直接回显。
+- 普通生产 smoke 中 `query-api-with-citations.fallback_used=true` 仍只证明引用型 fallback 链路健康，不证明真实生成模型能力可用。
+
+### 2026-06-15 AI 数据分析留存历史部署后历史事实
 
 - PR #79 `codex/analytics-upload-retention-history` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`analytics-retention-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-analytics-retention-20260615.sql.gz`，`gzip -t` 通过，大小 `512961688` bytes，`sha256=876bb9ecc1a0a39aa23085688c613000ca44dc4133b428ab2fdb3cb26d66f68d`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -109,7 +137,7 @@ source: human+ai
 - 法规政策过滤查询：`source_collections=["medical-insurance-laws"]` 返回 `200`，`citation_count=3`，证据类型为 `legal_basis`，首个引用预览页返回 `200`。
 - 医保目录过滤查询：`source_collections=["medical-insurance-catalog"]` 返回 `200`，`citation_count=3`，证据类型为 `catalog_basis`，首个引用预览页返回 `200`。
 - 验收后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-documents-query-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
-- 边界：`/api/v1/query` 会写入进程内查询日志和 preview reference，但不写入数据库业务表；本轮未完成搜索历史持久化、个人知识库上传、文档权限模型，也未补充响应中的 `source_collection` 直接回显字段。
+- 边界：`/api/v1/query` 当时会写入进程内查询日志和 preview reference，但不写入数据库业务表；当时未完成搜索历史持久化、个人知识库上传、文档权限模型，也未补充响应中的 `source_collection` 直接回显字段。
 
 ### 2026-06-15 AI 数据分析留存历史生产验收
 
