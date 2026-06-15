@@ -39,6 +39,38 @@ export type TableAnalysisUploadResponse = {
   readonly quality_findings: readonly string[];
   readonly audit_signals: readonly string[];
   readonly recommendations: readonly string[];
+  readonly upload_id: string | null;
+  readonly sha256: string | null;
+  readonly retention_status: "retained" | "not-configured";
+  readonly created_at: string | null;
+};
+
+export type TableAnalysisUploadHistoryItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly extension: string;
+  readonly size_bytes: number;
+  readonly size_kb: number;
+  readonly sha256: string;
+  readonly storage_path: string;
+  readonly sheet_name: string | null;
+  readonly row_count: number;
+  readonly column_count: number;
+  readonly empty_cell_count: number;
+  readonly duplicate_row_count: number;
+  readonly status: string;
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly retention_status: "retained";
+  readonly audit_signals: readonly string[];
+};
+
+export type TableAnalysisUploadHistoryResponse = {
+  readonly items: readonly TableAnalysisUploadHistoryItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
 };
 
 export type SourceCollection =

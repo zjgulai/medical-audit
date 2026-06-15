@@ -12,6 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb import __version__
 from medical_audit_kb.api.agent_store import AgentStore, SqlAlchemyAgentStore
+from medical_audit_kb.api.analytics_upload_store import (
+    AnalyticsUploadStore,
+    SqlAlchemyAnalyticsUploadStore,
+)
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
 from medical_audit_kb.api.project_member_store import (
@@ -59,6 +63,7 @@ class ApiState:
     audit_log_store: AuditLogStore | None = None
     agent_store: AgentStore | None = None
     project_member_store: ProjectMemberStore | None = None
+    analytics_upload_store: AnalyticsUploadStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
@@ -72,6 +77,11 @@ class ApiState:
             audit_log_store=SqlAlchemyAuditLogStore(settings.database_url),
             agent_store=SqlAlchemyAgentStore(settings.database_url),
             project_member_store=SqlAlchemyProjectMemberStore(settings.database_url),
+            analytics_upload_store=SqlAlchemyAnalyticsUploadStore(
+                settings.database_url,
+                upload_root=settings.analytics_upload_root
+                or settings.index_root / "analytics-uploads",
+            ),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
         )
 

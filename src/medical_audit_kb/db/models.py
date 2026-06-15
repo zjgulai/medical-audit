@@ -326,6 +326,35 @@ class IndexEvaluationRun(Base):
     )
 
 
+class AnalyticsUploadRecord(Base):
+    __tablename__ = "analytics_upload_records"
+    __table_args__ = (
+        Index("idx_analytics_upload_records_created_at", "created_at"),
+        Index("idx_analytics_upload_records_status", "status"),
+        Index("idx_analytics_upload_records_created_by", "created_by"),
+        Index("idx_analytics_upload_records_sha256", "sha256"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    upload_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    extension: Mapped[str] = mapped_column(String(16), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    sheet_name: Mapped[str | None] = mapped_column(Text)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    empty_cell_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="parsed")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    analysis_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class ReviewTask(Base):
     __tablename__ = "review_tasks"
     __table_args__ = (

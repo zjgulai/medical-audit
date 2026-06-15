@@ -1,10 +1,14 @@
 "use client";
 
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
-import { uploadAnalysisTable } from "@/lib/api-client";
-import type { TableAnalysisColumnType, TableAnalysisUploadResponse } from "@/lib/api-types";
+import { fetchAnalysisUploadHistory, uploadAnalysisTable } from "@/lib/api-client";
+import type {
+  TableAnalysisColumnType,
+  TableAnalysisUploadHistoryItem,
+  TableAnalysisUploadResponse
+} from "@/lib/api-types";
 
 type UploadProfile = {
   readonly name: string;
@@ -20,6 +24,10 @@ type UploadProfile = {
   readonly qualityFindings: readonly string[];
   readonly auditSignals: readonly string[];
   readonly recommendations: readonly string[];
+  readonly uploadId: string | null;
+  readonly sha256: string | null;
+  readonly retentionStatus: "retained" | "not-configured";
+  readonly createdAt: string | null;
 };
 
 type ColumnProfile = {
@@ -32,6 +40,7 @@ type ColumnProfile = {
 };
 
 type AnalysisTab = "code" | "terminal" | "chart" | "data" | "report";
+type HistoryStatus = "loading" | "ready" | "unavailable";
 
 const analysisTabs: readonly { readonly id: AnalysisTab; readonly label: string }[] = [
   { id: "code", label: "代码" },
@@ -66,7 +75,11 @@ function mapUploadProfile(response: TableAnalysisUploadResponse): UploadProfile 
     message: response.message,
     qualityFindings: response.quality_findings,
     auditSignals: response.audit_signals,
-    recommendations: response.recommendations
+    recommendations: response.recommendations,
+    uploadId: response.upload_id,
+    sha256: response.sha256,
+    retentionStatus: response.retention_status,
+    createdAt: response.created_at
   };
 }
 
@@ -84,7 +97,11 @@ function buildErrorProfile(file: File, message: string): UploadProfile {
     message,
     qualityFindings: ["后端未返回字段画像，当前文件不能进入审计判断。"],
     auditSignals: [],
-    recommendations: ["检查文件格式、大小和后端分析服务状态后重新上传。"]
+    recommendations: ["检查文件格式、大小和后端分析服务状态后重新上传。"],
+    uploadId: null,
+    sha256: null,
+    retentionStatus: "not-configured",
+    createdAt: null
   };
 }
 
@@ -92,6 +109,24 @@ export function DataAnalysisWorkbench() {
   const [profile, setProfile] = useState<UploadProfile | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("data");
+  const [history, setHistory] = useState<readonly TableAnalysisUploadHistoryItem[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>("loading");
+
+  const refreshHistory = useCallback(async () => {
+    setHistoryStatus("loading");
+    try {
+      const result = await fetchAnalysisUploadHistory();
+      setHistory(result.items);
+      setHistoryStatus(result.store.ready ? "ready" : "unavailable");
+    } catch {
+      setHistory([]);
+      setHistoryStatus("unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -105,6 +140,7 @@ export function DataAnalysisWorkbench() {
     try {
       const result = await uploadAnalysisTable(file);
       setProfile(mapUploadProfile(result));
+      await refreshHistory();
     } catch {
       setProfile(buildErrorProfile(file, "后端表格分析失败，请检查文件格式或稍后重试。"));
     } finally {
@@ -159,6 +195,7 @@ map_audit_signals()`}</pre>
             <p>[ok] 字段数: {profile.columns.length}</p>
             <p>[ok] 数据行: {profile.rowCount}</p>
             <p>{profile.status === "parsed" ? "[ok] 后端表格解析完成" : "[error] 后端表格解析失败"}</p>
+            <p>{profile.retentionStatus === "retained" ? "[ok] 上传文件已留存" : "[warn] 上传文件未留存"}</p>
           </div>
         </section>
       );
@@ -201,8 +238,11 @@ map_audit_signals()`}</pre>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="audit-section-title">{profile.name}</h2>
-              <p className="audit-copy mt-2">{profile.message}</p>
-            </div>
+            <p className="audit-copy mt-2">{profile.message}</p>
+            {profile.sha256 && (
+              <p className="audit-meta mt-2 break-all">sha256: {profile.sha256}</p>
+            )}
+          </div>
             <StatusPill tone={profile.status === "parsed" ? "success" : "danger"}>
               {profile.status === "parsed" ? "已生成" : "失败"}
             </StatusPill>
@@ -230,6 +270,12 @@ map_audit_signals()`}</pre>
           </StatusPill>
         </div>
         <p className="audit-copy mt-4">{profile.message}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="audit-chip">
+            留存：{profile.retentionStatus === "retained" ? "已留存" : "未配置"}
+          </span>
+          {profile.uploadId && <span className="audit-chip">记录：{profile.uploadId}</span>}
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Metric label="字段数" value={String(profile.columns.length)} />
           <Metric label="数据行" value={String(profile.rowCount)} />
@@ -384,6 +430,21 @@ map_audit_signals()`}</pre>
             <FileRow name="HIS staging 明细" status="审计数据入口" />
           </div>
         </section>
+        <section className="audit-panel-rail p-5">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="audit-section-title">上传历史</h2>
+            <StatusPill tone={historyStatus === "ready" ? "success" : historyStatus === "loading" ? "info" : "warning"}>
+              {historyStatus === "ready" ? "已连接" : historyStatus === "loading" ? "读取中" : "不可用"}
+            </StatusPill>
+          </div>
+          <div className="mt-4 space-y-2">
+            {history.length > 0 ? (
+              history.slice(0, 4).map((item) => <HistoryRow key={item.id} item={item} />)
+            ) : (
+              <p className="audit-copy">暂无上传记录。</p>
+            )}
+          </div>
+        </section>
         <a className="audit-focus-ring audit-action-card p-5" href="/findings">
           <p className="audit-kicker">审计数据分析入口</p>
           <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
@@ -396,6 +457,18 @@ map_audit_signals()`}</pre>
         </a>
       </aside>
     </main>
+  );
+}
+
+function HistoryRow({ item }: { readonly item: TableAnalysisUploadHistoryItem }) {
+  return (
+    <div className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
+      <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</p>
+      <p className="audit-meta mt-1">
+        {item.extension.toUpperCase()} / {item.row_count} 行 / {formatDateTime(item.created_at)}
+      </p>
+      <p className="audit-meta mt-1 break-all">sha256: {shortSha(item.sha256)}</p>
+    </div>
   );
 }
 
@@ -428,4 +501,21 @@ function AnalysisList({ title, items }: { readonly title: string; readonly items
       </ul>
     </section>
   );
+}
+
+function shortSha(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 12)}...${value.slice(-6)}` : value;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }

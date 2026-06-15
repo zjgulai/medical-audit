@@ -43,6 +43,7 @@ services:
       MEDICAL_AUDIT_KB_CONFIG: /app/configs/knowledge-query-engine-dev.yaml
       MEDICAL_AUDIT_KB_DATA_ROOT: /app/data/医保审核前期资料
       MEDICAL_AUDIT_KB_INDEX_ROOT: /app/tmp/knowledge-query-indexes
+      MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT: /app/analytics-uploads
       MEDICAL_AUDIT_KB_LOG_LEVEL: warning
       MEDICAL_AUDIT_KB_LOAD_BACKEND: "1"
       MEDICAL_AUDIT_KB_DEV_MODE: "0"
@@ -66,6 +67,7 @@ services:
     volumes:
       - ../../../data:/app/data:ro
       - ../../../tmp/knowledge-query-indexes:/app/tmp/knowledge-query-indexes
+      - ${MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST:-/opt/medical-audit/analytics-uploads}:/app/analytics-uploads
       - ${MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_ROOT_HOST:-/opt/medical-audit/audit-log-archive}:/app/audit-log-archive
       - ${MEDICAL_AUDIT_AUDIT_LOG_ARCHIVE_REPORT_DIR_HOST:-/opt/medical-audit/audit-reports}:/app/audit-reports
     depends_on:

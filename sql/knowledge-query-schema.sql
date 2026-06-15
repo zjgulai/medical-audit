@@ -163,6 +163,31 @@ CREATE TABLE IF NOT EXISTS index_evaluation_runs (
     CONSTRAINT ck_index_evaluation_runs_answer_case_count_non_negative CHECK (answer_case_count >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS analytics_upload_records (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_key text NOT NULL UNIQUE,
+    file_name text NOT NULL,
+    extension text NOT NULL,
+    size_bytes integer NOT NULL,
+    sha256 text NOT NULL,
+    storage_path text NOT NULL,
+    sheet_name text,
+    row_count integer NOT NULL DEFAULT 0,
+    column_count integer NOT NULL DEFAULT 0,
+    empty_cell_count integer NOT NULL DEFAULT 0,
+    duplicate_row_count integer NOT NULL DEFAULT 0,
+    status text NOT NULL DEFAULT 'parsed',
+    created_by text,
+    analysis_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_analytics_upload_records_extension CHECK (extension IN ('csv', 'xlsx', 'xlsm')),
+    CONSTRAINT ck_analytics_upload_records_size_bytes_positive CHECK (size_bytes > 0),
+    CONSTRAINT ck_analytics_upload_records_row_count_non_negative CHECK (row_count >= 0),
+    CONSTRAINT ck_analytics_upload_records_column_count_non_negative CHECK (column_count >= 0),
+    CONSTRAINT ck_analytics_upload_records_empty_cell_count_non_negative CHECK (empty_cell_count >= 0),
+    CONSTRAINT ck_analytics_upload_records_duplicate_row_count_non_negative CHECK (duplicate_row_count >= 0)
+);
+
 CREATE TABLE IF NOT EXISTS review_tasks (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     external_task_id text NOT NULL UNIQUE,
@@ -485,6 +510,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_events_payload_gin
     ON audit_log_events USING gin (payload);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_created_at ON index_evaluation_runs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_index_evaluation_runs_status ON index_evaluation_runs (status);
+CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_created_at
+    ON analytics_upload_records (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_status ON analytics_upload_records (status);
+CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_created_by
+    ON analytics_upload_records (created_by);
+CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_sha256
+    ON analytics_upload_records (sha256);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks (status);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_at ON review_tasks (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_by ON review_tasks (created_by);

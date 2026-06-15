@@ -9,6 +9,11 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
+from medical_audit_kb.api.analytics_upload_store import (
+    ANALYTICS_UPLOAD_ID_PREFIX,
+    InMemoryAnalyticsUploadStore,
+    SqlAlchemyAnalyticsUploadStore,
+)
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_ID_PREFIX,
@@ -194,7 +199,13 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
 
 
 def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'analytics-uploads.db'}"
     state = _api_state(tmp_path)
+    state.analytics_upload_store = SqlAlchemyAnalyticsUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "retained-uploads",
+        create_schema=True,
+    )
     client = TestClient(create_app(state))
 
     response = client.post(
@@ -218,6 +229,10 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "charge-sample.csv"
+    assert body["upload_id"].startswith(ANALYTICS_UPLOAD_ID_PREFIX)
+    assert body["sha256"]
+    assert body["retention_status"] == "retained"
+    assert body["created_at"]
     assert body["extension"] == "csv"
     assert body["status"] == "parsed"
     assert body["row_count"] == 3
@@ -233,6 +248,29 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert body["columns"][0]["type"] == "标识"
     assert "发现 1 条完全重复行。" in body["quality_findings"]
     assert state.operation_logs[-1]["action"] == "analytics-table-upload"
+    assert state.operation_logs[-1]["payload"]["retention_status"] == "retained"
+
+    history_response = client.get("/analytics/table-uploads")
+    assert history_response.status_code == 200
+    history_body = history_response.json()
+    assert history_body["store"]["backend"] == "SqlAlchemyAnalyticsUploadStore"
+    assert history_body["items"][0]["id"] == body["upload_id"]
+    assert history_body["items"][0]["sha256"] == body["sha256"]
+    assert history_body["items"][0]["row_count"] == 3
+    assert history_body["items"][0]["column_count"] == 5
+
+    retained_path = tmp_path / "retained-uploads" / history_body["items"][0]["storage_path"]
+    assert retained_path.exists()
+    assert retained_path.read_text(encoding="utf-8").startswith("patient_id,visit_date")
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.analytics_upload_store = SqlAlchemyAnalyticsUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "retained-uploads",
+    )
+    second_client = TestClient(create_app(second_state))
+    persisted_items = second_client.get("/analytics/table-uploads").json()["items"]
+    assert persisted_items[0]["id"] == body["upload_id"]
 
 
 def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
@@ -966,6 +1004,9 @@ def _api_state(tmp_path: Path) -> ApiState:
     )
     state = ApiState.from_settings(settings)
     state.audit_log_store = None
+    state.analytics_upload_store = InMemoryAnalyticsUploadStore(
+        upload_root=settings.index_root / "analytics-uploads"
+    )
     state.search_engine = _search_engine(
         _chunk_id(),
         source_file.relative_to(source_root).as_posix(),

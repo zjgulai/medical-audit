@@ -12,6 +12,7 @@ DATA_ROOT_ENV: Final = "MEDICAL_AUDIT_KB_DATA_ROOT"
 INDEX_ROOT_ENV: Final = "MEDICAL_AUDIT_KB_INDEX_ROOT"
 DATABASE_URL_ENV: Final = "MEDICAL_AUDIT_KB_DATABASE_URL"
 MODEL_PROVIDER_ENV: Final = "MEDICAL_AUDIT_KB_MODEL_PROVIDER"
+ANALYTICS_UPLOAD_ROOT_ENV: Final = "MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT"
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -39,6 +40,7 @@ class KnowledgeQuerySettings(BaseModel):
 
     data_root: Path
     index_root: Path
+    analytics_upload_root: Path | None = None
     database_url: str = Field(min_length=1)
     model_provider: ModelProviderSettings
     source_collection_weights: dict[str, float]
@@ -102,6 +104,8 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         merged["data_root"] = data_root
     if index_root := os.getenv(INDEX_ROOT_ENV):
         merged["index_root"] = index_root
+    if analytics_upload_root := os.getenv(ANALYTICS_UPLOAD_ROOT_ENV):
+        merged["analytics_upload_root"] = analytics_upload_root
     if database_url := os.getenv(DATABASE_URL_ENV):
         merged["database_url"] = database_url
     if provider := os.getenv(MODEL_PROVIDER_ENV):

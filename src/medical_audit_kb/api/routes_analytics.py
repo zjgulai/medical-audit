@@ -9,7 +9,7 @@ from io import BytesIO, StringIO
 from typing import Annotated, Literal
 from zipfile import BadZipFile
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel, ConfigDict
@@ -50,12 +50,46 @@ class TableUploadAnalysisResponse(BaseModel):
     quality_findings: list[str]
     audit_signals: list[str]
     recommendations: list[str]
+    upload_id: str | None = None
+    sha256: str | None = None
+    retention_status: Literal["retained", "not-configured"] = "not-configured"
+    created_at: str | None = None
+
+
+class AnalyticsUploadHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    extension: str
+    size_bytes: int
+    size_kb: int
+    sha256: str
+    storage_path: str
+    sheet_name: str | None
+    row_count: int
+    column_count: int
+    empty_cell_count: int
+    duplicate_row_count: int
+    status: str
+    created_by: str | None
+    created_at: str
+    retention_status: Literal["retained"]
+    audit_signals: list[str]
+
+
+class AnalyticsUploadHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AnalyticsUploadHistoryItem]
+    store: dict[str, object]
 
 
 @router.post("/table-upload", response_model=TableUploadAnalysisResponse)
 async def analyze_table_upload(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
 ) -> TableUploadAnalysisResponse:
     file_name = file.filename or "uploaded-table"
     extension = _file_extension(file_name)
@@ -92,18 +126,62 @@ async def analyze_table_upload(
         rows=rows,
         sheet_name=sheet_name,
     )
+    upload_record: dict[str, object] | None = None
+    if state.analytics_upload_store is not None:
+        upload_record = state.analytics_upload_store.add_upload(
+            file_name=file_name,
+            extension=extension,
+            content=content,
+            analysis_summary=_analysis_summary(response),
+            created_by=x_user_id,
+        )
+        response = response.model_copy(
+            update={
+                "upload_id": upload_record["id"],
+                "sha256": upload_record["sha256"],
+                "retention_status": upload_record["retention_status"],
+                "created_at": upload_record["created_at"],
+            }
+        )
     record_operation(
         state,
         "analytics-table-upload",
         {
+            "upload_id": upload_record.get("id") if upload_record else None,
             "file_name": file_name,
             "extension": extension,
             "sheet_name": sheet_name,
             "row_count": response.row_count,
             "column_count": len(response.columns),
+            "retention_status": response.retention_status,
         },
     )
     return response
+
+
+@router.get("/table-uploads", response_model=AnalyticsUploadHistoryResponse)
+def list_table_uploads(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AnalyticsUploadHistoryResponse:
+    if state.analytics_upload_store is None:
+        return AnalyticsUploadHistoryResponse(
+            items=[],
+            store={"ready": False, "backend": "none"},
+        )
+    items = [
+        AnalyticsUploadHistoryItem.model_validate(item)
+        for item in state.analytics_upload_store.list_uploads(limit=limit)
+    ]
+    record_operation(
+        state,
+        "analytics-table-upload-history-list",
+        {"count": len(items), "limit": limit},
+    )
+    return AnalyticsUploadHistoryResponse(
+        items=items,
+        store={"ready": True, "backend": state.analytics_upload_store.__class__.__name__},
+    )
 
 
 def _file_extension(file_name: str) -> str:
@@ -244,6 +322,21 @@ def _build_response(
         audit_signals=audit_signals,
         recommendations=recommendations,
     )
+
+
+def _analysis_summary(response: TableUploadAnalysisResponse) -> dict[str, object]:
+    return {
+        "status": response.status,
+        "sheet_name": response.sheet_name,
+        "row_count": response.row_count,
+        "column_count": len(response.columns),
+        "empty_cell_count": response.empty_cell_count,
+        "duplicate_row_count": response.duplicate_row_count,
+        "quality_findings": list(response.quality_findings),
+        "audit_signals": list(response.audit_signals),
+        "recommendations": list(response.recommendations),
+        "columns": [column.model_dump(mode="json") for column in response.columns],
+    }
 
 
 def _normalize_row(row: list[str], column_count: int) -> list[str]:
