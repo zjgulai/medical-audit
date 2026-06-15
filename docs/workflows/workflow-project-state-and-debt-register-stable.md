@@ -73,13 +73,13 @@ source: human+ai
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前本地工作分支：`codex/portal-config-denial-production-sync`
+- 当前本地工作分支：以执行时 `git status` 为准；本轮状态同步使用 `codex/*` docs-only 分支。
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前文档同步分支：`codex/portal-config-denial-production-sync`
-- GitHub `main` 最新提交：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`
+- 当前文档同步分支：PR #91 和后续 docs-only 状态修正分支。
+- GitHub `main` 当前已包含 PR #90 代码合并和 PR #91 docs-only 生产状态同步；docs-only 提交可能领先生产 `.deploy-sha`。
 - 当前生产运行代码 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`
 - 本轮已完成 PR #90 合并、腾讯云生产部署和门户配置写入拒绝审计专项 E2E；智能体和项目成员写接口的未知角色拒绝审计已从“代码层已补”推进到“生产已部署并验收通过”。
-- 当前生产运行代码与 `origin/main` 对齐。
+- 当前生产运行代码是 `origin/main` 的祖先；`origin/main` 若领先，仅代表 docs-only 状态同步，不能误判为生产已部署到 docs-only 提交。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -569,7 +569,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 使用 `claude-haiku-4-5-20251001` 仍返回 `401 invalid x-api-key`；历史 Kimi chat 403/401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 等待新的可用服务端 chat provider key；先跑 smoke 和真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events`；已部署智能体和项目成员写接口的未知角色拒绝审计，生产专项 smoke 证明 `guest` 访问记录 `agent-access-denied` 和 `project-member-access-denied` 并持久化到 `audit_log_events` | 无法满足生产级审计系统权限边界 | 建立用户/角色/部门模型和会话认证，替换静态 header 口径；补权限矩阵和跨模块绕过测试 | 未授权路径 403；审计日志记录访问拒绝；真实会话与角色模型验收通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和病毒扫描未完成 | 当前仅 HMAC 归档签名和本地附件归档 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA、远端 main 和文档状态同步到 `6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha` 和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA 和文档状态同步到 `6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`；远端 main 已包含 docs-only 状态同步，可能领先生产部署 SHA；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
 
 ## 5. P1 债务台账
 
