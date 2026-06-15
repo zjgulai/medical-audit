@@ -33,10 +33,28 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-14 PR #73 部署后当前事实
+### 2026-06-15 AI 数据分析留存历史部署后当前事实
+
+- PR #79 `codex/analytics-upload-retention-history` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`analytics-retention-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-analytics-retention-20260615.sql.gz`，`gzip -t` 通过，大小 `512961688` bytes，`sha256=876bb9ecc1a0a39aa23085688c613000ca44dc4133b428ab2fdb3cb26d66f68d`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
+- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 生产已应用 `analytics_upload_records` 表和索引；上传留存目录 `/opt/medical-audit/analytics-uploads` 已创建，宿主机目录权限为 `ubuntu:ubuntu 775`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-analytics-retention-deploy-20260615.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-analytics-retention-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-analytics-retention-deploy-20260615.json` 为 `status=pass`，`p0_count=0`、`p1_count=0`。
+- 生产 API 上传留存写入报告 `tmp/outputs/production-analytics-retention-write-e2e-20260615.json` 为 `status=pass`；记录 `analytics-upload-b3a1898e38d1` 已写入 PostgreSQL，并留存在 `/opt/medical-audit/analytics-uploads/2026/06/15/analytics-upload-b3a1898e38d1.csv`。
+- 生产 UI 上传联调报告 `tmp/outputs/production-analytics-ui-upload-retention-e2e-20260615.json` 为 `status=pass`；页面上传 `production-analytics-ui-upload-retention-20260615.csv` 后最新历史记录为 `analytics-upload-f39d652d3f81`，`retention_status=retained`，DB 和宿主机文件 `sha256` 校验一致。
+- 运维观察项：留存文件由容器写出后在宿主机呈现为 `root:root 644`，功能和读取不受影响，但后续人工清理需要 sudo 或补充容器用户/文件权限治理。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+
+### 2026-06-14 PR #73 部署后历史事实
 
 - PR #73 `接入答案生成 provider 并强化 no-fallback 生产门禁` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`281981ce072b549ebbcc4332db6d5ae1a06801e5`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时部署后生产 SHA：`281981ce072b549ebbcc4332db6d5ae1a06801e5`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`pr73-answer-gate-20260614`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
@@ -93,15 +111,15 @@ source: human+ai
 - 验收后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-documents-query-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 边界：`/api/v1/query` 会写入进程内查询日志和 preview reference，但不写入数据库业务表；本轮未完成搜索历史持久化、个人知识库上传、文档权限模型，也未补充响应中的 `source_collection` 直接回显字段。
 
-### 2026-06-15 AI 数据分析留存历史待部署变更
+### 2026-06-15 AI 数据分析留存历史生产验收
 
 - 本地实现范围：`/api/v1/analytics/table-upload` 上传成功后留存原始文件、写入 `analytics_upload_records`，并通过 `GET /api/v1/analytics/table-uploads` 返回最近上传历史。
 - 本地联调证据：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`；上传 `charge-retention-final.csv` 后最新历史记录为 `analytics-upload-28a10ca6ac89`，`retention_status=retained`。
-- 生产部署需要新增 host 目录：`/opt/medical-audit/analytics-uploads`。
-- 生产 Compose 已准备挂载：`${MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST:-/opt/medical-audit/analytics-uploads}:/app/analytics-uploads`。
-- 生产 env 示例已准备：`MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST=/opt/medical-audit/analytics-uploads`。
-- 生产 schema 需要应用 `analytics_upload_records` 表和索引。
-- 边界：本记录不是生产完成状态；尚未执行生产部署、schema apply、DB backup 或生产上传留存写入型 E2E。
+- 生产部署已完成 host 目录 `/opt/medical-audit/analytics-uploads` 创建和 Compose 挂载：`${MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST:-/opt/medical-audit/analytics-uploads}:/app/analytics-uploads`。
+- 生产 schema 已应用 `analytics_upload_records` 表和索引。
+- 生产 API 写入型验收：`tmp/outputs/production-analytics-retention-write-e2e-20260615.json`，状态 `pass`；`analytics-upload-b3a1898e38d1` 历史、DB 行和宿主机留存文件均验证通过。
+- 生产 UI 上传联调：`tmp/outputs/production-analytics-ui-upload-retention-e2e-20260615.json`，状态 `pass`；`analytics-upload-f39d652d3f81` 由 `/analytics` 页面上传产生，历史、DB 行和宿主机留存文件均验证通过。
+- 边界：本轮完成文件留存和历史记录，不等于完成病毒扫描、脱敏改写、对象存储、下载权限隔离、正式工作簿治理或长期存储生命周期策略。
 
 ### 2026-06-14 Phase 1 历史基线事实
 
