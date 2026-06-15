@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-operations
 status: stable
 created: 2026-05-31
-updated: 2026-06-05
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -651,7 +651,7 @@ uv run medical-audit-kb index-incremental-plan \
   --json-output tmp/outputs/knowledge-query-incremental-plan-current-20260602.json
 ```
 
-当前增量计划结果：
+2026-06-02 增量计划历史结果：
 
 - `ready_for_incremental_build`: `true`
 - `added_files`: `0`
@@ -661,6 +661,32 @@ uv run medical-audit-kb index-incremental-plan \
 - `pending_files`: `13`
 - `estimated_new_embeddings`: `0`
 - `db_rows_to_deactivate`: `0`
+
+### 2026-06-15 国家规章平台文档增量激活结果
+
+本轮资料来源为 `data/国家规章平台文档.zip`。资料已解压并转换到 `data/医保审核前期资料/全量法律/国家规章平台文档`，生产同步路径为 `/opt/medical-audit/app/data/医保审核前期资料/全量法律/国家规章平台文档`。
+
+最终激活的是稳定增量版本，不是第一次全量重建候选：
+
+- active index：`incremental-20260615-national-regulation-stable-20260615103344`
+- source package：`source-package-national-regulation-stable-incremental-20260615103344`
+- active 文档数：`503`
+- active chunks：`49051`
+- active embeddings：`49051`
+- 本轮国家规章平台新增入库文档：`17`
+- 本轮国家规章平台新增 chunks：`66`
+- index version 状态：`active=1`、`inactive=3`
+
+第一次全量重建候选 `full-rebuild-20260615093424` 没有激活，原因是固定 52 case 回归评测出现 `51/52`，而当时 active 为 `52/52`。该候选已置为 `inactive`，不得作为后续发布基线。
+
+稳定增量版本复用了既有 active artifact 和已生成候选中的 embeddings，未重新批量调用外部 embedding 生成。激活前后验收结果：
+
+- 固定 52 case 检索评测：`52/52` 通过，`recall@5=100%`、`citation_hit_rate=100%`、`preview_location_success_rate=100%`
+- 新增文档检索评测：`6/6` 通过
+- 新增文档答案评测：`4/4` 通过；仍为 citation fallback answer，不代表真实生成模型已启用
+- 生产综合 E2E：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，`status=pass`
+
+生产激活后曾暴露 `/pages/chat` 返回 `500`，日志为 `TemplateNotFound: chat.html`。复核确认远端源文件和本地 wheel 均包含模板，实际原因是运行中的 `uvicorn` 子进程仍持有旧导入路径。已仅重启 `medical_audit_app`，重启后 `/pages/chat` 内外网均返回 `200`，搜索后端仍为 PostgreSQL 且 `matching_embedding_count=49051`；重启后日志未再出现 `TemplateNotFound`。
 
 发布新 candidate 版本前必须完成：
 
@@ -680,8 +706,8 @@ uv run medical-audit-kb index-incremental-plan \
 - fixed candidate 构建结果：`persistent_chunk_count=48985`、`embedding_reused_count=48985`、`embedding_created_count=0`、`pending_file_count=0`、`failed_file_count=0`。
 - fixed candidate 的 `pgvector-import-plan` 和 `pgvector-import` dry-run 通过；发布就绪审计返回 `status=pass`、`safe_to_execute_candidate_write=true`、`chunk_collision_check.collision_count=0`、`evidence_grade=L3-production-read-only + L2-dry-run`。
 - 受控 `pgvector-import --execute --index-version-status candidate` 已执行；随后受控 `index-activate --index-version-key full-rebuild-20260603085815` 已执行。
-- 生产库当前包含 active `full-rebuild-20260603085815` 和 inactive `full-rebuild-20260531142344`，总计 `source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
-- 线上 PostgreSQL search backend 已重载，`/index/search-backend` 报告新 active 的 `matching_embedding_count=48985`。
+- 2026-06-03 激活后生产库当时包含 active `full-rebuild-20260603085815` 和 inactive `full-rebuild-20260531142344`，总计 `source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
+- 2026-06-03 线上 PostgreSQL search backend 已重载，`/index/search-backend` 当时报告新 active 的 `matching_embedding_count=48985`。
 - candidate DB vector self-query 通过：candidate 范围内 top1 命中同一 chunk，`score=1`。
 - candidate PostgreSQL 固定 52 case 检索评测通过：`recall@5=100%`、`citation_hit_rate=100%`、`preview_location_success_rate=100%`。
 - candidate PostgreSQL fallback 答案评测通过：8 case `pass_rate=100%`、`citation_marker_rate=100%`、`unsupported_claim_free_rate=100%`、`fallback_rate=100%`。
@@ -857,10 +883,10 @@ curl http://127.0.0.1:8010/index/postgres-status
 
 该接口必须显示：
 
-- `row_counts.document_chunks = 48985`
-- `row_counts.chunk_embeddings = 48985`
+- `row_counts.document_chunks = 49051`
+- `row_counts.chunk_embeddings = 49051`
 - `row_counts.failed_files = 0`
-- `row_counts.pending_files = 13`
+- `row_counts.pending_files = 0`
 - `embedding_sets[0] = openai/kimi-for-coding/v1/1024`
 
 备用手动加载 Kimi 主索引对应的 PostgreSQL 检索后端：
@@ -890,7 +916,7 @@ curl -X POST http://127.0.0.1:8010/index/search-backend/postgres \
 
 加载成功后再执行 `/pages/chat` 或 `/query`。如果返回 `409`，先检查 `KIMI_API_KEY` 是否在启动 API 的同一 shell 环境中存在；如果返回 `503`，先检查 PostgreSQL 容器、schema 和导入数据。
 
-加载成功响应中的 `details.matching_embedding_count` 必须大于 `0`。当前 Kimi 主索引期望为 `48985`，如果为 `0` 或返回 `409 no postgres embeddings match requested provider metadata`，说明请求参数与数据库中的 `openai/kimi-for-coding/v1/1024` 主索引不一致。
+加载成功响应中的 `details.matching_embedding_count` 必须大于 `0`。当前生产 Kimi 主索引期望为 `49051`，如果为 `0` 或返回 `409 no postgres embeddings match requested provider metadata`，说明请求参数与数据库中的 `openai/kimi-for-coding/v1/1024` 主索引不一致。
 
 注意：不要使用默认配置中的 `text-embedding-3-small` 参数加载当前数据库。当前数据库向量是 `openai/kimi-for-coding/v1/1024`，查询 embedding provider 必须一致。
 

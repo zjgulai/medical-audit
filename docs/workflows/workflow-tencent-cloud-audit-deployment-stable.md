@@ -33,7 +33,7 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-15 文档检索边界能力部署后当前事实
+### 2026-06-15 文档检索边界能力部署与国家规章增量激活后当前事实
 
 - PR #83 `codex/documents-boundary-tasks` 已合并到 `main` 并部署到生产。
 - 当前生产部署 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
@@ -41,7 +41,7 @@ source: human+ai
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260615T121812+0800.sql.gz`，大小 `512967344` bytes。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
-- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 生产已应用 `document_upload_records` 表和索引；个人文档留存目录 `/opt/medical-audit/document-uploads` 已创建并挂载到应用容器。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-deploy-20260615T121812+0800.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
@@ -52,15 +52,24 @@ source: human+ai
 - 早先 `production-documents-write-e2e-20260615T122322+0800.json`、`20260615T122459+0800.json` 和 `20260615T122620+0800.json` 的失败原因为检查脚本 SQL quoting 问题；API 写入实际成功，已由 `*-verified.json` 中的显式 DB 行、宿主机文件和权限隔离检查覆盖。
 - `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
 
+- 2026-06-15 国家规章平台文档增量资料已完成生产激活，未执行代码重新部署；远端 `.deploy-sha` 仍为 `f864e370abd7309f6222376074b45ef2bc6c0ff4`。
+- 当前 active index 为 `incremental-20260615-national-regulation-stable-20260615103344`，source package 为 `source-package-national-regulation-stable-incremental-20260615103344`。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`、`embedding_dimension=1024`。
+- 当前生产库索引版本状态为 `active=1`、`inactive=3`；active 计数为 `source_documents=503`、`document_chunks=49051`、`chunk_embeddings=49051`。
+- 本次新增国家规章平台入库文档 `17` 个、新增 chunks `66` 个；第一次全量重建候选 `full-rebuild-20260615093424` 因固定 52 case 回归为 `51/52` 未激活，并已置为 `inactive`。
+- 激活后固定 52 case 检索评测、6 case 新增文档检索评测、4 case 新增文档答案评测均通过；生产 E2E 报告 `tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json` 为 `status=pass`。
+- 激活后 `/pages/chat` 曾因运行中 `uvicorn` 子进程持有旧导入路径返回 `500`，日志为 `TemplateNotFound: chat.html`；已仅重启 `medical_audit_app` 修复，未重建或修改 `medical_audit_pg`、`medical_audit_pgdata` 或共享 `ai_video_nginx`。
+- 重启后 `/pages/chat` 内外网均返回 `200`，重启后日志未再出现 `TemplateNotFound`。
+
 ### 2026-06-15 AI 数据分析留存历史部署后历史事实
 
 - PR #79 `codex/analytics-upload-retention-history` 已合并到 `main` 并部署到生产。
-- 当时生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- PR #79 当时部署后生产 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 当时已核验。
 - 本轮部署戳：`analytics-retention-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-analytics-retention-20260615.sql.gz`，`gzip -t` 通过，大小 `512961688` bytes，`sha256=876bb9ecc1a0a39aa23085688c613000ca44dc4133b428ab2fdb3cb26d66f68d`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
-- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- PR #79 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
 - 生产已应用 `analytics_upload_records` 表和索引；上传留存目录 `/opt/medical-audit/analytics-uploads` 已创建，宿主机目录权限为 `ubuntu:ubuntu 775`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-analytics-retention-deploy-20260615.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-analytics-retention-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
@@ -308,23 +317,22 @@ python3 scripts/run-production-e2e-smoke.py \
 
 ### 5.1 数据导入结果
 
-远端 pgvector 已完成导入和激活：
+远端 pgvector 已完成导入和激活。当前生产 active 基线：
 
-- active `source_documents = 486`
-- active `document_chunks = 48985`
-- active `chunk_embeddings = 48985`
-- total `source_documents = 972`
-- total `document_chunks = 97970`
-- total `chunk_embeddings = 97970`
+- active `source_documents = 503`
+- active `document_chunks = 49051`
+- active `chunk_embeddings = 49051`
+- active `index_version_key = incremental-20260615-national-regulation-stable-20260615103344`
+- active `source_package_version_key = source-package-national-regulation-stable-incremental-20260615103344`
+- index version status count：`active = 1`、`inactive = 3`
 - `failed_files = 0`
-- `pending_files = 13`
+- `pending_files = 0`
 - `index_version_status = active`
-- `active_index_version_key = full-rebuild-20260603085815`
 
 说明：
 
-- `pending_files = 13` 表示索引构建时仍有待处理源文件记录，不阻断当前 active index 使用。
-- 本次远端只同步 active index 实际引用的 486 个源文件，避免长中文文件名导致 rsync 失败。
+- 当前 active index 的 `failed_files` 与 `pending_files` 均为 `0`。
+- 2026-06-03 首次生产 active 版本为 `full-rebuild-20260603085815`，计数为 `486/48985/48985`；该版本已在 2026-06-15 国家规章平台增量激活后变为 `inactive`。
 - 完整历史源文件仍保留在本地 `data/`，远端当前服务依赖 active source subset 和 pgvector 数据库。
 
 ### 5.2 运行环境
@@ -344,7 +352,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - `ready = true`
 - `embedding_model = kimi-for-coding`
 - `embedding_dimension = 1024`
-- `matching_embedding_count = 48985`
+- `matching_embedding_count = 49051`
 
 ### 5.3 证书与反代
 
@@ -524,7 +532,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - 不读取 `medical-audit.env` 内容，只检查备份文件路径、大小和修改时间。
 - 默认检查 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
-- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count=48985`。
+- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count` 等于当前 active index 的 embedding 计数；2026-06-15 当前值为 `49051`。
 - 默认汇总本地 `tmp/outputs/production-e2e-smoke*.json` 的最近结果，报告仍保存在 `tmp/outputs/`，不进入正式资产区。
 
 巡检命令：
@@ -532,8 +540,8 @@ python3 scripts/run-production-e2e-smoke.py \
 ```bash
 uv run python scripts/audit-tencent-cloud-deployment-state.py \
   --ssh-key ./ai_video.pem \
-  --expected-deploy-sha cf6c1479de0b109d5abc9ee92ac8267e549ec2f6 \
-  --required-backup-stamp 20260611T180655+0800
+  --expected-deploy-sha <当前生产 .deploy-sha> \
+  --required-backup-stamp <本次部署备份戳>
 ```
 
 默认输出：
@@ -547,7 +555,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - `medical_audit_app` 和 `medical_audit_pg` 为 `healthy`。
 - `ai_video_nginx nginx -t` 通过。
 - `/var/www/audit` bind mount 存在且为只读。
-- PostgreSQL 检索后端 ready，embedding 计数为 `48985`。
+- PostgreSQL 检索后端 ready，embedding 计数等于当前 active index 的 embedding 计数；2026-06-15 当前值为 `49051`。
 - 指定部署戳对应的 app/env/db/nginx/web 备份均存在。
 - 最近本地生产 smoke 报告不是 `fail`。
 - 首次生产巡检 `tencent-cloud-deployment-state-after-pr48-20260611` 已通过，状态为 `pass`，阻断项为空。
@@ -807,11 +815,11 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 3. 执行 `pgvector-import --execute` 写入 `candidate`。
 4. 执行 `medical-audit-kb index-activate` 激活目标版本。
 5. 查询数据库计数：
-   - `source_documents = 486`
-   - `document_chunks = 48985`
-   - `chunk_embeddings = 48985`
+   - `source_documents = 503`
+   - `document_chunks = 49051`
+   - `chunk_embeddings = 49051`
    - `failed_files = 0`
-   - `pending_files = 13`
+   - `pending_files = 0`
 
 ### 6.3 应用启动
 
@@ -822,7 +830,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 5. 后端 ready 门槛：
    - `backend = postgres`
    - `ready = true`
-   - `matching_embedding_count = 48985`
+   - `matching_embedding_count = 49051`
 
 ### 6.4 nginx 与证书
 
@@ -1025,7 +1033,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `https://audit.lute-tlz-dddd.top/health` 返回 `200`。
 - TLS 证书 SAN 包含 `audit.lute-tlz-dddd.top`。
 - `/index/search-backend` 返回 `ready=true`。
-- `matching_embedding_count=48985`。
+- `matching_embedding_count=49051`。
 - `/pages/chat` 页面可访问，并能渲染带引用的查询结果。
 - `/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
 - `/query` 公网调用返回 `confidence=high`、`citation_count=3`、`basis_group_count=2`。
@@ -1034,14 +1042,14 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `scripts/run-production-e2e-smoke.py` 默认只读生产 E2E 已通过；默认流程不创建复核任务。
 - 复核任务创建、状态更新与导出只在显式传入 `--include-review-write` 时执行。
 - 视觉基线脚本通过 desktop/mobile 检查，未发现横向溢出或关键文案缺失。
-- 增量更新 dry-run 已通过，486 个 active source files 全部 `unchanged`，新增/修改/删除/失败均为 `0`。
+- 2026-06-15 国家规章平台稳定增量激活已通过，当前 active source documents 为 `503`，active embeddings 为 `49051`；旧的 `486/48985/48985` 仅作为 2026-06-03 至 2026-06-14 历史基线保留。
 - 初始索引回滚就绪审计已执行，旧状态下生产库 `active=1`、`inactive=0`、`rollback_target=0`，真实 rollback 被安全阻止且数据库计数未变化。
 - candidate 发布就绪审计已执行：active-key artifact 被 `candidate-index-version-key-matches-active` 阻断，旧 candidate `full-rebuild-20260603081846` 被 48,985 个 active chunk id 跨 source package 碰撞阻断，数据库计数均未变化。
 - package-aware chunk id 修复已部署到生产镜像，新 fixed candidate `full-rebuild-20260603085815` 构建完成，`embedding_reused_count=48985`，`embedding_created_count=0`，pending/failed 均为 `0`。
 - fixed candidate 的 `pgvector-import-plan` 和 `pgvector-import` dry-run 通过，发布就绪审计返回 `status=pass`、`safe_to_execute_candidate_write=true`、`chunk_collision_check.collision_count=0`。
 - 受控 candidate 写入已执行，生产库曾包含 active `full-rebuild-20260531142344` 和 candidate `full-rebuild-20260603085815`；总计 `source_documents=972`、`document_chunks=97970`、`chunk_embeddings=97970`。
-- 受控 `index-activate` 已执行，当前 active 为 `full-rebuild-20260603085815`，旧 active `full-rebuild-20260531142344` 已变为 inactive。
-- 线上 PostgreSQL search backend 已重载，`/index/search-backend` 返回 `matching_embedding_count=48985`，查询引用版本为 `full-rebuild-20260603085815`。
+- 受控 `index-activate` 已执行，2026-06-03 当时 active 为 `full-rebuild-20260603085815`，旧 active `full-rebuild-20260531142344` 已变为 inactive。
+- 线上 PostgreSQL search backend 当时已重载，`/index/search-backend` 返回 `matching_embedding_count=48985`，查询引用版本为 `full-rebuild-20260603085815`。
 - candidate DB vector self-query 通过，candidate PostgreSQL 固定 52 case 检索评测通过，candidate fallback 答案评测 8 case 全部通过。
 - 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-fix-20260603` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`，复核任务写入流已跳过。
 - 生产只读 E2E smoke `production-e2e-smoke-readonly-after-candidate-write-20260603` 通过；证明 candidate 写入后线上 active 查询未回归。
@@ -1088,7 +1096,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `https://audit.lute-tlz-dddd.top/health` 返回 `200`。
 - TLS 证书 SAN 包含 `audit.lute-tlz-dddd.top`。
 - `/index/search-backend` 返回 `ready=true`。
-- `matching_embedding_count=48985`。
+- `matching_embedding_count=49051`。
 - `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
 - `/findings` 返回 Next 原生疑点工作台，主导航“疑点清单”指向 `/findings`。
 - `/api/v1/audit-findings` 返回 `200`，且 `store.ready=true`。

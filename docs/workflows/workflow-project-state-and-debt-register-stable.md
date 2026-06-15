@@ -41,7 +41,8 @@ source: human+ai
 - `ai_video_nginx`：running，作为共享公网入口。
 - PostgreSQL 检索后端：`backend=postgres`，`ready=true`。
 - Kimi embedding：`embedding_model=kimi-for-coding`，`embedding_dimension=1024`。
-- 当前匹配 embeddings：`48985`。
+- 当前匹配 embeddings：`49051`。
+- 当前 active index：`incremental-20260615-national-regulation-stable-20260615103344`，覆盖 `503` 个 source documents、`49051` 个 chunks 和 `49051` 条 embeddings。
 - 最新项目成员生产写入 smoke 报告：`tmp/outputs/production-project-member-write-smoke-20260614.json`，状态 `pass`。
 - 最新智能体生产写入 smoke 报告：`tmp/outputs/production-agent-write-smoke-20260614.json`，状态 `pass`。
 - 最新 AI 数据分析生产上传解析 smoke 报告：`tmp/outputs/production-analytics-upload-smoke-20260614.json`，状态 `pass`。
@@ -51,6 +52,7 @@ source: human+ai
 - 最新文档检索边界能力生产写入型 E2E 报告：`tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json`，状态 `pass`。
 - 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-documents-boundary-deploy-20260615.json`，状态 `pass`。
 - 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json`，状态 `pass`，`issues=[]`。
+- 最新国家规章平台增量激活后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
 - 最新 AI 数据分析留存历史本地联调截图：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`。
 - 项目成员写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`，`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
 - 项目成员生产写入结果：`CATALOG-LIMIT-202606` 新增 `member-custom-e152673f93f9`，成员数从 `4` 增至 `5`，数据库 `audit_project_members` 当前自定义记录数为 `1`。
@@ -66,12 +68,13 @@ source: human+ai
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit`
-- 当前本地工作分支：`codex/documents-boundary-tasks`
+- 当前本地工作分支：`codex/national-regulation-state-sync`
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前文档同步分支：`codex/documents-boundary-production-sync`
-- GitHub `main` 最新提交：`f864e370abd7309f6222376074b45ef2bc6c0ff4`
+- 当前文档同步分支：`codex/national-regulation-state-sync`
+- GitHub `main` 最新提交：`49d79b24465827550fc1f27ea40a066a69a845b7`
 - 当前生产运行代码 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`
 - 本轮已完成 PR #83 合并、腾讯云生产部署、schema 应用和 `/documents` 写入型 E2E；文档检索剩余边界能力已从“本地已验证”推进到“生产已部署并写入验收通过”。
+- 当前生产运行代码是 `origin/main` 的祖先；2026-06-15 国家规章平台资料激活未执行代码重新部署。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -451,6 +454,34 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 查询响应仍为 `fallback_used=true`，只证明引用型 fallback 和来源过滤链路健康，不证明真实生成模型能力。
 - 本轮不覆盖真实登录会话、组织级权限、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料入索引或长期存储生命周期策略。
 - 早先三份 `production-documents-write-e2e-*.json` 失败报告属于检查脚本 SQL quoting 问题，已被 `production-documents-write-e2e-20260615T122620+0800-verified.json` 以显式 DB 行和宿主机文件校验覆盖。
+
+### 2.13 国家规章平台文档增量入库与生产激活状态
+
+验收日期：`2026-06-15`
+
+本轮国家规章平台资料补充已完成生产激活，结论为 `pass`。
+
+数据与索引：
+
+- 资料来源：`data/国家规章平台文档.zip`。
+- 生产资料路径：`/opt/medical-audit/app/data/医保审核前期资料/全量法律/国家规章平台文档`。
+- active index：`incremental-20260615-national-regulation-stable-20260615103344`。
+- source package：`source-package-national-regulation-stable-incremental-20260615103344`。
+- active 计数：`503` 个 source documents、`49051` 个 chunks、`49051` 条 embeddings。
+- 本轮新增国家规章平台入库文档：`17` 个；新增 chunks：`66`。
+
+验收证据：
+
+- 固定 52 case 检索评测：`52/52` 通过。
+- 新增文档检索评测：`6/6` 通过。
+- 新增文档答案评测：`4/4` 通过；仍为 citation fallback answer，不代表真实生成模型能力可用。
+- 生产 E2E：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
+
+异常与处置：
+
+- 第一次全量重建候选 `full-rebuild-20260615093424` 因固定 52 case 回归为 `51/52` 未激活，并已置为 `inactive`。
+- 激活后 `/pages/chat` 曾返回 `500`，日志为 `TemplateNotFound: chat.html`；复核确认不是本地缺模板或 wheel 缺模板，而是运行中 `uvicorn` 子进程持有旧导入路径。
+- 已仅重启 `medical_audit_app` 修复；未修改 `medical_audit_pg`、`medical_audit_pgdata` 或共享 `ai_video_nginx`。重启后 `/pages/chat` 内外网均返回 `200`，重启后日志未再出现 `TemplateNotFound`。
 
 ## 3. 债务分级
 
