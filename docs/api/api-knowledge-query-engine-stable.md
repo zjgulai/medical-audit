@@ -650,6 +650,8 @@ Query 参数：
 
 ## 7. 索引接口
 
+索引写接口仍基于 `X-Role: it-admin` 做管理权限判断。拒绝访问时返回 `403`，并记录 `index-admin-access-denied` 操作日志；payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+
 ### `POST /index/rebuild`
 
 全量重建索引。需要 `X-Role: it-admin`。
@@ -713,7 +715,7 @@ Query 参数：
 
 错误：
 
-- `403`：缺少 `X-Role: it-admin`。
+- `403`：缺少 `X-Role: it-admin`，并记录 `index-admin-access-denied`。
 - `409`：目标版本不存在，或状态不允许激活。
 - `503`：PostgreSQL 写入失败。
 

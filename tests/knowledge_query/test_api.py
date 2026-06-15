@@ -835,10 +835,19 @@ def test_index_version_activate_and_rollback_actions_require_admin(
 
     forbidden_response = client.post(
         "/index/versions/activate",
-        headers={"X-Role": "auditor"},
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
         json={"index_version_key": "candidate-next"},
     )
     assert forbidden_response.status_code == 403
+    denied_log = state.operation_logs[-1]
+    assert denied_log["action"] == "index-admin-access-denied"
+    assert denied_log["payload"] == {
+        "attempted_action": "index-version-activate",
+        "user_identifier": "auditor-1",
+        "role": "auditor",
+        "status_code": 403,
+        "reason": "index operation requires it-admin role",
+    }
 
     activate_response = client.post(
         "/index/versions/activate",
