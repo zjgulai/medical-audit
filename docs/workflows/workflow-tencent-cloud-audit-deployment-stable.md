@@ -33,6 +33,23 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-15 权限上下文兼容层部署后当前事实
+
+- PR #94 `codex/auth-rbac-phase-a` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`bebcf57043197ff45dfff1185e071a1cf2d7d808`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`auth-rbac-phase-a-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-auth-rbac-phase-a-20260615.sql.gz`，大小约 `979M`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 专项 RBAC smoke 报告 `tmp/outputs/production-auth-rbac-phase-a-smoke-20260615.json` 为 `status=pass`；已验证旧 `X-Role: it-admin` 兼容映射为 `system-admin`，新 `X-Role: system-admin` 可读治理日志，未授权审计日志访问返回 `403`。
+- 专项 RBAC smoke 已验证 `auditor` 写 `/api/v1/index/versions/activate` 返回 `403`，`guest` 写 `/api/v1/agents` 和 `/api/v1/projects/SELF-CHECK-FUND-20260607/members` 返回 `403`，并均可在持久化审计日志中查到 `auth_source=legacy-header`、`normalized_role` 和 `attempted_action`。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+- 证据边界：本轮只证明 legacy header 权限上下文兼容层和关键写接口拒绝审计链路，不等于完成真实登录会话、组织/科室级授权、会话态前端切换或全站细粒度 RBAC。
+
 ### 2026-06-15 门户配置写入拒绝审计部署后当前事实
 
 - PR #90 `codex/portal-config-write-denial-audit` 已合并到 `main` 并部署到生产。
@@ -519,6 +536,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - schema 写入必须显式传入 `--apply-schema`。
 - 复核任务写入 E2E 必须显式传入 `--include-review-write`。
 - 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
+- 数据库备份必须使用非 TTY `docker exec -i ... pg_dump`，禁止在非交互 SSH 部署链路中使用 `docker exec -t ... pg_dump`，避免备份完成后本地 SSH 子进程卡住。
 - 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
 - 应用同步排除 `.deploy-sha`、`__pycache__/`、`*.pyc` 和本地缓存文件；`.deploy-sha` 只由脚本在同步后显式写入。
 - 应用同步前会在备份完成后清理远端 `remote_app_dir/src` 下的 `*.pyc`、`*.pyo`、`*.uploading.cfg` 和空 `__pycache__`，避免旧缓存或云盘上传临时文件阻断 rsync 删除空目录；不得使用 `--delete-excluded`，防止误删远端 `data/`、env、密钥或其他刻意排除资产。
@@ -549,7 +567,8 @@ python3 scripts/run-production-e2e-smoke.py \
 - 不读取 `medical-audit.env` 内容，只检查备份文件路径、大小和修改时间。
 - 默认检查 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
-- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count` 等于当前 active index 的 embedding 计数；2026-06-15 当前值为 `49051`。
+- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count >= 1`；报告会记录实际 `matching_embedding_count`，但不再与历史固定计数做精确相等比较。
+- 如需提高门槛，使用 `--min-matching-embeddings <最小可接受计数>`；旧参数 `--expected-matching-embeddings` 仍兼容，但语义已调整为最小阈值而非精确值。
 - 默认汇总本地 `tmp/outputs/production-e2e-smoke*.json` 的最近结果，报告仍保存在 `tmp/outputs/`，不进入正式资产区。
 
 巡检命令：
@@ -1167,10 +1186,10 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
 - 已重建并重启 `medical_audit_app`；`medical_audit_pg` 保持 running/healthy，未重建或删除 `medical_audit_pgdata`。
 - 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-portal-config-denial-deploy-20260615.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
-- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
-- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
-- 专项权限 smoke：`tmp/outputs/production-portal-config-denial-audit-smoke-20260615.json`，状态 `pass`；`guest` 角色写 `/api/v1/agents` 和 `/api/v1/projects/SELF-CHECK-FUND-20260607/members` 均返回 `403`，管理员角色查询持久化审计日志分别返回 `agent-access-denied.matching_count=1` 和 `project-member-access-denied.matching_count=1`。
-- 证据边界：本轮只证明门户配置写接口未知角色拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-auth-rbac-phase-a-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=bebcf57043197ff45dfff1185e071a1cf2d7d808`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-auth-rbac-phase-a-deploy-20260615.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 专项 RBAC smoke：`tmp/outputs/production-auth-rbac-phase-a-smoke-20260615.json`，状态 `pass`；旧 `it-admin` 兼容、新 `system-admin`、未授权审计日志拒绝、index/agent/project-member 写入拒绝及拒绝审计 payload 均已验证。
+- 证据边界：本轮只证明 legacy header 权限上下文兼容层和关键写接口拒绝审计链路，不等于完成真实登录会话、组织/科室级授权、会话态前端切换或全站细粒度 RBAC。
 
 ## 10. 回滚方案
 

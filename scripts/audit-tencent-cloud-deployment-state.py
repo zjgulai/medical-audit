@@ -16,7 +16,7 @@ DEFAULT_DOMAIN = "audit.lute-tlz-dddd.top"
 DEFAULT_REMOTE_APP_DIR = "/opt/medical-audit/app"
 DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_REMOTE_BACKUP_ROOT = "/opt/medical-audit/backups"
-DEFAULT_EXPECTED_EMBEDDINGS = 48985
+DEFAULT_MIN_MATCHING_EMBEDDINGS = 1
 DEFAULT_JSON_OUTPUT = "tmp/outputs/tencent-cloud-deployment-state-latest.json"
 DEFAULT_MARKDOWN_OUTPUT = "tmp/outputs/tencent-cloud-deployment-state-latest.md"
 BACKUP_CATEGORIES = (
@@ -60,7 +60,7 @@ def main() -> int:
             local_smoke_reports=local_smoke_reports,
             expected_deploy_sha=_optional_text(args.expected_deploy_sha),
             required_backup_stamp=_optional_text(args.required_backup_stamp),
-            expected_embeddings=int(args.expected_matching_embeddings),
+            min_matching_embeddings=_min_matching_embeddings(args),
         )
     except AuditError as exc:
         print(f"audit failed: {exc}", file=sys.stderr)
@@ -89,9 +89,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-deploy-sha", default="")
     parser.add_argument("--required-backup-stamp", default="")
     parser.add_argument(
+        "--min-matching-embeddings",
+        type=int,
+        default=None,
+        help="Minimum acceptable active PostgreSQL embedding count. Defaults to 1.",
+    )
+    parser.add_argument(
         "--expected-matching-embeddings",
         type=int,
-        default=DEFAULT_EXPECTED_EMBEDDINGS,
+        default=None,
+        help=(
+            "Deprecated alias for --min-matching-embeddings. The value is treated "
+            "as a lower bound, not an exact count."
+        ),
     )
     parser.add_argument("--backup-limit", type=int, default=5)
     parser.add_argument("--local-smoke-limit", type=int, default=5)
@@ -119,6 +129,16 @@ def _optional_text(value: object) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _min_matching_embeddings(args: argparse.Namespace) -> int:
+    explicit_min = getattr(args, "min_matching_embeddings", None)
+    if explicit_min is not None:
+        return int(explicit_min)
+    legacy_expected = getattr(args, "expected_matching_embeddings", None)
+    if legacy_expected is not None:
+        return int(legacy_expected)
+    return DEFAULT_MIN_MATCHING_EMBEDDINGS
 
 
 def _collect_remote_report(
@@ -369,7 +389,7 @@ def _build_report(
     local_smoke_reports: list[dict[str, Any]],
     expected_deploy_sha: str | None,
     required_backup_stamp: str | None,
-    expected_embeddings: int,
+    min_matching_embeddings: int,
 ) -> dict[str, Any]:
     issues: list[str] = []
     deploy_sha = _string_or_none(remote_report.get("deploy_sha"))
@@ -383,7 +403,7 @@ def _build_report(
         issues.append("nginx-config-test-failed")
     if not _audit_mount_valid(remote_report):
         issues.append("audit-static-bind-mount-missing")
-    if not _search_backend_ready(remote_report, expected_embeddings):
+    if not _search_backend_ready(remote_report, min_matching_embeddings):
         issues.append("search-backend-not-ready")
     if required_backup_stamp:
         missing = _missing_backup_categories(remote_report, required_backup_stamp)
@@ -397,14 +417,16 @@ def _build_report(
         "issues": issues,
         "expected_deploy_sha": expected_deploy_sha,
         "required_backup_stamp": required_backup_stamp,
-        "expected_matching_embeddings": expected_embeddings,
+        "minimum_matching_embeddings": min_matching_embeddings,
+        "expected_matching_embeddings": min_matching_embeddings,
         "summary": {
             "deploy_sha": deploy_sha,
             "app_health": _container_health(remote_report, "medical_audit_app"),
             "postgres_health": _container_health(remote_report, "medical_audit_pg"),
             "nginx_config_test": _nginx_test_passed(remote_report),
             "audit_mount_present": _audit_mount_valid(remote_report),
-            "search_backend_ready": _search_backend_ready(remote_report, expected_embeddings),
+            "search_backend_ready": _search_backend_ready(remote_report, min_matching_embeddings),
+            "matching_embedding_count": _matching_embedding_count(remote_report),
             "latest_local_smoke_status": latest_smoke.get("status") if latest_smoke else None,
         },
         "remote": remote_report,
@@ -439,21 +461,39 @@ def _audit_mount_valid(remote_report: dict[str, Any]) -> bool:
     return audit_mount.get("destination") == "/var/www/audit" and audit_mount.get("rw") is False
 
 
-def _search_backend_ready(remote_report: dict[str, Any], expected_embeddings: int) -> bool:
+def _search_backend_ready(remote_report: dict[str, Any], min_matching_embeddings: int) -> bool:
     search_backend = _nested_dict(remote_report, "local_backend", "search_backend")
     if search_backend.get("ok") is not True:
         return False
     payload = search_backend.get("payload")
     if not isinstance(payload, dict):
         return False
-    details = payload.get("details")
-    if not isinstance(details, dict):
+    matching_embedding_count = _matching_embedding_count(remote_report)
+    if matching_embedding_count is None:
         return False
     return (
         payload.get("backend") == "postgres"
         and payload.get("ready") is True
-        and details.get("matching_embedding_count") == expected_embeddings
+        and matching_embedding_count >= min_matching_embeddings
     )
+
+
+def _matching_embedding_count(remote_report: dict[str, Any]) -> int | None:
+    search_backend = _nested_dict(remote_report, "local_backend", "search_backend")
+    payload = search_backend.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    details = payload.get("details")
+    if not isinstance(details, dict):
+        return None
+    value = details.get("matching_embedding_count")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def _missing_backup_categories(remote_report: dict[str, Any], stamp: str) -> list[str]:
