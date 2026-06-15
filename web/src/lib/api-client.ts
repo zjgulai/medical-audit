@@ -4,6 +4,9 @@ import type {
   AgentsResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  DocumentPermissionsResponse,
+  DocumentUploadListResponse,
+  DocumentUploadResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectMembersResponse,
@@ -29,6 +32,25 @@ async function getJson<T>(path: string): Promise<T> {
 
   const response = await fetch(path, {
     headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function getJsonWithAuditHeaders<T>(path: string): Promise<T> {
+  assertBackendProxyClientRuntime();
+
+  const response = await fetch(path, {
+    headers: {
+      Accept: "application/json",
+      "X-Role": "auditor",
+      "X-User-Id": "next-knowledge-query"
+    },
     cache: "no-store"
   });
 
@@ -117,6 +139,20 @@ export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResp
 
 export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {
   return getJson<TableAnalysisUploadHistoryResponse>("/api/v1/analytics/table-uploads");
+}
+
+export function fetchDocumentPermissions(): Promise<DocumentPermissionsResponse> {
+  return getJsonWithAuditHeaders<DocumentPermissionsResponse>("/api/v1/documents/permissions");
+}
+
+export function fetchDocumentUploads(): Promise<DocumentUploadListResponse> {
+  return getJsonWithAuditHeaders<DocumentUploadListResponse>("/api/v1/documents/uploads");
+}
+
+export function uploadPersonalDocument(file: File): Promise<DocumentUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return postForm<DocumentUploadResponse>("/api/v1/documents/uploads", formData);
 }
 
 export function fetchAgents(): Promise<AgentsResponse> {

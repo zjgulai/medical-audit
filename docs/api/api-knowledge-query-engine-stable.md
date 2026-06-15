@@ -387,8 +387,8 @@ Query 参数：
 - `answer`：引用型回答正文。
 - `confidence`：`high | medium | low`。
 - `fallback_used`：是否使用 fallback 答案。
-- `basis_groups`：按证据类型分组的依据。
-- `citations`：引用列表，含 `chunk_id`、locator、索引版本和资料包版本。
+- `basis_groups`：按证据类型分组的依据；每条 `items` 直接回显 `source_collection`。
+- `citations`：引用列表，含 `chunk_id`、`source_collection`、locator、索引版本和资料包版本。
 - `query_log_index`：本次查询日志索引。
 - `query_log_id`：持久化查询历史 ID；当查询历史 store 不可用或写入失败时为 `null`，主查询结果不因历史写入失败而中断。
 
@@ -436,7 +436,112 @@ Query 参数：
 - 如果服务未配置查询历史 store，接口回退返回进程内最近日志，`store.ready=false`、`store.backend="memory"`。
 - 如果查询历史 store 读取失败，接口同样回退到进程内最近日志，`store.ready=false`，并返回结构化 `error.error_type`，不暴露数据库连接串或异常正文。
 
-## 4. 数据分析接口
+## 4. 文档接口
+
+### `GET /documents/permissions`
+
+返回当前角色可读取的文档来源集合和个人材料上传权限。
+
+请求头：
+
+- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
+
+响应示例：
+
+```json
+{
+  "role": "auditor",
+  "source_collections": [
+    {
+      "source_collection": "medical-insurance-laws",
+      "label": "法规政策",
+      "scope": "公开知识库",
+      "access": "read"
+    }
+  ],
+  "upload_permissions": {
+    "can_upload_personal": true,
+    "can_read_all_personal_uploads": false
+  }
+}
+```
+
+错误：
+
+- `403`：角色无查询权限。
+
+### `GET /documents/uploads`
+
+返回个人材料留存记录。
+
+请求头：
+
+- `X-User-Id`：当前用户标识；缺省为 `anonymous`。
+- `X-Role`：`auditor`、`it-admin` 或 `department-head`。
+
+Query 参数：
+
+- `limit`：返回数量，范围 `1` 到 `100`，默认 `20`。
+
+权限行为：
+
+- `auditor` 只读取自己上传的个人材料。
+- `it-admin` 和 `department-head` 可读取全部个人材料留存记录。
+
+响应核心字段：
+
+- `items`
+- `store.ready`
+- `store.backend`
+- `permissions`
+
+每条 `items` 记录包含：
+
+- `id`
+- `name`
+- `extension`
+- `size_bytes`
+- `size_kb`
+- `sha256`
+- `storage_path`
+- `visibility`
+- `status`
+- `created_by`
+- `created_at`
+- `retention_status`
+- `index_status`
+
+### `POST /documents/uploads`
+
+上传个人材料并写入受控留存目录。支持 multipart 上传。
+
+上传限制：
+
+- 文件字段名：`file`
+- 支持扩展名：`pdf`、`md`、`txt`、`csv`、`xlsx`、`xlsm`
+- 最大文件大小：`20MB`
+
+持久化行为：
+
+- 配置 `document_upload_store` 后，接口会把原始上传文件写入受控留存目录，并写入 `document_upload_records`。
+- 留存目录优先使用 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_ROOT`，未配置时使用 `index_root/document-uploads`。
+- 文件名使用系统生成的 `document-upload-*` 记录号，不复用原始文件名作为物理文件名。
+- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户和 `metadata.index_status=not-indexed`。
+
+当前边界：
+
+- 本接口只完成个人材料留存和列表读取，不把上传材料写入检索索引。
+- 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件下载权限隔离或生命周期清理。
+- 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
+
+状态码：
+
+- `200`：留存成功。
+- `409`：上传 store 未配置。
+- `413`：文件超过大小限制。
+- `422`：扩展名不支持或空文件。
+
+## 5. 数据分析接口
 
 ### `POST /analytics/table-upload`
 
@@ -519,7 +624,7 @@ Query 参数：
 - `retention_status`
 - `audit_signals`
 
-## 5. 原文预览接口
+## 6. 原文预览接口
 
 ### `GET /preview/{chunk_id}`
 
@@ -543,7 +648,7 @@ Query 参数：
 - `404`：引用不存在或源文件不存在。
 - `422`：locator 无法解析。
 
-## 6. 索引接口
+## 7. 索引接口
 
 ### `POST /index/rebuild`
 
@@ -819,7 +924,7 @@ Kimi 主索引运行参数：
 
 加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前 Kimi 主索引期望值为 `48985`。
 
-## 7. 操作日志接口
+## 8. 操作日志接口
 
 ### `GET /operation/logs`
 
@@ -843,7 +948,7 @@ Kimi 主索引运行参数：
 
 当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和外部告警接入。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
-## 8. CLI 命令
+## 9. CLI 命令
 
 ### `medical-audit-kb acceptance-run`
 

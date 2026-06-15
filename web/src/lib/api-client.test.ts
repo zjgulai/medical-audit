@@ -7,12 +7,15 @@ import {
   fetchAuditFindings,
   fetchAgents,
   fetchBackendHealth,
+  fetchDocumentPermissions,
+  fetchDocumentUploads,
   fetchProjectMembers,
   fetchProjects,
   fetchQueryHistory,
   fetchSearchBackendStatus,
   runKnowledgeQuery,
-  uploadAnalysisTable
+  uploadAnalysisTable,
+  uploadPersonalDocument
 } from "./api-client";
 
 describe("api-client", () => {
@@ -294,6 +297,135 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("analytics-upload-001");
+  });
+
+  it("fetches document permissions through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          role: "auditor",
+          source_collections: [
+            {
+              source_collection: "medical-insurance-laws",
+              label: "法规政策",
+              scope: "公开知识库",
+              access: "read"
+            }
+          ],
+          upload_permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: false
+          }
+        })
+      }))
+    );
+
+    const result = await fetchDocumentPermissions();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/permissions", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      cache: "no-store"
+    });
+    expect(result.source_collections[0].source_collection).toBe("medical-insurance-laws");
+  });
+
+  it("fetches personal document uploads through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "document-upload-001",
+              name: "policy.pdf",
+              extension: "pdf",
+              size_bytes: 128,
+              size_kb: 1,
+              sha256: "c".repeat(64),
+              storage_path: "2026/06/15/document-upload-001.pdf",
+              visibility: "private",
+              status: "retained",
+              created_by: "next-knowledge-query",
+              created_at: "2026-06-15T00:00:00Z",
+              retention_status: "retained",
+              index_status: "not-indexed"
+            }
+          ],
+          store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
+          permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: false
+          }
+        })
+      }))
+    );
+
+    const result = await fetchDocumentUploads();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      cache: "no-store"
+    });
+    expect(result.items[0].id).toBe("document-upload-001");
+  });
+
+  it("uploads personal documents through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "document-upload-001",
+            name: "policy.pdf",
+            extension: "pdf",
+            size_bytes: 128,
+            size_kb: 1,
+            sha256: "c".repeat(64),
+            storage_path: "2026/06/15/document-upload-001.pdf",
+            visibility: "private",
+            status: "retained",
+            created_by: "next-knowledge-query",
+            created_at: "2026-06-15T00:00:00Z",
+            retention_status: "retained",
+            index_status: "not-indexed"
+          },
+          store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
+          permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: false
+          }
+        })
+      }))
+    );
+
+    const file = new File(["policy"], "policy.pdf", { type: "application/pdf" });
+    const result = await uploadPersonalDocument(file);
+    const fetchCall = vi.mocked(fetch).mock.calls[0];
+
+    expect(fetchCall[0]).toBe("/api/v1/documents/uploads");
+    expect(fetchCall[1]).toMatchObject({
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      cache: "no-store"
+    });
+    expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
+    expect(result.item.index_status).toBe("not-indexed");
   });
 
   it("creates audit agents through the versioned API proxy", async () => {

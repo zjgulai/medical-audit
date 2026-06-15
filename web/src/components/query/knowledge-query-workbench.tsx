@@ -252,6 +252,7 @@ function CitationRow({ citation }: { readonly citation: QueryCitation }) {
           <p className="audit-compact-title">
             {citation.marker} · {citation.evidence_type}
           </p>
+          <p className="mt-1 audit-meta">来源: {citation.source_collection}</p>
           <p className="mt-1 audit-meta">{locatorSummary(citation.locator)}</p>
         </div>
         <a

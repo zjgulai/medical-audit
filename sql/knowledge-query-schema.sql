@@ -188,6 +188,25 @@ CREATE TABLE IF NOT EXISTS analytics_upload_records (
     CONSTRAINT ck_analytics_upload_records_duplicate_row_count_non_negative CHECK (duplicate_row_count >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS document_upload_records (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_key text NOT NULL UNIQUE,
+    file_name text NOT NULL,
+    extension text NOT NULL,
+    size_bytes integer NOT NULL,
+    sha256 text NOT NULL,
+    storage_path text NOT NULL,
+    visibility text NOT NULL DEFAULT 'private',
+    status text NOT NULL DEFAULT 'retained',
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_document_upload_records_extension CHECK (extension IN ('pdf', 'md', 'txt', 'csv', 'xlsx', 'xlsm')),
+    CONSTRAINT ck_document_upload_records_size_bytes_positive CHECK (size_bytes > 0),
+    CONSTRAINT ck_document_upload_records_visibility CHECK (visibility IN ('private')),
+    CONSTRAINT ck_document_upload_records_status CHECK (status IN ('retained'))
+);
+
 CREATE TABLE IF NOT EXISTS review_tasks (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     external_task_id text NOT NULL UNIQUE,
@@ -517,6 +536,14 @@ CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_created_by
     ON analytics_upload_records (created_by);
 CREATE INDEX IF NOT EXISTS idx_analytics_upload_records_sha256
     ON analytics_upload_records (sha256);
+CREATE INDEX IF NOT EXISTS idx_document_upload_records_created_at
+    ON document_upload_records (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_upload_records_created_by
+    ON document_upload_records (created_by);
+CREATE INDEX IF NOT EXISTS idx_document_upload_records_sha256
+    ON document_upload_records (sha256);
+CREATE INDEX IF NOT EXISTS idx_document_upload_records_status
+    ON document_upload_records (status);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks (status);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_at ON review_tasks (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_by ON review_tasks (created_by);

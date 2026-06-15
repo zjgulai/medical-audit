@@ -15,6 +15,10 @@ from medical_audit_kb.api.audit_log_policy import (
     can_read_audit_logs,
     redact_audit_log_events,
 )
+from medical_audit_kb.api.document_permissions import (
+    enforce_source_collection_access,
+    normalize_role,
+)
 from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.answer_builder import (
@@ -53,8 +57,11 @@ def query(
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    if x_role is not None and x_role not in {"auditor", "it-admin", "department-head"}:
-        raise HTTPException(status_code=403, detail="role is not allowed to query")
+    role = normalize_role(x_role)
+    enforce_source_collection_access(
+        role=role,
+        source_collections=tuple(payload.source_collections),
+    )
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search engine is not initialized")
 
@@ -84,7 +91,7 @@ def query(
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     log_entry = {
         "user_identifier": x_user_id or "anonymous",
-        "role": x_role or "auditor",
+        "role": role,
         "question": payload.question,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
@@ -126,6 +133,7 @@ def query(
                     {
                         "citation_id": item.citation_id,
                         "chunk_id": str(item.chunk_id),
+                        "source_collection": item.source_collection.value,
                         "snippet": item.snippet,
                         "locator": item.locator,
                         "index_version_key": item.index_version_key,
@@ -142,6 +150,7 @@ def query(
                 "marker": citation.marker,
                 "chunk_id": str(citation.chunk_id),
                 "evidence_type": citation.evidence_type.value,
+                "source_collection": citation.source_collection.value,
                 "snippet": citation.snippet,
                 "locator": citation.locator,
                 "index_version_key": citation.index_version_key,

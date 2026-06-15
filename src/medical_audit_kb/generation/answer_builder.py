@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
+from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import (
     Citation,
     CitationGroup,
@@ -76,6 +77,7 @@ class AnswerGenerationProvider(Protocol):
 class AnswerBasisItem:
     citation_id: str
     chunk_id: UUID
+    source_collection: SourceCollection
     snippet: str
     locator: dict[str, object]
     index_version_key: str
@@ -157,6 +159,7 @@ def _basis_groups(citation_groups: tuple[CitationGroup, ...]) -> tuple[AnswerBas
                     AnswerBasisItem(
                         citation_id=citation.citation_id,
                         chunk_id=citation.chunk_id,
+                        source_collection=citation.source_collection,
                         snippet=citation.snippet,
                         locator=citation.locator,
                         index_version_key=citation.index_version_key,

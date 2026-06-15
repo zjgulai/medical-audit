@@ -355,6 +355,33 @@ class AnalyticsUploadRecord(Base):
     )
 
 
+class DocumentUploadRecord(Base):
+    __tablename__ = "document_upload_records"
+    __table_args__ = (
+        Index("idx_document_upload_records_created_at", "created_at"),
+        Index("idx_document_upload_records_created_by", "created_by"),
+        Index("idx_document_upload_records_sha256", "sha256"),
+        Index("idx_document_upload_records_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    upload_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    extension: Mapped[str] = mapped_column(String(16), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="retained")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
 class ReviewTask(Base):
     __tablename__ = "review_tasks"
     __table_args__ = (

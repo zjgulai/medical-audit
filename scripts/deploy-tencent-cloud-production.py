@@ -280,7 +280,8 @@ mkdir -p /opt/medical-audit/backups/app \
   /opt/medical-audit/backups/db \
   /opt/medical-audit/backups/nginx \
   /opt/medical-audit/backups/web \
-  /opt/medical-audit/analytics-uploads
+  /opt/medical-audit/analytics-uploads \
+  /opt/medical-audit/document-uploads
 tar --exclude='.git' --exclude='.venv' --exclude='tmp' --exclude='data' \
   -czf /opt/medical-audit/backups/app/pre-deploy-${{stamp}}.tar.gz \
   -C /opt/medical-audit app
