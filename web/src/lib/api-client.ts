@@ -8,6 +8,7 @@ import type {
   ProjectMemberCreateResponse,
   ProjectMembersResponse,
   ProjectsResponse,
+  QueryHistoryResponse,
   QueryRequest,
   QueryResponse,
   SearchBackendStatusResponse,
@@ -91,6 +92,10 @@ export function fetchSearchBackendStatus(): Promise<SearchBackendStatusResponse>
 
 export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse> {
   return postJson<QueryResponse>("/api/v1/query", payload);
+}
+
+export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
+  return getJson<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
 }
 
 export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {

@@ -5,6 +5,7 @@ import {
   createAuditAgent,
   createProjectMember,
   fetchAnalysisUploadHistory,
+  fetchQueryHistory,
   fetchSearchBackendStatus,
   runKnowledgeQuery,
   uploadAnalysisTable
@@ -171,6 +172,24 @@ vi.mock("@/lib/api-client", () => ({
       }
     ],
     store: { ready: true, backend: "SqlAlchemyAnalyticsUploadStore" }
+  })),
+  fetchQueryHistory: vi.fn(async () => ({
+    items: [
+      {
+        id: "query-history-001",
+        user_identifier: "next-knowledge-query",
+        question: "医保基金支付异常",
+        filters: {
+          top_k: 8,
+          source_collections: ["medical-insurance-laws"]
+        },
+        answer_summary: "应核验医保基金支付异常的引用依据。",
+        retrieved_chunk_ids: ["chunk-doc-001"],
+        citation_count: 1,
+        created_at: "2026-06-15T00:00:00Z"
+      }
+    ],
+    store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
   })),
   fetchAuditFindings: vi.fn(async () => ({
     items: [],
@@ -671,7 +690,10 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "材料与知识库统一检索" })).toBeInTheDocument();
     expect(screen.getByLabelText("审计问题或文档关键词")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索历史" })).toBeInTheDocument();
-    expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
+    });
+    expect(screen.getByText("已连接")).toBeInTheDocument();
     expect(screen.getByText("监管两库")).toBeInTheDocument();
     expect(screen.getByText("risk-negative-list")).toBeInTheDocument();
     expect(screen.getByText("等待检索")).toBeInTheDocument();
@@ -703,6 +725,7 @@ describe("workspace foundation pages", () => {
       "href",
       expect.stringContaining("/chat?question=")
     );
+    expect(fetchQueryHistory).toHaveBeenCalled();
   });
 
   it("renders the read-only knowledge graph coverage view", async () => {
