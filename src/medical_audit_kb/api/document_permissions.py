@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
+from medical_audit_kb.api.role_policy import AUDIT_ROLES, normalize_audit_role
 from medical_audit_kb.domain.constants import SourceCollection
 
 DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
@@ -14,7 +15,7 @@ DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
 }
 
 READ_ALL_PERSONAL_UPLOAD_ROLES = frozenset({"it-admin", "department-head"})
-QUERY_ROLES = frozenset({"auditor", "it-admin", "department-head"})
+QUERY_ROLES = AUDIT_ROLES
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,10 +35,7 @@ class DocumentPermission:
 
 
 def normalize_role(role: str | None) -> str:
-    normalized = (role or "auditor").strip() or "auditor"
-    if normalized not in QUERY_ROLES:
-        raise HTTPException(status_code=403, detail="role is not allowed to query")
-    return normalized
+    return normalize_audit_role(role)
 
 
 def can_read_all_personal_uploads(role: str) -> bool:

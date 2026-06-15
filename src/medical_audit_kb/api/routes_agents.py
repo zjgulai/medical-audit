@@ -15,6 +15,7 @@ from medical_audit_kb.api.agent_store import (
     validate_agent_category,
 )
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.role_policy import require_audit_role_for_write
 
 router = APIRouter()
 
@@ -66,7 +67,15 @@ def create_agent(
     payload: AgentCreateRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
+    role = require_audit_role_for_write(
+        state,
+        role=x_role,
+        user_identifier=x_user_id,
+        attempted_action="agent-create",
+        denied_action="agent-access-denied",
+    )
     values = payload.model_dump()
     values["created_by"] = x_user_id or "anonymous"
     try:
@@ -84,6 +93,7 @@ def create_agent(
             "agent_id": agent["id"],
             "category": agent["category"],
             "created_by": x_user_id or "anonymous",
+            "role": role,
         },
     )
     return {

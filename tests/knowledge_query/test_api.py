@@ -78,7 +78,7 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
 
     create_response = client.post(
         "/agents",
-        headers={"X-User-Id": "auditor-1"},
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
         json={
             "name": "目录限制核验助手",
             "category": "业务类",
@@ -95,6 +95,7 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     assert created["created_by"] == "auditor-1"
     assert created["source"] == "custom"
     assert state.operation_logs[-1]["action"] == "agent-create"
+    assert state.operation_logs[-1]["payload"]["role"] == "auditor"
 
     second_state = _api_state(tmp_path / "second")
     second_state.agent_store = SqlAlchemyAgentStore(database_url)
@@ -127,6 +128,39 @@ def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
     assert response.status_code == 422
 
 
+def test_agents_api_records_denied_write_for_unknown_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'agents.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/agents",
+        headers={"X-User-Id": "guest-1", "X-Role": "guest"},
+        json={
+            "name": "访客助手",
+            "category": "业务类",
+            "topic": "医保基金使用合规",
+            "prompt": "输出审计问题。",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "role is not allowed"
+    assert state.operation_logs[-1] == {
+        "action": "agent-access-denied",
+        "payload": {
+            "attempted_action": "agent-create",
+            "user_identifier": "guest-1",
+            "role": "guest",
+            "status_code": 403,
+            "reason": "role is not allowed",
+        },
+    }
+
+
 def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
     state = _api_state(tmp_path)
@@ -152,7 +186,7 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
 
     create_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
-        headers={"X-User-Id": "auditor-1"},
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
         json={
             "name": "赵审计",
             "role": "审计员",
@@ -167,6 +201,7 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert created["status"] == "待确认"
     assert created["created_by"] == "auditor-1"
     assert state.operation_logs[-1]["action"] == "project-member-create"
+    assert state.operation_logs[-1]["payload"]["actor_role"] == "auditor"
 
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
@@ -202,9 +237,30 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
             "department": "医保办",
         },
     )
+    forbidden_actor_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "guest-1", "X-Role": "guest"},
+        json={
+            "name": "访客成员",
+            "role": "审计员",
+            "department": "医保办",
+        },
+    )
 
     assert missing_response.status_code == 404
     assert invalid_role_response.status_code == 422
+    assert forbidden_actor_response.status_code == 403
+    assert forbidden_actor_response.json()["detail"] == "role is not allowed"
+    assert state.operation_logs[-1] == {
+        "action": "project-member-access-denied",
+        "payload": {
+            "attempted_action": "project-member-create",
+            "user_identifier": "guest-1",
+            "role": "guest",
+            "status_code": 403,
+            "reason": "role is not allowed",
+        },
+    }
 
 
 def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
