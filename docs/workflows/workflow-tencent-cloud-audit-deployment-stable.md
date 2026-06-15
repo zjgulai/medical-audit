@@ -33,10 +33,27 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-15 文档检索边界能力部署与国家规章增量激活后当前事实
+### 2026-06-15 门户配置写入拒绝审计部署后当前事实
+
+- PR #90 `codex/portal-config-write-denial-audit` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`portal-config-denial-audit-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 专项权限 smoke 报告 `tmp/outputs/production-portal-config-denial-audit-smoke-20260615.json` 为 `status=pass`；用户 `portal-config-denial-e2e-20260615T122012Z` 使用 `X-Role: guest` 写 `/api/v1/agents` 和 `/api/v1/projects/SELF-CHECK-FUND-20260607/members` 均返回 `403 role is not allowed`。
+- 管理员角色查询持久化审计日志时，`agent-access-denied` 和 `project-member-access-denied` 均返回 `matching_count=1`，store 为 `SqlAlchemyAuditLogStore`。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+- 证据边界：本轮只证明门户配置写接口未知角色拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
+
+### 2026-06-15 文档检索边界能力部署与国家规章增量激活历史事实
 
 - PR #83 `codex/documents-boundary-tasks` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`20260615T121812+0800`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260615T121812+0800.sql.gz`，大小 `512967344` bytes。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -1140,6 +1157,20 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-index-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=a3111bf615995bd03a95514c49447cd82087e5ab`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
 - 专项权限 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`；普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，管理员角色查询持久化审计日志返回 `matching_count=1`。
 - 证据边界：本轮只证明索引管理写接口拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
+
+### 2026-06-15 门户配置写入拒绝审计部署
+
+- 部署提交：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`。
+- 部署戳：`portal-config-denial-audit-20260615`。
+- 变更范围：智能体和项目成员写接口遇到未知 `X-Role` 时返回 `403`，并分别记录 `agent-access-denied` 与 `project-member-access-denied`，payload 保留 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
+- 已重建并重启 `medical_audit_app`；`medical_audit_pg` 保持 running/healthy，未重建或删除 `medical_audit_pgdata`。
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-portal-config-denial-deploy-20260615.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 专项权限 smoke：`tmp/outputs/production-portal-config-denial-audit-smoke-20260615.json`，状态 `pass`；`guest` 角色写 `/api/v1/agents` 和 `/api/v1/projects/SELF-CHECK-FUND-20260607/members` 均返回 `403`，管理员角色查询持久化审计日志分别返回 `agent-access-denied.matching_count=1` 和 `project-member-access-denied.matching_count=1`。
+- 证据边界：本轮只证明门户配置写接口未知角色拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
 
 ## 10. 回滚方案
 
