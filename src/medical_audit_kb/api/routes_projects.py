@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
 from medical_audit_kb.api.project_member_store import (
     DEFAULT_PROJECT_PAYLOADS,
     PROJECT_MEMBER_ROLES,
@@ -19,7 +20,7 @@ from medical_audit_kb.api.project_member_store import (
     validate_project_member_role,
     validate_project_member_status,
 )
-from medical_audit_kb.api.role_policy import require_audit_role_for_write
+from medical_audit_kb.api.role_policy import require_audit_user_for_write
 
 router = APIRouter()
 
@@ -110,19 +111,17 @@ def create_project_member(
     project_key: str,
     payload: ProjectMemberCreateRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_project(project_key)
-    actor_role = require_audit_role_for_write(
+    current_user = require_audit_user_for_write(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         attempted_action="project-member-create",
         denied_action="project-member-access-denied",
     )
     values = payload.model_dump()
-    values["created_by"] = x_user_id or "anonymous"
+    values["created_by"] = current_user.user_key
     try:
         member = _project_member_store(state).add_member(project_key, values)
     except SQLAlchemyError as exc:
@@ -134,13 +133,14 @@ def create_project_member(
     record_operation(
         state,
         "project-member-create",
-        {
-            "project_key": project_key,
-            "member_id": member["id"],
-            "role": member["role"],
-            "actor_role": actor_role,
-            "created_by": x_user_id or "anonymous",
-        },
+        auth_audit_payload(
+            current_user,
+            project_key=project_key,
+            member_id=member["id"],
+            member_role=member["role"],
+            actor_role=current_user.primary_role,
+            created_by=current_user.user_key,
+        ),
     )
     return {
         "item": member,

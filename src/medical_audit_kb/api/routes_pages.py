@@ -25,6 +25,12 @@ from medical_audit_kb.api.audit_log_policy import (
     can_read_audit_logs,
     redact_audit_log_events,
 )
+from medical_audit_kb.api.auth_context import (
+    CurrentUser,
+    auth_audit_payload,
+    current_user_from_request,
+    get_current_user,
+)
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -272,6 +278,7 @@ def review_tasks_page(
 def audit_logs_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -289,18 +296,15 @@ def audit_logs_page(
         created_to=created_to,
         limit=limit,
     )
-    user_role = request.headers.get("X-Role")
-    user_identifier_header = request.headers.get("X-User-Id")
-    can_access_audit_logs = can_read_audit_logs(user_role)
+    can_access_audit_logs = can_read_audit_logs(current_user.primary_role)
     record_operation(
         state,
         "page-audit-logs-view" if can_access_audit_logs else "audit-logs-access-denied",
-        {
-            "filters": filters,
-            "user_identifier": user_identifier_header or "anonymous",
-            "role": user_role or "anonymous",
-            "status_code": 200 if can_access_audit_logs else 403,
-        },
+        auth_audit_payload(
+            current_user,
+            filters=filters,
+            status_code=200 if can_access_audit_logs else 403,
+        ),
     )
     audit_log_events = []
     if can_access_audit_logs and state.audit_log_store is not None:
@@ -1767,19 +1771,19 @@ def _ensure_review_task_writable(
 ) -> None:
     if str(task.get("status", "")).strip() == "closed":
         detail = "review task is closed and read-only"
+        current_user = current_user_from_request(request)
         record_operation(
             state,
             "review-task-readonly-write-blocked",
-            {
-                "task_id": str(task.get("task_id", "")),
-                "task_status": "closed",
-                "attempted_action": attempted_action,
-                "endpoint": endpoint,
-                "status_code": 409,
-                "reason": detail,
-                "user_identifier": request.headers.get("X-User-Id") or "anonymous",
-                "role": request.headers.get("X-Role") or "auditor",
-            },
+            auth_audit_payload(
+                current_user,
+                task_id=str(task.get("task_id", "")),
+                task_status="closed",
+                attempted_action=attempted_action,
+                endpoint=endpoint,
+                status_code=409,
+                reason=detail,
+            ),
         )
         raise HTTPException(status_code=409, detail=detail)
 

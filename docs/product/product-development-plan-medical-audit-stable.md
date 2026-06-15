@@ -57,6 +57,7 @@ source: human+ai
 - AI 数据分析上传留存和历史记录已完成生产部署与写入验收：新增 `analytics_upload_records`、受控上传文件留存、`GET /api/v1/analytics/table-uploads` 历史列表和 `/analytics` 上传历史侧栏；生产 API 上传、页面上传、历史查询、DB 行和宿主机留存文件均已验证。
 - 文档检索搜索历史持久化已完成本地实现和联调：`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 持久化读取历史，`/documents` 可展示、刷新和回填搜索历史；尚未生产部署。
 - 真实权限模型与 RBAC 架构基线已固化到 `docs/architecture/architecture-auth-rbac-stable.md`，明确用户、部门、角色、权限矩阵、服务端会话、legacy header 迁移和验收门禁。
+- RBAC Phase A 后端兼容层已完成代码实现和本地测试：新增 `CurrentUser`、`PermissionContext`、legacy header 归一化和统一审计 payload；`/agents`、`/projects`、`/documents`、`/query`、`/audit/logs`、`/index` 相关后端入口已收敛到统一用户上下文；尚未生产部署。
 
 当前未完成：
 
@@ -67,7 +68,7 @@ source: human+ai
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
 - 附件对象存储、病毒扫描、权限隔离、电子签章、独立整改数据库表和案件级整改归档流。
-- 用户、角色、科室、全站权限控制的代码实现仍未完成；当前只完成 RBAC 架构基线，尚未落 auth schema、真实会话、前端去硬编码 header、跨模块绕过测试、证书级非对称电子签章、审计日志长期保留介质接入和真实外部告警端点配置。
+- 用户、角色、科室、全站权限控制仍未完成；当前只完成 RBAC 架构基线和 Phase A 后端兼容层，尚未落 auth schema、真实登录会话、前端去硬编码 header、生产部署、跨模块绕过测试、证书级非对称电子签章、审计日志长期保留介质接入和真实外部告警端点配置。
 - 知识库新增源文件后的生产级增量写入和 active 切换闭环。
 - 真实医院 HIS 数据、院方 UAT 用例、问题登记、复测记录和验收签收材料。
 - Kimi Code 当前仅验证为 embedding provider；真实线上答案生成 provider 仍未通过预检和评测。
@@ -342,7 +343,7 @@ V0.3 门户壳层已经部署到生产，提示词型智能体、项目成员管
 
 任务：
 
-- RBAC：按 `architecture-auth-rbac-stable.md` 落地审计员、负责人、信息科、业务专家、系统管理员，先完成兼容层，再关闭浏览器侧 `X-Role` 授权。
+- RBAC：Phase A 后端兼容层已完成；下一步按 `architecture-auth-rbac-stable.md` 落 auth schema、真实会话和前端去硬编码 header，再关闭浏览器侧 `X-Role` 授权。
 - 审计日志：查询、导出、复核、规则更新、索引发布、回滚、报告导出。
 - 数据备份和恢复演练。
 - 证书续期 dry-run。

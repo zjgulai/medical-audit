@@ -96,6 +96,8 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     assert created["source"] == "custom"
     assert state.operation_logs[-1]["action"] == "agent-create"
     assert state.operation_logs[-1]["payload"]["role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
     second_state = _api_state(tmp_path / "second")
     second_state.agent_store = SqlAlchemyAgentStore(database_url)
@@ -155,6 +157,8 @@ def test_agents_api_records_denied_write_for_unknown_role(tmp_path: Path) -> Non
             "attempted_action": "agent-create",
             "user_identifier": "guest-1",
             "role": "guest",
+            "normalized_role": "guest",
+            "auth_source": "legacy-header",
             "status_code": 403,
             "reason": "role is not allowed",
         },
@@ -202,6 +206,8 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert created["created_by"] == "auditor-1"
     assert state.operation_logs[-1]["action"] == "project-member-create"
     assert state.operation_logs[-1]["payload"]["actor_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
@@ -257,6 +263,8 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
             "attempted_action": "project-member-create",
             "user_identifier": "guest-1",
             "role": "guest",
+            "normalized_role": "guest",
+            "auth_source": "legacy-header",
             "status_code": 403,
             "reason": "role is not allowed",
         },
@@ -429,6 +437,8 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
     assert state.operation_logs[-1]["action"] == "document-upload"
     assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
     retained_path = upload_root / uploaded["storage_path"]
     assert retained_path.exists()
@@ -510,6 +520,9 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert logs_response.status_code == 200
     assert logs_response.json()["items"][0]["user_identifier"] == "auditor-1"
     assert logs_response.json()["items"][0]["filters"]["top_k"] == 2
+    assert state.operation_logs[-1]["action"] == "query"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
 
 def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
@@ -901,6 +914,8 @@ def test_index_version_activate_and_rollback_actions_require_admin(
         "attempted_action": "index-version-activate",
         "user_identifier": "auditor-1",
         "role": "auditor",
+        "normalized_role": "auditor",
+        "auth_source": "legacy-header",
         "status_code": 403,
         "reason": "index operation requires it-admin role",
     }
@@ -916,7 +931,7 @@ def test_index_version_activate_and_rollback_actions_require_admin(
 
     rollback_response = client.post(
         "/index/versions/rollback",
-        headers={"X-Role": "it-admin"},
+        headers={"X-Role": "system-admin"},
         json={"index_version_key": "active-old"},
     )
     assert rollback_response.status_code == 200

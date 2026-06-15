@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import psycopg
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import (
@@ -14,6 +14,7 @@ from medical_audit_kb.api.app import (
     record_index_run,
     record_operation,
 )
+from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -93,13 +94,11 @@ class EvaluationRunRequest(BaseModel):
 def rebuild_index(
     payload: IndexRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-rebuild",
     )
     run_result = state.index_pipeline.run_full_rebuild(
@@ -114,13 +113,11 @@ def rebuild_index(
 def incremental_index(
     payload: IndexRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-incremental",
     )
     if state.current_snapshot is None:
@@ -138,13 +135,11 @@ def incremental_index(
 def retry_file(
     payload: RetryFileRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-retry-file",
     )
     run_result = state.index_pipeline.retry_file(
@@ -195,13 +190,11 @@ def search_backend_status(state: Annotated[ApiState, Depends(get_api_state)]) ->
 def activate_postgres_index_version(
     payload: IndexVersionSwitchRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-version-activate",
     )
     try:
@@ -229,13 +222,11 @@ def activate_postgres_index_version(
 def rollback_postgres_index_version(
     payload: IndexVersionSwitchRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-version-rollback",
     )
     try:
@@ -263,13 +254,11 @@ def rollback_postgres_index_version(
 def run_post_release_evaluation(
     payload: EvaluationRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="index-evaluation-run",
     )
     if state.search_engine is None:
@@ -386,13 +375,11 @@ def postgres_index_status(state: Annotated[ApiState, Depends(get_api_state)]) ->
 def load_postgres_search_backend(
     payload: PostgresSearchBackendRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
     _require_index_admin(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         operation="search-backend-postgres-load",
     )
     try:
@@ -440,22 +427,20 @@ def load_postgres_search_backend(
 def _require_index_admin(
     state: ApiState,
     *,
-    role: str | None,
-    user_identifier: str | None,
+    current_user: CurrentUser,
     operation: str,
 ) -> None:
-    if role == "it-admin":
+    if current_user.primary_role == "system-admin":
         return
     record_operation(
         state,
         "index-admin-access-denied",
-        {
-            "attempted_action": operation,
-            "user_identifier": user_identifier or "anonymous",
-            "role": role or "anonymous",
-            "status_code": 403,
-            "reason": "index operation requires it-admin role",
-        },
+        auth_audit_payload(
+            current_user,
+            attempted_action=operation,
+            status_code=403,
+            reason="index operation requires it-admin role",
+        ),
     )
     raise HTTPException(status_code=403, detail="index operation requires it-admin role")
 
