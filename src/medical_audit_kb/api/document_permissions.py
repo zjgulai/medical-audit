@@ -14,7 +14,7 @@ DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
     SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
 }
 
-READ_ALL_PERSONAL_UPLOAD_ROLES = frozenset({"it-admin", "department-head"})
+READ_ALL_PERSONAL_UPLOAD_ROLES = frozenset({"system-admin", "department-head"})
 QUERY_ROLES = AUDIT_ROLES
 
 

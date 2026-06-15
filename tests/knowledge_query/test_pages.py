@@ -861,6 +861,11 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     )
     assert readonly_block_payloads[0]["user_identifier"] == "auditor-a"
     assert readonly_block_payloads[2]["role"] == "department-head"
+    assert {payload["auth_source"] for payload in readonly_block_payloads} == {"legacy-header"}
+    assert {payload["normalized_role"] for payload in readonly_block_payloads} == {
+        "auditor",
+        "department-head",
+    }
 
 
 def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
@@ -1419,6 +1424,9 @@ def test_audit_logs_page_hides_events_without_governance_role(tmp_path: Path) ->
     assert "需要审计日志权限" in response.text
     assert "review-task-readonly-write-blocked" not in response.text
     assert "auditor-denied" not in response.text
+    assert state.operation_logs[-1]["action"] == "audit-logs-access-denied"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
+    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
 
 def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:

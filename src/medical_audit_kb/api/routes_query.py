@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,7 @@ from medical_audit_kb.api.audit_log_policy import (
     can_read_audit_logs,
     redact_audit_log_events,
 )
+from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
 from medical_audit_kb.api.document_permissions import (
     enforce_source_collection_access,
     normalize_role,
@@ -54,10 +55,9 @@ class QueryRequest(BaseModel):
 def query(
     payload: QueryRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
-    role = normalize_role(x_role)
+    role = normalize_role(current_user.primary_role)
     enforce_source_collection_access(
         role=role,
         source_collections=tuple(payload.source_collections),
@@ -90,8 +90,10 @@ def query(
     filter_payload = _query_filter_payload(payload)
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     log_entry = {
-        "user_identifier": x_user_id or "anonymous",
+        "user_identifier": current_user.user_key,
         "role": role,
+        "normalized_role": current_user.primary_role,
+        "auth_source": current_user.auth_source,
         "question": payload.question,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
@@ -101,7 +103,7 @@ def query(
     persisted_log, query_history_error = try_add_query_history(
         state.query_history_store,
         {
-            "user_identifier": x_user_id or "anonymous",
+            "user_identifier": current_user.user_key,
             "question": payload.question,
             "filters": filter_payload,
             "answer_summary": answer.answer[:500],
@@ -111,13 +113,13 @@ def query(
     record_operation(
         state,
         "query",
-        {
-            "question": payload.question,
-            "citation_count": len(answer.citations),
-            "user_identifier": x_user_id or "anonymous",
-            "query_log_id": persisted_log.get("id") if persisted_log else None,
-            "query_history_error": query_history_error,
-        },
+        auth_audit_payload(
+            current_user,
+            question=payload.question,
+            citation_count=len(answer.citations),
+            query_log_id=persisted_log.get("id") if persisted_log else None,
+            query_history_error=query_history_error,
+        ),
     )
 
     return {
@@ -260,8 +262,7 @@ def audit_findings(
 @router.get("/audit/logs")
 def audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -279,7 +280,7 @@ def audit_logs(
         created_to=created_to,
         limit=limit,
     )
-    _require_audit_log_reader(state, role=x_role, user_identifier=x_user_id)
+    _require_audit_log_reader(state, current_user=current_user)
     if state.audit_log_store is None:
         return {
             "items": [],
@@ -307,8 +308,7 @@ def audit_logs(
 @router.get("/audit/logs/export")
 def export_audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -317,7 +317,7 @@ def export_audit_logs(
     created_to: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 500,
 ) -> Response:
-    _require_audit_log_reader(state, role=x_role, user_identifier=x_user_id)
+    _require_audit_log_reader(state, current_user=current_user)
     if state.audit_log_store is None:
         raise HTTPException(status_code=409, detail="persistent audit log store is not configured")
 
@@ -423,20 +423,18 @@ def _audit_finding_store_unavailable_readiness() -> dict[str, object]:
 def _require_audit_log_reader(
     state: ApiState,
     *,
-    role: str | None,
-    user_identifier: str | None,
+    current_user: CurrentUser,
 ) -> None:
-    if can_read_audit_logs(role):
+    if can_read_audit_logs(current_user.primary_role):
         return
     record_operation(
         state,
         "audit-logs-access-denied",
-        {
-            "user_identifier": user_identifier or "anonymous",
-            "role": role or "anonymous",
-            "status_code": 403,
-            "reason": "audit log access requires governance role",
-        },
+        auth_audit_payload(
+            current_user,
+            status_code=403,
+            reason="audit log access requires governance role",
+        ),
     )
     raise HTTPException(
         status_code=403,

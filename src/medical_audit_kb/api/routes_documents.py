@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
 from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     document_permissions_for_role,
@@ -79,20 +80,19 @@ class DocumentUploadResponse(BaseModel):
 
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
 def document_permissions(
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> DocumentPermissionsResponse:
-    role = normalize_role(x_role)
+    role = normalize_role(current_user.primary_role)
     return _permissions_response(role)
 
 
 @router.get("/uploads", response_model=DocumentUploadListResponse)
 def list_document_uploads(
     state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> DocumentUploadListResponse:
-    role = normalize_role(x_role)
+    role = normalize_role(current_user.primary_role)
     permissions = _upload_permissions(role)
     if state.document_upload_store is None:
         return DocumentUploadListResponse(
@@ -101,7 +101,7 @@ def list_document_uploads(
             permissions=permissions,
         )
 
-    user_identifier = _user_identifier(x_user_id)
+    user_identifier = current_user.user_key
     items = [
         DocumentUploadItem.model_validate(item)
         for item in state.document_upload_store.list_uploads(
@@ -113,13 +113,12 @@ def list_document_uploads(
     record_operation(
         state,
         "document-upload-list",
-        {
-            "count": len(items),
-            "limit": limit,
-            "user_identifier": user_identifier,
-            "role": role,
-            "include_all": permissions.can_read_all_personal_uploads,
-        },
+        auth_audit_payload(
+            current_user,
+            count=len(items),
+            limit=limit,
+            include_all=permissions.can_read_all_personal_uploads,
+        ),
     )
     return DocumentUploadListResponse(
         items=items,
@@ -132,10 +131,9 @@ def list_document_uploads(
 async def upload_document(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> DocumentUploadResponse:
-    role = normalize_role(x_role)
+    role = normalize_role(current_user.primary_role)
     permissions = _upload_permissions(role)
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
@@ -151,7 +149,7 @@ async def upload_document(
     if not content:
         raise HTTPException(status_code=422, detail="uploaded document file is empty")
 
-    user_identifier = _user_identifier(x_user_id)
+    user_identifier = current_user.user_key
     item = DocumentUploadItem.model_validate(
         state.document_upload_store.add_upload(
             file_name=file_name,
@@ -163,16 +161,15 @@ async def upload_document(
     record_operation(
         state,
         "document-upload",
-        {
-            "upload_id": item.id,
-            "file_name": item.name,
-            "extension": item.extension,
-            "size_bytes": item.size_bytes,
-            "retention_status": item.retention_status,
-            "index_status": item.index_status,
-            "user_identifier": user_identifier,
-            "role": role,
-        },
+        auth_audit_payload(
+            current_user,
+            upload_id=item.id,
+            file_name=item.name,
+            extension=item.extension,
+            size_bytes=item.size_bytes,
+            retention_status=item.retention_status,
+            index_status=item.index_status,
+        ),
     )
     return DocumentUploadResponse(
         item=item,
@@ -203,8 +200,3 @@ def _file_extension(file_name: str) -> str:
     if "." not in file_name:
         return ""
     return file_name.rsplit(".", maxsplit=1)[-1].lower()
-
-
-def _user_identifier(value: str | None) -> str:
-    normalized = (value or "anonymous").strip()
-    return normalized or "anonymous"

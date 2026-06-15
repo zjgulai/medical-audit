@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -15,7 +15,8 @@ from medical_audit_kb.api.agent_store import (
     validate_agent_category,
 )
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
-from medical_audit_kb.api.role_policy import require_audit_role_for_write
+from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
+from medical_audit_kb.api.role_policy import require_audit_user_for_write
 
 router = APIRouter()
 
@@ -66,18 +67,16 @@ def list_agents(
 def create_agent(
     payload: AgentCreateRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
-    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> dict[str, object]:
-    role = require_audit_role_for_write(
+    current_user = require_audit_user_for_write(
         state,
-        role=x_role,
-        user_identifier=x_user_id,
+        current_user=current_user,
         attempted_action="agent-create",
         denied_action="agent-access-denied",
     )
     values = payload.model_dump()
-    values["created_by"] = x_user_id or "anonymous"
+    values["created_by"] = current_user.user_key
     try:
         agent = _agent_store(state).add_agent(values)
     except SQLAlchemyError as exc:
@@ -89,12 +88,12 @@ def create_agent(
     record_operation(
         state,
         "agent-create",
-        {
-            "agent_id": agent["id"],
-            "category": agent["category"],
-            "created_by": x_user_id or "anonymous",
-            "role": role,
-        },
+        auth_audit_payload(
+            current_user,
+            agent_id=agent["id"],
+            category=agent["category"],
+            created_by=current_user.user_key,
+        ),
     )
     return {
         "item": agent,
