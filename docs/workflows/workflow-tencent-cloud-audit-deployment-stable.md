@@ -33,10 +33,29 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-15 AI 数据分析留存历史部署后当前事实
+### 2026-06-15 文档检索边界能力部署后当前事实
+
+- PR #83 `codex/documents-boundary-tasks` 已合并到 `main` 并部署到生产。
+- 当前生产部署 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`20260615T121812+0800`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260615T121812+0800.sql.gz`，大小 `512967344` bytes。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
+- 生产检索后端仍为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=48985`、`embedding_model=kimi-for-coding`。
+- 生产已应用 `document_upload_records` 表和索引；个人文档留存目录 `/opt/medical-audit/document-uploads` 已创建并挂载到应用容器。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-deploy-20260615T121812+0800.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-documents-boundary-deploy-20260615.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 生产 `/documents` 写入型 E2E 报告 `tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json` 为 `status=pass`；记录 `document-upload-1ba9d6e00cb7` 已写入 PostgreSQL，并留存在 `/opt/medical-audit/document-uploads/2026/06/15/document-upload-1ba9d6e00cb7.txt`，文件 `sha256=88fe90530c937d6ea6b534dafff636d5b7dec15b7c1131d786e5f00b007b466e`。
+- 写入型 E2E 已验证普通审计员只能读取本人上传、其它审计员不可见、管理员可读全部个人上传；上传记录当前 `retention_status=retained`、`index_status=not-indexed`。
+- `/api/v1/query` 已验证 `source_collection` 在 `citations` 与 `basis_groups.items` 中直接回显；生产响应仍为 `fallback_used=true`，只证明引用型 fallback 和来源过滤链路健康。
+- 早先 `production-documents-write-e2e-20260615T122322+0800.json`、`20260615T122459+0800.json` 和 `20260615T122620+0800.json` 的失败原因为检查脚本 SQL quoting 问题；API 写入实际成功，已由 `*-verified.json` 中的显式 DB 行、宿主机文件和权限隔离检查覆盖。
+- `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
+
+### 2026-06-15 AI 数据分析留存历史部署后历史事实
 
 - PR #79 `codex/analytics-upload-retention-history` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`cbd93324119b28a7097712ea7b50b2d96b72de31`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`analytics-retention-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-analytics-retention-20260615.sql.gz`，`gzip -t` 通过，大小 `512961688` bytes，`sha256=876bb9ecc1a0a39aa23085688c613000ca44dc4133b428ab2fdb3cb26d66f68d`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -704,6 +723,26 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 公网页面截图抽查已通过：`/analytics`、`/documents`、`/rules` 均返回 `200`，无横向溢出、无 console error、无 failed request。
 - 证据边界：当前生产问答仍使用 citation fallback；检索、引用、预览和底稿导出可用，但不能表述为外部生成式大模型答案已完成。
 
+### 5.24 PR #83 文档检索边界能力部署
+
+已在 2026-06-15 合并并部署 PR #83：
+
+- PR #83 merge commit：`f864e370abd7309f6222376074b45ef2bc6c0ff4`。
+- 部署前本地 `main` worktree 已快进到 `f864e370abd7309f6222376074b45ef2bc6c0ff4`；部署从 `/Users/pray/project/medical_audit_minimal_pr` 执行。
+- 部署命令使用正式脚本：`python3 scripts/deploy-tencent-cloud-production.py --execute --confirm-production audit.lute-tlz-dddd.top --allow-dirty --apply-schema`。
+- 部署戳：`20260615T121812+0800`。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份；数据库备份为 `/opt/medical-audit/backups/db/pre-deploy-20260615T121812+0800.sql.gz`。
+- 已用正式 schema 幂等应用 `document_upload_records` 表和相关索引。
+- 已创建并挂载个人文档留存目录 `/opt/medical-audit/document-uploads`。
+- 已重建并重启 `medical_audit_app`，未重建或删除 `medical_audit_pgdata`。
+- 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-deploy-20260615T121812+0800.json` 已通过；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json` 已通过；远端 `.deploy-sha=f864e370abd7309f6222376074b45ef2bc6c0ff4`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 仍为 `matching_embedding_count=48985`。
+- 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-documents-boundary-deploy-20260615.json` 已通过；覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`，`/audit/logs` 与 `/audit/logs/export` 均满足无角色 `403`、管理员角色 `200`。
+- `/documents` 生产写入型 E2E `tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json` 已通过；上传记录 `document-upload-1ba9d6e00cb7` 的 DB 行、宿主机留存文件和 `sha256` 均校验通过。
+- 写入型 E2E 权限边界已验证：上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
+- `/api/v1/query` 来源过滤回显已验证：`medical-insurance-laws` 查询返回 1 条 citation 和 1 个 basis item，二者均回显 `source_collection=medical-insurance-laws`，同时返回 `query_log_id=9d6ec14e-1406-4e15-88b1-5978f6588891`。
+- 证据边界：本轮完成个人材料留存和角色读取隔离，不等于完成个人材料入索引、真实登录会话、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离或长期存储生命周期策略。
+
 ## 6. 后续维护流程
 
 ### 6.1 代码与资产同步
@@ -1031,7 +1070,8 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - `/query` 专题请求返回 `audit_topic=fund-usage-compliance`、`confidence=high`、`citation_count=3`、`basis_group_count=2`，首条引用可打开原文预览。
 - 生产只读 E2E `production-e2e-smoke-after-fund-topic-deploy-20260606` 通过。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-fund-topic-deploy-20260606` 通过。
-- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成、疑点复核任务状态同步、正式报告签发、整改跟踪 fixture 验证和 AI 智能审计门户核心工作台部署均已完成；当前 `.deploy-sha=32027049eb7fa2b9d336af217a228b0f21dca990`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
+- 生产认证桥接、静态前端热修、共享 Nginx bind mount 固化、部署自动化入口、产品导航真实功能入口、后端产品导航统一、Next 原生查询工作台、远端同步缓存清理、Next 原生疑点清单、疑点生成链路就绪诊断、CHARGE-RULE-001 受控 fixture 疑点生成、疑点复核任务状态同步、正式报告签发、整改跟踪 fixture 验证和 AI 智能审计门户核心工作台部署均已完成；该历史阶段对应的生产部署 SHA 曾为 `32027049eb7fa2b9d336af217a228b0f21dca990`，fixture finding 为 `finding-f044ebd309b659dc`，关联 `review-task-0007`。
+- PR #83 文档检索边界能力已部署到生产；当前 `.deploy-sha=f864e370abd7309f6222376074b45ef2bc6c0ff4`，个人上传记录 `document-upload-1ba9d6e00cb7` 已通过 DB 行、宿主机文件和角色读取隔离验收。
 - 生产只读 E2E `production-e2e-smoke-after-deploy-20260611-external-ai` 通过；TLS、health、PostgreSQL 检索后端、页面渲染、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
 - 生产视觉基线 `knowledge-query-chat-visual-baseline-prod-after-deploy-20260611` 通过；desktop/mobile 均无横向溢出，关键文案无缺失。
 - 生产写入型 E2E `production-e2e-smoke-with-review-write-after-deploy-20260611` 通过；创建、关闭并导出 `review-task-0003`，数据库 `review_tasks/review_actions` 计数均按预期增加 1。
@@ -1057,6 +1097,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
 - 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=403` 且 `allowed_status=200`。
+- `/documents` 个人上传链路必须证明 DB 行、宿主机留存文件 `sha256`、本人可读、其他普通审计员不可读和管理员可读全部上传同时成立；个人上传未入索引时必须明确显示 `index_status=not-indexed`。
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
