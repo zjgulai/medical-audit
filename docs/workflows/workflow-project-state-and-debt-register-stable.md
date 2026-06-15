@@ -35,7 +35,7 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 当前生产部署 SHA：`f864e370abd7309f6222376074b45ef2bc6c0ff4`
+- 当前生产部署 SHA：`a3111bf615995bd03a95514c49447cd82087e5ab`
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -53,6 +53,9 @@ source: human+ai
 - 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-documents-boundary-deploy-20260615.json`，状态 `pass`。
 - 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json`，状态 `pass`，`issues=[]`。
 - 最新国家规章平台增量激活后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
+- 最新索引管理拒绝审计部署后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`。
+- 最新索引管理拒绝审计专项生产 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`；普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，并在持久化 `audit_log_events` 中记录 `index-admin-access-denied`。
+- 最新索引管理拒绝审计部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-index-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`，`.deploy-sha=a3111bf615995bd03a95514c49447cd82087e5ab`。
 - 最新 AI 数据分析留存历史本地联调截图：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`。
 - 项目成员写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`，`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
 - 项目成员生产写入结果：`CATALOG-LIMIT-202606` 新增 `member-custom-e152673f93f9`，成员数从 `4` 增至 `5`，数据库 `audit_project_members` 当前自定义记录数为 `1`。
@@ -63,7 +66,7 @@ source: human+ai
 - 文档检索生产查询结果：全库重复收费、法规政策过滤和医保目录过滤 `POST /api/v1/query` 均返回 `200`，每个用例返回 `3` 条引用、证据分组和 `query_log_index`；首个引用 `chunk_id` 对应 `/pages/preview/{chunk_id}` 均返回 `200`。
 - 文档检索边界能力生产结果：生产已应用 `document_upload_records` 表和索引；个人上传记录 `document-upload-1ba9d6e00cb7` 的 DB 行、宿主机文件 `/opt/medical-audit/document-uploads/2026/06/15/document-upload-1ba9d6e00cb7.txt` 和 `sha256=88fe90530c937d6ea6b534dafff636d5b7dec15b7c1131d786e5f00b007b466e` 均校验通过；普通审计员只能读取本人上传，其他普通审计员不可见，管理员可读全部个人上传；`/api/v1/query` 已验证 `source_collection=medical-insurance-laws` 在 citation 和 basis item 中直接回显。
 
-生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、病毒扫描、DLP/脱敏改写、对象存储、个人材料入索引、下载权限隔离或案件级合规闭环已完成。
+生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、索引管理拒绝审计、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、病毒扫描、DLP/脱敏改写、对象存储、个人材料入索引、下载权限隔离或案件级合规闭环已完成。
 
 ### 2.2 本地仓库状态
 
@@ -455,7 +458,37 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 本轮不覆盖真实登录会话、组织级权限、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料入索引或长期存储生命周期策略。
 - 早先三份 `production-documents-write-e2e-*.json` 失败报告属于检查脚本 SQL quoting 问题，已被 `production-documents-write-e2e-20260615T122620+0800-verified.json` 以显式 DB 行和宿主机文件校验覆盖。
 
-### 2.13 国家规章平台文档增量入库与生产激活状态
+### 2.13 索引管理拒绝审计生产部署状态
+
+验收日期：`2026-06-15`
+
+本轮已将索引管理拒绝审计部署到生产，结论为 `pass`。
+
+部署事实：
+
+- 部署提交：`a3111bf615995bd03a95514c49447cd82087e5ab`。
+- 部署戳：`index-admin-denial-audit-20260615`。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-index-admin-denial-audit-20260615.sql.gz`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-index-admin-denial-audit-20260615.tar.gz`。
+- env 备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-index-admin-denial-audit-20260615`。
+- nginx 备份：`/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-index-admin-denial-audit-20260615`。
+- web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-index-admin-denial-audit-20260615.tar.gz`。
+
+验收证据：
+
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-index-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`。
+- 专项权限 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`。
+- 专项权限 smoke 用户：`index-denial-e2e-20260615T120014Z`。
+- 普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，错误为 `index operation requires it-admin role`。
+- 管理员角色查询 `/api/v1/audit/logs?action=index-admin-access-denied&user_identifier=index-denial-e2e-20260615T120014Z` 返回 `200`，`matching_count=1`，store 为 `SqlAlchemyAuditLogStore`。
+
+边界：
+
+- 本轮只补齐索引管理写接口拒绝审计，不等于完成真实登录会话、科室级授权、组织模型或全站 RBAC。
+- 生产查询仍为 `fallback_used=true`，不代表真实生成模型能力可用。
+
+### 2.14 国家规章平台文档增量入库与生产激活状态
 
 验收日期：`2026-06-15`
 
@@ -498,9 +531,9 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询、来源集合回显、文档权限接口和个人材料留存写入型验收；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补上传文件病毒扫描/DLP/脱敏/对象存储治理、真实认证权限、个人材料入索引、知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 使用 `claude-haiku-4-5-20251001` 仍返回 `401 invalid x-api-key`；历史 Kimi chat 403/401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 等待新的可用服务端 chat provider key；先跑 smoke 和真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
-| P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已补索引管理写接口拒绝审计，非 `it-admin` 访问记录 `index-admin-access-denied` | 无法满足生产级审计系统权限边界 | 先补齐高风险管理写接口拒绝审计，再建立用户/角色/部门模型和会话认证，替换静态 header 口径 | 未授权路径 403；审计日志记录访问拒绝；真实会话与角色模型验收通过 |
+| P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前 API 主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events` | 无法满足生产级审计系统权限边界 | 继续补齐其它高风险管理写接口拒绝审计，再建立用户/角色/部门模型和会话认证，替换静态 header 口径 | 未授权路径 403；审计日志记录访问拒绝；真实会话与角色模型验收通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和病毒扫描未完成 | 当前仅 HMAC 归档签名和本地附件归档 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA、远端 main 和文档状态同步到 `f864e370abd7309f6222376074b45ef2bc6c0ff4`；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha` 和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA、远端 main 和文档状态同步到 `a3111bf615995bd03a95514c49447cd82087e5ab`；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha` 和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
 
 ## 5. P1 债务台账
 
