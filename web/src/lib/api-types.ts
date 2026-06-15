@@ -79,6 +79,58 @@ export type SourceCollection =
   | "medical-insurance-catalog"
   | "risk-negative-list";
 
+export type DocumentSourcePermissionItem = {
+  readonly source_collection: SourceCollection;
+  readonly label: string;
+  readonly scope: string;
+  readonly access: "read";
+};
+
+export type DocumentUploadPermissions = {
+  readonly can_upload_personal: boolean;
+  readonly can_read_all_personal_uploads: boolean;
+};
+
+export type DocumentPermissionsResponse = {
+  readonly role: string;
+  readonly source_collections: readonly DocumentSourcePermissionItem[];
+  readonly upload_permissions: DocumentUploadPermissions;
+};
+
+export type DocumentUploadItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly extension: string;
+  readonly size_bytes: number;
+  readonly size_kb: number;
+  readonly sha256: string;
+  readonly storage_path: string;
+  readonly visibility: "private";
+  readonly status: "retained";
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly retention_status: "retained";
+  readonly index_status: "not-indexed";
+};
+
+export type DocumentUploadListResponse = {
+  readonly items: readonly DocumentUploadItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly permissions: DocumentUploadPermissions;
+};
+
+export type DocumentUploadResponse = {
+  readonly item: DocumentUploadItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly permissions: DocumentUploadPermissions;
+};
+
 export type QueryRequest = {
   readonly question: string;
   readonly top_k?: number;
@@ -88,6 +140,7 @@ export type QueryRequest = {
 export type QueryBasisItem = {
   readonly citation_id: string;
   readonly chunk_id: string;
+  readonly source_collection: SourceCollection;
   readonly snippet: string;
   readonly locator: Record<string, unknown>;
   readonly index_version_key: string | null;
@@ -105,6 +158,7 @@ export type QueryCitation = {
   readonly marker: string;
   readonly chunk_id: string;
   readonly evidence_type: string;
+  readonly source_collection: SourceCollection;
   readonly snippet: string;
   readonly locator: Record<string, unknown>;
   readonly index_version_key: string | null;

@@ -5,10 +5,13 @@ import {
   createAuditAgent,
   createProjectMember,
   fetchAnalysisUploadHistory,
+  fetchDocumentPermissions,
+  fetchDocumentUploads,
   fetchQueryHistory,
   fetchSearchBackendStatus,
   runKnowledgeQuery,
-  uploadAnalysisTable
+  uploadAnalysisTable,
+  uploadPersonalDocument
 } from "@/lib/api-client";
 import { primaryNavigation, secondaryNavigation, workspaceHomeNavigation } from "@/lib/navigation";
 
@@ -172,6 +175,85 @@ vi.mock("@/lib/api-client", () => ({
       }
     ],
     store: { ready: true, backend: "SqlAlchemyAnalyticsUploadStore" }
+  })),
+  fetchDocumentPermissions: vi.fn(async () => ({
+    role: "auditor",
+    source_collections: [
+      {
+        source_collection: "medical-insurance-laws",
+        label: "法规政策",
+        scope: "公开知识库",
+        access: "read"
+      },
+      {
+        source_collection: "supervision-rules-knowledge",
+        label: "监管两库",
+        scope: "系统知识库",
+        access: "read"
+      },
+      {
+        source_collection: "medical-insurance-catalog",
+        label: "医保目录",
+        scope: "系统知识库",
+        access: "read"
+      },
+      {
+        source_collection: "risk-negative-list",
+        label: "风险清单",
+        scope: "系统知识库",
+        access: "read"
+      }
+    ],
+    upload_permissions: {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: false
+    }
+  })),
+  fetchDocumentUploads: vi.fn(async () => ({
+    items: [
+      {
+        id: "document-upload-history",
+        name: "policy-retained.pdf",
+        extension: "pdf",
+        size_bytes: 128,
+        size_kb: 1,
+        sha256: "c".repeat(64),
+        storage_path: "2026/06/15/document-upload-history.pdf",
+        visibility: "private",
+        status: "retained",
+        created_by: "next-knowledge-query",
+        created_at: "2026-06-15T00:00:00Z",
+        retention_status: "retained",
+        index_status: "not-indexed"
+      }
+    ],
+    store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
+    permissions: {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: false
+    }
+  })),
+  uploadPersonalDocument: vi.fn(async (file: File) => ({
+    item: {
+      id: "document-upload-test",
+      name: file.name,
+      extension: "pdf",
+      size_bytes: file.size,
+      size_kb: Math.max(1, Math.round(file.size / 1024)),
+      sha256: "d".repeat(64),
+      storage_path: "2026/06/15/document-upload-test.pdf",
+      visibility: "private",
+      status: "retained",
+      created_by: "next-knowledge-query",
+      created_at: "2026-06-15T00:00:00Z",
+      retention_status: "retained",
+      index_status: "not-indexed"
+    },
+    store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
+    permissions: {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: false
+    }
   })),
   fetchQueryHistory: vi.fn(async () => ({
     items: [
@@ -380,6 +462,7 @@ vi.mock("@/lib/api-client", () => ({
           {
             citation_id: "C1",
             chunk_id: "chunk-doc-001",
+            source_collection: "medical-insurance-laws",
             snippet: "医疗机构应当保留医保基金审核依据。",
             locator: {
               source_path: "全量法律/law.md",
@@ -398,6 +481,7 @@ vi.mock("@/lib/api-client", () => ({
         marker: "[C1]",
         chunk_id: "chunk-doc-001",
         evidence_type: "law",
+        source_collection: "medical-insurance-laws",
         snippet: "医疗机构应当保留医保基金审核依据。",
         locator: {
           source_path: "全量法律/law.md",
@@ -693,10 +777,29 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
     });
-    expect(screen.getByText("已连接")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchDocumentPermissions).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(fetchDocumentUploads).toHaveBeenCalled();
+    });
+    expect(screen.getByText("权限已连接")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "个人材料" })).toBeInTheDocument();
+    expect(screen.getByText("policy-retained.pdf")).toBeInTheDocument();
+    expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
     expect(screen.getByText("监管两库")).toBeInTheDocument();
     expect(screen.getByText("risk-negative-list")).toBeInTheDocument();
     expect(screen.getByText("等待检索")).toBeInTheDocument();
+
+    const documentFile = new File(["policy"], "policy.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("上传个人知识库材料"), {
+      target: { files: [documentFile] }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
+    await waitFor(() => {
+      expect(uploadPersonalDocument).toHaveBeenCalledWith(documentFile);
+    });
+    expect(screen.getByText("policy.pdf 已留存，索引状态：not-indexed")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /监管两库/ }));
     fireEvent.change(screen.getByLabelText("审计问题或文档关键词"), {
@@ -716,6 +819,7 @@ describe("workspace foundation pages", () => {
     });
     expect(screen.getByText("应核验诊疗记录、收费明细和政策依据。")).toBeInTheDocument();
     expect(screen.getByText("医疗机构应当保留医保基金审核依据。")).toBeInTheDocument();
+    expect(screen.getByText("来源: medical-insurance-laws")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "核验原文" })).toHaveAttribute("href", "/pages/preview/chunk-doc-001");
     expect(screen.getByRole("heading", { name: "对话文档" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "知识库文档" })).toBeInTheDocument();

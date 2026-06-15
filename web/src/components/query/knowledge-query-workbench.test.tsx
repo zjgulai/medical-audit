@@ -31,6 +31,7 @@ describe("KnowledgeQueryWorkbench", () => {
             {
               citation_id: "C1",
               chunk_id: "11111111-1111-4111-8111-111111111111",
+              source_collection: "medical-insurance-laws",
               snippet: "医疗机构应保留审核依据。",
               locator: { source_path: "全量法律/law.md", line_start: 1, line_end: 2 },
               index_version_key: "index-v1",
@@ -45,6 +46,7 @@ describe("KnowledgeQueryWorkbench", () => {
           marker: "[1]",
           chunk_id: "11111111-1111-4111-8111-111111111111",
           evidence_type: "policy",
+          source_collection: "medical-insurance-laws",
           snippet: "医疗机构应保留审核依据。",
           locator: { source_path: "全量法律/law.md", line_start: 1, line_end: 2 },
           index_version_key: "index-v1",
@@ -71,6 +73,7 @@ describe("KnowledgeQueryWorkbench", () => {
       source_collections: ["medical-insurance-laws"]
     });
     expect(screen.getByText("应核验诊疗记录、收费明细和政策依据。")).toBeInTheDocument();
+    expect(screen.getByText("来源: medical-insurance-laws")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "核验原文" })).toHaveAttribute(
       "href",
       "/pages/preview/11111111-1111-4111-8111-111111111111"

@@ -15,6 +15,11 @@ from medical_audit_kb.api.analytics_upload_store import (
     SqlAlchemyAnalyticsUploadStore,
 )
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.document_upload_store import (
+    DOCUMENT_UPLOAD_ID_PREFIX,
+    InMemoryDocumentUploadStore,
+    SqlAlchemyDocumentUploadStore,
+)
 from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_ID_PREFIX,
     SqlAlchemyProjectMemberStore,
@@ -323,6 +328,108 @@ def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) ->
     assert response.json()["detail"] == "unsupported table file extension"
 
 
+def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-uploads.db'}"
+    upload_root = tmp_path / "document-uploads"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    permissions_response = client.get("/documents/permissions", headers={"X-Role": "auditor"})
+
+    assert permissions_response.status_code == 200
+    permissions_body = permissions_response.json()
+    assert permissions_body["role"] == "auditor"
+    assert [item["source_collection"] for item in permissions_body["source_collections"]] == [
+        "medical-insurance-laws",
+        "supervision-rules-knowledge",
+        "medical-insurance-catalog",
+        "risk-negative-list",
+    ]
+    assert permissions_body["upload_permissions"] == {
+        "can_upload_personal": True,
+        "can_read_all_personal_uploads": False,
+    }
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.pdf", b"%PDF-1.4 policy", "application/pdf")},
+    )
+
+    assert upload_response.status_code == 200
+    upload_body = upload_response.json()
+    uploaded = upload_body["item"]
+    assert uploaded["id"].startswith(DOCUMENT_UPLOAD_ID_PREFIX)
+    assert uploaded["created_by"] == "auditor-1"
+    assert uploaded["extension"] == "pdf"
+    assert uploaded["retention_status"] == "retained"
+    assert uploaded["index_status"] == "not-indexed"
+    assert uploaded["sha256"]
+    assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
+    assert state.operation_logs[-1]["action"] == "document-upload"
+    assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
+
+    retained_path = upload_root / uploaded["storage_path"]
+    assert retained_path.exists()
+    assert retained_path.read_bytes() == b"%PDF-1.4 policy"
+
+    owner_response = client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+    assert owner_response.status_code == 200
+    assert owner_response.json()["items"][0]["id"] == uploaded["id"]
+
+    other_auditor_response = client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+    )
+    assert other_auditor_response.status_code == 200
+    assert other_auditor_response.json()["items"] == []
+
+    admin_response = client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+    )
+    assert admin_response.status_code == 200
+    admin_body = admin_response.json()
+    assert admin_body["permissions"]["can_read_all_personal_uploads"] is True
+    assert admin_body["items"][0]["id"] == uploaded["id"]
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+    )
+    second_client = TestClient(create_app(second_state))
+    persisted_items = second_client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"]
+    assert persisted_items[0]["id"] == uploaded["id"]
+
+
+def test_documents_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        files={"file": ("policy.exe", b"binary", "application/octet-stream")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported document file extension"
+
+
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
@@ -336,9 +443,11 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert response.status_code == 200
     body = response.json()
     assert "[C1]" in body["answer"]
+    assert body["citations"][0]["source_collection"] == "medical-insurance-laws"
     assert body["citations"][0]["index_version_key"] == "index-v1"
     assert body["citations"][0]["source_package_version_key"] == "package-v1"
     assert body["basis_groups"][0]["title"] == "法规依据"
+    assert body["basis_groups"][0]["items"][0]["source_collection"] == "medical-insurance-laws"
     assert body["query_log_index"] == 0
 
     logs_response = client.get("/query/logs")
@@ -1080,6 +1189,9 @@ def _api_state(tmp_path: Path) -> ApiState:
     state.audit_log_store = None
     state.analytics_upload_store = InMemoryAnalyticsUploadStore(
         upload_root=settings.index_root / "analytics-uploads"
+    )
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=settings.index_root / "document-uploads"
     )
     state.query_history_store = InMemoryQueryHistoryStore()
     state.search_engine = _search_engine(

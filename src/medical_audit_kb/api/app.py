@@ -18,6 +18,10 @@ from medical_audit_kb.api.analytics_upload_store import (
 )
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
+from medical_audit_kb.api.document_upload_store import (
+    DocumentUploadStore,
+    SqlAlchemyDocumentUploadStore,
+)
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
     SqlAlchemyProjectMemberStore,
@@ -65,6 +69,7 @@ class ApiState:
     agent_store: AgentStore | None = None
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
+    document_upload_store: DocumentUploadStore | None = None
     query_history_store: QueryHistoryStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
@@ -83,6 +88,11 @@ class ApiState:
                 settings.database_url,
                 upload_root=settings.analytics_upload_root
                 or settings.index_root / "analytics-uploads",
+            ),
+            document_upload_store=SqlAlchemyDocumentUploadStore(
+                settings.database_url,
+                upload_root=settings.document_upload_root
+                or settings.index_root / "document-uploads",
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
@@ -133,6 +143,7 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
 
     from medical_audit_kb.api.routes_agents import router as agents_router
     from medical_audit_kb.api.routes_analytics import router as analytics_router
+    from medical_audit_kb.api.routes_documents import router as documents_router
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
     from medical_audit_kb.api.routes_preview import router as preview_router
@@ -143,6 +154,7 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
     app.include_router(query_router)
     app.include_router(agents_router)
     app.include_router(analytics_router)
+    app.include_router(documents_router)
     app.include_router(projects_router)
     app.include_router(index_router)
     app.include_router(preview_router)

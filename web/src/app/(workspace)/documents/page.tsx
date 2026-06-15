@@ -3,8 +3,21 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
-import { fetchQueryHistory, runKnowledgeQuery } from "@/lib/api-client";
-import type { QueryCitation, QueryHistoryItem, QueryResponse, SourceCollection } from "@/lib/api-types";
+import {
+  fetchDocumentPermissions,
+  fetchDocumentUploads,
+  fetchQueryHistory,
+  runKnowledgeQuery,
+  uploadPersonalDocument
+} from "@/lib/api-client";
+import type {
+  DocumentPermissionsResponse,
+  DocumentUploadItem,
+  QueryCitation,
+  QueryHistoryItem,
+  QueryResponse,
+  SourceCollection
+} from "@/lib/api-types";
 import {
   conversationDocuments,
   documentCategoryStats,
@@ -18,6 +31,8 @@ type DocumentSearchState =
   | { readonly status: "success"; readonly result: QueryResponse }
   | { readonly status: "error"; readonly message: string };
 type HistoryStatus = "loading" | "ready" | "unavailable";
+type PermissionStatus = "loading" | "ready" | "unavailable";
+type UploadStatus = "loading" | "ready" | "uploading" | "unavailable";
 
 const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
   "medical-insurance-laws",
@@ -33,6 +48,12 @@ export default function DocumentsPage() {
   const [searchState, setSearchState] = useState<DocumentSearchState>({ status: "idle" });
   const [history, setHistory] = useState<readonly QueryHistoryItem[]>([]);
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>("loading");
+  const [documentPermissions, setDocumentPermissions] = useState<DocumentPermissionsResponse | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>("loading");
+  const [uploads, setUploads] = useState<readonly DocumentUploadItem[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("loading");
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
 
   const refreshHistory = useCallback(async () => {
     setHistoryStatus("loading");
@@ -46,9 +67,46 @@ export default function DocumentsPage() {
     }
   }, []);
 
+  const refreshDocumentPermissions = useCallback(async () => {
+    setPermissionStatus("loading");
+    try {
+      const result = await fetchDocumentPermissions();
+      setDocumentPermissions(result);
+      setPermissionStatus("ready");
+    } catch {
+      setDocumentPermissions(null);
+      setPermissionStatus("unavailable");
+    }
+  }, []);
+
+  const refreshDocumentUploads = useCallback(async () => {
+    setUploadStatus("loading");
+    try {
+      const result = await fetchDocumentUploads();
+      setUploads(result.items);
+      setUploadStatus(result.store.ready ? "ready" : "unavailable");
+    } catch {
+      setUploads([]);
+      setUploadStatus("unavailable");
+    }
+  }, []);
+
   useEffect(() => {
     void refreshHistory();
-  }, [refreshHistory]);
+    void refreshDocumentPermissions();
+    void refreshDocumentUploads();
+  }, [refreshDocumentPermissions, refreshDocumentUploads, refreshHistory]);
+
+  const readableCollections = useMemo(() => {
+    if (documentPermissions === null) {
+      return new Set<SourceCollection>(SOURCE_COLLECTIONS);
+    }
+    return new Set(
+      documentPermissions.source_collections
+        .filter((item) => item.access === "read")
+        .map((item) => item.source_collection)
+    );
+  }, [documentPermissions]);
 
   const selectedScopeText = useMemo(() => {
     if (selectedCollections.length === 0) {
@@ -59,6 +117,9 @@ export default function DocumentsPage() {
       .map((category) => category.name)
       .join("、");
   }, [selectedCollections]);
+
+  const canUploadPersonal =
+    permissionStatus === "ready" && (documentPermissions?.upload_permissions.can_upload_personal ?? false);
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,6 +147,9 @@ export default function DocumentsPage() {
     if (!isSourceCollection(sourceCollection)) {
       return;
     }
+    if (!readableCollections.has(sourceCollection)) {
+      return;
+    }
     setSelectedCollections((current) =>
       current.includes(sourceCollection)
         ? current.filter((item) => item !== sourceCollection)
@@ -99,15 +163,41 @@ export default function DocumentsPage() {
     setSearchState({ status: "idle" });
   }
 
+  async function submitDocumentUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedUploadFile) {
+      setUploadMessage("请选择个人材料文件。");
+      return;
+    }
+
+    setUploadStatus("uploading");
+    setUploadMessage("");
+    try {
+      const result = await uploadPersonalDocument(selectedUploadFile);
+      setUploadMessage(`${result.item.name} 已留存，索引状态：${result.item.index_status}`);
+      setSelectedUploadFile(null);
+      await refreshDocumentUploads();
+    } catch {
+      setUploadStatus("unavailable");
+      setUploadMessage("个人材料留存失败。");
+    }
+  }
+
   return (
     <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">文档源</h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="audit-section-title">文档源</h2>
+          <StatusPill tone={permissionStatus === "ready" ? "success" : permissionStatus === "loading" ? "info" : "warning"}>
+            {permissionStatus === "ready" ? "权限已连接" : permissionStatus === "loading" ? "读取中" : "权限不可用"}
+          </StatusPill>
+        </div>
         <p className="audit-copy mt-2">按审计材料来源限定后端检索范围。</p>
         <div className="mt-5 space-y-3">
           {documentCategoryStats.map((category) => (
             <DocumentSourceCard
               category={category}
+              readable={readableCollections.has(category.sourceCollection as SourceCollection)}
               key={category.id}
               onToggle={() => toggleCollection(category.sourceCollection)}
               selected={selectedCollections.includes(category.sourceCollection as SourceCollection)}
@@ -177,6 +267,16 @@ export default function DocumentsPage() {
       </section>
 
       <aside className="min-w-0 space-y-4">
+        <DocumentUploadPanel
+          canUpload={canUploadPersonal}
+          message={uploadMessage}
+          onFileChange={setSelectedUploadFile}
+          onSubmit={submitDocumentUpload}
+          selectedFile={selectedUploadFile}
+          status={uploadStatus}
+          uploads={uploads}
+        />
+
         <section className="audit-panel-rail p-5">
           <div className="flex items-start justify-between gap-3">
             <h2 className="audit-section-title">搜索历史</h2>
@@ -224,17 +324,21 @@ export default function DocumentsPage() {
 function DocumentSourceCard({
   category,
   onToggle,
+  readable,
   selected
 }: {
   readonly category: (typeof documentCategoryStats)[number];
   readonly onToggle: () => void;
+  readonly readable: boolean;
   readonly selected: boolean;
 }) {
   return (
     <button
       aria-pressed={selected}
+      disabled={!readable}
       className={`audit-focus-ring w-full rounded-[var(--audit-radius-md)] border p-3 text-left transition ${
         selected ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)]" : "border-[var(--audit-line)] bg-white"
+      } ${readable ? "hover:bg-[var(--audit-surface-muted)]" : "cursor-not-allowed opacity-55"
       }`}
       onClick={onToggle}
       type="button"
@@ -244,11 +348,89 @@ function DocumentSourceCard({
           <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{category.name}</h3>
           <p className="audit-meta mt-1 truncate">{category.sourceCollection}</p>
         </div>
-        <StatusPill tone={selected ? "info" : category.scope === "公开知识库" ? "neutral" : "info"}>{category.scope}</StatusPill>
+        <StatusPill tone={!readable ? "warning" : selected ? "info" : category.scope === "公开知识库" ? "neutral" : "info"}>
+          {readable ? category.scope : "无权限"}
+        </StatusPill>
       </div>
       <p className="audit-metric-value-sm mt-3">{category.documentCount.toLocaleString()}</p>
       <p className="audit-copy mt-2">{category.description}</p>
     </button>
+  );
+}
+
+function DocumentUploadPanel({
+  canUpload,
+  message,
+  onFileChange,
+  onSubmit,
+  selectedFile,
+  status,
+  uploads
+}: {
+  readonly canUpload: boolean;
+  readonly message: string;
+  readonly onFileChange: (file: File | null) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly selectedFile: File | null;
+  readonly status: UploadStatus;
+  readonly uploads: readonly DocumentUploadItem[];
+}) {
+  return (
+    <section className="audit-panel-rail p-5">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="audit-section-title">个人材料</h2>
+        <StatusPill tone={status === "ready" ? "success" : status === "uploading" || status === "loading" ? "info" : "warning"}>
+          {status === "ready" ? "已连接" : status === "uploading" ? "留存中" : status === "loading" ? "读取中" : "不可用"}
+        </StatusPill>
+      </div>
+
+      <form className="mt-4 space-y-3" onSubmit={onSubmit}>
+        <label className="block" htmlFor="personal-document-upload">
+          <span className="audit-label">个人材料文件</span>
+          <input
+            accept=".pdf,.md,.txt,.csv,.xlsx,.xlsm"
+            aria-label="上传个人知识库材料"
+            className="audit-focus-ring mt-2 block w-full rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2 text-sm text-[var(--audit-ink)] file:mr-3 file:rounded-[var(--audit-radius-sm)] file:border-0 file:bg-[var(--audit-primary-soft)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[var(--audit-primary)]"
+            disabled={!canUpload || status === "uploading"}
+            id="personal-document-upload"
+            onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+        </label>
+        <button
+          className="audit-focus-ring audit-btn audit-btn-primary w-full"
+          disabled={!canUpload || status === "uploading" || selectedFile === null}
+          type="submit"
+        >
+          {status === "uploading" ? "留存中" : "上传材料"}
+        </button>
+        {message ? <p className="audit-meta break-words">{message}</p> : null}
+      </form>
+
+      <div className="mt-5 space-y-2">
+        {uploads.length > 0 ? (
+          uploads.map((item) => <DocumentUploadRow item={item} key={item.id} />)
+        ) : (
+          <p className="audit-copy">暂无个人材料留存。</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DocumentUploadRow({ item }: { readonly item: DocumentUploadItem }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</h3>
+          <p className="audit-meta mt-1">
+            {item.extension.toUpperCase()} / {item.size_kb} KB / {formatDateTime(item.created_at)}
+          </p>
+        </div>
+        <StatusPill tone="neutral">{item.index_status}</StatusPill>
+      </div>
+    </article>
   );
 }
 
@@ -334,6 +516,7 @@ function DocumentCitationCard({ citation }: { readonly citation: QueryCitation }
           <p className="audit-compact-title">
             {citation.marker} / {citation.evidence_type}
           </p>
+          <p className="audit-meta mt-1">来源: {citation.source_collection}</p>
           <p className="audit-meta mt-1 break-words">{locatorSummary(citation.locator)}</p>
         </div>
         <a

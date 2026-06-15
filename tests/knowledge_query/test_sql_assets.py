@@ -90,6 +90,24 @@ def test_pgvector_schema_includes_analytics_upload_records_table() -> None:
     assert "idx_analytics_upload_records_sha256" in schema
 
 
+def test_pgvector_schema_includes_document_upload_records_table() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS document_upload_records" in schema
+    assert "upload_key text NOT NULL UNIQUE" in schema
+    assert "file_name text NOT NULL" in schema
+    assert "storage_path text NOT NULL" in schema
+    assert "visibility text NOT NULL DEFAULT 'private'" in schema
+    assert "status text NOT NULL DEFAULT 'retained'" in schema
+    assert "metadata jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "CONSTRAINT ck_document_upload_records_extension" in schema
+    assert "CONSTRAINT ck_document_upload_records_visibility" in schema
+    assert "CONSTRAINT ck_document_upload_records_status" in schema
+    assert "idx_document_upload_records_created_by" in schema
+    assert "idx_document_upload_records_sha256" in schema
+    assert "idx_document_upload_records_status" in schema
+
+
 def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
 
