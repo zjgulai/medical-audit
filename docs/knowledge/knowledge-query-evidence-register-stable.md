@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: evidence-register
 status: stable
 created: 2026-06-02
-updated: 2026-06-02
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -49,6 +49,7 @@ source: human+ai
 | `drafts/analysis/knowledge-query-e2e-20-loop-report-draft-20260601.md` | UI E2E 记录 | 保留草稿，不晋升 | 属于历史 UI smoke 和迭代记录；正式验收以当前测试和发布门禁为准。 |
 | `drafts/analysis/knowledge-query-human-evaluation-kimi-v1-draft-20260601.md` | 固定 52 case 检索评测 | 保留草稿，不单独晋升 | 指标已进入架构文档；草稿保留为评测明细证据。 |
 | `drafts/analysis/knowledge-query-incremental-plan-current-draft-20260602.md` | 增量计划报告 | 保留草稿，新增资料后重跑 | 当次结论为无新增、无修改、无删除；新资料进入后不能复用该结论。 |
+| `drafts/analysis/knowledge-query-national-regulation-incremental-plan-draft-20260615.md` | 国家规章平台增量计划 | 保留草稿，不单独晋升 | 已被运行手册和部署工作流吸收为 2026-06-15 生产 active index 基线；草稿保留为入库计划、文件清单和待处理压缩包证据。 |
 | `drafts/analysis/knowledge-query-pgvector-import-dry-run-kimi-draft-20260601.md` | pgvector dry-run | 保留草稿，不单独晋升 | 数据规模和准备状态已进入架构文档；草稿保留为导入前证据。 |
 | `drafts/analysis/knowledge-query-pgvector-import-execute-kimi-draft-20260601.md` | pgvector 执行报告 | 保留草稿，不单独晋升 | 数据库写入结果已进入架构文档；草稿保留为执行明细证据。 |
 | `drafts/analysis/knowledge-query-pgvector-import-plan-kimi-draft-20260601.md` | pgvector 导入前校验 | 保留草稿，不单独晋升 | 当前 schema 和结果已正式化；草稿保留为导入前校验明细。 |

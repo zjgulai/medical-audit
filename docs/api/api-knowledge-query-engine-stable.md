@@ -922,7 +922,7 @@ Kimi 主索引运行参数：
 - 未设置对应环境变量时返回 `409`，不会静默降级。
 - 默认 `create_app()` 不自动加载 PostgreSQL 后端，避免配置与数据库向量模型不一致导致假成功。
 
-加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前 Kimi 主索引期望值为 `48985`。
+加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前生产 Kimi 主索引期望值为 `49051`。
 
 ## 8. 操作日志接口
 
@@ -1035,7 +1035,7 @@ Kimi 主索引运行参数：
 - `db_rows_to_activate`
 - `db_rows_to_deactivate`
 
-当前验证结果：
+2026-06-02 增量计划历史验证结果：
 
 - 报告：`drafts/analysis/knowledge-query-incremental-plan-current-draft-20260602.md`
 - JSON：`tmp/outputs/knowledge-query-incremental-plan-current-20260602.json`
@@ -1371,7 +1371,7 @@ uv run python scripts/capture-chat-workbench-visual-baseline.py \
 - `missing_embedding_count`: `0`
 - `invalid_dimension_count`: `0`
 
-说明：该历史导入发生在 candidate/activate 流程落地之前，因此数据库中当前 Kimi 主索引已是 active。后续新资料包导入必须先写 candidate。
+说明：该历史导入发生在 candidate/activate 流程落地之前；后续生产 active 版本已由 2026-06-15 国家规章平台稳定增量版本替换。后续新资料包导入必须先写 candidate。
 
 ### `medical-audit-kb index-activate`
 

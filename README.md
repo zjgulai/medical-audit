@@ -5,7 +5,7 @@ module: repository
 topic: project-overview
 status: stable
 created: 2026-05-31
-updated: 2026-06-02
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -60,12 +60,14 @@ source: human+ai
 - 已形成知识库查询引擎的架构、API 和运行手册
 - 已建立 `docs/knowledge/knowledge-query-evidence-register-stable.md`，用于登记知识库评测、迁移、UI smoke 和 provider 预检草稿证据
 - 已产出 `drafts/docs/architecture-his-data-ingestion-design-draft-20260602.md`，作为 HIS DDL、字段映射和任务级快照设计的评审草稿
+- 已完成 `国家规章平台文档.zip` 增量资料补充、稳定增量索引激活和腾讯云生产 E2E 复核；当前生产 active index 为 `incremental-20260615-national-regulation-stable-20260615103344`，覆盖 `503` 个文档、`49051` 个 chunks 和 `49051` 条 embeddings
 
 ## 下一步
 
-下一步围绕 V1.0 PRD 做详细设计和交付拆分：
+下一步围绕 V1.0 PRD 和当前生产基线继续收敛：
 
 - 评审 HIS 数据接入设计草稿，并向院方/信息科索取 HIS DDL、字段字典、脱敏历史数据和验证集
 - 补充首个专项审计场景 PRD、底稿报告模板设计
 - 与院方确认 HIS DDL、脱敏测试集、报告模板和准确率口径
 - 将 V1.0 的 0/1 合规判定、复核、报告和整改链路拆成可开发任务
+- 继续补齐真实生成模型 provider、个人/系统/公开知识库治理、文档权限、真实医院数据验收和案件级审计闭环

@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: medical-audit-knowledge-query-engine
 status: stable
 created: 2026-05-31
-updated: 2026-06-04
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -225,7 +225,7 @@ Kimi Code 真实生成评测未通过的根因不是检索质量，而是 chat c
 - `missing_embedding_count`: `0`
 - `invalid_dimension_count`: `0`
 - HNSW 向量检索 smoke query 已通过。
-- 历史导入发生在 candidate/activate 流程落地前，因此当前 Kimi 主索引已是 active。
+- 该历史导入发生在 candidate/activate 流程落地前；后续生产 active 版本已由 2026-06-15 国家规章平台稳定增量版本替换。
 
 当前版本发布机制：
 
@@ -302,4 +302,4 @@ API 运行态默认不自动加载 PostgreSQL 检索后端。原因是当前 `co
 - pgvector schema 已对齐当前 Kimi `1024` 维主索引，并建立 Kimi cosine HNSW 索引草案。
 - 下一步质量评测需要更换可用 chat model 或接入 Kimi 官方允许的 Coding Agent 方式，再复跑真实生成评测。
 
-当前不再重复启动 `48985` 个 chunk 的全量外部 embedding 调用，除非数据源或 embedding provider 发生变化。
+当前生产 active index 覆盖 `49051` 个 chunk。除非数据源或 embedding provider 发生变化，不再重复启动全量外部 embedding 调用；2026-06-15 国家规章平台增量激活通过复用既有 active artifact 和已生成候选 embeddings 完成。
