@@ -11,6 +11,7 @@ import type {
   QueryRequest,
   QueryResponse,
   SearchBackendStatusResponse,
+  TableAnalysisUploadHistoryResponse,
   TableAnalysisUploadResponse
 } from "./api-types";
 
@@ -107,6 +108,10 @@ export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResp
   const formData = new FormData();
   formData.append("file", file);
   return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData);
+}
+
+export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {
+  return getJson<TableAnalysisUploadHistoryResponse>("/api/v1/analytics/table-uploads");
 }
 
 export function fetchAgents(): Promise<AgentsResponse> {

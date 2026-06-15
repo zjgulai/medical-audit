@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-14
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -92,6 +92,16 @@ source: human+ai
 - 医保目录过滤查询：`source_collections=["medical-insurance-catalog"]` 返回 `200`，`citation_count=3`，证据类型为 `catalog_basis`，首个引用预览页返回 `200`。
 - 验收后生产前端验收：`tmp/outputs/production-frontend-acceptance-after-documents-query-20260614.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 边界：`/api/v1/query` 会写入进程内查询日志和 preview reference，但不写入数据库业务表；本轮未完成搜索历史持久化、个人知识库上传、文档权限模型，也未补充响应中的 `source_collection` 直接回显字段。
+
+### 2026-06-15 AI 数据分析留存历史待部署变更
+
+- 本地实现范围：`/api/v1/analytics/table-upload` 上传成功后留存原始文件、写入 `analytics_upload_records`，并通过 `GET /api/v1/analytics/table-uploads` 返回最近上传历史。
+- 本地联调证据：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`；上传 `charge-retention-final.csv` 后最新历史记录为 `analytics-upload-28a10ca6ac89`，`retention_status=retained`。
+- 生产部署需要新增 host 目录：`/opt/medical-audit/analytics-uploads`。
+- 生产 Compose 已准备挂载：`${MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST:-/opt/medical-audit/analytics-uploads}:/app/analytics-uploads`。
+- 生产 env 示例已准备：`MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT_HOST=/opt/medical-audit/analytics-uploads`。
+- 生产 schema 需要应用 `analytics_upload_records` 表和索引。
+- 边界：本记录不是生产完成状态；尚未执行生产部署、schema apply、DB backup 或生产上传留存写入型 E2E。
 
 ### 2026-06-14 Phase 1 历史基线事实
 

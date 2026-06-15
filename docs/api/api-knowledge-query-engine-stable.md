@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-05
+updated: 2026-06-15
 owner: self
 source: human+ai
 ---
@@ -407,7 +407,90 @@ Query 参数：
 }
 ```
 
-## 4. 原文预览接口
+## 4. 数据分析接口
+
+### `POST /analytics/table-upload`
+
+接收审计表格并生成字段画像、质量提示、重复行统计和审计信号。支持 multipart 上传。
+
+上传限制：
+
+- 文件字段名：`file`
+- 支持扩展名：`csv`、`xlsx`、`xlsm`
+- 最大文件大小：`20MB`
+
+成功响应核心字段：
+
+- `name`
+- `size_kb`
+- `extension`
+- `sheet_name`
+- `columns`
+- `row_count`
+- `empty_cell_count`
+- `duplicate_row_count`
+- `quality_findings`
+- `audit_signals`
+- `recommendations`
+- `upload_id`
+- `sha256`
+- `retention_status`
+- `created_at`
+
+持久化行为：
+
+- 配置 `analytics_upload_store` 后，接口会把原始上传文件写入受控留存目录，并写入 `analytics_upload_records`。
+- 留存目录优先使用 `MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT`，未配置时使用 `index_root/analytics-uploads`。
+- 文件名使用系统生成的 `analytics-upload-*` 记录号，不复用原始文件名作为物理文件名。
+- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、sheet、行列统计、空值/重复行统计、审计信号和分析摘要。
+- 已配置 store 时，留存或记录写入失败会导致本次上传失败，不返回“已分析但未留存”的成功状态。
+
+当前边界：
+
+- 本接口不执行病毒扫描、脱敏改写、权限隔离下载或正式审计任务生成。
+- 当前未提供上传文件下载接口；留存文件用于受控审计追溯和后续治理能力扩展。
+
+状态码：
+
+- `200`：解析和留存成功。
+- `413`：文件超过大小限制。
+- `422`：扩展名不支持、空文件、编码不支持或工作簿无法解析。
+
+### `GET /analytics/table-uploads`
+
+返回最近上传留存记录。
+
+Query 参数：
+
+- `limit`：返回数量，范围 `1` 到 `100`，默认 `20`。
+
+响应核心字段：
+
+- `items`
+- `store.ready`
+- `store.backend`
+
+每条 `items` 记录包含：
+
+- `id`
+- `name`
+- `extension`
+- `size_bytes`
+- `size_kb`
+- `sha256`
+- `storage_path`
+- `sheet_name`
+- `row_count`
+- `column_count`
+- `empty_cell_count`
+- `duplicate_row_count`
+- `status`
+- `created_by`
+- `created_at`
+- `retention_status`
+- `audit_signals`
+
+## 5. 原文预览接口
 
 ### `GET /preview/{chunk_id}`
 
@@ -431,7 +514,7 @@ Query 参数：
 - `404`：引用不存在或源文件不存在。
 - `422`：locator 无法解析。
 
-## 5. 索引接口
+## 6. 索引接口
 
 ### `POST /index/rebuild`
 
@@ -707,7 +790,7 @@ Kimi 主索引运行参数：
 
 加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前 Kimi 主索引期望值为 `48985`。
 
-## 6. 操作日志接口
+## 7. 操作日志接口
 
 ### `GET /operation/logs`
 
@@ -731,7 +814,7 @@ Kimi 主索引运行参数：
 
 当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和外部告警接入。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
-## 7. CLI 命令
+## 8. CLI 命令
 
 ### `medical-audit-kb acceptance-run`
 

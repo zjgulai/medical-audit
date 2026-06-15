@@ -77,6 +77,19 @@ def test_pgvector_schema_includes_project_member_table() -> None:
     assert "idx_audit_project_members_status" in schema
 
 
+def test_pgvector_schema_includes_analytics_upload_records_table() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS analytics_upload_records" in schema
+    assert "upload_key text NOT NULL UNIQUE" in schema
+    assert "sha256 text NOT NULL" in schema
+    assert "storage_path text NOT NULL" in schema
+    assert "analysis_summary jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
+    assert "CONSTRAINT ck_analytics_upload_records_extension" in schema
+    assert "idx_analytics_upload_records_created_at" in schema
+    assert "idx_analytics_upload_records_sha256" in schema
+
+
 def test_pgvector_schema_includes_audit_workflow_tables() -> None:
     schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
 

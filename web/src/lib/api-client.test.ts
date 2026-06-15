@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuditAgent,
   createProjectMember,
+  fetchAnalysisUploadHistory,
   fetchAuditFindings,
   fetchAgents,
   fetchBackendHealth,
@@ -193,7 +194,11 @@ describe("api-client", () => {
           message: "后端已完成 CSV 文件的字段画像。",
           quality_findings: [],
           audit_signals: [],
-          recommendations: []
+          recommendations: [],
+          upload_id: "analytics-upload-test",
+          sha256: "a".repeat(64),
+          retention_status: "retained",
+          created_at: "2026-06-15T00:00:00Z"
         })
       }))
     );
@@ -214,6 +219,48 @@ describe("api-client", () => {
     });
     expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
     expect(result.name).toBe("charge-sample.csv");
+    expect(result.retention_status).toBe("retained");
+  });
+
+  it("fetches analysis upload history through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "analytics-upload-001",
+              name: "charge-sample.csv",
+              extension: "csv",
+              size_bytes: 128,
+              size_kb: 1,
+              sha256: "b".repeat(64),
+              storage_path: "2026/06/15/analytics-upload-001.csv",
+              sheet_name: null,
+              row_count: 3,
+              column_count: 5,
+              empty_cell_count: 1,
+              duplicate_row_count: 1,
+              status: "parsed",
+              created_by: "next-knowledge-query",
+              created_at: "2026-06-15T00:00:00Z",
+              retention_status: "retained",
+              audit_signals: ["金额/费用字段"]
+            }
+          ],
+          store: { ready: true, backend: "SqlAlchemyAnalyticsUploadStore" }
+        })
+      }))
+    );
+
+    const result = await fetchAnalysisUploadHistory();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/analytics/table-uploads", {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    expect(result.items[0].id).toBe("analytics-upload-001");
   });
 
   it("creates audit agents through the versioned API proxy", async () => {

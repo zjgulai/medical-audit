@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createAuditAgent,
   createProjectMember,
+  fetchAnalysisUploadHistory,
   fetchSearchBackendStatus,
   runKnowledgeQuery,
   uploadAnalysisTable
@@ -141,7 +142,35 @@ vi.mock("@/lib/api-client", () => ({
       "重复收费核验字段基础完整，可按患者/就诊、项目、日期和金额形成初筛分组。",
       "已识别医保支付字段，可进一步核对支付范围、报销口径和目录限制条件。",
       "优先核对高空值字段：charge_amount。"
-    ]
+    ],
+    upload_id: "analytics-upload-test",
+    sha256: "a".repeat(64),
+    retention_status: "retained",
+    created_at: "2026-06-15T00:00:00Z"
+  })),
+  fetchAnalysisUploadHistory: vi.fn(async () => ({
+    items: [
+      {
+        id: "analytics-upload-history",
+        name: "history-charge.csv",
+        extension: "csv",
+        size_bytes: 128,
+        size_kb: 1,
+        sha256: "b".repeat(64),
+        storage_path: "2026/06/15/analytics-upload-history.csv",
+        sheet_name: null,
+        row_count: 3,
+        column_count: 5,
+        empty_cell_count: 1,
+        duplicate_row_count: 1,
+        status: "parsed",
+        created_by: "next-knowledge-query",
+        created_at: "2026-06-15T00:00:00Z",
+        retention_status: "retained",
+        audit_signals: ["金额/费用字段"]
+      }
+    ],
+    store: { ready: true, backend: "SqlAlchemyAnalyticsUploadStore" }
   })),
   fetchAuditFindings: vi.fn(async () => ({
     items: [],
@@ -504,6 +533,9 @@ describe("workspace foundation pages", () => {
       expect(uploadAnalysisTable).toHaveBeenCalledWith(file);
     });
     await waitFor(() => {
+      expect(fetchAnalysisUploadHistory).toHaveBeenCalled();
+    });
+    await waitFor(() => {
       expect(screen.getByRole("heading", { name: "charge-sample.csv" })).toBeInTheDocument();
     });
     expect(screen.getByText("数据质量提示")).toBeInTheDocument();
@@ -511,6 +543,8 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("金额/费用字段")).toBeInTheDocument();
     expect(screen.getByText("重复收费核验字段基础完整，可按患者/就诊、项目、日期和金额形成初筛分组。")).toBeInTheDocument();
     expect(screen.getByText("发现 1 条完全重复行。")).toBeInTheDocument();
+    expect(screen.getByText("上传历史")).toBeInTheDocument();
+    expect(screen.getByText("history-charge.csv")).toBeInTheDocument();
   });
 
   it("renders project list and creates project members through the backend API", async () => {
