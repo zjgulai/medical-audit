@@ -19,7 +19,7 @@ source: human+ai
 - 健康检查：`GET /health`
 - 权限头：`X-User-Id`、`X-Role`
 
-允许查询角色：
+允许查询和门户配置写入角色：
 
 - `auditor`
 - `it-admin`
@@ -364,7 +364,91 @@ Query 参数：
 - 验收历史：展示最近报告，并提供 `GET /index/evaluation/history` JSON 列表入口
 - 操作日志导出入口
 
-## 3. 查询接口
+## 3. 门户配置接口
+
+门户配置写接口当前仍基于请求头角色做最小边界控制，不等于真实登录会话、部门权限或全站 RBAC。允许角色为 `auditor`、`it-admin` 和 `department-head`；未知角色返回 `403`，并通过 `record_operation` 记录拒绝事件。配置了数据库审计日志 store 时，同一事件会同步写入 `audit_log_events`。
+
+### `GET /agents`
+
+返回系统默认智能体和自定义智能体。
+
+响应核心字段：
+
+- `items`
+- `categories`
+- `store.ready`
+- `store.backend`
+
+### `POST /agents`
+
+新增提示词型智能体。
+
+请求头：
+
+- `X-User-Id`：创建人标识；缺省为 `anonymous`。
+- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
+
+请求体核心字段：
+
+- `name`
+- `category`
+- `topic`
+- `prompt`
+- `knowledge_base`
+- `project_name`
+- `metadata`
+
+错误：
+
+- `403`：角色不在允许列表，并记录 `agent-access-denied`，payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+- `409`：持久化智能体 store 不可用。
+- `422`：分类或请求体字段非法。
+
+### `GET /projects`
+
+返回系统默认项目和成员计数。
+
+响应核心字段：
+
+- `items`
+- `roles`
+- `statuses`
+- `store.ready`
+- `store.backend`
+
+### `GET /projects/{project_key}/members`
+
+返回指定项目的系统默认成员和自定义成员。
+
+错误：
+
+- `404`：项目不存在。
+
+### `POST /projects/{project_key}/members`
+
+新增项目成员。
+
+请求头：
+
+- `X-User-Id`：创建人标识；缺省为 `anonymous`。
+- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
+
+请求体核心字段：
+
+- `name`
+- `role`
+- `department`
+- `status`
+- `metadata`
+
+错误：
+
+- `403`：角色不在允许列表，并记录 `project-member-access-denied`，payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+- `404`：项目不存在。
+- `409`：持久化项目成员 store 不可用。
+- `422`：成员角色、状态或请求体字段非法。
+
+## 4. 查询接口
 
 ### `POST /query`
 
@@ -436,7 +520,7 @@ Query 参数：
 - 如果服务未配置查询历史 store，接口回退返回进程内最近日志，`store.ready=false`、`store.backend="memory"`。
 - 如果查询历史 store 读取失败，接口同样回退到进程内最近日志，`store.ready=false`，并返回结构化 `error.error_type`，不暴露数据库连接串或异常正文。
 
-## 4. 文档接口
+## 5. 文档接口
 
 ### `GET /documents/permissions`
 
@@ -541,7 +625,7 @@ Query 参数：
 - `413`：文件超过大小限制。
 - `422`：扩展名不支持或空文件。
 
-## 5. 数据分析接口
+## 6. 数据分析接口
 
 ### `POST /analytics/table-upload`
 
@@ -624,7 +708,7 @@ Query 参数：
 - `retention_status`
 - `audit_signals`
 
-## 6. 原文预览接口
+## 7. 原文预览接口
 
 ### `GET /preview/{chunk_id}`
 
@@ -648,7 +732,7 @@ Query 参数：
 - `404`：引用不存在或源文件不存在。
 - `422`：locator 无法解析。
 
-## 7. 索引接口
+## 8. 索引接口
 
 索引写接口仍基于 `X-Role: it-admin` 做管理权限判断。拒绝访问时返回 `403`，并记录 `index-admin-access-denied` 操作日志；payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
 
@@ -926,7 +1010,7 @@ Kimi 主索引运行参数：
 
 加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前生产 Kimi 主索引期望值为 `49051`。
 
-## 8. 操作日志接口
+## 9. 操作日志接口
 
 ### `GET /operation/logs`
 
@@ -950,7 +1034,7 @@ Kimi 主索引运行参数：
 
 当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和外部告警接入。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
-## 9. CLI 命令
+## 10. CLI 命令
 
 ### `medical-audit-kb acceptance-run`
 

@@ -19,6 +19,7 @@ from medical_audit_kb.api.project_member_store import (
     validate_project_member_role,
     validate_project_member_status,
 )
+from medical_audit_kb.api.role_policy import require_audit_role_for_write
 
 router = APIRouter()
 
@@ -110,8 +111,16 @@ def create_project_member(
     payload: ProjectMemberCreateRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
     _require_project(project_key)
+    actor_role = require_audit_role_for_write(
+        state,
+        role=x_role,
+        user_identifier=x_user_id,
+        attempted_action="project-member-create",
+        denied_action="project-member-access-denied",
+    )
     values = payload.model_dump()
     values["created_by"] = x_user_id or "anonymous"
     try:
@@ -129,6 +138,7 @@ def create_project_member(
             "project_key": project_key,
             "member_id": member["id"],
             "role": member["role"],
+            "actor_role": actor_role,
             "created_by": x_user_id or "anonymous",
         },
     )
