@@ -22,6 +22,7 @@ source: human+ai
 - 本地环境只读检查结果：`ANTHROPIC_API_KEY=SET`，`KIMI_API_KEY`、`MOONSHOT_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY` 和全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`。
 - 生产容器只读检查结果：`KIMI_API_KEY=SET`，`MOONSHOT_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 和全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`。
 - 既有记录显示：生产 `KIMI_API_KEY` 对常规 Moonshot chat endpoint 返回 `401 Invalid Authentication`，对 Kimi Coding endpoint 返回 `403 access_terminated_error`；本地 `ANTHROPIC_API_KEY` 历史 smoke 返回 `401 invalid x-api-key`。
+- 2026-06-15 使用 `claude-haiku-4-5-20251001` 重新执行本地 Anthropic `answer-provider-smoke`，结果仍为 `FAIL`，错误为 `401 authentication_error: invalid x-api-key`。
 - 因此，目前没有一个已验证可用、可迁移到生产的真实 chat answer provider。
 
 ## 2. Provider 候选
@@ -161,8 +162,8 @@ python3 scripts/run-production-e2e-smoke.py \
 
 ## 5. 当前执行建议
 
-下一步只做本地 `ANTHROPIC_API_KEY` 的 `answer-provider-smoke`，前提是允许一次外部 provider 调用和可能产生的小额费用。
+本地 `ANTHROPIC_API_KEY` 已完成一次 `answer-provider-smoke`，结果为 `FAIL`。
 
-若 Anthropic 仍为 `401`，立即停止，不进入生产 env 写入；随后要求提供新的可用服务端 chat provider key。
+当前停止 Anthropic 路径，不进入生产 env 写入；下一步必须提供新的可用服务端 chat provider key。
 
-若 Anthropic smoke 通过，再执行完整 `evaluate-answers`。完整评测通过后，才进入生产 env 备份、写入、应用重启和 no-fallback 生产 E2E。
+拿到新 key 后，先重复单 provider smoke；smoke 通过后，再执行完整 `evaluate-answers`。完整评测通过后，才进入生产 env 备份、写入、应用重启和 no-fallback 生产 E2E。
