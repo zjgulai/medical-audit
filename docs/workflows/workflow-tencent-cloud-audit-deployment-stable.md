@@ -33,10 +33,29 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-15 权限上下文兼容层部署后当前事实
+### 2026-06-16 部署脚本 SSH stdin 修复部署后当前事实
+
+- PR #95 `codex/deploy-tooling-debt-fix` 已合并到 `main`，merge commit 为 `8281a0ea123cbbd5df519e20fd5c4cdf77b87e30`；生产部署验证失败，原因是 `docker exec -i ... pg_dump` 改法仍会导致本地 SSH 在 DB 备份完成后挂起，生产 `.deploy-sha` 未更新。
+- PR #96 `codex/deploy-pgdump-stdin-fix` 已合并到 `main`，merge commit 为 `33522d24983b188587feed3b9a45cad066c87b4a`；生产部署验证失败，原因是 plain `docker exec ... pg_dump` 仍无法阻断远端脚本消耗 SSH stdin 后导致的本地挂起，生产 `.deploy-sha` 未更新。
+- PR #97 `codex/deploy-ssh-stdin-fix` 已合并到 `main` 并完成生产部署，merge commit 为 `4901d6705a60494542f42b98aa0e6766e3224114`。
+- 当前生产部署 SHA：`4901d6705a60494542f42b98aa0e6766e3224114`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 有效修复点：部署脚本中远端脚本式 `_ssh` 调用统一使用 `ssh -n` 断开本地 stdin；`rsync` 传输调用保持不加 `-n`。
+- 本轮部署戳：`ssh-stdin-fix-20260616`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-ssh-stdin-fix-20260616.sql.gz`，`gzip -t` 已通过，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `430K`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，Nginx 配置测试通过。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`，`issues=[]`，`.deploy-sha=4901d6705a60494542f42b98aa0e6766e3224114`。
+- 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`。
+- 证据边界：本轮只证明部署脚本不再在 DB 备份完成后挂起，并且生产已更新到 PR #97；不改变产品功能范围、真实登录会话、数据库 schema、生产 env、Nginx 配置或既有业务数据，除部署备份和既有 smoke/验收日志外不引入新的业务写入结论。
+
+### 2026-06-15 权限上下文兼容层部署后历史事实
 
 - PR #94 `codex/auth-rbac-phase-a` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`bebcf57043197ff45dfff1185e071a1cf2d7d808`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`bebcf57043197ff45dfff1185e071a1cf2d7d808`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`auth-rbac-phase-a-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-auth-rbac-phase-a-20260615.sql.gz`，大小约 `979M`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -50,10 +69,10 @@ source: human+ai
 - `ai_video.pem` 仍保留在项目本地用于 SSH；禁止删除，禁止提交到 Git。
 - 证据边界：本轮只证明 legacy header 权限上下文兼容层和关键写接口拒绝审计链路，不等于完成真实登录会话、组织/科室级授权、会话态前端切换或全站细粒度 RBAC。
 
-### 2026-06-15 门户配置写入拒绝审计部署后当前事实
+### 2026-06-15 门户配置写入拒绝审计部署后历史事实
 
 - PR #90 `codex/portal-config-write-denial-audit` 已合并到 `main` 并部署到生产。
-- 当前生产部署 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`portal-config-denial-audit-20260615`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -1188,10 +1207,39 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
 - 已重建并重启 `medical_audit_app`；`medical_audit_pg` 保持 running/healthy，未重建或删除 `medical_audit_pgdata`。
 - 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-portal-config-denial-deploy-20260615.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- 专项权限 smoke：`tmp/outputs/production-portal-config-denial-audit-smoke-20260615.json`，状态 `pass`；`guest` 角色写 `/api/v1/agents` 和 `/api/v1/projects/SELF-CHECK-FUND-20260607/members` 均返回 `403`，并在持久化 `audit_log_events` 中分别记录 `agent-access-denied` 与 `project-member-access-denied`。
+- 证据边界：本轮只证明门户配置写接口未知角色拒绝审计落库，不等于完成真实登录会话、科室级授权、组织模型、全站 RBAC 或生产 no-fallback 生成模型能力。
+
+### 2026-06-15 权限上下文兼容层部署
+
+- 部署提交：`bebcf57043197ff45dfff1185e071a1cf2d7d808`。
+- 部署戳：`auth-rbac-phase-a-20260615`。
+- 变更范围：新增 `CurrentUser`、`PermissionContext`、`it-admin -> system-admin` 角色归一化、legacy header 权限上下文兼容层和统一 `auth_source=legacy-header` 审计 payload。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-auth-rbac-phase-a-20260615.sql.gz`，大小约 `979M`。
+- 已重建并重启 `medical_audit_app`；`medical_audit_pg` 保持 running/healthy，未重建或删除 `medical_audit_pgdata`。
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-auth-rbac-phase-a-deploy-20260615.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
 - 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-auth-rbac-phase-a-deploy-20260615.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=bebcf57043197ff45dfff1185e071a1cf2d7d808`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
 - 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-auth-rbac-phase-a-deploy-20260615.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
 - 专项 RBAC smoke：`tmp/outputs/production-auth-rbac-phase-a-smoke-20260615.json`，状态 `pass`；旧 `it-admin` 兼容、新 `system-admin`、未授权审计日志拒绝、index/agent/project-member 写入拒绝及拒绝审计 payload 均已验证。
 - 证据边界：本轮只证明 legacy header 权限上下文兼容层和关键写接口拒绝审计链路，不等于完成真实登录会话、组织/科室级授权、会话态前端切换或全站细粒度 RBAC。
+
+### 2026-06-16 部署脚本 SSH stdin 修复生产部署
+
+- PR #95 `codex/deploy-tooling-debt-fix` 修复了部署巡检脚本和备份调用的第一层问题，但生产部署验证仍在 DB 备份完成后挂起；该 PR 不能作为有效生产部署完成态。
+- PR #96 `codex/deploy-pgdump-stdin-fix` 将 DB 备份改为 plain `docker exec medical_audit_pg ... pg_dump`，但生产部署验证仍在 DB 备份完成后挂起；该 PR 不能作为有效生产部署完成态。
+- PR #97 `codex/deploy-ssh-stdin-fix` 将远端脚本式 `_ssh` 调用改为 `ssh -n`，保留 `rsync` 原传输方式，已完成生产部署。
+- 部署提交：`4901d6705a60494542f42b98aa0e6766e3224114`。
+- 部署戳：`ssh-stdin-fix-20260616`。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-ssh-stdin-fix-20260616.sql.gz`，`gzip -t` 通过，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `430K`。
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=4901d6705a60494542f42b98aa0e6766e3224114`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，active search backend 为 `matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`。
+- 证据边界：本轮是部署工具链脆弱点修复，不等于新增产品功能、权限模型、生成模型、schema 或生产配置能力。
 
 ## 10. 回滚方案
 
