@@ -536,6 +536,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - schema 写入必须显式传入 `--apply-schema`。
 - 复核任务写入 E2E 必须显式传入 `--include-review-write`。
 - 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
+- 远端脚本型 SSH 调用必须使用 `ssh -n`，避免本地 stdin 被远端命令链路继承；rsync transport 不使用 `-n`。
 - 数据库备份必须使用 plain `docker exec ... pg_dump`，禁止在非交互 SSH 部署链路中使用 `docker exec -i` 或 `docker exec -t`，避免备份完成后本地 SSH 子进程卡住。
 - 2026-06-16 已验证 `docker exec -i ... pg_dump` 仍会在备份完成后卡住本地 SSH 子进程；该形态不再作为生产部署脚本方案使用。
 - 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
