@@ -222,14 +222,39 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
         local_smoke_reports=module._summarize_local_smoke_reports(tmp_path, limit=3),
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp=stamp,
-        expected_embeddings=48985,
+        min_matching_embeddings=48985,
     )
 
     assert report["status"] == "pass"
     assert report["issues"] == []
     assert report["summary"]["deploy_sha"] == "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
     assert report["summary"]["audit_mount_present"] is True
+    assert report["summary"]["matching_embedding_count"] == 48985
     assert report["summary"]["latest_local_smoke_status"] == "pass"
+
+
+def test_audit_tencent_cloud_deployment_state_accepts_embedding_count_above_minimum() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_embedding_minimum",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    stamp = "20260611T180655+0800"
+    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
+    remote_report["local_backend"]["search_backend"]["payload"]["details"][
+        "matching_embedding_count"
+    ] = 49051
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        min_matching_embeddings=48985,
+    )
+
+    assert report["status"] == "pass"
+    assert report["summary"]["matching_embedding_count"] == 49051
+    assert report["minimum_matching_embeddings"] == 48985
 
 
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
@@ -243,7 +268,7 @@ def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> N
         local_smoke_reports=[],
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp="20260611T180655+0800",
-        expected_embeddings=48985,
+        min_matching_embeddings=48985,
     )
 
     assert report["status"] == "fail"
@@ -322,6 +347,8 @@ def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
 
     assert backup_call < cleanup_call < sync_call
     assert "--delete-excluded" not in script_text
+    assert "docker exec -i medical_audit_pg" in script_text
+    assert "docker exec -t medical_audit_pg" not in script_text
 
 
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
