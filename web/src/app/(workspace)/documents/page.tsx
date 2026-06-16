@@ -44,7 +44,8 @@ const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
 const INDEX_READINESS_BLOCKER_LABELS: Record<DocumentIndexReadinessBlocker, string> = {
   "virus-scan-required": "待病毒扫描",
   "dlp-review-required": "待脱敏审查",
-  "manual-index-approval-required": "待入索引审批"
+  "manual-index-approval-required": "待入索引审批",
+  "manual-index-approval-rejected": "入索引已驳回"
 };
 
 export default function DocumentsPage() {

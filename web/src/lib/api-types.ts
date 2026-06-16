@@ -94,7 +94,8 @@ export type DocumentUploadPermissions = {
 export type DocumentIndexReadinessBlocker =
   | "virus-scan-required"
   | "dlp-review-required"
-  | "manual-index-approval-required";
+  | "manual-index-approval-required"
+  | "manual-index-approval-rejected";
 
 export type DocumentIndexReadinessCheck = {
   readonly check_type: "virus-scan" | "dlp-review" | "manual-index-approval";
@@ -105,9 +106,9 @@ export type DocumentIndexReadinessCheck = {
 };
 
 export type DocumentIndexReadiness = {
-  readonly status: "blocked";
+  readonly status: "blocked" | "ready" | "rejected";
   readonly blockers: readonly DocumentIndexReadinessBlocker[];
-  readonly next_action: "complete-upload-governance";
+  readonly next_action: "complete-upload-governance" | "ingest-personal-upload" | "review-manual-index-rejection";
   readonly checks: readonly DocumentIndexReadinessCheck[];
 };
 

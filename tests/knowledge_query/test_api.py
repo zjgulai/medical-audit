@@ -603,6 +603,186 @@ def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
     ]
 
 
+def test_documents_upload_manual_index_approval_marks_ready_and_persists(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    database_url = f"sqlite:///{tmp_path / 'document-index-readiness.db'}"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    approval_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "审查通过，准许进入后续入索引队列。"},
+    )
+
+    assert approval_response.status_code == 200
+    item = approval_response.json()["item"]
+    assert item["id"] == upload_id
+    assert item["index_status"] == "not-indexed"
+    assert item["index_readiness"] == {
+        "status": "ready",
+        "blockers": [],
+        "next_action": "ingest-personal-upload",
+        "checks": [
+            {
+                "check_type": "virus-scan",
+                "provider": "local-test-virus",
+                "status": "passed",
+                "blocker": None,
+                "detail": f"sha256 {item['sha256']} accepted",
+            },
+            {
+                "check_type": "dlp-review",
+                "provider": "local-test-dlp",
+                "status": "passed",
+                "blocker": None,
+                "detail": "policy.txt contains no test DLP findings",
+            },
+            {
+                "check_type": "manual-index-approval",
+                "provider": "manual",
+                "status": "passed",
+                "blocker": None,
+                "detail": (
+                    "manual index approval approved by head-1: "
+                    "审查通过，准许进入后续入索引队列。"
+                ),
+            },
+        ],
+    }
+    assert state.operation_logs[-1]["action"] == "document-upload-index-readiness-update"
+    assert state.operation_logs[-1]["payload"]["upload_id"] == upload_id
+    assert state.operation_logs[-1]["payload"]["decision"] == "approved"
+    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "ready"
+    assert state.operation_logs[-1]["payload"]["normalized_role"] == "department-head"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+    )
+    second_client = TestClient(create_app(second_state))
+    persisted = second_client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"][0]
+    assert persisted["id"] == upload_id
+    assert persisted["index_readiness"]["status"] == "ready"
+
+
+def test_documents_upload_manual_index_rejection_marks_rejected(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    rejection_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={"decision": "rejected", "note": "材料来源不足，退回补证。"},
+    )
+
+    assert rejection_response.status_code == 200
+    readiness = rejection_response.json()["item"]["index_readiness"]
+    assert readiness["status"] == "rejected"
+    assert readiness["blockers"] == [
+        "virus-scan-required",
+        "dlp-review-required",
+        "manual-index-approval-rejected",
+    ]
+    assert readiness["next_action"] == "review-manual-index-rejection"
+    assert readiness["checks"][-1] == {
+        "check_type": "manual-index-approval",
+        "provider": "manual",
+        "status": "blocked",
+        "blocker": "manual-index-approval-rejected",
+        "detail": "manual index approval rejected by admin-1: 材料来源不足，退回补证。",
+    }
+
+
+def test_documents_upload_manual_index_approval_rejects_auditor(
+    tmp_path: Path,
+) -> None:
+    denied_reason = "document upload index approval requires department-head or system-admin role"
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"decision": "approved", "note": "普通审计员尝试批准。"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == denied_reason
+    assert state.operation_logs[-1] == {
+        "action": "document-upload-index-approval-access-denied",
+        "payload": {
+            "attempted_action": "document-upload-index-readiness-update",
+            "upload_id": upload_id,
+            "user_identifier": "auditor-1",
+            "role": "auditor",
+            "normalized_role": "auditor",
+            "auth_source": "legacy-header",
+            "status_code": 403,
+            "reason": denied_reason,
+        },
+    }
+
+
 def test_documents_upload_local_test_governance_detects_markers(
     tmp_path: Path,
 ) -> None:
