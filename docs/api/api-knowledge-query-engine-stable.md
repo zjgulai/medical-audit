@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-15
+updated: 2026-06-16
 owner: self
 source: human+ai
 ---
@@ -594,6 +594,13 @@ Query 参数：
 - `created_at`
 - `retention_status`
 - `index_status`
+- `index_readiness`
+
+`index_readiness` 当前返回：
+
+- `status=blocked`
+- `blockers=["virus-scan-required","dlp-review-required","manual-index-approval-required"]`
+- `next_action=complete-upload-governance`
 
 ### `POST /documents/uploads`
 
@@ -610,11 +617,12 @@ Query 参数：
 - 配置 `document_upload_store` 后，接口会把原始上传文件写入受控留存目录，并写入 `document_upload_records`。
 - 留存目录优先使用 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_ROOT`，未配置时使用 `index_root/document-uploads`。
 - 文件名使用系统生成的 `document-upload-*` 记录号，不复用原始文件名作为物理文件名。
-- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户和 `metadata.index_status=not-indexed`。
+- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户、`metadata.index_status=not-indexed` 和 `metadata.index_readiness`。
+- `metadata.index_readiness` 用于表达入索引前置治理门禁；旧记录缺少该字段时，API 按默认 blocked 门禁返回。
 
 当前边界：
 
-- 本接口只完成个人材料留存和列表读取，不把上传材料写入检索索引。
+- 本接口只完成个人材料留存、列表读取和入索引治理门禁表达，不把上传材料写入检索索引。
 - 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件下载权限隔离或生命周期清理。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 

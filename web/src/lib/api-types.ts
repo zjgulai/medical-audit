@@ -91,6 +91,17 @@ export type DocumentUploadPermissions = {
   readonly can_read_all_personal_uploads: boolean;
 };
 
+export type DocumentIndexReadinessBlocker =
+  | "virus-scan-required"
+  | "dlp-review-required"
+  | "manual-index-approval-required";
+
+export type DocumentIndexReadiness = {
+  readonly status: "blocked";
+  readonly blockers: readonly DocumentIndexReadinessBlocker[];
+  readonly next_action: "complete-upload-governance";
+};
+
 export type DocumentPermissionsResponse = {
   readonly role: string;
   readonly source_collections: readonly DocumentSourcePermissionItem[];
@@ -111,6 +122,7 @@ export type DocumentUploadItem = {
   readonly created_at: string;
   readonly retention_status: "retained";
   readonly index_status: "not-indexed";
+  readonly index_readiness: DocumentIndexReadiness;
 };
 
 export type DocumentUploadListResponse = {

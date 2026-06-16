@@ -224,7 +224,16 @@ vi.mock("@/lib/api-client", () => ({
         created_by: "next-knowledge-query",
         created_at: "2026-06-15T00:00:00Z",
         retention_status: "retained",
-        index_status: "not-indexed"
+        index_status: "not-indexed",
+        index_readiness: {
+          status: "blocked",
+          blockers: [
+            "virus-scan-required",
+            "dlp-review-required",
+            "manual-index-approval-required"
+          ],
+          next_action: "complete-upload-governance"
+        }
       }
     ],
     store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
@@ -247,7 +256,16 @@ vi.mock("@/lib/api-client", () => ({
       created_by: "next-knowledge-query",
       created_at: "2026-06-15T00:00:00Z",
       retention_status: "retained",
-      index_status: "not-indexed"
+      index_status: "not-indexed",
+      index_readiness: {
+        status: "blocked",
+        blockers: [
+          "virus-scan-required",
+          "dlp-review-required",
+          "manual-index-approval-required"
+        ],
+        next_action: "complete-upload-governance"
+      }
     },
     store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
     permissions: {
@@ -799,7 +817,7 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(uploadPersonalDocument).toHaveBeenCalledWith(documentFile);
     });
-    expect(screen.getByText("policy.pdf 已留存，索引状态：not-indexed")).toBeInTheDocument();
+    expect(screen.getByText("policy.pdf 已留存，入索引门禁：待病毒扫描、待脱敏审查、待入索引审批")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /监管两库/ }));
     fireEvent.change(screen.getByLabelText("审计问题或文档关键词"), {

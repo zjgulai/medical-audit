@@ -433,10 +433,25 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert uploaded["extension"] == "pdf"
     assert uploaded["retention_status"] == "retained"
     assert uploaded["index_status"] == "not-indexed"
+    assert uploaded["index_readiness"] == {
+        "status": "blocked",
+        "blockers": [
+            "virus-scan-required",
+            "dlp-review-required",
+            "manual-index-approval-required",
+        ],
+        "next_action": "complete-upload-governance",
+    }
     assert uploaded["sha256"]
     assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
     assert state.operation_logs[-1]["action"] == "document-upload"
     assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
+    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "blocked"
+    assert state.operation_logs[-1]["payload"]["index_readiness_blockers"] == [
+        "virus-scan-required",
+        "dlp-review-required",
+        "manual-index-approval-required",
+    ]
     assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
     assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 

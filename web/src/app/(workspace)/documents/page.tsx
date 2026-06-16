@@ -11,6 +11,7 @@ import {
   uploadPersonalDocument
 } from "@/lib/api-client";
 import type {
+  DocumentIndexReadinessBlocker,
   DocumentPermissionsResponse,
   DocumentUploadItem,
   QueryCitation,
@@ -40,6 +41,11 @@ const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
   "medical-insurance-catalog",
   "risk-negative-list"
 ];
+const INDEX_READINESS_BLOCKER_LABELS: Record<DocumentIndexReadinessBlocker, string> = {
+  "virus-scan-required": "待病毒扫描",
+  "dlp-review-required": "待脱敏审查",
+  "manual-index-approval-required": "待入索引审批"
+};
 
 export default function DocumentsPage() {
   const totalDocuments = documentCategoryStats.reduce((sum, category) => sum + category.documentCount, 0);
@@ -174,7 +180,7 @@ export default function DocumentsPage() {
     setUploadMessage("");
     try {
       const result = await uploadPersonalDocument(selectedUploadFile);
-      setUploadMessage(`${result.item.name} 已留存，索引状态：${result.item.index_status}`);
+      setUploadMessage(`${result.item.name} 已留存，入索引门禁：${indexReadinessText(result.item)}`);
       setSelectedUploadFile(null);
       await refreshDocumentUploads();
     } catch {
@@ -428,8 +434,9 @@ function DocumentUploadRow({ item }: { readonly item: DocumentUploadItem }) {
             {item.extension.toUpperCase()} / {item.size_kb} KB / {formatDateTime(item.created_at)}
           </p>
         </div>
-        <StatusPill tone="neutral">{item.index_status}</StatusPill>
+        <StatusPill tone="warning">待治理</StatusPill>
       </div>
+      <p className="audit-meta mt-2">入索引门禁：{indexReadinessText(item)}</p>
     </article>
   );
 }
@@ -606,6 +613,13 @@ function formatDateTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function indexReadinessText(item: DocumentUploadItem): string {
+  if (item.index_readiness.blockers.length === 0) {
+    return item.index_status;
+  }
+  return item.index_readiness.blockers.map((blocker) => INDEX_READINESS_BLOCKER_LABELS[blocker]).join("、");
 }
 
 function locatorSummary(locator: Record<string, unknown>): string {
