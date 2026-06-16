@@ -33,12 +33,29 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-16 部署脚本 SSH stdin 修复部署后当前事实
+### 2026-06-16 个人材料上传治理 provider 配置部署后当前事实
+
+- PR #101 `codex/document-upload-governance-provider-config` 已合并到 `main` 并完成生产部署，merge commit 为 `6302f0a8baeb5695861f9682090f65786ea6d6e0`。
+- 当前生产部署 SHA：`6302f0a8baeb5695861f9682090f65786ea6d6e0`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`20260616T135218+0800`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260616T135218+0800.sql.gz`，`gzip -t` 已通过，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-20260616T135218+0800.tar.gz`，`gzip -t` 已通过，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-20260616T135218+0800.tar.gz`，`gzip -t` 已通过，大小约 `430K`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-deploy-20260616T135218+0800.json` 为 `status=pass`。
+- 生产 `/documents` 写入型 E2E verified 报告 `tmp/outputs/production-documents-write-e2e-20260616T135913+0800-verified.json` 为 `status=pass`；记录 `document-upload-f81adf853774` 已写入 PostgreSQL，并留存在 `/opt/medical-audit/document-uploads/2026/06/16/document-upload-f81adf853774.txt`，文件 `sha256=90639f5b2a37ab3ec322067059e1f27034dcb4cd51b76794221694414e93d39e`。
+- 写入型 E2E 已验证普通审计员只能读取本人上传、其它审计员不可见、管理员可读全部个人上传；上传记录当前 `retention_status=retained`、`index_status=not-indexed`。
+- 新增 `index_readiness` 治理门禁已在生产响应和 DB `metadata` 中验证：默认 `unconfigured` 病毒扫描、默认 `unconfigured` DLP 审查和人工入索引审批均返回 `blocked`，blockers 为 `virus-scan-required`、`dlp-review-required`、`manual-index-approval-required`。
+- 本轮首次 `/documents` 写入型 E2E 报告 `tmp/outputs/production-documents-write-e2e-20260616T135913+0800.json` 的失败原因为校验脚本 DB 查询返回空结果；API 写入、权限隔离实际成功，已由 `*-verified.json` 中的显式 psql 查询、宿主机文件和 `sha256` 校验覆盖。
+- 证据边界：本轮只证明个人材料上传治理 provider 配置层、默认 blocked 门禁表达、个人材料留存和角色读取隔离可用；不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、真实登录会话、个人材料入索引或长期存储生命周期策略。
+
+### 2026-06-16 部署脚本 SSH stdin 修复部署后历史事实
 
 - PR #95 `codex/deploy-tooling-debt-fix` 已合并到 `main`，merge commit 为 `8281a0ea123cbbd5df519e20fd5c4cdf77b87e30`；生产部署验证失败，原因是 `docker exec -i ... pg_dump` 改法仍会导致本地 SSH 在 DB 备份完成后挂起，生产 `.deploy-sha` 未更新。
 - PR #96 `codex/deploy-pgdump-stdin-fix` 已合并到 `main`，merge commit 为 `33522d24983b188587feed3b9a45cad066c87b4a`；生产部署验证失败，原因是 plain `docker exec ... pg_dump` 仍无法阻断远端脚本消耗 SSH stdin 后导致的本地挂起，生产 `.deploy-sha` 未更新。
 - PR #97 `codex/deploy-ssh-stdin-fix` 已合并到 `main` 并完成生产部署，merge commit 为 `4901d6705a60494542f42b98aa0e6766e3224114`。
-- 当前生产部署 SHA：`4901d6705a60494542f42b98aa0e6766e3224114`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`4901d6705a60494542f42b98aa0e6766e3224114`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 有效修复点：部署脚本中远端脚本式 `_ssh` 调用统一使用 `ssh -n` 断开本地 stdin；`rsync` 传输调用保持不加 `-n`。
 - 本轮部署戳：`ssh-stdin-fix-20260616`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-ssh-stdin-fix-20260616.sql.gz`，`gzip -t` 已通过，大小约 `979M`。
@@ -807,6 +824,22 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 写入型 E2E 权限边界已验证：上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
 - `/api/v1/query` 来源过滤回显已验证：`medical-insurance-laws` 查询返回 1 条 citation 和 1 个 basis item，二者均回显 `source_collection=medical-insurance-laws`，同时返回 `query_log_id=9d6ec14e-1406-4e15-88b1-5978f6588891`。
 - 证据边界：本轮完成个人材料留存和角色读取隔离，不等于完成个人材料入索引、真实登录会话、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离或长期存储生命周期策略。
+
+### 5.25 PR #101 个人材料上传治理 provider 配置部署
+
+已在 2026-06-16 合并并部署 PR #101：
+
+- PR #101 merge commit：`6302f0a8baeb5695861f9682090f65786ea6d6e0`。
+- 部署从 `/Users/pray/project/medical_audit_minimal_pr` 的 `main` 执行，部署前本地 `HEAD`、`origin/main` 均为 `6302f0a8baeb5695861f9682090f65786ea6d6e0`。
+- 部署命令使用正式脚本：`uv run python scripts/deploy-tencent-cloud-production.py --execute --confirm-production audit.lute-tlz-dddd.top`。
+- 部署戳：`20260616T135218+0800`。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份；数据库备份为 `/opt/medical-audit/backups/db/pre-deploy-20260616T135218+0800.sql.gz`，`gzip -t` 通过，大小约 `979M`。
+- 已重建并重启 `medical_audit_app`，未重建或删除 `medical_audit_pgdata`。
+- 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-deploy-20260616T135218+0800.json` 已通过；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 生产 `/documents` 写入型 E2E `tmp/outputs/production-documents-write-e2e-20260616T135913+0800-verified.json` 已通过；上传记录 `document-upload-f81adf853774` 的 DB 行、宿主机留存文件和 `sha256=90639f5b2a37ab3ec322067059e1f27034dcb4cd51b76794221694414e93d39e` 均校验通过。
+- 写入型 E2E 权限边界已验证：上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
+- `index_readiness` 治理门禁已验证：病毒扫描、DLP 审查和人工入索引审批三项 check 均进入响应和 DB `metadata`；默认生产 provider 为 `unconfigured`，因此当前门禁状态仍为 `blocked`。
+- 证据边界：本轮完成治理 provider 配置层和默认门禁表达，不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料入索引或真实登录会话。
 
 ## 6. 后续维护流程
 
