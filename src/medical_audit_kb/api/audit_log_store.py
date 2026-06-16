@@ -107,6 +107,9 @@ def _entity_from_payload(action: str, payload: dict[str, object]) -> tuple[str, 
     chunk_id = _optional_str(payload.get("chunk_id"))
     if chunk_id is not None:
         return "document-chunk", chunk_id
+    upload_id = _optional_str(payload.get("upload_id"))
+    if upload_id is not None:
+        return "document-upload", upload_id
     index_version_key = _optional_str(payload.get("index_version_key"))
     if index_version_key is not None:
         return "index-version", index_version_key

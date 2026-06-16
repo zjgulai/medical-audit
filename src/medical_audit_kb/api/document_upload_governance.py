@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from medical_audit_kb.core.config import DocumentUploadGovernanceSettings
 
@@ -13,21 +13,44 @@ DocumentUploadGovernanceCheckType = Literal[
 ]
 DocumentUploadGovernanceCheckStatus = Literal["passed", "blocked"]
 DocumentUploadLocalTestMode = Literal["normal", "false-positive", "false-negative"]
+DocumentUploadIndexReadinessStatus = Literal["blocked", "ready", "rejected"]
 DocumentUploadIndexBlocker = Literal[
     "virus-scan-required",
     "dlp-review-required",
     "manual-index-approval-required",
+    "manual-index-approval-rejected",
 ]
+DocumentUploadIndexNextAction = Literal[
+    "complete-upload-governance",
+    "ingest-personal-upload",
+    "review-manual-index-rejection",
+]
+DocumentUploadManualIndexDecision = Literal["approved", "rejected"]
 
 INDEX_READINESS_BLOCKERS: tuple[DocumentUploadIndexBlocker, ...] = (
     "virus-scan-required",
     "dlp-review-required",
     "manual-index-approval-required",
 )
-INDEX_READINESS_NEXT_ACTION = "complete-upload-governance"
+INDEX_READINESS_REJECTED_BLOCKER: DocumentUploadIndexBlocker = (
+    "manual-index-approval-rejected"
+)
+INDEX_READINESS_NEXT_ACTION: DocumentUploadIndexNextAction = "complete-upload-governance"
+INDEX_READINESS_READY_NEXT_ACTION: DocumentUploadIndexNextAction = "ingest-personal-upload"
+INDEX_READINESS_REJECTED_NEXT_ACTION: DocumentUploadIndexNextAction = (
+    "review-manual-index-rejection"
+)
 _VALID_CHECK_TYPES = frozenset({"virus-scan", "dlp-review", "manual-index-approval"})
 _VALID_CHECK_STATUSES = frozenset({"passed", "blocked"})
-_VALID_BLOCKERS = frozenset(INDEX_READINESS_BLOCKERS)
+_VALID_READINESS_STATUSES = frozenset({"blocked", "ready", "rejected"})
+_VALID_NEXT_ACTIONS = frozenset(
+    {
+        INDEX_READINESS_NEXT_ACTION,
+        INDEX_READINESS_READY_NEXT_ACTION,
+        INDEX_READINESS_REJECTED_NEXT_ACTION,
+    }
+)
+_VALID_BLOCKERS = frozenset((*INDEX_READINESS_BLOCKERS, INDEX_READINESS_REJECTED_BLOCKER))
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,12 +256,7 @@ class DocumentUploadGovernancePolicy:
             self.dlp_reviewer.review(context),
             self.manual_approval_gate.evaluate(context),
         )
-        blockers = [
-            check.blocker
-            for check in checks
-            if check.status == "blocked" and check.blocker is not None
-        ]
-        return _readiness_payload(checks=checks, blockers=blockers)
+        return _readiness_payload(checks=checks)
 
 
 def document_upload_governance_policy_from_settings(
@@ -274,7 +292,7 @@ def default_index_readiness() -> dict[str, object]:
             detail="manual index approval is required before ingesting personal uploads",
         ),
     )
-    return _readiness_payload(checks=checks, blockers=list(INDEX_READINESS_BLOCKERS))
+    return _readiness_payload(checks=checks)
 
 
 def index_readiness_from_metadata(metadata: dict[str, object]) -> dict[str, object]:
@@ -287,10 +305,12 @@ def index_readiness_from_metadata(metadata: dict[str, object]) -> dict[str, obje
     next_action = value.get("next_action")
     checks = value.get("checks")
     if (
-        status == "blocked"
+        isinstance(status, str)
+        and status in _VALID_READINESS_STATUSES
         and isinstance(blockers, list)
         and all(isinstance(blocker, str) and blocker in _VALID_BLOCKERS for blocker in blockers)
-        and next_action == INDEX_READINESS_NEXT_ACTION
+        and isinstance(next_action, str)
+        and next_action in _VALID_NEXT_ACTIONS
         and isinstance(checks, list)
         and all(_valid_check_payload(check) for check in checks)
     ):
@@ -303,15 +323,52 @@ def index_readiness_from_metadata(metadata: dict[str, object]) -> dict[str, obje
     return default_index_readiness()
 
 
+def apply_manual_index_decision(
+    index_readiness: dict[str, object],
+    *,
+    decision: DocumentUploadManualIndexDecision,
+    actor: str,
+    note: str,
+) -> dict[str, object]:
+    current = index_readiness_from_metadata({"index_readiness": index_readiness})
+    current_checks = current.get("checks")
+    checks: tuple[GovernanceCheckResult, ...] = ()
+    if isinstance(current_checks, list):
+        checks = tuple(
+            _check_result_from_payload(cast(dict[str, object], check))
+            for check in current_checks
+            if isinstance(check, dict)
+        )
+    updated_manual_check = _manual_index_decision_check(
+        decision=decision,
+        actor=actor,
+        note=note,
+    )
+    updated_checks = tuple(
+        updated_manual_check
+        if check.check_type == "manual-index-approval"
+        else check
+        for check in checks
+    )
+    if not any(check.check_type == "manual-index-approval" for check in updated_checks):
+        updated_checks = (*updated_checks, updated_manual_check)
+    return _readiness_payload(checks=updated_checks)
+
+
 def _readiness_payload(
     *,
     checks: tuple[GovernanceCheckResult, ...],
-    blockers: list[DocumentUploadIndexBlocker],
 ) -> dict[str, object]:
+    blockers = [
+        check.blocker
+        for check in checks
+        if check.status == "blocked" and check.blocker is not None
+    ]
+    status, next_action = _readiness_status_and_next_action(blockers)
     return {
-        "status": "blocked",
+        "status": status,
         "blockers": blockers,
-        "next_action": INDEX_READINESS_NEXT_ACTION,
+        "next_action": next_action,
         "checks": [check.to_payload() for check in checks],
     }
 
@@ -335,6 +392,51 @@ def _valid_check_payload(value: object) -> bool:
         and isinstance(detail, str)
         and bool(detail)
     )
+
+
+def _check_result_from_payload(value: dict[str, object]) -> GovernanceCheckResult:
+    if not _valid_check_payload(value):
+        raise ValueError("invalid document upload governance check payload")
+    return GovernanceCheckResult(
+        check_type=cast(DocumentUploadGovernanceCheckType, value["check_type"]),
+        provider=str(value["provider"]),
+        status=cast(DocumentUploadGovernanceCheckStatus, value["status"]),
+        blocker=cast(DocumentUploadIndexBlocker | None, value["blocker"]),
+        detail=str(value["detail"]),
+    )
+
+
+def _manual_index_decision_check(
+    *,
+    decision: DocumentUploadManualIndexDecision,
+    actor: str,
+    note: str,
+) -> GovernanceCheckResult:
+    if decision == "approved":
+        return GovernanceCheckResult(
+            check_type="manual-index-approval",
+            provider="manual",
+            status="passed",
+            blocker=None,
+            detail=f"manual index approval approved by {actor}: {note}",
+        )
+    return GovernanceCheckResult(
+        check_type="manual-index-approval",
+        provider="manual",
+        status="blocked",
+        blocker=INDEX_READINESS_REJECTED_BLOCKER,
+        detail=f"manual index approval rejected by {actor}: {note}",
+    )
+
+
+def _readiness_status_and_next_action(
+    blockers: list[DocumentUploadIndexBlocker],
+) -> tuple[DocumentUploadIndexReadinessStatus, DocumentUploadIndexNextAction]:
+    if INDEX_READINESS_REJECTED_BLOCKER in blockers:
+        return "rejected", INDEX_READINESS_REJECTED_NEXT_ACTION
+    if blockers:
+        return "blocked", INDEX_READINESS_NEXT_ACTION
+    return "ready", INDEX_READINESS_READY_NEXT_ACTION
 
 
 def _virus_scanner_from_settings(

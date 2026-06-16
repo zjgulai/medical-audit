@@ -596,11 +596,11 @@ Query 参数：
 - `index_status`
 - `index_readiness`
 
-`index_readiness` 当前返回：
+`index_readiness` 返回入索引治理状态：
 
-- `status=blocked`
-- `blockers=["virus-scan-required","dlp-review-required","manual-index-approval-required"]`
-- `next_action=complete-upload-governance`
+- `status`：可选 `blocked`、`ready`、`rejected`。
+- `blockers`：可包含 `virus-scan-required`、`dlp-review-required`、`manual-index-approval-required`、`manual-index-approval-rejected`。
+- `next_action`：可选 `complete-upload-governance`、`ingest-personal-upload`、`review-manual-index-rejection`。
 - `checks`：逐项返回 `virus-scan`、`dlp-review` 和 `manual-index-approval` 的 `provider`、`status`、`blocker` 和 `detail`
 
 ### `POST /documents/uploads`
@@ -630,9 +630,30 @@ Query 参数：
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
 
+### `POST /documents/uploads/{upload_id}/index-readiness/manual-approval`
+
+对个人材料执行人工入索引审批决策。该接口只更新 `metadata.index_readiness`，不把文件写入检索索引。
+
+权限：
+
+- 允许角色：`department-head`、`system-admin`。
+- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
+- 普通 `auditor` 不允许审批，会返回 `403`，并记录 `document-upload-index-approval-access-denied` 操作日志。
+
+请求体：
+
+- `decision`：可选 `approved`、`rejected`。
+- `note`：必填，最长 `1000` 字符，用于保留审批理由。
+
+状态变更：
+
+- `approved`：将 `manual-index-approval` check 置为 `passed`；若病毒扫描和 DLP check 均已 passed，则整体 `status=ready`、`next_action=ingest-personal-upload`。
+- `approved`：若病毒扫描或 DLP check 仍 blocked，则只消除人工审批 blocker，整体仍为 `blocked`。
+- `rejected`：将 `manual-index-approval` check 置为 `blocked`，blocker 为 `manual-index-approval-rejected`，整体 `status=rejected`、`next_action=review-manual-index-rejection`。
+
 当前边界：
 
-- 本接口只完成个人材料留存、列表读取和入索引治理门禁表达，不把上传材料写入检索索引。
+- 本接口只完成个人材料留存、列表读取、人工审批状态变更和入索引治理门禁表达，不把上传材料写入检索索引。
 - 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件下载权限隔离或生命周期清理。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 

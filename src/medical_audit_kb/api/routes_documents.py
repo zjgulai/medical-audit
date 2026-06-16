@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
 from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
@@ -12,13 +12,20 @@ from medical_audit_kb.api.document_permissions import (
     document_permissions_for_role,
     normalize_role,
 )
-from medical_audit_kb.api.document_upload_governance import DocumentUploadGovernanceContext
+from medical_audit_kb.api.document_upload_governance import (
+    DocumentUploadGovernanceContext,
+    apply_manual_index_decision,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 
 router = APIRouter(prefix="/documents")
 
 MAX_DOCUMENT_UPLOAD_BYTES = 20 * 1024 * 1024
 SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt", "csv", "xlsx", "xlsm"}
+MANUAL_INDEX_APPROVAL_ROLES = frozenset({"system-admin", "department-head"})
+MANUAL_INDEX_APPROVAL_DENIED_REASON = (
+    "document upload index approval requires department-head or system-admin role"
+)
 
 
 class DocumentSourcePermissionItem(BaseModel):
@@ -48,6 +55,7 @@ class DocumentIndexReadinessCheck(BaseModel):
             "virus-scan-required",
             "dlp-review-required",
             "manual-index-approval-required",
+            "manual-index-approval-rejected",
         ]
         | None
     )
@@ -57,15 +65,20 @@ class DocumentIndexReadinessCheck(BaseModel):
 class DocumentIndexReadiness(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: Literal["blocked"]
+    status: Literal["blocked", "ready", "rejected"]
     blockers: list[
         Literal[
             "virus-scan-required",
             "dlp-review-required",
             "manual-index-approval-required",
+            "manual-index-approval-rejected",
         ]
     ]
-    next_action: Literal["complete-upload-governance"]
+    next_action: Literal[
+        "complete-upload-governance",
+        "ingest-personal-upload",
+        "review-manual-index-rejection",
+    ]
     checks: list[DocumentIndexReadinessCheck]
 
 
@@ -110,6 +123,13 @@ class DocumentUploadResponse(BaseModel):
     item: DocumentUploadItem
     store: dict[str, object]
     permissions: DocumentUploadPermissions
+
+
+class ManualIndexApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    note: str = Field(min_length=1, max_length=1000)
 
 
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
@@ -209,6 +229,74 @@ async def upload_document(
             extension=item.extension,
             size_bytes=item.size_bytes,
             retention_status=item.retention_status,
+            index_status=item.index_status,
+            index_readiness_status=item.index_readiness.status,
+            index_readiness_blockers=item.index_readiness.blockers,
+            index_readiness_checks=[
+                check.model_dump() for check in item.index_readiness.checks
+            ],
+        ),
+    )
+    return DocumentUploadResponse(
+        item=item,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/index-readiness/manual-approval",
+    response_model=DocumentUploadResponse,
+)
+def decide_manual_index_approval(
+    upload_id: str,
+    request: ManualIndexApprovalRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> DocumentUploadResponse:
+    role = normalize_role(current_user.primary_role)
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    if role not in MANUAL_INDEX_APPROVAL_ROLES:
+        record_operation(
+            state,
+            "document-upload-index-approval-access-denied",
+            auth_audit_payload(
+                current_user,
+                attempted_action="document-upload-index-readiness-update",
+                upload_id=upload_id,
+                status_code=403,
+                reason=MANUAL_INDEX_APPROVAL_DENIED_REASON,
+            ),
+        )
+        raise HTTPException(status_code=403, detail=MANUAL_INDEX_APPROVAL_DENIED_REASON)
+
+    current_upload = state.document_upload_store.get_upload(upload_id)
+    if current_upload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    index_readiness = apply_manual_index_decision(
+        cast(dict[str, object], current_upload["index_readiness"]),
+        decision=request.decision,
+        actor=current_user.user_key,
+        note=request.note,
+    )
+    updated = state.document_upload_store.update_index_readiness(
+        upload_key=upload_id,
+        index_readiness=index_readiness,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(updated)
+    record_operation(
+        state,
+        "document-upload-index-readiness-update",
+        auth_audit_payload(
+            current_user,
+            upload_id=item.id,
+            decision=request.decision,
             index_status=item.index_status,
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,

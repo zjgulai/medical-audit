@@ -42,6 +42,17 @@ class DocumentUploadStore(Protocol):
     ) -> list[dict[str, object]]:
         pass
 
+    def get_upload(self, upload_key: str) -> dict[str, object] | None:
+        pass
+
+    def update_index_readiness(
+        self,
+        *,
+        upload_key: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        pass
+
 
 @dataclass(slots=True)
 class SqlAlchemyDocumentUploadStore:
@@ -118,6 +129,35 @@ class SqlAlchemyDocumentUploadStore:
             statement = statement.limit(limit)
             return [_record_to_payload(record) for record in session.scalars(statement).all()]
 
+    def get_upload(self, upload_key: str) -> dict[str, object] | None:
+        with self._session_factory() as session:
+            record = session.scalars(
+                select(DocumentUploadRecord).where(DocumentUploadRecord.upload_key == upload_key)
+            ).one_or_none()
+            if record is None:
+                return None
+            return _record_to_payload(record)
+
+    def update_index_readiness(
+        self,
+        *,
+        upload_key: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        readiness = _copy_index_readiness(index_readiness)
+        with self._session_factory.begin() as session:
+            record = session.scalars(
+                select(DocumentUploadRecord).where(DocumentUploadRecord.upload_key == upload_key)
+            ).one_or_none()
+            if record is None:
+                return None
+            metadata = dict(record.extra_metadata)
+            metadata["index_status"] = str(metadata.get("index_status") or "not-indexed")
+            metadata["index_readiness"] = readiness
+            record.extra_metadata = metadata
+            session.flush()
+            return _record_to_payload(record)
+
 
 @dataclass(slots=True)
 class InMemoryDocumentUploadStore:
@@ -173,6 +213,25 @@ class InMemoryDocumentUploadStore:
             return [copy.deepcopy(record) for record in self.records[:limit]]
         owned = [record for record in self.records if record.get("created_by") == created_by]
         return [copy.deepcopy(record) for record in owned[:limit]]
+
+    def get_upload(self, upload_key: str) -> dict[str, object] | None:
+        for record in self.records:
+            if record.get("id") == upload_key:
+                return copy.deepcopy(record)
+        return None
+
+    def update_index_readiness(
+        self,
+        *,
+        upload_key: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        readiness = _copy_index_readiness(index_readiness)
+        for record in self.records:
+            if record.get("id") == upload_key:
+                record["index_readiness"] = readiness
+                return copy.deepcopy(record)
+        return None
 
 
 def _write_retained_file(
