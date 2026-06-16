@@ -12,15 +12,13 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from medical_audit_kb.api.document_upload_governance import (
+    default_index_readiness,
+    index_readiness_from_metadata,
+)
 from medical_audit_kb.db.models import Base, DocumentUploadRecord, utc_now
 
 DOCUMENT_UPLOAD_ID_PREFIX = "document-upload-"
-INDEX_READINESS_BLOCKERS = (
-    "virus-scan-required",
-    "dlp-review-required",
-    "manual-index-approval-required",
-)
-INDEX_READINESS_NEXT_ACTION = "complete-upload-governance"
 
 
 class DocumentUploadStore(Protocol):
@@ -31,6 +29,7 @@ class DocumentUploadStore(Protocol):
         extension: str,
         content: bytes,
         created_by: str | None,
+        index_readiness: dict[str, object] | None = None,
     ) -> dict[str, object]:
         pass
 
@@ -69,10 +68,12 @@ class SqlAlchemyDocumentUploadStore:
         extension: str,
         content: bytes,
         created_by: str | None,
+        index_readiness: dict[str, object] | None = None,
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
         sha256 = hashlib.sha256(content).hexdigest()
+        readiness = _copy_index_readiness(index_readiness)
         storage_path = _write_retained_file(
             upload_root=self.upload_root,
             upload_key=upload_key,
@@ -92,7 +93,7 @@ class SqlAlchemyDocumentUploadStore:
             created_by=created_by,
             extra_metadata={
                 "index_status": "not-indexed",
-                "index_readiness": _default_index_readiness(),
+                "index_readiness": readiness,
             },
             created_at=now,
         )
@@ -130,9 +131,11 @@ class InMemoryDocumentUploadStore:
         extension: str,
         content: bytes,
         created_by: str | None,
+        index_readiness: dict[str, object] | None = None,
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
+        readiness = _copy_index_readiness(index_readiness)
         storage_path = _write_retained_file(
             upload_root=self.upload_root,
             upload_key=upload_key,
@@ -154,7 +157,7 @@ class InMemoryDocumentUploadStore:
             "created_at": _datetime_to_iso(now),
             "retention_status": "retained",
             "index_status": "not-indexed",
-            "index_readiness": _default_index_readiness(),
+            "index_readiness": readiness,
         }
         self.records.insert(0, copy.deepcopy(record))
         return copy.deepcopy(record)
@@ -205,39 +208,14 @@ def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
         "created_at": _datetime_to_iso(record.created_at),
         "retention_status": "retained",
         "index_status": str(record.extra_metadata.get("index_status") or "not-indexed"),
-        "index_readiness": _index_readiness_from_metadata(record.extra_metadata),
+        "index_readiness": index_readiness_from_metadata(record.extra_metadata),
     }
 
 
-def _default_index_readiness() -> dict[str, object]:
-    return {
-        "status": "blocked",
-        "blockers": list(INDEX_READINESS_BLOCKERS),
-        "next_action": INDEX_READINESS_NEXT_ACTION,
-    }
-
-
-def _index_readiness_from_metadata(metadata: dict[str, object]) -> dict[str, object]:
-    value = metadata.get("index_readiness")
-    if not isinstance(value, dict):
-        return _default_index_readiness()
-
-    status = value.get("status")
-    blockers = value.get("blockers")
-    next_action = value.get("next_action")
-    if (
-        status == "blocked"
-        and isinstance(blockers, list)
-        and all(isinstance(blocker, str) for blocker in blockers)
-        and isinstance(next_action, str)
-        and next_action
-    ):
-        return {
-            "status": status,
-            "blockers": blockers,
-            "next_action": next_action,
-        }
-    return _default_index_readiness()
+def _copy_index_readiness(value: dict[str, object] | None) -> dict[str, object]:
+    if value is None:
+        return default_index_readiness()
+    return copy.deepcopy(value)
 
 
 def _new_upload_key() -> str:

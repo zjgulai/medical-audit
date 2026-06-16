@@ -96,10 +96,19 @@ export type DocumentIndexReadinessBlocker =
   | "dlp-review-required"
   | "manual-index-approval-required";
 
+export type DocumentIndexReadinessCheck = {
+  readonly check_type: "virus-scan" | "dlp-review" | "manual-index-approval";
+  readonly provider: string;
+  readonly status: "passed" | "blocked";
+  readonly blocker: DocumentIndexReadinessBlocker | null;
+  readonly detail: string;
+};
+
 export type DocumentIndexReadiness = {
   readonly status: "blocked";
   readonly blockers: readonly DocumentIndexReadinessBlocker[];
   readonly next_action: "complete-upload-governance";
+  readonly checks: readonly DocumentIndexReadinessCheck[];
 };
 
 export type DocumentPermissionsResponse = {

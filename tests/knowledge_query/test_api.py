@@ -15,6 +15,11 @@ from medical_audit_kb.api.analytics_upload_store import (
     SqlAlchemyAnalyticsUploadStore,
 )
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.document_upload_governance import (
+    DocumentUploadGovernanceContext,
+    DocumentUploadGovernancePolicy,
+    GovernanceCheckResult,
+)
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
     InMemoryDocumentUploadStore,
@@ -441,6 +446,29 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
             "manual-index-approval-required",
         ],
         "next_action": "complete-upload-governance",
+        "checks": [
+            {
+                "check_type": "virus-scan",
+                "provider": "unconfigured",
+                "status": "blocked",
+                "blocker": "virus-scan-required",
+                "detail": "virus scan adapter is not configured for pdf upload",
+            },
+            {
+                "check_type": "dlp-review",
+                "provider": "unconfigured",
+                "status": "blocked",
+                "blocker": "dlp-review-required",
+                "detail": "DLP review adapter is not configured for pdf upload",
+            },
+            {
+                "check_type": "manual-index-approval",
+                "provider": "manual",
+                "status": "blocked",
+                "blocker": "manual-index-approval-required",
+                "detail": "manual index approval is required before ingesting policy.pdf",
+            },
+        ],
     }
     assert uploaded["sha256"]
     assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
@@ -452,6 +480,9 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         "dlp-review-required",
         "manual-index-approval-required",
     ]
+    assert state.operation_logs[-1]["payload"]["index_readiness_checks"] == uploaded[
+        "index_readiness"
+    ]["checks"]
     assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
     assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
@@ -493,6 +524,78 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
     ).json()["items"]
     assert persisted_items[0]["id"] == uploaded["id"]
+
+
+def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    readiness = response.json()["item"]["index_readiness"]
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == ["manual-index-approval-required"]
+    assert readiness["checks"] == [
+        {
+            "check_type": "virus-scan",
+            "provider": "local-test-virus",
+            "status": "passed",
+            "blocker": None,
+            "detail": f"sha256 {response.json()['item']['sha256']} accepted",
+        },
+        {
+            "check_type": "dlp-review",
+            "provider": "local-test-dlp",
+            "status": "passed",
+            "blocker": None,
+            "detail": "policy.txt contains no test DLP findings",
+        },
+        {
+            "check_type": "manual-index-approval",
+            "provider": "manual",
+            "status": "blocked",
+            "blocker": "manual-index-approval-required",
+            "detail": "manual index approval is required before ingesting policy.txt",
+        },
+    ]
 
 
 def test_documents_upload_rejects_unsupported_extension(tmp_path: Path) -> None:

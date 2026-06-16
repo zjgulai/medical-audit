@@ -18,6 +18,7 @@ from medical_audit_kb.api.analytics_upload_store import (
 )
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
+from medical_audit_kb.api.document_upload_governance import DocumentUploadGovernancePolicy
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
@@ -70,6 +71,9 @@ class ApiState:
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
     document_upload_store: DocumentUploadStore | None = None
+    document_upload_governance: DocumentUploadGovernancePolicy = field(
+        default_factory=DocumentUploadGovernancePolicy
+    )
     query_history_store: QueryHistoryStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
