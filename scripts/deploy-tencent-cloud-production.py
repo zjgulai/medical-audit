@@ -433,6 +433,7 @@ def _run_production_smoke(config: DeployConfig) -> None:
 def _ssh(config: DeployConfig, script: str) -> None:
     print(
         "+ ssh "
+        "-n "
         f"-i {shlex.quote(str(config.ssh_key))} "
         "-o StrictHostKeyChecking=no "
         "-o IdentitiesOnly=yes "
@@ -445,6 +446,7 @@ def _ssh(config: DeployConfig, script: str) -> None:
 def _ssh_args(config: DeployConfig, script: str) -> list[str]:
     return [
         "ssh",
+        "-n",
         "-i",
         str(config.ssh_key),
         "-o",

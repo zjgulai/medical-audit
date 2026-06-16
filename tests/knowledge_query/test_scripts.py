@@ -306,6 +306,23 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     ).resolve()
 
 
+def test_deploy_tencent_cloud_ssh_script_calls_detach_stdin() -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_production_ssh_args",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        ssh_key=Path("ai_video.pem"),
+        ssh_target="ubuntu@101.34.52.232",
+    )
+
+    ssh_args = module._ssh_args(config, "echo ok")
+    ssh_transport = module._ssh_transport(config)
+
+    assert ssh_args[:2] == ["ssh", "-n"]
+    assert "-n" not in ssh_transport.split()
+
+
 def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
     monkeypatch: MonkeyPatch,
 ) -> None:
