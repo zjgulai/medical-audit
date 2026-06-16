@@ -18,7 +18,10 @@ from medical_audit_kb.api.analytics_upload_store import (
 )
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
-from medical_audit_kb.api.document_upload_governance import DocumentUploadGovernancePolicy
+from medical_audit_kb.api.document_upload_governance import (
+    DocumentUploadGovernancePolicy,
+    document_upload_governance_policy_from_settings,
+)
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
@@ -97,6 +100,9 @@ class ApiState:
                 settings.database_url,
                 upload_root=settings.document_upload_root
                 or settings.index_root / "document-uploads",
+            ),
+            document_upload_governance=document_upload_governance_policy_from_settings(
+                settings.document_upload_governance
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),

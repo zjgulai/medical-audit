@@ -19,6 +19,7 @@ from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernanceContext,
     DocumentUploadGovernancePolicy,
     GovernanceCheckResult,
+    document_upload_governance_policy_from_settings,
 )
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
@@ -33,7 +34,11 @@ from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
     SqlAlchemyQueryHistoryStore,
 )
-from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
+from medical_audit_kb.core.config import (
+    DocumentUploadGovernanceSettings,
+    KnowledgeQuerySettings,
+    ModelProviderSettings,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -587,6 +592,113 @@ def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
             "status": "passed",
             "blocker": None,
             "detail": "policy.txt contains no test DLP findings",
+        },
+        {
+            "check_type": "manual-index-approval",
+            "provider": "manual",
+            "status": "blocked",
+            "blocker": "manual-index-approval-required",
+            "detail": "manual index approval is required before ingesting policy.txt",
+        },
+    ]
+
+
+def test_documents_upload_local_test_governance_detects_markers(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="local-test",
+            dlp_review_provider="local-test",
+        )
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"EICAR patient_id=123", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    readiness = response.json()["item"]["index_readiness"]
+    assert readiness["blockers"] == [
+        "virus-scan-required",
+        "dlp-review-required",
+        "manual-index-approval-required",
+    ]
+    assert readiness["checks"] == [
+        {
+            "check_type": "virus-scan",
+            "provider": "local-test",
+            "status": "blocked",
+            "blocker": "virus-scan-required",
+            "detail": "local test virus marker detected",
+        },
+        {
+            "check_type": "dlp-review",
+            "provider": "local-test",
+            "status": "blocked",
+            "blocker": "dlp-review-required",
+            "detail": "local test DLP marker detected",
+        },
+        {
+            "check_type": "manual-index-approval",
+            "provider": "manual",
+            "status": "blocked",
+            "blocker": "manual-index-approval-required",
+            "detail": "manual index approval is required before ingesting policy.txt",
+        },
+    ]
+
+
+def test_documents_upload_local_test_governance_supports_false_positive_and_negative(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="local-test",
+            dlp_review_provider="local-test",
+            virus_scan_test_mode="false-positive",
+            dlp_review_test_mode="false-negative",
+        )
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"patient_id=123", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    readiness = response.json()["item"]["index_readiness"]
+    assert readiness["blockers"] == [
+        "virus-scan-required",
+        "manual-index-approval-required",
+    ]
+    assert readiness["checks"] == [
+        {
+            "check_type": "virus-scan",
+            "provider": "local-test",
+            "status": "blocked",
+            "blocker": "virus-scan-required",
+            "detail": "local false-positive virus test blocked upload",
+        },
+        {
+            "check_type": "dlp-review",
+            "provider": "local-test",
+            "status": "passed",
+            "blocker": None,
+            "detail": "local false-negative DLP test passed upload",
         },
         {
             "check_type": "manual-index-approval",

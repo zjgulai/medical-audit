@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, Final, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,6 +14,14 @@ DATABASE_URL_ENV: Final = "MEDICAL_AUDIT_KB_DATABASE_URL"
 MODEL_PROVIDER_ENV: Final = "MEDICAL_AUDIT_KB_MODEL_PROVIDER"
 ANALYTICS_UPLOAD_ROOT_ENV: Final = "MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT"
 DOCUMENT_UPLOAD_ROOT_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_ROOT"
+DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER"
+)
+DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER"
+)
+DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE"
+DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE"
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -36,6 +44,15 @@ class ModelProviderSettings(BaseModel):
     chat_model: str = Field(min_length=1)
 
 
+class DocumentUploadGovernanceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    virus_scan_provider: Literal["unconfigured", "local-test"] = "unconfigured"
+    dlp_review_provider: Literal["unconfigured", "local-test"] = "unconfigured"
+    virus_scan_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
+    dlp_review_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
+
+
 class KnowledgeQuerySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -45,6 +62,9 @@ class KnowledgeQuerySettings(BaseModel):
     document_upload_root: Path | None = None
     database_url: str = Field(min_length=1)
     model_provider: ModelProviderSettings
+    document_upload_governance: DocumentUploadGovernanceSettings = Field(
+        default_factory=DocumentUploadGovernanceSettings
+    )
     source_collection_weights: dict[str, float]
 
     @field_validator("source_collection_weights")
@@ -116,5 +136,29 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         model_provider = dict(cast(dict[str, Any], merged.get("model_provider", {})))
         model_provider["provider"] = provider
         merged["model_provider"] = model_provider
+    if document_upload_governance := _document_upload_governance_env_overrides(merged):
+        merged["document_upload_governance"] = document_upload_governance
 
     return merged
+
+
+def _document_upload_governance_env_overrides(
+    data: dict[str, Any],
+) -> dict[str, Any] | None:
+    governance = dict(cast(dict[str, Any], data.get("document_upload_governance", {})))
+    changed = False
+    if provider := os.getenv(DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER_ENV):
+        governance["virus_scan_provider"] = provider
+        changed = True
+    if provider := os.getenv(DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV):
+        governance["dlp_review_provider"] = provider
+        changed = True
+    if mode := os.getenv(DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV):
+        governance["virus_scan_test_mode"] = mode
+        changed = True
+    if mode := os.getenv(DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV):
+        governance["dlp_review_test_mode"] = mode
+        changed = True
+    if not changed:
+        return None
+    return governance
