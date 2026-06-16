@@ -33,10 +33,30 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-16 个人材料上传治理 provider 配置部署后当前事实
+### 2026-06-16 个人材料入索引审批状态机部署后当前事实
+
+- PR #103 `codex/document-upload-index-readiness-state-machine` 已合并到 `main` 并完成生产部署，merge commit 为 `b425e2123d55a94dc6b6c800b806384eec1de679`。
+- 当前生产部署 SHA：`b425e2123d55a94dc6b6c800b806384eec1de679`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 本轮部署戳：`pr103-index-readiness-20260616`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-pr103-index-readiness-20260616.sql.gz`，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `430K`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读，Nginx 配置测试通过。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-pr103-index-readiness-deploy-20260616.json` 为 `status=pass`。
+- 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-pr103-index-readiness-deploy-20260616.json` 为 `status=pass`，`issues=[]`。
+- 生产 `/documents` 入索引审批写入型 E2E 报告 `tmp/outputs/production-documents-index-readiness-e2e-pr103-20260616.json` 为 `status=pass`；记录 `document-upload-29e6f19736ed` 的人工审批通过路径和 `document-upload-da1a475b381b` 的人工驳回路径均已写入 PostgreSQL，并验证宿主机留存文件 `sha256` 与 DB 一致。
+- 写入型 E2E 已验证普通审计员只能读取本人上传、其它审计员不可见、管理员可读全部个人上传；普通 `auditor` 调用人工审批接口返回 `403` 并记录 `document-upload-index-approval-access-denied`。
+- 人工审批通过路径已验证：`department-head` 可将 `manual-index-approval` check 置为 `passed` 并清除人工审批 blocker；由于生产病毒扫描和 DLP provider 当前仍为 `unconfigured`，整体 `index_readiness.status` 仍为 `blocked`，剩余 blockers 为 `virus-scan-required`、`dlp-review-required`。
+- 人工驳回路径已验证：`department-head` 可将 `manual-index-approval` check 置为 `blocked`，blocker 为 `manual-index-approval-rejected`，整体 `index_readiness.status=rejected`、`next_action=review-manual-index-rejection`。
+- 审计日志已验证：`document-upload-index-readiness-update` 和 `document-upload-index-approval-access-denied` 均按 `entity_type=document-upload`、`entity_id=<upload_id>` 落库。
+- 证据边界：本轮只证明个人材料人工入索引审批状态机、审批拒绝权限边界、审计日志和持久化状态更新可用；不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+
+### 2026-06-16 个人材料上传治理 provider 配置部署后历史事实
 
 - PR #101 `codex/document-upload-governance-provider-config` 已合并到 `main` 并完成生产部署，merge commit 为 `6302f0a8baeb5695861f9682090f65786ea6d6e0`。
-- 当前生产部署 SHA：`6302f0a8baeb5695861f9682090f65786ea6d6e0`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`6302f0a8baeb5695861f9682090f65786ea6d6e0`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`20260616T135218+0800`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260616T135218+0800.sql.gz`，`gzip -t` 已通过，大小约 `979M`。
 - 应用备份：`/opt/medical-audit/backups/app/pre-deploy-20260616T135218+0800.tar.gz`，`gzip -t` 已通过，大小约 `176M`。
@@ -48,7 +68,7 @@ source: human+ai
 - 写入型 E2E 已验证普通审计员只能读取本人上传、其它审计员不可见、管理员可读全部个人上传；上传记录当前 `retention_status=retained`、`index_status=not-indexed`。
 - 新增 `index_readiness` 治理门禁已在生产响应和 DB `metadata` 中验证：默认 `unconfigured` 病毒扫描、默认 `unconfigured` DLP 审查和人工入索引审批均返回 `blocked`，blockers 为 `virus-scan-required`、`dlp-review-required`、`manual-index-approval-required`。
 - 本轮首次 `/documents` 写入型 E2E 报告 `tmp/outputs/production-documents-write-e2e-20260616T135913+0800.json` 的失败原因为校验脚本 DB 查询返回空结果；API 写入、权限隔离实际成功，已由 `*-verified.json` 中的显式 psql 查询、宿主机文件和 `sha256` 校验覆盖。
-- 证据边界：本轮只证明个人材料上传治理 provider 配置层、默认 blocked 门禁表达、个人材料留存和角色读取隔离可用；不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、真实登录会话、个人材料入索引或长期存储生命周期策略。
+- 证据边界：本轮只证明个人材料上传治理 provider 配置层、默认 blocked 门禁表达、个人材料留存和角色读取隔离可用；不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
 ### 2026-06-16 部署脚本 SSH stdin 修复部署后历史事实
 
@@ -823,7 +843,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - `/documents` 生产写入型 E2E `tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json` 已通过；上传记录 `document-upload-1ba9d6e00cb7` 的 DB 行、宿主机留存文件和 `sha256` 均校验通过。
 - 写入型 E2E 权限边界已验证：上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
 - `/api/v1/query` 来源过滤回显已验证：`medical-insurance-laws` 查询返回 1 条 citation 和 1 个 basis item，二者均回显 `source_collection=medical-insurance-laws`，同时返回 `query_log_id=9d6ec14e-1406-4e15-88b1-5978f6588891`。
-- 证据边界：本轮完成个人材料留存和角色读取隔离，不等于完成个人材料入索引、真实登录会话、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离或长期存储生命周期策略。
+- 证据边界：本轮完成个人材料留存和角色读取隔离，不等于完成个人材料实际入索引、真实登录会话、病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离或长期存储生命周期策略。
 
 ### 5.25 PR #101 个人材料上传治理 provider 配置部署
 
@@ -839,7 +859,30 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 生产 `/documents` 写入型 E2E `tmp/outputs/production-documents-write-e2e-20260616T135913+0800-verified.json` 已通过；上传记录 `document-upload-f81adf853774` 的 DB 行、宿主机留存文件和 `sha256=90639f5b2a37ab3ec322067059e1f27034dcb4cd51b76794221694414e93d39e` 均校验通过。
 - 写入型 E2E 权限边界已验证：上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
 - `index_readiness` 治理门禁已验证：病毒扫描、DLP 审查和人工入索引审批三项 check 均进入响应和 DB `metadata`；默认生产 provider 为 `unconfigured`，因此当前门禁状态仍为 `blocked`。
-- 证据边界：本轮完成治理 provider 配置层和默认门禁表达，不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料入索引或真实登录会话。
+- 证据边界：本轮完成治理 provider 配置层和默认门禁表达，不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料实际入索引或真实登录会话。
+
+### 5.26 PR #103 个人材料入索引审批状态机部署
+
+已在 2026-06-16 合并并部署 PR #103：
+
+- PR #103 merge commit：`b425e2123d55a94dc6b6c800b806384eec1de679`。
+- 部署从 `/Users/pray/project/medical_audit_minimal_pr` 的 `main` 执行，部署前本地 `HEAD`、`origin/main` 均为 `b425e2123d55a94dc6b6c800b806384eec1de679`。
+- 部署命令使用正式脚本：`python3 scripts/deploy-tencent-cloud-production.py --execute --confirm-production audit.lute-tlz-dddd.top --stamp pr103-index-readiness-20260616 --report tmp/outputs/production-e2e-smoke-after-pr103-index-readiness-deploy-20260616.json`。
+- 部署戳：`pr103-index-readiness-20260616`。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份；数据库备份为 `/opt/medical-audit/backups/db/pre-deploy-pr103-index-readiness-20260616.sql.gz`，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `430K`。
+- 已重建并重启 `medical_audit_app`，未重建或删除 `medical_audit_pgdata`。
+- 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr103-index-readiness-deploy-20260616.json` 已通过；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均为 `pass`。
+- 部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr103-index-readiness-deploy-20260616.json` 已通过；远端 `.deploy-sha=b425e2123d55a94dc6b6c800b806384eec1de679`，`medical_audit_app` 与 `medical_audit_pg` healthy，`ai_video_nginx nginx -t` 通过，`/var/www/audit` 只读 bind mount 存在，active search backend 为 `matching_embedding_count=49051`。
+- 生产 `/documents` 入索引审批写入型 E2E `tmp/outputs/production-documents-index-readiness-e2e-pr103-20260616.json` 已通过。
+- 审批通过路径上传记录：`document-upload-29e6f19736ed`，文件名 `production-documents-index-approval-pr103-index-readiness-20260616.txt`，上传人 `documents-e2e-owner-pr103-pr103-index-readiness-20260616`，宿主机文件 `/opt/medical-audit/document-uploads/2026/06/16/document-upload-29e6f19736ed.txt`，`sha256=d1138be8268699bf221138d5eb7d5e91abe0f471db3bac07e5bb9d7f0f63bc34`。
+- 审批通过路径已验证：`department-head` 将 `manual-index-approval` check 置为 `passed`，人工审批 blocker 被清除；由于生产病毒扫描和 DLP provider 仍为 `unconfigured`，整体仍为 `blocked`，剩余 blockers 为 `virus-scan-required` 和 `dlp-review-required`。
+- 审批驳回路径上传记录：`document-upload-da1a475b381b`，文件名 `production-documents-index-rejection-pr103-index-readiness-20260616.txt`，上传人 `documents-e2e-owner-pr103-pr103-index-readiness-20260616`，宿主机文件 `/opt/medical-audit/document-uploads/2026/06/16/document-upload-da1a475b381b.txt`，`sha256=c08e90a5a644725dda1effb367f7e17ddc6d87e6cf35e1fd8ba9d92746bb2284`。
+- 审批驳回路径已验证：`department-head` 将 `manual-index-approval` check 置为 `blocked`，blocker 为 `manual-index-approval-rejected`，整体 `status=rejected`、`next_action=review-manual-index-rejection`。
+- 权限边界已验证：普通 `auditor` 调用人工审批接口返回 `403`；上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
+- 审计日志已验证：`document-upload-index-approval-access-denied` 和 `document-upload-index-readiness-update` 均以 `entity_type=document-upload`、`entity_id=<upload_id>` 落库。
+- 证据边界：本轮完成个人材料人工入索引审批状态机和审批审计链路，不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料实际入索引、真实登录会话或长期存储生命周期策略。
 
 ## 6. 后续维护流程
 
