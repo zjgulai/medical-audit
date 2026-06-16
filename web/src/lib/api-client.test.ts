@@ -355,7 +355,16 @@ describe("api-client", () => {
               created_by: "next-knowledge-query",
               created_at: "2026-06-15T00:00:00Z",
               retention_status: "retained",
-              index_status: "not-indexed"
+              index_status: "not-indexed",
+              index_readiness: {
+                status: "blocked",
+                blockers: [
+                  "virus-scan-required",
+                  "dlp-review-required",
+                  "manual-index-approval-required"
+                ],
+                next_action: "complete-upload-governance"
+              }
             }
           ],
           store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
@@ -399,7 +408,16 @@ describe("api-client", () => {
             created_by: "next-knowledge-query",
             created_at: "2026-06-15T00:00:00Z",
             retention_status: "retained",
-            index_status: "not-indexed"
+            index_status: "not-indexed",
+            index_readiness: {
+              status: "blocked",
+              blockers: [
+                "virus-scan-required",
+                "dlp-review-required",
+                "manual-index-approval-required"
+              ],
+              next_action: "complete-upload-governance"
+            }
           },
           store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
           permissions: {
@@ -426,6 +444,7 @@ describe("api-client", () => {
     });
     expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
     expect(result.item.index_status).toBe("not-indexed");
+    expect(result.item.index_readiness.blockers).toContain("virus-scan-required");
   });
 
   it("creates audit agents through the versioned API proxy", async () => {

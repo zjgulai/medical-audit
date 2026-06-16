@@ -36,6 +36,20 @@ class DocumentUploadPermissions(BaseModel):
     can_read_all_personal_uploads: bool
 
 
+class DocumentIndexReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["blocked"]
+    blockers: list[
+        Literal[
+            "virus-scan-required",
+            "dlp-review-required",
+            "manual-index-approval-required",
+        ]
+    ]
+    next_action: Literal["complete-upload-governance"]
+
+
 class DocumentPermissionsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -60,6 +74,7 @@ class DocumentUploadItem(BaseModel):
     created_at: str
     retention_status: Literal["retained"]
     index_status: Literal["not-indexed"]
+    index_readiness: DocumentIndexReadiness
 
 
 class DocumentUploadListResponse(BaseModel):
@@ -169,6 +184,8 @@ async def upload_document(
             size_bytes=item.size_bytes,
             retention_status=item.retention_status,
             index_status=item.index_status,
+            index_readiness_status=item.index_readiness.status,
+            index_readiness_blockers=item.index_readiness.blockers,
         ),
     )
     return DocumentUploadResponse(
