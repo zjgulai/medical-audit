@@ -347,8 +347,9 @@ def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
 
     assert backup_call < cleanup_call < sync_call
     assert "--delete-excluded" not in script_text
-    assert "docker exec -i medical_audit_pg" in script_text
-    assert "docker exec -t medical_audit_pg" not in script_text
+    assert "docker exec medical_audit_pg sh -lc 'pg_dump" in script_text
+    assert "docker exec -i medical_audit_pg sh -lc 'pg_dump" not in script_text
+    assert "docker exec -t medical_audit_pg sh -lc 'pg_dump" not in script_text
 
 
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:

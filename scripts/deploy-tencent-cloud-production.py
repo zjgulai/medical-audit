@@ -287,7 +287,7 @@ tar --exclude='.git' --exclude='.venv' --exclude='tmp' --exclude='data' \
   -C /opt/medical-audit app
 cp {shlex.quote(config.remote_app_dir)}/configs/deploy/tencent-cloud/medical-audit.env \
   /opt/medical-audit/backups/env/medical-audit.env.pre-deploy-${{stamp}}
-docker exec -i medical_audit_pg sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+docker exec medical_audit_pg sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
   | gzip > /opt/medical-audit/backups/db/pre-deploy-${{stamp}}.sql.gz
 cp /opt/ai-video/deploy/lighthouse/nginx.conf \
   /opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-${{stamp}}

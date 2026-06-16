@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-15
+updated: 2026-06-16
 owner: self
 source: human+ai
 ---
@@ -536,7 +536,8 @@ python3 scripts/run-production-e2e-smoke.py \
 - schema 写入必须显式传入 `--apply-schema`。
 - 复核任务写入 E2E 必须显式传入 `--include-review-write`。
 - 脚本只校验共享 `ai_video_nginx` 的 `/var/www/audit` bind mount 与 `nginx -t`，不写入共享 Nginx 配置，不处理生产 secret。
-- 数据库备份必须使用非 TTY `docker exec -i ... pg_dump`，禁止在非交互 SSH 部署链路中使用 `docker exec -t ... pg_dump`，避免备份完成后本地 SSH 子进程卡住。
+- 数据库备份必须使用 plain `docker exec ... pg_dump`，禁止在非交互 SSH 部署链路中使用 `docker exec -i` 或 `docker exec -t`，避免备份完成后本地 SSH 子进程卡住。
+- 2026-06-16 已验证 `docker exec -i ... pg_dump` 仍会在备份完成后卡住本地 SSH 子进程；该形态不再作为生产部署脚本方案使用。
 - 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
 - 应用同步排除 `.deploy-sha`、`__pycache__/`、`*.pyc` 和本地缓存文件；`.deploy-sha` 只由脚本在同步后显式写入。
 - 应用同步前会在备份完成后清理远端 `remote_app_dir/src` 下的 `*.pyc`、`*.pyo`、`*.uploading.cfg` 和空 `__pycache__`，避免旧缓存或云盘上传临时文件阻断 rsync 删除空目录；不得使用 `--delete-excluded`，防止误删远端 `data/`、env、密钥或其他刻意排除资产。
