@@ -622,6 +622,14 @@ Query 参数：
 - `metadata.index_readiness` 用于表达入索引前置治理门禁；旧记录缺少该字段时，API 按默认 blocked 门禁返回。
 - 上传治理策略已拆为可替换 adapter：病毒扫描 adapter、DLP 审查 adapter 和人工入索引审批 gate。默认 adapter 为 `unconfigured`，会阻断入索引并返回对应 blocker。
 
+治理 adapter 配置：
+
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER`：可选 `unconfigured`、`local-test`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER`：可选 `unconfigured`、`local-test`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
+- `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
+
 当前边界：
 
 - 本接口只完成个人材料留存、列表读取和入索引治理门禁表达，不把上传材料写入检索索引。

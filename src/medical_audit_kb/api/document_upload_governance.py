@@ -4,12 +4,15 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from medical_audit_kb.core.config import DocumentUploadGovernanceSettings
+
 DocumentUploadGovernanceCheckType = Literal[
     "virus-scan",
     "dlp-review",
     "manual-index-approval",
 ]
 DocumentUploadGovernanceCheckStatus = Literal["passed", "blocked"]
+DocumentUploadLocalTestMode = Literal["normal", "false-positive", "false-negative"]
 DocumentUploadIndexBlocker = Literal[
     "virus-scan-required",
     "dlp-review-required",
@@ -117,6 +120,90 @@ class UnconfiguredDlpReviewer:
 
 
 @dataclass(frozen=True, slots=True)
+class LocalTestVirusScanner:
+    mode: DocumentUploadLocalTestMode = "normal"
+    provider: str = "local-test"
+
+    def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        if self.mode == "false-positive":
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="blocked",
+                blocker="virus-scan-required",
+                detail="local false-positive virus test blocked upload",
+            )
+        if self.mode == "false-negative":
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail="local false-negative virus test passed upload",
+            )
+        if _context_contains_any(
+            context,
+            markers=("eicar", "test-malware", "virus-positive"),
+        ):
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="blocked",
+                blocker="virus-scan-required",
+                detail="local test virus marker detected",
+            )
+        return GovernanceCheckResult(
+            check_type="virus-scan",
+            provider=self.provider,
+            status="passed",
+            blocker=None,
+            detail="local test virus scanner found no marker",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LocalTestDlpReviewer:
+    mode: DocumentUploadLocalTestMode = "normal"
+    provider: str = "local-test"
+
+    def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        if self.mode == "false-positive":
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="blocked",
+                blocker="dlp-review-required",
+                detail="local false-positive DLP test blocked upload",
+            )
+        if self.mode == "false-negative":
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail="local false-negative DLP test passed upload",
+            )
+        if _context_contains_any(
+            context,
+            markers=("patient_id", "id_card", "身份证", "手机号", "sensitive-patient"),
+        ):
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="blocked",
+                blocker="dlp-review-required",
+                detail="local test DLP marker detected",
+            )
+        return GovernanceCheckResult(
+            check_type="dlp-review",
+            provider=self.provider,
+            status="passed",
+            blocker=None,
+            detail="local test DLP reviewer found no marker",
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ManualIndexApprovalGate:
     provider: str = "manual"
 
@@ -152,6 +239,15 @@ class DocumentUploadGovernancePolicy:
             if check.status == "blocked" and check.blocker is not None
         ]
         return _readiness_payload(checks=checks, blockers=blockers)
+
+
+def document_upload_governance_policy_from_settings(
+    settings: DocumentUploadGovernanceSettings,
+) -> DocumentUploadGovernancePolicy:
+    return DocumentUploadGovernancePolicy(
+        virus_scanner=_virus_scanner_from_settings(settings),
+        dlp_reviewer=_dlp_reviewer_from_settings(settings),
+    )
 
 
 def default_index_readiness() -> dict[str, object]:
@@ -239,3 +335,33 @@ def _valid_check_payload(value: object) -> bool:
         and isinstance(detail, str)
         and bool(detail)
     )
+
+
+def _virus_scanner_from_settings(
+    settings: DocumentUploadGovernanceSettings,
+) -> DocumentUploadVirusScanner:
+    if settings.virus_scan_provider == "unconfigured":
+        return UnconfiguredVirusScanner()
+    if settings.virus_scan_provider == "local-test":
+        return LocalTestVirusScanner(mode=settings.virus_scan_test_mode)
+    raise ValueError(f"unsupported document upload virus scanner: {settings.virus_scan_provider}")
+
+
+def _dlp_reviewer_from_settings(
+    settings: DocumentUploadGovernanceSettings,
+) -> DocumentUploadDlpReviewer:
+    if settings.dlp_review_provider == "unconfigured":
+        return UnconfiguredDlpReviewer()
+    if settings.dlp_review_provider == "local-test":
+        return LocalTestDlpReviewer(mode=settings.dlp_review_test_mode)
+    raise ValueError(f"unsupported document upload DLP reviewer: {settings.dlp_review_provider}")
+
+
+def _context_contains_any(
+    context: DocumentUploadGovernanceContext,
+    *,
+    markers: tuple[str, ...],
+) -> bool:
+    text = context.content[:4096].decode("utf-8", errors="ignore")
+    haystack = f"{context.file_name}\n{context.extension}\n{text}".lower()
+    return any(marker.lower() in haystack for marker in markers)
