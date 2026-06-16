@@ -601,6 +601,7 @@ Query 参数：
 - `status=blocked`
 - `blockers=["virus-scan-required","dlp-review-required","manual-index-approval-required"]`
 - `next_action=complete-upload-governance`
+- `checks`：逐项返回 `virus-scan`、`dlp-review` 和 `manual-index-approval` 的 `provider`、`status`、`blocker` 和 `detail`
 
 ### `POST /documents/uploads`
 
@@ -619,6 +620,7 @@ Query 参数：
 - 文件名使用系统生成的 `document-upload-*` 记录号，不复用原始文件名作为物理文件名。
 - 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户、`metadata.index_status=not-indexed` 和 `metadata.index_readiness`。
 - `metadata.index_readiness` 用于表达入索引前置治理门禁；旧记录缺少该字段时，API 按默认 blocked 门禁返回。
+- 上传治理策略已拆为可替换 adapter：病毒扫描 adapter、DLP 审查 adapter 和人工入索引审批 gate。默认 adapter 为 `unconfigured`，会阻断入索引并返回对应 blocker。
 
 当前边界：
 

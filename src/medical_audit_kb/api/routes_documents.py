@@ -12,6 +12,7 @@ from medical_audit_kb.api.document_permissions import (
     document_permissions_for_role,
     normalize_role,
 )
+from medical_audit_kb.api.document_upload_governance import DocumentUploadGovernanceContext
 from medical_audit_kb.domain.constants import SourceCollection
 
 router = APIRouter(prefix="/documents")
@@ -36,6 +37,23 @@ class DocumentUploadPermissions(BaseModel):
     can_read_all_personal_uploads: bool
 
 
+class DocumentIndexReadinessCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_type: Literal["virus-scan", "dlp-review", "manual-index-approval"]
+    provider: str
+    status: Literal["passed", "blocked"]
+    blocker: (
+        Literal[
+            "virus-scan-required",
+            "dlp-review-required",
+            "manual-index-approval-required",
+        ]
+        | None
+    )
+    detail: str
+
+
 class DocumentIndexReadiness(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,6 +66,7 @@ class DocumentIndexReadiness(BaseModel):
         ]
     ]
     next_action: Literal["complete-upload-governance"]
+    checks: list[DocumentIndexReadinessCheck]
 
 
 class DocumentPermissionsResponse(BaseModel):
@@ -165,12 +184,19 @@ async def upload_document(
         raise HTTPException(status_code=422, detail="uploaded document file is empty")
 
     user_identifier = current_user.user_key
+    governance_context = DocumentUploadGovernanceContext.from_upload(
+        file_name=file_name,
+        extension=extension,
+        content=content,
+    )
+    index_readiness = state.document_upload_governance.evaluate(governance_context)
     item = DocumentUploadItem.model_validate(
         state.document_upload_store.add_upload(
             file_name=file_name,
             extension=extension,
             content=content,
             created_by=user_identifier,
+            index_readiness=index_readiness,
         )
     )
     record_operation(
@@ -186,6 +212,9 @@ async def upload_document(
             index_status=item.index_status,
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,
+            index_readiness_checks=[
+                check.model_dump() for check in item.index_readiness.checks
+            ],
         ),
     )
     return DocumentUploadResponse(

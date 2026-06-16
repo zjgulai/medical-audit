@@ -363,7 +363,30 @@ describe("api-client", () => {
                   "dlp-review-required",
                   "manual-index-approval-required"
                 ],
-                next_action: "complete-upload-governance"
+                next_action: "complete-upload-governance",
+                checks: [
+                  {
+                    check_type: "virus-scan",
+                    provider: "unconfigured",
+                    status: "blocked",
+                    blocker: "virus-scan-required",
+                    detail: "virus scan adapter is not configured for pdf upload"
+                  },
+                  {
+                    check_type: "dlp-review",
+                    provider: "unconfigured",
+                    status: "blocked",
+                    blocker: "dlp-review-required",
+                    detail: "DLP review adapter is not configured for pdf upload"
+                  },
+                  {
+                    check_type: "manual-index-approval",
+                    provider: "manual",
+                    status: "blocked",
+                    blocker: "manual-index-approval-required",
+                    detail: "manual index approval is required before ingesting policy.pdf"
+                  }
+                ]
               }
             }
           ],
@@ -416,7 +439,30 @@ describe("api-client", () => {
                 "dlp-review-required",
                 "manual-index-approval-required"
               ],
-              next_action: "complete-upload-governance"
+              next_action: "complete-upload-governance",
+              checks: [
+                {
+                  check_type: "virus-scan",
+                  provider: "unconfigured",
+                  status: "blocked",
+                  blocker: "virus-scan-required",
+                  detail: "virus scan adapter is not configured for pdf upload"
+                },
+                {
+                  check_type: "dlp-review",
+                  provider: "unconfigured",
+                  status: "blocked",
+                  blocker: "dlp-review-required",
+                  detail: "DLP review adapter is not configured for pdf upload"
+                },
+                {
+                  check_type: "manual-index-approval",
+                  provider: "manual",
+                  status: "blocked",
+                  blocker: "manual-index-approval-required",
+                  detail: "manual index approval is required before ingesting policy.pdf"
+                }
+              ]
             }
           },
           store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
