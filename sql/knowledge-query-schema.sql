@@ -207,6 +207,55 @@ CREATE TABLE IF NOT EXISTS document_upload_records (
     CONSTRAINT ck_document_upload_records_status CHECK (status IN ('retained'))
 );
 
+CREATE TABLE IF NOT EXISTS document_storage_objects (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_key text NOT NULL REFERENCES document_upload_records(upload_key) ON DELETE CASCADE,
+    provider text NOT NULL,
+    bucket text,
+    region text,
+    object_key text NOT NULL,
+    object_version text,
+    etag text,
+    sha256 text NOT NULL,
+    size_bytes integer NOT NULL,
+    storage_class text,
+    encryption_mode text,
+    storage_status text NOT NULL,
+    retention_until timestamptz,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_document_storage_objects_upload_provider UNIQUE (upload_key, provider),
+    CONSTRAINT ck_document_storage_objects_provider CHECK (provider IN ('local', 'tencent-cos')),
+    CONSTRAINT ck_document_storage_objects_status
+        CHECK (storage_status IN ('local-quarantine', 'object-stored', 'object-missing')),
+    CONSTRAINT ck_document_storage_objects_sha256_length CHECK (length(sha256) = 64),
+    CONSTRAINT ck_document_storage_objects_size_bytes_positive CHECK (size_bytes > 0)
+);
+
+CREATE TABLE IF NOT EXISTS document_upload_governance_jobs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_key text NOT NULL UNIQUE,
+    upload_key text NOT NULL REFERENCES document_upload_records(upload_key) ON DELETE CASCADE,
+    job_type text NOT NULL,
+    provider text NOT NULL,
+    external_job_id text,
+    status text NOT NULL,
+    result_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error_message text,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_retry_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz,
+    CONSTRAINT ck_document_upload_governance_jobs_job_type
+        CHECK (job_type IN ('virus-scan', 'dlp-review', 'object-sync')),
+    CONSTRAINT ck_document_upload_governance_jobs_status
+        CHECK (status IN ('pending', 'running', 'passed', 'blocked', 'failed', 'timeout')),
+    CONSTRAINT ck_document_upload_governance_jobs_attempt_count_non_negative
+        CHECK (attempt_count >= 0)
+);
+
 CREATE TABLE IF NOT EXISTS review_tasks (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     external_task_id text NOT NULL UNIQUE,
@@ -544,6 +593,24 @@ CREATE INDEX IF NOT EXISTS idx_document_upload_records_sha256
     ON document_upload_records (sha256);
 CREATE INDEX IF NOT EXISTS idx_document_upload_records_status
     ON document_upload_records (status);
+CREATE INDEX IF NOT EXISTS idx_document_storage_objects_upload_key
+    ON document_storage_objects (upload_key);
+CREATE INDEX IF NOT EXISTS idx_document_storage_objects_provider
+    ON document_storage_objects (provider);
+CREATE INDEX IF NOT EXISTS idx_document_storage_objects_status
+    ON document_storage_objects (storage_status);
+CREATE INDEX IF NOT EXISTS idx_document_storage_objects_sha256
+    ON document_storage_objects (sha256);
+CREATE INDEX IF NOT EXISTS idx_document_upload_governance_jobs_upload_key
+    ON document_upload_governance_jobs (upload_key);
+CREATE INDEX IF NOT EXISTS idx_document_upload_governance_jobs_job_type
+    ON document_upload_governance_jobs (job_type);
+CREATE INDEX IF NOT EXISTS idx_document_upload_governance_jobs_status
+    ON document_upload_governance_jobs (status);
+CREATE INDEX IF NOT EXISTS idx_document_upload_governance_jobs_external_job
+    ON document_upload_governance_jobs (external_job_id);
+CREATE INDEX IF NOT EXISTS idx_document_upload_governance_jobs_next_retry
+    ON document_upload_governance_jobs (next_retry_at);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_status ON review_tasks (status);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_at ON review_tasks (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_tasks_created_by ON review_tasks (created_by);
