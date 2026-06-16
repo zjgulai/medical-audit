@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-06-15
+updated: 2026-06-16
 owner: self
 source: human+ai
 ---
@@ -26,7 +26,7 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-冻结日期：`2026-06-15`
+冻结日期：`2026-06-16`
 
 ### 2.1 生产状态
 
@@ -35,7 +35,7 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 当前生产部署 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`
+- 当前生产部署 SHA：`4901d6705a60494542f42b98aa0e6766e3224114`
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -50,8 +50,10 @@ source: human+ai
 - 最新 AI 数据分析上传留存 UI 联调报告：`tmp/outputs/production-analytics-ui-upload-retention-e2e-20260615.json`，状态 `pass`。
 - 最新文档检索生产查询 smoke 报告：`tmp/outputs/production-documents-query-smoke-20260614.json`，状态 `pass`。
 - 最新文档检索边界能力生产写入型 E2E 报告：`tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json`，状态 `pass`。
-- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，`p0_count=0`，`p1_count=0`。
-- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json`，状态 `pass`，`issues=[]`，`.deploy-sha=6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`。
+- 最新生产基础 E2E smoke 报告：`tmp/outputs/production-e2e-smoke-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`。
+- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
+- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，`issues=[]`，`.deploy-sha=4901d6705a60494542f42b98aa0e6766e3224114`。
+- 最新部署工具链修复结论：PR #95 和 PR #96 均已合并但生产部署验证失败，原因均为 DB 备份完成后本地 SSH 仍挂起；PR #97 已合并、部署并验证通过，有效修复点为远端脚本式 `_ssh` 调用统一使用 `ssh -n`。
 - 最新国家规章平台增量激活后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
 - 最新索引管理拒绝审计部署后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`。
 - 最新索引管理拒绝审计专项生产 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`；普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，并在持久化 `audit_log_events` 中记录 `index-admin-access-denied`。
@@ -68,18 +70,18 @@ source: human+ai
 - 文档检索生产查询结果：全库重复收费、法规政策过滤和医保目录过滤 `POST /api/v1/query` 均返回 `200`，每个用例返回 `3` 条引用、证据分组和 `query_log_index`；首个引用 `chunk_id` 对应 `/pages/preview/{chunk_id}` 均返回 `200`。
 - 文档检索边界能力生产结果：生产已应用 `document_upload_records` 表和索引；个人上传记录 `document-upload-1ba9d6e00cb7` 的 DB 行、宿主机文件 `/opt/medical-audit/document-uploads/2026/06/15/document-upload-1ba9d6e00cb7.txt` 和 `sha256=88fe90530c937d6ea6b534dafff636d5b7dec15b7c1131d786e5f00b007b466e` 均校验通过；普通审计员只能读取本人上传，其他普通审计员不可见，管理员可读全部个人上传；`/api/v1/query` 已验证 `source_collection=medical-insurance-laws` 在 citation 和 basis item 中直接回显。
 
-生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、索引管理拒绝审计、门户配置写入拒绝审计、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、病毒扫描、DLP/脱敏改写、对象存储、个人材料入索引、下载权限隔离或案件级合规闭环已完成。
+生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、索引管理拒绝审计、门户配置写入拒绝审计、权限上下文兼容层、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路、AI 数据分析上传留存/历史记录链路和部署脚本 DB 备份后不中断继续执行链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、病毒扫描、DLP/脱敏改写、对象存储、个人材料入索引、下载权限隔离或案件级合规闭环已完成。
 
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit_minimal_pr`
 - 当前本地工作分支：以执行时 `git status` 为准；本轮状态同步使用 `codex/*` docs-only 分支。
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前文档同步分支：PR #91 和后续 docs-only 状态修正分支。
-- GitHub `main` 当前已包含 PR #90 代码合并和 PR #91 docs-only 生产状态同步；docs-only 提交可能领先生产 `.deploy-sha`。
-- 当前生产运行代码 SHA：`6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`
-- 本轮已完成 PR #90 合并、腾讯云生产部署和门户配置写入拒绝审计专项 E2E；智能体和项目成员写接口的未知角色拒绝审计已从“代码层已补”推进到“生产已部署并验收通过”。
-- 当前生产运行代码是 `origin/main` 的祖先；`origin/main` 若领先，仅代表 docs-only 状态同步，不能误判为生产已部署到 docs-only 提交。
+- 当前文档同步分支：`codex/post-ssh-stdin-fix-state-sync`。
+- GitHub `main` 当前已包含 PR #97 代码合并；截至本次核验，本地 `main`、`origin/main` 和生产 `.deploy-sha` 均为 `4901d6705a60494542f42b98aa0e6766e3224114`。
+- 当前生产运行代码 SHA：`4901d6705a60494542f42b98aa0e6766e3224114`
+- 本轮已完成 PR #95、PR #96、PR #97 的部署工具链修复闭环；#95/#96 只能作为失败验证记录，#97 才是已生效生产修复。
+- 当前 `main` 与生产部署 SHA 已重新对齐；后续若合并 docs-only PR，必须重新区分 `main` 领先生产与生产已部署两个事实。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -552,6 +554,39 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 本轮只补齐智能体和项目成员写接口的未知角色拒绝审计，不等于完成真实登录会话、科室级授权、组织模型或全站 RBAC。
 - 生产查询仍为 `fallback_used=true`，不代表真实生成模型能力可用。
 
+### 2.16 部署脚本 SSH stdin 修复生产部署状态
+
+验收日期：`2026-06-16`
+
+本轮已将部署脚本 SSH stdin 修复部署到生产，结论为 `pass`。
+
+失败链路：
+
+- PR #95 `codex/deploy-tooling-debt-fix` 已合并到 `main`，merge commit 为 `8281a0ea123cbbd5df519e20fd5c4cdf77b87e30`；生产部署验证失败，DB 备份已完成但本地 SSH 仍挂起，生产 `.deploy-sha` 未更新。
+- PR #96 `codex/deploy-pgdump-stdin-fix` 已合并到 `main`，merge commit 为 `33522d24983b188587feed3b9a45cad066c87b4a`；生产部署验证失败，plain `docker exec ... pg_dump` 仍未解决远端脚本消耗 stdin 的根因，生产 `.deploy-sha` 未更新。
+- PR #97 `codex/deploy-ssh-stdin-fix` 已合并到 `main` 并完成生产部署，merge commit 为 `4901d6705a60494542f42b98aa0e6766e3224114`；有效修复点为远端脚本式 `_ssh` 调用统一使用 `ssh -n`，`rsync` 传输调用保持原方式。
+
+部署事实：
+
+- 部署提交：`4901d6705a60494542f42b98aa0e6766e3224114`。
+- 部署戳：`ssh-stdin-fix-20260616`。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-ssh-stdin-fix-20260616.sql.gz`，`gzip -t` 通过，大小约 `979M`。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `176M`。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `430K`。
+- 远端 `.deploy-sha`、本地 `main` 和 `origin/main` 均为 `4901d6705a60494542f42b98aa0e6766e3224114`。
+- `medical_audit_app` 与 `medical_audit_pg` 均为 `running healthy`；共享入口 `ai_video_nginx nginx -t` 通过。
+
+验收证据：
+
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，`issues=[]`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`。
+
+边界：
+
+- 本轮只关闭部署脚本在 DB 备份完成后挂起的工程脆弱点，不代表新增产品功能、权限模型、生成模型、schema 或生产配置能力。
+- #95/#96 只作为失败验证和根因收敛记录，不能写成已生效生产部署。
+
 ## 3. 债务分级
 
 | 等级 | 定义 | 处理原则 |
@@ -567,9 +602,9 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询、来源集合回显、文档权限接口和个人材料留存写入型验收；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补上传文件病毒扫描/DLP/脱敏/对象存储治理、真实认证权限、个人材料入索引、知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 使用 `claude-haiku-4-5-20251001` 仍返回 `401 invalid x-api-key`；历史 Kimi chat 403/401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 等待新的可用服务端 chat provider key；先跑 smoke 和真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
-| P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前生产 API 仍主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events`；已部署智能体和项目成员写接口的未知角色拒绝审计，生产专项 smoke 证明 `guest` 访问记录 `agent-access-denied` 和 `project-member-access-denied` 并持久化到 `audit_log_events`；真实权限模型架构已固化到 `docs/architecture/architecture-auth-rbac-stable.md`；Phase A 后端兼容层已完成代码实现和本地测试，新增 `CurrentUser`、`PermissionContext`、`it-admin -> system-admin` 归一化和统一 `auth_source=legacy-header` 审计 payload，尚未生产部署 | 无法满足生产级审计系统权限边界 | 下一步落 auth schema、真实会话、前端去硬编码 header、生产部署和跨模块绕过测试 | 未授权路径 401/403；审计日志记录访问拒绝；伪造 `X-Role` 无效；真实会话与角色模型验收通过 |
+| P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前生产 API 仍主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events`；已部署智能体和项目成员写接口的未知角色拒绝审计，生产专项 smoke 证明 `guest` 访问记录 `agent-access-denied` 和 `project-member-access-denied` 并持久化到 `audit_log_events`；真实权限模型架构已固化到 `docs/architecture/architecture-auth-rbac-stable.md`；Phase A 后端兼容层已完成生产部署，新增 `CurrentUser`、`PermissionContext`、`it-admin -> system-admin` 归一化和统一 `auth_source=legacy-header` 审计 payload，生产专项 smoke 已验证旧/新角色兼容和关键写接口拒绝审计 | 无法满足生产级审计系统权限边界 | 下一步落 auth schema、真实会话、前端去硬编码 header、跨模块绕过测试和生产验收 | 未授权路径 401/403；审计日志记录访问拒绝；伪造 `X-Role` 无效；真实会话与角色模型验收通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和病毒扫描未完成 | 当前仅 HMAC 归档签名和本地附件归档 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA 和文档状态同步到 `6ae514cf994ff0d0da612d5ea9bcce82bb7df1bc`；远端 main 已包含 docs-only 状态同步，可能领先生产部署 SHA；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 本轮已将生产 SHA、`origin/main` 和文档状态同步到 `4901d6705a60494542f42b98aa0e6766e3224114`；PR #95/#96 为失败验证记录，PR #97 为已生效生产修复；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致 |
 
 ## 5. P1 债务台账
 
