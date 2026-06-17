@@ -7,8 +7,9 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from importlib import util as importlib_util
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Literal, Protocol, TypedDict, cast
 from uuid import uuid4
 
 from sqlalchemy import create_engine, inspect, select
@@ -43,6 +44,94 @@ class TencentCosSdkModule(Protocol):
 
     def CosS3Client(self, config: object) -> TencentCosSdkClient:  # noqa: N802
         pass
+
+
+class TencentCosBootstrapPreflightChecks(TypedDict):
+    provider_is_tencent_cos: bool
+    cos_sdk_bootstrap_enabled: bool
+    cos_bucket_configured: bool
+    cos_region_configured: bool
+    secret_id_env_name_configured: bool
+    secret_key_env_name_configured: bool
+    secret_id_env_value_present: bool
+    secret_key_env_value_present: bool
+    qcloud_cos_available: bool
+
+
+class TencentCosBootstrapSecretEnvNames(TypedDict):
+    secret_id: str | None
+    secret_key: str | None
+
+
+class TencentCosBootstrapPreflightReport(TypedDict):
+    status: Literal["pass", "blocked"]
+    provider: str
+    cos_bucket: str | None
+    cos_region: str | None
+    cos_prefix: str
+    cos_sdk_bootstrap_enabled: bool
+    secret_env_names: TencentCosBootstrapSecretEnvNames
+    checks: TencentCosBootstrapPreflightChecks
+    issues: list[str]
+
+
+def tencent_cos_bootstrap_preflight_from_settings(
+    settings: DocumentStorageSettings,
+    *,
+    environ: Mapping[str, str] | None = None,
+    qcloud_cos_available: bool | None = None,
+) -> TencentCosBootstrapPreflightReport:
+    selected_environ = os.environ if environ is None else environ
+    secret_id_env = settings.cos_secret_id_env
+    secret_key_env = settings.cos_secret_key_env
+    sdk_available = (
+        _qcloud_cos_sdk_available() if qcloud_cos_available is None else qcloud_cos_available
+    )
+    checks: TencentCosBootstrapPreflightChecks = {
+        "provider_is_tencent_cos": settings.provider == "tencent-cos",
+        "cos_sdk_bootstrap_enabled": settings.cos_sdk_bootstrap_enabled,
+        "cos_bucket_configured": bool(settings.cos_bucket),
+        "cos_region_configured": bool(settings.cos_region),
+        "secret_id_env_name_configured": bool(secret_id_env),
+        "secret_key_env_name_configured": bool(secret_key_env),
+        "secret_id_env_value_present": _env_value_present(selected_environ, secret_id_env),
+        "secret_key_env_value_present": _env_value_present(selected_environ, secret_key_env),
+        "qcloud_cos_available": sdk_available,
+    }
+    issues: list[str] = []
+    if not checks["provider_is_tencent_cos"]:
+        issues.append("document-storage-provider-not-tencent-cos")
+    if not checks["cos_sdk_bootstrap_enabled"]:
+        issues.append("cos-sdk-bootstrap-disabled")
+    if not checks["cos_bucket_configured"]:
+        issues.append("cos-bucket-missing")
+    if not checks["cos_region_configured"]:
+        issues.append("cos-region-missing")
+    if not checks["secret_id_env_name_configured"]:
+        issues.append("cos-secret-id-env-name-missing")
+    if not checks["secret_key_env_name_configured"]:
+        issues.append("cos-secret-key-env-name-missing")
+    if not checks["secret_id_env_value_present"]:
+        issues.append("cos-secret-id-env-value-missing")
+    if not checks["secret_key_env_value_present"]:
+        issues.append("cos-secret-key-env-value-missing")
+    if not checks["qcloud_cos_available"]:
+        issues.append("qcloud-cos-sdk-not-installed")
+
+    return {
+        "status": "pass" if not issues else "blocked",
+        "provider": settings.provider,
+        "cos_bucket": settings.cos_bucket,
+        "cos_region": settings.cos_region,
+        "cos_prefix": settings.cos_prefix,
+        "cos_sdk_bootstrap_enabled": settings.cos_sdk_bootstrap_enabled,
+        "secret_env_names": {
+            "secret_id": secret_id_env,
+            "secret_key": secret_key_env,
+        },
+        "checks": checks,
+        "issues": issues,
+    }
 
 
 def tencent_cos_put_object_client_from_settings(
@@ -128,6 +217,16 @@ def _import_qcloud_cos_module() -> TencentCosSdkModule:
             "qcloud_cos is required when Tencent COS SDK bootstrap is enabled"
         ) from exc
     return cast(TencentCosSdkModule, module)
+
+
+def _qcloud_cos_sdk_available() -> bool:
+    return importlib_util.find_spec("qcloud_cos") is not None
+
+
+def _env_value_present(environ: Mapping[str, str], env_name: str | None) -> bool:
+    if not env_name:
+        return False
+    return bool(environ.get(env_name, "").strip())
 
 
 class DocumentUploadStore(Protocol):

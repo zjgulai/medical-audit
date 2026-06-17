@@ -1,3 +1,7 @@
+import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
@@ -21,6 +25,7 @@ from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
     document_object_storage_from_settings,
     document_storage_objects_schema_ready,
+    tencent_cos_bootstrap_preflight_from_settings,
     tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.core.config import DocumentStorageSettings
@@ -78,8 +83,7 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
     assert result.bucket == "medical-audit-prod"
     assert result.region == "ap-guangzhou"
     assert result.object_key == (
-        "personal-materials/test/2026/06/17/"
-        f"document-upload-cos123/{'b' * 64}.txt"
+        f"personal-materials/test/2026/06/17/document-upload-cos123/{'b' * 64}.txt"
     )
     assert "patient-report" not in result.object_key
     assert result.etag == '"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"'
@@ -311,6 +315,128 @@ def test_tencent_cos_sdk_bootstrap_builds_client_from_fake_module() -> None:
         }
     ]
     assert module.client_configs == [module.configs[0]]
+
+
+def test_tencent_cos_bootstrap_preflight_reports_blockers_without_secret_leak() -> None:
+    report = tencent_cos_bootstrap_preflight_from_settings(
+        DocumentStorageSettings.model_validate(
+            {
+                "provider": "tencent-cos",
+                "cos_bucket": "medical-audit-prod",
+                "cos_region": "ap-guangzhou",
+                "cos_secret_id_env": "COS_SECRET_ID",
+                "cos_secret_key_env": "COS_SECRET_KEY",
+                "cos_sdk_bootstrap_enabled": True,
+            }
+        ),
+        environ={"COS_SECRET_ID": "sid-secret"},
+        qcloud_cos_available=False,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["provider"] == "tencent-cos"
+    assert "cos-secret-key-env-value-missing" in report["issues"]
+    assert "qcloud-cos-sdk-not-installed" in report["issues"]
+    assert report["secret_env_names"] == {
+        "secret_id": "COS_SECRET_ID",
+        "secret_key": "COS_SECRET_KEY",
+    }
+    assert report["checks"]["secret_id_env_value_present"] is True
+    assert report["checks"]["secret_key_env_value_present"] is False
+    assert report["checks"]["qcloud_cos_available"] is False
+    assert "sid-secret" not in json.dumps(report, ensure_ascii=False)
+
+
+def test_tencent_cos_bootstrap_preflight_passes_when_dependencies_are_ready() -> None:
+    report = tencent_cos_bootstrap_preflight_from_settings(
+        DocumentStorageSettings.model_validate(
+            {
+                "provider": "tencent-cos",
+                "cos_bucket": "medical-audit-prod",
+                "cos_region": "ap-guangzhou",
+                "cos_secret_id_env": "COS_SECRET_ID",
+                "cos_secret_key_env": "COS_SECRET_KEY",
+                "cos_sdk_bootstrap_enabled": True,
+            }
+        ),
+        environ={"COS_SECRET_ID": "sid-secret", "COS_SECRET_KEY": "key-secret"},
+        qcloud_cos_available=True,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["checks"] == {
+        "provider_is_tencent_cos": True,
+        "cos_sdk_bootstrap_enabled": True,
+        "cos_bucket_configured": True,
+        "cos_region_configured": True,
+        "secret_id_env_name_configured": True,
+        "secret_key_env_name_configured": True,
+        "secret_id_env_value_present": True,
+        "secret_key_env_value_present": True,
+        "qcloud_cos_available": True,
+    }
+    assert "sid-secret" not in json.dumps(report, ensure_ascii=False)
+    assert "key-secret" not in json.dumps(report, ensure_ascii=False)
+
+
+def test_document_cos_bootstrap_preflight_script_outputs_json(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "knowledge-query-engine-cos.yaml"
+    config_path.write_text(
+        """
+data_root: data/医保审核前期资料
+index_root: tmp/knowledge-query-indexes
+database_url: postgresql+psycopg://medical_audit_kb:medical_audit_kb_dev@localhost:5433/medical_audit_kb
+model_provider:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  embedding_model: text-embedding-3-small
+  rerank_model: null
+  chat_model: gpt-4.1-mini
+document_storage:
+  provider: tencent-cos
+  cos_bucket: medical-audit-prod
+  cos_region: ap-guangzhou
+  cos_secret_id_env: COS_SECRET_ID
+  cos_secret_key_env: COS_SECRET_KEY
+  cos_sdk_bootstrap_enabled: true
+source_collection_weights:
+  medical-insurance-catalog: 1.25
+  supervision-rules-knowledge: 1.35
+  risk-negative-list: 1.1
+  medical-insurance-laws: 1.0
+""".strip(),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run-document-cos-bootstrap-preflight.py",
+            "--config",
+            str(config_path),
+            "--qcloud-cos-availability",
+            "available",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "COS_SECRET_ID": "sid-secret",
+            "COS_SECRET_KEY": "key-secret",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    report = json.loads(completed.stdout)
+    assert report["status"] == "pass"
+    assert report["checks"]["qcloud_cos_available"] is True
+    assert "sid-secret" not in completed.stdout
+    assert "key-secret" not in completed.stdout
 
 
 def test_document_upload_store_can_record_local_storage_object(
