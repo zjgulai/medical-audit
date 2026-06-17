@@ -90,6 +90,51 @@ class TencentCosPutObjectClient(Protocol):
         pass
 
 
+class TencentCosSdkClient(Protocol):
+    def put_object(self, **kwargs: object) -> Mapping[str, object]:
+        pass
+
+
+@dataclass(frozen=True, slots=True)
+class TencentCosSdkPutObjectClient:
+    sdk_client: TencentCosSdkClient
+
+    def put_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: dict[str, str],
+        encryption_mode: str,
+        kms_key_id: str | None,
+        storage_class: str,
+    ) -> Mapping[str, str | None]:
+        # qcloud_cos binds Region in CosConfig; its put_object call does not take Region.
+        _ = region
+        put_kwargs = {
+            "Bucket": bucket,
+            "Key": object_key,
+            "Body": content,
+            "ContentType": content_type,
+            "StorageClass": storage_class,
+            "Metadata": _cos_sdk_metadata(metadata),
+        }
+        put_kwargs.update(
+            _cos_sdk_encryption_args(
+                encryption_mode=encryption_mode,
+                kms_key_id=kms_key_id,
+            )
+        )
+        response = self.sdk_client.put_object(**put_kwargs)
+        return {
+            "etag": _string_mapping_value(response, "ETag"),
+            "version_id": _string_mapping_value(response, "VersionId"),
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class LocalDocumentObjectStorage:
     upload_root: Path
@@ -520,6 +565,32 @@ def _content_type_for_extension(extension: str) -> str:
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
     }.get(extension.lower(), "application/octet-stream")
+
+
+def _cos_sdk_metadata(metadata: dict[str, str]) -> dict[str, str]:
+    return {f"x-cos-meta-{key.replace('_', '-')}": value for key, value in metadata.items()}
+
+
+def _cos_sdk_encryption_args(
+    *,
+    encryption_mode: str,
+    kms_key_id: str | None,
+) -> dict[str, str]:
+    if encryption_mode == "sse-cos":
+        return {"ServerSideEncryption": "AES256"}
+    if encryption_mode == "sse-kms":
+        args = {"ServerSideEncryption": "cos/kms"}
+        if kms_key_id:
+            args["SSEKMSKeyId"] = kms_key_id
+        return args
+    raise ValueError(f"unsupported Tencent COS encryption mode: {encryption_mode}")
+
+
+def _string_mapping_value(mapping: Mapping[str, object], key: str) -> str | None:
+    value = mapping.get(key)
+    if isinstance(value, str):
+        return value
+    return None
 
 
 def _datetime_to_iso(value: datetime | None) -> str | None:

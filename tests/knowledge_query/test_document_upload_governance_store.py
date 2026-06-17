@@ -15,6 +15,7 @@ from medical_audit_kb.api.document_upload_governance_store import (
     LocalDocumentObjectStorage,
     SqlAlchemyDocumentUploadGovernanceStore,
     TencentCosDocumentObjectStorage,
+    TencentCosSdkPutObjectClient,
 )
 from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
@@ -105,6 +106,68 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
             "storage_class": "STANDARD_IA",
         }
     ]
+
+
+def test_tencent_cos_sdk_client_translates_contract_to_python_sdk_put_object() -> None:
+    sdk_client = FakeTencentCosSdkClient(
+        response={
+            "ETag": '"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"',
+            "VersionId": "cos-version-1",
+        }
+    )
+    client = TencentCosSdkPutObjectClient(sdk_client=sdk_client)
+
+    result = client.put_object(
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        object_key="personal-materials/prod/2026/06/17/object.txt",
+        content=b"policy evidence",
+        content_type="text/plain",
+        metadata={"sha256": "b" * 64, "upload_key": "document-upload-cos123"},
+        encryption_mode="sse-cos",
+        kms_key_id=None,
+        storage_class="STANDARD_IA",
+    )
+
+    assert result == {
+        "etag": '"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"',
+        "version_id": "cos-version-1",
+    }
+    assert sdk_client.calls == [
+        {
+            "Bucket": "medical-audit-prod",
+            "Key": "personal-materials/prod/2026/06/17/object.txt",
+            "Body": b"policy evidence",
+            "ContentType": "text/plain",
+            "StorageClass": "STANDARD_IA",
+            "Metadata": {
+                "x-cos-meta-sha256": "b" * 64,
+                "x-cos-meta-upload-key": "document-upload-cos123",
+            },
+            "ServerSideEncryption": "AES256",
+        }
+    ]
+
+
+def test_tencent_cos_sdk_client_translates_kms_encryption() -> None:
+    sdk_client = FakeTencentCosSdkClient(response={"ETag": '"etag"', "VersionId": None})
+    client = TencentCosSdkPutObjectClient(sdk_client=sdk_client)
+
+    result = client.put_object(
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        object_key="personal-materials/prod/object.txt",
+        content=b"policy evidence",
+        content_type="text/plain",
+        metadata={"sha256": "c" * 64},
+        encryption_mode="sse-kms",
+        kms_key_id="kms-key-1",
+        storage_class="STANDARD",
+    )
+
+    assert result == {"etag": '"etag"', "version_id": None}
+    assert sdk_client.calls[0]["ServerSideEncryption"] == "cos/kms"
+    assert sdk_client.calls[0]["SSEKMSKeyId"] == "kms-key-1"
 
 
 def test_document_object_storage_factory_builds_local_by_default(tmp_path: Path) -> None:
@@ -372,3 +435,13 @@ class FakeTencentCosClient:
             }
         )
         return {"etag": self.etag, "version_id": self.version_id}
+
+
+class FakeTencentCosSdkClient:
+    def __init__(self, *, response: dict[str, object]) -> None:
+        self.response = response
+        self.calls: list[dict[str, object]] = []
+
+    def put_object(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return dict(self.response)
