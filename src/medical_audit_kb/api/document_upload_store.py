@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from medical_audit_kb.api.document_upload_governance import (
@@ -25,6 +26,7 @@ from medical_audit_kb.api.document_upload_governance_store import (
 from medical_audit_kb.db.models import Base, DocumentStorageObject, DocumentUploadRecord, utc_now
 
 DOCUMENT_UPLOAD_ID_PREFIX = "document-upload-"
+DOCUMENT_STORAGE_OBJECTS_TABLE = "document_storage_objects"
 
 
 class DocumentUploadStore(Protocol):
@@ -333,3 +335,18 @@ def _connect_args(database_url: str) -> dict[str, object]:
     if database_url.startswith("sqlite:"):
         return {"check_same_thread": False}
     return {}
+
+
+def document_storage_objects_schema_ready(database_url: str) -> bool:
+    engine = create_engine(
+        _sync_database_url(database_url),
+        connect_args=_connect_args(database_url),
+        pool_pre_ping=True,
+    )
+    try:
+        with engine.connect() as connection:
+            return bool(inspect(connection).has_table(DOCUMENT_STORAGE_OBJECTS_TABLE))
+    except SQLAlchemyError:
+        return False
+    finally:
+        engine.dispose()

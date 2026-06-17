@@ -9,7 +9,10 @@ from medical_audit_kb.api.document_upload_governance_store import (
     LocalDocumentObjectStorage,
     SqlAlchemyDocumentUploadGovernanceStore,
 )
-from medical_audit_kb.api.document_upload_store import SqlAlchemyDocumentUploadStore
+from medical_audit_kb.api.document_upload_store import (
+    SqlAlchemyDocumentUploadStore,
+    document_storage_objects_schema_ready,
+)
 
 
 def test_local_document_object_storage_keeps_existing_partitioned_path(
@@ -68,6 +71,22 @@ def test_document_upload_store_can_record_local_storage_object(
         "storage_backend": "local-filesystem",
         "file_name": "policy.txt",
     }
+
+
+def test_document_storage_objects_schema_ready_detects_created_table(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-storage-schema.db'}"
+
+    assert document_storage_objects_schema_ready(database_url) is False
+
+    SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+    )
+
+    assert document_storage_objects_schema_ready(database_url) is True
 
 
 def test_document_upload_governance_store_tracks_storage_and_jobs(

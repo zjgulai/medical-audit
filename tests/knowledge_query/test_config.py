@@ -11,6 +11,7 @@ from medical_audit_kb.core.config import (
     DOCUMENT_STORAGE_COS_PREFIX_ENV,
     DOCUMENT_STORAGE_COS_REGION_ENV,
     DOCUMENT_STORAGE_PROVIDER_ENV,
+    DOCUMENT_STORAGE_RECORD_OBJECTS_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV,
     DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV,
     DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER_ENV,
@@ -36,6 +37,7 @@ def test_default_config_loads() -> None:
     assert settings.document_storage.cos_bucket is None
     assert settings.document_storage.cos_prefix == "personal-materials/prod"
     assert settings.document_storage.signed_url_ttl_seconds == 120
+    assert settings.document_storage.record_storage_objects is False
     assert REQUIRED_COLLECTIONS.issubset(settings.source_collection_weights)
 
 
@@ -121,6 +123,7 @@ def test_environment_overrides_document_storage(
     monkeypatch.setenv(DOCUMENT_STORAGE_COS_ENCRYPTION_ENV, "sse-kms")
     monkeypatch.setenv(DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV, "180")
     monkeypatch.setenv(DOCUMENT_OBJECT_RETENTION_DAYS_ENV, "365")
+    monkeypatch.setenv(DOCUMENT_STORAGE_RECORD_OBJECTS_ENV, "true")
 
     settings = load_settings()
 
@@ -131,6 +134,16 @@ def test_environment_overrides_document_storage(
     assert settings.document_storage.cos_encryption == "sse-kms"
     assert settings.document_storage.signed_url_ttl_seconds == 180
     assert settings.document_storage.object_retention_days == 365
+    assert settings.document_storage.record_storage_objects is True
+
+
+def test_environment_rejects_invalid_document_storage_boolean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(DOCUMENT_STORAGE_RECORD_OBJECTS_ENV, "maybe")
+
+    with pytest.raises(ValueError, match="MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS"):
+        load_settings()
 
 
 def test_config_rejects_invalid_document_upload_governance_provider() -> None:

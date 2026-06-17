@@ -14,7 +14,11 @@ from medical_audit_kb.api.analytics_upload_store import (
     InMemoryAnalyticsUploadStore,
     SqlAlchemyAnalyticsUploadStore,
 )
-from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.app import (
+    ApiState,
+    _document_storage_object_records_enabled,
+    create_app,
+)
 from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernanceContext,
     DocumentUploadGovernancePolicy,
@@ -35,6 +39,7 @@ from medical_audit_kb.api.query_history_store import (
     SqlAlchemyQueryHistoryStore,
 )
 from medical_audit_kb.core.config import (
+    DocumentStorageSettings,
     DocumentUploadGovernanceSettings,
     KnowledgeQuerySettings,
     ModelProviderSettings,
@@ -222,9 +227,7 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()[
-        "items"
-    ]
+    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()["items"]
     persisted_projects = second_client.get("/projects").json()["items"]
     catalog_project = next(
         item for item in persisted_projects if item["id"] == "CATALOG-LIMIT-202606"
@@ -485,9 +488,10 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         "dlp-review-required",
         "manual-index-approval-required",
     ]
-    assert state.operation_logs[-1]["payload"]["index_readiness_checks"] == uploaded[
-        "index_readiness"
-    ]["checks"]
+    assert (
+        state.operation_logs[-1]["payload"]["index_readiness_checks"]
+        == uploaded["index_readiness"]["checks"]
+    )
     assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
     assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
@@ -685,8 +689,7 @@ def test_documents_upload_manual_index_approval_marks_ready_and_persists(
                 "status": "passed",
                 "blocker": None,
                 "detail": (
-                    "manual index approval approved by head-1: "
-                    "审查通过，准许进入后续入索引队列。"
+                    "manual index approval approved by head-1: 审查通过，准许进入后续入索引队列。"
                 ),
             },
         ],
@@ -904,6 +907,41 @@ def test_documents_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "unsupported document file extension"
+
+
+def test_api_state_gates_document_storage_object_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enabled_settings = _knowledge_query_settings(
+        tmp_path / "enabled",
+        document_storage=DocumentStorageSettings(record_storage_objects=True),
+    )
+    disabled_settings = _knowledge_query_settings(
+        tmp_path / "disabled",
+        document_storage=DocumentStorageSettings(record_storage_objects=False),
+    )
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
+        lambda _database_url: True,
+    )
+
+    assert _document_storage_object_records_enabled(disabled_settings) is False
+    assert _document_storage_object_records_enabled(enabled_settings) is True
+    enabled_state = ApiState.from_settings(enabled_settings)
+    assert isinstance(enabled_state.document_upload_store, SqlAlchemyDocumentUploadStore)
+    assert enabled_state.document_upload_store.record_storage_objects is True
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
+        lambda _database_url: False,
+    )
+
+    assert _document_storage_object_records_enabled(enabled_settings) is False
+    blocked_state = ApiState.from_settings(enabled_settings)
+    assert isinstance(blocked_state.document_upload_store, SqlAlchemyDocumentUploadStore)
+    assert blocked_state.document_upload_store.record_storage_objects is False
 
 
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:
@@ -1658,23 +1696,7 @@ def _api_state(tmp_path: Path) -> ApiState:
             ]
         ),
     )
-    settings = KnowledgeQuerySettings(
-        data_root=source_root,
-        index_root=tmp_path / "index",
-        database_url="postgresql+psycopg://user:pass@localhost:5433/db",
-        model_provider=ModelProviderSettings(
-            provider="fake",
-            api_key_env="OPENAI_API_KEY",
-            embedding_model="fake",
-            chat_model="fake",
-        ),
-        source_collection_weights={
-            "medical-insurance-catalog": 1.25,
-            "supervision-rules-knowledge": 1.35,
-            "risk-negative-list": 1.1,
-            "medical-insurance-laws": 1.0,
-        },
-    )
+    settings = _knowledge_query_settings(tmp_path, data_root=source_root)
     state = ApiState.from_settings(settings)
     state.audit_log_store = None
     state.analytics_upload_store = InMemoryAnalyticsUploadStore(
@@ -1689,6 +1711,32 @@ def _api_state(tmp_path: Path) -> ApiState:
         source_file.relative_to(source_root).as_posix(),
     )
     return state
+
+
+def _knowledge_query_settings(
+    tmp_path: Path,
+    *,
+    data_root: Path | None = None,
+    document_storage: DocumentStorageSettings | None = None,
+) -> KnowledgeQuerySettings:
+    return KnowledgeQuerySettings(
+        data_root=data_root or tmp_path / "data",
+        index_root=tmp_path / "index",
+        database_url="postgresql+psycopg://user:pass@localhost:5433/db",
+        model_provider=ModelProviderSettings(
+            provider="fake",
+            api_key_env="OPENAI_API_KEY",
+            embedding_model="fake",
+            chat_model="fake",
+        ),
+        document_storage=document_storage or DocumentStorageSettings(),
+        source_collection_weights={
+            "medical-insurance-catalog": 1.25,
+            "supervision-rules-knowledge": 1.35,
+            "risk-negative-list": 1.1,
+            "medical-insurance-laws": 1.0,
+        },
+    )
 
 
 def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
