@@ -33,29 +33,48 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-17 个人材料对象记录元数据部署后当前事实
+### 2026-06-17 COS 生产启用与部署目录清理后当前事实
+
+- PR #117 `codex/personal-material-cos-production-readiness` 已合并到 `main` 并完成生产部署，生产部署 SHA 为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`。
+- PR #117 部署戳：`cos-sdk-local-provider-20260617`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- 部署后将 active env 从默认 local provider 切到 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，切换前 env 备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
+- 当前生产部署 SHA：`a276eeb2cd9018ebac52193103d17f476dbe96a6`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当前 GitHub `main` SHA：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；该提交为 PR #118 部署工具防回归修复，尚未重新部署业务镜像，因此 `main` 领先生产一个 tooling commit。
+- 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`、COS region 为 `ap-guangzhou`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`。
+- `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- COS 写入型 E2E 已执行两次：容器内直连 `/documents/uploads` 写入 `document-upload-73805d5ac457`，公网 `/api/v1/documents/uploads` 写入 `document-upload-6ee427e0fd91`。
+- 两次 COS 写入均已验证 DB `document_upload_records` 增量、`document_storage_objects` 增量、`provider=tencent-cos`、bucket `medical-audit-personal-materials-1304185125`、region `ap-guangzhou`、`storage_status=object-stored`、`encryption_mode=sse-cos`、COS `HEAD` 成功，以及上传人可读、其他普通 `auditor` 不可见、`department-head` 可读全部的权限边界。
+- COS 写入后只读复核报告 `tmp/outputs/production-documents-cos-write-e2e-summary-20260617.json` 为 `status=pass`。
+- COS 写入后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-cos-public-documents-write-20260617.json` 为 `status=pass`，`issues=[]`。
+- PR #118 `codex/production-dotgit-cleanup` 已合并到 `main`，merge commit 为 `e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
+- 生产侧已备份并删除历史残留 `/opt/medical-audit/app/.git` 单文件，备份路径为 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`；清理后 `git rev-parse HEAD` 返回标准非 Git 仓库错误，不再指向本机 worktree。
+- 清理后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`，`issues=[]`；生产 `.deploy-sha` 仍为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`，服务健康不受影响。
+- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，且生产部署目录不再残留本机 worktree Git 指针；不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+
+### 2026-06-17 个人材料对象记录元数据部署后历史事实
 
 - PR #108 `codex/personal-material-storage-schema-gate` 已合并到 `main` 并完成生产部署，merge commit 为 `c7e54e04b4584ee394a9f428f3de13d7c70519b9`。
 - PR #108 使用 `--apply-schema` 部署，生产创建 `document_storage_objects` 表及索引；当时生产 `.deploy-sha=c7e54e04b4584ee394a9f428f3de13d7c70519b9`，但 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS` 初始仍保持关闭。
 - PR #108 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr108-schema-gate-deploy-20260617.json` 为 `status=pass`；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr108-schema-gate-20260617.json` 为 `status=pass`。
 - 打开 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS` 后，首次 `/documents` 真实上传触发 `500`，报告为 `tmp/outputs/production-documents-storage-record-e2e-20260617.json`。根因是 `document_storage_objects` 与 `document_upload_records` 只有外键字段、没有 ORM relationship，flush 顺序可能先插入对象记录再插入上传记录，导致 FK violation。
 - PR #109 `codex/document-storage-fk-flush-fix` 已合并到 `main` 并完成生产部署，merge commit 为 `6296cd504157171a1b212210dfe9bde1aa46b5a3`。
-- 当前生产部署 SHA：`6296cd504157171a1b212210dfe9bde1aa46b5a3`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`6296cd504157171a1b212210dfe9bde1aa46b5a3`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - PR #109 部署戳：`pr109-document-storage-fk-fix-20260617`；部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr109-document-storage-fk-fix-deploy-20260617.json` 为 `status=pass`；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr109-document-storage-fk-fix-20260617.json` 为 `status=pass`。
-- 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`；`medical_audit_app` 容器 `running` 且 `health=healthy`，`medical_audit_pg` 容器 `running` 且 `health=healthy`。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`；`medical_audit_app` 容器 `running` 且 `health=healthy`，`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 生产 `/documents` 对象记录写入型 E2E 报告 `tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json` 为 `status=pass`；上传记录 `document-upload-25f283a6346e` 已写入 `document_upload_records`，对应本地对象记录已写入 `document_storage_objects`。
 - 本轮写入文件：`production-documents-storage-record-e2e-after-pr109-20260617T1011.txt`；宿主机留存路径为 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-25f283a6346e.txt`，`sha256=5a3a4fb1bb03506d1b95825d2f141b0cc05279a3f5653642f022d6bd945fa5e1`。
 - 写入后数据库计数已核验：`document_upload_records=7`、`document_storage_objects=1`；上传人、其他普通审计员和管理员读取边界仍按预期生效。
 - 首次失败上传遗留孤儿文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已确认在 `document_upload_records` 和 `document_storage_objects` 中均无记录；删除前已备份到 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete`，备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`，原文件已删除，删除后 DB 行仍为 `0,0`。
-- 证据边界：本轮只证明个人材料本地对象记录元数据、schema gate、FK flush 顺序、对象记录写入和孤儿文件清理闭环；不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+- 证据边界：PR #109 本轮只证明个人材料本地对象记录元数据、schema gate、FK flush 顺序、对象记录写入和孤儿文件清理闭环；当时不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。个人材料腾讯云 COS 对象存储在后续 PR #117 已单独完成生产启用和公网写入验收。
 
-### 2026-06-17 COS 生产启用前置只读核验
+### 2026-06-17 COS 生产启用前置历史只读核验
 
 - PR #116 `codex/personal-material-cos-preflight` 已合并到 `main`，merge commit 为 `f06013c21ddc9e858a2ac9cd1747bfcf79c82bbe`；该提交只新增本地 COS bootstrap preflight，不代表生产已部署或启用 COS。
-- 当前生产部署 SHA 仍为 `6296cd504157171a1b212210dfe9bde1aa46b5a3`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，后端 `/health` 返回 `status=ok`。
-- 当前生产容器未配置 COS：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER`、COS bucket、COS region、COS secret env name 和 `MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP` 均未在运行容器中设置；容器内 YAML `document_storage={}`。
-- 当前生产镜像中 `qcloud_cos` 不可用；这是 COS 尚未启用的事实，不是运行故障。
+- 当时生产部署 SHA 仍为 `6296cd504157171a1b212210dfe9bde1aa46b5a3`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，后端 `/health` 返回 `status=ok`。
+- 当时生产容器未配置 COS：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER`、COS bucket、COS region、COS secret env name 和 `MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP` 均未在运行容器中设置；容器内 YAML `document_storage={}`。
+- 当时生产镜像中 `qcloud_cos` 不可用；这是 PR #116 后、PR #117 前的历史事实，不是当前运行态。
 - 证据边界：本次只读核验只证明生产仍为 local storage 和未安装 COS SDK；未修改远端 env，未部署，未上传 COS object，未执行 `/documents` 生产写入型 E2E。
 
 ### 2026-06-16 个人材料入索引审批状态机部署后历史事实
@@ -68,7 +87,7 @@ source: human+ai
 - Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `430K`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读，Nginx 配置测试通过。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-pr103-index-readiness-deploy-20260616.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-pr103-index-readiness-deploy-20260616.json` 为 `status=pass`，`issues=[]`。
 - 生产 `/documents` 入索引审批写入型 E2E 报告 `tmp/outputs/production-documents-index-readiness-e2e-pr103-20260616.json` 为 `status=pass`；记录 `document-upload-29e6f19736ed` 的人工审批通过路径和 `document-upload-da1a475b381b` 的人工驳回路径均已写入 PostgreSQL，并验证宿主机留存文件 `sha256` 与 DB 一致。
@@ -87,7 +106,7 @@ source: human+ai
 - 应用备份：`/opt/medical-audit/backups/app/pre-deploy-20260616T135218+0800.tar.gz`，`gzip -t` 已通过，大小约 `176M`。
 - Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-20260616T135218+0800.tar.gz`，`gzip -t` 已通过，大小约 `430K`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-deploy-20260616T135218+0800.json` 为 `status=pass`。
 - 生产 `/documents` 写入型 E2E verified 报告 `tmp/outputs/production-documents-write-e2e-20260616T135913+0800-verified.json` 为 `status=pass`；记录 `document-upload-f81adf853774` 已写入 PostgreSQL，并留存在 `/opt/medical-audit/document-uploads/2026/06/16/document-upload-f81adf853774.txt`，文件 `sha256=90639f5b2a37ab3ec322067059e1f27034dcb4cd51b76794221694414e93d39e`。
 - 写入型 E2E 已验证普通审计员只能读取本人上传、其它审计员不可见、管理员可读全部个人上传；上传记录当前 `retention_status=retained`、`index_status=not-indexed`。
@@ -108,7 +127,7 @@ source: human+ai
 - Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-ssh-stdin-fix-20260616.tar.gz`，大小约 `430K`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，Nginx 配置测试通过。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`，`issues=[]`，`.deploy-sha=4901d6705a60494542f42b98aa0e6766e3224114`。
 - 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`。
@@ -122,7 +141,7 @@ source: human+ai
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-auth-rbac-phase-a-20260615.sql.gz`，大小约 `979M`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
 - 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-auth-rbac-phase-a-deploy-20260615.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
@@ -139,7 +158,7 @@ source: human+ai
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-portal-config-denial-audit-20260615.sql.gz`，大小 `1025903476` bytes。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
 - 生产前端验收报告 `tmp/outputs/production-frontend-acceptance-after-portal-config-denial-deploy-20260615.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
@@ -156,7 +175,7 @@ source: human+ai
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-20260615T121812+0800.sql.gz`，大小 `512967344` bytes。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 共享入口 `ai_video_nginx` 仍由 `lighthouse` Compose project 管理，`/var/www/audit` bind mount 存在且为只读；Nginx 配置测试通过。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - 生产已应用 `document_upload_records` 表和索引；个人文档留存目录 `/opt/medical-audit/document-uploads` 已创建并挂载到应用容器。
 - 部署脚本内普通生产 smoke 报告 `tmp/outputs/production-e2e-smoke-after-deploy-20260615T121812+0800.json` 为 `status=pass`。
 - 部署后状态审计报告 `tmp/outputs/tencent-cloud-deployment-state-after-documents-boundary-deploy-20260615.json` 为 `status=pass`，`issues=[]`。
@@ -169,7 +188,7 @@ source: human+ai
 
 - 2026-06-15 国家规章平台文档增量资料已完成生产激活，未执行代码重新部署；远端 `.deploy-sha` 仍为 `f864e370abd7309f6222376074b45ef2bc6c0ff4`。
 - 当前 active index 为 `incremental-20260615-national-regulation-stable-20260615103344`，source package 为 `source-package-national-regulation-stable-incremental-20260615103344`。
-- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`、`embedding_dimension=1024`。
+- 当时生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`、`embedding_dimension=1024`。
 - 当前生产库索引版本状态为 `active=1`、`inactive=3`；active 计数为 `source_documents=503`、`document_chunks=49051`、`chunk_embeddings=49051`。
 - 本次新增国家规章平台入库文档 `17` 个、新增 chunks `66` 个；第一次全量重建候选 `full-rebuild-20260615093424` 因固定 52 case 回归为 `51/52` 未激活，并已置为 `inactive`。
 - 激活后固定 52 case 检索评测、6 case 新增文档检索评测、4 case 新增文档答案评测均通过；生产 E2E 报告 `tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json` 为 `status=pass`。
@@ -918,13 +937,28 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - PR #108 merge commit：`c7e54e04b4584ee394a9f428f3de13d7c70519b9`；部署时使用 `--apply-schema` 创建 `document_storage_objects` 表及索引，部署后 `.deploy-sha=c7e54e04b4584ee394a9f428f3de13d7c70519b9`。
 - PR #108 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr108-schema-gate-deploy-20260617.json` 已通过；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr108-schema-gate-20260617.json` 已通过。
 - 打开对象记录开关后的首个生产写入 E2E `tmp/outputs/production-documents-storage-record-e2e-20260617.json` 失败为 `500`；根因为 ORM flush 可能先写 `document_storage_objects` 再写 `document_upload_records`，触发 FK violation。
-- PR #109 merge commit：`6296cd504157171a1b212210dfe9bde1aa46b5a3`；部署戳为 `pr109-document-storage-fk-fix-20260617`，当前生产 `.deploy-sha=6296cd504157171a1b212210dfe9bde1aa46b5a3`。
+- PR #109 merge commit：`6296cd504157171a1b212210dfe9bde1aa46b5a3`；部署戳为 `pr109-document-storage-fk-fix-20260617`，当时生产 `.deploy-sha=6296cd504157171a1b212210dfe9bde1aa46b5a3`。
 - PR #109 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr109-document-storage-fk-fix-deploy-20260617.json` 已通过；部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr109-document-storage-fk-fix-20260617.json` 已通过。
-- 当前生产 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`，`document_storage_objects` 对象记录写入已启用。
+- 当时生产 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`，`document_storage_objects` 对象记录写入已启用。
 - 生产 `/documents` 对象记录写入型 E2E `tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json` 已通过；上传 `document-upload-25f283a6346e` 同时写入 `document_upload_records` 和 `document_storage_objects`。
 - 验收文件：`/opt/medical-audit/document-uploads/2026/06/17/document-upload-25f283a6346e.txt`，`sha256=5a3a4fb1bb03506d1b95825d2f141b0cc05279a3f5653642f022d6bd945fa5e1`；写入后计数为 `document_upload_records=7`、`document_storage_objects=1`。
 - 首次失败上传遗留孤儿文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已备份到 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete` 并删除；备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`，删除后原路径不存在且两张表均无孤儿记录。
 - 证据边界：本轮完成个人材料本地对象记录元数据和 FK flush 修复，不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+
+### 5.28 PR #117/#118 个人材料 COS 启用与生产目录 Git 清理
+
+已在 2026-06-17 完成 PR #117 生产部署、active env 切换、COS 写入型 E2E 和 PR #118 合并：
+
+- PR #117 merge commit：`a276eeb2cd9018ebac52193103d17f476dbe96a6`；部署戳为 `cos-sdk-local-provider-20260617`，当前生产 `.deploy-sha=a276eeb2cd9018ebac52193103d17f476dbe96a6`。
+- active env 切换前备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
+- 当前生产个人材料 storage provider 为 `tencent-cos`，COS region 为 `ap-guangzhou`，SDK bootstrap 和对象记录写入均已启用。
+- 容器内直连写入 `document-upload-73805d5ac457`，公网 `/api/v1` 写入 `document-upload-6ee427e0fd91`；两条记录均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，并通过 COS `HEAD`。
+- 只读复核报告：`tmp/outputs/production-documents-cos-write-e2e-summary-20260617.json`，状态 `pass`。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-cos-public-documents-write-20260617.json`，状态 `pass`，`issues=[]`。
+- PR #118 merge commit：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；该提交修复部署脚本误同步 worktree 形态 `.git` 文件的问题，已合并到 `main`，但未重新部署业务镜像。
+- 生产侧历史残留 `/opt/medical-audit/app/.git` 单文件已备份到 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949` 并删除。
+- 清理后部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json`，状态 `pass`，`issues=[]`。
+- 证据边界：本轮完成个人材料 COS 对象存储和部署工具防回归，不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
 ## 6. 后续维护流程
 
@@ -957,7 +991,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 
 1. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
 2. 将当前工作树同步到 `/opt/medical-audit/app/`。
-3. 排除 `.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
+3. 排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
 4. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
 5. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
 
@@ -1203,7 +1237,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 
 ### 7.9 个人材料 COS bootstrap 只读 preflight
 
-COS 生产启用必须分成三步：依赖和脚本先部署、候选 env 只读 preflight、最后才允许应用重启和写入型 E2E。任一步失败都停止，不进入下一步。
+COS 生产启用必须分成三步：依赖和脚本先部署、候选 env 只读 preflight、最后才允许应用重启和写入型 E2E。任一步失败都停止，不进入下一步。2026-06-17 个人材料上传链路已按该流程启用腾讯云 COS；后续仍按本节作为回归和新环境启用 SOP。
 
 前置条件：
 
