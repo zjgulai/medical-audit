@@ -35,7 +35,7 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 最新已核验 GitHub `main` docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`，对应 PR #122 状态文档同步，不代表业务运行代码变更。
+- PR #122 docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`，对应状态文档同步，不代表业务运行代码变更。
 - 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`；PR #121 已使用部署戳 `pr121-download-metadata-20260617` 同步到生产并重建 `medical_audit_app` 容器。部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点，本轮已人工接管后续同步、`.deploy-sha` 写入、`docker compose build/up`、健康检查和 smoke，生产验收通过。#122 合并后未执行生产轻量同步，生产 `.deploy-sha` 保持在 #121 业务部署 SHA。
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。

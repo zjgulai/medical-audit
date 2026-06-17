@@ -44,7 +44,7 @@ source: human+ai
 - 本次部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点；已人工中断卡住的部署脚本，并按部署脚本顺序手工完成远端同步清理、应用 rsync、静态目录 rsync、`.deploy-sha` 写入、`docker compose build app`、`docker compose up -d app`、健康检查、生产 smoke 和部署状态审计。
 - 部署后将 active env 从默认 local provider 切到 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，切换前 env 备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
 - 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
-- 最新已核验 GitHub `main` docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`；生产 `.deploy-sha` 保持在 #121 业务部署 SHA，未因 #122 docs-only 合并执行生产轻量同步。
+- PR #122 docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`；生产 `.deploy-sha` 保持在 #121 业务部署 SHA，未因 #122 docs-only 合并执行生产轻量同步。
 - 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`、COS region 为 `ap-guangzhou`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
