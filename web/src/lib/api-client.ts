@@ -5,6 +5,7 @@ import type {
   AuditFindingsResponse,
   BackendHealthResponse,
   DocumentPermissionsResponse,
+  DocumentUploadDownloadResponse,
   DocumentUploadListResponse,
   DocumentUploadResponse,
   ProjectMemberCreateRequest,
@@ -153,6 +154,12 @@ export function uploadPersonalDocument(file: File): Promise<DocumentUploadRespon
   const formData = new FormData();
   formData.append("file", file);
   return postForm<DocumentUploadResponse>("/api/v1/documents/uploads", formData);
+}
+
+export function fetchDocumentUploadDownload(uploadId: string): Promise<DocumentUploadDownloadResponse> {
+  return getJsonWithAuditHeaders<DocumentUploadDownloadResponse>(
+    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/download`
+  );
 }
 
 export function fetchAgents(): Promise<AgentsResponse> {

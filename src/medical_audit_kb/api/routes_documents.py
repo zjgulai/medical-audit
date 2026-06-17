@@ -109,6 +109,39 @@ class DocumentUploadItem(BaseModel):
     index_readiness: DocumentIndexReadiness
 
 
+class DocumentStorageObjectItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_key: str
+    provider: Literal["local", "tencent-cos"]
+    bucket: str | None
+    region: str | None
+    object_key: str
+    object_version: str | None
+    etag: str | None
+    sha256: str
+    size_bytes: int
+    storage_class: str | None
+    encryption_mode: str | None
+    storage_status: Literal["local-quarantine", "object-stored", "object-missing"]
+    retention_until: str | None
+    created_at: str
+    updated_at: str
+
+
+class DocumentUploadDownloadAccess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["metadata-only"]
+    access_scope: Literal["owner", "read-all"]
+    delivery: Literal["not-issued"]
+    reason: Literal["signed-download-not-configured"]
+    signed_url: str | None
+    expires_at: str | None
+    storage_path: str
+    storage_objects: list[DocumentStorageObjectItem]
+
+
 class DocumentUploadListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -122,6 +155,14 @@ class DocumentUploadResponse(BaseModel):
 
     item: DocumentUploadItem
     store: dict[str, object]
+    permissions: DocumentUploadPermissions
+
+
+class DocumentUploadDownloadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: DocumentUploadItem
+    download: DocumentUploadDownloadAccess
     permissions: DocumentUploadPermissions
 
 
@@ -242,6 +283,72 @@ async def upload_document(
     )
 
 
+@router.get("/uploads/{upload_id}/download", response_model=DocumentUploadDownloadResponse)
+def get_document_upload_download_metadata(
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> DocumentUploadDownloadResponse:
+    role = normalize_role(current_user.primary_role)
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+
+    upload = state.document_upload_store.get_upload(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    access_scope = _document_upload_access_scope(
+        upload=upload,
+        current_user=current_user,
+        permissions=permissions,
+    )
+    if access_scope is None:
+        record_operation(
+            state,
+            "document-upload-download-access-denied",
+            auth_audit_payload(
+                current_user,
+                attempted_action="document-upload-download-metadata",
+                upload_id=upload_id,
+                status_code=404,
+                reason="document upload not found",
+            ),
+        )
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(upload)
+    storage_objects = [
+        DocumentStorageObjectItem.model_validate(storage_object)
+        for storage_object in state.document_upload_store.list_storage_objects(upload_id)
+    ]
+    record_operation(
+        state,
+        "document-upload-download-metadata",
+        auth_audit_payload(
+            current_user,
+            upload_id=item.id,
+            access_scope=access_scope,
+            storage_object_count=len(storage_objects),
+            signed_url_issued=False,
+        ),
+    )
+    return DocumentUploadDownloadResponse(
+        item=item,
+        download=DocumentUploadDownloadAccess(
+            status="metadata-only",
+            access_scope=access_scope,
+            delivery="not-issued",
+            reason="signed-download-not-configured",
+            signed_url=None,
+            expires_at=None,
+            storage_path=item.storage_path,
+            storage_objects=storage_objects,
+        ),
+        permissions=permissions,
+    )
+
+
 @router.post(
     "/uploads/{upload_id}/index-readiness/manual-approval",
     response_model=DocumentUploadResponse,
@@ -324,6 +431,19 @@ def _upload_permissions(role: str) -> DocumentUploadPermissions:
         can_upload_personal=True,
         can_read_all_personal_uploads=can_read_all_personal_uploads(role),
     )
+
+
+def _document_upload_access_scope(
+    *,
+    upload: dict[str, object],
+    current_user: CurrentUser,
+    permissions: DocumentUploadPermissions,
+) -> Literal["owner", "read-all"] | None:
+    if upload.get("created_by") == current_user.user_key:
+        return "owner"
+    if permissions.can_read_all_personal_uploads:
+        return "read-all"
+    return None
 
 
 def _file_extension(file_name: str) -> str:

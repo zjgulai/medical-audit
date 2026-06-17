@@ -630,6 +630,38 @@ Query 参数：
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
 
+### `GET /documents/uploads/{upload_id}/download`
+
+返回个人材料下载授权元信息。该接口用于先建立下载权限隔离边界，不直接返回文件内容，也不生成 COS 临时签名 URL。
+
+请求头：
+
+- `X-User-Id`：当前用户标识；缺省为 `anonymous`。
+- `X-Role`：`auditor`、`it-admin` 或 `department-head`。
+
+权限行为：
+
+- 上传人可读取本人上传材料的下载元信息，`download.access_scope=owner`。
+- `it-admin` 和 `department-head` 可读取全部个人材料下载元信息，`download.access_scope=read-all`。
+- 其他普通 `auditor` 访问非本人上传时返回 `404 document upload not found`，避免泄露个人材料是否存在，并记录 `document-upload-download-access-denied` 操作日志。
+
+响应核心字段：
+
+- `item`：同 `GET /documents/uploads` 的单条上传记录。
+- `download.status`：当前固定为 `metadata-only`。
+- `download.delivery`：当前固定为 `not-issued`。
+- `download.reason`：当前固定为 `signed-download-not-configured`。
+- `download.signed_url`：当前固定为 `null`。
+- `download.expires_at`：当前固定为 `null`。
+- `download.storage_path`：上传记录中的受控存储路径。
+- `download.storage_objects`：已记录的对象存储元信息，包含 `provider`、`bucket`、`region`、`object_key`、`sha256`、`storage_status`、`storage_class`、`encryption_mode` 等字段。
+- `permissions`：当前角色的个人材料上传权限。
+
+当前边界：
+
+- 本接口只证明下载前置授权和对象元信息读取，不证明真实文件下载、COS 签名 URL、病毒扫描、DLP/脱敏或长期留存生命周期已完成。
+- `storage_objects` 只对已授权用户返回；接口不返回 COS secret、真实密钥或文件正文。
+
 ### `POST /documents/uploads/{upload_id}/index-readiness/manual-approval`
 
 对个人材料执行人工入索引审批决策。该接口只更新 `metadata.index_readiness`，不把文件写入检索索引。
@@ -654,7 +686,7 @@ Query 参数：
 当前边界：
 
 - 本接口只完成个人材料留存、列表读取、人工审批状态变更和入索引治理门禁表达，不把上传材料写入检索索引。
-- 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件下载权限隔离或生命周期清理。
+- 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件正文下载、签名 URL 生成或生命周期清理。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 
 状态码：
