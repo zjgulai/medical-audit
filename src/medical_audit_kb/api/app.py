@@ -25,6 +25,7 @@ from medical_audit_kb.api.document_upload_governance import (
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
+    document_storage_objects_schema_ready,
 )
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
@@ -100,6 +101,7 @@ class ApiState:
                 settings.database_url,
                 upload_root=settings.document_upload_root
                 or settings.index_root / "document-uploads",
+                record_storage_objects=_document_storage_object_records_enabled(settings),
             ),
             document_upload_governance=document_upload_governance_policy_from_settings(
                 settings.document_upload_governance
@@ -207,6 +209,13 @@ def answer_generation_provider_from_settings(
         )
 
     raise ValueError(f"unsupported answer provider: {provider}")
+
+
+def _document_storage_object_records_enabled(settings: KnowledgeQuerySettings) -> bool:
+    return bool(
+        settings.document_storage.record_storage_objects
+        and document_storage_objects_schema_ready(settings.database_url)
+    )
 
 
 def get_api_state(request: Request) -> ApiState:

@@ -39,6 +39,7 @@ DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS"
 )
 DOCUMENT_OBJECT_RETENTION_DAYS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_OBJECT_RETENTION_DAYS"
+DOCUMENT_STORAGE_RECORD_OBJECTS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS"
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -94,6 +95,7 @@ class DocumentStorageSettings(BaseModel):
     signed_url_ttl_seconds: int = Field(default=120, ge=1)
     local_quarantine_retention_days: int = Field(default=7, ge=0)
     object_retention_days: int = Field(default=180, ge=1)
+    record_storage_objects: bool = False
 
 
 class KnowledgeQuerySettings(BaseModel):
@@ -246,6 +248,21 @@ def _document_storage_env_overrides(data: dict[str, Any]) -> dict[str, Any] | No
     if retention_days := os.getenv(DOCUMENT_OBJECT_RETENTION_DAYS_ENV):
         storage["object_retention_days"] = int(retention_days)
         changed = True
+    if record_objects := os.getenv(DOCUMENT_STORAGE_RECORD_OBJECTS_ENV):
+        storage["record_storage_objects"] = _parse_bool_env(
+            record_objects,
+            DOCUMENT_STORAGE_RECORD_OBJECTS_ENV,
+        )
+        changed = True
     if not changed:
         return None
     return storage
+
+
+def _parse_bool_env(value: str, env_name: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{env_name} must be a boolean value")
