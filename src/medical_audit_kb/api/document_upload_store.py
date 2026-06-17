@@ -127,6 +127,7 @@ class SqlAlchemyDocumentUploadStore:
         )
         with self._session_factory.begin() as session:
             session.add(record)
+            session.flush()
             if self.record_storage_objects:
                 session.add(_storage_object_record_from_result(storage_result))
             session.flush()

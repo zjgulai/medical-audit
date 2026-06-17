@@ -1,5 +1,9 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from sqlite3 import Connection as SQLiteConnection
+
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from medical_audit_kb.api.document_upload_governance_store import (
     DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX,
@@ -71,6 +75,37 @@ def test_document_upload_store_can_record_local_storage_object(
         "storage_backend": "local-filesystem",
         "file_name": "policy.txt",
     }
+
+
+def test_document_upload_store_records_storage_object_with_foreign_keys_enforced(
+    tmp_path: Path,
+) -> None:
+    event.listen(Engine, "connect", _enable_sqlite_foreign_keys)
+    try:
+        database_url = f"sqlite:///{tmp_path / 'document-storage-fk-records.db'}"
+        upload_store = SqlAlchemyDocumentUploadStore(
+            database_url=database_url,
+            upload_root=tmp_path / "document-uploads",
+            create_schema=True,
+            record_storage_objects=True,
+        )
+        upload = upload_store.add_upload(
+            file_name="policy.txt",
+            extension="txt",
+            content=b"policy evidence",
+            created_by="auditor-1",
+        )
+    finally:
+        event.remove(Engine, "connect", _enable_sqlite_foreign_keys)
+
+    governance_store = SqlAlchemyDocumentUploadGovernanceStore(database_url=database_url)
+    storage_object = governance_store.get_storage_object(
+        upload_key=str(upload["id"]),
+        provider="local",
+    )
+
+    assert storage_object is not None
+    assert storage_object["upload_key"] == upload["id"]
 
 
 def test_document_storage_objects_schema_ready_detects_created_table(
@@ -160,3 +195,16 @@ def test_document_upload_governance_store_tracks_storage_and_jobs(
     assert updated_job["result_payload"] == {"result_code": "normal"}
     assert updated_job["finished_at"] == "2026-06-16T12:00:00Z"
     assert store.list_governance_jobs(str(upload["id"])) == [updated_job]
+
+
+def _enable_sqlite_foreign_keys(
+    dbapi_connection: object,
+    _connection_record: object,
+) -> None:
+    if not isinstance(dbapi_connection, SQLiteConnection):
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
