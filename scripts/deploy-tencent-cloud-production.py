@@ -17,6 +17,8 @@ DEFAULT_DOMAIN = "audit.lute-tlz-dddd.top"
 DEFAULT_REMOTE_APP_DIR = "/opt/medical-audit/app"
 DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
+REMOTE_BACKUP_TIMEOUT_SECONDS = 20 * 60
+REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 
 APP_RSYNC_EXCLUDES = (
     ".DS_Store",
@@ -273,9 +275,23 @@ def _build_static_frontend(config: DeployConfig) -> None:
 
 
 def _create_remote_backups(config: DeployConfig) -> None:
+    backup_marker = f"/tmp/medical-audit-deploy-backups-{config.stamp}.complete"
+    app_backup = f"/opt/medical-audit/backups/app/pre-deploy-{config.stamp}.tar.gz"
+    env_backup = (
+        f"/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-{config.stamp}"
+    )
+    db_backup = f"/opt/medical-audit/backups/db/pre-deploy-{config.stamp}.sql.gz"
+    nginx_backup = (
+        f"/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-{config.stamp}"
+    )
+    web_backup = (
+        f"/opt/medical-audit/backups/web/audit-web-pre-deploy-{config.stamp}.tar.gz"
+    )
     script = f"""
 set -euo pipefail
 stamp={shlex.quote(config.stamp)}
+backup_marker={shlex.quote(backup_marker)}
+rm -f "$backup_marker"
 mkdir -p /opt/medical-audit/backups/app \
   /opt/medical-audit/backups/env \
   /opt/medical-audit/backups/db \
@@ -294,8 +310,25 @@ cp /opt/ai-video/deploy/lighthouse/nginx.conf \
   /opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-${{stamp}}
 tar -czf /opt/medical-audit/backups/web/audit-web-pre-deploy-${{stamp}}.tar.gz \
   -C /var/www audit
+printf 'complete\\n' > "$backup_marker"
 """
-    _ssh(config, script)
+    completion_check_script = f"""
+set -euo pipefail
+backup_marker={shlex.quote(backup_marker)}
+test -s "$backup_marker"
+test -s {shlex.quote(app_backup)}
+test -s {shlex.quote(env_backup)}
+test -s {shlex.quote(db_backup)}
+test -s {shlex.quote(nginx_backup)}
+test -s {shlex.quote(web_backup)}
+"""
+    _ssh(
+        config,
+        script,
+        timeout_seconds=REMOTE_BACKUP_TIMEOUT_SECONDS,
+        completion_check_script=completion_check_script,
+        timeout_description="remote backups",
+    )
 
 
 def _sync_application(config: DeployConfig) -> None:
@@ -435,7 +468,14 @@ def _run_production_smoke(config: DeployConfig) -> None:
     _run(args, cwd=config.repo_root)
 
 
-def _ssh(config: DeployConfig, script: str) -> None:
+def _ssh(
+    config: DeployConfig,
+    script: str,
+    *,
+    timeout_seconds: int | None = None,
+    completion_check_script: str | None = None,
+    timeout_description: str = "remote script",
+) -> None:
     print(
         "+ ssh "
         "-n "
@@ -445,7 +485,44 @@ def _ssh(config: DeployConfig, script: str) -> None:
         f"{config.ssh_target} bash -lc <remote-script>",
         flush=True,
     )
-    subprocess.run(_ssh_args(config, script), cwd=config.repo_root, check=True, text=True)
+    try:
+        subprocess.run(
+            _ssh_args(config, script),
+            cwd=config.repo_root,
+            check=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if completion_check_script is None:
+            raise DeployError(
+                f"{timeout_description} timed out after {exc.timeout} seconds",
+            ) from exc
+        print(
+            f"WARNING {timeout_description} ssh timed out after {exc.timeout} seconds; "
+            "checking remote completion marker",
+            flush=True,
+        )
+        subprocess.run(
+            _ssh_args(config, completion_check_script),
+            cwd=config.repo_root,
+            check=True,
+            text=True,
+            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+        )
+        print(
+            f"WARNING {timeout_description} completed remotely after ssh timeout; continuing",
+            flush=True,
+        )
+        return
+    if completion_check_script is not None:
+        subprocess.run(
+            _ssh_args(config, completion_check_script),
+            cwd=config.repo_root,
+            check=True,
+            text=True,
+            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+        )
 
 
 def _ssh_args(config: DeployConfig, script: str) -> list[str]:

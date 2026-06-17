@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -33,7 +34,7 @@ def test_capture_chat_workbench_visual_baseline_script_is_valid() -> None:
     script_path = Path("scripts/capture-chat-workbench-visual-baseline.py")
 
     result = subprocess.run(
-        ["python3", "-m", "py_compile", str(script_path)],
+        [sys.executable, "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -58,7 +59,7 @@ def test_serve_chat_workbench_container_script_is_valid_and_does_not_store_secre
     script_path = Path("scripts/serve-chat-workbench-container.py")
 
     result = subprocess.run(
-        ["python3", "-m", "py_compile", str(script_path)],
+        [sys.executable, "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -75,7 +76,7 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     script_path = Path("scripts/run-production-e2e-smoke.py")
 
     result = subprocess.run(
-        ["python3", "-m", "py_compile", str(script_path)],
+        [sys.executable, "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -182,7 +183,7 @@ def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() 
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
     result = subprocess.run(
-        ["python3", "-m", "py_compile", str(script_path)],
+        [sys.executable, "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -359,6 +360,97 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
     assert "rm -rf" not in script
 
 
+def test_deploy_tencent_cloud_backups_use_timeout_and_completion_check(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_production_backup_completion",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_ssh(
+        config: object,
+        script: str,
+        *,
+        timeout_seconds: int | None = None,
+        completion_check_script: str | None = None,
+        timeout_description: str = "remote script",
+    ) -> None:
+        captured["script"] = script
+        captured["timeout_seconds"] = timeout_seconds
+        captured["completion_check_script"] = completion_check_script
+        captured["timeout_description"] = timeout_description
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(
+        stamp="pr121-download-metadata-20260617",
+        remote_app_dir="/opt/medical-audit/app",
+    )
+
+    module._create_remote_backups(config)
+
+    script = str(captured["script"])
+    completion_check = str(captured["completion_check_script"])
+    assert captured["timeout_seconds"] == module.REMOTE_BACKUP_TIMEOUT_SECONDS
+    assert captured["timeout_description"] == "remote backups"
+    marker_assignment = (
+        "backup_marker=/tmp/medical-audit-deploy-backups-"
+        "pr121-download-metadata-20260617.complete"
+    )
+    assert marker_assignment in script
+    assert 'rm -f "$backup_marker"' in script
+    assert 'printf \'complete\\n\' > "$backup_marker"' in script
+    assert "test -s \"$backup_marker\"" in completion_check
+    assert "pre-deploy-pr121-download-metadata-20260617.tar.gz" in completion_check
+    assert "medical-audit.env.pre-deploy-pr121-download-metadata-20260617" in completion_check
+    assert "pre-deploy-pr121-download-metadata-20260617.sql.gz" in completion_check
+    assert "nginx.conf.pre-deploy-pr121-download-metadata-20260617" in completion_check
+    assert "audit-web-pre-deploy-pr121-download-metadata-20260617.tar.gz" in completion_check
+
+
+def test_deploy_tencent_cloud_ssh_timeout_recovers_when_completion_check_passes(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_production_ssh_timeout_recovery",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=Path.cwd(),
+        ssh_key=Path("ai_video.pem"),
+        ssh_target="ubuntu@101.34.52.232",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd=args, timeout=timeout)
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._ssh(
+        config,
+        "long backup",
+        timeout_seconds=1,
+        completion_check_script="test -s /tmp/marker",
+        timeout_description="remote backups",
+    )
+
+    assert len(calls) == 2
+    assert calls[0][-1] == shlex.quote("long backup")
+    assert calls[1][-1] == shlex.quote("test -s /tmp/marker")
+
+
 def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
     script_text = Path("scripts/deploy-tencent-cloud-production.py").read_text(
         encoding="utf-8",
@@ -379,7 +471,7 @@ def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret()
     script_path = Path("scripts/run-audit-log-archive-audit.py")
 
     result = subprocess.run(
-        ["python3", "-m", "py_compile", str(script_path)],
+        [sys.executable, "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -539,7 +631,7 @@ def test_classify_knowledge_pending_files_script_writes_reports(tmp_path: Path) 
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--pending-file",
             str(pending_file),
@@ -605,7 +697,7 @@ def test_audit_index_rollback_readiness_allows_inactive_target(tmp_path: Path) -
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--versions-file",
             str(versions_file),
@@ -653,7 +745,7 @@ def test_audit_index_rollback_readiness_blocks_without_inactive_target(
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--versions-file",
             str(versions_file),
@@ -708,7 +800,7 @@ def test_audit_index_candidate_release_readiness_allows_new_candidate_key(
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--import-result-json",
             str(import_result_file),
@@ -766,7 +858,7 @@ def test_audit_index_candidate_release_readiness_blocks_existing_candidate_key(
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--import-result-json",
             str(import_result_file),
@@ -826,7 +918,7 @@ def test_audit_index_candidate_release_readiness_blocks_chunk_id_collision(
 
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(script_path),
             "--import-result-json",
             str(import_result_file),
