@@ -33,24 +33,27 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-17 COS 生产启用与部署目录清理后当前事实
+### 2026-06-17 COS 生产启用、部署目录清理与 main 轻量部署后当前事实
 
 - PR #117 `codex/personal-material-cos-production-readiness` 已合并到 `main` 并完成生产部署，生产部署 SHA 为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`。
 - PR #117 部署戳：`cos-sdk-local-provider-20260617`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
+- PR #118 `codex/production-dotgit-cleanup` 和 PR #119 `codex/cos-production-state-doc-sync` 已合并到 `main`，当前 `main` SHA 为 `936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`。
+- `main@936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 已使用部署戳 `main-936d50af-dotgit-doc-sync-20260617` 轻量同步到生产；本次使用 `--skip-web-build --skip-app-rebuild`，因此远端文件和 `.deploy-sha` 已同步，运行中的 app 容器未重建。`a276eeb2cd9018ebac52193103d17f476dbe96a6..936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 只包含部署脚本、测试和文档改动，不包含业务运行代码变更。
 - 部署后将 active env 从默认 local provider 切到 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，切换前 env 备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
-- 当前生产部署 SHA：`a276eeb2cd9018ebac52193103d17f476dbe96a6`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
-- 当前 GitHub `main` SHA：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；该提交为 PR #118 部署工具防回归修复，尚未重新部署业务镜像，因此 `main` 领先生产一个 tooling commit。
+- 当前生产部署标记 SHA：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当前 GitHub `main` SHA：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；当前 `main` 与生产 `.deploy-sha` 已对齐。
 - 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`、COS region 为 `ap-guangzhou`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
 - COS 写入型 E2E 已执行两次：容器内直连 `/documents/uploads` 写入 `document-upload-73805d5ac457`，公网 `/api/v1/documents/uploads` 写入 `document-upload-6ee427e0fd91`。
 - 两次 COS 写入均已验证 DB `document_upload_records` 增量、`document_storage_objects` 增量、`provider=tencent-cos`、bucket `medical-audit-personal-materials-1304185125`、region `ap-guangzhou`、`storage_status=object-stored`、`encryption_mode=sse-cos`、COS `HEAD` 成功，以及上传人可读、其他普通 `auditor` 不可见、`department-head` 可读全部的权限边界。
-- COS 写入后只读复核报告 `tmp/outputs/production-documents-cos-write-e2e-summary-20260617.json` 为 `status=pass`。
-- COS 写入后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-cos-public-documents-write-20260617.json` 为 `status=pass`，`issues=[]`。
-- PR #118 `codex/production-dotgit-cleanup` 已合并到 `main`，merge commit 为 `e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
+- COS 写入后最新只读复核报告 `tmp/outputs/production-documents-cos-readonly-after-main-936d50af-deploy-20260617.json` 为 `status=pass`，两条既有写入记录 COS `HEAD` 均通过，容器本地文件均不存在。
+- `main@936d50af` 轻量部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-main-936d50af-dotgit-doc-sync-20260617.json` 为 `status=pass`，`issues=[]`。
+- `main@936d50af` 轻量部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-main-936d50af-dotgit-doc-sync-20260617.json` 为 `status=pass`。
+- PR #118 `codex/production-dotgit-cleanup` 已合并并随 `main@936d50af` 轻量部署；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
 - 生产侧已备份并删除历史残留 `/opt/medical-audit/app/.git` 单文件，备份路径为 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`；清理后 `git rev-parse HEAD` 返回标准非 Git 仓库错误，不再指向本机 worktree。
-- 清理后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`，`issues=[]`；生产 `.deploy-sha` 仍为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`，服务健康不受影响。
-- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，且生产部署目录不再残留本机 worktree Git 指针；不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+- 清理后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`，`issues=[]`；随后 `main@936d50af` 轻量部署状态巡检继续为 `status=pass`。
+- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，生产部署目录不再残留本机 worktree Git 指针，且 `main` 与生产 `.deploy-sha` 已对齐；由于本次跳过 app rebuild，不能把它表述为业务镜像重建或新业务运行代码发布。仍不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
 ### 2026-06-17 个人材料对象记录元数据部署后历史事实
 
@@ -947,18 +950,21 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 ### 5.28 PR #117/#118 个人材料 COS 启用与生产目录 Git 清理
 
-已在 2026-06-17 完成 PR #117 生产部署、active env 切换、COS 写入型 E2E 和 PR #118 合并：
+已在 2026-06-17 完成 PR #117 生产部署、active env 切换、COS 写入型 E2E、PR #118/#119 合并和 `main@936d50af` 轻量生产部署：
 
-- PR #117 merge commit：`a276eeb2cd9018ebac52193103d17f476dbe96a6`；部署戳为 `cos-sdk-local-provider-20260617`，当前生产 `.deploy-sha=a276eeb2cd9018ebac52193103d17f476dbe96a6`。
+- PR #117 merge commit：`a276eeb2cd9018ebac52193103d17f476dbe96a6`；部署戳为 `cos-sdk-local-provider-20260617`，完成 COS 生产启用和业务镜像部署。
+- PR #118 merge commit：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；该提交修复部署脚本误同步 worktree 形态 `.git` 文件的问题。
+- PR #119 merge commit：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；该提交同步 COS 生产状态文档。
+- `main@936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 轻量部署戳为 `main-936d50af-dotgit-doc-sync-20260617`，当前生产 `.deploy-sha=936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；本次跳过 app rebuild，运行中的 app 容器未重建。
 - active env 切换前备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
 - 当前生产个人材料 storage provider 为 `tencent-cos`，COS region 为 `ap-guangzhou`，SDK bootstrap 和对象记录写入均已启用。
 - 容器内直连写入 `document-upload-73805d5ac457`，公网 `/api/v1` 写入 `document-upload-6ee427e0fd91`；两条记录均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，并通过 COS `HEAD`。
-- 只读复核报告：`tmp/outputs/production-documents-cos-write-e2e-summary-20260617.json`，状态 `pass`。
-- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-cos-public-documents-write-20260617.json`，状态 `pass`，`issues=[]`。
-- PR #118 merge commit：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；该提交修复部署脚本误同步 worktree 形态 `.git` 文件的问题，已合并到 `main`，但未重新部署业务镜像。
+- 最新只读复核报告：`tmp/outputs/production-documents-cos-readonly-after-main-936d50af-deploy-20260617.json`，状态 `pass`。
+- 最新部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-main-936d50af-dotgit-doc-sync-20260617.json`，状态 `pass`，`issues=[]`。
+- 最新生产 smoke：`tmp/outputs/production-e2e-smoke-after-main-936d50af-dotgit-doc-sync-20260617.json`，状态 `pass`。
 - 生产侧历史残留 `/opt/medical-audit/app/.git` 单文件已备份到 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949` 并删除。
 - 清理后部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json`，状态 `pass`，`issues=[]`。
-- 证据边界：本轮完成个人材料 COS 对象存储和部署工具防回归，不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+- 证据边界：本轮完成个人材料 COS 对象存储、部署工具防回归和 `main`/生产 `.deploy-sha` 对齐；由于本次跳过 app rebuild，不等于业务镜像重建。仍不等于完成生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
 ## 6. 后续维护流程
 
