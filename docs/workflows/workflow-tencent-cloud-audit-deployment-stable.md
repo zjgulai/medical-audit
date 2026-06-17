@@ -33,13 +33,17 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-18 部署脚本备份阶段超时恢复修复待合并
+### 2026-06-18 PR #125 部署脚本备份阶段超时恢复第一次生产验证
 
-- 当前修复分支：`codex/deploy-backup-timeout-recovery`。
-- GitHub `main` 与本地 `origin/main` 已对齐到 PR #124 docs-only merge commit `5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；生产 `.deploy-sha` 仍为 PR #121 业务部署 SHA `e62254bb5f3f142d33fdbca28d0274332f52ec90`。
-- 部署脚本已在当前分支为远端备份阶段增加 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200`、远端完成 marker `/tmp/medical-audit-deploy-backups-${stamp}.complete`、app/env/db/nginx/web 备份文件复核，以及 SSH 超时后的远端完成检查恢复。
-- 本轮证据是本地脚本验证：新增备份完成检查用例和 SSH 超时恢复用例通过，`deploy_tencent_cloud` 相关用例通过，Ruff 和 `git diff --check` 通过。
-- 证据边界：该修复尚未合并，尚未执行生产 `--execute` 部署验证，不能据此关闭 P0-07；关闭仍需连续两次完整生产部署无人工接管并通过状态审计。
+- PR #125 `codex/deploy-backup-timeout-recovery` 已合并到 `main`，merge commit 为 `ce5ca0475891cd3daee0cdc10c0f62a043915874`。
+- GitHub `main` 已核验到 `ce5ca0475891cd3daee0cdc10c0f62a043915874`；本地 `git fetch` 因 GitHub HTTPS 连接失败未完成，本轮部署前已用 GitHub API 核验本地 tree 与远端 merge commit tree 均为 `0fe0d5ed75e222a417bacc1d496c94f7fd6ff9c8`。
+- `main@ce5ca0475891cd3daee0cdc10c0f62a043915874` 已使用部署戳 `pr125-backup-timeout-recovery-20260618` 发布到生产；本次重建并重启 `medical_audit_app` 容器。
+- 本次部署实际触发备份阶段超时恢复：远端备份 SSH 在 20 分钟后超时，脚本自动执行完成 marker 与 app/env/db/nginx/web 备份文件复核，检查通过后继续同步、重建、健康检查和 smoke，无人工接管。
+- 当前生产业务部署标记 SHA：`ce5ca0475891cd3daee0cdc10c0f62a043915874`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr125-backup-timeout-recovery-20260618.json` 为 `status=pass`。
+- 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr125-backup-timeout-recovery-20260618.json` 为 `status=pass`，`issues=[]`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，指定备份戳的 app/env/db/nginx/web 备份均存在。
+- 部署后生产前端语义验收 `tmp/outputs/production-frontend-acceptance-latest.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
+- 证据边界：本轮只构成 P0-07 的第一次真实生产验证；由于 PR #95/#96/#121 历史上反复出现备份 SSH 退出链路问题，P0-07 关闭仍需第二次独立完整生产部署无人工接管并通过状态审计。
 
 ### 2026-06-17 PR #121 下载元信息部署后当前事实
 
@@ -51,7 +55,7 @@ source: human+ai
 - `main@e62254bb5f3f142d33fdbca28d0274332f52ec90` 已使用部署戳 `pr121-download-metadata-20260617` 发布到生产；本次重建并重启 `medical_audit_app` 容器。
 - 本次部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点；已人工中断卡住的部署脚本，并按部署脚本顺序手工完成远端同步清理、应用 rsync、静态目录 rsync、`.deploy-sha` 写入、`docker compose build app`、`docker compose up -d app`、健康检查、生产 smoke 和部署状态审计。
 - 部署后将 active env 从默认 local provider 切到 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，切换前 env 备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
-- 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - PR #124 docs-only merge commit：`5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；生产 `.deploy-sha` 保持在 #121 业务部署 SHA，未因 #122/#124 docs-only 合并执行生产轻量同步。
 - 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`、COS region 为 `ap-guangzhou`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
@@ -65,7 +69,7 @@ source: human+ai
 - PR #118 `codex/production-dotgit-cleanup` 已合并并随 `main@936d50af` 轻量部署；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
 - 生产侧已备份并删除历史残留 `/opt/medical-audit/app/.git` 单文件，备份路径为 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`；清理后 `git rev-parse HEAD` 返回标准非 Git 仓库错误，不再指向本机 worktree。
 - 清理后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`，`issues=[]`；随后 `main@e62254bb` 部署状态巡检继续为 `status=pass`。
-- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，生产部署目录不再残留本机 worktree Git 指针，生产 `.deploy-sha` 与 #121 业务部署 SHA 对齐，且下载元信息授权隔离可用；#122/#124 是 docs-only 状态同步，不触发业务部署。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。部署脚本备份阶段 SSH 退出已有本地修复分支和单测证据，生产层仍待真实部署复验。
+- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，生产部署目录不再残留本机 worktree Git 指针，生产 `.deploy-sha` 与 #121 业务部署 SHA 对齐，且下载元信息授权隔离可用；#122/#124 是 docs-only 状态同步，不触发业务部署。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。该阶段部署脚本备份 SSH 退出仍待后续生产复验，后续结论见 2026-06-18 PR #125 记录。
 
 ### 2026-06-17 个人材料对象记录元数据部署后历史事实
 
@@ -977,11 +981,28 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 容器内直连写入 `document-upload-73805d5ac457`，公网 `/api/v1` 写入 `document-upload-6ee427e0fd91`；两条记录均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，并通过 COS `HEAD`。
 - 最新只读复核报告：`tmp/outputs/production-documents-cos-readonly-after-main-936d50af-deploy-20260617.json`，状态 `pass`。
 - 最新下载元信息只读 E2E 报告：`tmp/outputs/production-documents-download-metadata-readonly-after-pr121-20260617.json`，状态 `pass`。
-- 最新部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-pr121-download-metadata-20260617.json`，状态 `pass`，`issues=[]`。
-- 最新生产 smoke：`tmp/outputs/production-e2e-smoke-after-pr121-download-metadata-20260617.json`，状态 `pass`。
+- PR #121 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-pr121-download-metadata-20260617.json`，状态 `pass`，`issues=[]`。
+- PR #121 生产 smoke：`tmp/outputs/production-e2e-smoke-after-pr121-download-metadata-20260617.json`，状态 `pass`。
 - 生产侧历史残留 `/opt/medical-audit/app/.git` 单文件已备份到 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949` 并删除。
 - 清理后部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json`，状态 `pass`，`issues=[]`。
-- 证据边界：本轮完成个人材料 COS 对象存储、部署目录 Git 清理、#121 业务部署 SHA 与生产 `.deploy-sha` 对齐，以及下载元信息授权隔离；PR #122 是 docs-only 状态同步，未触发生产轻量同步。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+- 证据边界：本轮完成个人材料 COS 对象存储、部署目录 Git 清理、#121 业务部署 SHA 与生产 `.deploy-sha` 对齐，以及下载元信息授权隔离；PR #122/#124 是 docs-only 状态同步，未触发生产轻量同步。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+
+### 5.29 PR #125 部署备份超时恢复生产验证
+
+已在 2026-06-18 完成 PR #125 合并和第一次生产部署验证：
+
+- PR #125 merge commit：`ce5ca0475891cd3daee0cdc10c0f62a043915874`；部署戳为 `pr125-backup-timeout-recovery-20260618`。
+- 生产部署脚本在远端备份阶段达到 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200` 后自动触发完成检查；远端 marker 和 app/env/db/nginx/web 备份文件均存在，脚本继续执行后续 rsync、静态资源同步、`.deploy-sha` 写入、app 镜像重建、健康检查和 smoke。
+- 当前生产 `.deploy-sha=ce5ca0475891cd3daee0cdc10c0f62a043915874`。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-pr125-backup-timeout-recovery-20260618.sql.gz`，大小 `1026230651` bytes。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr125-backup-timeout-recovery-20260618.tar.gz`，大小 `184531759` bytes。
+- env 备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr125-backup-timeout-recovery-20260618`，大小 `1857` bytes。
+- Nginx 备份：`/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr125-backup-timeout-recovery-20260618`，大小 `29348` bytes。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-pr125-backup-timeout-recovery-20260618.tar.gz`，大小 `440074` bytes。
+- 生产 smoke：`tmp/outputs/production-e2e-smoke-after-pr125-backup-timeout-recovery-20260618.json`，状态 `pass`，覆盖 TLS、health、search backend、页面渲染、审计日志权限、query API citation、citation preview、chat dossier export 和共享入口回归。
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-after-pr125-backup-timeout-recovery-20260618.json`，状态 `pass`，`issues=[]`。
+- 生产前端语义验收：`tmp/outputs/production-frontend-acceptance-latest.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
+- 证据边界：本轮验证部署脚本可在备份 SSH 超时后依靠远端完成检查自动恢复并完成部署，不等于完成 P0-07 关闭；仍需第二次独立完整生产部署无人工接管并通过状态审计。
 
 ## 6. 后续维护流程
 
