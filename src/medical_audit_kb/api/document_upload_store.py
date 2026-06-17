@@ -16,7 +16,13 @@ from medical_audit_kb.api.document_upload_governance import (
     default_index_readiness,
     index_readiness_from_metadata,
 )
-from medical_audit_kb.db.models import Base, DocumentUploadRecord, utc_now
+from medical_audit_kb.api.document_upload_governance_store import (
+    DocumentObjectStorage,
+    DocumentObjectStoragePutRequest,
+    DocumentObjectStoragePutResult,
+    LocalDocumentObjectStorage,
+)
+from medical_audit_kb.db.models import Base, DocumentStorageObject, DocumentUploadRecord, utc_now
 
 DOCUMENT_UPLOAD_ID_PREFIX = "document-upload-"
 
@@ -59,10 +65,14 @@ class SqlAlchemyDocumentUploadStore:
     database_url: str
     upload_root: Path
     create_schema: bool = False
+    object_storage: DocumentObjectStorage | None = None
+    record_storage_objects: bool = False
     _engine: Engine = field(init=False, repr=False)
     _session_factory: sessionmaker[Session] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if self.object_storage is None:
+            self.object_storage = LocalDocumentObjectStorage(self.upload_root)
         self._engine = create_engine(
             _sync_database_url(self.database_url),
             connect_args=_connect_args(self.database_url),
@@ -85,13 +95,18 @@ class SqlAlchemyDocumentUploadStore:
         upload_key = _new_upload_key()
         sha256 = hashlib.sha256(content).hexdigest()
         readiness = _copy_index_readiness(index_readiness)
-        storage_path = _write_retained_file(
-            upload_root=self.upload_root,
-            upload_key=upload_key,
-            extension=extension,
-            content=content,
-            created_at=now,
+        object_storage = self.object_storage or LocalDocumentObjectStorage(self.upload_root)
+        storage_result = object_storage.put_object(
+            DocumentObjectStoragePutRequest(
+                upload_key=upload_key,
+                file_name=file_name,
+                extension=extension,
+                content=content,
+                sha256=sha256,
+                created_at=now,
+            )
         )
+        storage_path = storage_result.object_key
         record = DocumentUploadRecord(
             upload_key=upload_key,
             file_name=file_name,
@@ -110,6 +125,8 @@ class SqlAlchemyDocumentUploadStore:
         )
         with self._session_factory.begin() as session:
             session.add(record)
+            if self.record_storage_objects:
+                session.add(_storage_object_record_from_result(storage_result))
             session.flush()
             return _record_to_payload(record)
 
@@ -162,7 +179,12 @@ class SqlAlchemyDocumentUploadStore:
 @dataclass(slots=True)
 class InMemoryDocumentUploadStore:
     upload_root: Path
+    object_storage: DocumentObjectStorage | None = None
     records: list[dict[str, object]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.object_storage is None:
+            self.object_storage = LocalDocumentObjectStorage(self.upload_root)
 
     def add_upload(
         self,
@@ -175,13 +197,18 @@ class InMemoryDocumentUploadStore:
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
+        sha256 = hashlib.sha256(content).hexdigest()
         readiness = _copy_index_readiness(index_readiness)
-        storage_path = _write_retained_file(
-            upload_root=self.upload_root,
-            upload_key=upload_key,
-            extension=extension,
-            content=content,
-            created_at=now,
+        object_storage = self.object_storage or LocalDocumentObjectStorage(self.upload_root)
+        storage_result = object_storage.put_object(
+            DocumentObjectStoragePutRequest(
+                upload_key=upload_key,
+                file_name=file_name,
+                extension=extension,
+                content=content,
+                sha256=sha256,
+                created_at=now,
+            )
         )
         record = {
             "id": upload_key,
@@ -189,8 +216,8 @@ class InMemoryDocumentUploadStore:
             "extension": extension,
             "size_bytes": len(content),
             "size_kb": _size_kb(len(content)),
-            "sha256": hashlib.sha256(content).hexdigest(),
-            "storage_path": storage_path,
+            "sha256": sha256,
+            "storage_path": storage_result.object_key,
             "visibility": "private",
             "status": "retained",
             "created_by": created_by,
@@ -234,22 +261,25 @@ class InMemoryDocumentUploadStore:
         return None
 
 
-def _write_retained_file(
-    *,
-    upload_root: Path,
-    upload_key: str,
-    extension: str,
-    content: bytes,
-    created_at: datetime,
-) -> str:
-    partition = created_at.astimezone(UTC).strftime("%Y/%m/%d")
-    relative_path = Path(partition) / f"{upload_key}.{extension}"
-    final_path = upload_root / relative_path
-    final_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = final_path.with_suffix(f"{final_path.suffix}.tmp")
-    temp_path.write_bytes(content)
-    temp_path.replace(final_path)
-    return relative_path.as_posix()
+def _storage_object_record_from_result(
+    result: DocumentObjectStoragePutResult,
+) -> DocumentStorageObject:
+    return DocumentStorageObject(
+        upload_key=result.upload_key,
+        provider=result.provider,
+        bucket=result.bucket,
+        region=result.region,
+        object_key=result.object_key,
+        object_version=result.object_version,
+        etag=result.etag,
+        sha256=result.sha256,
+        size_bytes=result.size_bytes,
+        storage_class=result.storage_class,
+        encryption_mode=result.encryption_mode,
+        storage_status=result.storage_status,
+        retention_until=result.retention_until,
+        extra_metadata=copy.deepcopy(result.metadata),
+    )
 
 
 def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
