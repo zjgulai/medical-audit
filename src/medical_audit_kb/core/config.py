@@ -32,6 +32,9 @@ DOCUMENT_STORAGE_COS_SECRET_KEY_NAME_ENV: Final = (
 )
 DOCUMENT_STORAGE_COS_ENCRYPTION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_ENCRYPTION"
 DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_KMS_KEY_ID"
+DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_STORAGE_CLASS"
+)
 DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS"
 )
@@ -92,6 +95,7 @@ class DocumentStorageSettings(BaseModel):
     cos_secret_key_env: str | None = None
     cos_encryption: Literal["sse-cos", "sse-kms"] = "sse-cos"
     cos_kms_key_id: str | None = None
+    cos_storage_class: str = Field(default="STANDARD", min_length=1)
     signed_url_ttl_seconds: int = Field(default=120, ge=1)
     local_quarantine_retention_days: int = Field(default=7, ge=0)
     object_retention_days: int = Field(default=180, ge=1)
@@ -238,6 +242,9 @@ def _document_storage_env_overrides(data: dict[str, Any]) -> dict[str, Any] | No
         changed = True
     if kms_key_id := os.getenv(DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV):
         storage["cos_kms_key_id"] = kms_key_id
+        changed = True
+    if storage_class := os.getenv(DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV):
+        storage["cos_storage_class"] = storage_class
         changed = True
     if ttl := os.getenv(DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV):
         storage["signed_url_ttl_seconds"] = int(ttl)

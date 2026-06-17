@@ -22,11 +22,49 @@ from medical_audit_kb.api.document_upload_governance_store import (
     DocumentObjectStoragePutRequest,
     DocumentObjectStoragePutResult,
     LocalDocumentObjectStorage,
+    TencentCosDocumentObjectStorage,
+    TencentCosPutObjectClient,
 )
+from medical_audit_kb.core.config import DocumentStorageSettings
 from medical_audit_kb.db.models import Base, DocumentStorageObject, DocumentUploadRecord, utc_now
 
 DOCUMENT_UPLOAD_ID_PREFIX = "document-upload-"
 DOCUMENT_STORAGE_OBJECTS_TABLE = "document_storage_objects"
+
+
+def document_object_storage_from_settings(
+    settings: DocumentStorageSettings,
+    *,
+    upload_root: Path,
+    tencent_cos_client: TencentCosPutObjectClient | None = None,
+) -> DocumentObjectStorage:
+    if settings.provider == "local":
+        return LocalDocumentObjectStorage(upload_root)
+
+    if settings.provider == "tencent-cos":
+        if tencent_cos_client is None:
+            raise ValueError("tencent-cos client is required for document object storage")
+        bucket = settings.cos_bucket
+        region = settings.cos_region
+        if not bucket or not region:
+            missing = []
+            if not bucket:
+                missing.append("cos_bucket")
+            if not region:
+                missing.append("cos_region")
+            joined = ", ".join(missing)
+            raise ValueError(f"missing tencent-cos document storage settings: {joined}")
+        return TencentCosDocumentObjectStorage(
+            client=tencent_cos_client,
+            bucket=bucket,
+            region=region,
+            prefix=settings.cos_prefix,
+            encryption_mode=settings.cos_encryption,
+            kms_key_id=settings.cos_kms_key_id,
+            storage_class=settings.cos_storage_class,
+        )
+
+    raise ValueError(f"unsupported document storage provider: {settings.provider}")
 
 
 class DocumentUploadStore(Protocol):

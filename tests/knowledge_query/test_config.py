@@ -10,6 +10,7 @@ from medical_audit_kb.core.config import (
     DOCUMENT_STORAGE_COS_ENCRYPTION_ENV,
     DOCUMENT_STORAGE_COS_PREFIX_ENV,
     DOCUMENT_STORAGE_COS_REGION_ENV,
+    DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV,
     DOCUMENT_STORAGE_PROVIDER_ENV,
     DOCUMENT_STORAGE_RECORD_OBJECTS_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV,
@@ -121,6 +122,7 @@ def test_environment_overrides_document_storage(
     monkeypatch.setenv(DOCUMENT_STORAGE_COS_REGION_ENV, "ap-guangzhou")
     monkeypatch.setenv(DOCUMENT_STORAGE_COS_PREFIX_ENV, "personal-materials/prod")
     monkeypatch.setenv(DOCUMENT_STORAGE_COS_ENCRYPTION_ENV, "sse-kms")
+    monkeypatch.setenv(DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV, "STANDARD_IA")
     monkeypatch.setenv(DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV, "180")
     monkeypatch.setenv(DOCUMENT_OBJECT_RETENTION_DAYS_ENV, "365")
     monkeypatch.setenv(DOCUMENT_STORAGE_RECORD_OBJECTS_ENV, "true")
@@ -132,6 +134,7 @@ def test_environment_overrides_document_storage(
     assert settings.document_storage.cos_region == "ap-guangzhou"
     assert settings.document_storage.cos_prefix == "personal-materials/prod"
     assert settings.document_storage.cos_encryption == "sse-kms"
+    assert settings.document_storage.cos_storage_class == "STANDARD_IA"
     assert settings.document_storage.signed_url_ttl_seconds == 180
     assert settings.document_storage.object_retention_days == 365
     assert settings.document_storage.record_storage_objects is True
