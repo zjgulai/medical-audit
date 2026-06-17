@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal, Protocol
 from uuid import uuid4
 
@@ -69,6 +70,39 @@ class DocumentObjectStorage(Protocol):
         request: DocumentObjectStoragePutRequest,
     ) -> DocumentObjectStoragePutResult:
         pass
+
+
+@dataclass(frozen=True, slots=True)
+class LocalDocumentObjectStorage:
+    upload_root: Path
+    provider: DocumentStorageProvider = "local"
+
+    def put_object(
+        self,
+        request: DocumentObjectStoragePutRequest,
+    ) -> DocumentObjectStoragePutResult:
+        object_key = _local_object_key(
+            created_at=request.created_at,
+            upload_key=request.upload_key,
+            extension=request.extension,
+        )
+        final_path = self.upload_root / object_key
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = final_path.with_suffix(f"{final_path.suffix}.tmp")
+        temp_path.write_bytes(request.content)
+        temp_path.replace(final_path)
+        return DocumentObjectStoragePutResult(
+            upload_key=request.upload_key,
+            provider=self.provider,
+            object_key=object_key,
+            sha256=request.sha256,
+            size_bytes=len(request.content),
+            storage_status="local-quarantine",
+            metadata={
+                "storage_backend": "local-filesystem",
+                "file_name": request.file_name,
+            },
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -373,6 +407,16 @@ def _governance_job_to_payload(record: DocumentUploadGovernanceJob) -> dict[str,
 
 def _new_governance_job_key() -> str:
     return f"{DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX}{uuid4().hex[:12]}"
+
+
+def _local_object_key(
+    *,
+    created_at: datetime,
+    upload_key: str,
+    extension: str,
+) -> str:
+    partition = created_at.astimezone(UTC).strftime("%Y/%m/%d")
+    return (Path(partition) / f"{upload_key}.{extension}").as_posix()
 
 
 def _datetime_to_iso(value: datetime | None) -> str | None:

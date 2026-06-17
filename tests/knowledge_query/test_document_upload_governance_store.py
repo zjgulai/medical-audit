@@ -3,11 +3,71 @@ from pathlib import Path
 
 from medical_audit_kb.api.document_upload_governance_store import (
     DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX,
+    DocumentObjectStoragePutRequest,
     DocumentStorageObjectCreate,
     DocumentUploadGovernanceJobCreate,
+    LocalDocumentObjectStorage,
     SqlAlchemyDocumentUploadGovernanceStore,
 )
 from medical_audit_kb.api.document_upload_store import SqlAlchemyDocumentUploadStore
+
+
+def test_local_document_object_storage_keeps_existing_partitioned_path(
+    tmp_path: Path,
+) -> None:
+    storage = LocalDocumentObjectStorage(tmp_path / "document-uploads")
+    result = storage.put_object(
+        request=DocumentObjectStoragePutRequest(
+            upload_key="document-upload-abc123",
+            file_name="policy.txt",
+            extension="txt",
+            content=b"policy evidence",
+            sha256="a" * 64,
+            created_at=datetime(2026, 6, 16, 12, 0, tzinfo=UTC),
+        )
+    )
+
+    assert result.provider == "local"
+    assert result.object_key == "2026/06/16/document-upload-abc123.txt"
+    assert result.storage_status == "local-quarantine"
+    assert result.metadata["storage_backend"] == "local-filesystem"
+    assert (tmp_path / "document-uploads" / result.object_key).read_bytes() == b"policy evidence"
+
+
+def test_document_upload_store_can_record_local_storage_object(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-storage-records.db'}"
+    upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+        record_storage_objects=True,
+    )
+    upload = upload_store.add_upload(
+        file_name="policy.txt",
+        extension="txt",
+        content=b"policy evidence",
+        created_by="auditor-1",
+    )
+    governance_store = SqlAlchemyDocumentUploadGovernanceStore(database_url=database_url)
+
+    storage_object = governance_store.get_storage_object(
+        upload_key=str(upload["id"]),
+        provider="local",
+    )
+
+    assert storage_object is not None
+    assert storage_object["upload_key"] == upload["id"]
+    assert storage_object["provider"] == "local"
+    assert storage_object["object_key"] == upload["storage_path"]
+    assert storage_object["sha256"] == upload["sha256"]
+    assert storage_object["size_bytes"] == upload["size_bytes"]
+    assert storage_object["storage_status"] == "local-quarantine"
+    assert storage_object["metadata"] == {
+        "storage_backend": "local-filesystem",
+        "file_name": "policy.txt",
+    }
 
 
 def test_document_upload_governance_store_tracks_storage_and_jobs(
