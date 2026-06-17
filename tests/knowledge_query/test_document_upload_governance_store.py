@@ -380,6 +380,27 @@ def test_tencent_cos_bootstrap_preflight_passes_when_dependencies_are_ready() ->
     assert "key-secret" not in json.dumps(report, ensure_ascii=False)
 
 
+def test_tencent_cos_bootstrap_preflight_detects_installed_sdk() -> None:
+    report = tencent_cos_bootstrap_preflight_from_settings(
+        DocumentStorageSettings.model_validate(
+            {
+                "provider": "tencent-cos",
+                "cos_bucket": "medical-audit-prod",
+                "cos_region": "ap-guangzhou",
+                "cos_secret_id_env": "COS_SECRET_ID",
+                "cos_secret_key_env": "COS_SECRET_KEY",
+                "cos_sdk_bootstrap_enabled": True,
+            }
+        ),
+        environ={"COS_SECRET_ID": "sid-secret", "COS_SECRET_KEY": "key-secret"},
+    )
+
+    assert report["status"] == "pass"
+    assert report["checks"]["qcloud_cos_available"] is True
+    assert "sid-secret" not in json.dumps(report, ensure_ascii=False)
+    assert "key-secret" not in json.dumps(report, ensure_ascii=False)
+
+
 def test_document_cos_bootstrap_preflight_script_outputs_json(
     tmp_path: Path,
 ) -> None:

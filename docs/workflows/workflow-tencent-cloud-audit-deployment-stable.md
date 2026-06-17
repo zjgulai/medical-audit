@@ -50,6 +50,14 @@ source: human+ai
 - 首次失败上传遗留孤儿文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已确认在 `document_upload_records` 和 `document_storage_objects` 中均无记录；删除前已备份到 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete`，备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`，原文件已删除，删除后 DB 行仍为 `0,0`。
 - 证据边界：本轮只证明个人材料本地对象记录元数据、schema gate、FK flush 顺序、对象记录写入和孤儿文件清理闭环；不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
+### 2026-06-17 COS 生产启用前置只读核验
+
+- PR #116 `codex/personal-material-cos-preflight` 已合并到 `main`，merge commit 为 `f06013c21ddc9e858a2ac9cd1747bfcf79c82bbe`；该提交只新增本地 COS bootstrap preflight，不代表生产已部署或启用 COS。
+- 当前生产部署 SHA 仍为 `6296cd504157171a1b212210dfe9bde1aa46b5a3`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，后端 `/health` 返回 `status=ok`。
+- 当前生产容器未配置 COS：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER`、COS bucket、COS region、COS secret env name 和 `MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP` 均未在运行容器中设置；容器内 YAML `document_storage={}`。
+- 当前生产镜像中 `qcloud_cos` 不可用；这是 COS 尚未启用的事实，不是运行故障。
+- 证据边界：本次只读核验只证明生产仍为 local storage 和未安装 COS SDK；未修改远端 env，未部署，未上传 COS object，未执行 `/documents` 生产写入型 E2E。
+
 ### 2026-06-16 个人材料入索引审批状态机部署后历史事实
 
 - PR #103 `codex/document-upload-index-readiness-state-machine` 已合并到 `main` 并完成生产部署，merge commit 为 `b425e2123d55a94dc6b6c800b806384eec1de679`。
@@ -410,6 +418,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - `scripts/audit-tencent-cloud-deployment-state.py`
 - `scripts/deploy-tencent-cloud-production.py`
 - `scripts/run-audit-log-archive-audit.py`
+- `scripts/run-document-cos-bootstrap-preflight.py`
 - `scripts/run-production-frontend-acceptance.mjs`
 - `.dockerignore`
 
@@ -418,6 +427,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - `ai_video.pem` 只用于本地 SSH，不进入镜像。
 - `KIMI_API_KEY` 只允许写入远端 `medical-audit.env`，权限必须为 `600`。
 - `MEDICAL_AUDIT_AUDIT_LOG_SIGNING_SECRET` 只允许写入远端 `medical-audit.env`，用于审计日志归档 HMAC 验签；不得写入 git、报告或签名 manifest。
+- `COS_SECRET_ID` 和 `COS_SECRET_KEY` 只允许写入远端 `medical-audit.env` 或等价密钥注入机制；报告和 PR 正文只允许记录 env name、是否存在和 preflight 状态，不记录真实值。
 - 任何 `*.env`、`*.pem`、`*.key` 不允许进入 git。
 
 ## 5. 已执行上线记录
@@ -1191,6 +1201,69 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 手动验收外部告警通道时，可临时传入 `--send-success-alert`；若要求 webhook 失败也阻断验收，再同时传入 `--fail-on-alert-error`。
 - 最新机器可读报告固定为 `/opt/medical-audit/audit-reports/audit-log-archive-audit-latest.json`。
 
+### 7.9 个人材料 COS bootstrap 只读 preflight
+
+COS 生产启用必须分成三步：依赖和脚本先部署、候选 env 只读 preflight、最后才允许应用重启和写入型 E2E。任一步失败都停止，不进入下一步。
+
+前置条件：
+
+- 当前代码已包含 `cos-python-sdk-v5` 运行时依赖。
+- 当前代码已包含 `scripts/run-document-cos-bootstrap-preflight.py`。
+- 远端 `configs/deploy/tencent-cloud/medical-audit.env` 已备份，权限保持 `600`。
+- COS bucket、region、secret env name 和 secret value 已通过远端 env 或等价密钥注入方式准备好。
+- 尚未重启 `medical_audit_app`，尚未执行 `/documents` 写入型 E2E。
+
+候选 env 必须包含：
+
+```bash
+MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_BUCKET=<bucket-with-appid>
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_REGION=ap-guangzhou
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_PREFIX=personal-materials/prod
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SECRET_ID_ENV=COS_SECRET_ID
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SECRET_KEY_ENV=COS_SECRET_KEY
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_ENCRYPTION=sse-cos
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_STORAGE_CLASS=STANDARD
+MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1
+COS_SECRET_ID=<remote-secret-value>
+COS_SECRET_KEY=<remote-secret-value>
+```
+
+只读 preflight 使用一次性容器执行，不能复用已运行 app 容器的旧环境：
+
+```bash
+cd /opt/medical-audit/app
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env \
+  run --rm --no-deps app \
+  python scripts/run-document-cos-bootstrap-preflight.py \
+  --config /app/configs/knowledge-query-engine-dev.yaml
+```
+
+通过条件：
+
+- 退出码为 `0`。
+- JSON `status` 为 `pass`。
+- `provider_is_tencent_cos=true`。
+- `cos_sdk_bootstrap_enabled=true`。
+- bucket、region、secret env name 和 secret env value 均为 present。
+- `qcloud_cos_available=true`。
+- 输出中不得出现 `COS_SECRET_ID` 或 `COS_SECRET_KEY` 的真实值。
+
+阻断条件：
+
+- 退出码为 `2` 或 JSON `status=blocked`。
+- 任一 `issues` 非空。
+- 输出包含真实 secret value。
+- 一次性容器执行过程中出现网络上传、`/documents` 写入或对象创建证据。
+
+阻断后的处置：
+
+1. 不重启 `medical_audit_app`。
+2. 不执行 `/documents` 生产写入型 E2E。
+3. 恢复或修正远端 `medical-audit.env`。
+4. 重新执行只读 preflight，直到 `status=pass`。
+
 ## 8. 验收标准
 
 当前已通过的验收：
@@ -1390,3 +1463,5 @@ nginx 回滚：
 - 不直接覆盖 nginx 配置而不备份。
 - 不在证书 SAN 未包含 `audit` 时声称 HTTPS 已完成。
 - 不以 HTTP `200` 作为唯一验收标准，必须检查页面内容、后端 ready 和引用链。
+- 不允许在 COS bootstrap 只读 preflight 通过前把 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER` 切到 `tencent-cos` 并重启生产 app。
+- 不允许把 COS secret 真实值写入 git、PR 正文、验收报告或终端摘要。
