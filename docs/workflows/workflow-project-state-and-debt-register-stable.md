@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-06-17
+updated: 2026-06-18
 owner: self
 source: human+ai
 ---
@@ -35,8 +35,8 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- PR #122 docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`，对应状态文档同步，不代表业务运行代码变更。
-- 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`；PR #121 已使用部署戳 `pr121-download-metadata-20260617` 同步到生产并重建 `medical_audit_app` 容器。部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点，本轮已人工接管后续同步、`.deploy-sha` 写入、`docker compose build/up`、健康检查和 smoke，生产验收通过。#122 合并后未执行生产轻量同步，生产 `.deploy-sha` 保持在 #121 业务部署 SHA。
+- PR #124 docs-only merge commit：`5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`，对应 #121/#122 后状态文档边界修正，不代表业务运行代码变更。
+- 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`；PR #121 已使用部署戳 `pr121-download-metadata-20260617` 同步到生产并重建 `medical_audit_app` 容器。部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点，本轮已人工接管后续同步、`.deploy-sha` 写入、`docker compose build/up`、健康检查和 smoke，生产验收通过。#122/#124 合并后未执行生产轻量同步，生产 `.deploy-sha` 保持在 #121 业务部署 SHA。
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -62,7 +62,7 @@ source: human+ai
 - 最新个人材料入索引审批状态机部署结论：PR #103 已生产部署；`department-head` 可人工审批通过或驳回个人材料入索引申请，普通 `auditor` 审批返回 `403`，审批更新和拒绝均写入持久化审计日志。
 - 最新个人材料对象存储部署结论：PR #117 已生产部署，COS SDK 和 local provider 兼容层进入生产镜像；active env 已切到 `tencent-cos`，上传 `document-upload-73805d5ac457` 和公网 `/api/v1` 上传 `document-upload-6ee427e0fd91` 均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，且 COS `HEAD` 成功。
 - 最新个人材料下载元信息部署结论：PR #121 已生产部署；`GET /api/v1/documents/uploads/{upload_id}/download` 只返回授权下载元信息，不返回文件体，不签发下载 URL；owner 可读本人上传元信息，其他普通 `auditor` 按 `404` 隐藏存在性，`department-head` 可按 `read-all` 读取元信息。
-- 最新部署工具链结论：PR #95 和 PR #96 均已合并但生产部署验证失败，原因均为 DB 备份完成后本地 SSH 仍挂起；PR #97 曾验证通过，但 PR #121 部署再次观察到远端 DB 备份完成、备份文件落盘后本地 SSH 子进程未退出。当前生产部署已通过人工接管完成，部署脚本仍需补超时、远端完成哨兵或分段备份策略。
+- 最新部署工具链结论：PR #95 和 PR #96 均已合并但生产部署验证失败，原因均为 DB 备份完成后本地 SSH 仍挂起；PR #97 曾验证通过，但 PR #121 部署再次观察到远端 DB 备份完成、备份文件落盘后本地 SSH 子进程未退出。当前生产部署已通过人工接管完成；分支 `codex/deploy-backup-timeout-recovery` 已为远端备份阶段补充本地超时、远端完成哨兵和备份文件完整性复核，本地脚本单测已通过，尚未经过生产 `--execute` 验证。
 - 最新国家规章平台增量激活后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
 - 最新索引管理拒绝审计部署后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`。
 - 最新索引管理拒绝审计专项生产 smoke：`tmp/outputs/production-index-admin-denial-audit-smoke-20260615.json`，状态 `pass`；普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，并在持久化 `audit_log_events` 中记录 `index-admin-access-denied`。
@@ -81,17 +81,17 @@ source: human+ai
 - 个人材料 COS 对象存储生产结果：生产已启用 `tencent-cos` provider，`document-upload-73805d5ac457` 与 `document-upload-6ee427e0fd91` 均生成 `personal-materials/prod/...` object key；对应 `document_storage_objects.provider=tencent-cos`、bucket 为 `medical-audit-personal-materials-1304185125`、region 为 `ap-guangzhou`、`storage_status=object-stored`、`encryption_mode=sse-cos`，且本地 `/opt/medical-audit/document-uploads` 不再生成对应文件。
 - 孤儿文件清理结果：首次失败写入遗留文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已在确认两张表均无记录后备份并删除；备份路径 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete`，备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`。
 
-生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、个人材料上传治理门禁表达、个人材料人工入索引审批状态机、个人材料 COS 对象存储、个人材料下载元信息授权隔离、索引管理拒绝审计、门户配置写入拒绝审计、权限上下文兼容层、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、生产级病毒扫描、DLP/脱敏改写、个人材料实际入索引、真实文件下载交付、签名 URL 或案件级合规闭环已完成。部署脚本的 DB 备份 SSH 退出链路仍是当前工程脆弱点。
+生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、个人材料上传治理门禁表达、个人材料人工入索引审批状态机、个人材料 COS 对象存储、个人材料下载元信息授权隔离、索引管理拒绝审计、门户配置写入拒绝审计、权限上下文兼容层、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、生产级病毒扫描、DLP/脱敏改写、个人材料实际入索引、真实文件下载交付、签名 URL 或案件级合规闭环已完成。部署脚本的 DB 备份 SSH 退出链路已有本地修复和单测证据，生产层仍需真实 `--execute` 部署验证后才能关闭。
 
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit_minimal_pr`
 - 当前本地工作分支：以执行时 `git status` 为准；本轮状态同步使用 `codex/*` docs-only 分支。
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前文档同步分支：`codex/docs-only-merge-sha-boundary`。
-- GitHub `main` 已包含 PR #122 docs-only 合并，已核验 merge commit 为 `65fc07462fbae73e3b53a41ca797b7c6e170cbce`；本地 `origin/main` 因 GitHub HTTPS fetch 返回异常仍可能滞后到 `e62254bb5f3f142d33fdbca28d0274332f52ec90`，不得把本地 remote-tracking 分支当作当前远端事实。
+- 当前部署工具链修复分支：`codex/deploy-backup-timeout-recovery`。
+- GitHub `main` 和本地 `origin/main` 已对齐到 PR #124 docs-only merge commit `5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；该提交不代表业务生产部署。
 - 当前生产部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`；本次已重建 app 容器并完成生产 smoke、部署状态审计和 `/documents` 下载元信息只读 E2E。
-- 本轮已完成 PR #121 合并、腾讯云生产部署、app 镜像重建、`/documents/uploads/{id}/download` 生产只读 E2E、PR #122 状态文档同步合并，以及 PR #122 合并后 docs-only/main SHA 边界修正。
+- 本轮已完成 PR #121 合并、腾讯云生产部署、app 镜像重建、`/documents/uploads/{id}/download` 生产只读 E2E、PR #122 状态文档同步合并，以及 PR #124 docs-only/main SHA 边界修正。
 - 当前生产 `.deploy-sha` 与 #121 业务部署 SHA 对齐；GitHub `main` 后续 docs-only merge commit 不应自动解释为业务生产部署。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
@@ -676,8 +676,8 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 使用 `claude-haiku-4-5-20251001` 仍返回 `401 invalid x-api-key`；历史 Kimi chat 403/401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 等待新的可用服务端 chat provider key；先跑 smoke 和真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前生产 API 仍主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events`；已部署智能体和项目成员写接口的未知角色拒绝审计，生产专项 smoke 证明 `guest` 访问记录 `agent-access-denied` 和 `project-member-access-denied` 并持久化到 `audit_log_events`；真实权限模型架构已固化到 `docs/architecture/architecture-auth-rbac-stable.md`；Phase A 后端兼容层已完成生产部署，新增 `CurrentUser`、`PermissionContext`、`it-admin -> system-admin` 归一化和统一 `auth_source=legacy-header` 审计 payload，生产专项 smoke 已验证旧/新角色兼容和关键写接口拒绝审计 | 无法满足生产级审计系统权限边界 | 下一步落 auth schema、真实会话、前端去硬编码 header、跨模块绕过测试和生产验收 | 未授权路径 401/403；审计日志记录访问拒绝；伪造 `X-Role` 无效；真实会话与角色模型验收通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、真实文件下载交付和病毒扫描未完成 | 当前已有 HMAC 归档签名、本地附件归档、个人材料腾讯云 COS 对象存储和下载元信息授权隔离；扫描、DLP/脱敏、文件体下载或签名 URL、签章和长期留存介质仍未完成 | 报告与归档不能作为完整合规交付 | 设计签章、病毒扫描、DLP/脱敏、真实文件下载交付/签名 URL、下载审计和留存介质方案 | 归档包、签章、验签、授权下载和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 已核验 GitHub `main` docs-only merge commit 为 `65fc07462fbae73e3b53a41ca797b7c6e170cbce`，生产 `.deploy-sha=e62254bb5f3f142d33fdbca28d0274332f52ec90`；PR #121 已重建生产 app 并通过 smoke/状态审计/下载元信息只读 E2E；PR #122 仅同步文档且未触发生产轻量同步；生产 `/opt/medical-audit/app/.git` 污染文件已备份并删除；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only/tooling 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致；生产目录不残留 worktree Git 指针 |
-| P0-07 | 工程脆弱点债务 | 部署脚本 DB 备份 SSH 退出链路仍不稳定 | PR #121 部署中，远端 `pg_dump` 和备份文件已完成，但本地部署脚本的第一段 SSH 子进程未退出；人工中断后按脚本顺序完成同步、重建、健康检查、smoke 和部署状态审计 | 后续生产部署存在卡住、超时和人工接管风险 | 为远端备份阶段增加超时、完成哨兵、分段命令或可恢复 checkpoint；将手工接管步骤固化为失败恢复流程 | 连续两次完整 `deploy-tencent-cloud-production.py --execute` 无人工介入完成并通过状态审计 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 已核验 GitHub `main=origin/main=5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`，生产 `.deploy-sha=e62254bb5f3f142d33fdbca28d0274332f52ec90`；PR #121 已重建生产 app 并通过 smoke/状态审计/下载元信息只读 E2E；PR #122/#124 仅同步文档且未触发生产轻量同步；生产 `/opt/medical-audit/app/.git` 污染文件已备份并删除；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only/tooling 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致；生产目录不残留 worktree Git 指针 |
+| P0-07 | 工程脆弱点债务 | 部署脚本 DB 备份 SSH 退出链路仍需生产复验 | PR #121 部署中，远端 `pg_dump` 和备份文件已完成，但本地部署脚本的第一段 SSH 子进程未退出；人工中断后按脚本顺序完成同步、重建、健康检查、smoke 和部署状态审计。当前分支已增加备份阶段 20 分钟超时、远端完成 marker、app/env/db/nginx/web 备份文件复核和超时后完成检查恢复，本地新增单测与部署脚本相关用例通过 | 后续生产部署风险已降低，但在修复合并并经真实生产部署前仍不能关闭 | 合并脚本修复 PR 后执行一次标准生产部署，若仍无人工接管，再安排第二次独立生产部署复验；保留失败恢复流程 | 连续两次完整 `deploy-tencent-cloud-production.py --execute` 无人工介入完成并通过状态审计 |
 
 ## 5. P1 债务台账
 

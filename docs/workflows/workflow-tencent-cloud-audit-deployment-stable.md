@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-17
+updated: 2026-06-18
 owner: self
 source: human+ai
 ---
@@ -33,18 +33,26 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-18 部署脚本备份阶段超时恢复修复待合并
+
+- 当前修复分支：`codex/deploy-backup-timeout-recovery`。
+- GitHub `main` 与本地 `origin/main` 已对齐到 PR #124 docs-only merge commit `5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；生产 `.deploy-sha` 仍为 PR #121 业务部署 SHA `e62254bb5f3f142d33fdbca28d0274332f52ec90`。
+- 部署脚本已在当前分支为远端备份阶段增加 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200`、远端完成 marker `/tmp/medical-audit-deploy-backups-${stamp}.complete`、app/env/db/nginx/web 备份文件复核，以及 SSH 超时后的远端完成检查恢复。
+- 本轮证据是本地脚本验证：新增备份完成检查用例和 SSH 超时恢复用例通过，`deploy_tencent_cloud` 相关用例通过，Ruff 和 `git diff --check` 通过。
+- 证据边界：该修复尚未合并，尚未执行生产 `--execute` 部署验证，不能据此关闭 P0-07；关闭仍需连续两次完整生产部署无人工接管并通过状态审计。
+
 ### 2026-06-17 PR #121 下载元信息部署后当前事实
 
 - PR #117 `codex/personal-material-cos-production-readiness` 已合并到 `main` 并完成生产部署，生产部署 SHA 为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`。
 - PR #117 部署戳：`cos-sdk-local-provider-20260617`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - PR #118 `codex/production-dotgit-cleanup` 和 PR #119 `codex/cos-production-state-doc-sync` 已合并到 `main`；`main@936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 曾使用部署戳 `main-936d50af-dotgit-doc-sync-20260617` 轻量同步到生产。
 - PR #121 `codex/document-download-access-metadata` 已合并到 `main`，业务部署基线 SHA 为 `e62254bb5f3f142d33fdbca28d0274332f52ec90`。
-- PR #122 `codex/pr121-download-metadata-state-doc-sync` 已合并到 `main`，merge commit 为 `65fc07462fbae73e3b53a41ca797b7c6e170cbce`；该提交为 docs-only 状态同步，不代表业务运行代码变更。
+- PR #122 `codex/pr121-download-metadata-state-doc-sync` 已合并到 `main`，merge commit 为 `65fc07462fbae73e3b53a41ca797b7c6e170cbce`；PR #124 `codex/docs-only-merge-sha-boundary` 已合并到 `main`，merge commit 为 `5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；二者均为 docs-only 状态同步，不代表业务运行代码变更。
 - `main@e62254bb5f3f142d33fdbca28d0274332f52ec90` 已使用部署戳 `pr121-download-metadata-20260617` 发布到生产；本次重建并重启 `medical_audit_app` 容器。
 - 本次部署脚本在远端 DB 备份落盘后出现本地 SSH 子进程未退出的残余脆弱点；已人工中断卡住的部署脚本，并按部署脚本顺序手工完成远端同步清理、应用 rsync、静态目录 rsync、`.deploy-sha` 写入、`docker compose build app`、`docker compose up -d app`、健康检查、生产 smoke 和部署状态审计。
 - 部署后将 active env 从默认 local provider 切到 `MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，切换前 env 备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-cos-provider-switch-20260617T163741`。
 - 当前生产业务部署标记 SHA：`e62254bb5f3f142d33fdbca28d0274332f52ec90`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
-- PR #122 docs-only merge commit：`65fc07462fbae73e3b53a41ca797b7c6e170cbce`；生产 `.deploy-sha` 保持在 #121 业务部署 SHA，未因 #122 docs-only 合并执行生产轻量同步。
+- PR #124 docs-only merge commit：`5c0d6a85e0a7e27cdcf7e85f1c7a3d87f74eb983`；生产 `.deploy-sha` 保持在 #121 业务部署 SHA，未因 #122/#124 docs-only 合并执行生产轻量同步。
 - 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`、COS region 为 `ap-guangzhou`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP=1`、`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`。
 - `medical_audit_app` 容器 `running` 且 `health=healthy`；`medical_audit_pg` 容器 `running` 且 `health=healthy`。
 - 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
@@ -57,7 +65,7 @@ source: human+ai
 - PR #118 `codex/production-dotgit-cleanup` 已合并并随 `main@936d50af` 轻量部署；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
 - 生产侧已备份并删除历史残留 `/opt/medical-audit/app/.git` 单文件，备份路径为 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`；清理后 `git rev-parse HEAD` 返回标准非 Git 仓库错误，不再指向本机 worktree。
 - 清理后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`，`issues=[]`；随后 `main@e62254bb` 部署状态巡检继续为 `status=pass`。
-- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，生产部署目录不再残留本机 worktree Git 指针，生产 `.deploy-sha` 与 #121 业务部署 SHA 对齐，且下载元信息授权隔离可用；#122 是 docs-only 状态同步，不触发业务部署。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。部署脚本备份阶段 SSH 退出仍存在脆弱点。
+- 证据边界：本轮证明个人材料上传对象已进入腾讯云 COS，生产部署目录不再残留本机 worktree Git 指针，生产 `.deploy-sha` 与 #121 业务部署 SHA 对齐，且下载元信息授权隔离可用；#122/#124 是 docs-only 状态同步，不触发业务部署。不等于完成生产级病毒扫描、DLP/脱敏改写、真实文件下载交付、签名 URL、真实登录会话、个人材料实际入索引或长期存储生命周期策略。部署脚本备份阶段 SSH 退出已有本地修复分支和单测证据，生产层仍待真实部署复验。
 
 ### 2026-06-17 个人材料对象记录元数据部署后历史事实
 
@@ -648,6 +656,7 @@ python3 scripts/run-production-e2e-smoke.py \
 - 远端脚本型 SSH 调用必须使用 `ssh -n`，避免本地 stdin 被远端命令链路继承；rsync transport 不使用 `-n`。
 - 数据库备份必须使用 plain `docker exec ... pg_dump`，禁止在非交互 SSH 部署链路中使用 `docker exec -i` 或 `docker exec -t`，避免备份完成后本地 SSH 子进程卡住。
 - 2026-06-16 已验证 `docker exec -i ... pg_dump` 仍会在备份完成后卡住本地 SSH 子进程；该形态不再作为生产部署脚本方案使用。
+- 远端备份阶段必须设置本地超时和远端完成哨兵；如果 SSH 子进程超时，只有在远端 marker 与 app/env/db/nginx/web 备份文件均存在时才允许恢复继续，否则必须失败并进入人工恢复流程。
 - 应用重建后必须等待 `medical_audit_app` health 进入 `healthy`，再执行本机 curl、公网 curl 和生产 smoke。
 - 应用同步排除 `.deploy-sha`、`__pycache__/`、`*.pyc` 和本地缓存文件；`.deploy-sha` 只由脚本在同步后显式写入。
 - 应用同步前会在备份完成后清理远端 `remote_app_dir/src` 下的 `*.pyc`、`*.pyo`、`*.uploading.cfg` 和空 `__pycache__`，避免旧缓存或云盘上传临时文件阻断 rsync 删除空目录；不得使用 `--delete-excluded`，防止误删远端 `data/`、env、密钥或其他刻意排除资产。
