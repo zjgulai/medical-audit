@@ -330,6 +330,8 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
         "deploy_tencent_cloud_production_cleanup",
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
+    assert ".git" in module.APP_RSYNC_EXCLUDES
+    assert ".git/" in module.APP_RSYNC_EXCLUDES
     captured_scripts: list[str] = []
 
     def fake_ssh(config: object, script: str) -> None:
@@ -342,6 +344,9 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
 
     assert len(captured_scripts) == 1
     script = captured_scripts[0]
+    assert "git_file=/opt/medical-audit/app/.git" in script
+    assert 'if [ -f "$git_file" ]; then' in script
+    assert 'rm -f "$git_file"' in script
     assert "src_dir=/opt/medical-audit/app/src" in script
     assert "test -d \"$src_dir\"" in script
     assert "-name '*.pyc'" in script
@@ -351,6 +356,7 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
     assert "--delete-excluded" not in script
     assert "/data" not in script
     assert "medical-audit.env" not in script
+    assert "rm -rf" not in script
 
 
 def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:

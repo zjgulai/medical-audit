@@ -21,6 +21,7 @@ DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
 APP_RSYNC_EXCLUDES = (
     ".DS_Store",
     ".deploy-sha",
+    ".git",
     ".git/",
     ".kiro/",
     ".playwright-mcp/",
@@ -316,6 +317,10 @@ def _sync_application(config: DeployConfig) -> None:
 def _cleanup_remote_sync_artifacts(config: DeployConfig) -> None:
     script = f"""
 set -euo pipefail
+git_file={shlex.quote(config.remote_app_dir)}/.git
+if [ -f "$git_file" ]; then
+  rm -f "$git_file"
+fi
 src_dir={shlex.quote(config.remote_app_dir)}/src
 test -d "$src_dir"
 find "$src_dir" -type f \\( \
