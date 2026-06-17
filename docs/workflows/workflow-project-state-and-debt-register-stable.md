@@ -35,8 +35,8 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 当前 GitHub `main` SHA：`e8aeb34a032bfaed96aad78b80ea7a665bb5575a`，已包含 PR #118 部署工具防回归修复。
-- 当前生产运行部署 SHA：`a276eeb2cd9018ebac52193103d17f476dbe96a6`；PR #118 未重新部署业务镜像，生产 `.deploy-sha` 仍保持 PR #117 部署结果。
+- 当前 GitHub `main` SHA：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`，已包含 PR #118 部署工具防回归修复和 PR #119 状态同步文档。
+- 当前生产部署标记 SHA：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；本次使用 `--skip-app-rebuild` 轻量部署，远端仓库文件和 `.deploy-sha` 已同步，运行中的 app 容器未重建。`a276eeb2cd9018ebac52193103d17f476dbe96a6..936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 不包含业务运行代码变更。
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -53,11 +53,11 @@ source: human+ai
 - 最新文档检索生产查询 smoke 报告：`tmp/outputs/production-documents-query-smoke-20260614.json`，状态 `pass`。
 - 最新文档检索边界能力生产写入型 E2E 报告：`tmp/outputs/production-documents-index-readiness-e2e-pr103-20260616.json`，状态 `pass`。
 - 最新个人材料对象记录元数据生产写入型 E2E 报告：`tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json`，状态 `pass`。
-- 最新个人材料 COS 写入型 E2E 只读复核报告：`tmp/outputs/production-documents-cos-write-e2e-summary-20260617.json`，状态 `pass`；容器内直连和公网 `/api/v1/documents/uploads` 两次写入均已写入 COS object，并通过 DB 行、`document_storage_objects`、COS `HEAD` 和权限边界复核。
-- 最新生产基础 E2E smoke 报告：`tmp/outputs/production-e2e-smoke-after-pr109-document-storage-fk-fix-deploy-20260617.json`，状态 `pass`。
+- 最新个人材料 COS 写入型 E2E 只读复核报告：`tmp/outputs/production-documents-cos-readonly-after-main-936d50af-deploy-20260617.json`，状态 `pass`；容器内直连和公网 `/api/v1/documents/uploads` 两条既有写入均仍在 DB 和 COS 中，COS `HEAD` 均通过，本地容器文件均不存在。
+- 最新生产基础 E2E smoke 报告：`tmp/outputs/production-e2e-smoke-after-main-936d50af-dotgit-doc-sync-20260617.json`，状态 `pass`。
 - 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
-- 最新生产部署后只读核验：`tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=a276eeb2cd9018ebac52193103d17f476dbe96a6`，`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，公网 `/api/v1/index/search-backend` 返回 `ready=true`。
-- 最新生产部署目录 Git 元数据清理结论：PR #118 已合并到 `main`，修复部署脚本误同步 worktree 形态 `.git` 文件的问题；生产侧已备份并删除 `/opt/medical-audit/app/.git` 单文件，备份路径 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`，生产目录现在不再指向本机 worktree 元数据。
+- 最新生产部署后只读核验：`tmp/outputs/tencent-cloud-deployment-state-after-main-936d50af-dotgit-doc-sync-20260617.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`，`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，公网 `/api/v1/index/search-backend` 返回 `ready=true`。
+- 最新生产部署目录 Git 元数据清理结论：PR #118 已合并并随 `main-936d50af-dotgit-doc-sync-20260617` 轻量部署，部署脚本已在实际 rsync 命令中排除 `.git` 文件和 `.git/` 目录；生产侧已备份并删除 `/opt/medical-audit/app/.git` 单文件，备份路径 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`，生产目录现在不再指向本机 worktree 元数据。
 - 最新个人材料入索引审批状态机部署结论：PR #103 已生产部署；`department-head` 可人工审批通过或驳回个人材料入索引申请，普通 `auditor` 审批返回 `403`，审批更新和拒绝均写入持久化审计日志。
 - 最新个人材料对象存储部署结论：PR #117 已生产部署，COS SDK 和 local provider 兼容层进入生产镜像；active env 已切到 `tencent-cos`，上传 `document-upload-73805d5ac457` 和公网 `/api/v1` 上传 `document-upload-6ee427e0fd91` 均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，且 COS `HEAD` 成功。
 - 最新部署工具链修复结论：PR #95 和 PR #96 均已合并但生产部署验证失败，原因均为 DB 备份完成后本地 SSH 仍挂起；PR #97 已合并、部署并验证通过，有效修复点为远端脚本式 `_ssh` 调用统一使用 `ssh -n`。
@@ -86,11 +86,11 @@ source: human+ai
 - 当前工作区：`/Users/pray/project/medical_audit_minimal_pr`
 - 当前本地工作分支：以执行时 `git status` 为准；本轮状态同步使用 `codex/*` docs-only 分支。
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前文档同步分支：`codex/cos-production-state-doc-sync`。
-- GitHub `main` 当前已包含 PR #118 合并，`main=origin/main=e8aeb34a032bfaed96aad78b80ea7a665bb5575a`。
-- 当前生产运行代码 SHA：`a276eeb2cd9018ebac52193103d17f476dbe96a6`。
-- 本轮已完成 PR #117 的生产部署、COS active env 切换、`/documents` COS 写入型 E2E、公网 `/api/v1/documents/uploads` 写入型 E2E 和生产 `.git` 文件清理；PR #118 为已合并的部署工具防回归修复，尚未重新部署业务镜像。
-- 当前 `main` 领先生产一个部署工具合并提交；这是 docs/tooling 层领先，不代表业务功能代码已在生产重新部署。
+- 当前文档同步分支：`codex/main-936-production-state-doc-sync`。
+- GitHub `main` 当前已包含 PR #119 合并，`main=origin/main=936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`。
+- 当前生产部署标记 SHA：`936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；本次轻量部署未重建 app 容器，运行镜像与 PR #117 业务运行态等价。
+- 本轮已完成 PR #117 的生产部署、COS active env 切换、`/documents` COS 写入型 E2E、公网 `/api/v1/documents/uploads` 写入型 E2E、生产 `.git` 文件清理、PR #118/#119 合并，以及 `main@936d50af` 轻量生产部署。
+- 当前 `main` 与生产 `.deploy-sha` 已对齐；当前 docs-only 分支仅用于记录这次部署后状态，尚未合并。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -529,8 +529,8 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 根因：部署脚本原本排除了 `.git/` 目录，但没有排除 worktree 形态的 `.git` 文件，导致生产 `/opt/medical-audit/app/.git` 保存了本机 worktree 指针。
 - 生产侧已先备份再删除 `/opt/medical-audit/app/.git` 单文件，备份路径为 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`。
 - PR #118 `codex/production-dotgit-cleanup` 已合并到 `main`，merge commit 为 `e8aeb34a032bfaed96aad78b80ea7a665bb5575a`；部署脚本现在同时排除 `.git` 文件和 `.git/` 目录，并在远端同步清理阶段仅删除 app 根目录 `.git` 单文件。
-- 清理后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`、`issues=[]`；生产 `.deploy-sha` 仍为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`，服务健康不受影响。
-- 证据边界：PR #118 是部署工具防回归修复，尚未重新部署业务镜像；生产侧污染文件已现场清理并验证。
+- 清理后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-dotgit-cleanup-20260617.json` 为 `status=pass`、`issues=[]`；随后 `main@936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b` 已完成轻量部署，最新状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-main-936d50af-dotgit-doc-sync-20260617.json` 仍为 `status=pass`、`issues=[]`。
+- 证据边界：PR #118 是部署工具防回归修复，已随 `main@936d50af` 同步到生产远端文件和 `.deploy-sha`；本次跳过 app rebuild，不等于业务镜像重建。
 
 ### 2.13 索引管理拒绝审计生产部署状态
 
@@ -674,7 +674,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 使用 `claude-haiku-4-5-20251001` 仍返回 `401 invalid x-api-key`；历史 Kimi chat 403/401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 等待新的可用服务端 chat provider key；先跑 smoke 和真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实用户、角色、科室、全站权限未完成 | 当前生产 API 仍主要依赖 `X-Role`、`X-User-Id`、Nginx 注入 `X-API-Key`；2026-06-15 已部署索引管理写接口拒绝审计，生产专项 smoke 证明非 `it-admin` 访问记录 `index-admin-access-denied` 并持久化到 `audit_log_events`；已部署智能体和项目成员写接口的未知角色拒绝审计，生产专项 smoke 证明 `guest` 访问记录 `agent-access-denied` 和 `project-member-access-denied` 并持久化到 `audit_log_events`；真实权限模型架构已固化到 `docs/architecture/architecture-auth-rbac-stable.md`；Phase A 后端兼容层已完成生产部署，新增 `CurrentUser`、`PermissionContext`、`it-admin -> system-admin` 归一化和统一 `auth_source=legacy-header` 审计 payload，生产专项 smoke 已验证旧/新角色兼容和关键写接口拒绝审计 | 无法满足生产级审计系统权限边界 | 下一步落 auth schema、真实会话、前端去硬编码 header、跨模块绕过测试和生产验收 | 未授权路径 401/403；审计日志记录访问拒绝；伪造 `X-Role` 无效；真实会话与角色模型验收通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、下载隔离和病毒扫描未完成 | 当前已有 HMAC 归档签名、本地附件归档和个人材料腾讯云 COS 对象存储；扫描、下载隔离、签章和长期留存介质仍未完成 | 报告与归档不能作为完整合规交付 | 设计签章、病毒扫描、DLP/脱敏、下载权限隔离和留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 当前 `origin/main=e8aeb34a032bfaed96aad78b80ea7a665bb5575a`，生产 `.deploy-sha=a276eeb2cd9018ebac52193103d17f476dbe96a6`；差异为 PR #118 部署工具防回归修复，尚未重新部署业务镜像；生产 `/opt/medical-audit/app/.git` 污染文件已备份并删除；本地仍有多个 worktree 和未跟踪参考目录 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only/tooling 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致；生产目录不残留 worktree Git 指针 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 当前 `origin/main=936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`，生产 `.deploy-sha=936d50afcfa40ee350fa66ebc9a7cf596a5d1c7b`；PR #118 部署工具防回归修复已随轻量部署同步到生产远端文件；生产 `/opt/medical-audit/app/.git` 污染文件已备份并删除；本地仍有多个 worktree 和未跟踪参考目录；当前 docs-only 分支尚未合并 | 后续部署可能混入非目标状态 | 后续功能继续从干净 `codex/` 分支切出，部署前核验远端 main、生产 `.deploy-sha`、docs-only/tooling 差异和未跟踪排除清单 | `git status` 清晰；PR、部署 SHA、文档一致；生产目录不残留 worktree Git 指针 |
 
 ## 5. P1 债务台账
 
