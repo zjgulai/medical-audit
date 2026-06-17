@@ -27,6 +27,7 @@ from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
     document_object_storage_from_settings,
     document_storage_objects_schema_ready,
+    tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
@@ -87,6 +88,9 @@ class ApiState:
         document_upload_root = settings.document_upload_root or (
             settings.index_root / "document-uploads"
         )
+        tencent_cos_client = tencent_cos_put_object_client_from_settings(
+            settings.document_storage
+        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -107,6 +111,7 @@ class ApiState:
                 object_storage=document_object_storage_from_settings(
                     settings.document_storage,
                     upload_root=document_upload_root,
+                    tencent_cos_client=tencent_cos_client,
                 ),
                 record_storage_objects=_document_storage_object_records_enabled(settings),
             ),

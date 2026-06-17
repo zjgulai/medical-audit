@@ -25,6 +25,9 @@ from medical_audit_kb.api.document_upload_governance import (
     GovernanceCheckResult,
     document_upload_governance_policy_from_settings,
 )
+from medical_audit_kb.api.document_upload_governance_store import (
+    TencentCosDocumentObjectStorage,
+)
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
     InMemoryDocumentUploadStore,
@@ -944,6 +947,47 @@ def test_api_state_gates_document_storage_object_records(
     assert blocked_state.document_upload_store.record_storage_objects is False
 
 
+def test_api_state_uses_cos_bootstrap_only_when_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeTencentCosClient()
+    calls: list[DocumentStorageSettings] = []
+
+    def fake_bootstrap(settings: DocumentStorageSettings) -> FakeTencentCosClient:
+        calls.append(settings)
+        return fake_client
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.app.tencent_cos_put_object_client_from_settings",
+        fake_bootstrap,
+    )
+    monkeypatch.setattr(
+        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
+        lambda _database_url: False,
+    )
+    settings = _knowledge_query_settings(
+        tmp_path / "cos-bootstrap",
+        document_storage=DocumentStorageSettings.model_validate(
+            {
+                "provider": "tencent-cos",
+                "cos_bucket": "medical-audit-prod",
+                "cos_region": "ap-guangzhou",
+                "cos_secret_id_env": "COS_SECRET_ID",
+                "cos_secret_key_env": "COS_SECRET_KEY",
+                "cos_sdk_bootstrap_enabled": True,
+            }
+        ),
+    )
+
+    state = ApiState.from_settings(settings)
+
+    assert calls == [settings.document_storage]
+    assert isinstance(state.document_upload_store, SqlAlchemyDocumentUploadStore)
+    assert isinstance(state.document_upload_store.object_storage, TencentCosDocumentObjectStorage)
+    assert state.document_upload_store.object_storage.client is fake_client
+
+
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
@@ -1801,6 +1845,23 @@ class FailingQueryHistoryStore:
     def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
         _ = limit
         raise RuntimeError("history database unavailable")
+
+
+class FakeTencentCosClient:
+    def put_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: dict[str, str],
+        encryption_mode: str,
+        kms_key_id: str | None,
+        storage_class: str,
+    ) -> dict[str, str | None]:
+        return {"etag": '"etag"', "version_id": "version-1"}
 
 
 def _write_text(path: Path, content: str) -> Path:
