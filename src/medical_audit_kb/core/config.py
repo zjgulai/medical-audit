@@ -35,6 +35,9 @@ DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS
 DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_STORAGE_CLASS"
 )
+DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP"
+)
 DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS"
 )
@@ -96,6 +99,7 @@ class DocumentStorageSettings(BaseModel):
     cos_encryption: Literal["sse-cos", "sse-kms"] = "sse-cos"
     cos_kms_key_id: str | None = None
     cos_storage_class: str = Field(default="STANDARD", min_length=1)
+    cos_sdk_bootstrap_enabled: bool = False
     signed_url_ttl_seconds: int = Field(default=120, ge=1)
     local_quarantine_retention_days: int = Field(default=7, ge=0)
     object_retention_days: int = Field(default=180, ge=1)
@@ -245,6 +249,12 @@ def _document_storage_env_overrides(data: dict[str, Any]) -> dict[str, Any] | No
         changed = True
     if storage_class := os.getenv(DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV):
         storage["cos_storage_class"] = storage_class
+        changed = True
+    if sdk_bootstrap := os.getenv(DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP_ENV):
+        storage["cos_sdk_bootstrap_enabled"] = _parse_bool_env(
+            sdk_bootstrap,
+            DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP_ENV,
+        )
         changed = True
     if ttl := os.getenv(DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV):
         storage["signed_url_ttl_seconds"] = int(ttl)

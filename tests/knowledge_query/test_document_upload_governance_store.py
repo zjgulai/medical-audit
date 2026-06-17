@@ -21,6 +21,7 @@ from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
     document_object_storage_from_settings,
     document_storage_objects_schema_ready,
+    tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.core.config import DocumentStorageSettings
 
@@ -231,6 +232,85 @@ def test_document_object_storage_factory_builds_tencent_cos_with_injected_client
     assert result.encryption_mode == "sse-kms"
     assert client.calls[0]["kms_key_id"] == "kms-key-1"
     assert client.calls[0]["storage_class"] == "STANDARD_IA"
+
+
+def test_tencent_cos_sdk_bootstrap_disabled_by_default() -> None:
+    client = tencent_cos_put_object_client_from_settings(
+        DocumentStorageSettings(
+            provider="tencent-cos",
+            cos_bucket="medical-audit-prod",
+            cos_region="ap-guangzhou",
+        ),
+        environ={"COS_SECRET_ID": "sid", "COS_SECRET_KEY": "skey"},
+        qcloud_cos_module=FakeTencentCosSdkModule(),
+    )
+
+    assert client is None
+
+
+def test_tencent_cos_sdk_bootstrap_requires_secret_env_names() -> None:
+    with pytest.raises(ValueError, match="cos_secret_id_env, cos_secret_key_env"):
+        tencent_cos_put_object_client_from_settings(
+            DocumentStorageSettings.model_validate(
+                {
+                    "provider": "tencent-cos",
+                    "cos_bucket": "medical-audit-prod",
+                    "cos_region": "ap-guangzhou",
+                    "cos_sdk_bootstrap_enabled": True,
+                }
+            ),
+            environ={"COS_SECRET_ID": "sid", "COS_SECRET_KEY": "skey"},
+            qcloud_cos_module=FakeTencentCosSdkModule(),
+        )
+
+
+def test_tencent_cos_sdk_bootstrap_requires_secret_values() -> None:
+    with pytest.raises(ValueError, match="COS_SECRET_KEY"):
+        tencent_cos_put_object_client_from_settings(
+            DocumentStorageSettings.model_validate(
+                {
+                    "provider": "tencent-cos",
+                    "cos_bucket": "medical-audit-prod",
+                    "cos_region": "ap-guangzhou",
+                    "cos_secret_id_env": "COS_SECRET_ID",
+                    "cos_secret_key_env": "COS_SECRET_KEY",
+                    "cos_sdk_bootstrap_enabled": True,
+                }
+            ),
+            environ={"COS_SECRET_ID": "sid"},
+            qcloud_cos_module=FakeTencentCosSdkModule(),
+        )
+
+
+def test_tencent_cos_sdk_bootstrap_builds_client_from_fake_module() -> None:
+    module = FakeTencentCosSdkModule()
+
+    client = tencent_cos_put_object_client_from_settings(
+        DocumentStorageSettings.model_validate(
+            {
+                "provider": "tencent-cos",
+                "cos_bucket": "medical-audit-prod",
+                "cos_region": "ap-guangzhou",
+                "cos_secret_id_env": "COS_SECRET_ID",
+                "cos_secret_key_env": "COS_SECRET_KEY",
+                "cos_sdk_bootstrap_enabled": True,
+            }
+        ),
+        environ={"COS_SECRET_ID": "sid", "COS_SECRET_KEY": "skey"},
+        qcloud_cos_module=module,
+    )
+
+    assert isinstance(client, TencentCosSdkPutObjectClient)
+    assert module.config_calls == [
+        {
+            "Region": "ap-guangzhou",
+            "SecretId": "sid",
+            "SecretKey": "skey",
+            "Token": None,
+            "Scheme": "https",
+        }
+    ]
+    assert module.client_configs == [module.configs[0]]
 
 
 def test_document_upload_store_can_record_local_storage_object(
@@ -445,3 +525,21 @@ class FakeTencentCosSdkClient:
     def put_object(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
         return dict(self.response)
+
+
+class FakeTencentCosSdkModule:
+    def __init__(self) -> None:
+        self.config_calls: list[dict[str, object]] = []
+        self.configs: list[dict[str, object]] = []
+        self.client_configs: list[dict[str, object]] = []
+
+    def CosConfig(self, **kwargs: object) -> dict[str, object]:  # noqa: N802
+        config = dict(kwargs)
+        self.config_calls.append(config)
+        self.configs.append(config)
+        return config
+
+    def CosS3Client(self, config: object) -> FakeTencentCosSdkClient:  # noqa: N802
+        assert isinstance(config, dict)
+        self.client_configs.append(config)
+        return FakeTencentCosSdkClient(response={"ETag": '"etag"', "VersionId": "version-1"})

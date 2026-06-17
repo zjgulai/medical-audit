@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import uuid4
 
 from sqlalchemy import create_engine, inspect, select
@@ -24,12 +27,62 @@ from medical_audit_kb.api.document_upload_governance_store import (
     LocalDocumentObjectStorage,
     TencentCosDocumentObjectStorage,
     TencentCosPutObjectClient,
+    TencentCosSdkClient,
+    TencentCosSdkPutObjectClient,
 )
 from medical_audit_kb.core.config import DocumentStorageSettings
 from medical_audit_kb.db.models import Base, DocumentStorageObject, DocumentUploadRecord, utc_now
 
 DOCUMENT_UPLOAD_ID_PREFIX = "document-upload-"
 DOCUMENT_STORAGE_OBJECTS_TABLE = "document_storage_objects"
+
+
+class TencentCosSdkModule(Protocol):
+    def CosConfig(self, **kwargs: object) -> object:  # noqa: N802
+        pass
+
+    def CosS3Client(self, config: object) -> TencentCosSdkClient:  # noqa: N802
+        pass
+
+
+def tencent_cos_put_object_client_from_settings(
+    settings: DocumentStorageSettings,
+    *,
+    environ: Mapping[str, str] | None = None,
+    qcloud_cos_module: TencentCosSdkModule | None = None,
+) -> TencentCosPutObjectClient | None:
+    if not settings.cos_sdk_bootstrap_enabled:
+        return None
+    if settings.provider != "tencent-cos":
+        raise ValueError("Tencent COS SDK bootstrap requires tencent-cos document storage")
+    if not settings.cos_secret_id_env or not settings.cos_secret_key_env:
+        raise ValueError(
+            "cos_secret_id_env, cos_secret_key_env are required for Tencent COS SDK bootstrap"
+        )
+    if not settings.cos_region:
+        raise ValueError("cos_region is required for Tencent COS SDK bootstrap")
+
+    selected_environ = os.environ if environ is None else environ
+    secret_id = selected_environ.get(settings.cos_secret_id_env, "").strip()
+    secret_key = selected_environ.get(settings.cos_secret_key_env, "").strip()
+    missing = []
+    if not secret_id:
+        missing.append(settings.cos_secret_id_env)
+    if not secret_key:
+        missing.append(settings.cos_secret_key_env)
+    if missing:
+        joined = ", ".join(missing)
+        raise ValueError(f"missing Tencent COS secret environment variables: {joined}")
+
+    module = qcloud_cos_module or _import_qcloud_cos_module()
+    config = module.CosConfig(
+        Region=settings.cos_region,
+        SecretId=secret_id,
+        SecretKey=secret_key,
+        Token=None,
+        Scheme="https",
+    )
+    return TencentCosSdkPutObjectClient(sdk_client=module.CosS3Client(config))
 
 
 def document_object_storage_from_settings(
@@ -65,6 +118,16 @@ def document_object_storage_from_settings(
         )
 
     raise ValueError(f"unsupported document storage provider: {settings.provider}")
+
+
+def _import_qcloud_cos_module() -> TencentCosSdkModule:
+    try:
+        module = importlib.import_module("qcloud_cos")
+    except ImportError as exc:
+        raise RuntimeError(
+            "qcloud_cos is required when Tencent COS SDK bootstrap is enabled"
+        ) from exc
+    return cast(TencentCosSdkModule, module)
 
 
 class DocumentUploadStore(Protocol):
