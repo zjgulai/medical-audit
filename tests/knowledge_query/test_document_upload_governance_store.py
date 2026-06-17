@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
+from typing import cast
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -12,6 +13,7 @@ from medical_audit_kb.api.document_upload_governance_store import (
     DocumentUploadGovernanceJobCreate,
     LocalDocumentObjectStorage,
     SqlAlchemyDocumentUploadGovernanceStore,
+    TencentCosDocumentObjectStorage,
 )
 from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
@@ -39,6 +41,67 @@ def test_local_document_object_storage_keeps_existing_partitioned_path(
     assert result.storage_status == "local-quarantine"
     assert result.metadata["storage_backend"] == "local-filesystem"
     assert (tmp_path / "document-uploads" / result.object_key).read_bytes() == b"policy evidence"
+
+
+def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> None:
+    client = FakeTencentCosClient(
+        etag='"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"',
+        version_id="cos-version-1",
+    )
+    storage = TencentCosDocumentObjectStorage(
+        client=client,
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        prefix="personal-materials/test",
+        encryption_mode="sse-kms",
+        kms_key_id="kms-key-1",
+        storage_class="STANDARD_IA",
+    )
+
+    result = storage.put_object(
+        request=DocumentObjectStoragePutRequest(
+            upload_key="document-upload-cos123",
+            file_name="patient-report.txt",
+            extension="txt",
+            content=b"policy evidence",
+            sha256="b" * 64,
+            created_at=datetime(2026, 6, 17, 10, 11, tzinfo=UTC),
+        )
+    )
+
+    assert result.provider == "tencent-cos"
+    assert result.bucket == "medical-audit-prod"
+    assert result.region == "ap-guangzhou"
+    assert result.object_key == (
+        "personal-materials/test/2026/06/17/"
+        f"document-upload-cos123/{'b' * 64}.txt"
+    )
+    assert "patient-report" not in result.object_key
+    assert result.etag == '"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"'
+    assert result.object_version == "cos-version-1"
+    assert result.storage_class == "STANDARD_IA"
+    assert result.encryption_mode == "sse-kms"
+    assert result.storage_status == "object-stored"
+    assert result.metadata == {
+        "content_type": "text/plain",
+        "storage_backend": "tencent-cos",
+    }
+    assert client.calls == [
+        {
+            "bucket": "medical-audit-prod",
+            "region": "ap-guangzhou",
+            "object_key": result.object_key,
+            "content": b"policy evidence",
+            "content_type": "text/plain",
+            "metadata": {
+                "sha256": "b" * 64,
+                "upload_key": "document-upload-cos123",
+            },
+            "encryption_mode": "sse-kms",
+            "kms_key_id": "kms-key-1",
+            "storage_class": "STANDARD_IA",
+        }
+    ]
 
 
 def test_document_upload_store_can_record_local_storage_object(
@@ -147,7 +210,7 @@ def test_document_upload_governance_store_tracks_storage_and_jobs(
             provider="local",
             object_key=str(upload["storage_path"]),
             sha256=str(upload["sha256"]),
-            size_bytes=int(upload["size_bytes"]),
+            size_bytes=cast(int, upload["size_bytes"]),
             storage_status="local-quarantine",
             metadata={"source": "unit-test"},
         )
@@ -158,7 +221,7 @@ def test_document_upload_governance_store_tracks_storage_and_jobs(
             provider="local",
             object_key=str(upload["storage_path"]),
             sha256=str(upload["sha256"]),
-            size_bytes=int(upload["size_bytes"]),
+            size_bytes=cast(int, upload["size_bytes"]),
             storage_status="object-stored",
             metadata={"source": "unit-test", "synced": True},
         )
@@ -188,7 +251,7 @@ def test_document_upload_governance_store_tracks_storage_and_jobs(
         finished_at=finished_at,
     )
 
-    assert job["job_key"].startswith(DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX)
+    assert str(job["job_key"]).startswith(DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX)
     assert job["status"] == "pending"
     assert updated_job is not None
     assert updated_job["status"] == "passed"
@@ -208,3 +271,38 @@ def _enable_sqlite_foreign_keys(
         cursor.execute("PRAGMA foreign_keys=ON")
     finally:
         cursor.close()
+
+
+class FakeTencentCosClient:
+    def __init__(self, *, etag: str, version_id: str) -> None:
+        self.etag = etag
+        self.version_id = version_id
+        self.calls: list[dict[str, object]] = []
+
+    def put_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: dict[str, str],
+        encryption_mode: str,
+        kms_key_id: str | None,
+        storage_class: str,
+    ) -> dict[str, str]:
+        self.calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+                "content": content,
+                "content_type": content_type,
+                "metadata": metadata,
+                "encryption_mode": encryption_mode,
+                "kms_key_id": kms_key_id,
+                "storage_class": storage_class,
+            }
+        )
+        return {"etag": self.etag, "version_id": self.version_id}

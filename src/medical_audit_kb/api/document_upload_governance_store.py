@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,6 +73,23 @@ class DocumentObjectStorage(Protocol):
         pass
 
 
+class TencentCosPutObjectClient(Protocol):
+    def put_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: dict[str, str],
+        encryption_mode: str,
+        kms_key_id: str | None,
+        storage_class: str,
+    ) -> Mapping[str, str | None]:
+        pass
+
+
 @dataclass(frozen=True, slots=True)
 class LocalDocumentObjectStorage:
     upload_root: Path
@@ -101,6 +119,63 @@ class LocalDocumentObjectStorage:
             metadata={
                 "storage_backend": "local-filesystem",
                 "file_name": request.file_name,
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TencentCosDocumentObjectStorage:
+    client: TencentCosPutObjectClient
+    bucket: str
+    region: str
+    prefix: str
+    encryption_mode: str = "sse-cos"
+    kms_key_id: str | None = None
+    storage_class: str = "STANDARD"
+    provider: DocumentStorageProvider = "tencent-cos"
+
+    def put_object(
+        self,
+        request: DocumentObjectStoragePutRequest,
+    ) -> DocumentObjectStoragePutResult:
+        object_key = _cos_object_key(
+            prefix=self.prefix,
+            created_at=request.created_at,
+            upload_key=request.upload_key,
+            sha256=request.sha256,
+            extension=request.extension,
+        )
+        content_type = _content_type_for_extension(request.extension)
+        response = self.client.put_object(
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+            content=request.content,
+            content_type=content_type,
+            metadata={
+                "sha256": request.sha256,
+                "upload_key": request.upload_key,
+            },
+            encryption_mode=self.encryption_mode,
+            kms_key_id=self.kms_key_id,
+            storage_class=self.storage_class,
+        )
+        return DocumentObjectStoragePutResult(
+            upload_key=request.upload_key,
+            provider=self.provider,
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+            object_version=response.get("version_id"),
+            etag=response.get("etag"),
+            sha256=request.sha256,
+            size_bytes=len(request.content),
+            storage_class=self.storage_class,
+            encryption_mode=self.encryption_mode,
+            storage_status="object-stored",
+            metadata={
+                "content_type": content_type,
+                "storage_backend": "tencent-cos",
             },
         )
 
@@ -417,6 +492,34 @@ def _local_object_key(
 ) -> str:
     partition = created_at.astimezone(UTC).strftime("%Y/%m/%d")
     return (Path(partition) / f"{upload_key}.{extension}").as_posix()
+
+
+def _cos_object_key(
+    *,
+    prefix: str,
+    created_at: datetime,
+    upload_key: str,
+    sha256: str,
+    extension: str,
+) -> str:
+    partition = created_at.astimezone(UTC).strftime("%Y/%m/%d")
+    suffix = f"{sha256}.{extension.lower()}" if extension else sha256
+    path = (Path(partition) / upload_key / suffix).as_posix()
+    normalized_prefix = prefix.strip("/")
+    if not normalized_prefix:
+        return path
+    return f"{normalized_prefix}/{path}"
+
+
+def _content_type_for_extension(extension: str) -> str:
+    return {
+        "csv": "text/csv",
+        "md": "text/markdown",
+        "pdf": "application/pdf",
+        "txt": "text/plain",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    }.get(extension.lower(), "application/octet-stream")
 
 
 def _datetime_to_iso(value: datetime | None) -> str | None:
