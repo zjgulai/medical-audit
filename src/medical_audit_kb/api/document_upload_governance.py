@@ -32,9 +32,7 @@ INDEX_READINESS_BLOCKERS: tuple[DocumentUploadIndexBlocker, ...] = (
     "dlp-review-required",
     "manual-index-approval-required",
 )
-INDEX_READINESS_REJECTED_BLOCKER: DocumentUploadIndexBlocker = (
-    "manual-index-approval-rejected"
-)
+INDEX_READINESS_REJECTED_BLOCKER: DocumentUploadIndexBlocker = "manual-index-approval-rejected"
 INDEX_READINESS_NEXT_ACTION: DocumentUploadIndexNextAction = "complete-upload-governance"
 INDEX_READINESS_READY_NEXT_ACTION: DocumentUploadIndexNextAction = "ingest-personal-upload"
 INDEX_READINESS_REJECTED_NEXT_ACTION: DocumentUploadIndexNextAction = (
@@ -85,15 +83,31 @@ class GovernanceCheckResult:
     status: DocumentUploadGovernanceCheckStatus
     blocker: DocumentUploadIndexBlocker | None
     detail: str
+    job_key: str | None = None
+    external_job_id: str | None = None
+    risk_level: str | None = None
+    result_code: str | None = None
+    finished_at: str | None = None
 
     def to_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "check_type": self.check_type,
             "provider": self.provider,
             "status": self.status,
             "blocker": self.blocker,
             "detail": self.detail,
         }
+        if self.job_key is not None:
+            payload["job_key"] = self.job_key
+        if self.external_job_id is not None:
+            payload["external_job_id"] = self.external_job_id
+        if self.risk_level is not None:
+            payload["risk_level"] = self.risk_level
+        if self.result_code is not None:
+            payload["result_code"] = self.result_code
+        if self.finished_at is not None:
+            payload["finished_at"] = self.finished_at
+        return payload
 
 
 class DocumentUploadVirusScanner(Protocol):
@@ -242,13 +256,9 @@ class ManualIndexApprovalGate:
 
 @dataclass(frozen=True, slots=True)
 class DocumentUploadGovernancePolicy:
-    virus_scanner: DocumentUploadVirusScanner = field(
-        default_factory=UnconfiguredVirusScanner
-    )
+    virus_scanner: DocumentUploadVirusScanner = field(default_factory=UnconfiguredVirusScanner)
     dlp_reviewer: DocumentUploadDlpReviewer = field(default_factory=UnconfiguredDlpReviewer)
-    manual_approval_gate: ManualIndexApprovalGate = field(
-        default_factory=ManualIndexApprovalGate
-    )
+    manual_approval_gate: ManualIndexApprovalGate = field(default_factory=ManualIndexApprovalGate)
 
     def evaluate(self, context: DocumentUploadGovernanceContext) -> dict[str, object]:
         checks = (
@@ -345,9 +355,7 @@ def apply_manual_index_decision(
         note=note,
     )
     updated_checks = tuple(
-        updated_manual_check
-        if check.check_type == "manual-index-approval"
-        else check
+        updated_manual_check if check.check_type == "manual-index-approval" else check
         for check in checks
     )
     if not any(check.check_type == "manual-index-approval" for check in updated_checks):
@@ -360,9 +368,7 @@ def _readiness_payload(
     checks: tuple[GovernanceCheckResult, ...],
 ) -> dict[str, object]:
     blockers = [
-        check.blocker
-        for check in checks
-        if check.status == "blocked" and check.blocker is not None
+        check.blocker for check in checks if check.status == "blocked" and check.blocker is not None
     ]
     status, next_action = _readiness_status_and_next_action(blockers)
     return {
@@ -381,6 +387,13 @@ def _valid_check_payload(value: object) -> bool:
     status = value.get("status")
     blocker = value.get("blocker")
     detail = value.get("detail")
+    optional_text_fields = (
+        "job_key",
+        "external_job_id",
+        "risk_level",
+        "result_code",
+        "finished_at",
+    )
     return (
         isinstance(check_type, str)
         and check_type in _VALID_CHECK_TYPES
@@ -391,6 +404,11 @@ def _valid_check_payload(value: object) -> bool:
         and (blocker is None or (isinstance(blocker, str) and blocker in _VALID_BLOCKERS))
         and isinstance(detail, str)
         and bool(detail)
+        and all(
+            value.get(field) is None
+            or (isinstance(value.get(field), str) and bool(value.get(field)))
+            for field in optional_text_fields
+        )
     )
 
 
@@ -403,6 +421,11 @@ def _check_result_from_payload(value: dict[str, object]) -> GovernanceCheckResul
         status=cast(DocumentUploadGovernanceCheckStatus, value["status"]),
         blocker=cast(DocumentUploadIndexBlocker | None, value["blocker"]),
         detail=str(value["detail"]),
+        job_key=_optional_text(value.get("job_key")),
+        external_job_id=_optional_text(value.get("external_job_id")),
+        risk_level=_optional_text(value.get("risk_level")),
+        result_code=_optional_text(value.get("result_code")),
+        finished_at=_optional_text(value.get("finished_at")),
     )
 
 
@@ -446,7 +469,7 @@ def _virus_scanner_from_settings(
         return UnconfiguredVirusScanner()
     if settings.virus_scan_provider == "local-test":
         return LocalTestVirusScanner(mode=settings.virus_scan_test_mode)
-    raise ValueError(f"unsupported document upload virus scanner: {settings.virus_scan_provider}")
+    return UnconfiguredVirusScanner(provider=settings.virus_scan_provider)
 
 
 def _dlp_reviewer_from_settings(
@@ -456,7 +479,13 @@ def _dlp_reviewer_from_settings(
         return UnconfiguredDlpReviewer()
     if settings.dlp_review_provider == "local-test":
         return LocalTestDlpReviewer(mode=settings.dlp_review_test_mode)
-    raise ValueError(f"unsupported document upload DLP reviewer: {settings.dlp_review_provider}")
+    return UnconfiguredDlpReviewer(provider=settings.dlp_review_provider)
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _context_contains_any(

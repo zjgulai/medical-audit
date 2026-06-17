@@ -45,7 +45,7 @@ class DocumentUploadPermissions(BaseModel):
 
 
 class DocumentIndexReadinessCheck(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
 
     check_type: Literal["virus-scan", "dlp-review", "manual-index-approval"]
     provider: str
@@ -232,9 +232,7 @@ async def upload_document(
             index_status=item.index_status,
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,
-            index_readiness_checks=[
-                check.model_dump() for check in item.index_readiness.checks
-            ],
+            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
         ),
     )
     return DocumentUploadResponse(
@@ -300,9 +298,7 @@ def decide_manual_index_approval(
             index_status=item.index_status,
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,
-            index_readiness_checks=[
-                check.model_dump() for check in item.index_readiness.checks
-            ],
+            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
         ),
     )
     return DocumentUploadResponse(

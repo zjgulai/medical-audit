@@ -382,6 +382,83 @@ class DocumentUploadRecord(Base):
     )
 
 
+class DocumentStorageObject(Base):
+    __tablename__ = "document_storage_objects"
+    __table_args__ = (
+        UniqueConstraint(
+            "upload_key",
+            "provider",
+            name="uq_document_storage_objects_upload_provider",
+        ),
+        Index("idx_document_storage_objects_upload_key", "upload_key"),
+        Index("idx_document_storage_objects_provider", "provider"),
+        Index("idx_document_storage_objects_status", "storage_status"),
+        Index("idx_document_storage_objects_sha256", "sha256"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    upload_key: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("document_upload_records.upload_key", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(48), nullable=False)
+    bucket: Mapped[str | None] = mapped_column(Text)
+    region: Mapped[str | None] = mapped_column(String(64))
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    object_version: Mapped[str | None] = mapped_column(Text)
+    etag: Mapped[str | None] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_class: Mapped[str | None] = mapped_column(String(64))
+    encryption_mode: Mapped[str | None] = mapped_column(String(64))
+    storage_status: Mapped[str] = mapped_column(String(48), nullable=False)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class DocumentUploadGovernanceJob(Base):
+    __tablename__ = "document_upload_governance_jobs"
+    __table_args__ = (
+        Index("idx_document_upload_governance_jobs_upload_key", "upload_key"),
+        Index("idx_document_upload_governance_jobs_job_type", "job_type"),
+        Index("idx_document_upload_governance_jobs_status", "status"),
+        Index("idx_document_upload_governance_jobs_external_job", "external_job_id"),
+        Index("idx_document_upload_governance_jobs_next_retry", "next_retry_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    job_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    upload_key: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("document_upload_records.upload_key", ondelete="CASCADE"),
+        nullable=False,
+    )
+    job_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_job_id: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(48), nullable=False)
+    result_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ReviewTask(Base):
     __tablename__ = "review_tasks"
     __table_args__ = (

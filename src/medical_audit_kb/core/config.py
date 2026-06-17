@@ -22,6 +22,23 @@ DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV: Final = (
 )
 DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE"
 DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE"
+DOCUMENT_STORAGE_PROVIDER_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER"
+DOCUMENT_STORAGE_COS_BUCKET_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_BUCKET"
+DOCUMENT_STORAGE_COS_REGION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_REGION"
+DOCUMENT_STORAGE_COS_PREFIX_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_PREFIX"
+DOCUMENT_STORAGE_COS_SECRET_ID_NAME_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SECRET_ID_ENV"
+DOCUMENT_STORAGE_COS_SECRET_KEY_NAME_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SECRET_KEY_ENV"
+)
+DOCUMENT_STORAGE_COS_ENCRYPTION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_ENCRYPTION"
+DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_KMS_KEY_ID"
+DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS"
+)
+DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS"
+)
+DOCUMENT_OBJECT_RETENTION_DAYS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_OBJECT_RETENTION_DAYS"
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -47,10 +64,36 @@ class ModelProviderSettings(BaseModel):
 class DocumentUploadGovernanceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    virus_scan_provider: Literal["unconfigured", "local-test"] = "unconfigured"
-    dlp_review_provider: Literal["unconfigured", "local-test"] = "unconfigured"
+    virus_scan_provider: Literal[
+        "unconfigured",
+        "local-test",
+        "tencent-ci-virus",
+        "clamav-sidecar",
+    ] = "unconfigured"
+    dlp_review_provider: Literal[
+        "unconfigured",
+        "local-test",
+        "ruleset-v1",
+        "external-dlp",
+    ] = "unconfigured"
     virus_scan_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
     dlp_review_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
+
+
+class DocumentStorageSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: Literal["local", "tencent-cos"] = "local"
+    cos_bucket: str | None = None
+    cos_region: str | None = None
+    cos_prefix: str = "personal-materials/prod"
+    cos_secret_id_env: str | None = None
+    cos_secret_key_env: str | None = None
+    cos_encryption: Literal["sse-cos", "sse-kms"] = "sse-cos"
+    cos_kms_key_id: str | None = None
+    signed_url_ttl_seconds: int = Field(default=120, ge=1)
+    local_quarantine_retention_days: int = Field(default=7, ge=0)
+    object_retention_days: int = Field(default=180, ge=1)
 
 
 class KnowledgeQuerySettings(BaseModel):
@@ -65,6 +108,7 @@ class KnowledgeQuerySettings(BaseModel):
     document_upload_governance: DocumentUploadGovernanceSettings = Field(
         default_factory=DocumentUploadGovernanceSettings
     )
+    document_storage: DocumentStorageSettings = Field(default_factory=DocumentStorageSettings)
     source_collection_weights: dict[str, float]
 
     @field_validator("source_collection_weights")
@@ -138,6 +182,8 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         merged["model_provider"] = model_provider
     if document_upload_governance := _document_upload_governance_env_overrides(merged):
         merged["document_upload_governance"] = document_upload_governance
+    if document_storage := _document_storage_env_overrides(merged):
+        merged["document_storage"] = document_storage
 
     return merged
 
@@ -162,3 +208,44 @@ def _document_upload_governance_env_overrides(
     if not changed:
         return None
     return governance
+
+
+def _document_storage_env_overrides(data: dict[str, Any]) -> dict[str, Any] | None:
+    storage = dict(cast(dict[str, Any], data.get("document_storage", {})))
+    changed = False
+    if provider := os.getenv(DOCUMENT_STORAGE_PROVIDER_ENV):
+        storage["provider"] = provider
+        changed = True
+    if bucket := os.getenv(DOCUMENT_STORAGE_COS_BUCKET_ENV):
+        storage["cos_bucket"] = bucket
+        changed = True
+    if region := os.getenv(DOCUMENT_STORAGE_COS_REGION_ENV):
+        storage["cos_region"] = region
+        changed = True
+    if prefix := os.getenv(DOCUMENT_STORAGE_COS_PREFIX_ENV):
+        storage["cos_prefix"] = prefix
+        changed = True
+    if secret_id_env := os.getenv(DOCUMENT_STORAGE_COS_SECRET_ID_NAME_ENV):
+        storage["cos_secret_id_env"] = secret_id_env
+        changed = True
+    if secret_key_env := os.getenv(DOCUMENT_STORAGE_COS_SECRET_KEY_NAME_ENV):
+        storage["cos_secret_key_env"] = secret_key_env
+        changed = True
+    if encryption := os.getenv(DOCUMENT_STORAGE_COS_ENCRYPTION_ENV):
+        storage["cos_encryption"] = encryption
+        changed = True
+    if kms_key_id := os.getenv(DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV):
+        storage["cos_kms_key_id"] = kms_key_id
+        changed = True
+    if ttl := os.getenv(DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV):
+        storage["signed_url_ttl_seconds"] = int(ttl)
+        changed = True
+    if retention_days := os.getenv(DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS_ENV):
+        storage["local_quarantine_retention_days"] = int(retention_days)
+        changed = True
+    if retention_days := os.getenv(DOCUMENT_OBJECT_RETENTION_DAYS_ENV):
+        storage["object_retention_days"] = int(retention_days)
+        changed = True
+    if not changed:
+        return None
+    return storage
