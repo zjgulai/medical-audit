@@ -538,6 +538,70 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert persisted_items[0]["id"] == uploaded["id"]
 
 
+def test_documents_upload_download_metadata_is_permission_scoped(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-downloads.db'}"
+    upload_root = tmp_path / "document-uploads"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+        record_storage_objects=True,
+    )
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    owner_response = client.get(
+        f"/documents/uploads/{upload_id}/download",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+
+    assert owner_response.status_code == 200
+    owner_body = owner_response.json()
+    assert owner_body["item"]["id"] == upload_id
+    assert owner_body["download"] == {
+        "status": "metadata-only",
+        "access_scope": "owner",
+        "delivery": "not-issued",
+        "reason": "signed-download-not-configured",
+        "signed_url": None,
+        "expires_at": None,
+        "storage_path": owner_body["item"]["storage_path"],
+        "storage_objects": owner_body["download"]["storage_objects"],
+    }
+    assert owner_body["download"]["storage_objects"][0]["provider"] == "local"
+    assert owner_body["download"]["storage_objects"][0]["storage_status"] == "local-quarantine"
+    assert owner_body["download"]["storage_objects"][0]["object_key"] == owner_body["item"][
+        "storage_path"
+    ]
+    assert state.operation_logs[-1]["action"] == "document-upload-download-metadata"
+    assert state.operation_logs[-1]["payload"]["access_scope"] == "owner"
+    assert state.operation_logs[-1]["payload"]["signed_url_issued"] is False
+
+    other_response = client.get(
+        f"/documents/uploads/{upload_id}/download",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+    )
+
+    assert other_response.status_code == 404
+    assert other_response.json()["detail"] == "document upload not found"
+    assert state.operation_logs[-1]["action"] == "document-upload-download-access-denied"
+    assert state.operation_logs[-1]["payload"]["status_code"] == 404
+
+    head_response = client.get(
+        f"/documents/uploads/{upload_id}/download",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert head_response.status_code == 200
+    assert head_response.json()["download"]["access_scope"] == "read-all"
+
+
 def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
     tmp_path: Path,
 ) -> None:

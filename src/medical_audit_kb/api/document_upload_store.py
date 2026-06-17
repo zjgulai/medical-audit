@@ -253,6 +253,9 @@ class DocumentUploadStore(Protocol):
     def get_upload(self, upload_key: str) -> dict[str, object] | None:
         pass
 
+    def list_storage_objects(self, upload_key: str) -> list[dict[str, object]]:
+        pass
+
     def update_index_readiness(
         self,
         *,
@@ -358,6 +361,17 @@ class SqlAlchemyDocumentUploadStore:
                 return None
             return _record_to_payload(record)
 
+    def list_storage_objects(self, upload_key: str) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            if not inspect(session.connection()).has_table(DOCUMENT_STORAGE_OBJECTS_TABLE):
+                return []
+            records = session.scalars(
+                select(DocumentStorageObject)
+                .where(DocumentStorageObject.upload_key == upload_key)
+                .order_by(DocumentStorageObject.created_at.asc())
+            ).all()
+            return [_storage_object_to_payload(record) for record in records]
+
     def update_index_readiness(
         self,
         *,
@@ -450,6 +464,10 @@ class InMemoryDocumentUploadStore:
                 return copy.deepcopy(record)
         return None
 
+    def list_storage_objects(self, upload_key: str) -> list[dict[str, object]]:
+        _ = upload_key
+        return []
+
     def update_index_readiness(
         self,
         *,
@@ -504,6 +522,26 @@ def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
     }
 
 
+def _storage_object_to_payload(record: DocumentStorageObject) -> dict[str, object]:
+    return {
+        "upload_key": record.upload_key,
+        "provider": record.provider,
+        "bucket": record.bucket,
+        "region": record.region,
+        "object_key": record.object_key,
+        "object_version": record.object_version,
+        "etag": record.etag,
+        "sha256": record.sha256,
+        "size_bytes": record.size_bytes,
+        "storage_class": record.storage_class,
+        "encryption_mode": record.encryption_mode,
+        "storage_status": record.storage_status,
+        "retention_until": _datetime_to_iso(record.retention_until),
+        "created_at": _datetime_to_iso(record.created_at),
+        "updated_at": _datetime_to_iso(record.updated_at),
+    }
+
+
 def _copy_index_readiness(value: dict[str, object] | None) -> dict[str, object]:
     if value is None:
         return default_index_readiness()
@@ -518,7 +556,9 @@ def _size_kb(size_bytes: int) -> int:
     return max(1, round(size_bytes / 1024))
 
 
-def _datetime_to_iso(value: datetime) -> str:
+def _datetime_to_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")

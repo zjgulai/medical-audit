@@ -135,6 +135,35 @@ export type DocumentUploadItem = {
   readonly index_readiness: DocumentIndexReadiness;
 };
 
+export type DocumentStorageObjectItem = {
+  readonly upload_key: string;
+  readonly provider: "local" | "tencent-cos";
+  readonly bucket: string | null;
+  readonly region: string | null;
+  readonly object_key: string;
+  readonly object_version: string | null;
+  readonly etag: string | null;
+  readonly sha256: string;
+  readonly size_bytes: number;
+  readonly storage_class: string | null;
+  readonly encryption_mode: string | null;
+  readonly storage_status: "local-quarantine" | "object-stored" | "object-missing";
+  readonly retention_until: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+};
+
+export type DocumentUploadDownloadAccess = {
+  readonly status: "metadata-only";
+  readonly access_scope: "owner" | "read-all";
+  readonly delivery: "not-issued";
+  readonly reason: "signed-download-not-configured";
+  readonly signed_url: string | null;
+  readonly expires_at: string | null;
+  readonly storage_path: string;
+  readonly storage_objects: readonly DocumentStorageObjectItem[];
+};
+
 export type DocumentUploadListResponse = {
   readonly items: readonly DocumentUploadItem[];
   readonly store: {
@@ -150,6 +179,12 @@ export type DocumentUploadResponse = {
     readonly ready: boolean;
     readonly backend: string;
   };
+  readonly permissions: DocumentUploadPermissions;
+};
+
+export type DocumentUploadDownloadResponse = {
+  readonly item: DocumentUploadItem;
+  readonly download: DocumentUploadDownloadAccess;
   readonly permissions: DocumentUploadPermissions;
 };
 

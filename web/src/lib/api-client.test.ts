@@ -7,6 +7,7 @@ import {
   fetchAuditFindings,
   fetchAgents,
   fetchBackendHealth,
+  fetchDocumentUploadDownload,
   fetchDocumentPermissions,
   fetchDocumentUploads,
   fetchProjectMembers,
@@ -491,6 +492,65 @@ describe("api-client", () => {
     expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
     expect(result.item.index_status).toBe("not-indexed");
     expect(result.item.index_readiness.blockers).toContain("virus-scan-required");
+  });
+
+  it("fetches document upload download metadata through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "document-upload-001",
+            name: "policy.pdf",
+            extension: "pdf",
+            size_bytes: 128,
+            size_kb: 1,
+            sha256: "c".repeat(64),
+            storage_path: "2026/06/15/document-upload-001.pdf",
+            visibility: "private",
+            status: "retained",
+            created_by: "next-knowledge-query",
+            created_at: "2026-06-15T00:00:00Z",
+            retention_status: "retained",
+            index_status: "not-indexed",
+            index_readiness: {
+              status: "blocked",
+              blockers: ["virus-scan-required"],
+              next_action: "complete-upload-governance",
+              checks: []
+            }
+          },
+          download: {
+            status: "metadata-only",
+            access_scope: "owner",
+            delivery: "not-issued",
+            reason: "signed-download-not-configured",
+            signed_url: null,
+            expires_at: null,
+            storage_path: "2026/06/15/document-upload-001.pdf",
+            storage_objects: []
+          },
+          permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: false
+          }
+        })
+      }))
+    );
+
+    const result = await fetchDocumentUploadDownload("document-upload-001");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads/document-upload-001/download", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "auditor",
+        "X-User-Id": "next-knowledge-query"
+      },
+      cache: "no-store"
+    });
+    expect(result.download.status).toBe("metadata-only");
+    expect(result.download.signed_url).toBeNull();
   });
 
   it("creates audit agents through the versioned API proxy", async () => {
