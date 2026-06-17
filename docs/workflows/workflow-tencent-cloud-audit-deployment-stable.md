@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-16
+updated: 2026-06-17
 owner: self
 source: human+ai
 ---
@@ -33,10 +33,27 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-16 个人材料入索引审批状态机部署后当前事实
+### 2026-06-17 个人材料对象记录元数据部署后当前事实
+
+- PR #108 `codex/personal-material-storage-schema-gate` 已合并到 `main` 并完成生产部署，merge commit 为 `c7e54e04b4584ee394a9f428f3de13d7c70519b9`。
+- PR #108 使用 `--apply-schema` 部署，生产创建 `document_storage_objects` 表及索引；当时生产 `.deploy-sha=c7e54e04b4584ee394a9f428f3de13d7c70519b9`，但 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS` 初始仍保持关闭。
+- PR #108 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr108-schema-gate-deploy-20260617.json` 为 `status=pass`；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr108-schema-gate-20260617.json` 为 `status=pass`。
+- 打开 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS` 后，首次 `/documents` 真实上传触发 `500`，报告为 `tmp/outputs/production-documents-storage-record-e2e-20260617.json`。根因是 `document_storage_objects` 与 `document_upload_records` 只有外键字段、没有 ORM relationship，flush 顺序可能先插入对象记录再插入上传记录，导致 FK violation。
+- PR #109 `codex/document-storage-fk-flush-fix` 已合并到 `main` 并完成生产部署，merge commit 为 `6296cd504157171a1b212210dfe9bde1aa46b5a3`。
+- 当前生产部署 SHA：`6296cd504157171a1b212210dfe9bde1aa46b5a3`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- PR #109 部署戳：`pr109-document-storage-fk-fix-20260617`；部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr109-document-storage-fk-fix-deploy-20260617.json` 为 `status=pass`；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr109-document-storage-fk-fix-20260617.json` 为 `status=pass`。
+- 当前生产配置：`MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`；`medical_audit_app` 容器 `running` 且 `health=healthy`，`medical_audit_pg` 容器 `running` 且 `health=healthy`。
+- 当前生产检索后端为 PostgreSQL：`backend=postgres`、`ready=true`、`matching_embedding_count=49051`、`embedding_model=kimi-for-coding`。
+- 生产 `/documents` 对象记录写入型 E2E 报告 `tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json` 为 `status=pass`；上传记录 `document-upload-25f283a6346e` 已写入 `document_upload_records`，对应本地对象记录已写入 `document_storage_objects`。
+- 本轮写入文件：`production-documents-storage-record-e2e-after-pr109-20260617T1011.txt`；宿主机留存路径为 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-25f283a6346e.txt`，`sha256=5a3a4fb1bb03506d1b95825d2f141b0cc05279a3f5653642f022d6bd945fa5e1`。
+- 写入后数据库计数已核验：`document_upload_records=7`、`document_storage_objects=1`；上传人、其他普通审计员和管理员读取边界仍按预期生效。
+- 首次失败上传遗留孤儿文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已确认在 `document_upload_records` 和 `document_storage_objects` 中均无记录；删除前已备份到 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete`，备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`，原文件已删除，删除后 DB 行仍为 `0,0`。
+- 证据边界：本轮只证明个人材料本地对象记录元数据、schema gate、FK flush 顺序、对象记录写入和孤儿文件清理闭环；不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
+
+### 2026-06-16 个人材料入索引审批状态机部署后历史事实
 
 - PR #103 `codex/document-upload-index-readiness-state-machine` 已合并到 `main` 并完成生产部署，merge commit 为 `b425e2123d55a94dc6b6c800b806384eec1de679`。
-- 当前生产部署 SHA：`b425e2123d55a94dc6b6c800b806384eec1de679`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
+- 当时生产部署 SHA：`b425e2123d55a94dc6b6c800b806384eec1de679`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已核验。
 - 本轮部署戳：`pr103-index-readiness-20260616`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-pr103-index-readiness-20260616.sql.gz`，大小约 `979M`。
 - 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr103-index-readiness-20260616.tar.gz`，大小约 `176M`。
@@ -883,6 +900,21 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 权限边界已验证：普通 `auditor` 调用人工审批接口返回 `403`；上传人可读本人记录，其他普通审计员不可见，管理员可读全部个人上传。
 - 审计日志已验证：`document-upload-index-approval-access-denied` 和 `document-upload-index-readiness-update` 均以 `entity_type=document-upload`、`entity_id=<upload_id>` 落库。
 - 证据边界：本轮完成个人材料人工入索引审批状态机和审批审计链路，不等于完成生产级病毒扫描、DLP/脱敏改写、对象存储、下载权限隔离、个人材料实际入索引、真实登录会话或长期存储生命周期策略。
+
+### 5.27 PR #108/#109 个人材料对象记录元数据部署
+
+已在 2026-06-17 合并并部署 PR #108 与 PR #109：
+
+- PR #108 merge commit：`c7e54e04b4584ee394a9f428f3de13d7c70519b9`；部署时使用 `--apply-schema` 创建 `document_storage_objects` 表及索引，部署后 `.deploy-sha=c7e54e04b4584ee394a9f428f3de13d7c70519b9`。
+- PR #108 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr108-schema-gate-deploy-20260617.json` 已通过；部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-pr108-schema-gate-20260617.json` 已通过。
+- 打开对象记录开关后的首个生产写入 E2E `tmp/outputs/production-documents-storage-record-e2e-20260617.json` 失败为 `500`；根因为 ORM flush 可能先写 `document_storage_objects` 再写 `document_upload_records`，触发 FK violation。
+- PR #109 merge commit：`6296cd504157171a1b212210dfe9bde1aa46b5a3`；部署戳为 `pr109-document-storage-fk-fix-20260617`，当前生产 `.deploy-sha=6296cd504157171a1b212210dfe9bde1aa46b5a3`。
+- PR #109 部署后普通生产 smoke `tmp/outputs/production-e2e-smoke-after-pr109-document-storage-fk-fix-deploy-20260617.json` 已通过；部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr109-document-storage-fk-fix-20260617.json` 已通过。
+- 当前生产 `MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS=1`，`document_storage_objects` 对象记录写入已启用。
+- 生产 `/documents` 对象记录写入型 E2E `tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json` 已通过；上传 `document-upload-25f283a6346e` 同时写入 `document_upload_records` 和 `document_storage_objects`。
+- 验收文件：`/opt/medical-audit/document-uploads/2026/06/17/document-upload-25f283a6346e.txt`，`sha256=5a3a4fb1bb03506d1b95825d2f141b0cc05279a3f5653642f022d6bd945fa5e1`；写入后计数为 `document_upload_records=7`、`document_storage_objects=1`。
+- 首次失败上传遗留孤儿文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已备份到 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete` 并删除；备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`，删除后原路径不存在且两张表均无孤儿记录。
+- 证据边界：本轮完成个人材料本地对象记录元数据和 FK flush 修复，不等于完成腾讯云 COS/外部对象存储、生产级病毒扫描、DLP/脱敏改写、下载权限隔离、真实登录会话、个人材料实际入索引或长期存储生命周期策略。
 
 ## 6. 后续维护流程
 
