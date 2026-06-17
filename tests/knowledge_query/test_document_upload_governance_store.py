@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
 from typing import cast
 
+import pytest
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
@@ -17,8 +18,10 @@ from medical_audit_kb.api.document_upload_governance_store import (
 )
 from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
+    document_object_storage_from_settings,
     document_storage_objects_schema_ready,
 )
+from medical_audit_kb.core.config import DocumentStorageSettings
 
 
 def test_local_document_object_storage_keeps_existing_partitioned_path(
@@ -102,6 +105,69 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
             "storage_class": "STANDARD_IA",
         }
     ]
+
+
+def test_document_object_storage_factory_builds_local_by_default(tmp_path: Path) -> None:
+    storage = document_object_storage_from_settings(
+        DocumentStorageSettings(provider="local"),
+        upload_root=tmp_path / "document-uploads",
+    )
+
+    assert isinstance(storage, LocalDocumentObjectStorage)
+    assert storage.upload_root == tmp_path / "document-uploads"
+
+
+def test_document_object_storage_factory_requires_cos_client() -> None:
+    settings = DocumentStorageSettings(
+        provider="tencent-cos",
+        cos_bucket="medical-audit-prod",
+        cos_region="ap-guangzhou",
+    )
+
+    with pytest.raises(ValueError, match="tencent-cos client"):
+        document_object_storage_from_settings(
+            settings,
+            upload_root=Path("unused"),
+        )
+
+
+def test_document_object_storage_factory_builds_tencent_cos_with_injected_client() -> None:
+    client = FakeTencentCosClient(
+        etag='"8f7dd3a13bfa8f5b67a6b734f4c1a4d7"',
+        version_id="cos-version-1",
+    )
+    storage = document_object_storage_from_settings(
+        DocumentStorageSettings(
+            provider="tencent-cos",
+            cos_bucket="medical-audit-prod",
+            cos_region="ap-guangzhou",
+            cos_prefix="personal-materials/prod",
+            cos_encryption="sse-kms",
+            cos_kms_key_id="kms-key-1",
+            cos_storage_class="STANDARD_IA",
+        ),
+        upload_root=Path("unused"),
+        tencent_cos_client=client,
+    )
+
+    assert isinstance(storage, TencentCosDocumentObjectStorage)
+    result = storage.put_object(
+        request=DocumentObjectStoragePutRequest(
+            upload_key="document-upload-cos456",
+            file_name="audit-case.xlsx",
+            extension="xlsx",
+            content=b"spreadsheet bytes",
+            sha256="c" * 64,
+            created_at=datetime(2026, 6, 17, 10, 30, tzinfo=UTC),
+        )
+    )
+
+    assert result.bucket == "medical-audit-prod"
+    assert result.region == "ap-guangzhou"
+    assert result.storage_class == "STANDARD_IA"
+    assert result.encryption_mode == "sse-kms"
+    assert client.calls[0]["kms_key_id"] == "kms-key-1"
+    assert client.calls[0]["storage_class"] == "STANDARD_IA"
 
 
 def test_document_upload_store_can_record_local_storage_object(

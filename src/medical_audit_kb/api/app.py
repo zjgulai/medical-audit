@@ -25,6 +25,7 @@ from medical_audit_kb.api.document_upload_governance import (
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
+    document_object_storage_from_settings,
     document_storage_objects_schema_ready,
 )
 from medical_audit_kb.api.project_member_store import (
@@ -83,6 +84,9 @@ class ApiState:
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
+        document_upload_root = settings.document_upload_root or (
+            settings.index_root / "document-uploads"
+        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -99,8 +103,11 @@ class ApiState:
             ),
             document_upload_store=SqlAlchemyDocumentUploadStore(
                 settings.database_url,
-                upload_root=settings.document_upload_root
-                or settings.index_root / "document-uploads",
+                upload_root=document_upload_root,
+                object_storage=document_object_storage_from_settings(
+                    settings.document_storage,
+                    upload_root=document_upload_root,
+                ),
                 record_storage_objects=_document_storage_object_records_enabled(settings),
             ),
             document_upload_governance=document_upload_governance_policy_from_settings(
