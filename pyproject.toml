@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "asyncpg>=0.29.0",
+    "cos-python-sdk-v5>=1.9.44",
     "fastapi>=0.115.0",
     "greenlet>=3.0.3",
     "httpx>=0.27.0",
