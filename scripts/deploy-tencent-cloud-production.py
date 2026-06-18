@@ -97,9 +97,9 @@ def main() -> int:
         _sync_static_frontend(config)
         if config.apply_schema:
             _apply_schema(config)
-        _write_remote_deploy_sha(config)
         _rebuild_application(config)
         _run_remote_post_checks(config)
+        _write_remote_deploy_sha(config)
         _run_production_smoke(config)
     except DeployError as exc:
         print(f"deploy failed: {exc}", file=sys.stderr)
@@ -438,7 +438,6 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 
 
 def _run_remote_post_checks(config: DeployConfig) -> None:
-    sha = _run_capture(["git", "rev-parse", "HEAD"], cwd=config.repo_root).strip()
     health_format = "{{.State.Health.Status}}"
     script = f"""
 set -euo pipefail
@@ -467,7 +466,6 @@ if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   test "$(docker inspect medical_audit_clamav \
     --format {shlex.quote(health_format)})" = "healthy"
 fi
-test "$(cat .deploy-sha)" = {shlex.quote(sha)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
 if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
