@@ -13,6 +13,7 @@ from typing import Any
 DEFAULT_HOST = "101.34.52.232"
 DEFAULT_USER = "ubuntu"
 DEFAULT_DOMAIN = "audit.lute-tlz-dddd.top"
+DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
 DEFAULT_REMOTE_APP_DIR = "/opt/medical-audit/app"
 DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_REMOTE_BACKUP_ROOT = "/opt/medical-audit/backups"
@@ -49,6 +50,7 @@ def main() -> int:
             remote_app_dir=str(args.remote_app_dir),
             remote_web_dir=str(args.remote_web_dir),
             remote_backup_root=str(args.remote_backup_root),
+            base_url=str(args.base_url),
             backup_limit=int(args.backup_limit),
         )
         local_smoke_reports = _summarize_local_smoke_reports(
@@ -84,6 +86,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ssh-user", default=DEFAULT_USER)
     parser.add_argument("--ssh-host", default=DEFAULT_HOST)
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--remote-app-dir", default=DEFAULT_REMOTE_APP_DIR)
     parser.add_argument("--remote-web-dir", default=DEFAULT_REMOTE_WEB_DIR)
     parser.add_argument("--remote-backup-root", default=DEFAULT_REMOTE_BACKUP_ROOT)
@@ -155,6 +158,7 @@ def _collect_remote_report(
     remote_app_dir: str,
     remote_web_dir: str,
     remote_backup_root: str,
+    base_url: str,
     backup_limit: int,
 ) -> dict[str, Any]:
     if not ssh_key.exists():
@@ -163,6 +167,7 @@ def _collect_remote_report(
         remote_app_dir=remote_app_dir,
         remote_web_dir=remote_web_dir,
         remote_backup_root=remote_backup_root,
+        base_url=base_url.rstrip("/"),
         backup_limit=max(1, backup_limit),
     )
     command = [
@@ -208,6 +213,7 @@ def _remote_audit_code(
     remote_app_dir: str,
     remote_web_dir: str,
     remote_backup_root: str,
+    base_url: str,
     backup_limit: int,
 ) -> str:
     return f"""
@@ -221,6 +227,7 @@ from pathlib import Path
 APP_DIR = {json.dumps(remote_app_dir, ensure_ascii=False)}
 WEB_DIR = {json.dumps(remote_web_dir, ensure_ascii=False)}
 BACKUP_ROOT = {json.dumps(remote_backup_root, ensure_ascii=False)}
+BASE_URL = {json.dumps(base_url, ensure_ascii=False)}
 BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
 
@@ -309,7 +316,12 @@ def governance_env():
 
 def nginx_test():
     result = run(["docker", "exec", "ai_video_nginx", "nginx", "-t"])
-    return {{"passed": result.returncode == 0}}
+    return {{
+        "passed": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }}
 
 
 def nginx_mounts():
@@ -348,6 +360,33 @@ def http_json(url):
         except json.JSONDecodeError:
             payload = {{"raw": body[:500]}}
         return {{"ok": True, "payload": payload}}
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {{"ok": False, "error": str(exc)}}
+
+
+def http_status(url, expected_texts=None):
+    expected_texts = expected_texts or []
+    try:
+        request = urllib.request.Request(
+            url,
+            headers={{"User-Agent": "medical-audit-state-audit/1.0"}},
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = response.read()
+            status_code = response.getcode()
+            content_type = response.headers.get("content-type")
+        expected_utf8_text = {{
+            text: text.encode("utf-8") in body for text in expected_texts
+        }}
+        return {{
+            "ok": status_code == 200 and all(expected_utf8_text.values()),
+            "status_code": status_code,
+            "content_type": content_type,
+            "content_length": len(body),
+            "expected_utf8_text": expected_utf8_text,
+        }}
+    except urllib.error.HTTPError as exc:
+        return {{"ok": False, "status_code": exc.code, "error": str(exc)}}
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {{"ok": False, "error": str(exc)}}
 
@@ -401,6 +440,13 @@ report = {{
         "health": http_json("http://127.0.0.1:18080/health"),
         "search_backend": http_json("http://127.0.0.1:18080/index/search-backend"),
     }},
+    "public_frontdoor": {{
+        "health": http_status(BASE_URL + "/api/v1/health"),
+        "documents": http_status(
+            BASE_URL + "/documents",
+            ["AI智能审计管理系统", "材料与知识库统一检索", "个人材料"],
+        ),
+    }},
     "backups": backup_index(),
 }}
 print(json.dumps(report, ensure_ascii=False))
@@ -448,6 +494,7 @@ def _build_report(
     require_clamav_sidecar: bool,
 ) -> dict[str, Any]:
     issues: list[str] = []
+    warnings: list[str] = []
     deploy_sha = _string_or_none(remote_report.get("deploy_sha"))
     if expected_deploy_sha and deploy_sha != expected_deploy_sha:
         issues.append("deploy-sha-mismatch")
@@ -455,7 +502,14 @@ def _build_report(
         health = _container_health(remote_report, name)
         if health != "healthy":
             issues.append(f"{name}-not-healthy")
-    if not _nginx_test_passed(remote_report):
+    nginx_config_test_passed = _nginx_test_passed(remote_report)
+    audit_frontdoor_healthy = _audit_frontdoor_healthy(remote_report)
+    if not nginx_config_test_passed and _shared_nginx_failure_is_non_blocking(
+        remote_report,
+        min_matching_embeddings,
+    ):
+        warnings.append("shared-nginx-config-test-failed-audit-route-healthy")
+    elif not nginx_config_test_passed:
         issues.append("nginx-config-test-failed")
     if not _audit_mount_valid(remote_report):
         issues.append("audit-static-bind-mount-missing")
@@ -476,6 +530,7 @@ def _build_report(
     return {
         "status": "pass" if not issues else "fail",
         "issues": issues,
+        "warnings": warnings,
         "expected_deploy_sha": expected_deploy_sha,
         "required_backup_stamp": required_backup_stamp,
         "minimum_matching_embeddings": min_matching_embeddings,
@@ -495,6 +550,7 @@ def _build_report(
                 "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
             ),
             "nginx_config_test": _nginx_test_passed(remote_report),
+            "audit_frontdoor_healthy": audit_frontdoor_healthy,
             "audit_mount_present": _audit_mount_valid(remote_report),
             "search_backend_ready": _search_backend_ready(remote_report, min_matching_embeddings),
             "matching_embedding_count": _matching_embedding_count(remote_report),
@@ -541,6 +597,31 @@ def _governance_env_value(remote_report: dict[str, Any], key: str) -> str | None
 def _nginx_test_passed(remote_report: dict[str, Any]) -> bool:
     config_test = _nested_dict(remote_report, "nginx", "config_test")
     return config_test.get("passed") is True
+
+
+def _shared_nginx_failure_is_non_blocking(
+    remote_report: dict[str, Any],
+    min_matching_embeddings: int,
+) -> bool:
+    return (
+        _container_health(remote_report, "medical_audit_app") == "healthy"
+        and _container_health(remote_report, "medical_audit_pg") == "healthy"
+        and _audit_mount_valid(remote_report)
+        and _search_backend_ready(remote_report, min_matching_embeddings)
+        and _audit_frontdoor_healthy(remote_report)
+    )
+
+
+def _audit_frontdoor_healthy(remote_report: dict[str, Any]) -> bool:
+    frontdoor = _nested_dict(remote_report, "public_frontdoor")
+    health = _nested_dict(frontdoor, "health")
+    documents = _nested_dict(frontdoor, "documents")
+    return (
+        health.get("ok") is True
+        and health.get("status_code") == 200
+        and documents.get("ok") is True
+        and documents.get("status_code") == 200
+    )
 
 
 def _audit_mount_valid(remote_report: dict[str, Any]) -> bool:
@@ -628,9 +709,15 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
     summary = _dict_or_empty(report.get("summary"))
     clamav_service_present = summary.get("clamav_compose_service_present")
     issues = report.get("issues")
+    warnings = report.get("warnings")
     issue_lines = (
         [f"- `{issue}`" for issue in issues]
         if isinstance(issues, list) and issues
+        else ["- 无"]
+    )
+    warning_lines = (
+        [f"- `{warning}`" for warning in warnings]
+        if isinstance(warnings, list) and warnings
         else ["- 无"]
     )
     smoke_reports = report.get("local_smoke_reports")
@@ -656,6 +743,7 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `virus_scan_provider`: `{summary.get('virus_scan_provider')}`",
             f"- `dlp_review_provider`: `{summary.get('dlp_review_provider')}`",
             f"- `nginx_config_test`: `{summary.get('nginx_config_test')}`",
+            f"- `audit_frontdoor_healthy`: `{summary.get('audit_frontdoor_healthy')}`",
             f"- `audit_mount_present`: `{summary.get('audit_mount_present')}`",
             f"- `search_backend_ready`: `{summary.get('search_backend_ready')}`",
             f"- `latest_local_smoke_status`: `{summary.get('latest_local_smoke_status')}`",
@@ -663,6 +751,10 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             "## 阻断项",
             "",
             *issue_lines,
+            "",
+            "## 警告项",
+            "",
+            *warning_lines,
             "",
             "## 本地 Smoke 报告",
             "",

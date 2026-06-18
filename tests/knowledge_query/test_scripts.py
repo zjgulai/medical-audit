@@ -423,6 +423,65 @@ def test_audit_tencent_cloud_deployment_state_accepts_embedding_count_above_mini
     assert report["minimum_matching_embeddings"] == 48985
 
 
+def test_audit_tencent_cloud_deployment_state_warns_when_shared_nginx_fails() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_shared_nginx_warning",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    stamp = "20260611T180655+0800"
+    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
+    remote_report["nginx"]["config_test"] = {
+        "passed": False,
+        "stderr": 'host not found in upstream "scm-governance-workbench"',
+    }
+    remote_report["public_frontdoor"] = _healthy_audit_frontdoor_fixture()
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["warnings"] == ["shared-nginx-config-test-failed-audit-route-healthy"]
+    assert report["summary"]["nginx_config_test"] is False
+    assert report["summary"]["audit_frontdoor_healthy"] is True
+
+
+def test_audit_tencent_cloud_deployment_state_blocks_bad_audit_route() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_shared_nginx_blocks_bad_audit_route",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    stamp = "20260611T180655+0800"
+    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
+    remote_report["nginx"]["config_test"] = {
+        "passed": False,
+        "stderr": 'host not found in upstream "audit-backend"',
+    }
+    frontdoor = _healthy_audit_frontdoor_fixture()
+    frontdoor["documents"] = {"ok": False, "status_code": 502}
+    remote_report["public_frontdoor"] = frontdoor
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
+    )
+
+    assert report["status"] == "fail"
+    assert report["issues"] == ["nginx-config-test-failed"]
+    assert report["warnings"] == []
+    assert report["summary"]["audit_frontdoor_healthy"] is False
+
+
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
     module = _load_script_module(
         "audit_tencent_cloud_deployment_state_missing_backup",
@@ -1197,6 +1256,21 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
             "web": [
                 {"path": f"/opt/medical-audit/backups/web/audit-web-pre-deploy-{stamp}.tar.gz"}
             ],
+        },
+    }
+
+
+def _healthy_audit_frontdoor_fixture() -> dict[str, object]:
+    return {
+        "health": {"ok": True, "status_code": 200},
+        "documents": {
+            "ok": True,
+            "status_code": 200,
+            "expected_utf8_text": {
+                "AI智能审计管理系统": True,
+                "材料与知识库统一检索": True,
+                "个人材料": True,
+            },
         },
     }
 

@@ -1169,7 +1169,8 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 - `deploy-sha-mismatch`：先确认是否存在“代码已合并但未部署”的正常差异。
 - `medical_audit_app-not-healthy`：先查看 app 容器日志和 healthcheck，不直接重建数据库。
-- `nginx-config-test-failed`：恢复最近的 Nginx 备份后再 reload。
+- `nginx-config-test-failed`：先区分共享 Nginx 全局配置失败和本项目 audit 路由失败；若报告中 `public_frontdoor`、`audit_frontdoor_healthy`、`audit_mount_present`、app/pg 健康和 search backend 均正常，则按共享 Nginx 依赖 warning 处理，并排查对应外部 upstream；若 audit 路由不健康或 bind mount 缺失，再恢复最近的 Nginx 备份后 reload。
+- `shared-nginx-config-test-failed-audit-route-healthy`：共享 Nginx 的某个非本项目 upstream 解析失败，但 `https://audit.lute-tlz-dddd.top/api/v1/health` 与 `/documents` 已通过公网只读复核；不得写成生产部署失败，应同步处理外部 upstream 稳定性。
 - `audit-static-bind-mount-missing`：检查共享 Nginx Compose 中 `/var/www/audit:/var/www/audit:ro`。
 - `search-backend-not-ready`：检查 PostgreSQL 容器、env 和 active index，不先动前端静态文件。
 - `missing-required-backup-stamp:*`：先补齐或确认备份，不继续写入型 E2E。
