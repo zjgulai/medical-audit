@@ -691,9 +691,37 @@ Query 参数：
 - `approved`：若病毒扫描或 DLP check 仍 blocked，则只消除人工审批 blocker，整体仍为 `blocked`。
 - `rejected`：将 `manual-index-approval` check 置为 `blocked`，blocker 为 `manual-index-approval-rejected`，整体 `status=rejected`、`next_action=review-manual-index-rejection`。
 
+### `POST /documents/uploads/{upload_id}/index-readiness/governance-result`
+
+回写个人材料外部治理结果。该接口用于把外部病毒扫描或 DLP 审查结果写回 `metadata.index_readiness`，不调用外部 provider，不写入检索索引。
+
+权限：
+
+- 允许角色：`department-head`、`system-admin`。
+- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
+- 普通 `auditor` 不允许回写，会返回 `403`，并记录 `document-upload-governance-result-access-denied` 操作日志。
+
+请求体：
+
+- `check_type`：可选 `virus-scan`、`dlp-review`。
+- `provider`：结果来源，例如 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp`。
+- `status`：可选 `passed`、`blocked`。
+- `detail`：必填，最长 `1000` 字符，用于保留结果说明。
+- `result_code`：可选外部结果码，例如 `normal`、`malware-detected`、`no-sensitive-marker`。
+- `risk_level`：可选风险等级，主要用于 DLP 结果。
+- `external_job_id`：可选外部任务号。
+- `finished_at`：可选外部完成时间字符串。
+
+状态变更：
+
+- `status=passed`：对应 `virus-scan` 或 `dlp-review` check 置为 `passed`，清除该 check blocker。
+- `status=blocked`：对应 check 保持 `blocked`，`virus-scan` 写回 `virus-scan-required`，`dlp-review` 写回 `dlp-review-required`。
+- 若外部结果和人工审批均已 passed，则整体 `status=ready`、`next_action=ingest-personal-upload`；否则整体仍保持 `blocked` 或 `rejected`。
+- 操作日志记录 `document-upload-governance-result-update`，包含 `check_type`、`provider`、结果状态、结果码、外部任务号和更新后的 blockers。
+
 当前边界：
 
-- 本接口只完成个人材料留存、列表读取、人工审批状态变更和入索引治理门禁表达，不把上传材料写入检索索引。
+- 本接口只完成个人材料留存、列表读取、人工审批/外部结果状态变更和入索引治理门禁表达，不把上传材料写入检索索引。
 - 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件正文下载、签名 URL 生成或生命周期清理。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 

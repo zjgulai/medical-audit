@@ -400,6 +400,46 @@ def apply_manual_index_decision(
     return _readiness_payload(checks=updated_checks)
 
 
+def apply_governance_check_result(
+    index_readiness: dict[str, object],
+    *,
+    check_type: Literal["virus-scan", "dlp-review"],
+    provider: str,
+    status: DocumentUploadGovernanceCheckStatus,
+    detail: str,
+    external_job_id: str | None = None,
+    risk_level: str | None = None,
+    result_code: str | None = None,
+    finished_at: str | None = None,
+) -> dict[str, object]:
+    current = index_readiness_from_metadata({"index_readiness": index_readiness})
+    current_checks = current.get("checks")
+    checks: tuple[GovernanceCheckResult, ...] = ()
+    if isinstance(current_checks, list):
+        checks = tuple(
+            _check_result_from_payload(cast(dict[str, object], check))
+            for check in current_checks
+            if isinstance(check, dict)
+        )
+    updated_check = GovernanceCheckResult(
+        check_type=check_type,
+        provider=provider,
+        status=status,
+        blocker=_governance_result_blocker(check_type, status),
+        detail=detail,
+        external_job_id=external_job_id,
+        risk_level=risk_level,
+        result_code=result_code,
+        finished_at=finished_at,
+    )
+    updated_checks = tuple(
+        updated_check if check.check_type == check_type else check for check in checks
+    )
+    if not any(check.check_type == check_type for check in updated_checks):
+        updated_checks = _insert_governance_result_check(updated_checks, updated_check)
+    return _readiness_payload(checks=updated_checks)
+
+
 def _readiness_payload(
     *,
     checks: tuple[GovernanceCheckResult, ...],
@@ -487,6 +527,28 @@ def _manual_index_decision_check(
         blocker=INDEX_READINESS_REJECTED_BLOCKER,
         detail=f"manual index approval rejected by {actor}: {note}",
     )
+
+
+def _governance_result_blocker(
+    check_type: Literal["virus-scan", "dlp-review"],
+    status: DocumentUploadGovernanceCheckStatus,
+) -> DocumentUploadIndexBlocker | None:
+    if status == "passed":
+        return None
+    if check_type == "virus-scan":
+        return "virus-scan-required"
+    return "dlp-review-required"
+
+
+def _insert_governance_result_check(
+    checks: tuple[GovernanceCheckResult, ...],
+    updated_check: GovernanceCheckResult,
+) -> tuple[GovernanceCheckResult, ...]:
+    if updated_check.check_type == "virus-scan":
+        return (updated_check, *checks)
+    before_manual = tuple(check for check in checks if check.check_type != "manual-index-approval")
+    manual_checks = tuple(check for check in checks if check.check_type == "manual-index-approval")
+    return (*before_manual, updated_check, *manual_checks)
 
 
 def _readiness_status_and_next_action(
