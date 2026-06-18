@@ -47,6 +47,16 @@ source: human+ai
 - provider 激活后容器内 preflight 返回 `status=pass`：`virus-scan` provider 为 `clamav-sidecar`、stage 为 `local-sidecar`；`dlp-review` provider 为 `unconfigured`、stage 为 `inactive`；`external_provider_call_performed=false`、`production_write_performed=false`。
 - provider 激活后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-clamav-provider-activation-20260618.json` 为 `status=pass`，`issues=[]`；`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=unconfigured`。
 - `/documents` ClamAV sidecar 生产写入 E2E 已固化为 `scripts/run-production-documents-clamav-sidecar-write-e2e.py`；生产执行必须显式传入 `--confirm-production-write audit.lute-tlz-dddd.top`。
+- `/documents` 生产只读探测已固化为 `scripts/run-production-documents-readonly-probe.py`；用于 docs-only 合并后或日常生产只读核验，不调用 `/api/v1/documents/uploads`，不调用 `/api/v1/documents/uploads/{upload_id}/download`，因此不产生新的上传记录、下载元信息审计日志或 provider 调用。
+- 推荐只读探测命令：
+
+```bash
+uv run python scripts/run-production-documents-readonly-probe.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --min-matching-embeddings 48985 \
+  --report tmp/outputs/production-documents-readonly-YYYYMMDD.json
+```
+
 - 推荐执行命令：
 
 ```bash
