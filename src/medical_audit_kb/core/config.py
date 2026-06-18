@@ -22,6 +22,14 @@ DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV: Final = (
 )
 DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE"
 DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE"
+DOCUMENT_UPLOAD_CLAMAV_HOST_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST"
+DOCUMENT_UPLOAD_CLAMAV_PORT_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT"
+DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS"
+)
+DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES"
+)
 DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER"
 )
@@ -47,12 +55,8 @@ DOCUMENT_STORAGE_COS_SECRET_KEY_NAME_ENV: Final = (
 )
 DOCUMENT_STORAGE_COS_ENCRYPTION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_ENCRYPTION"
 DOCUMENT_STORAGE_COS_KMS_KEY_ID_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_KMS_KEY_ID"
-DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV: Final = (
-    "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_STORAGE_CLASS"
-)
-DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP_ENV: Final = (
-    "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP"
-)
+DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_STORAGE_CLASS"
+DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_SDK_BOOTSTRAP"
 DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS"
 )
@@ -100,6 +104,10 @@ class DocumentUploadGovernanceSettings(BaseModel):
     ] = "unconfigured"
     virus_scan_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
     dlp_review_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
+    clamav_host: str = Field(default="127.0.0.1", min_length=1)
+    clamav_port: int = Field(default=3310, ge=1, le=65535)
+    clamav_timeout_seconds: float = Field(default=3.0, gt=0)
+    clamav_chunk_size_bytes: int = Field(default=131072, ge=1)
     governance_job_submitter_provider: Literal["disabled", "local-recording"] = "disabled"
     virus_scan_job_endpoint_env: str | None = None
     virus_scan_job_secret_env: str | None = None
@@ -234,6 +242,18 @@ def _document_upload_governance_env_overrides(
         changed = True
     if mode := os.getenv(DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV):
         governance["dlp_review_test_mode"] = mode
+        changed = True
+    if host := os.getenv(DOCUMENT_UPLOAD_CLAMAV_HOST_ENV):
+        governance["clamav_host"] = host
+        changed = True
+    if port := os.getenv(DOCUMENT_UPLOAD_CLAMAV_PORT_ENV):
+        governance["clamav_port"] = int(port)
+        changed = True
+    if timeout_seconds := os.getenv(DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS_ENV):
+        governance["clamav_timeout_seconds"] = float(timeout_seconds)
+        changed = True
+    if chunk_size_bytes := os.getenv(DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES_ENV):
+        governance["clamav_chunk_size_bytes"] = int(chunk_size_bytes)
         changed = True
     if provider := os.getenv(DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV):
         governance["governance_job_submitter_provider"] = provider

@@ -129,7 +129,7 @@ def _provider_env_contracts(
     settings: DocumentUploadGovernanceSettings,
 ) -> dict[str, dict[str, str | None]]:
     contracts: dict[str, dict[str, str | None]] = {}
-    if settings.virus_scan_provider not in {"unconfigured", "local-test"}:
+    if settings.virus_scan_provider not in {"unconfigured", "local-test", "clamav-sidecar"}:
         contracts[settings.virus_scan_provider] = {
             "endpoint_env": settings.virus_scan_job_endpoint_env,
             "secret_env": settings.virus_scan_job_secret_env,

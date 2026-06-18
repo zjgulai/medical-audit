@@ -16,6 +16,10 @@ from medical_audit_kb.core.config import (
     DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV,
     DOCUMENT_STORAGE_PROVIDER_ENV,
     DOCUMENT_STORAGE_RECORD_OBJECTS_ENV,
+    DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES_ENV,
+    DOCUMENT_UPLOAD_CLAMAV_HOST_ENV,
+    DOCUMENT_UPLOAD_CLAMAV_PORT_ENV,
+    DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV,
@@ -42,6 +46,10 @@ def test_default_config_loads() -> None:
     assert settings.document_upload_governance.dlp_review_provider == "unconfigured"
     assert settings.document_upload_governance.virus_scan_test_mode == "normal"
     assert settings.document_upload_governance.dlp_review_test_mode == "normal"
+    assert settings.document_upload_governance.clamav_host == "127.0.0.1"
+    assert settings.document_upload_governance.clamav_port == 3310
+    assert settings.document_upload_governance.clamav_timeout_seconds == 3.0
+    assert settings.document_upload_governance.clamav_chunk_size_bytes == 131072
     assert settings.document_upload_governance.governance_job_submitter_provider == "disabled"
     assert settings.document_upload_governance.virus_scan_job_endpoint_env is None
     assert settings.document_upload_governance.virus_scan_job_secret_env is None
@@ -119,6 +127,10 @@ def test_environment_overrides_document_upload_governance(
     monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV, "local-test")
     monkeypatch.setenv(DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV, "false-positive")
     monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV, "false-negative")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_CLAMAV_HOST_ENV, "clamav")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_CLAMAV_PORT_ENV, "3311")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS_ENV, "5.5")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES_ENV, "65536")
     monkeypatch.setenv(DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV, "local-recording")
     monkeypatch.setenv(
         DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV,
@@ -137,6 +149,10 @@ def test_environment_overrides_document_upload_governance(
     assert settings.document_upload_governance.dlp_review_provider == "local-test"
     assert settings.document_upload_governance.virus_scan_test_mode == "false-positive"
     assert settings.document_upload_governance.dlp_review_test_mode == "false-negative"
+    assert settings.document_upload_governance.clamav_host == "clamav"
+    assert settings.document_upload_governance.clamav_port == 3311
+    assert settings.document_upload_governance.clamav_timeout_seconds == 5.5
+    assert settings.document_upload_governance.clamav_chunk_size_bytes == 65536
     assert settings.document_upload_governance.governance_job_submitter_provider == (
         "local-recording"
     )
