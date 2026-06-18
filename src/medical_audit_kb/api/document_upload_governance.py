@@ -241,6 +241,43 @@ class LocalTestDlpReviewer:
 
 
 @dataclass(frozen=True, slots=True)
+class ExternalPendingVirusScanner:
+    provider: str
+
+    def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        return GovernanceCheckResult(
+            check_type="virus-scan",
+            provider=self.provider,
+            status="blocked",
+            blocker="virus-scan-required",
+            detail=(
+                f"{self.provider} scan result is required before indexing "
+                f"{context.extension} upload"
+            ),
+            result_code="pending-external-result",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalPendingDlpReviewer:
+    provider: str
+
+    def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        return GovernanceCheckResult(
+            check_type="dlp-review",
+            provider=self.provider,
+            status="blocked",
+            blocker="dlp-review-required",
+            detail=(
+                f"{self.provider} review result is required before indexing "
+                f"{context.extension} upload"
+            ),
+            risk_level="unknown",
+            result_code="pending-external-result",
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ManualIndexApprovalGate:
     provider: str = "manual"
 
@@ -469,7 +506,7 @@ def _virus_scanner_from_settings(
         return UnconfiguredVirusScanner()
     if settings.virus_scan_provider == "local-test":
         return LocalTestVirusScanner(mode=settings.virus_scan_test_mode)
-    return UnconfiguredVirusScanner(provider=settings.virus_scan_provider)
+    return ExternalPendingVirusScanner(provider=settings.virus_scan_provider)
 
 
 def _dlp_reviewer_from_settings(
@@ -479,7 +516,7 @@ def _dlp_reviewer_from_settings(
         return UnconfiguredDlpReviewer()
     if settings.dlp_review_provider == "local-test":
         return LocalTestDlpReviewer(mode=settings.dlp_review_test_mode)
-    return UnconfiguredDlpReviewer(provider=settings.dlp_review_provider)
+    return ExternalPendingDlpReviewer(provider=settings.dlp_review_provider)
 
 
 def _optional_text(value: object) -> str | None:

@@ -601,7 +601,7 @@ Query 参数：
 - `status`：可选 `blocked`、`ready`、`rejected`。
 - `blockers`：可包含 `virus-scan-required`、`dlp-review-required`、`manual-index-approval-required`、`manual-index-approval-rejected`。
 - `next_action`：可选 `complete-upload-governance`、`ingest-personal-upload`、`review-manual-index-rejection`。
-- `checks`：逐项返回 `virus-scan`、`dlp-review` 和 `manual-index-approval` 的 `provider`、`status`、`blocker` 和 `detail`
+- `checks`：逐项返回 `virus-scan`、`dlp-review` 和 `manual-index-approval` 的 `provider`、`status`、`blocker` 和 `detail`；外部治理 provider 还可返回 `result_code`、`risk_level`、`job_key`、`external_job_id` 和 `finished_at`
 
 ### `POST /documents/uploads`
 
@@ -624,11 +624,12 @@ Query 参数：
 
 治理 adapter 配置：
 
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER`：可选 `unconfigured`、`local-test`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER`：可选 `unconfigured`、`local-test`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER`：可选 `unconfigured`、`local-test`、`tencent-ci-virus`、`clamav-sidecar`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER`：可选 `unconfigured`、`local-test`、`ruleset-v1`、`external-dlp`。
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
+- `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 和 `external-dlp` 当前表达为外部治理 pending 边界：上传响应保留 `blocked`，对应 check 返回 `result_code=pending-external-result`，必须等外部扫描或 DLP 结果写回后才能消除 blocker。该阶段不调用外部 provider，也不宣称生产级扫描或脱敏完成。
 
 ### `GET /documents/uploads/{upload_id}/download`
 
