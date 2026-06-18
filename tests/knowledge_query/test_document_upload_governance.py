@@ -1,8 +1,17 @@
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernanceContext,
     apply_manual_index_decision,
     document_upload_governance_policy_from_settings,
     index_readiness_from_metadata,
+)
+from medical_audit_kb.api.document_upload_governance_preflight import (
+    document_upload_governance_provider_preflight_from_settings,
 )
 from medical_audit_kb.core.config import DocumentUploadGovernanceSettings
 
@@ -117,3 +126,107 @@ def test_external_governance_providers_surface_pending_result_boundary() -> None
     assert dlp_check["risk_level"] == "unknown"
     assert dlp_check["result_code"] == "pending-external-result"
     assert "not configured" not in dlp_check["detail"]
+
+
+def test_document_governance_provider_preflight_passes_for_default_inactive_state() -> None:
+    report = document_upload_governance_provider_preflight_from_settings(
+        DocumentUploadGovernanceSettings()
+    )
+
+    assert report["status"] == "pass"
+    assert report["external_provider_requested"] is False
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["issues"] == []
+    assert report["checks"][0]["stage"] == "inactive"
+    assert report["checks"][1]["stage"] == "inactive"
+
+
+def test_document_governance_provider_preflight_blocks_pending_external_calls() -> None:
+    report = document_upload_governance_provider_preflight_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="tencent-ci-virus",
+            dlp_review_provider="external-dlp",
+        )
+    )
+
+    assert report["status"] == "blocked"
+    assert report["external_provider_requested"] is True
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["result_writeback_supported"] is True
+    assert report["manual_index_approval_required"] is True
+    assert report["checks"][0]["stage"] == "external-pending"
+    assert report["checks"][0]["external_provider_call_implemented"] is False
+    assert report["checks"][1]["stage"] == "external-pending"
+    assert report["checks"][1]["external_provider_call_implemented"] is False
+    assert report["issues"] == [
+        "virus-scan-external-provider-call-not-implemented",
+        "dlp-review-external-provider-call-not-implemented",
+    ]
+
+
+def test_document_governance_provider_preflight_can_require_external_provider() -> None:
+    report = document_upload_governance_provider_preflight_from_settings(
+        DocumentUploadGovernanceSettings(),
+        require_external_provider=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["external_provider_requested"] is False
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["issues"] == ["external-governance-provider-not-configured"]
+
+
+def test_document_governance_provider_preflight_script_outputs_json(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "knowledge-query-engine-governance-provider.yaml"
+    config_path.write_text(
+        """
+data_root: data/医保审核前期资料
+index_root: tmp/knowledge-query-indexes
+database_url: postgresql+psycopg://medical_audit_kb:medical_audit_kb_dev@localhost:5433/medical_audit_kb
+model_provider:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  embedding_model: text-embedding-3-small
+  rerank_model: null
+  chat_model: gpt-4.1-mini
+document_upload_governance:
+  virus_scan_provider: tencent-ci-virus
+  dlp_review_provider: external-dlp
+source_collection_weights:
+  medical-insurance-catalog: 1.25
+  supervision-rules-knowledge: 1.35
+  risk-negative-list: 1.1
+  medical-insurance-laws: 1.0
+""".strip(),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run-document-governance-provider-preflight.py",
+            "--config",
+            str(config_path),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env=os.environ.copy(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    report = json.loads(completed.stdout)
+    assert report["status"] == "blocked"
+    assert report["external_provider_requested"] is True
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["issues"] == [
+        "virus-scan-external-provider-call-not-implemented",
+        "dlp-review-external-provider-call-not-implemented",
+    ]
