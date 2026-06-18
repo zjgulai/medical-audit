@@ -33,7 +33,7 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-18 PR #131 个人材料治理结果回写生产部署与 E2E
+### 2026-06-18 PR #131 个人材料治理结果回写与 ready 状态生产 E2E
 
 - PR #130 `codex/document-governance-external-pending` 已合并到 `main`，merge commit 为 `3356dc2c33bb23e95c6893826ad1ffeda8d12b3d`；该提交将外部治理 provider pending 语义合入主线。
 - PR #131 `codex/document-governance-result-writeback` 已合并到 `main`，merge commit 为 `0fa7eb149047fa049b495d2964302c9100b380d6`。
@@ -47,8 +47,12 @@ source: human+ai
 - 指定备份戳文件：app `/opt/medical-audit/backups/app/pre-deploy-pr131-governance-result-writeback-20260618.tar.gz`，大小 `184540492` bytes；env `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr131-governance-result-writeback-20260618`，大小 `1857` bytes；DB `/opt/medical-audit/backups/db/pre-deploy-pr131-governance-result-writeback-20260618.sql.gz`，大小 `1026239720` bytes；Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr131-governance-result-writeback-20260618`，大小 `29348` bytes；Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-pr131-governance-result-writeback-20260618.tar.gz`，大小 `440134` bytes。
 - `/documents` governance-result 生产 E2E 报告 `tmp/outputs/production-documents-governance-result-writeback-e2e-after-pr131-api-v1-20260618.json` 为 `status=pass`，验证对象为 `document-upload-d66c5600e0cd`；公网正确入口为 `/api/v1/documents/uploads/{upload_id}/index-readiness/governance-result`。
 - E2E 覆盖：新增个人材料上传、`department-head` 回写 `virus-scan` 为 `passed`、`virus-scan-required` blocker 清除、`dlp-review-required` 和 `manual-index-approval-required` 继续阻断、普通 `auditor` 回写治理结果返回 `403`、成功和拒绝事件均可在持久化审计日志中查询。
+- 正式治理 ready 状态 E2E 脚本已固化为 `scripts/run-production-documents-governance-result-e2e.py`；该脚本会写入受控个人材料上传、治理结果、人工审批和审计日志，并输出 JSON 报告。
+- 正式脚本执行前已创建专项数据库备份 `/opt/medical-audit/backups/db/pre-documents-governance-ready-e2e-20260618.sql.gz`，`gzip -t` 通过，大小 `1026244626` bytes。
+- 正式脚本生产 E2E 报告 `tmp/outputs/production-documents-governance-ready-e2e-20260618.json` 为 `status=pass`，验证对象为 `document-upload-e212a5d410f1`；覆盖普通 `auditor` 回写治理结果 `403`、`department-head` 回写 `virus-scan=passed` 和 `dlp-review=passed`、人工审批 `approved`、刷新列表后 owner 与 `department-head` 均可读到 `index_readiness.status=ready`，以及 `document-upload`、`document-upload-governance-result-access-denied`、`document-upload-governance-result-update` 和 `document-upload-index-readiness-update` 审计事件落库。
+- ready E2E 后状态复核 `tmp/outputs/tencent-cloud-deployment-state-after-governance-ready-e2e-20260618.json` 为 `status=pass`，`issues=[]`；远端 `.deploy-sha` 仍为 `0fa7eb149047fa049b495d2964302c9100b380d6`，`medical_audit_app` 和 `medical_audit_pg` 继续保持 `healthy`。
 - 本轮首次使用裸 `/documents/uploads` 公网写入时返回 Nginx `405`，报告保留在 `tmp/outputs/production-documents-governance-result-writeback-e2e-after-pr131-20260618.json`；该失败证明裸 `/documents` 被静态前端接管，不是后端治理结果回写逻辑失败。生产公网 API 应使用 `/api/v1/documents/...`。
-- 证据边界：本轮证明治理结果回写 API、角色拒绝和审计日志可用；本轮没有调用真实病毒扫描、DLP 或外部 provider，没有触发个人材料实际入索引，也不代表真实登录会话或案件级完整合规闭环已完成。
+- 证据边界：本轮证明治理结果回写 API、角色拒绝、人工审批后 ready 状态和审计日志可用；本轮没有调用真实病毒扫描、DLP 或外部治理 provider，没有触发个人材料实际入索引，也不代表真实登录会话或案件级完整合规闭环已完成。
 
 ### 2026-06-18 PR #128 个人材料 signed URL 下载交付生产部署与 E2E
 
