@@ -638,6 +638,13 @@ Query 参数：
 - 配置 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp` 时，preflight 会返回 `blocked`，并用 `*-external-provider-call-not-implemented` 标记真实外部调用 adapter 仍未接入；当前已具备治理结果写回结构，但未执行 provider call。
 - 如需在部署门禁中强制要求外部 provider，可增加 `--require-external-provider`；未配置外部 provider 时返回 `external-governance-provider-not-configured`。
 
+外部治理 job submitter 契约：
+
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER` 默认为 `disabled`；默认生产行为不创建治理 job，也不调用 provider。
+- `local-recording` 只用于本地或预生产链路验收：上传后会把 `result_code=pending-external-result` 的病毒扫描和 DLP check 写入 `document_upload_governance_jobs`，状态为 `pending`，`result_payload.external_provider_call_performed=false`，`result_payload.production_write_performed=false`。
+- provider endpoint/secret 只保存环境变量名：`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_ENV`；接口和日志不保存 secret 值。
+- `local-recording` 证明异步 job 记录和后续结果回写结构可联通，不证明腾讯云 CI、ClamAV、DLP 或任何外部治理系统已经执行扫描。
+
 ### `GET /documents/uploads/{upload_id}/download`
 
 返回个人材料下载授权元信息。该接口用于建立下载权限隔离边界，并在对象存储和签名器可用时签发短期下载 URL。

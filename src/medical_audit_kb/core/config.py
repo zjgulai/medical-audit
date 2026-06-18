@@ -22,6 +22,21 @@ DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV: Final = (
 )
 DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE"
 DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE"
+DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER"
+)
+DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_ENV"
+)
+DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_NAME_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_ENV"
+)
+DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_ENV"
+)
+DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_ENV"
+)
 DOCUMENT_STORAGE_PROVIDER_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER"
 DOCUMENT_STORAGE_COS_BUCKET_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_BUCKET"
 DOCUMENT_STORAGE_COS_REGION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_REGION"
@@ -85,6 +100,11 @@ class DocumentUploadGovernanceSettings(BaseModel):
     ] = "unconfigured"
     virus_scan_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
     dlp_review_test_mode: Literal["normal", "false-positive", "false-negative"] = "normal"
+    governance_job_submitter_provider: Literal["disabled", "local-recording"] = "disabled"
+    virus_scan_job_endpoint_env: str | None = None
+    virus_scan_job_secret_env: str | None = None
+    dlp_review_job_endpoint_env: str | None = None
+    dlp_review_job_secret_env: str | None = None
 
 
 class DocumentStorageSettings(BaseModel):
@@ -214,6 +234,21 @@ def _document_upload_governance_env_overrides(
         changed = True
     if mode := os.getenv(DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV):
         governance["dlp_review_test_mode"] = mode
+        changed = True
+    if provider := os.getenv(DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV):
+        governance["governance_job_submitter_provider"] = provider
+        changed = True
+    if endpoint_env := os.getenv(DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV):
+        governance["virus_scan_job_endpoint_env"] = endpoint_env
+        changed = True
+    if secret_env := os.getenv(DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_NAME_ENV):
+        governance["virus_scan_job_secret_env"] = secret_env
+        changed = True
+    if endpoint_env := os.getenv(DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV):
+        governance["dlp_review_job_endpoint_env"] = endpoint_env
+        changed = True
+    if secret_env := os.getenv(DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV):
+        governance["dlp_review_job_secret_env"] = secret_env
         changed = True
     if not changed:
         return None

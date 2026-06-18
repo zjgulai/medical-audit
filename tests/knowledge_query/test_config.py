@@ -16,8 +16,13 @@ from medical_audit_kb.core.config import (
     DOCUMENT_STORAGE_COS_STORAGE_CLASS_ENV,
     DOCUMENT_STORAGE_PROVIDER_ENV,
     DOCUMENT_STORAGE_RECORD_OBJECTS_ENV,
+    DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV,
+    DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV,
     DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV,
     DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV,
+    DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV,
+    DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV,
+    DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_NAME_ENV,
     DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER_ENV,
     DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV,
     MODEL_PROVIDER_ENV,
@@ -37,6 +42,11 @@ def test_default_config_loads() -> None:
     assert settings.document_upload_governance.dlp_review_provider == "unconfigured"
     assert settings.document_upload_governance.virus_scan_test_mode == "normal"
     assert settings.document_upload_governance.dlp_review_test_mode == "normal"
+    assert settings.document_upload_governance.governance_job_submitter_provider == "disabled"
+    assert settings.document_upload_governance.virus_scan_job_endpoint_env is None
+    assert settings.document_upload_governance.virus_scan_job_secret_env is None
+    assert settings.document_upload_governance.dlp_review_job_endpoint_env is None
+    assert settings.document_upload_governance.dlp_review_job_secret_env is None
     assert settings.document_storage.provider == "local"
     assert settings.document_storage.cos_bucket is None
     assert settings.document_storage.cos_prefix == "personal-materials/prod"
@@ -109,6 +119,17 @@ def test_environment_overrides_document_upload_governance(
     monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV, "local-test")
     monkeypatch.setenv(DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV, "false-positive")
     monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV, "false-negative")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV, "local-recording")
+    monkeypatch.setenv(
+        DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV,
+        "VIRUS_SCAN_JOB_ENDPOINT",
+    )
+    monkeypatch.setenv(DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_NAME_ENV, "VIRUS_SCAN_JOB_SECRET")
+    monkeypatch.setenv(
+        DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV,
+        "DLP_REVIEW_JOB_ENDPOINT",
+    )
+    monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV, "DLP_REVIEW_JOB_SECRET")
 
     settings = load_settings()
 
@@ -116,6 +137,21 @@ def test_environment_overrides_document_upload_governance(
     assert settings.document_upload_governance.dlp_review_provider == "local-test"
     assert settings.document_upload_governance.virus_scan_test_mode == "false-positive"
     assert settings.document_upload_governance.dlp_review_test_mode == "false-negative"
+    assert settings.document_upload_governance.governance_job_submitter_provider == (
+        "local-recording"
+    )
+    assert settings.document_upload_governance.virus_scan_job_endpoint_env == (
+        "VIRUS_SCAN_JOB_ENDPOINT"
+    )
+    assert settings.document_upload_governance.virus_scan_job_secret_env == (
+        "VIRUS_SCAN_JOB_SECRET"
+    )
+    assert settings.document_upload_governance.dlp_review_job_endpoint_env == (
+        "DLP_REVIEW_JOB_ENDPOINT"
+    )
+    assert settings.document_upload_governance.dlp_review_job_secret_env == (
+        "DLP_REVIEW_JOB_SECRET"
+    )
 
 
 def test_environment_overrides_document_storage(
