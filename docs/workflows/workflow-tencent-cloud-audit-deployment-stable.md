@@ -1037,7 +1037,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 - PR #126 merge commit：`26a4415aa92f3de66d5662508482e1fb83f3f07e`；部署戳为 `pr126-p0-07-second-validation-20260618`。
 - 生产部署脚本备份阶段正常返回，未触发 20 分钟超时恢复路径，也未人工接管；脚本继续完成 rsync、静态资源同步、`.deploy-sha` 写入、健康检查和 smoke。
-- 当前生产 `.deploy-sha=26a4415aa92f3de66d5662508482e1fb83f3f07e`。
+- 当时生产 `.deploy-sha=26a4415aa92f3de66d5662508482e1fb83f3f07e`。
 - 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-pr126-p0-07-second-validation-20260618.sql.gz`，大小 `1026235344` bytes。
 - 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr126-p0-07-second-validation-20260618.tar.gz`，大小 `184539590` bytes。
 - env 备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr126-p0-07-second-validation-20260618`，大小 `1857` bytes。
