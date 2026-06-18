@@ -888,6 +888,123 @@ def test_documents_upload_manual_index_rejection_marks_rejected(
     }
 
 
+def test_documents_upload_governance_result_update_marks_check_and_persists(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-governance-result.db'}"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="tencent-ci-virus",
+            dlp_review_provider="external-dlp",
+        )
+    )
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    result_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/governance-result",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={
+            "check_type": "virus-scan",
+            "provider": "tencent-ci-virus",
+            "status": "passed",
+            "detail": "Tencent CI scan finished without malware findings.",
+            "result_code": "normal",
+            "external_job_id": "ci-virus-job-1",
+            "finished_at": "2026-06-18T12:00:00Z",
+        },
+    )
+
+    assert result_response.status_code == 200
+    item = result_response.json()["item"]
+    readiness = item["index_readiness"]
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == ["dlp-review-required", "manual-index-approval-required"]
+    assert readiness["checks"][0] == {
+        "check_type": "virus-scan",
+        "provider": "tencent-ci-virus",
+        "status": "passed",
+        "blocker": None,
+        "detail": "Tencent CI scan finished without malware findings.",
+        "external_job_id": "ci-virus-job-1",
+        "result_code": "normal",
+        "finished_at": "2026-06-18T12:00:00Z",
+    }
+    assert state.operation_logs[-1]["action"] == "document-upload-governance-result-update"
+    assert state.operation_logs[-1]["payload"]["upload_id"] == upload_id
+    assert state.operation_logs[-1]["payload"]["check_type"] == "virus-scan"
+    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "blocked"
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+    )
+    persisted = TestClient(create_app(second_state)).get(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"][0]
+    assert persisted["id"] == upload_id
+    assert persisted["index_readiness"]["checks"][0]["status"] == "passed"
+    assert persisted["index_readiness"]["checks"][0]["external_job_id"] == "ci-virus-job-1"
+
+
+def test_documents_upload_governance_result_update_rejects_auditor(
+    tmp_path: Path,
+) -> None:
+    denied_reason = (
+        "document upload governance result update requires department-head or system-admin role"
+    )
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/governance-result",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "check_type": "dlp-review",
+            "provider": "external-dlp",
+            "status": "passed",
+            "detail": "普通审计员尝试回写治理结果。",
+            "result_code": "no-sensitive-marker",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == denied_reason
+    assert state.operation_logs[-1] == {
+        "action": "document-upload-governance-result-access-denied",
+        "payload": {
+            "attempted_action": "document-upload-governance-result-update",
+            "upload_id": upload_id,
+            "check_type": "dlp-review",
+            "user_identifier": "auditor-1",
+            "role": "auditor",
+            "normalized_role": "auditor",
+            "auth_source": "legacy-header",
+            "status_code": 403,
+            "reason": denied_reason,
+        },
+    }
+
+
 def test_documents_upload_manual_index_approval_rejects_auditor(
     tmp_path: Path,
 ) -> None:

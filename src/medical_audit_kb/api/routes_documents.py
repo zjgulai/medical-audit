@@ -15,6 +15,7 @@ from medical_audit_kb.api.document_permissions import (
 )
 from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernanceContext,
+    apply_governance_check_result,
     apply_manual_index_decision,
 )
 from medical_audit_kb.api.document_upload_governance_store import (
@@ -29,6 +30,9 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt", "csv", "xlsx", "xlsm"}
 MANUAL_INDEX_APPROVAL_ROLES = frozenset({"system-admin", "department-head"})
 MANUAL_INDEX_APPROVAL_DENIED_REASON = (
     "document upload index approval requires department-head or system-admin role"
+)
+GOVERNANCE_RESULT_UPDATE_DENIED_REASON = (
+    "document upload governance result update requires department-head or system-admin role"
 )
 
 
@@ -179,6 +183,19 @@ class ManualIndexApprovalRequest(BaseModel):
 
     decision: Literal["approved", "rejected"]
     note: str = Field(min_length=1, max_length=1000)
+
+
+class GovernanceResultUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_type: Literal["virus-scan", "dlp-review"]
+    provider: str = Field(min_length=1, max_length=96)
+    status: Literal["passed", "blocked"]
+    detail: str = Field(min_length=1, max_length=1000)
+    external_job_id: str | None = Field(default=None, min_length=1, max_length=128)
+    risk_level: str | None = Field(default=None, min_length=1, max_length=64)
+    result_code: str | None = Field(default=None, min_length=1, max_length=96)
+    finished_at: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
@@ -435,6 +452,83 @@ def decide_manual_index_approval(
             current_user,
             upload_id=item.id,
             decision=request.decision,
+            index_status=item.index_status,
+            index_readiness_status=item.index_readiness.status,
+            index_readiness_blockers=item.index_readiness.blockers,
+            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
+        ),
+    )
+    return DocumentUploadResponse(
+        item=item,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/index-readiness/governance-result",
+    response_model=DocumentUploadResponse,
+)
+def update_governance_result(
+    upload_id: str,
+    request: GovernanceResultUpdateRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> DocumentUploadResponse:
+    role = normalize_role(current_user.primary_role)
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    if role not in MANUAL_INDEX_APPROVAL_ROLES:
+        record_operation(
+            state,
+            "document-upload-governance-result-access-denied",
+            auth_audit_payload(
+                current_user,
+                attempted_action="document-upload-governance-result-update",
+                upload_id=upload_id,
+                check_type=request.check_type,
+                status_code=403,
+                reason=GOVERNANCE_RESULT_UPDATE_DENIED_REASON,
+            ),
+        )
+        raise HTTPException(status_code=403, detail=GOVERNANCE_RESULT_UPDATE_DENIED_REASON)
+
+    current_upload = state.document_upload_store.get_upload(upload_id)
+    if current_upload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    index_readiness = apply_governance_check_result(
+        cast(dict[str, object], current_upload["index_readiness"]),
+        check_type=request.check_type,
+        provider=request.provider,
+        status=request.status,
+        detail=request.detail,
+        external_job_id=request.external_job_id,
+        risk_level=request.risk_level,
+        result_code=request.result_code,
+        finished_at=request.finished_at,
+    )
+    updated = state.document_upload_store.update_index_readiness(
+        upload_key=upload_id,
+        index_readiness=index_readiness,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(updated)
+    record_operation(
+        state,
+        "document-upload-governance-result-update",
+        auth_audit_payload(
+            current_user,
+            upload_id=item.id,
+            check_type=request.check_type,
+            provider=request.provider,
+            result_status=request.status,
+            result_code=request.result_code,
+            risk_level=request.risk_level,
+            external_job_id=request.external_job_id,
             index_status=item.index_status,
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,
