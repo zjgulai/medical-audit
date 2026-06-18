@@ -33,13 +33,27 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-18 PR #128 个人材料 signed URL 下载交付生产部署与 E2E
+
+- PR #128 `codex/document-download-signed-url-audit` 已合并到 `main`，merge commit 为 `b1cd474113dbdb4f58ef59ae32781b06c9387e20`。
+- `main@b1cd474113dbdb4f58ef59ae32781b06c9387e20` 已使用部署戳 `pr128-signed-download-20260618` 发布到生产；本次部署重建 `medical_audit_app` 镜像并安装 `cos-python-sdk-v5==1.9.44`。
+- 本次部署的远端备份阶段正常返回，未触发超时恢复路径；部署脚本继续完成 rsync、静态资源同步、`.deploy-sha` 写入、容器重建、健康检查和 smoke。
+- 当前生产业务部署标记 SHA：`b1cd474113dbdb4f58ef59ae32781b06c9387e20`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr128-signed-download-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
+- 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr128-signed-download-e2e-20260618.json` 为 `status=pass`，`issues=[]`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，`/var/www/audit` 只读 bind mount 存在，生产检索后端 `ready=true` 且 `matching_embedding_count=49051`。
+- 指定备份戳文件：app `/opt/medical-audit/backups/app/pre-deploy-pr128-signed-download-20260618.tar.gz`，大小 `184539636` bytes；env `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr128-signed-download-20260618`，大小 `1857` bytes；DB `/opt/medical-audit/backups/db/pre-deploy-pr128-signed-download-20260618.sql.gz`，大小 `1026236185` bytes；Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr128-signed-download-20260618`，大小 `29348` bytes；Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-pr128-signed-download-20260618.tar.gz`，大小 `440196` bytes。
+- 部署后生产前端语义验收 `tmp/outputs/production-frontend-acceptance-latest.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`，`p1_count=0`；`/audit/logs` 和 `/audit/logs/export` 均满足未授权 `403`、授权 `200`。
+- `/documents` signed URL 生产 E2E 报告 `tmp/outputs/production-documents-signed-download-e2e-after-pr128-20260618.json` 为 `status=pass`，验证对象为 `document-upload-73805d5ac457`；覆盖 read-all 列表、read-all signed URL 候选选择、owner signed URL 元信息、signed URL 真实对象下载 `200`、下载内容 `sha256` 和大小匹配、非 owner 普通 `auditor` 返回 `404`、审计日志记录签发但不保存 `signed_url`、越权访问审计日志落库。
+- 本轮 `/documents` E2E 会写入生产审计日志；执行前已有 `pre-deploy-pr128-signed-download-20260618.sql.gz` 数据库备份作为回滚边界。
+- 证据边界：本轮证明个人材料已存 COS 对象可由授权用户获取短期 signed URL 并完成真实对象下载，越权用户仍返回 `404`，审计日志保存签发事实但不保存 URL 本体。不等于完成生产级病毒扫描、DLP/脱敏改写、真实登录会话、个人材料实际入索引、证书级电子签章或长期存储生命周期策略。
+
 ### 2026-06-18 PR #126 P0-07 第二次生产部署验证与关闭
 
 - PR #126 `codex/pr125-deploy-state-sync` 已合并到 `main`，merge commit 为 `26a4415aa92f3de66d5662508482e1fb83f3f07e`。
 - GitHub `main` 已核验到 `26a4415aa92f3de66d5662508482e1fb83f3f07e`；本地 `git fetch` 因 GitHub HTTPS 连接失败未作为唯一事实源，本轮部署前已用 GitHub API 核验本地 tree 与远端 merge commit tree 均为 `190dfabaf4332252495b749067d50b20b5213b6a`。
 - `main@26a4415aa92f3de66d5662508482e1fb83f3f07e` 已使用部署戳 `pr126-p0-07-second-validation-20260618` 发布到生产。
 - 本次部署的远端备份阶段正常返回，未触发 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200` 超时恢复路径；部署脚本无人工接管，继续完成 rsync、静态资源同步、`.deploy-sha` 写入、健康检查和 smoke。
-- 当前生产业务部署标记 SHA：`26a4415aa92f3de66d5662508482e1fb83f3f07e`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 当时生产业务部署标记 SHA：`26a4415aa92f3de66d5662508482e1fb83f3f07e`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
 - 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr126-p0-07-second-validation-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
 - 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr126-p0-07-second-validation-20260618.json` 为 `status=pass`，`issues=[]`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，`/var/www/audit` 只读 bind mount 存在，生产检索后端 `ready=true` 且 `matching_embedding_count=49051`，指定备份戳的 app/env/db/nginx/web 备份均存在。
 - 指定备份戳文件：app `/opt/medical-audit/backups/app/pre-deploy-pr126-p0-07-second-validation-20260618.tar.gz`，大小 `184539590` bytes；env `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr126-p0-07-second-validation-20260618`，大小 `1857` bytes；DB `/opt/medical-audit/backups/db/pre-deploy-pr126-p0-07-second-validation-20260618.sql.gz`，大小 `1026235344` bytes；Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr126-p0-07-second-validation-20260618`，大小 `29348` bytes；Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-pr126-p0-07-second-validation-20260618.tar.gz`，大小 `440225` bytes。
@@ -58,7 +72,7 @@ source: human+ai
 - 部署后生产前端语义验收 `tmp/outputs/production-frontend-acceptance-latest.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
 - 证据边界：本轮只构成 P0-07 的第一次真实生产验证；第二次独立完整生产部署复验已在 PR #126 完成，P0-07 关闭结论见 2026-06-18 PR #126 记录。
 
-### 2026-06-17 PR #121 下载元信息部署后当前事实
+### 2026-06-17 PR #121 下载元信息部署后历史事实
 
 - PR #117 `codex/personal-material-cos-production-readiness` 已合并到 `main` 并完成生产部署，生产部署 SHA 为 `a276eeb2cd9018ebac52193103d17f476dbe96a6`。
 - PR #117 部署戳：`cos-sdk-local-provider-20260617`；远端已生成 `app`、`env`、`db`、`nginx` 和 `web` 备份。
