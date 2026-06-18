@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -15,6 +16,9 @@ from medical_audit_kb.api.document_permissions import (
 from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernanceContext,
     apply_manual_index_decision,
+)
+from medical_audit_kb.api.document_upload_governance_store import (
+    DocumentObjectStorageSignedUrlResult,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 
@@ -132,10 +136,14 @@ class DocumentStorageObjectItem(BaseModel):
 class DocumentUploadDownloadAccess(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: Literal["metadata-only"]
+    status: Literal["metadata-only", "download-ready"]
     access_scope: Literal["owner", "read-all"]
-    delivery: Literal["not-issued"]
-    reason: Literal["signed-download-not-configured"]
+    delivery: Literal["not-issued", "signed-url"]
+    reason: Literal[
+        "signed-download-not-configured",
+        "signed-url-issued",
+        "signed-url-not-available",
+    ]
     signed_url: str | None
     expires_at: str | None
     storage_path: str
@@ -322,6 +330,28 @@ def get_document_upload_download_metadata(
         DocumentStorageObjectItem.model_validate(storage_object)
         for storage_object in state.document_upload_store.list_storage_objects(upload_id)
     ]
+    signed_url_result = _create_document_upload_signed_url(
+        state=state,
+        storage_objects=storage_objects,
+    )
+    signed_url_issued = signed_url_result is not None
+    delivery: Literal["not-issued", "signed-url"] = (
+        "signed-url" if signed_url_issued else "not-issued"
+    )
+    reason: Literal[
+        "signed-download-not-configured",
+        "signed-url-issued",
+        "signed-url-not-available",
+    ] = (
+        "signed-url-issued"
+        if signed_url_result is not None
+        else _download_not_issued_reason(storage_objects)
+    )
+    expires_at = (
+        _datetime_to_response_iso(signed_url_result.expires_at)
+        if signed_url_result is not None
+        else None
+    )
     record_operation(
         state,
         "document-upload-download-metadata",
@@ -330,18 +360,21 @@ def get_document_upload_download_metadata(
             upload_id=item.id,
             access_scope=access_scope,
             storage_object_count=len(storage_objects),
-            signed_url_issued=False,
+            delivery=delivery,
+            reason=reason,
+            signed_url_issued=signed_url_issued,
+            signed_url_expires_at=expires_at,
         ),
     )
     return DocumentUploadDownloadResponse(
         item=item,
         download=DocumentUploadDownloadAccess(
-            status="metadata-only",
+            status="download-ready" if signed_url_issued else "metadata-only",
             access_scope=access_scope,
-            delivery="not-issued",
-            reason="signed-download-not-configured",
-            signed_url=None,
-            expires_at=None,
+            delivery=delivery,
+            reason=reason,
+            signed_url=signed_url_result.signed_url if signed_url_result is not None else None,
+            expires_at=expires_at,
             storage_path=item.storage_path,
             storage_objects=storage_objects,
         ),
@@ -444,6 +477,44 @@ def _document_upload_access_scope(
     if permissions.can_read_all_personal_uploads:
         return "read-all"
     return None
+
+
+def _create_document_upload_signed_url(
+    *,
+    state: ApiState,
+    storage_objects: list[DocumentStorageObjectItem],
+) -> DocumentObjectStorageSignedUrlResult | None:
+    if state.document_upload_store is None:
+        return None
+    for storage_object in storage_objects:
+        if (
+            storage_object.provider != "tencent-cos"
+            or storage_object.storage_status != "object-stored"
+        ):
+            continue
+        signed_url_result = state.document_upload_store.create_presigned_download_url(
+            storage_object=storage_object.model_dump(),
+            expires_in_seconds=state.settings.document_storage.signed_url_ttl_seconds,
+        )
+        if signed_url_result is not None:
+            return signed_url_result
+    return None
+
+
+def _download_not_issued_reason(
+    storage_objects: list[DocumentStorageObjectItem],
+) -> Literal["signed-download-not-configured", "signed-url-not-available"]:
+    for storage_object in storage_objects:
+        if (
+            storage_object.provider == "tencent-cos"
+            and storage_object.storage_status == "object-stored"
+        ):
+            return "signed-url-not-available"
+    return "signed-download-not-configured"
+
+
+def _datetime_to_response_iso(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
 
 
 def _file_extension(file_name: str) -> str:

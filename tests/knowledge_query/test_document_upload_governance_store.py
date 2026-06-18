@@ -95,6 +95,16 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
         "content_type": "text/plain",
         "storage_backend": "tencent-cos",
     }
+    signed_url_result = storage.create_presigned_download_url(
+        object_key=result.object_key,
+        expires_in_seconds=300,
+    )
+    assert signed_url_result is not None
+    assert signed_url_result.provider == "tencent-cos"
+    assert signed_url_result.bucket == "medical-audit-prod"
+    assert signed_url_result.region == "ap-guangzhou"
+    assert signed_url_result.object_key == result.object_key
+    assert signed_url_result.signed_url == "https://cos.example/signed-download"
     assert client.calls == [
         {
             "bucket": "medical-audit-prod",
@@ -109,6 +119,14 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
             "encryption_mode": "sse-kms",
             "kms_key_id": "kms-key-1",
             "storage_class": "STANDARD_IA",
+        }
+    ]
+    assert client.presign_calls == [
+        {
+            "bucket": "medical-audit-prod",
+            "region": "ap-guangzhou",
+            "object_key": result.object_key,
+            "expires_in_seconds": 300,
         }
     ]
 
@@ -173,6 +191,27 @@ def test_tencent_cos_sdk_client_translates_kms_encryption() -> None:
     assert result == {"etag": '"etag"', "version_id": None}
     assert sdk_client.calls[0]["ServerSideEncryption"] == "cos/kms"
     assert sdk_client.calls[0]["SSEKMSKeyId"] == "kms-key-1"
+
+
+def test_tencent_cos_sdk_client_translates_presigned_download_url() -> None:
+    sdk_client = FakeTencentCosSdkClient(response={"ETag": '"etag"', "VersionId": None})
+    client = TencentCosSdkPutObjectClient(sdk_client=sdk_client)
+
+    result = client.create_presigned_download_url(
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        object_key="personal-materials/prod/object.txt",
+        expires_in_seconds=600,
+    )
+
+    assert result == "https://cos.example/sdk-signed-download"
+    assert sdk_client.presign_calls == [
+        {
+            "Bucket": "medical-audit-prod",
+            "Key": "personal-materials/prod/object.txt",
+            "Expired": 600,
+        }
+    ]
 
 
 def test_document_object_storage_factory_builds_local_by_default(tmp_path: Path) -> None:
@@ -630,10 +669,18 @@ def _enable_sqlite_foreign_keys(
 
 
 class FakeTencentCosClient:
-    def __init__(self, *, etag: str, version_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        etag: str,
+        version_id: str,
+        signed_url: str = "https://cos.example/signed-download",
+    ) -> None:
         self.etag = etag
         self.version_id = version_id
+        self.signed_url = signed_url
         self.calls: list[dict[str, object]] = []
+        self.presign_calls: list[dict[str, object]] = []
 
     def put_object(
         self,
@@ -663,15 +710,44 @@ class FakeTencentCosClient:
         )
         return {"etag": self.etag, "version_id": self.version_id}
 
+    def create_presigned_download_url(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> str:
+        self.presign_calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+                "expires_in_seconds": expires_in_seconds,
+            }
+        )
+        return self.signed_url
+
 
 class FakeTencentCosSdkClient:
-    def __init__(self, *, response: dict[str, object]) -> None:
+    def __init__(
+        self,
+        *,
+        response: dict[str, object],
+        signed_url: str = "https://cos.example/sdk-signed-download",
+    ) -> None:
         self.response = response
+        self.signed_url = signed_url
         self.calls: list[dict[str, object]] = []
+        self.presign_calls: list[dict[str, object]] = []
 
     def put_object(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
         return dict(self.response)
+
+    def get_presigned_download_url(self, **kwargs: object) -> str:
+        self.presign_calls.append(kwargs)
+        return self.signed_url
 
 
 class FakeTencentCosSdkModule:

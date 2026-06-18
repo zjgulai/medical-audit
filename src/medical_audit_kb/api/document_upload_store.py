@@ -25,6 +25,7 @@ from medical_audit_kb.api.document_upload_governance_store import (
     DocumentObjectStorage,
     DocumentObjectStoragePutRequest,
     DocumentObjectStoragePutResult,
+    DocumentObjectStorageSignedUrlResult,
     LocalDocumentObjectStorage,
     TencentCosDocumentObjectStorage,
     TencentCosPutObjectClient,
@@ -256,6 +257,14 @@ class DocumentUploadStore(Protocol):
     def list_storage_objects(self, upload_key: str) -> list[dict[str, object]]:
         pass
 
+    def create_presigned_download_url(
+        self,
+        *,
+        storage_object: Mapping[str, object],
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
+        pass
+
     def update_index_readiness(
         self,
         *,
@@ -372,6 +381,21 @@ class SqlAlchemyDocumentUploadStore:
             ).all()
             return [_storage_object_to_payload(record) for record in records]
 
+    def create_presigned_download_url(
+        self,
+        *,
+        storage_object: Mapping[str, object],
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
+        object_storage = self.object_storage or LocalDocumentObjectStorage(self.upload_root)
+        if not _storage_object_is_signable(storage_object, provider=object_storage.provider):
+            return None
+        object_key = str(storage_object.get("object_key") or "")
+        return object_storage.create_presigned_download_url(
+            object_key=object_key,
+            expires_in_seconds=expires_in_seconds,
+        )
+
     def update_index_readiness(
         self,
         *,
@@ -468,6 +492,21 @@ class InMemoryDocumentUploadStore:
         _ = upload_key
         return []
 
+    def create_presigned_download_url(
+        self,
+        *,
+        storage_object: Mapping[str, object],
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
+        object_storage = self.object_storage or LocalDocumentObjectStorage(self.upload_root)
+        if not _storage_object_is_signable(storage_object, provider=object_storage.provider):
+            return None
+        object_key = str(storage_object.get("object_key") or "")
+        return object_storage.create_presigned_download_url(
+            object_key=object_key,
+            expires_in_seconds=expires_in_seconds,
+        )
+
     def update_index_readiness(
         self,
         *,
@@ -540,6 +579,18 @@ def _storage_object_to_payload(record: DocumentStorageObject) -> dict[str, objec
         "created_at": _datetime_to_iso(record.created_at),
         "updated_at": _datetime_to_iso(record.updated_at),
     }
+
+
+def _storage_object_is_signable(
+    storage_object: Mapping[str, object],
+    *,
+    provider: str,
+) -> bool:
+    return (
+        storage_object.get("provider") == provider
+        and storage_object.get("storage_status") == "object-stored"
+        and bool(str(storage_object.get("object_key") or "").strip())
+    )
 
 
 def _copy_index_readiness(value: dict[str, object] | None) -> dict[str, object]:

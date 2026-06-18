@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
 from uuid import uuid4
@@ -61,6 +61,16 @@ class DocumentObjectStoragePutResult:
     metadata: dict[str, object] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentObjectStorageSignedUrlResult:
+    provider: DocumentStorageProvider
+    object_key: str
+    signed_url: str
+    expires_at: datetime
+    bucket: str | None = None
+    region: str | None = None
+
+
 class DocumentObjectStorage(Protocol):
     @property
     def provider(self) -> DocumentStorageProvider:
@@ -70,6 +80,14 @@ class DocumentObjectStorage(Protocol):
         self,
         request: DocumentObjectStoragePutRequest,
     ) -> DocumentObjectStoragePutResult:
+        pass
+
+    def create_presigned_download_url(
+        self,
+        *,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
         pass
 
 
@@ -89,9 +107,22 @@ class TencentCosPutObjectClient(Protocol):
     ) -> Mapping[str, str | None]:
         pass
 
+    def create_presigned_download_url(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> str:
+        pass
+
 
 class TencentCosSdkClient(Protocol):
     def put_object(self, **kwargs: object) -> Mapping[str, object]:
+        pass
+
+    def get_presigned_download_url(self, **kwargs: object) -> str:
         pass
 
 
@@ -134,6 +165,22 @@ class TencentCosSdkPutObjectClient:
             "version_id": _string_mapping_value(response, "VersionId"),
         }
 
+    def create_presigned_download_url(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> str:
+        # qcloud_cos binds Region in CosConfig; its presign call does not take Region.
+        _ = region
+        return self.sdk_client.get_presigned_download_url(
+            Bucket=bucket,
+            Key=object_key,
+            Expired=expires_in_seconds,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class LocalDocumentObjectStorage:
@@ -166,6 +213,15 @@ class LocalDocumentObjectStorage:
                 "file_name": request.file_name,
             },
         )
+
+    def create_presigned_download_url(
+        self,
+        *,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
+        _ = object_key, expires_in_seconds
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +278,27 @@ class TencentCosDocumentObjectStorage:
                 "content_type": content_type,
                 "storage_backend": "tencent-cos",
             },
+        )
+
+    def create_presigned_download_url(
+        self,
+        *,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> DocumentObjectStorageSignedUrlResult | None:
+        signed_url = self.client.create_presigned_download_url(
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+            expires_in_seconds=expires_in_seconds,
+        )
+        return DocumentObjectStorageSignedUrlResult(
+            provider=self.provider,
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+            signed_url=signed_url,
+            expires_at=datetime.now(UTC) + timedelta(seconds=expires_in_seconds),
         )
 
 
