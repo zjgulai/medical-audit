@@ -33,6 +33,23 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-18 PR #131 个人材料治理结果回写生产部署与 E2E
+
+- PR #130 `codex/document-governance-external-pending` 已合并到 `main`，merge commit 为 `3356dc2c33bb23e95c6893826ad1ffeda8d12b3d`；该提交将外部治理 provider pending 语义合入主线。
+- PR #131 `codex/document-governance-result-writeback` 已合并到 `main`，merge commit 为 `0fa7eb149047fa049b495d2964302c9100b380d6`。
+- `main@0fa7eb149047fa049b495d2964302c9100b380d6` 已使用部署戳 `pr131-governance-result-writeback-20260618` 发布到生产；本次部署重建 `medical_audit_app` 镜像并同步前端静态资源。
+- 本次部署的远端备份阶段正常返回，未触发超时恢复路径；部署脚本继续完成 rsync、静态资源同步、`.deploy-sha` 写入、容器重建、健康检查和 smoke。
+- 当前生产业务部署标记 SHA：`0fa7eb149047fa049b495d2964302c9100b380d6`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr131-governance-result-writeback-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
+- 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr131-governance-result-writeback-deploy-20260618.json` 为 `status=pass`，`issues=[]`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，`/var/www/audit` 只读 bind mount 存在，生产检索后端 `ready=true` 且 `matching_embedding_count=49051`。
+- `/documents` governance-result E2E 后状态复核 `tmp/outputs/tencent-cloud-deployment-state-after-pr131-governance-result-writeback-e2e-20260618.json` 为 `status=pass`，`issues=[]`；远端 `.deploy-sha` 仍为 `0fa7eb149047fa049b495d2964302c9100b380d6`，`medical_audit_app` 和 `medical_audit_pg` 继续保持 `healthy`。
+- 部署后生产前端语义验收 `tmp/outputs/production-frontend-acceptance-latest.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`，`p1_count=0`；`/audit/logs` 和 `/audit/logs/export` 均满足未授权 `403`、授权 `200`。
+- 指定备份戳文件：app `/opt/medical-audit/backups/app/pre-deploy-pr131-governance-result-writeback-20260618.tar.gz`，大小 `184540492` bytes；env `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr131-governance-result-writeback-20260618`，大小 `1857` bytes；DB `/opt/medical-audit/backups/db/pre-deploy-pr131-governance-result-writeback-20260618.sql.gz`，大小 `1026239720` bytes；Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr131-governance-result-writeback-20260618`，大小 `29348` bytes；Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-pr131-governance-result-writeback-20260618.tar.gz`，大小 `440134` bytes。
+- `/documents` governance-result 生产 E2E 报告 `tmp/outputs/production-documents-governance-result-writeback-e2e-after-pr131-api-v1-20260618.json` 为 `status=pass`，验证对象为 `document-upload-d66c5600e0cd`；公网正确入口为 `/api/v1/documents/uploads/{upload_id}/index-readiness/governance-result`。
+- E2E 覆盖：新增个人材料上传、`department-head` 回写 `virus-scan` 为 `passed`、`virus-scan-required` blocker 清除、`dlp-review-required` 和 `manual-index-approval-required` 继续阻断、普通 `auditor` 回写治理结果返回 `403`、成功和拒绝事件均可在持久化审计日志中查询。
+- 本轮首次使用裸 `/documents/uploads` 公网写入时返回 Nginx `405`，报告保留在 `tmp/outputs/production-documents-governance-result-writeback-e2e-after-pr131-20260618.json`；该失败证明裸 `/documents` 被静态前端接管，不是后端治理结果回写逻辑失败。生产公网 API 应使用 `/api/v1/documents/...`。
+- 证据边界：本轮证明治理结果回写 API、角色拒绝和审计日志可用；本轮没有调用真实病毒扫描、DLP 或外部 provider，没有触发个人材料实际入索引，也不代表真实登录会话或案件级完整合规闭环已完成。
+
 ### 2026-06-18 PR #128 个人材料 signed URL 下载交付生产部署与 E2E
 
 - PR #128 `codex/document-download-signed-url-audit` 已合并到 `main`，merge commit 为 `b1cd474113dbdb4f58ef59ae32781b06c9387e20`。

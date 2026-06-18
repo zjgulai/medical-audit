@@ -38,7 +38,9 @@ source: human+ai
 - PR #125 merge commit：`ce5ca0475891cd3daee0cdc10c0f62a043915874`，已完成部署脚本备份阶段超时恢复修复并完成第一次生产部署验证。
 - PR #126 merge commit：`26a4415aa92f3de66d5662508482e1fb83f3f07e`，为 PR #125 部署验证状态同步 docs-only commit，已作为 P0-07 第二次独立生产部署复验目标 SHA 同步到生产。
 - PR #128 merge commit：`b1cd474113dbdb4f58ef59ae32781b06c9387e20`，已完成 COS signed URL 下载交付并部署到生产。
-- 当前生产业务部署标记 SHA：`b1cd474113dbdb4f58ef59ae32781b06c9387e20`；PR #128 已使用部署戳 `pr128-signed-download-20260618` 完成生产部署。本轮远端备份阶段正常返回，未触发 20 分钟超时恢复路径，也无人工接管；生产 smoke、部署状态审计、前端语义验收和 `/documents` signed URL 生产 E2E 均通过。
+- PR #130 merge commit：`3356dc2c33bb23e95c6893826ad1ffeda8d12b3d`，已将外部治理 provider pending 语义合入 `main`。
+- PR #131 merge commit：`0fa7eb149047fa049b495d2964302c9100b380d6`，已完成个人材料治理结果回写接口并部署到生产。
+- 当前生产业务部署标记 SHA：`0fa7eb149047fa049b495d2964302c9100b380d6`；PR #131 已使用部署戳 `pr131-governance-result-writeback-20260618` 完成生产部署。本轮远端备份阶段正常返回，未触发 20 分钟超时恢复路径，也无人工接管；生产 smoke、部署状态审计、前端语义验收和 `/documents` governance-result 写入型生产 E2E 均通过。
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -57,13 +59,15 @@ source: human+ai
 - 最新个人材料对象记录元数据生产写入型 E2E 报告：`tmp/outputs/production-documents-storage-record-e2e-after-pr109-20260617.json`，状态 `pass`。
 - 最新个人材料 COS 写入型 E2E 只读复核报告：`tmp/outputs/production-documents-cos-readonly-after-main-936d50af-deploy-20260617.json`，状态 `pass`；容器内直连和公网 `/api/v1/documents/uploads` 两条既有写入均仍在 DB 和 COS 中，COS `HEAD` 均通过，本地容器文件均不存在。
 - 最新个人材料 signed URL 下载交付生产 E2E 报告：`tmp/outputs/production-documents-signed-download-e2e-after-pr128-20260618.json`，状态 `pass`；基于既有 COS 上传 `document-upload-73805d5ac457` 验证 owner 返回 `download-ready/delivery=signed-url/reason=signed-url-issued`，signed URL 真实对象下载 `200`，内容 `sha256` 和大小匹配，其他普通 `auditor` 返回 `404`，审计日志记录签发事实但不保存 URL 本体。
-- 最新生产基础 E2E smoke 报告：`tmp/outputs/production-e2e-smoke-after-pr128-signed-download-20260618.json`，状态 `pass`，覆盖 `9` 个生产 smoke 步骤。
+- 最新个人材料治理结果回写生产 E2E 报告：`tmp/outputs/production-documents-governance-result-writeback-e2e-after-pr131-api-v1-20260618.json`，状态 `pass`；公网正确入口为 `/api/v1/documents/...`。新上传 `document-upload-d66c5600e0cd` 后，`department-head` 成功将 `virus-scan` check 回写为 `passed`，`virus-scan-required` blocker 被清除，`dlp-review-required` 和 `manual-index-approval-required` 继续阻断；普通 `auditor` 回写治理结果返回 `403`，成功与拒绝事件均写入持久化审计日志。
+- 最新生产基础 E2E smoke 报告：`tmp/outputs/production-e2e-smoke-after-pr131-governance-result-writeback-20260618.json`，状态 `pass`，覆盖 `9` 个生产 smoke 步骤。
 - 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-latest.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
-- 最新生产部署后只读核验：`tmp/outputs/tencent-cloud-deployment-state-after-pr128-signed-download-e2e-20260618.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=b1cd474113dbdb4f58ef59ae32781b06c9387e20`，`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，公网 `/api/v1/index/search-backend` 返回 `ready=true`，`matching_embedding_count=49051`，指定备份戳 `pr128-signed-download-20260618` 的 app/env/db/nginx/web 备份均存在。
+- 最新生产部署后只读核验：`tmp/outputs/tencent-cloud-deployment-state-after-pr131-governance-result-writeback-e2e-20260618.json`，状态 `pass`，`issues=[]`；远端 `.deploy-sha=0fa7eb149047fa049b495d2964302c9100b380d6`，`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，公网 `/api/v1/index/search-backend` 返回 `ready=true`，`matching_embedding_count=49051`，指定备份戳 `pr131-governance-result-writeback-20260618` 的 app/env/db/nginx/web 备份均存在。
 - 最新生产部署目录 Git 元数据清理结论：PR #118 已合并并随 `main-936d50af-dotgit-doc-sync-20260617` 轻量部署，部署脚本已在实际 rsync 命令中排除 `.git` 文件和 `.git/` 目录；生产侧已备份并删除 `/opt/medical-audit/app/.git` 单文件，备份路径 `/opt/medical-audit/backups/app/remote-dotgit-file-pre-cleanup-20260617T165949`，生产目录现在不再指向本机 worktree 元数据。
 - 最新个人材料入索引审批状态机部署结论：PR #103 已生产部署；`department-head` 可人工审批通过或驳回个人材料入索引申请，普通 `auditor` 审批返回 `403`，审批更新和拒绝均写入持久化审计日志。
 - 最新个人材料对象存储部署结论：PR #117 已生产部署，COS SDK 和 local provider 兼容层进入生产镜像；active env 已切到 `tencent-cos`，上传 `document-upload-73805d5ac457` 和公网 `/api/v1` 上传 `document-upload-6ee427e0fd91` 均写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS，且 COS `HEAD` 成功。
 - 最新个人材料下载交付部署结论：PR #128 已生产部署；`GET /api/v1/documents/uploads/{upload_id}/download` 对已授权且已记录 `provider=tencent-cos/storage_status=object-stored` 的对象签发短期 signed URL，不返回文件体，不把 URL 写入审计日志；owner 可取得本人上传材料的 signed URL，其他普通 `auditor` 按 `404` 隐藏存在性，`department-head` 可按 `read-all` 读取并触发签发。
+- 最新个人材料治理结果回写部署结论：PR #130 和 PR #131 已生产部署；生产 API 入口为 `/api/v1/documents/uploads/{upload_id}/index-readiness/governance-result`，`department-head/system-admin` 可回写 `virus-scan` 或 `dlp-review` 结果，普通 `auditor` 返回 `403` 并写拒绝审计日志。本轮只执行受控结果回写，不调用真实病毒扫描、DLP 或外部 provider。
 - 最新部署工具链结论：PR #95 和 PR #96 均已合并但生产部署验证失败，原因均为 DB 备份完成后本地 SSH 仍挂起；PR #97 曾验证通过，但 PR #121 部署再次观察到远端 DB 备份完成、备份文件落盘后本地 SSH 子进程未退出。PR #125 已完成第一次生产验证：备份 SSH 超时后自动完成检查恢复并继续部署，未人工接管；PR #126 已完成第二次独立生产部署复验：备份阶段正常返回，未人工接管，部署状态审计通过。P0-07 已关闭并降级为后续部署监控项。
 - 最新国家规章平台增量激活后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-national-regulation-app-restart-20260615.json`，状态 `pass`。
 - 最新索引管理拒绝审计部署后生产 E2E 报告：`tmp/outputs/production-e2e-smoke-after-index-admin-denial-audit-deploy-20260615.json`，状态 `pass`。
@@ -83,18 +87,18 @@ source: human+ai
 - 个人材料 COS 对象存储生产结果：生产已启用 `tencent-cos` provider，`document-upload-73805d5ac457` 与 `document-upload-6ee427e0fd91` 均生成 `personal-materials/prod/...` object key；对应 `document_storage_objects.provider=tencent-cos`、bucket 为 `medical-audit-personal-materials-1304185125`、region 为 `ap-guangzhou`、`storage_status=object-stored`、`encryption_mode=sse-cos`，且本地 `/opt/medical-audit/document-uploads` 不再生成对应文件。
 - 孤儿文件清理结果：首次失败写入遗留文件 `/opt/medical-audit/document-uploads/2026/06/17/document-upload-51043ab42e46.txt` 已在确认两张表均无记录后备份并删除；备份路径 `/opt/medical-audit/backups/orphan-document-uploads/20260617/document-upload-51043ab42e46.txt.pre-delete`，备份 `sha256=89c0fee5185dbd1a42df6ae89165854f96a6f2c41d676c4cea796ac258027b3f`。
 
-生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、个人材料上传治理门禁表达、个人材料人工入索引审批状态机、个人材料 COS 对象存储、个人材料下载元信息授权隔离、个人材料 signed URL 下载交付、索引管理拒绝审计、门户配置写入拒绝审计、权限上下文兼容层、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、生产级病毒扫描、DLP/脱敏改写、个人材料实际入索引或案件级完整合规闭环已完成。部署脚本的 DB 备份 SSH 退出链路已连续两次完整生产部署无人工介入并通过状态审计，P0-07 已关闭并降级为每次部署保留备份戳和状态审计的监控项。
+生产结论：当前生产检索、引用、预览、静态门户、文档检索查询、文档来源回显、文档来源权限读取、个人材料留存、个人材料上传治理门禁表达、个人材料人工入索引审批状态机、个人材料 COS 对象存储、个人材料下载元信息授权隔离、个人材料 signed URL 下载交付、个人材料治理结果回写、索引管理拒绝审计、门户配置写入拒绝审计、权限上下文兼容层、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型、真实登录会话/全站权限体系、生产级病毒扫描、DLP/脱敏改写、个人材料实际入索引或案件级完整合规闭环已完成。部署脚本的 DB 备份 SSH 退出链路已连续多次完整生产部署无人工介入并通过状态审计，P0-07 已关闭并降级为每次部署保留备份戳和状态审计的监控项。
 
 ### 2.2 本地仓库状态
 
 - 当前工作区：`/Users/pray/project/medical_audit_minimal_pr`
 - 当前本地工作分支：以执行时 `git status` 为准；本轮状态同步使用 `codex/*` docs-only 分支。
 - 本轮生产部署和文档同步执行 worktree：`/Users/pray/project/medical_audit_minimal_pr`
-- 当前生产业务部署来源：PR #128 `codex/document-download-signed-url-audit` 已合并并完成生产部署。
+- 当前生产业务部署来源：PR #131 `codex/document-governance-result-writeback` 已合并并完成生产部署。
 - PR #129 `codex/pr128-signed-download-state-sync` 为 docs-only 状态同步；合并后 GitHub `main` 可前进到 docs-only merge commit，但 production unchanged，生产业务部署基线仍以 `.deploy-sha` 为准。
-- 当前生产部署标记 SHA：`b1cd474113dbdb4f58ef59ae32781b06c9387e20`；本次已完成生产 smoke、部署状态审计、生产前端语义验收和 `/documents` signed URL 生产 E2E。
-- 本轮已完成 PR #128 合并、腾讯云生产部署、备份阶段正常返回验证、生产 smoke、部署状态审计、前端语义验收和 `/documents` signed URL 写入型 E2E。
-- 当前生产 `.deploy-sha` 与 PR #128 merge commit 对齐；P0-07 已关闭并降级为后续部署监控项。
+- 当前生产部署标记 SHA：`0fa7eb149047fa049b495d2964302c9100b380d6`；本次已完成生产 smoke、部署状态审计、生产前端语义验收和 `/documents` governance-result 写入型 E2E。
+- 本轮已完成 PR #131 合并、腾讯云生产部署、备份阶段正常返回验证、生产 smoke、部署状态审计、前端语义验收和 `/documents` governance-result 写入型 E2E。
+- 当前生产 `.deploy-sha` 与 PR #131 merge commit 对齐；P0-07 已关闭并降级为后续部署监控项。
 - 当前存在额外 worktree：
   - `/Users/pray/.config/superpowers/worktrees/medical_audit/frontend-plan-02-projects-dashboard`
   - `/Users/pray/project/medical_audit_minimal_pr`
@@ -124,7 +128,7 @@ source: human+ai
 - 文档检索页已完成生产查询 E2E；`/api/v1/query` 可按来源过滤返回引用、证据分组和原文入口，`/pages/preview/{chunk_id}` 生产预览可打开。
 - 文档检索搜索历史持久化已完成本地实现和联调；`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 读取历史，`/documents` 可展示、刷新和回填历史。
 - 文档检索剩余边界已完成生产部署和写入型 E2E；`/api/v1/query` 的 `citations` 与 `basis_groups.items` 直接回显 `source_collection`，`/api/v1/documents/permissions` 返回来源集合读权限，`/api/v1/documents/uploads` 支持个人材料留存、刷新后读取和普通审计员/管理员角色隔离，`/documents` 页面可展示权限状态和 `not-indexed` 上传历史。
-- 个人材料上传治理 provider 配置层已完成生产部署；默认生产配置下病毒扫描和 DLP adapter 为 `unconfigured`，会以 `index_readiness` 明确阻断个人材料实际入索引，并返回三项 blockers 供前后端和审计日志消费。本地已新增外部治理 provider pending 语义和结果回写接口：配置 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp` 时，响应保留 `blocked`，用 `result_code=pending-external-result` 表达仍需外部结果；`department-head/system-admin` 可通过治理结果回写接口更新 `virus-scan` 或 `dlp-review` check。
+- 个人材料上传治理 provider 配置层已完成生产部署；默认生产配置下病毒扫描和 DLP adapter 为 `unconfigured`，会以 `index_readiness` 明确阻断个人材料实际入索引，并返回三项 blockers 供前后端和审计日志消费。外部治理 provider pending 语义和结果回写接口已完成生产部署与受控写入型 E2E：配置 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp` 时，响应保留 `blocked`，用 `result_code=pending-external-result` 表达仍需外部结果；`department-head/system-admin` 可通过治理结果回写接口更新 `virus-scan` 或 `dlp-review` check，普通 `auditor` 被拒并写审计日志。
 - 个人材料人工入索引审批状态机已完成生产部署和写入型 E2E；`department-head` 可审批通过或驳回，普通 `auditor` 审批返回 `403`，审批结果持久化到 `document_upload_records.metadata.index_readiness` 并写入 `audit_log_events`。
 - 个人材料 COS 对象存储已完成生产部署、active env 切换和写入型 E2E；`document_storage_objects` 记录 COS object key、provider、bucket、region、`sha256`、大小、storage class、加密模式和状态，新增上传可同时写入上传记录、对象记录和腾讯云 COS。
 
@@ -133,7 +137,7 @@ source: human+ai
 - 智能体提示词版本治理、上下架、删除/停用和权限生效仍未完成；本轮只验证新增提示词型智能体持久化。
 - 项目成员真实权限、邀请审批、成员禁用/移除和权限生效仍未完成；本轮只验证成员新增持久化。
 - AI 数据分析病毒扫描、脱敏改写、外部对象存储/COS、下载权限隔离、正式工作簿治理和长期存储生命周期策略仍未完成。
-- 文档检索个人材料当前已完成留存、角色读取隔离、入索引治理门禁表达、人工审批状态机、腾讯云 COS 对象存储、下载元信息授权隔离和 signed URL 下载交付生产 E2E；外部治理 provider pending 语义和结果回写接口已完成本地实现和测试，但尚未完成生产部署、生产写入型 E2E 或真实外部 provider 调用；真实认证、生产级病毒扫描、生产级 DLP/脱敏改写、个人材料实际入索引流程和生产搜索历史列表/回填专项验收仍未完成。
+- 文档检索个人材料当前已完成留存、角色读取隔离、入索引治理门禁表达、人工审批状态机、腾讯云 COS 对象存储、下载元信息授权隔离、signed URL 下载交付、外部治理 provider pending 语义和治理结果回写生产 E2E；真实认证、生产级病毒扫描、生产级 DLP/脱敏改写、真实外部 provider 调用、个人材料实际入索引流程和生产搜索历史列表/回填专项验收仍未完成。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
 - Kimi 当前只验证为 embedding provider；线上答案生成模型未验证通过。
