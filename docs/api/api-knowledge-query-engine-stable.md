@@ -593,7 +593,7 @@ Query 参数：
 - `created_by`
 - `created_at`
 - `retention_status`
-- `index_status`
+- `index_status`：可选 `not-indexed`、`staged-for-index`、`indexed`、`indexing-failed`；当前个人材料入索引 API 仅推进到 `staged-for-index`。
 - `index_readiness`
 
 `index_readiness` 返回入索引治理状态：
@@ -651,6 +651,14 @@ Query 参数：
 - `local-recording` 只用于本地或预生产链路验收：上传后会把 `result_code=pending-external-result` 的病毒扫描和 DLP check 写入 `document_upload_governance_jobs`，状态为 `pending`，`result_payload.external_provider_call_performed=false`，`result_payload.production_write_performed=false`。
 - provider endpoint/secret 只保存环境变量名：`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_ENV`；接口和日志不保存 secret 值。
 - `local-recording` 证明异步 job 记录和后续结果回写结构可联通，不证明腾讯云 CI、ClamAV、DLP 或任何外部治理系统已经执行扫描。
+
+个人材料入索引 staging 配置：
+
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED` 默认为 `false`；默认生产行为不创建个人材料 indexer。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION` 默认 `32`，仅用于确定性 fake embedding 的本地/测试验收。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY` 默认 `personal-materials-candidate`。
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY` 默认 `personal-materials-candidate`。
+- 当前实现只生成 `index_version_status=candidate` 的 staging 索引版本，固定 `external_provider_call_performed=false`、`live_retrieval_activated=false`；它证明上传材料可抽取、切块、写入候选索引表和状态机，不表示生产 live retrieval 已包含个人材料。
 
 ### `GET /documents/uploads/{upload_id}/download`
 
@@ -740,10 +748,52 @@ Query 参数：
 - 若外部结果和人工审批均已 passed，则整体 `status=ready`、`next_action=ingest-personal-upload`；否则整体仍保持 `blocked` 或 `rejected`。
 - 操作日志记录 `document-upload-governance-result-update`，包含 `check_type`、`provider`、结果状态、结果码、外部任务号和更新后的 blockers。
 
+### `POST /documents/uploads/{upload_id}/index-ingestion`
+
+将已通过治理门禁的个人材料写入候选索引 staging 表。该接口是受控 staging，不发布到生产 active index，不触发 live retrieval 重载，也不调用外部 embedding/provider。
+
+权限：
+
+- 允许角色：`department-head`、`system-admin`。
+- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
+- 普通 `auditor` 不允许触发，会返回 `403`，并记录 `document-upload-index-ingestion-access-denied` 操作日志。
+
+前置条件：
+
+- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED=true`，否则返回 `409 document upload indexing is not enabled`。
+- 上传记录必须存在且 `metadata.index_readiness.status=ready`。
+- 上传记录必须为 `visibility=private`、`status=retained`、`metadata.index_status=not-indexed`。
+- 当前阶段只支持读取本地隔离区文件；COS-only 对象若本地隔离文件不可用，会返回 `409` 和 `reason=document-upload-local-file-unavailable`。
+
+staging 行为：
+
+- 读取本地隔离区文件，复用现有抽取器和切块器生成个人材料 chunk。
+- 写入 `source_package_versions`、`source_documents`、`document_chunks`、`chunk_embeddings` 和 `index_versions`。
+- `source_collection=personal-materials`。
+- `index_versions.status=candidate`，不改动 active index。
+- embedding 使用确定性 fake provider，接口不读取 Kimi/OpenAI/腾讯云等外部 provider key，不发生外部 provider call。
+- 上传记录推进为 `metadata.index_status=staged-for-index`，并写入 `metadata.index_ingestion` 记录 chunk 数、embedding 数、candidate key 和 `live_retrieval_activated=false`。
+
+响应核心字段：
+
+- `item`：更新后的上传记录。
+- `ingestion.status`：`staged-for-index` 或 `already-staged`。
+- `ingestion.source_collection`：固定 `personal-materials`。
+- `ingestion.index_version_status`：固定 `candidate`。
+- `ingestion.chunk_count`、`embedding_count`：本次 staging 写入数量。
+- `ingestion.external_provider_call_performed=false`。
+- `ingestion.live_retrieval_activated=false`。
+
 当前边界：
 
-- 本接口只完成个人材料留存、列表读取、人工审批/外部结果状态变更和入索引治理门禁表达，不把上传材料写入检索索引。
-- 本接口不执行病毒扫描、脱敏改写、对象存储上传、文件正文下载、签名 URL 生成或生命周期清理。
+- 本接口是本地可验证的候选索引 staging，不等同于生产个人材料检索可见。
+- 在进入 active retrieval 前，还必须补齐用户级 `created_by/visibility` 检索隔离、生产 embedding provider 门禁、candidate 发布审计和生产写入授权。
+
+当前边界：
+
+- 默认 `/documents` 链路只完成个人材料留存、列表读取、人工审批/外部结果状态变更和入索引治理门禁表达；只有显式启用 `index-ingestion` 后才写入候选索引 staging。
+- `index-ingestion` 不执行病毒扫描、脱敏改写、COS 对象拉取、签名 URL 生成、active index 发布或生命周期清理。
+- 上传、COS 对象存储和签名下载分别遵循 `POST /documents/uploads` 与 `GET /documents/uploads/{upload_id}/download` 的边界；不能把其中任一项通过当作全链路生产入索引完成。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 
 状态码：

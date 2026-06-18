@@ -8,6 +8,7 @@ class SourceCollection(StrEnum):
     SUPERVISION_RULES_KNOWLEDGE = "supervision-rules-knowledge"
     RISK_NEGATIVE_LIST = "risk-negative-list"
     MEDICAL_INSURANCE_LAWS = "medical-insurance-laws"
+    PERSONAL_MATERIALS = "personal-materials"
 
 
 class DocumentStatus(StrEnum):

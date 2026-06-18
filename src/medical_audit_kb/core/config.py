@@ -65,6 +65,16 @@ DOCUMENT_LOCAL_QUARANTINE_RETENTION_DAYS_ENV: Final = (
 )
 DOCUMENT_OBJECT_RETENTION_DAYS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_OBJECT_RETENTION_DAYS"
 DOCUMENT_STORAGE_RECORD_OBJECTS_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS"
+DOCUMENT_UPLOAD_INDEXING_ENABLED_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED"
+DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION"
+)
+DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY"
+)
+DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY"
+)
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -134,6 +144,17 @@ class DocumentStorageSettings(BaseModel):
     record_storage_objects: bool = False
 
 
+class DocumentUploadIndexingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    embedding_provider: Literal["deterministic-fake"] = "deterministic-fake"
+    embedding_dimension: int = Field(default=32, gt=0)
+    source_package_version_key: str = Field(default="personal-materials-candidate", min_length=1)
+    index_version_key: str = Field(default="personal-materials-candidate", min_length=1)
+    index_version_status: Literal["candidate"] = "candidate"
+
+
 class KnowledgeQuerySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -147,6 +168,9 @@ class KnowledgeQuerySettings(BaseModel):
         default_factory=DocumentUploadGovernanceSettings
     )
     document_storage: DocumentStorageSettings = Field(default_factory=DocumentStorageSettings)
+    document_upload_indexing: DocumentUploadIndexingSettings = Field(
+        default_factory=DocumentUploadIndexingSettings
+    )
     source_collection_weights: dict[str, float]
 
     @field_validator("source_collection_weights")
@@ -222,6 +246,8 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         merged["document_upload_governance"] = document_upload_governance
     if document_storage := _document_storage_env_overrides(merged):
         merged["document_storage"] = document_storage
+    if document_upload_indexing := _document_upload_indexing_env_overrides(merged):
+        merged["document_upload_indexing"] = document_upload_indexing
 
     return merged
 
@@ -329,6 +355,26 @@ def _document_storage_env_overrides(data: dict[str, Any]) -> dict[str, Any] | No
     if not changed:
         return None
     return storage
+
+
+def _document_upload_indexing_env_overrides(data: dict[str, Any]) -> dict[str, Any] | None:
+    indexing = dict(cast(dict[str, Any], data.get("document_upload_indexing", {})))
+    changed = False
+    if enabled := os.getenv(DOCUMENT_UPLOAD_INDEXING_ENABLED_ENV):
+        indexing["enabled"] = _parse_bool_env(enabled, DOCUMENT_UPLOAD_INDEXING_ENABLED_ENV)
+        changed = True
+    if dimension := os.getenv(DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION_ENV):
+        indexing["embedding_dimension"] = int(dimension)
+        changed = True
+    if package_key := os.getenv(DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY_ENV):
+        indexing["source_package_version_key"] = package_key
+        changed = True
+    if index_key := os.getenv(DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV):
+        indexing["index_version_key"] = index_key
+        changed = True
+    if not changed:
+        return None
+    return indexing
 
 
 def _parse_bool_env(value: str, env_name: str) -> bool:
