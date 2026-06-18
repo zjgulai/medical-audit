@@ -86,3 +86,34 @@ def test_future_governance_providers_do_not_clear_blockers_in_phase_a() -> None:
     assert readiness["checks"][0]["status"] == "blocked"
     assert readiness["checks"][1]["provider"] == "ruleset-v1"
     assert readiness["checks"][1]["status"] == "blocked"
+
+
+def test_external_governance_providers_surface_pending_result_boundary() -> None:
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="tencent-ci-virus",
+            dlp_review_provider="external-dlp",
+        )
+    )
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="patient-ledger.csv",
+            extension="csv",
+            content=b"patient_id,amount\np1,120.00\n",
+        )
+    )
+
+    virus_check = readiness["checks"][0]
+    dlp_check = readiness["checks"][1]
+    assert readiness["status"] == "blocked"
+    assert virus_check["provider"] == "tencent-ci-virus"
+    assert virus_check["status"] == "blocked"
+    assert virus_check["blocker"] == "virus-scan-required"
+    assert virus_check["result_code"] == "pending-external-result"
+    assert "not configured" not in virus_check["detail"]
+    assert dlp_check["provider"] == "external-dlp"
+    assert dlp_check["status"] == "blocked"
+    assert dlp_check["blocker"] == "dlp-review-required"
+    assert dlp_check["risk_level"] == "unknown"
+    assert dlp_check["result_code"] == "pending-external-result"
+    assert "not configured" not in dlp_check["detail"]
