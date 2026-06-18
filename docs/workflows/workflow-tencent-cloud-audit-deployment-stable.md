@@ -87,7 +87,7 @@ uv run python scripts/run-production-documents-clamav-sidecar-write-e2e.py \
 - PR #131 `codex/document-governance-result-writeback` 已合并到 `main`，merge commit 为 `0fa7eb149047fa049b495d2964302c9100b380d6`。
 - `main@0fa7eb149047fa049b495d2964302c9100b380d6` 已使用部署戳 `pr131-governance-result-writeback-20260618` 发布到生产；本次部署重建 `medical_audit_app` 镜像并同步前端静态资源。
 - 本次部署的远端备份阶段正常返回，未触发超时恢复路径；部署脚本继续完成 rsync、静态资源同步、`.deploy-sha` 写入、容器重建、健康检查和 smoke。
-- 当前生产业务部署标记 SHA：`0fa7eb149047fa049b495d2964302c9100b380d6`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 当时生产业务部署标记 SHA：`0fa7eb149047fa049b495d2964302c9100b380d6`，远端文件 `/opt/medical-audit/app/.deploy-sha` 已由该轮部署状态审计核验。
 - 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr131-governance-result-writeback-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
 - 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr131-governance-result-writeback-deploy-20260618.json` 为 `status=pass`，`issues=[]`；`medical_audit_app` 和 `medical_audit_pg` 均为 `healthy`，Nginx 配置测试通过，`/var/www/audit` 只读 bind mount 存在，生产检索后端 `ready=true` 且 `matching_embedding_count=49051`。
 - `/documents` governance-result E2E 后状态复核 `tmp/outputs/tencent-cloud-deployment-state-after-pr131-governance-result-writeback-e2e-20260618.json` 为 `status=pass`，`issues=[]`；远端 `.deploy-sha` 仍为 `0fa7eb149047fa049b495d2964302c9100b380d6`，`medical_audit_app` 和 `medical_audit_pg` 继续保持 `healthy`。
