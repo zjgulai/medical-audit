@@ -61,6 +61,7 @@ def main() -> int:
             expected_deploy_sha=_optional_text(args.expected_deploy_sha),
             required_backup_stamp=_optional_text(args.required_backup_stamp),
             min_matching_embeddings=_min_matching_embeddings(args),
+            require_clamav_sidecar=bool(args.require_clamav_sidecar),
         )
     except AuditError as exc:
         print(f"audit failed: {exc}", file=sys.stderr)
@@ -105,6 +106,11 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--backup-limit", type=int, default=5)
     parser.add_argument("--local-smoke-limit", type=int, default=5)
+    parser.add_argument(
+        "--require-clamav-sidecar",
+        action="store_true",
+        help="Require the medical_audit_clamav sidecar to be present in compose and healthy.",
+    )
     parser.add_argument("--json-output", default=DEFAULT_JSON_OUTPUT)
     parser.add_argument("--markdown-output", default=DEFAULT_MARKDOWN_OUTPUT)
     return parser.parse_args()
@@ -219,8 +225,8 @@ BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
 
 
-def run(command):
-    return subprocess.run(command, check=False, capture_output=True, text=True)
+def run(command, cwd=None):
+    return subprocess.run(command, check=False, capture_output=True, text=True, cwd=cwd)
 
 
 def docker_inspect_json(name, template):
@@ -253,6 +259,52 @@ def container_state(name):
         "compose_project": label_value.get("com.docker.compose.project"),
         "compose_service": label_value.get("com.docker.compose.service"),
     }}
+
+
+def compose_services():
+    compose_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud/docker-compose.prod.yaml")
+    env_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud/medical-audit.env")
+    result = run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            compose_path,
+            "--env-file",
+            env_path,
+            "config",
+            "--services",
+        ],
+        cwd=APP_DIR,
+    )
+    if result.returncode != 0:
+        return {{"ok": False, "services": [], "error": result.stderr.strip()}}
+    services = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return {{"ok": True, "services": services}}
+
+
+def governance_env():
+    env_path = Path(APP_DIR) / "configs/deploy/tencent-cloud/medical-audit.env"
+    keys = {{
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST",
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT",
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS",
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES",
+    }}
+    values = {{}}
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", maxsplit=1)
+            if key in keys:
+                values[key] = value
+    except OSError as exc:
+        return {{"ok": False, "values": {{}}, "error": str(exc)}}
+    return {{"ok": True, "values": values}}
 
 
 def nginx_test():
@@ -336,8 +388,11 @@ report = {{
     "containers": {{
         "medical_audit_app": container_state("medical_audit_app"),
         "medical_audit_pg": container_state("medical_audit_pg"),
+        "medical_audit_clamav": container_state("medical_audit_clamav"),
         "ai_video_nginx": container_state("ai_video_nginx"),
     }},
+    "compose": compose_services(),
+    "document_upload_governance": governance_env(),
     "nginx": {{
         "config_test": nginx_test(),
         "mounts": nginx_mounts(),
@@ -390,6 +445,7 @@ def _build_report(
     expected_deploy_sha: str | None,
     required_backup_stamp: str | None,
     min_matching_embeddings: int,
+    require_clamav_sidecar: bool,
 ) -> dict[str, Any]:
     issues: list[str] = []
     deploy_sha = _string_or_none(remote_report.get("deploy_sha"))
@@ -409,6 +465,11 @@ def _build_report(
         missing = _missing_backup_categories(remote_report, required_backup_stamp)
         if missing:
             issues.append("missing-required-backup-stamp:" + ",".join(missing))
+    if require_clamav_sidecar:
+        if not _compose_service_present(remote_report, "clamav"):
+            issues.append("clamav-compose-service-missing")
+        if not _clamav_sidecar_healthy(remote_report):
+            issues.append("medical_audit_clamav-not-healthy")
     latest_smoke = local_smoke_reports[0] if local_smoke_reports else None
     if latest_smoke and latest_smoke.get("status") != "pass":
         issues.append("latest-local-smoke-not-pass")
@@ -423,6 +484,16 @@ def _build_report(
             "deploy_sha": deploy_sha,
             "app_health": _container_health(remote_report, "medical_audit_app"),
             "postgres_health": _container_health(remote_report, "medical_audit_pg"),
+            "clamav_health": _container_health(remote_report, "medical_audit_clamav"),
+            "clamav_compose_service_present": _compose_service_present(remote_report, "clamav"),
+            "virus_scan_provider": _governance_env_value(
+                remote_report,
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
+            ),
+            "dlp_review_provider": _governance_env_value(
+                remote_report,
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
+            ),
             "nginx_config_test": _nginx_test_passed(remote_report),
             "audit_mount_present": _audit_mount_valid(remote_report),
             "search_backend_ready": _search_backend_ready(remote_report, min_matching_embeddings),
@@ -446,6 +517,25 @@ def _container_health(remote_report: dict[str, Any], name: str) -> str | None:
     if isinstance(health, dict):
         return _string_or_none(health.get("Status"))
     return _string_or_none(state.get("Status"))
+
+
+def _compose_service_present(remote_report: dict[str, Any], service_name: str) -> bool:
+    compose = _nested_dict(remote_report, "compose")
+    services = compose.get("services")
+    return isinstance(services, list) and service_name in services
+
+
+def _clamav_sidecar_healthy(remote_report: dict[str, Any]) -> bool:
+    return _container_health(remote_report, "medical_audit_clamav") == "healthy"
+
+
+def _governance_env_value(remote_report: dict[str, Any], key: str) -> str | None:
+    governance = _nested_dict(remote_report, "document_upload_governance")
+    values = governance.get("values")
+    if not isinstance(values, dict):
+        return None
+    value = values.get(key)
+    return value if isinstance(value, str) else None
 
 
 def _nginx_test_passed(remote_report: dict[str, Any]) -> bool:
@@ -536,6 +626,7 @@ def _write_json(path: Path, report: dict[str, Any]) -> None:
 def _write_markdown(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     summary = _dict_or_empty(report.get("summary"))
+    clamav_service_present = summary.get("clamav_compose_service_present")
     issues = report.get("issues")
     issue_lines = (
         [f"- `{issue}`" for issue in issues]
@@ -560,6 +651,10 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `deploy_sha`: `{summary.get('deploy_sha')}`",
             f"- `app_health`: `{summary.get('app_health')}`",
             f"- `postgres_health`: `{summary.get('postgres_health')}`",
+            f"- `clamav_health`: `{summary.get('clamav_health')}`",
+            f"- `clamav_compose_service_present`: `{clamav_service_present}`",
+            f"- `virus_scan_provider`: `{summary.get('virus_scan_provider')}`",
+            f"- `dlp_review_provider`: `{summary.get('dlp_review_provider')}`",
             f"- `nginx_config_test`: `{summary.get('nginx_config_test')}`",
             f"- `audit_mount_present`: `{summary.get('audit_mount_present')}`",
             f"- `search_backend_ready`: `{summary.get('search_backend_ready')}`",
