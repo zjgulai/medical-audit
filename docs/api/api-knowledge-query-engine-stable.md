@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-16
+updated: 2026-06-18
 owner: self
 source: human+ai
 ---
@@ -664,6 +664,10 @@ Query 参数：
 - 本接口证明授权签发边界和审计事件可记录，不证明生产级病毒扫描、DLP/脱敏、个人材料实际入索引或长期留存生命周期已完成。
 - `storage_objects` 只对已授权用户返回；接口不返回 COS secret、真实密钥或文件正文。
 - 操作日志记录 `delivery`、`reason`、`signed_url_issued` 和 `signed_url_expires_at`，但不保存 `signed_url` 本身。
+
+生产验收：
+
+- 2026-06-18 PR #128 已将 COS signed URL 下载交付部署到生产，生产 E2E 报告 `tmp/outputs/production-documents-signed-download-e2e-after-pr128-20260618.json` 为 `status=pass`；验证对象 `document-upload-73805d5ac457` 的 owner 可取得短期 URL 并完成真实对象下载，下载内容 `sha256` 和大小匹配，非 owner 普通 `auditor` 返回 `404`，审计日志记录签发事实但不保存 URL 本体。
 
 ### `POST /documents/uploads/{upload_id}/index-readiness/manual-approval`
 
