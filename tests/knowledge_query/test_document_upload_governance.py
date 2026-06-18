@@ -42,6 +42,14 @@ def test_index_readiness_preserves_async_job_fields() -> None:
                 "job_key": "document-governance-job-dlp",
                 "risk_level": "low",
                 "result_code": "no-sensitive-marker",
+                "findings": [
+                    {
+                        "rule_id": "patient-name",
+                        "category": "patient",
+                        "risk_level": "medium",
+                        "match_count": 1,
+                    }
+                ],
                 "finished_at": "2026-06-16T12:01:00Z",
             },
             {
@@ -68,13 +76,21 @@ def test_index_readiness_preserves_async_job_fields() -> None:
     assert approved["checks"][0]["external_job_id"] == "ci-job-1"
     assert approved["checks"][1]["job_key"] == "document-governance-job-dlp"
     assert approved["checks"][1]["risk_level"] == "low"
+    assert approved["checks"][1]["findings"] == [
+        {
+            "rule_id": "patient-name",
+            "category": "patient",
+            "risk_level": "medium",
+            "match_count": 1,
+        }
+    ]
 
 
-def test_future_governance_providers_do_not_clear_blockers_in_phase_a() -> None:
+def test_external_governance_providers_do_not_clear_blockers_without_result() -> None:
     policy = document_upload_governance_policy_from_settings(
         DocumentUploadGovernanceSettings(
             virus_scan_provider="tencent-ci-virus",
-            dlp_review_provider="ruleset-v1",
+            dlp_review_provider="external-dlp",
         )
     )
     readiness = policy.evaluate(
@@ -93,8 +109,99 @@ def test_future_governance_providers_do_not_clear_blockers_in_phase_a() -> None:
     ]
     assert readiness["checks"][0]["provider"] == "tencent-ci-virus"
     assert readiness["checks"][0]["status"] == "blocked"
-    assert readiness["checks"][1]["provider"] == "ruleset-v1"
+    assert readiness["checks"][1]["provider"] == "external-dlp"
     assert readiness["checks"][1]["status"] == "blocked"
+
+
+def test_ruleset_v1_dlp_passes_clean_content_and_keeps_manual_blocker() -> None:
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="local-test",
+            dlp_review_provider="ruleset-v1",
+        )
+    )
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="policy.txt",
+            extension="txt",
+            content=b"policy evidence without sensitive markers",
+        )
+    )
+
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == ["manual-index-approval-required"]
+    assert readiness["checks"][1] == {
+        "check_type": "dlp-review",
+        "provider": "ruleset-v1",
+        "status": "passed",
+        "blocker": None,
+        "detail": "ruleset-v1 DLP found no configured sensitive markers",
+        "risk_level": "low",
+        "result_code": "no-sensitive-marker",
+    }
+
+
+def test_ruleset_v1_dlp_blocks_sensitive_markers_without_raw_values() -> None:
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="local-test",
+            dlp_review_provider="ruleset-v1",
+        )
+    )
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="patient-ledger.csv",
+            extension="csv",
+            content=(
+                "患者姓名：张三\n"
+                "身份证：110105199001011234\n"
+                "手机号：13800138000\n"
+                "诊断：高血压\n"
+            ).encode(),
+        )
+    )
+
+    dlp_check = readiness["checks"][1]
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == [
+        "dlp-review-required",
+        "manual-index-approval-required",
+    ]
+    assert dlp_check["provider"] == "ruleset-v1"
+    assert dlp_check["status"] == "blocked"
+    assert dlp_check["blocker"] == "dlp-review-required"
+    assert dlp_check["risk_level"] == "high"
+    assert dlp_check["result_code"] == "sensitive-marker-detected"
+    assert dlp_check["findings"] == [
+        {
+            "rule_id": "id-card-number",
+            "category": "identity",
+            "risk_level": "high",
+            "match_count": 1,
+        },
+        {
+            "rule_id": "mobile-phone-number",
+            "category": "contact",
+            "risk_level": "high",
+            "match_count": 1,
+        },
+        {
+            "rule_id": "patient-name",
+            "category": "patient",
+            "risk_level": "medium",
+            "match_count": 1,
+        },
+        {
+            "rule_id": "diagnosis-text",
+            "category": "diagnosis",
+            "risk_level": "medium",
+            "match_count": 1,
+        },
+    ]
+    serialized = json.dumps(dlp_check, ensure_ascii=False)
+    assert "张三" not in serialized
+    assert "110105199001011234" not in serialized
+    assert "13800138000" not in serialized
 
 
 def test_external_governance_providers_surface_pending_result_boundary() -> None:
@@ -177,6 +284,21 @@ def test_document_governance_provider_preflight_can_require_external_provider() 
     assert report["external_provider_call_performed"] is False
     assert report["production_write_performed"] is False
     assert report["issues"] == ["external-governance-provider-not-configured"]
+
+
+def test_document_governance_provider_preflight_accepts_ruleset_v1_local_dlp() -> None:
+    report = document_upload_governance_provider_preflight_from_settings(
+        DocumentUploadGovernanceSettings(dlp_review_provider="ruleset-v1")
+    )
+
+    assert report["status"] == "pass"
+    assert report["external_provider_requested"] is False
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["checks"][1]["provider"] == "ruleset-v1"
+    assert report["checks"][1]["stage"] == "local-ruleset"
+    assert report["checks"][1]["local_validation_only"] is True
+    assert report["checks"][1]["issues"] == []
 
 
 def test_document_governance_provider_preflight_script_outputs_json(

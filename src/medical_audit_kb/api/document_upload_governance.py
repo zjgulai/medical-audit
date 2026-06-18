@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, cast
 
@@ -13,6 +14,7 @@ DocumentUploadGovernanceCheckType = Literal[
 ]
 DocumentUploadGovernanceCheckStatus = Literal["passed", "blocked"]
 DocumentUploadLocalTestMode = Literal["normal", "false-positive", "false-negative"]
+DocumentUploadDlpRiskLevel = Literal["low", "medium", "high"]
 DocumentUploadIndexReadinessStatus = Literal["blocked", "ready", "rejected"]
 DocumentUploadIndexBlocker = Literal[
     "virus-scan-required",
@@ -88,6 +90,7 @@ class GovernanceCheckResult:
     risk_level: str | None = None
     result_code: str | None = None
     finished_at: str | None = None
+    findings: tuple[dict[str, object], ...] | None = None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -107,6 +110,8 @@ class GovernanceCheckResult:
             payload["result_code"] = self.result_code
         if self.finished_at is not None:
             payload["finished_at"] = self.finished_at
+        if self.findings is not None:
+            payload["findings"] = [dict(finding) for finding in self.findings]
         return payload
 
 
@@ -237,6 +242,43 @@ class LocalTestDlpReviewer:
             status="passed",
             blocker=None,
             detail="local test DLP reviewer found no marker",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RulesetDlpRule:
+    rule_id: str
+    category: str
+    risk_level: DocumentUploadDlpRiskLevel
+    pattern: re.Pattern[str]
+
+
+@dataclass(frozen=True, slots=True)
+class RulesetDlpReviewer:
+    provider: str = "ruleset-v1"
+
+    def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        findings = _ruleset_dlp_findings(context)
+        if not findings:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail="ruleset-v1 DLP found no configured sensitive markers",
+                risk_level="low",
+                result_code="no-sensitive-marker",
+            )
+        risk_level = _max_risk_level(findings)
+        return GovernanceCheckResult(
+            check_type="dlp-review",
+            provider=self.provider,
+            status="blocked",
+            blocker="dlp-review-required",
+            detail=f"ruleset-v1 DLP detected {risk_level}-risk sensitive markers",
+            risk_level=risk_level,
+            result_code="sensitive-marker-detected",
+            findings=tuple(findings),
         )
 
 
@@ -486,6 +528,7 @@ def _valid_check_payload(value: object) -> bool:
             or (isinstance(value.get(field), str) and bool(value.get(field)))
             for field in optional_text_fields
         )
+        and _valid_findings_payload(value.get("findings"))
     )
 
 
@@ -503,6 +546,7 @@ def _check_result_from_payload(value: dict[str, object]) -> GovernanceCheckResul
         risk_level=_optional_text(value.get("risk_level")),
         result_code=_optional_text(value.get("result_code")),
         finished_at=_optional_text(value.get("finished_at")),
+        findings=_findings_from_payload(value.get("findings")),
     )
 
 
@@ -578,6 +622,8 @@ def _dlp_reviewer_from_settings(
         return UnconfiguredDlpReviewer()
     if settings.dlp_review_provider == "local-test":
         return LocalTestDlpReviewer(mode=settings.dlp_review_test_mode)
+    if settings.dlp_review_provider == "ruleset-v1":
+        return RulesetDlpReviewer()
     return ExternalPendingDlpReviewer(provider=settings.dlp_review_provider)
 
 
@@ -595,3 +641,123 @@ def _context_contains_any(
     text = context.content[:4096].decode("utf-8", errors="ignore")
     haystack = f"{context.file_name}\n{context.extension}\n{text}".lower()
     return any(marker.lower() in haystack for marker in markers)
+
+
+_RULESET_DLP_RULES: tuple[RulesetDlpRule, ...] = (
+    RulesetDlpRule(
+        rule_id="id-card-number",
+        category="identity",
+        risk_level="high",
+        pattern=re.compile(
+            r"(?<!\d)[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])"
+            r"(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)"
+        ),
+    ),
+    RulesetDlpRule(
+        rule_id="mobile-phone-number",
+        category="contact",
+        risk_level="high",
+        pattern=re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
+    ),
+    RulesetDlpRule(
+        rule_id="medical-insurance-id",
+        category="medical-insurance",
+        risk_level="high",
+        pattern=re.compile(r"(?:医保号|医保编号|医保卡号)[:：\s]*[A-Za-z0-9-]{4,32}"),
+    ),
+    RulesetDlpRule(
+        rule_id="inpatient-record-id",
+        category="medical-record",
+        risk_level="medium",
+        pattern=re.compile(r"(?:住院号|病案号)[:：\s]*[A-Za-z0-9-]{3,32}"),
+    ),
+    RulesetDlpRule(
+        rule_id="patient-name",
+        category="patient",
+        risk_level="medium",
+        pattern=re.compile(r"(?:患者姓名|病人姓名|姓名)[:：\s]*[\u4e00-\u9fff]{2,6}"),
+    ),
+    RulesetDlpRule(
+        rule_id="diagnosis-text",
+        category="diagnosis",
+        risk_level="medium",
+        pattern=re.compile(r"(?:诊断|疾病诊断)[:：\s]*[^\n,，;；]{2,40}"),
+    ),
+    RulesetDlpRule(
+        rule_id="address-text",
+        category="address",
+        risk_level="medium",
+        pattern=re.compile(r"(?:住址|地址)[:：\s]*[^\n,，;；]{4,80}"),
+    ),
+    RulesetDlpRule(
+        rule_id="fee-detail-section",
+        category="fee-detail",
+        risk_level="medium",
+        pattern=re.compile(r"(?:费用明细|收费明细|住院费用|门诊费用)"),
+    ),
+)
+
+
+def _ruleset_dlp_findings(
+    context: DocumentUploadGovernanceContext,
+) -> list[dict[str, object]]:
+    text = context.content[:65536].decode("utf-8", errors="ignore")
+    haystack = f"{context.file_name}\n{context.extension}\n{text}"
+    findings: list[dict[str, object]] = []
+    for rule in _RULESET_DLP_RULES:
+        match_count = len(rule.pattern.findall(haystack))
+        if match_count == 0:
+            continue
+        findings.append(
+            {
+                "rule_id": rule.rule_id,
+                "category": rule.category,
+                "risk_level": rule.risk_level,
+                "match_count": match_count,
+            }
+        )
+    return findings
+
+
+def _max_risk_level(findings: tuple[dict[str, object], ...] | list[dict[str, object]]) -> str:
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+    highest = "low"
+    for finding in findings:
+        value = finding.get("risk_level")
+        if isinstance(value, str) and risk_order.get(value, -1) > risk_order[highest]:
+            highest = value
+    return highest
+
+
+def _valid_findings_payload(value: object) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, list):
+        return False
+    for finding in value:
+        if not isinstance(finding, dict):
+            return False
+        rule_id = finding.get("rule_id")
+        category = finding.get("category")
+        risk_level = finding.get("risk_level")
+        match_count = finding.get("match_count")
+        if not (
+            isinstance(rule_id, str)
+            and bool(rule_id)
+            and isinstance(category, str)
+            and bool(category)
+            and isinstance(risk_level, str)
+            and risk_level in {"low", "medium", "high"}
+            and isinstance(match_count, int)
+            and match_count > 0
+        ):
+            return False
+    return True
+
+
+def _findings_from_payload(value: object) -> tuple[dict[str, object], ...] | None:
+    if value is None:
+        return None
+    if not _valid_findings_payload(value):
+        raise ValueError("invalid document upload governance findings payload")
+    return tuple(dict(cast(dict[str, object], finding)) for finding in cast(list[object], value))

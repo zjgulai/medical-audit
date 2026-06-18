@@ -1165,6 +1165,57 @@ def test_documents_upload_local_test_governance_detects_markers(
     ]
 
 
+def test_documents_upload_ruleset_v1_dlp_blocks_sensitive_findings(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="local-test",
+            dlp_review_provider="ruleset-v1",
+        )
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "patient-ledger.txt",
+                (
+                    "患者姓名：张三\n"
+                    "身份证：110105199001011234\n"
+                    "手机号：13800138000\n"
+                    "诊断：高血压\n"
+                ).encode(),
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    readiness = response.json()["item"]["index_readiness"]
+    dlp_check = readiness["checks"][1]
+    assert readiness["blockers"] == [
+        "dlp-review-required",
+        "manual-index-approval-required",
+    ]
+    assert dlp_check["provider"] == "ruleset-v1"
+    assert dlp_check["status"] == "blocked"
+    assert dlp_check["risk_level"] == "high"
+    assert dlp_check["result_code"] == "sensitive-marker-detected"
+    assert dlp_check["findings"][0]["rule_id"] == "id-card-number"
+    assert dlp_check["findings"][1]["rule_id"] == "mobile-phone-number"
+    serialized = json.dumps(response.json(), ensure_ascii=False)
+    assert "张三" not in serialized
+    assert "110105199001011234" not in serialized
+    assert "13800138000" not in serialized
+
+
 def test_documents_upload_local_test_governance_supports_false_positive_and_negative(
     tmp_path: Path,
 ) -> None:

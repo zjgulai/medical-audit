@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 from medical_audit_kb.api.document_upload_governance_jobs import (
     LocalRecordingDocumentUploadGovernanceJobSubmitter,
+    document_upload_governance_job_submitter_from_settings,
     submit_required_document_upload_governance_jobs,
 )
 from medical_audit_kb.api.document_upload_governance_store import (
@@ -32,7 +33,7 @@ from medical_audit_kb.api.document_upload_store import (
     tencent_cos_bootstrap_preflight_from_settings,
     tencent_cos_put_object_client_from_settings,
 )
-from medical_audit_kb.core.config import DocumentStorageSettings
+from medical_audit_kb.core.config import DocumentStorageSettings, DocumentUploadGovernanceSettings
 
 
 def test_local_document_object_storage_keeps_existing_partitioned_path(
@@ -744,6 +745,28 @@ def test_local_recording_governance_submitter_records_external_pending_jobs(
     serialized = json.dumps(jobs, ensure_ascii=False)
     assert "actual-secret-value" not in serialized
     assert governance_store.list_governance_jobs(str(upload["id"])) == jobs
+
+
+def test_governance_job_submitter_settings_treats_ruleset_v1_as_local_dlp() -> None:
+    submitter = document_upload_governance_job_submitter_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="tencent-ci-virus",
+            dlp_review_provider="ruleset-v1",
+            governance_job_submitter_provider="local-recording",
+            virus_scan_job_endpoint_env="VIRUS_SCAN_JOB_ENDPOINT",
+            virus_scan_job_secret_env="VIRUS_SCAN_JOB_SECRET",
+            dlp_review_job_endpoint_env="DLP_REVIEW_JOB_ENDPOINT",
+            dlp_review_job_secret_env="DLP_REVIEW_JOB_SECRET",
+        )
+    )
+
+    assert isinstance(submitter, LocalRecordingDocumentUploadGovernanceJobSubmitter)
+    assert submitter.provider_env_contracts == {
+        "tencent-ci-virus": {
+            "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
+            "secret_env": "VIRUS_SCAN_JOB_SECRET",
+        }
+    }
 
 
 def _enable_sqlite_foreign_keys(
