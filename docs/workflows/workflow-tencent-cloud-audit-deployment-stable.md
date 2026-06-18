@@ -33,6 +33,38 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-18 PR #139/#140 ClamAV sidecar 生产拓扑、provider 激活与 `/documents` 写入 E2E
+
+- PR #139 `codex/clamav-sidecar-production-topology` 已合并到 `main`，将 `medical_audit_clamav` sidecar 加入腾讯云生产 Docker Compose 拓扑。
+- PR #140 `codex/clamav-sidecar-healthcheck-hotfix` 已合并到 `main`，merge 后生产业务部署 SHA 为 `44b42ad64969fbcd5dd989ed4f3dd933677241f8`。
+- PR #139 首次部署时 `medical_audit_clamav` 已能启动，但 Docker healthcheck 使用了无效命令 `clamdscan --ping`，导致 sidecar 长时间停留在 `starting`；应用未完成重启，生产业务仍保持旧 app healthy。
+- PR #140 将 ClamAV healthcheck 修正为已在容器内验证通过的 `clamdscan --no-summary /etc/hosts`，并将 `.deploy-sha` 写入移动到 app/ClamAV 远端 post-check 之后，避免部分部署被误标为成功。
+- `main@44b42ad64969fbcd5dd989ed4f3dd933677241f8` 已使用部署戳 `pr140-clamav-healthcheck-hotfix-20260618` 发布到生产；部署后 `medical_audit_app`、`medical_audit_pg` 和 `medical_audit_clamav` 均为 `healthy`。
+- 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr140-clamav-healthcheck-hotfix-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
+- 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr140-clamav-healthcheck-hotfix-20260618.json` 为 `status=pass`，`issues=[]`；当时 `virus_scan_provider=null`、`dlp_review_provider=null`，表示 sidecar 已就绪但 provider 尚未激活。
+- 2026-06-18 已对远端 env 做专项 provider 激活，激活前备份为 `/opt/medical-audit/backups/env/medical-audit.env.pre-clamav-provider-activation-20260618T182516`。
+- 当前生产配置为 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER=clamav-sidecar`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER=unconfigured`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST=clamav`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT=3310`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS=5.0`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES=131072`。
+- provider 激活后容器内 preflight 返回 `status=pass`：`virus-scan` provider 为 `clamav-sidecar`、stage 为 `local-sidecar`；`dlp-review` provider 为 `unconfigured`、stage 为 `inactive`；`external_provider_call_performed=false`、`production_write_performed=false`。
+- provider 激活后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-clamav-provider-activation-20260618.json` 为 `status=pass`，`issues=[]`；`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=unconfigured`。
+- `/documents` ClamAV sidecar 生产写入 E2E 已固化为 `scripts/run-production-documents-clamav-sidecar-write-e2e.py`；生产执行必须显式传入 `--confirm-production-write audit.lute-tlz-dddd.top`。
+- 推荐执行命令：
+
+```bash
+uv run python scripts/run-production-documents-clamav-sidecar-write-e2e.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --confirm-production-write audit.lute-tlz-dddd.top \
+  --report tmp/outputs/production-documents-clamav-sidecar-write-e2e-YYYYMMDD.json
+```
+
+- 当前通过报告 `tmp/outputs/production-documents-clamav-sidecar-write-e2e-20260618.json` 为 `status=pass`，验证对象为 `document-upload-8c2d77f4387b`。
+- 本轮 E2E 证明：干净文本上传后 `virus-scan` check 由真实 `clamav-sidecar` 返回 `passed`、`result_code=clean`、`blocker=null`；`virus-scan-required` blocker 不再出现；`dlp-review-required` 和 `manual-index-approval-required` 继续阻断，整体 `index_readiness.status=blocked`、`index_status=not-indexed`。
+- 本轮 E2E 同时验证 COS 对象记录：`provider=tencent-cos`、bucket `medical-audit-personal-materials-1304185125`、region `ap-guangzhou`、`storage_status=object-stored`、`encryption_mode=sse-cos`，并通过 owner 与 `department-head` 列表读取验证状态持久化。
+- 本轮首次临时脚本运行产生 `document-upload-6bd259cbf1b4`，核心上传、ClamAV 与 COS 校验已通过，但审计日志断言把 `document-upload-list` 错误要求包含 upload id，属于验证脚本 false negative；正式脚本已修正为只要求 `document-upload` 和 `document-upload-download-metadata` 引用 upload id，`document-upload-list` 只验证列表审计事件存在。
+- provider 激活与 E2E 后生产 smoke `tmp/outputs/production-e2e-smoke-after-clamav-provider-activation-20260618.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤；其中 `query-api-with-citations` 返回 `fallback_used=true`，只能证明 fallback/citation 链路可用，不代表生成模型 provider 已成功调用。
+- E2E 后最终部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-clamav-e2e-20260618.json` 为 `status=pass`，`issues=[]`；`.deploy-sha` 仍为 `44b42ad64969fbcd5dd989ed4f3dd933677241f8`，app/postgres/clamav 继续保持 `healthy`。
+- 测试上传记录治理边界：`document-upload-6bd259cbf1b4` 和 `document-upload-8c2d77f4387b` 是受控生产验收记录，保留用于审计追踪；如未来需要清理，必须先制定单独清理计划，至少包含 DB 行、COS object、审计日志引用、签名 URL 记录和回滚备份核验，不得把此类记录混入普通临时文件清理。
+- 证据边界：本轮证明本地 ClamAV sidecar 真实 clean 扫描链路、COS 对象写入、下载元信息、持久化审计日志和角色可见性可用；没有调用外部病毒扫描 provider，没有调用外部 DLP provider，没有执行人工审批写回，没有触发个人材料实际入索引，也不代表真实登录会话、生产级 DLP/脱敏、长期生命周期策略或案件级完整合规闭环已完成。
+
 ### 2026-06-18 PR #131 个人材料治理结果回写与 ready 状态生产 E2E
 
 - PR #130 `codex/document-governance-external-pending` 已合并到 `main`，merge commit 为 `3356dc2c33bb23e95c6893826ad1ffeda8d12b3d`；该提交将外部治理 provider pending 语义合入主线。

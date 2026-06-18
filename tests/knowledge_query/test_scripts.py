@@ -179,6 +179,50 @@ def test_run_production_e2e_smoke_can_require_generated_answer(
         )
 
 
+def test_run_production_documents_clamav_sidecar_write_e2e_script_is_guarded() -> None:
+    script_path = Path("scripts/run-production-documents-clamav-sidecar-write-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "--confirm-production-write" in script_text
+    assert "real_clamav_sidecar_scan" in script_text
+    assert "external_governance_provider_call" in script_text
+    assert "manual_index_approval_writeback" in script_text
+    assert "indexing_triggered" in script_text
+    assert "signed_url_issued" in script_text
+    assert "tmp/outputs/production-documents-clamav-sidecar-write-e2e-latest.json" in script_text
+
+
+def test_run_production_documents_clamav_sidecar_write_e2e_blocks_unconfirmed_production() -> None:
+    module = _load_script_module(
+        "run_production_documents_clamav_sidecar_write_e2e",
+        Path("scripts/run-production-documents-clamav-sidecar-write-e2e.py"),
+    )
+
+    with pytest.raises(module.E2EError, match="production /documents write requires"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+    module._require_production_write_confirmation(
+        base_url="http://127.0.0.1:8000",
+        confirm_production_write="",
+    )
+
+
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
@@ -194,7 +238,11 @@ def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() 
     assert "sk-" not in script_text
     assert "<remote-audit>" in script_text
     assert "tmp/outputs/tencent-cloud-deployment-state-latest.json" in script_text
-    assert "medical-audit.env" not in script_text
+    assert "medical-audit.env" in script_text
+    assert "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER" in script_text
+    assert "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER" in script_text
+    assert "COS_SECRET" not in script_text
+    assert "PASSWORD" not in script_text
 
 
 def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path) -> None:
@@ -224,6 +272,7 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp=stamp,
         min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
     )
 
     assert report["status"] == "pass"
@@ -251,6 +300,7 @@ def test_audit_tencent_cloud_deployment_state_accepts_embedding_count_above_mini
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp=stamp,
         min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
     )
 
     assert report["status"] == "pass"
@@ -270,6 +320,7 @@ def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> N
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp="20260611T180655+0800",
         min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
     )
 
     assert report["status"] == "fail"
