@@ -27,6 +27,26 @@ services:
       - medical_audit_internal
     logging: *default-logging
 
+  clamav:
+    image: clamav/clamav:stable
+    container_name: medical_audit_clamav
+    restart: unless-stopped
+    expose:
+      - "3310"
+    volumes:
+      - medical_audit_clamav_data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    networks:
+      medical_audit_internal:
+        aliases:
+          - clamav
+    logging: *default-logging
+
   app:
     build:
       context: ../../..
@@ -95,6 +115,8 @@ services:
 volumes:
   medical_audit_pgdata:
     name: medical_audit_pgdata
+  medical_audit_clamav_data:
+    name: medical_audit_clamav_data
 
 networks:
   medical_audit_internal:

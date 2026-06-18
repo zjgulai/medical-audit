@@ -409,11 +409,28 @@ def _rebuild_application(config: DeployConfig) -> None:
     if config.skip_app_rebuild:
         print("skip app rebuild", flush=True)
         return
+    health_format = "{{.State.Health.Status}}"
     script = f"""
 set -euo pipefail
 cd {shlex.quote(config.remote_app_dir)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env build app
+if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env config --services \
+  | grep -Fx clamav >/dev/null; then
+  docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+    --env-file configs/deploy/tencent-cloud/medical-audit.env up -d clamav
+  for attempt in $(seq 1 60); do
+    clamav_health="$(docker inspect medical_audit_clamav \
+      --format {shlex.quote(health_format)} 2>/dev/null || true)"
+    if [ "$clamav_health" = "healthy" ]; then
+      break
+    fi
+    sleep 2
+  done
+  test "$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(health_format)})" = "healthy"
+fi
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env up -d app
 """
@@ -436,6 +453,20 @@ for attempt in $(seq 1 60); do
 done
 test "$(docker inspect medical_audit_app \
   --format {shlex.quote(health_format)})" = "healthy"
+if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env config --services \
+  | grep -Fx clamav >/dev/null; then
+  for attempt in $(seq 1 60); do
+    clamav_health="$(docker inspect medical_audit_clamav \
+      --format {shlex.quote(health_format)} 2>/dev/null || true)"
+    if [ "$clamav_health" = "healthy" ]; then
+      break
+    fi
+    sleep 2
+  done
+  test "$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(health_format)})" = "healthy"
+fi
 test "$(cat .deploy-sha)" = {shlex.quote(sha)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
