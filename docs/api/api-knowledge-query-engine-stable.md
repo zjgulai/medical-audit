@@ -771,6 +771,7 @@ staging 行为：
 - 写入 `source_package_versions`、`source_documents`、`document_chunks`、`chunk_embeddings` 和 `index_versions`。
 - `source_collection=personal-materials`。
 - `index_versions.status=candidate`，不改动 active index。
+- `personal-materials` candidate 版本在 `metadata.live_retrieval_activated=false` 时会被 `index activation` 门禁阻断，不能发布为 active index。
 - embedding 使用确定性 fake provider，接口不读取 Kimi/OpenAI/腾讯云等外部 provider key，不发生外部 provider call。
 - 上传记录推进为 `metadata.index_status=staged-for-index`，并写入 `metadata.index_ingestion` 记录 chunk 数、embedding 数、candidate key 和 `live_retrieval_activated=false`。
 
@@ -788,6 +789,7 @@ staging 行为：
 
 - 本接口是本地可验证的候选索引 staging，不等同于生产个人材料检索可见。
 - 在进入 active retrieval 前，还必须补齐用户级 `created_by/visibility` 检索隔离、生产 embedding provider 门禁、candidate 发布审计和生产写入授权。
+- 当前 `index activation` 已 fail-closed 阻断 `personal-materials` staging 版本被激活；后续只有在实现用户级检索隔离后，才能重新评估该阻断条件。
 
 当前边界：
 
