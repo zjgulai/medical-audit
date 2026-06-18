@@ -223,6 +223,121 @@ def test_run_production_documents_clamav_sidecar_write_e2e_blocks_unconfirmed_pr
     )
 
 
+def test_run_production_documents_readonly_probe_script_is_secret_safe() -> None:
+    script_path = Path("scripts/run-production-documents-readonly-probe.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "tmp/outputs/production-documents-readonly-latest.json" in script_text
+    assert "document_upload_write" in script_text
+    assert "document_upload_list_api_called" in script_text
+    assert "download_metadata_api_called" in script_text
+    assert "audit_log_write_expected" in script_text
+    assert "provider_call" in script_text
+    assert "utf8-bytes" in script_text
+
+
+def test_run_production_documents_readonly_probe_skips_upload_endpoints() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+    called_urls: list[str] = []
+
+    def fake_http_get(
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> object:
+        called_urls.append(url)
+        if url.endswith("/documents"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=(
+                    "<html>AI智能审计管理系统 材料与知识库统一检索 个人材料</html>"
+                ).encode(),
+                headers={"content-type": "text/html"},
+            )
+        if url.endswith("/api/v1/documents/permissions"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "role": "auditor",
+                        "source_collections": [
+                            {"source_collection": "medical-insurance-laws"}
+                        ],
+                        "upload_permissions": {
+                            "can_upload_personal": True,
+                            "can_read_all_personal_uploads": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8"),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/health"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"status":"ok","version":"0.1.0"}',
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/index/search-backend"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "backend": "postgres",
+                        "ready": True,
+                        "details": {
+                            "matching_embedding_count": 49051,
+                            "embedding_provider": "openai",
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8"),
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(f"unexpected URL: {url}")
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1.0,
+        user_id="readonly-test",
+        role="auditor",
+        min_matching_embeddings=48985,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "pass"
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["document_upload_write"] is False
+    assert report["boundaries"]["document_upload_list_api_called"] is False
+    assert report["boundaries"]["download_metadata_api_called"] is False
+    assert report["boundaries"]["audit_log_write_expected"] is False
+    assert report["boundaries"]["provider_call"] is False
+    assert report["summary"]["matching_embedding_count"] == 49051
+    assert called_urls == [
+        "https://audit.lute-tlz-dddd.top/documents",
+        "https://audit.lute-tlz-dddd.top/api/v1/documents/permissions",
+        "https://audit.lute-tlz-dddd.top/api/backend/health",
+        "https://audit.lute-tlz-dddd.top/api/backend/index/search-backend",
+    ]
+    assert not any("/documents/uploads" in url for url in called_urls)
+
+
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
