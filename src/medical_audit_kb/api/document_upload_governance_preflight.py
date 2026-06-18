@@ -4,11 +4,17 @@ from typing import Literal, TypedDict
 
 from medical_audit_kb.core.config import DocumentUploadGovernanceSettings
 
-DocumentUploadGovernanceProviderStage = Literal["inactive", "local-test", "external-pending"]
+DocumentUploadGovernanceProviderStage = Literal[
+    "inactive",
+    "local-test",
+    "local-ruleset",
+    "external-pending",
+]
 DocumentUploadGovernanceProviderCheckType = Literal["virus-scan", "dlp-review"]
 
 _EXTERNAL_VIRUS_SCAN_PROVIDERS = frozenset({"tencent-ci-virus", "clamav-sidecar"})
-_EXTERNAL_DLP_REVIEW_PROVIDERS = frozenset({"ruleset-v1", "external-dlp"})
+_EXTERNAL_DLP_REVIEW_PROVIDERS = frozenset({"external-dlp"})
+_LOCAL_RULESET_PROVIDERS = frozenset({"ruleset-v1"})
 
 
 class DocumentUploadGovernanceProviderPreflightCheck(TypedDict):
@@ -49,6 +55,7 @@ def document_upload_governance_provider_preflight_from_settings(
             check_type="dlp-review",
             provider=settings.dlp_review_provider,
             external_providers=_EXTERNAL_DLP_REVIEW_PROVIDERS,
+            local_ruleset_providers=_LOCAL_RULESET_PROVIDERS,
         ),
     ]
     external_provider_requested = any(check["external_provider_requested"] for check in checks)
@@ -73,6 +80,7 @@ def _provider_check(
     check_type: DocumentUploadGovernanceProviderCheckType,
     provider: str,
     external_providers: frozenset[str],
+    local_ruleset_providers: frozenset[str] = frozenset(),
 ) -> DocumentUploadGovernanceProviderPreflightCheck:
     if provider == "unconfigured":
         return {
@@ -90,6 +98,17 @@ def _provider_check(
             "check_type": check_type,
             "provider": provider,
             "stage": "local-test",
+            "external_provider_requested": False,
+            "local_validation_only": True,
+            "external_provider_call_implemented": False,
+            "result_writeback_supported": True,
+            "issues": [],
+        }
+    if provider in local_ruleset_providers:
+        return {
+            "check_type": check_type,
+            "provider": provider,
+            "stage": "local-ruleset",
             "external_provider_requested": False,
             "local_validation_only": True,
             "external_provider_call_implemented": False,

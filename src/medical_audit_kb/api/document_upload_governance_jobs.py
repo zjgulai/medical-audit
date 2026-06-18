@@ -134,7 +134,7 @@ def _provider_env_contracts(
             "endpoint_env": settings.virus_scan_job_endpoint_env,
             "secret_env": settings.virus_scan_job_secret_env,
         }
-    if settings.dlp_review_provider not in {"unconfigured", "local-test"}:
+    if settings.dlp_review_provider not in {"unconfigured", "local-test", "ruleset-v1"}:
         contracts[settings.dlp_review_provider] = {
             "endpoint_env": settings.dlp_review_job_endpoint_env,
             "secret_env": settings.dlp_review_job_secret_env,

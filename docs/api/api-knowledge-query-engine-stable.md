@@ -629,13 +629,14 @@ Query 参数：
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
 - `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
-- `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 和 `external-dlp` 当前表达为外部治理 pending 边界：上传响应保留 `blocked`，对应 check 返回 `result_code=pending-external-result`，必须等外部扫描或 DLP 结果写回后才能消除 blocker。该阶段不调用外部 provider，也不宣称生产级扫描或脱敏完成。
+- `ruleset-v1` 为应用级本地 DLP 规则 adapter：当前识别身份证、手机号、医保号、住院号、患者姓名、诊断、地址和费用明细等敏感标记；命中时返回 `dlp-review=blocked`、`result_code=sensitive-marker-detected`、`risk_level` 和不含原文值的 `findings`，未命中时返回 `dlp-review=passed`、`result_code=no-sensitive-marker`。该 adapter 不调用企业 DLP，不改写或脱敏原始文件。
+- `tencent-ci-virus`、`clamav-sidecar` 和 `external-dlp` 当前表达为外部治理 pending 边界：上传响应保留 `blocked`，对应 check 返回 `result_code=pending-external-result`，必须等外部扫描或 DLP 结果写回后才能消除 blocker。该阶段不调用外部 provider，也不宣称生产级扫描或企业级脱敏完成。
 
 外部治理 provider preflight：
 
 - `scripts/run-document-governance-provider-preflight.py --config <path>` 只读取配置，不调用病毒扫描、DLP、对象存储或生产 API；报告固定返回 `external_provider_call_performed=false` 和 `production_write_performed=false`。
-- 默认 `unconfigured` 或 `local-test` 时，preflight 可通过，但只表示未启用外部 provider 或仅启用本地测试链路，不表示生产级扫描能力已具备。
-- 配置 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp` 时，preflight 会返回 `blocked`，并用 `*-external-provider-call-not-implemented` 标记真实外部调用 adapter 仍未接入；当前已具备治理结果写回结构，但未执行 provider call。
+- 默认 `unconfigured`、`local-test` 或 `ruleset-v1` 时，preflight 可通过；其中 `ruleset-v1` 只表示应用级本地 DLP 规则可用，不表示企业 DLP 或脱敏改写能力已具备。
+- 配置 `tencent-ci-virus`、`clamav-sidecar` 或 `external-dlp` 时，preflight 会返回 `blocked`，并用 `*-external-provider-call-not-implemented` 标记真实外部调用 adapter 仍未接入；当前已具备治理结果写回结构，但未执行 provider call。
 - 如需在部署门禁中强制要求外部 provider，可增加 `--require-external-provider`；未配置外部 provider 时返回 `external-governance-provider-not-configured`。
 
 外部治理 job submitter 契约：
