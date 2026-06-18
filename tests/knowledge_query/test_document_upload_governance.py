@@ -4,7 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from medical_audit_kb.api import document_upload_governance as governance
 from medical_audit_kb.api.document_upload_governance import (
+    ClamAvSidecarScanResult,
     DocumentUploadGovernanceContext,
     apply_manual_index_decision,
     document_upload_governance_policy_from_settings,
@@ -14,6 +18,16 @@ from medical_audit_kb.api.document_upload_governance_preflight import (
     document_upload_governance_provider_preflight_from_settings,
 )
 from medical_audit_kb.core.config import DocumentUploadGovernanceSettings
+
+
+class FakeClamAvSidecarClient:
+    def __init__(self, result: ClamAvSidecarScanResult) -> None:
+        self.result = result
+        self.calls: list[tuple[bytes, str]] = []
+
+    def scan(self, content: bytes, *, file_name: str) -> ClamAvSidecarScanResult:
+        self.calls.append((content, file_name))
+        return self.result
 
 
 def test_index_readiness_preserves_async_job_fields() -> None:
@@ -113,6 +127,138 @@ def test_external_governance_providers_do_not_clear_blockers_without_result() ->
     assert readiness["checks"][1]["status"] == "blocked"
 
 
+def test_clamav_sidecar_response_parser_maps_standard_statuses() -> None:
+    clean = governance._clamav_sidecar_scan_result_from_response("stream: OK\x00")
+    infected = governance._clamav_sidecar_scan_result_from_response(
+        "stream: Eicar-Test-Signature FOUND\x00"
+    )
+    error = governance._clamav_sidecar_scan_result_from_response(
+        "stream: Size limit exceeded ERROR"
+    )
+
+    assert clean == ClamAvSidecarScanResult(status="clean", detail="clamav-sidecar reported OK")
+    assert infected == ClamAvSidecarScanResult(
+        status="infected",
+        signature="Eicar-Test-Signature",
+    )
+    assert error == ClamAvSidecarScanResult(status="error", detail="Size limit exceeded")
+
+
+def test_clamav_sidecar_passes_clean_result_and_keeps_manual_blocker() -> None:
+    client = FakeClamAvSidecarClient(ClamAvSidecarScanResult(status="clean"))
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="clamav-sidecar",
+            dlp_review_provider="local-test",
+        ),
+        clamav_client=client,
+    )
+
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="policy.txt",
+            extension="txt",
+            content=b"clean policy evidence",
+        )
+    )
+
+    assert client.calls == [(b"clean policy evidence", "policy.txt")]
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == ["manual-index-approval-required"]
+    assert readiness["checks"][0] == {
+        "check_type": "virus-scan",
+        "provider": "clamav-sidecar",
+        "status": "passed",
+        "blocker": None,
+        "detail": "clamav-sidecar found no malware",
+        "result_code": "clean",
+    }
+
+
+def test_clamav_sidecar_blocks_infected_result_without_raw_content() -> None:
+    client = FakeClamAvSidecarClient(
+        ClamAvSidecarScanResult(
+            status="infected",
+            signature="Eicar-Test-Signature",
+        )
+    )
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="clamav-sidecar",
+            dlp_review_provider="local-test",
+        ),
+        clamav_client=client,
+    )
+
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="policy.txt",
+            extension="txt",
+            content=b"do-not-echo-upload-content",
+        )
+    )
+    virus_check = readiness["checks"][0]
+
+    assert readiness["status"] == "blocked"
+    assert readiness["blockers"] == [
+        "virus-scan-required",
+        "manual-index-approval-required",
+    ]
+    assert virus_check["provider"] == "clamav-sidecar"
+    assert virus_check["status"] == "blocked"
+    assert virus_check["blocker"] == "virus-scan-required"
+    assert virus_check["risk_level"] == "high"
+    assert virus_check["result_code"] == "infected"
+    assert virus_check["detail"] == "clamav-sidecar detected malware: Eicar-Test-Signature"
+    assert "do-not-echo-upload-content" not in json.dumps(virus_check, ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_code", "expected_detail"),
+    [
+        (
+            ClamAvSidecarScanResult(status="timeout", detail="deadline exceeded"),
+            "provider-timeout",
+            "clamav-sidecar scan timed out: deadline exceeded",
+        ),
+        (
+            ClamAvSidecarScanResult(status="error", detail="connection refused"),
+            "provider-error",
+            "clamav-sidecar scan failed: connection refused",
+        ),
+    ],
+)
+def test_clamav_sidecar_blocks_unavailable_provider(
+    result: ClamAvSidecarScanResult,
+    expected_code: str,
+    expected_detail: str,
+) -> None:
+    client = FakeClamAvSidecarClient(result)
+    policy = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="clamav-sidecar",
+            dlp_review_provider="local-test",
+        ),
+        clamav_client=client,
+    )
+
+    readiness = policy.evaluate(
+        DocumentUploadGovernanceContext.from_upload(
+            file_name="policy.txt",
+            extension="txt",
+            content=b"policy evidence",
+        )
+    )
+    virus_check = readiness["checks"][0]
+
+    assert readiness["status"] == "blocked"
+    assert "virus-scan-required" in readiness["blockers"]
+    assert virus_check["provider"] == "clamav-sidecar"
+    assert virus_check["status"] == "blocked"
+    assert virus_check["result_code"] == expected_code
+    assert virus_check["detail"] == expected_detail
+
+
 def test_ruleset_v1_dlp_passes_clean_content_and_keeps_manual_blocker() -> None:
     policy = document_upload_governance_policy_from_settings(
         DocumentUploadGovernanceSettings(
@@ -153,10 +299,7 @@ def test_ruleset_v1_dlp_blocks_sensitive_markers_without_raw_values() -> None:
             file_name="patient-ledger.csv",
             extension="csv",
             content=(
-                "患者姓名：张三\n"
-                "身份证：110105199001011234\n"
-                "手机号：13800138000\n"
-                "诊断：高血压\n"
+                "患者姓名：张三\n身份证：110105199001011234\n手机号：13800138000\n诊断：高血压\n"
             ).encode(),
         )
     )
@@ -299,6 +442,22 @@ def test_document_governance_provider_preflight_accepts_ruleset_v1_local_dlp() -
     assert report["checks"][1]["stage"] == "local-ruleset"
     assert report["checks"][1]["local_validation_only"] is True
     assert report["checks"][1]["issues"] == []
+
+
+def test_document_governance_provider_preflight_accepts_clamav_sidecar() -> None:
+    report = document_upload_governance_provider_preflight_from_settings(
+        DocumentUploadGovernanceSettings(virus_scan_provider="clamav-sidecar")
+    )
+
+    assert report["status"] == "pass"
+    assert report["external_provider_requested"] is False
+    assert report["external_provider_call_performed"] is False
+    assert report["production_write_performed"] is False
+    assert report["checks"][0]["provider"] == "clamav-sidecar"
+    assert report["checks"][0]["stage"] == "local-sidecar"
+    assert report["checks"][0]["local_validation_only"] is False
+    assert report["checks"][0]["external_provider_call_implemented"] is True
+    assert report["checks"][0]["issues"] == []
 
 
 def test_document_governance_provider_preflight_script_outputs_json(

@@ -8,13 +8,15 @@ DocumentUploadGovernanceProviderStage = Literal[
     "inactive",
     "local-test",
     "local-ruleset",
+    "local-sidecar",
     "external-pending",
 ]
 DocumentUploadGovernanceProviderCheckType = Literal["virus-scan", "dlp-review"]
 
-_EXTERNAL_VIRUS_SCAN_PROVIDERS = frozenset({"tencent-ci-virus", "clamav-sidecar"})
+_EXTERNAL_VIRUS_SCAN_PROVIDERS = frozenset({"tencent-ci-virus"})
 _EXTERNAL_DLP_REVIEW_PROVIDERS = frozenset({"external-dlp"})
 _LOCAL_RULESET_PROVIDERS = frozenset({"ruleset-v1"})
+_LOCAL_SIDECAR_VIRUS_SCAN_PROVIDERS = frozenset({"clamav-sidecar"})
 
 
 class DocumentUploadGovernanceProviderPreflightCheck(TypedDict):
@@ -50,6 +52,7 @@ def document_upload_governance_provider_preflight_from_settings(
             check_type="virus-scan",
             provider=settings.virus_scan_provider,
             external_providers=_EXTERNAL_VIRUS_SCAN_PROVIDERS,
+            local_sidecar_providers=_LOCAL_SIDECAR_VIRUS_SCAN_PROVIDERS,
         ),
         _provider_check(
             check_type="dlp-review",
@@ -81,6 +84,7 @@ def _provider_check(
     provider: str,
     external_providers: frozenset[str],
     local_ruleset_providers: frozenset[str] = frozenset(),
+    local_sidecar_providers: frozenset[str] = frozenset(),
 ) -> DocumentUploadGovernanceProviderPreflightCheck:
     if provider == "unconfigured":
         return {
@@ -112,6 +116,17 @@ def _provider_check(
             "external_provider_requested": False,
             "local_validation_only": True,
             "external_provider_call_implemented": False,
+            "result_writeback_supported": True,
+            "issues": [],
+        }
+    if provider in local_sidecar_providers:
+        return {
+            "check_type": check_type,
+            "provider": provider,
+            "stage": "local-sidecar",
+            "external_provider_requested": False,
+            "local_validation_only": False,
+            "external_provider_call_implemented": True,
             "result_writeback_supported": True,
             "issues": [],
         }

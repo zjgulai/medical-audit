@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+import socket
+import struct
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, cast
 
@@ -15,6 +17,7 @@ DocumentUploadGovernanceCheckType = Literal[
 DocumentUploadGovernanceCheckStatus = Literal["passed", "blocked"]
 DocumentUploadLocalTestMode = Literal["normal", "false-positive", "false-negative"]
 DocumentUploadDlpRiskLevel = Literal["low", "medium", "high"]
+ClamAvSidecarScanStatus = Literal["clean", "infected", "error", "timeout"]
 DocumentUploadIndexReadinessStatus = Literal["blocked", "ready", "rejected"]
 DocumentUploadIndexBlocker = Literal[
     "virus-scan-required",
@@ -134,6 +137,18 @@ class DocumentUploadDlpReviewer(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ClamAvSidecarScanResult:
+    status: ClamAvSidecarScanStatus
+    signature: str | None = None
+    detail: str | None = None
+
+
+class ClamAvSidecarClient(Protocol):
+    def scan(self, content: bytes, *, file_name: str) -> ClamAvSidecarScanResult:
+        pass
+
+
+@dataclass(frozen=True, slots=True)
 class UnconfiguredVirusScanner:
     provider: str = "unconfigured"
 
@@ -200,6 +215,85 @@ class LocalTestVirusScanner:
             status="passed",
             blocker=None,
             detail="local test virus scanner found no marker",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TcpClamAvSidecarClient:
+    host: str
+    port: int
+    timeout_seconds: float
+    chunk_size_bytes: int
+
+    def scan(self, content: bytes, *, file_name: str) -> ClamAvSidecarScanResult:
+        try:
+            with socket.create_connection(
+                (self.host, self.port),
+                timeout=self.timeout_seconds,
+            ) as connection:
+                connection.settimeout(self.timeout_seconds)
+                connection.sendall(b"zINSTREAM\0")
+                for offset in range(0, len(content), self.chunk_size_bytes):
+                    chunk = content[offset : offset + self.chunk_size_bytes]
+                    connection.sendall(struct.pack("!I", len(chunk)))
+                    connection.sendall(chunk)
+                connection.sendall(struct.pack("!I", 0))
+                response = connection.recv(4096).decode("utf-8", errors="replace")
+        except TimeoutError as exc:
+            return ClamAvSidecarScanResult(
+                status="timeout",
+                detail=f"connection to ClamAV sidecar timed out: {exc}",
+            )
+        except OSError as exc:
+            return ClamAvSidecarScanResult(
+                status="error",
+                detail=f"connection to ClamAV sidecar failed: {exc}",
+            )
+        return _clamav_sidecar_scan_result_from_response(response)
+
+
+@dataclass(frozen=True, slots=True)
+class ClamAvSidecarVirusScanner:
+    client: ClamAvSidecarClient
+    provider: str = "clamav-sidecar"
+
+    def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+        result = self.client.scan(context.content, file_name=context.file_name)
+        if result.status == "clean":
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail="clamav-sidecar found no malware",
+                result_code="clean",
+            )
+        if result.status == "infected":
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="blocked",
+                blocker="virus-scan-required",
+                detail=_clamav_detail("clamav-sidecar detected malware", result.signature),
+                risk_level="high",
+                result_code="infected",
+            )
+        if result.status == "timeout":
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="blocked",
+                blocker="virus-scan-required",
+                detail=_clamav_detail("clamav-sidecar scan timed out", result.detail),
+                result_code="provider-timeout",
+            )
+        return GovernanceCheckResult(
+            check_type="virus-scan",
+            provider=self.provider,
+            status="blocked",
+            blocker="virus-scan-required",
+            detail=_clamav_detail("clamav-sidecar scan failed", result.detail),
+            result_code="provider-error",
         )
 
 
@@ -350,9 +444,11 @@ class DocumentUploadGovernancePolicy:
 
 def document_upload_governance_policy_from_settings(
     settings: DocumentUploadGovernanceSettings,
+    *,
+    clamav_client: ClamAvSidecarClient | None = None,
 ) -> DocumentUploadGovernancePolicy:
     return DocumentUploadGovernancePolicy(
-        virus_scanner=_virus_scanner_from_settings(settings),
+        virus_scanner=_virus_scanner_from_settings(settings, clamav_client=clamav_client),
         dlp_reviewer=_dlp_reviewer_from_settings(settings),
     )
 
@@ -607,11 +703,23 @@ def _readiness_status_and_next_action(
 
 def _virus_scanner_from_settings(
     settings: DocumentUploadGovernanceSettings,
+    *,
+    clamav_client: ClamAvSidecarClient | None = None,
 ) -> DocumentUploadVirusScanner:
     if settings.virus_scan_provider == "unconfigured":
         return UnconfiguredVirusScanner()
     if settings.virus_scan_provider == "local-test":
         return LocalTestVirusScanner(mode=settings.virus_scan_test_mode)
+    if settings.virus_scan_provider == "clamav-sidecar":
+        return ClamAvSidecarVirusScanner(
+            client=clamav_client
+            or TcpClamAvSidecarClient(
+                host=settings.clamav_host,
+                port=settings.clamav_port,
+                timeout_seconds=settings.clamav_timeout_seconds,
+                chunk_size_bytes=settings.clamav_chunk_size_bytes,
+            )
+        )
     return ExternalPendingVirusScanner(provider=settings.virus_scan_provider)
 
 
@@ -641,6 +749,34 @@ def _context_contains_any(
     text = context.content[:4096].decode("utf-8", errors="ignore")
     haystack = f"{context.file_name}\n{context.extension}\n{text}".lower()
     return any(marker.lower() in haystack for marker in markers)
+
+
+def _clamav_sidecar_scan_result_from_response(response: str) -> ClamAvSidecarScanResult:
+    normalized = response.replace("\x00", "").strip()
+    if normalized.endswith(" OK"):
+        return ClamAvSidecarScanResult(status="clean", detail="clamav-sidecar reported OK")
+    if normalized.endswith(" FOUND"):
+        signature = normalized.removesuffix(" FOUND").rsplit(":", maxsplit=1)[-1].strip()
+        return ClamAvSidecarScanResult(
+            status="infected",
+            signature=signature or "unknown-signature",
+        )
+    if normalized.endswith(" ERROR"):
+        detail = normalized.removesuffix(" ERROR").rsplit(":", maxsplit=1)[-1].strip()
+        return ClamAvSidecarScanResult(
+            status="error",
+            detail=detail or "clamav-sidecar returned ERROR",
+        )
+    return ClamAvSidecarScanResult(
+        status="error",
+        detail="clamav-sidecar returned an unrecognized response",
+    )
+
+
+def _clamav_detail(prefix: str, detail: str | None) -> str:
+    if detail is None or not detail.strip():
+        return prefix
+    return f"{prefix}: {detail.strip()[:160]}"
 
 
 _RULESET_DLP_RULES: tuple[RulesetDlpRule, ...] = (

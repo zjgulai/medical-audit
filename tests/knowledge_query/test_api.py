@@ -20,6 +20,7 @@ from medical_audit_kb.api.app import (
     create_app,
 )
 from medical_audit_kb.api.document_upload_governance import (
+    ClamAvSidecarScanResult,
     DocumentUploadGovernanceContext,
     DocumentUploadGovernancePolicy,
     GovernanceCheckResult,
@@ -67,6 +68,16 @@ from medical_audit_kb.indexing.vector_index import (
 )
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
 from medical_audit_kb.retrieval.rerank import FakeRerankProvider
+
+
+class FakeClamAvSidecarClient:
+    def __init__(self, result: ClamAvSidecarScanResult) -> None:
+        self.result = result
+        self.calls: list[tuple[bytes, str]] = []
+
+    def scan(self, content: bytes, *, file_name: str) -> ClamAvSidecarScanResult:
+        self.calls.append((content, file_name))
+        return self.result
 
 
 def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
@@ -580,9 +591,10 @@ def test_documents_upload_download_metadata_is_permission_scoped(tmp_path: Path)
     }
     assert owner_body["download"]["storage_objects"][0]["provider"] == "local"
     assert owner_body["download"]["storage_objects"][0]["storage_status"] == "local-quarantine"
-    assert owner_body["download"]["storage_objects"][0]["object_key"] == owner_body["item"][
-        "storage_path"
-    ]
+    assert (
+        owner_body["download"]["storage_objects"][0]["object_key"]
+        == owner_body["item"]["storage_path"]
+    )
     assert state.operation_logs[-1]["action"] == "document-upload-download-metadata"
     assert state.operation_logs[-1]["payload"]["access_scope"] == "owner"
     assert state.operation_logs[-1]["payload"]["signed_url_issued"] is False
@@ -955,10 +967,14 @@ def test_documents_upload_governance_result_update_marks_check_and_persists(
         database_url=database_url,
         upload_root=tmp_path / "document-uploads",
     )
-    persisted = TestClient(create_app(second_state)).get(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
+    persisted = (
+        TestClient(create_app(second_state))
+        .get(
+            "/documents/uploads",
+            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        )
+        .json()["items"][0]
+    )
     assert persisted["id"] == upload_id
     assert persisted["index_readiness"]["checks"][0]["status"] == "passed"
     assert persisted["index_readiness"]["checks"][0]["external_job_id"] == "ci-virus-job-1"
@@ -1163,6 +1179,43 @@ def test_documents_upload_local_test_governance_detects_markers(
             "detail": "manual index approval is required before ingesting policy.txt",
         },
     ]
+
+
+def test_documents_upload_clamav_sidecar_clean_result_passes_virus_check(
+    tmp_path: Path,
+) -> None:
+    clamav_client = FakeClamAvSidecarClient(ClamAvSidecarScanResult(status="clean"))
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="clamav-sidecar",
+            dlp_review_provider="local-test",
+        ),
+        clamav_client=clamav_client,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"clean policy evidence", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    readiness = response.json()["item"]["index_readiness"]
+    assert clamav_client.calls == [(b"clean policy evidence", "policy.txt")]
+    assert readiness["blockers"] == ["manual-index-approval-required"]
+    assert readiness["checks"][0] == {
+        "check_type": "virus-scan",
+        "provider": "clamav-sidecar",
+        "status": "passed",
+        "blocker": None,
+        "detail": "clamav-sidecar found no malware",
+        "result_code": "clean",
+    }
 
 
 def test_documents_upload_ruleset_v1_dlp_blocks_sensitive_findings(

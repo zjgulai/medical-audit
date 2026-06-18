@@ -128,7 +128,7 @@ source: human+ai
 - 文档检索页已完成生产查询 E2E；`/api/v1/query` 可按来源过滤返回引用、证据分组和原文入口，`/pages/preview/{chunk_id}` 生产预览可打开。
 - 文档检索搜索历史持久化已完成本地实现和联调；`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 读取历史，`/documents` 可展示、刷新和回填历史。
 - 文档检索剩余边界已完成生产部署和写入型 E2E；`/api/v1/query` 的 `citations` 与 `basis_groups.items` 直接回显 `source_collection`，`/api/v1/documents/permissions` 返回来源集合读权限，`/api/v1/documents/uploads` 支持个人材料留存、刷新后读取和普通审计员/管理员角色隔离，`/documents` 页面可展示权限状态和 `not-indexed` 上传历史。
-- 个人材料上传治理 provider 配置层已完成生产部署；默认生产配置下病毒扫描和 DLP adapter 为 `unconfigured`，会以 `index_readiness` 明确阻断个人材料实际入索引，并返回三项 blockers 供前后端和审计日志消费。外部治理 provider pending 语义和结果回写接口已完成生产部署与受控写入型 E2E：配置 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp` 时，响应保留 `blocked`，用 `result_code=pending-external-result` 表达仍需外部结果；`department-head/system-admin` 可通过治理结果回写接口更新 `virus-scan` 或 `dlp-review` check，普通 `auditor` 被拒并写审计日志。
+- 个人材料上传治理 provider 配置层已完成生产部署；默认生产配置下病毒扫描和 DLP adapter 为 `unconfigured`，会以 `index_readiness` 明确阻断个人材料实际入索引，并返回三项 blockers 供前后端和审计日志消费。外部治理 provider pending 语义和结果回写接口已完成生产部署与受控写入型 E2E：配置 `tencent-ci-virus` 或 `external-dlp` 时，响应保留 `blocked`，用 `result_code=pending-external-result` 表达仍需外部结果；`ruleset-v1` 已作为应用级本地 DLP 规则 adapter 接入；`clamav-sidecar` 已进入当前代码分支的本地 sidecar 病毒扫描 adapter 实现阶段，但尚未执行生产部署、真实 sidecar 健康检查或生产文件扫描验收；`department-head/system-admin` 可通过治理结果回写接口更新 `virus-scan` 或 `dlp-review` check，普通 `auditor` 被拒并写审计日志。
 - 个人材料人工入索引审批状态机已完成生产部署和写入型 E2E；`department-head` 可审批通过或驳回，普通 `auditor` 审批返回 `403`，审批结果持久化到 `document_upload_records.metadata.index_readiness` 并写入 `audit_log_events`。
 - 个人材料 COS 对象存储已完成生产部署、active env 切换和写入型 E2E；`document_storage_objects` 记录 COS object key、provider、bucket、region、`sha256`、大小、storage class、加密模式和状态，新增上传可同时写入上传记录、对象记录和腾讯云 COS。
 
@@ -137,7 +137,7 @@ source: human+ai
 - 智能体提示词版本治理、上下架、删除/停用和权限生效仍未完成；本轮只验证新增提示词型智能体持久化。
 - 项目成员真实权限、邀请审批、成员禁用/移除和权限生效仍未完成；本轮只验证成员新增持久化。
 - AI 数据分析病毒扫描、脱敏改写、外部对象存储/COS、下载权限隔离、正式工作簿治理和长期存储生命周期策略仍未完成。
-- 文档检索个人材料当前已完成留存、角色读取隔离、入索引治理门禁表达、人工审批状态机、腾讯云 COS 对象存储、下载元信息授权隔离、signed URL 下载交付、外部治理 provider pending 语义和治理结果回写生产 E2E；真实认证、生产级病毒扫描、生产级 DLP/脱敏改写、真实外部 provider 调用、个人材料实际入索引流程和生产搜索历史列表/回填专项验收仍未完成。
+- 文档检索个人材料当前已完成留存、角色读取隔离、入索引治理门禁表达、人工审批状态机、腾讯云 COS 对象存储、下载元信息授权隔离、signed URL 下载交付、外部治理 provider pending 语义和治理结果回写生产 E2E；真实认证、`clamav-sidecar` 生产部署与健康验收、生产级病毒扫描、生产级 DLP/脱敏改写、真实外部 provider 调用、个人材料实际入索引流程和生产搜索历史列表/回填专项验收仍未完成。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
 - Kimi 当前只验证为 embedding provider；线上答案生成模型未验证通过。
