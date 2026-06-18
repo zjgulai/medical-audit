@@ -602,6 +602,77 @@ def test_documents_upload_download_metadata_is_permission_scoped(tmp_path: Path)
     assert head_response.json()["download"]["access_scope"] == "read-all"
 
 
+def test_documents_upload_download_issues_signed_url_for_cos_object(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-signed-downloads.db'}"
+    upload_root = tmp_path / "document-uploads"
+    fake_cos_client = FakeTencentCosClient(
+        signed_url="https://cos.example/signed-download?sign=q-sign-algorithm",
+    )
+    state = _api_state(
+        tmp_path,
+        document_storage=DocumentStorageSettings(signed_url_ttl_seconds=300),
+    )
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+        object_storage=TencentCosDocumentObjectStorage(
+            client=fake_cos_client,
+            bucket="medical-audit-prod",
+            region="ap-guangzhou",
+            prefix="personal-materials/test",
+        ),
+        record_storage_objects=True,
+    )
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    owner_response = client.get(
+        f"/documents/uploads/{upload_id}/download",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+
+    assert owner_response.status_code == 200
+    owner_body = owner_response.json()
+    assert owner_body["download"]["status"] == "download-ready"
+    assert owner_body["download"]["delivery"] == "signed-url"
+    assert owner_body["download"]["reason"] == "signed-url-issued"
+    assert owner_body["download"]["signed_url"] == (
+        "https://cos.example/signed-download?sign=q-sign-algorithm"
+    )
+    assert owner_body["download"]["expires_at"].endswith("Z")
+    assert owner_body["download"]["storage_objects"][0]["provider"] == "tencent-cos"
+    assert owner_body["download"]["storage_objects"][0]["storage_status"] == "object-stored"
+    assert fake_cos_client.presign_calls == [
+        {
+            "bucket": "medical-audit-prod",
+            "region": "ap-guangzhou",
+            "object_key": owner_body["download"]["storage_objects"][0]["object_key"],
+            "expires_in_seconds": 300,
+        }
+    ]
+    assert state.operation_logs[-1]["action"] == "document-upload-download-metadata"
+    assert state.operation_logs[-1]["payload"]["signed_url_issued"] is True
+    assert state.operation_logs[-1]["payload"]["delivery"] == "signed-url"
+    assert state.operation_logs[-1]["payload"]["reason"] == "signed-url-issued"
+    assert "signed_url" not in state.operation_logs[-1]["payload"]
+
+    other_response = client.get(
+        f"/documents/uploads/{upload_id}/download",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+    )
+
+    assert other_response.status_code == 404
+    assert len(fake_cos_client.presign_calls) == 1
+
+
 def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
     tmp_path: Path,
 ) -> None:
@@ -1792,7 +1863,11 @@ def test_index_evaluation_run_requires_ready_search_backend(tmp_path: Path) -> N
     assert "search backend is not ready" in response.json()["detail"]
 
 
-def _api_state(tmp_path: Path) -> ApiState:
+def _api_state(
+    tmp_path: Path,
+    *,
+    document_storage: DocumentStorageSettings | None = None,
+) -> ApiState:
     source_root = tmp_path / "data"
     source_file = source_root / "全量法律" / "law.md"
     _write_text(
@@ -1804,7 +1879,11 @@ def _api_state(tmp_path: Path) -> ApiState:
             ]
         ),
     )
-    settings = _knowledge_query_settings(tmp_path, data_root=source_root)
+    settings = _knowledge_query_settings(
+        tmp_path,
+        data_root=source_root,
+        document_storage=document_storage,
+    )
     state = ApiState.from_settings(settings)
     state.audit_log_store = None
     state.analytics_upload_store = InMemoryAnalyticsUploadStore(
@@ -1912,6 +1991,14 @@ class FailingQueryHistoryStore:
 
 
 class FakeTencentCosClient:
+    def __init__(
+        self,
+        *,
+        signed_url: str = "https://cos.example/signed-download",
+    ) -> None:
+        self.signed_url = signed_url
+        self.presign_calls: list[dict[str, object]] = []
+
     def put_object(
         self,
         *,
@@ -1926,6 +2013,24 @@ class FakeTencentCosClient:
         storage_class: str,
     ) -> dict[str, str | None]:
         return {"etag": '"etag"', "version_id": "version-1"}
+
+    def create_presigned_download_url(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+        expires_in_seconds: int,
+    ) -> str:
+        self.presign_calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+                "expires_in_seconds": expires_in_seconds,
+            }
+        )
+        return self.signed_url
 
 
 def _write_text(path: Path, content: str) -> Path:

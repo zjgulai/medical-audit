@@ -632,7 +632,7 @@ Query 参数：
 
 ### `GET /documents/uploads/{upload_id}/download`
 
-返回个人材料下载授权元信息。该接口用于先建立下载权限隔离边界，不直接返回文件内容，也不生成 COS 临时签名 URL。
+返回个人材料下载授权元信息。该接口用于建立下载权限隔离边界，并在对象存储和签名器可用时签发短期下载 URL。
 
 请求头：
 
@@ -648,19 +648,22 @@ Query 参数：
 响应核心字段：
 
 - `item`：同 `GET /documents/uploads` 的单条上传记录。
-- `download.status`：当前固定为 `metadata-only`。
-- `download.delivery`：当前固定为 `not-issued`。
-- `download.reason`：当前固定为 `signed-download-not-configured`。
-- `download.signed_url`：当前固定为 `null`。
-- `download.expires_at`：当前固定为 `null`。
+- `download.status`：`download-ready` 表示已签发短期下载 URL；`metadata-only` 表示只返回授权元信息。
+- `download.delivery`：`signed-url` 表示通过对象存储短期签名 URL 交付；`not-issued` 表示未签发 URL。
+- `download.reason`：`signed-url-issued`、`signed-download-not-configured` 或 `signed-url-not-available`。
+- `download.signed_url`：已授权且签发成功时返回短期 URL；未签发时为 `null`。该 URL 不写入操作日志。
+- `download.expires_at`：短期 URL 过期时间；未签发时为 `null`。
 - `download.storage_path`：上传记录中的受控存储路径。
 - `download.storage_objects`：已记录的对象存储元信息，包含 `provider`、`bucket`、`region`、`object_key`、`sha256`、`storage_status`、`storage_class`、`encryption_mode` 等字段。
 - `permissions`：当前角色的个人材料上传权限。
 
 当前边界：
 
-- 本接口只证明下载前置授权和对象元信息读取，不证明真实文件下载、COS 签名 URL、病毒扫描、DLP/脱敏或长期留存生命周期已完成。
+- 签名 URL 仅在已授权用户访问、存在 `provider=tencent-cos` 且 `storage_status=object-stored` 的对象记录、并且运行态 COS SDK signer 可用时签发。
+- local provider、缺少对象记录、对象状态不可交付或签名器不可用时，接口保持 `metadata-only`，不会回退为本地文件直出。
+- 本接口证明授权签发边界和审计事件可记录，不证明生产级病毒扫描、DLP/脱敏、个人材料实际入索引或长期留存生命周期已完成。
 - `storage_objects` 只对已授权用户返回；接口不返回 COS secret、真实密钥或文件正文。
+- 操作日志记录 `delivery`、`reason`、`signed_url_issued` 和 `signed_url_expires_at`，但不保存 `signed_url` 本身。
 
 ### `POST /documents/uploads/{upload_id}/index-readiness/manual-approval`
 
