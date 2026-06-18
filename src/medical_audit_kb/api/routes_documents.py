@@ -18,6 +18,9 @@ from medical_audit_kb.api.document_upload_governance import (
     apply_governance_check_result,
     apply_manual_index_decision,
 )
+from medical_audit_kb.api.document_upload_governance_jobs import (
+    submit_required_document_upload_governance_jobs,
+)
 from medical_audit_kb.api.document_upload_governance_store import (
     DocumentObjectStorageSignedUrlResult,
 )
@@ -276,15 +279,19 @@ async def upload_document(
         content=content,
     )
     index_readiness = state.document_upload_governance.evaluate(governance_context)
-    item = DocumentUploadItem.model_validate(
-        state.document_upload_store.add_upload(
-            file_name=file_name,
-            extension=extension,
-            content=content,
-            created_by=user_identifier,
-            index_readiness=index_readiness,
-        )
+    upload_record = state.document_upload_store.add_upload(
+        file_name=file_name,
+        extension=extension,
+        content=content,
+        created_by=user_identifier,
+        index_readiness=index_readiness,
     )
+    governance_jobs = _submit_governance_jobs_for_upload(
+        state=state,
+        upload=upload_record,
+        index_readiness=index_readiness,
+    )
+    item = DocumentUploadItem.model_validate(upload_record)
     record_operation(
         state,
         "document-upload",
@@ -299,11 +306,19 @@ async def upload_document(
             index_readiness_status=item.index_readiness.status,
             index_readiness_blockers=item.index_readiness.blockers,
             index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
+            governance_job_count=len(governance_jobs),
+            governance_job_keys=[
+                job.get("job_key") for job in governance_jobs if job.get("job_key") is not None
+            ],
         ),
     )
     return DocumentUploadResponse(
         item=item,
-        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        store={
+            "ready": True,
+            "backend": state.document_upload_store.__class__.__name__,
+            "governance_job_count": len(governance_jobs),
+        },
         permissions=permissions,
     )
 
@@ -557,6 +572,27 @@ def _upload_permissions(role: str) -> DocumentUploadPermissions:
     return DocumentUploadPermissions(
         can_upload_personal=True,
         can_read_all_personal_uploads=can_read_all_personal_uploads(role),
+    )
+
+
+def _submit_governance_jobs_for_upload(
+    *,
+    state: ApiState,
+    upload: dict[str, object],
+    index_readiness: dict[str, object],
+) -> list[dict[str, object]]:
+    if (
+        state.document_upload_store is None
+        or state.document_upload_governance_store is None
+        or state.document_upload_governance_job_submitter is None
+    ):
+        return []
+    return submit_required_document_upload_governance_jobs(
+        upload=upload,
+        index_readiness=index_readiness,
+        storage_objects=state.document_upload_store.list_storage_objects(str(upload["id"])),
+        store=state.document_upload_governance_store,
+        submitter=state.document_upload_governance_job_submitter,
     )
 
 

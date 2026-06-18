@@ -22,6 +22,14 @@ from medical_audit_kb.api.document_upload_governance import (
     DocumentUploadGovernancePolicy,
     document_upload_governance_policy_from_settings,
 )
+from medical_audit_kb.api.document_upload_governance_jobs import (
+    document_upload_governance_job_submitter_from_settings,
+)
+from medical_audit_kb.api.document_upload_governance_store import (
+    DocumentUploadGovernanceJobSubmitter,
+    DocumentUploadGovernanceStore,
+    SqlAlchemyDocumentUploadGovernanceStore,
+)
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
@@ -80,6 +88,8 @@ class ApiState:
     document_upload_governance: DocumentUploadGovernancePolicy = field(
         default_factory=DocumentUploadGovernancePolicy
     )
+    document_upload_governance_store: DocumentUploadGovernanceStore | None = None
+    document_upload_governance_job_submitter: DocumentUploadGovernanceJobSubmitter | None = None
     query_history_store: QueryHistoryStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
@@ -117,6 +127,14 @@ class ApiState:
             ),
             document_upload_governance=document_upload_governance_policy_from_settings(
                 settings.document_upload_governance
+            ),
+            document_upload_governance_store=_document_upload_governance_store_from_settings(
+                settings
+            ),
+            document_upload_governance_job_submitter=(
+                document_upload_governance_job_submitter_from_settings(
+                    settings.document_upload_governance
+                )
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
@@ -228,6 +246,14 @@ def _document_storage_object_records_enabled(settings: KnowledgeQuerySettings) -
         settings.document_storage.record_storage_objects
         and document_storage_objects_schema_ready(settings.database_url)
     )
+
+
+def _document_upload_governance_store_from_settings(
+    settings: KnowledgeQuerySettings,
+) -> DocumentUploadGovernanceStore | None:
+    if settings.document_upload_governance.governance_job_submitter_provider == "disabled":
+        return None
+    return SqlAlchemyDocumentUploadGovernanceStore(settings.database_url)
 
 
 def get_api_state(request: Request) -> ApiState:

@@ -11,6 +11,10 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
+from medical_audit_kb.api.document_upload_governance_jobs import (
+    LocalRecordingDocumentUploadGovernanceJobSubmitter,
+    submit_required_document_upload_governance_jobs,
+)
 from medical_audit_kb.api.document_upload_governance_store import (
     DOCUMENT_UPLOAD_GOVERNANCE_JOB_ID_PREFIX,
     DocumentObjectStoragePutRequest,
@@ -653,6 +657,93 @@ def test_document_upload_governance_store_tracks_storage_and_jobs(
     assert updated_job["result_payload"] == {"result_code": "normal"}
     assert updated_job["finished_at"] == "2026-06-16T12:00:00Z"
     assert store.list_governance_jobs(str(upload["id"])) == [updated_job]
+
+
+def test_local_recording_governance_submitter_records_external_pending_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIRUS_SCAN_JOB_SECRET", "actual-secret-value")
+    monkeypatch.setenv("DLP_REVIEW_JOB_SECRET", "actual-secret-value")
+    database_url = f"sqlite:///{tmp_path / 'document-governance-submit.db'}"
+    upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+        record_storage_objects=True,
+    )
+    upload = upload_store.add_upload(
+        file_name="policy.txt",
+        extension="txt",
+        content=b"policy evidence",
+        created_by="auditor-1",
+    )
+    governance_store = SqlAlchemyDocumentUploadGovernanceStore(database_url=database_url)
+    submitter = LocalRecordingDocumentUploadGovernanceJobSubmitter(
+        provider_env_contracts={
+            "tencent-ci-virus": {
+                "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
+                "secret_env": "VIRUS_SCAN_JOB_SECRET",
+            },
+            "external-dlp": {
+                "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
+                "secret_env": "DLP_REVIEW_JOB_SECRET",
+            },
+        }
+    )
+    index_readiness = {
+        "checks": [
+            {
+                "check_type": "virus-scan",
+                "provider": "tencent-ci-virus",
+                "status": "blocked",
+                "blocker": "virus-scan-required",
+                "detail": "external result required",
+                "result_code": "pending-external-result",
+            },
+            {
+                "check_type": "dlp-review",
+                "provider": "external-dlp",
+                "status": "blocked",
+                "blocker": "dlp-review-required",
+                "detail": "external result required",
+                "result_code": "pending-external-result",
+            },
+            {
+                "check_type": "manual-index-approval",
+                "provider": "manual",
+                "status": "blocked",
+                "blocker": "manual-index-approval-required",
+                "detail": "manual approval required",
+            },
+        ]
+    }
+
+    jobs = submit_required_document_upload_governance_jobs(
+        upload=upload,
+        index_readiness=index_readiness,
+        storage_objects=upload_store.list_storage_objects(str(upload["id"])),
+        store=governance_store,
+        submitter=submitter,
+    )
+
+    assert [job["job_type"] for job in jobs] == ["virus-scan", "dlp-review"]
+    assert [job["status"] for job in jobs] == ["pending", "pending"]
+    assert jobs[0]["external_job_id"] == f"local-recording-virus-scan-{upload['id']}"
+    assert jobs[1]["external_job_id"] == f"local-recording-dlp-review-{upload['id']}"
+    assert jobs[0]["result_payload"]["external_provider_call_performed"] is False
+    assert jobs[0]["result_payload"]["production_write_performed"] is False
+    assert jobs[0]["result_payload"]["provider_env_contract"] == {
+        "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
+        "secret_env": "VIRUS_SCAN_JOB_SECRET",
+    }
+    assert jobs[1]["result_payload"]["provider_env_contract"] == {
+        "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
+        "secret_env": "DLP_REVIEW_JOB_SECRET",
+    }
+    serialized = json.dumps(jobs, ensure_ascii=False)
+    assert "actual-secret-value" not in serialized
+    assert governance_store.list_governance_jobs(str(upload["id"])) == jobs
 
 
 def _enable_sqlite_foreign_keys(

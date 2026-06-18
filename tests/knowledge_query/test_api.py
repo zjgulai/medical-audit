@@ -25,7 +25,11 @@ from medical_audit_kb.api.document_upload_governance import (
     GovernanceCheckResult,
     document_upload_governance_policy_from_settings,
 )
+from medical_audit_kb.api.document_upload_governance_jobs import (
+    LocalRecordingDocumentUploadGovernanceJobSubmitter,
+)
 from medical_audit_kb.api.document_upload_governance_store import (
+    SqlAlchemyDocumentUploadGovernanceStore,
     TencentCosDocumentObjectStorage,
 )
 from medical_audit_kb.api.document_upload_store import (
@@ -958,6 +962,73 @@ def test_documents_upload_governance_result_update_marks_check_and_persists(
     assert persisted["id"] == upload_id
     assert persisted["index_readiness"]["checks"][0]["status"] == "passed"
     assert persisted["index_readiness"]["checks"][0]["external_job_id"] == "ci-virus-job-1"
+
+
+def test_documents_upload_records_external_governance_jobs_in_local_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VIRUS_SCAN_JOB_SECRET", "actual-secret-value")
+    monkeypatch.setenv("DLP_REVIEW_JOB_SECRET", "actual-secret-value")
+    database_url = f"sqlite:///{tmp_path / 'document-governance-jobs-api.db'}"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=tmp_path / "document-uploads",
+        create_schema=True,
+        record_storage_objects=True,
+    )
+    state.document_upload_governance_store = SqlAlchemyDocumentUploadGovernanceStore(
+        database_url=database_url
+    )
+    state.document_upload_governance_job_submitter = (
+        LocalRecordingDocumentUploadGovernanceJobSubmitter(
+            provider_env_contracts={
+                "tencent-ci-virus": {
+                    "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
+                    "secret_env": "VIRUS_SCAN_JOB_SECRET",
+                },
+                "external-dlp": {
+                    "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
+                    "secret_env": "DLP_REVIEW_JOB_SECRET",
+                },
+            }
+        )
+    )
+    state.document_upload_governance = document_upload_governance_policy_from_settings(
+        DocumentUploadGovernanceSettings(
+            virus_scan_provider="tencent-ci-virus",
+            dlp_review_provider="external-dlp",
+        )
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+
+    assert upload_response.status_code == 200
+    upload_body = upload_response.json()
+    upload_id = upload_body["item"]["id"]
+    assert upload_body["store"]["governance_job_count"] == 2
+    assert state.operation_logs[-1]["payload"]["governance_job_count"] == 2
+    jobs = state.document_upload_governance_store.list_governance_jobs(upload_id)
+    assert [job["job_type"] for job in jobs] == ["virus-scan", "dlp-review"]
+    assert [job["provider"] for job in jobs] == ["tencent-ci-virus", "external-dlp"]
+    assert [job["status"] for job in jobs] == ["pending", "pending"]
+    assert jobs[0]["result_payload"]["external_provider_call_performed"] is False
+    assert jobs[0]["result_payload"]["production_write_performed"] is False
+    assert jobs[0]["result_payload"]["provider_env_contract"] == {
+        "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
+        "secret_env": "VIRUS_SCAN_JOB_SECRET",
+    }
+    assert jobs[1]["result_payload"]["provider_env_contract"] == {
+        "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
+        "secret_env": "DLP_REVIEW_JOB_SECRET",
+    }
+    assert "actual-secret-value" not in json.dumps(jobs, ensure_ascii=False)
 
 
 def test_documents_upload_governance_result_update_rejects_auditor(

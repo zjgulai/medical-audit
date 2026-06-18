@@ -321,6 +321,14 @@ class DocumentUploadGovernanceJobSubmission:
     error_message: str | None = None
 
 
+class DocumentUploadGovernanceJobSubmitter(Protocol):
+    def submit(
+        self,
+        request: DocumentUploadGovernanceJobRequest,
+    ) -> DocumentUploadGovernanceJobSubmission:
+        pass
+
+
 class DocumentVirusScanJobProvider(Protocol):
     @property
     def provider(self) -> str:
