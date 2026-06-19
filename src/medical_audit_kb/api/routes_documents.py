@@ -24,6 +24,9 @@ from medical_audit_kb.api.document_upload_governance_jobs import (
 from medical_audit_kb.api.document_upload_governance_store import (
     DocumentObjectStorageSignedUrlResult,
 )
+from medical_audit_kb.api.document_upload_ingestion import (
+    DocumentUploadIngestionError,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 
 router = APIRouter(prefix="/documents")
@@ -36,6 +39,9 @@ MANUAL_INDEX_APPROVAL_DENIED_REASON = (
 )
 GOVERNANCE_RESULT_UPDATE_DENIED_REASON = (
     "document upload governance result update requires department-head or system-admin role"
+)
+INDEX_INGESTION_DENIED_REASON = (
+    "document upload index ingestion requires department-head or system-admin role"
 )
 
 
@@ -116,7 +122,7 @@ class DocumentUploadItem(BaseModel):
     created_by: str | None
     created_at: str
     retention_status: Literal["retained"]
-    index_status: Literal["not-indexed"]
+    index_status: Literal["not-indexed", "staged-for-index", "indexed", "indexing-failed"]
     index_readiness: DocumentIndexReadiness
 
 
@@ -178,6 +184,34 @@ class DocumentUploadDownloadResponse(BaseModel):
 
     item: DocumentUploadItem
     download: DocumentUploadDownloadAccess
+    permissions: DocumentUploadPermissions
+
+
+class DocumentUploadIndexIngestionDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["staged-for-index", "already-staged"]
+    upload_key: str
+    source_collection: str
+    source_package_version_key: str
+    index_version_key: str
+    index_version_status: Literal["candidate"]
+    source_document_id: str
+    chunk_count: int
+    embedding_count: int
+    embedding_provider: str
+    embedding_model: str
+    embedding_dimension: int
+    external_provider_call_performed: bool
+    live_retrieval_activated: bool
+
+
+class DocumentUploadIndexIngestionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: DocumentUploadItem
+    ingestion: DocumentUploadIndexIngestionDetails
+    store: dict[str, object]
     permissions: DocumentUploadPermissions
 
 
@@ -552,6 +586,90 @@ def update_governance_result(
     )
     return DocumentUploadResponse(
         item=item,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/index-ingestion",
+    response_model=DocumentUploadIndexIngestionResponse,
+)
+def ingest_document_upload_index(
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> DocumentUploadIndexIngestionResponse:
+    role = normalize_role(current_user.primary_role)
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    if role not in MANUAL_INDEX_APPROVAL_ROLES:
+        record_operation(
+            state,
+            "document-upload-index-ingestion-access-denied",
+            auth_audit_payload(
+                current_user,
+                attempted_action="document-upload-index-ingestion",
+                upload_id=upload_id,
+                status_code=403,
+                reason=INDEX_INGESTION_DENIED_REASON,
+            ),
+        )
+        raise HTTPException(status_code=403, detail=INDEX_INGESTION_DENIED_REASON)
+    if state.document_upload_indexer is None:
+        record_operation(
+            state,
+            "document-upload-index-ingestion-blocked",
+            auth_audit_payload(
+                current_user,
+                upload_id=upload_id,
+                status_code=409,
+                reason="document-upload-indexing-disabled",
+            ),
+        )
+        raise HTTPException(status_code=409, detail="document upload indexing is not enabled")
+
+    try:
+        result = state.document_upload_indexer.ingest_upload(
+            upload_id,
+            actor=current_user.user_key,
+        )
+    except DocumentUploadIngestionError as exc:
+        record_operation(
+            state,
+            "document-upload-index-ingestion-blocked",
+            auth_audit_payload(
+                current_user,
+                upload_id=upload_id,
+                status_code=exc.status_code,
+                reason=exc.reason,
+                **exc.payload,
+            ),
+        )
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": exc.detail, "reason": exc.reason, **exc.payload},
+        ) from exc
+
+    updated = state.document_upload_store.get_upload(upload_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    item = DocumentUploadItem.model_validate(updated)
+    ingestion = DocumentUploadIndexIngestionDetails.model_validate(result.to_dict())
+    record_operation(
+        state,
+        "document-upload-index-ingestion",
+        auth_audit_payload(
+            current_user,
+            upload_id=item.id,
+            index_status=item.index_status,
+            **ingestion.model_dump(),
+        ),
+    )
+    return DocumentUploadIndexIngestionResponse(
+        item=item,
+        ingestion=ingestion,
         store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
         permissions=permissions,
     )

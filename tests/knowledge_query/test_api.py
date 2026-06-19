@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.analytics_upload_store import (
@@ -33,6 +35,7 @@ from medical_audit_kb.api.document_upload_governance_store import (
     SqlAlchemyDocumentUploadGovernanceStore,
     TencentCosDocumentObjectStorage,
 )
+from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
     InMemoryDocumentUploadStore,
@@ -49,8 +52,16 @@ from medical_audit_kb.api.query_history_store import (
 from medical_audit_kb.core.config import (
     DocumentStorageSettings,
     DocumentUploadGovernanceSettings,
+    DocumentUploadIndexingSettings,
     KnowledgeQuerySettings,
     ModelProviderSettings,
+)
+from medical_audit_kb.db.models import (
+    ChunkEmbedding,
+    DocumentChunk,
+    IndexVersion,
+    SourceDocument,
+    SourcePackageVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
@@ -866,6 +877,269 @@ def test_documents_upload_manual_index_approval_marks_ready_and_persists(
     ).json()["items"][0]
     assert persisted["id"] == upload_id
     assert persisted["index_readiness"]["status"] == "ready"
+
+
+def test_documents_upload_index_ingestion_stages_ready_upload(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion.db'}"
+    upload_root = tmp_path / "document-uploads"
+    indexing_settings = DocumentUploadIndexingSettings(
+        enabled=True,
+        source_package_version_key="personal-materials-test",
+        index_version_key="personal-materials-test",
+    )
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=indexing_settings,
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "personal-note.txt",
+                "个人补充材料：门诊费用审核依据。\n第二行证据。".encode(),
+                "text/plain",
+            )
+        },
+    )
+    upload_id = upload_response.json()["item"]["id"]
+    approval_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "材料已完成病毒与DLP治理。"},
+    )
+    assert approval_response.status_code == 200
+
+    ingestion_response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert ingestion_response.status_code == 200
+    body = ingestion_response.json()
+    assert body["item"]["index_status"] == "staged-for-index"
+    assert body["ingestion"]["status"] == "staged-for-index"
+    assert body["ingestion"]["source_collection"] == "personal-materials"
+    assert body["ingestion"]["index_version_status"] == "candidate"
+    assert body["ingestion"]["chunk_count"] == 1
+    assert body["ingestion"]["embedding_count"] == 1
+    assert body["ingestion"]["embedding_provider"] == "fake"
+    assert body["ingestion"]["external_provider_call_performed"] is False
+    assert body["ingestion"]["live_retrieval_activated"] is False
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion"
+    assert state.operation_logs[-1]["payload"]["index_status"] == "staged-for-index"
+    assert state.operation_logs[-1]["payload"]["live_retrieval_activated"] is False
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        source_document = session.scalars(select(SourceDocument)).one()
+        chunk = session.scalars(select(DocumentChunk)).one()
+        embedding = session.scalars(select(ChunkEmbedding)).one()
+        index_version = session.scalars(select(IndexVersion)).one()
+
+    assert source_document.source_collection == "personal-materials"
+    assert source_document.relative_path == f"personal-materials/{upload_id}/personal-note.txt"
+    assert chunk.extra_metadata["upload_key"] == upload_id
+    assert chunk.extra_metadata["live_retrieval_activated"] is False
+    assert embedding.provider == "fake"
+    assert embedding.dimension == 32
+    assert index_version.status == "candidate"
+    assert index_version.chunk_count == 1
+    assert index_version.document_count == 1
+
+
+def test_documents_upload_index_ingestion_blocks_when_upload_is_not_ready(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-blocked.db'}"
+    upload_root = tmp_path / "document-uploads"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=DocumentUploadIndexingSettings(enabled=True),
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "document-upload-not-ready-for-indexing"
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
+    assert state.operation_logs[-1]["payload"]["reason"] == (
+        "document-upload-not-ready-for-indexing"
+    )
+
+
+def test_documents_upload_index_ingestion_blocks_index_version_key_collision(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-collision.db'}"
+    upload_root = tmp_path / "document-uploads"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=DocumentUploadIndexingSettings(
+            enabled=True,
+            source_package_version_key="personal-materials-new",
+            index_version_key="active-system-index",
+        ),
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        package = SourcePackageVersion(
+            version_key="system-package",
+            source_root_path=str(tmp_path / "data"),
+            description="Existing system package.",
+            extra_metadata={"source": "persistent-jsonl"},
+        )
+        session.add(package)
+        session.flush()
+        session.add(
+            IndexVersion(
+                source_package_version_id=package.id,
+                version_key="active-system-index",
+                status="active",
+                chunk_count=0,
+                document_count=0,
+                extra_metadata={"source": "persistent-jsonl"},
+            )
+        )
+        session.commit()
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+    approval_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "材料已完成治理。"},
+    )
+    assert approval_response.status_code == 200
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "document-upload-index-version-key-collision"
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
+    assert state.operation_logs[-1]["payload"]["index_version_key"] == "active-system-index"
+
+
+def test_documents_upload_index_ingestion_requires_enabled_indexer(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "document upload indexing is not enabled"
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
+    assert state.operation_logs[-1]["payload"]["reason"] == "document-upload-indexing-disabled"
 
 
 def test_documents_upload_manual_index_rejection_marks_rejected(

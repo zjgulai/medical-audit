@@ -158,7 +158,7 @@ def query_page(
         "query.html",
         {
             "question": question or "",
-            "source_collections": list(SourceCollection),
+            "source_collections": list(SOURCE_COLLECTION_UI),
             "source_collection_cards": _source_collection_cards(selected_collections),
             "selected_collections": {item.value for item in selected_collections},
             "answer": answer_payload,
@@ -188,7 +188,7 @@ def chat_page(
         "chat.html",
         {
             "question": question or "",
-            "source_collections": list(SourceCollection),
+            "source_collections": list(SOURCE_COLLECTION_UI),
             "source_collection_cards": _source_collection_cards(selected_collections),
             "selected_collections": {item.value for item in selected_collections},
             "answer": answer_payload,
@@ -2509,7 +2509,7 @@ def _source_collection_cards(
             "audit_hint": SOURCE_COLLECTION_UI[collection]["audit_hint"],
             "selected": collection.value in selected_values,
         }
-        for collection in SourceCollection
+        for collection in SOURCE_COLLECTION_UI
     )
 
 

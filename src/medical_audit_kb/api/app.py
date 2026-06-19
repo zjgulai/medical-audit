@@ -30,6 +30,10 @@ from medical_audit_kb.api.document_upload_governance_store import (
     DocumentUploadGovernanceStore,
     SqlAlchemyDocumentUploadGovernanceStore,
 )
+from medical_audit_kb.api.document_upload_ingestion import (
+    SqlAlchemyDocumentUploadIndexer,
+    document_upload_indexer_from_settings,
+)
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
@@ -90,6 +94,7 @@ class ApiState:
     )
     document_upload_governance_store: DocumentUploadGovernanceStore | None = None
     document_upload_governance_job_submitter: DocumentUploadGovernanceJobSubmitter | None = None
+    document_upload_indexer: SqlAlchemyDocumentUploadIndexer | None = None
     query_history_store: QueryHistoryStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
@@ -135,6 +140,11 @@ class ApiState:
                 document_upload_governance_job_submitter_from_settings(
                     settings.document_upload_governance
                 )
+            ),
+            document_upload_indexer=document_upload_indexer_from_settings(
+                database_url=settings.database_url,
+                upload_root=document_upload_root,
+                settings=settings.document_upload_indexing,
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),

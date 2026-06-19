@@ -25,6 +25,10 @@ from medical_audit_kb.core.config import (
     DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER_ENV,
     DOCUMENT_UPLOAD_DLP_TEST_MODE_ENV,
     DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER_ENV,
+    DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION_ENV,
+    DOCUMENT_UPLOAD_INDEXING_ENABLED_ENV,
+    DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV,
+    DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY_ENV,
     DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_NAME_ENV,
     DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_NAME_ENV,
     DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER_ENV,
@@ -61,6 +65,8 @@ def test_default_config_loads() -> None:
     assert settings.document_storage.cos_sdk_bootstrap_enabled is False
     assert settings.document_storage.signed_url_ttl_seconds == 120
     assert settings.document_storage.record_storage_objects is False
+    assert settings.document_upload_indexing.enabled is False
+    assert settings.document_upload_indexing.index_version_status == "candidate"
     assert REQUIRED_COLLECTIONS.issubset(settings.source_collection_weights)
 
 
@@ -200,6 +206,26 @@ def test_environment_overrides_document_storage(
     assert settings.document_storage.signed_url_ttl_seconds == 180
     assert settings.document_storage.object_retention_days == 365
     assert settings.document_storage.record_storage_objects is True
+
+
+def test_environment_overrides_document_upload_indexing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(DOCUMENT_UPLOAD_INDEXING_ENABLED_ENV, "true")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION_ENV, "64")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY_ENV, "personal-package-test")
+    monkeypatch.setenv(DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV, "personal-index-test")
+
+    settings = load_settings()
+
+    assert settings.document_upload_indexing.enabled is True
+    assert settings.document_upload_indexing.embedding_provider == "deterministic-fake"
+    assert settings.document_upload_indexing.embedding_dimension == 64
+    assert settings.document_upload_indexing.source_package_version_key == (
+        "personal-package-test"
+    )
+    assert settings.document_upload_indexing.index_version_key == "personal-index-test"
+    assert settings.document_upload_indexing.index_version_status == "candidate"
 
 
 def test_environment_rejects_invalid_document_storage_boolean(

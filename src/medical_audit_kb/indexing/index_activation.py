@@ -107,7 +107,7 @@ def activate_index_version_to_cursor(
     if target is None:
         raise IndexActivationError(f"index version not found: {index_version_key}")
 
-    target_id, version_key, vector_provider, vector_model, previous_status = target
+    target_id, version_key, vector_provider, vector_model, previous_status, raw_metadata = target
     target_uuid = _uuid_value(target_id)
     provider = _optional_str(vector_provider)
     model = _optional_str(vector_model)
@@ -116,6 +116,7 @@ def activate_index_version_to_cursor(
         raise IndexActivationError(
             f"index version must be candidate or active before activation: {status}"
         )
+    _validate_activation_allowed(version_key=str(version_key), metadata=_object_dict(raw_metadata))
 
     cursor.execute(
         DEACTIVATE_MATCHING_ACTIVE_INDEX_VERSIONS_SQL,
@@ -145,7 +146,7 @@ def rollback_index_version_to_cursor(
     if target is None:
         raise IndexActivationError(f"index version not found: {index_version_key}")
 
-    target_id, version_key, vector_provider, vector_model, previous_status = target
+    target_id, version_key, vector_provider, vector_model, previous_status, _raw_metadata = target
     target_uuid = _uuid_value(target_id)
     provider = _optional_str(vector_provider)
     model = _optional_str(vector_model)
@@ -274,8 +275,31 @@ def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _object_dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _validate_activation_allowed(*, version_key: str, metadata: dict[str, object]) -> None:
+    if (
+        metadata.get("source_collection") == "personal-materials"
+        and metadata.get("live_retrieval_activated") is not True
+    ):
+        raise IndexActivationError(
+            "personal-materials index version cannot be activated before "
+            f"user-level retrieval isolation is implemented: {version_key}"
+        )
+
+
 SELECT_INDEX_VERSION_FOR_ACTIVATION_SQL = """
-SELECT id, version_key, vector_provider, vector_model, status
+SELECT id, version_key, vector_provider, vector_model, status, metadata
 FROM index_versions
 WHERE version_key = %s
 FOR UPDATE

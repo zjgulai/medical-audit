@@ -1,6 +1,9 @@
 from uuid import UUID
 
+import pytest
+
 from medical_audit_kb.indexing.index_activation import (
+    IndexActivationError,
     activate_index_version_to_cursor,
     rollback_index_version_to_cursor,
 )
@@ -9,7 +12,14 @@ from medical_audit_kb.indexing.index_activation import (
 def test_activate_index_version_deactivates_matching_active_versions() -> None:
     target_id = UUID("00000000-0000-0000-0000-000000000002")
     cursor = RecordingActivationCursor(
-        target_row=(target_id, "candidate-next", "openai", "kimi-for-coding", "candidate"),
+        target_row=(
+            target_id,
+            "candidate-next",
+            "openai",
+            "kimi-for-coding",
+            "candidate",
+            {"source_collection": "medical-insurance-laws"},
+        ),
         deactivated_rows=[("active-old",)],
         activated_row=("candidate-next",),
     )
@@ -28,7 +38,14 @@ def test_activate_index_version_deactivates_matching_active_versions() -> None:
 def test_rollback_index_version_restores_inactive_version() -> None:
     target_id = UUID("00000000-0000-0000-0000-000000000003")
     cursor = RecordingActivationCursor(
-        target_row=(target_id, "active-previous", "openai", "kimi-for-coding", "inactive"),
+        target_row=(
+            target_id,
+            "active-previous",
+            "openai",
+            "kimi-for-coding",
+            "inactive",
+            {"source_collection": "medical-insurance-laws"},
+        ),
         deactivated_rows=[("active-current",)],
         activated_row=("active-previous",),
     )
@@ -42,6 +59,30 @@ def test_rollback_index_version_restores_inactive_version() -> None:
     assert result.deactivated_index_version_keys == ("active-current",)
     assert cursor.queries[1][1] == (target_id, "openai", "kimi-for-coding")
     assert cursor.queries[2][1] == (target_id,)
+
+
+def test_activate_index_version_blocks_personal_materials_without_retrieval_isolation() -> None:
+    target_id = UUID("00000000-0000-0000-0000-000000000004")
+    cursor = RecordingActivationCursor(
+        target_row=(
+            target_id,
+            "personal-materials-candidate",
+            "fake",
+            "deterministic-token-hashing",
+            "candidate",
+            {
+                "source_collection": "personal-materials",
+                "live_retrieval_activated": False,
+            },
+        ),
+        deactivated_rows=[],
+        activated_row=("personal-materials-candidate",),
+    )
+
+    with pytest.raises(IndexActivationError, match="personal-materials index version"):
+        activate_index_version_to_cursor(cursor, "personal-materials-candidate")
+
+    assert len(cursor.queries) == 1
 
 
 class RecordingActivationCursor:
