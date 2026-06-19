@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-18
+updated: 2026-06-19
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,25 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-06-19 PR #147 个人材料检索隔离生产部署、只读验收与写入 E2E
+
+- PR #147 `codex/personal-material-retrieval-isolation` 已合并到 `main`，merge commit 为 `c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`。
+- `main@c21d985e6853ffcbd4cb06cdf27deb03ab2861bc` 已使用部署戳 `pr147-personal-material-retrieval-isolation-20260619` 通过 `scripts/deploy-tencent-cloud-production.py --execute` 发布到腾讯云生产环境。
+- 本次部署的远端备份阶段在 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200` 后触发完成检查；远端 completion marker 和 app/env/db/nginx/web 备份均存在，脚本继续完成后续 rsync、静态资源同步、`.deploy-sha` 写入、`medical_audit_app` 镜像重建、健康检查和生产 smoke。
+- 当前生产业务部署标记 SHA：`c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`，远端 `/opt/medical-audit/app/.deploy-sha` 已由部署状态审计核验。
+- 指定备份戳文件：app `/opt/medical-audit/backups/app/pre-deploy-pr147-personal-material-retrieval-isolation-20260619.tar.gz`，大小 `184571281` bytes；env `/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr147-personal-material-retrieval-isolation-20260619`，大小 `2205` bytes；DB `/opt/medical-audit/backups/db/pre-deploy-pr147-personal-material-retrieval-isolation-20260619.sql.gz`，大小 `1026256364` bytes；Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr147-personal-material-retrieval-isolation-20260619`，大小 `30973` bytes；Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-pr147-personal-material-retrieval-isolation-20260619.tar.gz`，大小 `440131` bytes。
+- 部署后生产 smoke `tmp/outputs/production-e2e-smoke-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`，覆盖 `9` 个生产 smoke 步骤。
+- 部署后状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`，`issues=[]`；`medical_audit_app`、`medical_audit_pg` 和 `medical_audit_clamav` 均为 `healthy`，Nginx 配置测试通过，公网 `/api/v1/index/search-backend` 返回 `ready=true`，`matching_embedding_count=49051`。
+- 当前生产配置为 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED` 未设置，`MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER=tencent-cos`，COS bucket 为 `medical-audit-personal-materials-1304185125`，COS region 为 `ap-guangzhou`，`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=unconfigured`。
+- `/documents` 生产只读探针 `tmp/outputs/production-documents-readonly-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`；边界为 `production_write=false`、`document_upload_write=false`、`provider_call=false`、`browser_js_executed=false`。
+- 部署后生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`，`p1_count=0`；`/audit/logs` 和 `/audit/logs/export` 均满足未授权 `403`、授权 `200`。
+- `/documents` ClamAV sidecar 生产写入 E2E `tmp/outputs/production-documents-clamav-sidecar-write-e2e-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`，验证对象为 `document-upload-d7bd6d7cb171`，fixture `sha256=1bcd85b61007a7d48ab67fd1e7916800e7373d7c28c336aac86571b8f5a566dc`。
+- 本轮写入 E2E 证明：干净文本上传后真实 `clamav-sidecar` 返回 clean，个人材料写入 `document_upload_records`、`document_storage_objects` 和腾讯云 COS；owner 可见本人上传，`department-head` 可按 `read-all` 读取；`dlp-review-required` 与 `manual-index-approval-required` 继续阻断，`indexing_triggered=false`。
+- 本轮写入边界为 `production_write=true`、`document_upload_write=true`、`object_storage_write=true`、`real_clamav_sidecar_scan=true`、`external_governance_provider_call=false`、`external_dlp_provider_call=false`、`manual_index_approval_writeback=false`、`indexing_triggered=false`。
+- 非 owner 隔离验证 `tmp/outputs/production-documents-non-owner-isolation-after-pr147-personal-material-retrieval-isolation-20260619.json` 为 `status=pass`；其他普通 `auditor` 下载元信息返回 `404`，列表接口返回 `200` 但 `list_count=0` 且 `list_contains_upload=false`。该验证会产生访问审计日志，但不新增上传记录或 COS 对象。
+- 写入 E2E 后状态复核 `tmp/outputs/tencent-cloud-deployment-state-after-pr147-documents-write-e2e-20260619.json` 为 `status=pass`，`issues=[]`；远端 `.deploy-sha` 仍为 `c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`。
+- 证据边界：本轮证明个人材料检索隔离相关权限面、owner/read-all 过滤、下载元信息和列表隔离、COS 写入、真实 ClamAV sidecar clean 扫描、部署状态和生产前端验收可用；不等于完成真实登录会话、生产级 DLP/脱敏、真实外部 provider 调用、个人材料实际入索引、active personal-material 检索命中、证书级电子签章或案件级完整合规闭环。
 
 ### 2026-06-18 PR #139/#140 ClamAV sidecar 生产拓扑、provider 激活与 `/documents` 写入 E2E
 
@@ -1116,6 +1135,27 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-after-pr126-p0-07-second-validation-20260618.json`，状态 `pass`，`issues=[]`；`summary.deploy_sha=26a4415aa92f3de66d5662508482e1fb83f3f07e`，`app_health=healthy`，`postgres_health=healthy`，`search_backend_ready=true`，`matching_embedding_count=49051`。
 - 生产前端语义验收：`tmp/outputs/production-frontend-acceptance-latest.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`，`p1=[]`。
 - 证据边界：PR #126 为 docs-only 状态同步 commit，本轮部署用于验证部署脚本完整链路；结合 PR #125 第一次生产验证，P0-07 已满足连续两次完整 `deploy-tencent-cloud-production.py --execute` 无人工接管完成并通过状态审计的关闭门禁。后续若备份 SSH 退出异常再次出现，应重新打开 P0-07。
+
+### 5.31 PR #147 个人材料检索隔离生产部署与 `/documents` 写入 E2E
+
+已在 2026-06-19 完成 PR #147 合并、腾讯云生产部署和 `/documents` 写入型 E2E：
+
+- PR #147 merge commit：`c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`；部署戳为 `pr147-personal-material-retrieval-isolation-20260619`。
+- 生产部署脚本远端备份阶段达到 `REMOTE_BACKUP_TIMEOUT_SECONDS=1200` 后自动执行完成检查；远端 completion marker 与 app/env/db/nginx/web 备份均存在，脚本继续执行并完成 `.deploy-sha` 写入、app 镜像重建、健康检查和 smoke。
+- 当前生产 `.deploy-sha=c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`。
+- 写入前 DB 备份：`/opt/medical-audit/backups/db/pre-deploy-pr147-personal-material-retrieval-isolation-20260619.sql.gz`，大小 `1026256364` bytes。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-pr147-personal-material-retrieval-isolation-20260619.tar.gz`，大小 `184571281` bytes。
+- env 备份：`/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-pr147-personal-material-retrieval-isolation-20260619`，大小 `2205` bytes。
+- Nginx 备份：`/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-pr147-personal-material-retrieval-isolation-20260619`，大小 `30973` bytes。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-pr147-personal-material-retrieval-isolation-20260619.tar.gz`，大小 `440131` bytes。
+- 生产 smoke：`tmp/outputs/production-e2e-smoke-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`，覆盖 `9` 个生产 smoke 步骤。
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`，`issues=[]`；`app_health=healthy`，`postgres_health=healthy`，`clamav_health=healthy`，`search_backend_ready=true`，`matching_embedding_count=49051`。
+- 生产 `/documents` 只读探针：`tmp/outputs/production-documents-readonly-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`，确认不产生上传、下载或 provider 调用。
+- 生产前端语义验收：`tmp/outputs/production-frontend-acceptance-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`，`p1_count=0`。
+- `/documents` 写入型 E2E：`tmp/outputs/production-documents-clamav-sidecar-write-e2e-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`，验证对象为 `document-upload-d7bd6d7cb171`；本轮写入生产上传记录和腾讯云 COS 对象，并触发真实 ClamAV sidecar clean 扫描。
+- 非 owner 隔离 E2E：`tmp/outputs/production-documents-non-owner-isolation-after-pr147-personal-material-retrieval-isolation-20260619.json`，状态 `pass`；其他普通 `auditor` 下载元信息返回 `404`，列表接口返回 `200` 且不包含该上传。
+- 写入 E2E 后状态复核：`tmp/outputs/tencent-cloud-deployment-state-after-pr147-documents-write-e2e-20260619.json`，状态 `pass`，`issues=[]`，远端 `.deploy-sha` 保持 `c21d985e6853ffcbd4cb06cdf27deb03ab2861bc`。
+- 证据边界：本轮证明 PR #147 个人材料权限面、owner/read-all 检索过滤基础、生产上传和隔离验证已经进入生产；但 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED` 仍未设置，DLP 仍为 `unconfigured`，未触发人工审批写回或实际入索引，因此不能宣称 active personal-material 检索链路或完整合规闭环已完成。
 
 ## 6. 后续维护流程
 
