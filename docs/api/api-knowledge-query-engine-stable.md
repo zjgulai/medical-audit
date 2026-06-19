@@ -651,6 +651,12 @@ Query 参数：
 - `ruleset-v1` 为应用级本地 DLP 规则 adapter：当前识别身份证、手机号、医保号、住院号、患者姓名、诊断、地址和费用明细等敏感标记；命中时返回 `dlp-review=blocked`、`result_code=sensitive-marker-detected`、`risk_level` 和不含原文值的 `findings`，未命中时返回 `dlp-review=passed`、`result_code=no-sensitive-marker`。该 adapter 不调用企业 DLP，不改写或脱敏原始文件。
 - `tencent-ci-virus` 和 `external-dlp` 当前表达为外部治理 pending 边界：上传响应保留 `blocked`，对应 check 返回 `result_code=pending-external-result`，必须等外部扫描或 DLP 结果写回后才能消除 blocker。该阶段不调用外部 provider，也不宣称生产级扫描或企业级脱敏完成。
 
+生产验收状态：
+
+- 2026-06-19 生产环境已激活 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER=clamav-sidecar` 与 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER=ruleset-v1`。
+- 生产写入型 E2E `tmp/outputs/production-documents-ruleset-dlp-write-e2e-after-activation-20260619.json` 已验证 clean 样本上传 `document-upload-c3bd6dcf9917` 返回 `dlp-review=passed/result_code=no-sensitive-marker`，sensitive 样本上传 `document-upload-2d7265f12e5d` 返回 `dlp-review=blocked/result_code=sensitive-marker-detected`。
+- 该生产验收只证明本应用内置规则集可执行并 fail-closed；不证明企业 DLP、脱敏改写、外部 provider 调用、人工审批写回或个人材料实际入索引。
+
 外部治理 provider preflight：
 
 - `scripts/run-document-governance-provider-preflight.py --config <path>` 只读取配置，不调用病毒扫描、DLP、对象存储或生产 API；报告固定返回 `external_provider_call_performed=false` 和 `production_write_performed=false`。
