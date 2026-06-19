@@ -17,6 +17,7 @@ class EvidenceType(StrEnum):
     RULE_BASIS = "rule_basis"
     CATALOG_BASIS = "catalog_basis"
     RISK_CASE_BASIS = "risk_case_basis"
+    PERSONAL_MATERIAL_BASIS = "personal_material_basis"
 
 
 EVIDENCE_TITLES: dict[EvidenceType, str] = {
@@ -24,6 +25,7 @@ EVIDENCE_TITLES: dict[EvidenceType, str] = {
     EvidenceType.RULE_BASIS: "规则依据",
     EvidenceType.CATALOG_BASIS: "目录依据",
     EvidenceType.RISK_CASE_BASIS: "风险案例依据",
+    EvidenceType.PERSONAL_MATERIAL_BASIS: "个人材料依据",
 }
 
 EVIDENCE_ORDER: tuple[EvidenceType, ...] = (
@@ -31,6 +33,7 @@ EVIDENCE_ORDER: tuple[EvidenceType, ...] = (
     EvidenceType.RULE_BASIS,
     EvidenceType.CATALOG_BASIS,
     EvidenceType.RISK_CASE_BASIS,
+    EvidenceType.PERSONAL_MATERIAL_BASIS,
 )
 
 
@@ -116,6 +119,8 @@ def evidence_type_for_source_collection(source_collection: SourceCollection) -> 
         return EvidenceType.CATALOG_BASIS
     if source_collection == SourceCollection.RISK_NEGATIVE_LIST:
         return EvidenceType.RISK_CASE_BASIS
+    if source_collection == SourceCollection.PERSONAL_MATERIALS:
+        return EvidenceType.PERSONAL_MATERIAL_BASIS
     raise ValueError(f"unsupported source collection: {source_collection}")
 
 

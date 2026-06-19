@@ -139,6 +139,56 @@ def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Pat
     assert state.query_logs[-1]["question"] == "医保基金审核依据"
 
 
+def test_query_page_scopes_personal_materials_to_current_user(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = _search_engine(
+        (
+            _chunk(
+                chunk_id=PERSONAL_OWNER_CHUNK_ID,
+                text="个人补充材料 门诊费用审核依据 来自审计员一",
+                source_path="personal-materials/auditor-1/note.txt",
+                source_collection=SourceCollection.PERSONAL_MATERIALS,
+                document_type="personal-upload",
+                created_by="auditor-1",
+                visibility="private",
+            ),
+            _chunk(
+                chunk_id=PERSONAL_OTHER_CHUNK_ID,
+                text="个人补充材料 门诊费用审核依据 来自审计员二",
+                source_path="personal-materials/auditor-2/note.txt",
+                source_collection=SourceCollection.PERSONAL_MATERIALS,
+                document_type="personal-upload",
+                created_by="auditor-2",
+                visibility="private",
+            ),
+        )
+    )
+    client = TestClient(create_app(state))
+    params = {
+        "question": "个人补充材料 门诊费用审核依据",
+        "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
+    }
+
+    owner_response = client.get(
+        "/pages/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        params=params,
+    )
+    other_response = client.get(
+        "/pages/query",
+        headers={"X-User-Id": "auditor-3", "X-Role": "auditor"},
+        params=params,
+    )
+
+    assert owner_response.status_code == 200
+    assert "来自审计员一" in owner_response.text
+    assert "来自审计员二" not in owner_response.text
+    assert state.query_logs[-1]["user_identifier"] == "auditor-1"
+    assert state.query_logs[-1]["retrieved_chunk_ids"] == [str(PERSONAL_OWNER_CHUNK_ID)]
+    assert other_response.status_code == 200
+    assert "没有找到可引用依据。" in other_response.text
+
+
 def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
@@ -1445,6 +1495,8 @@ def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:
 
 LAW_CHUNK_ID = UUID("11111111-1111-4111-8111-111111111111")
 RULE_CHUNK_ID = UUID("22222222-2222-4222-8222-222222222222")
+PERSONAL_OWNER_CHUNK_ID = UUID("33333333-3333-4333-8333-333333333333")
+PERSONAL_OTHER_CHUNK_ID = UUID("44444444-4444-4444-8444-444444444444")
 
 
 def _api_state(tmp_path: Path) -> ApiState:
@@ -1657,25 +1709,32 @@ def _chunk(
     source_path: str,
     source_collection: SourceCollection,
     document_type: str,
+    created_by: str | None = None,
+    visibility: str | None = None,
 ) -> ChunkEmbeddingInput:
+    metadata: dict[str, object] = {
+        "source_collection": source_collection.value,
+        "locator": {
+            "type": "markdown-section",
+            "source_path": source_path,
+            "line_start": 1,
+            "line_end": 1,
+        },
+        "index_version_key": "index-v1",
+        "source_package_version_key": "package-v1",
+        "year": 2024,
+        "region": "国家",
+        "document_type": document_type,
+        "business_topic": "fund-supervision",
+    }
+    if created_by is not None:
+        metadata["created_by"] = created_by
+    if visibility is not None:
+        metadata["visibility"] = visibility
     return ChunkEmbeddingInput(
         chunk_id=chunk_id,
         text=text,
-        metadata={
-            "source_collection": source_collection.value,
-            "locator": {
-                "type": "markdown-section",
-                "source_path": source_path,
-                "line_start": 1,
-                "line_end": 1,
-            },
-            "index_version_key": "index-v1",
-            "source_package_version_key": "package-v1",
-            "year": 2024,
-            "region": "国家",
-            "document_type": document_type,
-            "business_topic": "fund-supervision",
-        },
+        metadata=metadata,
     )
 
 

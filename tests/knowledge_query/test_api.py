@@ -455,7 +455,9 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         "supervision-rules-knowledge",
         "medical-insurance-catalog",
         "risk-negative-list",
+        "personal-materials",
     ]
+    assert permissions_body["source_collections"][-1]["scope"] == "本人上传"
     assert permissions_body["upload_permissions"] == {
         "can_upload_personal": True,
         "can_read_all_personal_uploads": False,
@@ -1755,6 +1757,63 @@ def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
     assert persisted_items[0]["id"] == body["query_log_id"]
 
 
+def test_query_endpoint_scopes_personal_materials_by_owner_and_read_all(
+    tmp_path: Path,
+) -> None:
+    owner_id = uuid4()
+    other_id = uuid4()
+    state = _api_state(tmp_path)
+    state.search_engine = _search_engine_from_chunks(
+        [
+            _personal_chunk(
+                owner_id,
+                "个人补充材料 门诊费用审核依据 来自审计员一",
+                created_by="auditor-1",
+            ),
+            _personal_chunk(
+                other_id,
+                "个人补充材料 门诊费用审核依据 来自审计员二",
+                created_by="auditor-2",
+            ),
+        ]
+    )
+    client = TestClient(create_app(state))
+    payload = {
+        "question": "个人补充材料 门诊费用审核依据",
+        "top_k": 5,
+        "source_collections": ["personal-materials"],
+    }
+
+    owner_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json=payload,
+    )
+    other_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-3", "X-Role": "auditor"},
+        json=payload,
+    )
+    head_response = client.post(
+        "/query",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json=payload,
+    )
+
+    assert owner_response.status_code == 200
+    assert [item["chunk_id"] for item in owner_response.json()["citations"]] == [
+        str(owner_id)
+    ]
+    assert other_response.status_code == 404
+    assert other_response.json()["detail"] == "no cited evidence found"
+    assert head_response.status_code == 200
+    assert {item["chunk_id"] for item in head_response.json()["citations"]} == {
+        str(owner_id),
+        str(other_id),
+    }
+    assert state.query_logs[-1]["user_identifier"] == "head-1"
+
+
 def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.query_history_store = FailingQueryHistoryStore()
@@ -2493,29 +2552,36 @@ def _knowledge_query_settings(
 
 
 def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
-    provider = DeterministicFakeEmbeddingProvider(dimension=32)
-    chunk = ChunkEmbeddingInput(
-        chunk_id=chunk_id,
-        text="第一条 医疗机构应当保留医保基金审核依据。",
-        metadata={
-            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
-            "locator": {
-                "type": "law-article",
-                "source_path": source_path,
-                "line_start": 1,
-                "line_end": 1,
-                "article_number": "第一条",
-            },
-            "index_version_key": "index-v1",
-            "source_package_version_key": "package-v1",
-            "year": 2024,
-            "region": "国家",
-            "document_type": "law",
-            "business_topic": "fund-supervision",
-        },
+    return _search_engine_from_chunks(
+        [
+            ChunkEmbeddingInput(
+                chunk_id=chunk_id,
+                text="第一条 医疗机构应当保留医保基金审核依据。",
+                metadata={
+                    "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                    "locator": {
+                        "type": "law-article",
+                        "source_path": source_path,
+                        "line_start": 1,
+                        "line_end": 1,
+                        "article_number": "第一条",
+                    },
+                    "index_version_key": "index-v1",
+                    "source_package_version_key": "package-v1",
+                    "year": 2024,
+                    "region": "国家",
+                    "document_type": "law",
+                    "business_topic": "fund-supervision",
+                },
+            )
+        ]
     )
+
+
+def _search_engine_from_chunks(chunks: Sequence[ChunkEmbeddingInput]) -> HybridSearchEngine:
+    provider = DeterministicFakeEmbeddingProvider(dimension=32)
     vector_index = InMemoryVectorIndex(dimension=provider.dimension)
-    vector_index.upsert(build_chunk_embedding_records([chunk], provider=provider))
+    vector_index.upsert(build_chunk_embedding_records(chunks, provider=provider))
     bm25_index = InMemoryBM25Index()
     bm25_index.upsert(
         [
@@ -2524,6 +2590,7 @@ def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
                 text=chunk.text,
                 metadata=chunk.metadata,
             )
+            for chunk in chunks
         ]
     )
     return HybridSearchEngine(
@@ -2531,6 +2598,30 @@ def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
         vector_index=vector_index,
         bm25_index=bm25_index,
         rerank_provider=FakeRerankProvider(),
+    )
+
+
+def _personal_chunk(chunk_id: UUID, text: str, *, created_by: str) -> ChunkEmbeddingInput:
+    return ChunkEmbeddingInput(
+        chunk_id=chunk_id,
+        text=text,
+        metadata={
+            "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
+            "locator": {
+                "type": "personal-upload",
+                "source_path": f"personal-materials/{created_by}/note.txt",
+                "line_start": 1,
+                "line_end": 1,
+            },
+            "index_version_key": "personal-materials-test",
+            "source_package_version_key": "personal-materials-test",
+            "year": 2026,
+            "region": "本院",
+            "document_type": "personal-upload",
+            "business_topic": "fund-supervision",
+            "created_by": created_by,
+            "visibility": "private",
+        },
     )
 
 
