@@ -223,6 +223,53 @@ def test_run_production_documents_clamav_sidecar_write_e2e_blocks_unconfirmed_pr
     )
 
 
+def test_run_production_documents_ruleset_dlp_write_e2e_script_is_guarded() -> None:
+    script_path = Path("scripts/run-production-documents-ruleset-dlp-write-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "--confirm-production-write" in script_text
+    assert "real_clamav_sidecar_scan" in script_text
+    assert "real_ruleset_dlp_review" in script_text
+    assert "external_governance_provider_call" in script_text
+    assert "external_dlp_provider_call" in script_text
+    assert "manual_index_approval_writeback" in script_text
+    assert "indexing_triggered" in script_text
+    assert "ruleset-v1" in script_text
+    assert "sensitive-marker-detected" in script_text
+    assert "tmp/outputs/production-documents-ruleset-dlp-write-e2e-latest.json" in script_text
+
+
+def test_run_production_documents_ruleset_dlp_write_e2e_blocks_unconfirmed_production() -> None:
+    module = _load_script_module(
+        "run_production_documents_ruleset_dlp_write_e2e",
+        Path("scripts/run-production-documents-ruleset-dlp-write-e2e.py"),
+    )
+
+    with pytest.raises(module.E2EError, match="production /documents write requires"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+    module._require_production_write_confirmation(
+        base_url="http://127.0.0.1:8000",
+        confirm_production_write="",
+    )
+
+
 def test_run_production_documents_readonly_probe_script_is_secret_safe() -> None:
     script_path = Path("scripts/run-production-documents-readonly-probe.py")
 
@@ -421,6 +468,51 @@ def test_audit_tencent_cloud_deployment_state_accepts_embedding_count_above_mini
     assert report["status"] == "pass"
     assert report["summary"]["matching_embedding_count"] == 49051
     assert report["minimum_matching_embeddings"] == 48985
+
+
+def test_audit_tencent_cloud_deployment_state_can_require_dlp_review_provider() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_expected_dlp",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    stamp = "20260611T180655+0800"
+    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
+    remote_report["document_upload_governance"] = {
+        "ok": True,
+        "values": {
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER": "clamav-sidecar",
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER": "ruleset-v1",
+        },
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
+        expected_dlp_review_provider="ruleset-v1",
+    )
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["expected_dlp_review_provider"] == "ruleset-v1"
+    assert report["summary"]["dlp_review_provider"] == "ruleset-v1"
+
+    remote_report["document_upload_governance"]["values"][
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER"
+    ] = "unconfigured"
+    mismatch = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=stamp,
+        min_matching_embeddings=48985,
+        require_clamav_sidecar=False,
+        expected_dlp_review_provider="ruleset-v1",
+    )
+    assert mismatch["status"] == "fail"
+    assert mismatch["issues"] == ["dlp-review-provider-mismatch"]
 
 
 def test_audit_tencent_cloud_deployment_state_warns_when_shared_nginx_fails() -> None:

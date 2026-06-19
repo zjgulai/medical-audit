@@ -64,6 +64,7 @@ def main() -> int:
             required_backup_stamp=_optional_text(args.required_backup_stamp),
             min_matching_embeddings=_min_matching_embeddings(args),
             require_clamav_sidecar=bool(args.require_clamav_sidecar),
+            expected_dlp_review_provider=_optional_text(args.expected_dlp_review_provider),
         )
     except AuditError as exc:
         print(f"audit failed: {exc}", file=sys.stderr)
@@ -113,6 +114,11 @@ def _parse_args() -> argparse.Namespace:
         "--require-clamav-sidecar",
         action="store_true",
         help="Require the medical_audit_clamav sidecar to be present in compose and healthy.",
+    )
+    parser.add_argument(
+        "--expected-dlp-review-provider",
+        default="",
+        help="Require MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER to match.",
     )
     parser.add_argument("--json-output", default=DEFAULT_JSON_OUTPUT)
     parser.add_argument("--markdown-output", default=DEFAULT_MARKDOWN_OUTPUT)
@@ -492,6 +498,7 @@ def _build_report(
     required_backup_stamp: str | None,
     min_matching_embeddings: int,
     require_clamav_sidecar: bool,
+    expected_dlp_review_provider: str | None = None,
 ) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
@@ -524,6 +531,12 @@ def _build_report(
             issues.append("clamav-compose-service-missing")
         if not _clamav_sidecar_healthy(remote_report):
             issues.append("medical_audit_clamav-not-healthy")
+    dlp_review_provider = _governance_env_value(
+        remote_report,
+        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
+    )
+    if expected_dlp_review_provider and dlp_review_provider != expected_dlp_review_provider:
+        issues.append("dlp-review-provider-mismatch")
     latest_smoke = local_smoke_reports[0] if local_smoke_reports else None
     if latest_smoke and latest_smoke.get("status") != "pass":
         issues.append("latest-local-smoke-not-pass")
@@ -533,6 +546,7 @@ def _build_report(
         "warnings": warnings,
         "expected_deploy_sha": expected_deploy_sha,
         "required_backup_stamp": required_backup_stamp,
+        "expected_dlp_review_provider": expected_dlp_review_provider,
         "minimum_matching_embeddings": min_matching_embeddings,
         "expected_matching_embeddings": min_matching_embeddings,
         "summary": {
@@ -545,10 +559,7 @@ def _build_report(
                 remote_report,
                 "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
             ),
-            "dlp_review_provider": _governance_env_value(
-                remote_report,
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
-            ),
+            "dlp_review_provider": dlp_review_provider,
             "nginx_config_test": _nginx_test_passed(remote_report),
             "audit_frontdoor_healthy": audit_frontdoor_healthy,
             "audit_mount_present": _audit_mount_valid(remote_report),
