@@ -68,6 +68,7 @@ def test_cross_collection_citations_are_grouped_by_basis_type() -> None:
             _result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE),
             _result(SourceCollection.MEDICAL_INSURANCE_CATALOG),
             _result(SourceCollection.RISK_NEGATIVE_LIST),
+            _result(SourceCollection.PERSONAL_MATERIALS),
         )
     )
 
@@ -78,8 +79,15 @@ def test_cross_collection_citations_are_grouped_by_basis_type() -> None:
         EvidenceType.RULE_BASIS,
         EvidenceType.CATALOG_BASIS,
         EvidenceType.RISK_CASE_BASIS,
+        EvidenceType.PERSONAL_MATERIAL_BASIS,
     ]
-    assert [group.title for group in groups] == ["法规依据", "规则依据", "目录依据", "风险案例依据"]
+    assert [group.title for group in groups] == [
+        "法规依据",
+        "规则依据",
+        "目录依据",
+        "风险案例依据",
+        "个人材料依据",
+    ]
 
 
 def test_answer_uses_provider_output_when_it_contains_citation_marker() -> None:

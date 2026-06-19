@@ -17,6 +17,7 @@ from medical_audit_kb.api.audit_log_policy import (
 )
 from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
 from medical_audit_kb.api.document_permissions import (
+    can_read_all_personal_uploads,
     enforce_source_collection_access,
     normalize_role,
 )
@@ -71,6 +72,8 @@ def query(
         regions=tuple(payload.regions),
         document_types=tuple(payload.document_types),
         business_topics=tuple(payload.business_topics),
+        personal_upload_user_key=current_user.user_key,
+        personal_upload_read_all=can_read_all_personal_uploads(role),
     )
     results = state.search_engine.search(payload.question, filters=filters, top_k=payload.top_k)
     try:

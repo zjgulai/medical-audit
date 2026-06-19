@@ -31,6 +31,11 @@ from medical_audit_kb.api.auth_context import (
     current_user_from_request,
     get_current_user,
 )
+from medical_audit_kb.api.document_permissions import (
+    can_read_all_personal_uploads,
+    enforce_source_collection_access,
+    normalize_role,
+)
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -146,8 +151,10 @@ def query_page(
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
 ) -> object:
     selected_collections = tuple(source_collection or ())
+    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
+        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-query",
@@ -177,8 +184,10 @@ def chat_page(
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
 ) -> object:
     selected_collections = tuple(source_collection or ())
+    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
+        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-chat",
@@ -210,8 +219,10 @@ def chat_dossier_export(
     format: Annotated[str, Query(pattern="^(json|markdown)$")] = "json",
 ) -> Response:
     selected_collections = tuple(source_collection or ())
+    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
+        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-chat-export-query",
@@ -418,8 +429,10 @@ async def create_review_task_page(
     form = await _urlencoded_form(request)
     question = _form_required_str(form, "question")
     selected_collections = _source_collections_from_form(form)
+    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
+        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="review-task-create-query",
@@ -956,10 +969,16 @@ def _audit_log_severity(event: dict[str, object]) -> str:
 def _run_page_query(
     state: ApiState,
     *,
+    current_user: CurrentUser,
     question: str | None,
     selected_collections: tuple[SourceCollection, ...],
     operation_name: str,
 ) -> tuple[dict[str, object] | None, str | None]:
+    role = normalize_role(current_user.primary_role)
+    enforce_source_collection_access(
+        role=role,
+        source_collections=selected_collections,
+    )
     if not question:
         return None, None
     if state.search_engine is None:
@@ -967,7 +986,11 @@ def _run_page_query(
 
     results = state.search_engine.search(
         question,
-        filters=RetrievalFilters(source_collections=selected_collections),
+        filters=RetrievalFilters(
+            source_collections=selected_collections,
+            personal_upload_user_key=current_user.user_key,
+            personal_upload_read_all=can_read_all_personal_uploads(role),
+        ),
         top_k=5,
     )
     try:
@@ -998,8 +1021,8 @@ def _run_page_query(
     }
     state.query_logs.append(
         {
-            "user_identifier": "page-user",
-            "role": "auditor",
+            "user_identifier": current_user.user_key,
+            "role": role,
             "question": question,
             "filters": filter_payload,
             "retrieved_chunk_ids": retrieved_chunk_ids,
@@ -1009,7 +1032,7 @@ def _run_page_query(
     persisted_log, query_history_error = try_add_query_history(
         state.query_history_store,
         {
-            "user_identifier": "page-user",
+            "user_identifier": current_user.user_key,
             "question": question,
             "filters": filter_payload,
             "answer_summary": answer.answer[:500],

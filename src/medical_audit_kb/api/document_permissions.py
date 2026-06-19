@@ -14,10 +14,11 @@ DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
     SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
 }
 PERSONAL_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
-    SourceCollection.PERSONAL_MATERIALS: ("个人材料", "受控候选索引"),
+    SourceCollection.PERSONAL_MATERIALS: ("个人材料", "本人上传"),
 }
 
 READ_ALL_PERSONAL_UPLOAD_ROLES = frozenset({"system-admin", "department-head"})
+READ_OWN_PERSONAL_UPLOAD_ROLES = AUDIT_ROLES
 QUERY_ROLES = AUDIT_ROLES
 
 
@@ -45,11 +46,17 @@ def can_read_all_personal_uploads(role: str) -> bool:
     return role in READ_ALL_PERSONAL_UPLOAD_ROLES
 
 
+def can_read_own_personal_uploads(role: str) -> bool:
+    return role in READ_OWN_PERSONAL_UPLOAD_ROLES
+
+
 def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
     # Current system collections are readable by all authenticated audit roles.
     labels = dict(DOCUMENT_SOURCE_COLLECTION_LABELS)
-    if can_read_all_personal_uploads(role):
+    if can_read_own_personal_uploads(role):
         labels.update(PERSONAL_SOURCE_COLLECTION_LABELS)
+    if can_read_all_personal_uploads(role):
+        labels[SourceCollection.PERSONAL_MATERIALS] = ("个人材料", "全部授权上传")
     return tuple(
         DocumentPermission(
             source_collection=collection,
@@ -57,7 +64,7 @@ def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
             scope=scope,
             access="read",
         )
-        for collection, (label, scope) in DOCUMENT_SOURCE_COLLECTION_LABELS.items()
+        for collection, (label, scope) in labels.items()
     )
 
 

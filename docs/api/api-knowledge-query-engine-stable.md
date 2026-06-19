@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-18
+updated: 2026-06-19
 owner: self
 source: human+ai
 ---
@@ -476,6 +476,14 @@ Query 参数：
 - `query_log_index`：本次查询日志索引。
 - `query_log_id`：持久化查询历史 ID；当查询历史 store 不可用或写入失败时为 `null`，主查询结果不因历史写入失败而中断。
 
+个人材料检索隔离：
+
+- 请求 `source_collections` 包含 `personal-materials` 时，仍先执行角色级来源权限检查。
+- 普通 `auditor` 只能召回 `source_collection=personal-materials`、`visibility=private` 且 `created_by` 等于当前 `X-User-Id` 的 chunk。
+- `department-head` 和 `system-admin` 可召回全部已进入运行态索引的 `personal-materials` chunk。
+- 未携带用户上下文的底层检索默认过滤 `personal-materials`，避免后台调用绕过用户级隔离。
+- `personal-materials` 引用在回答中归为 `personal_material_basis`，页面标题为 `个人材料依据`。
+
 错误：
 
 - `403`：角色无查询权限。
@@ -540,6 +548,12 @@ Query 参数：
       "source_collection": "medical-insurance-laws",
       "label": "法规政策",
       "scope": "公开知识库",
+      "access": "read"
+    },
+    {
+      "source_collection": "personal-materials",
+      "label": "个人材料",
+      "scope": "本人上传",
       "access": "read"
     }
   ],
@@ -788,8 +802,9 @@ staging 行为：
 当前边界：
 
 - 本接口是本地可验证的候选索引 staging，不等同于生产个人材料检索可见。
-- 在进入 active retrieval 前，还必须补齐用户级 `created_by/visibility` 检索隔离、生产 embedding provider 门禁、candidate 发布审计和生产写入授权。
-- 当前 `index activation` 已 fail-closed 阻断 `personal-materials` staging 版本被激活；后续只有在实现用户级检索隔离后，才能重新评估该阻断条件。
+- 运行态检索层已经具备 `created_by/visibility` 用户级隔离：普通 `auditor` 只能召回本人 `private` 上传，`department-head` 和 `system-admin` 具备 read-all 范围。
+- 在进入生产 active retrieval 前，还必须补齐生产 embedding provider 门禁、candidate 发布审计、生产写入授权和生产 reload 验收。
+- 当前 `index activation` 已 fail-closed 阻断 `personal-materials` staging 版本被激活；只有完成上述生产门禁后，才能重新评估该阻断条件。
 
 当前边界：
 
