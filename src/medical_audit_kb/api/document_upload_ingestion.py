@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -22,6 +23,7 @@ from medical_audit_kb.db.models import (
     IndexVersion,
     SourceDocument,
     SourcePackageVersion,
+    utc_now,
 )
 from medical_audit_kb.domain.constants import DocumentStatus, SourceCollection
 from medical_audit_kb.domain.schemas import DocumentChunkCreate
@@ -30,6 +32,33 @@ from medical_audit_kb.ingestion.chunkers import chunk_extraction_result
 from medical_audit_kb.ingestion.extractors import ExtractionStatus, extract_file
 
 DocumentUploadIngestionStatus = Literal["staged-for-index", "already-staged"]
+PGVECTOR_EMBEDDING_DIMENSION = 1024
+
+PGVECTOR_CHUNK_EMBEDDING_INSERT_SQL = """
+INSERT INTO chunk_embeddings (
+    id,
+    chunk_id,
+    provider,
+    model_name,
+    provider_version,
+    dimension,
+    embedding,
+    created_at
+)
+VALUES (
+    :id,
+    :chunk_id,
+    :provider,
+    :model_name,
+    :provider_version,
+    :dimension,
+    CAST(:embedding AS vector),
+    :created_at
+)
+ON CONFLICT (chunk_id, provider, model_name, provider_version) DO UPDATE SET
+    dimension = EXCLUDED.dimension,
+    embedding = EXCLUDED.embedding
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,16 +215,11 @@ class SqlAlchemyDocumentUploadIndexer:
             session.add_all(chunk_records)
             session.flush()
             embeddings = provider.embed_texts([chunk.text for chunk in chunk_records])
-            session.add_all(
-                ChunkEmbedding(
-                    chunk_id=chunk.id,
-                    provider=provider.provider,
-                    model_name=provider.model_name,
-                    provider_version=provider.provider_version,
-                    dimension=provider.dimension,
-                    embedding=list(embedding),
-                )
-                for chunk, embedding in zip(chunk_records, embeddings, strict=True)
+            _add_chunk_embeddings(
+                session,
+                chunk_records=chunk_records,
+                embeddings=embeddings,
+                provider=provider,
             )
             _upsert_index_version(
                 session,
@@ -515,6 +539,61 @@ def _chunk_record(
         locator=locator,
         extra_metadata=metadata,
     )
+
+
+def _add_chunk_embeddings(
+    session: Session,
+    *,
+    chunk_records: Sequence[DocumentChunk],
+    embeddings: Sequence[Sequence[float]],
+    provider: DeterministicFakeEmbeddingProvider,
+) -> None:
+    if _session_dialect_name(session) == "postgresql":
+        if provider.dimension != PGVECTOR_EMBEDDING_DIMENSION:
+            raise DocumentUploadIngestionError(
+                "document-upload-embedding-dimension-unsupported",
+                "document upload pgvector indexing requires 1024-dimensional embeddings",
+                payload={
+                    "embedding_dimension": provider.dimension,
+                    "expected_embedding_dimension": PGVECTOR_EMBEDDING_DIMENSION,
+                },
+            )
+        statement = text(PGVECTOR_CHUNK_EMBEDDING_INSERT_SQL)
+        for chunk, embedding in zip(chunk_records, embeddings, strict=True):
+            session.execute(
+                statement,
+                {
+                    "id": str(uuid4()),
+                    "chunk_id": str(chunk.id),
+                    "provider": provider.provider,
+                    "model_name": provider.model_name,
+                    "provider_version": provider.provider_version,
+                    "dimension": provider.dimension,
+                    "embedding": _pgvector_literal(embedding),
+                    "created_at": utc_now().isoformat(),
+                },
+            )
+        return
+
+    session.add_all(
+        ChunkEmbedding(
+            chunk_id=chunk.id,
+            provider=provider.provider,
+            model_name=provider.model_name,
+            provider_version=provider.provider_version,
+            dimension=provider.dimension,
+            embedding=list(embedding),
+        )
+        for chunk, embedding in zip(chunk_records, embeddings, strict=True)
+    )
+
+
+def _session_dialect_name(session: Session) -> str:
+    return str(session.get_bind().dialect.name)
+
+
+def _pgvector_literal(embedding: Sequence[float]) -> str:
+    return "[" + ",".join(format(float(item), ".9g") for item in embedding) + "]"
 
 
 def _upsert_index_version(
