@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import io
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -71,6 +72,15 @@ class DocumentObjectStorageSignedUrlResult:
     region: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentObjectStorageReadResult:
+    provider: DocumentStorageProvider
+    object_key: str
+    content: bytes
+    bucket: str | None = None
+    region: str | None = None
+
+
 class DocumentObjectStorage(Protocol):
     @property
     def provider(self) -> DocumentStorageProvider:
@@ -88,6 +98,13 @@ class DocumentObjectStorage(Protocol):
         object_key: str,
         expires_in_seconds: int,
     ) -> DocumentObjectStorageSignedUrlResult | None:
+        pass
+
+    def read_object(
+        self,
+        *,
+        object_key: str,
+    ) -> DocumentObjectStorageReadResult:
         pass
 
 
@@ -117,12 +134,24 @@ class TencentCosPutObjectClient(Protocol):
     ) -> str:
         pass
 
+    def get_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+    ) -> bytes:
+        pass
+
 
 class TencentCosSdkClient(Protocol):
     def put_object(self, **kwargs: object) -> Mapping[str, object]:
         pass
 
     def get_presigned_download_url(self, **kwargs: object) -> str:
+        pass
+
+    def get_object(self, **kwargs: object) -> Mapping[str, object]:
         pass
 
 
@@ -181,6 +210,20 @@ class TencentCosSdkPutObjectClient:
             Expired=expires_in_seconds,
         )
 
+    def get_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+    ) -> bytes:
+        _ = region
+        response = self.sdk_client.get_object(
+            Bucket=bucket,
+            Key=object_key,
+        )
+        return _read_cos_object_body(response)
+
 
 @dataclass(frozen=True, slots=True)
 class LocalDocumentObjectStorage:
@@ -222,6 +265,21 @@ class LocalDocumentObjectStorage:
     ) -> DocumentObjectStorageSignedUrlResult | None:
         _ = object_key, expires_in_seconds
         return None
+
+    def read_object(
+        self,
+        *,
+        object_key: str,
+    ) -> DocumentObjectStorageReadResult:
+        relative_path = Path(object_key)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise ValueError("local object key is invalid")
+        content = (self.upload_root / relative_path).read_bytes()
+        return DocumentObjectStorageReadResult(
+            provider=self.provider,
+            object_key=object_key,
+            content=content,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,6 +357,24 @@ class TencentCosDocumentObjectStorage:
             object_key=object_key,
             signed_url=signed_url,
             expires_at=datetime.now(UTC) + timedelta(seconds=expires_in_seconds),
+        )
+
+    def read_object(
+        self,
+        *,
+        object_key: str,
+    ) -> DocumentObjectStorageReadResult:
+        content = self.client.get_object(
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+        )
+        return DocumentObjectStorageReadResult(
+            provider=self.provider,
+            bucket=self.bucket,
+            region=self.region,
+            object_key=object_key,
+            content=content,
         )
 
 
@@ -676,6 +752,35 @@ def _string_mapping_value(mapping: Mapping[str, object], key: str) -> str | None
     if isinstance(value, str):
         return value
     return None
+
+
+def _read_cos_object_body(response: Mapping[str, object]) -> bytes:
+    body = response.get("Body")
+    if isinstance(body, bytes):
+        return body
+    if isinstance(body, str):
+        return body.encode()
+    if isinstance(body, io.BytesIO):
+        return body.getvalue()
+    if body is not None:
+        read = getattr(body, "read", None)
+        if callable(read):
+            value = read()
+            if isinstance(value, bytes):
+                return value
+            if isinstance(value, str):
+                return value.encode()
+        get_raw_stream = getattr(body, "get_raw_stream", None)
+        if callable(get_raw_stream):
+            stream = get_raw_stream()
+            stream_read = getattr(stream, "read", None)
+            if callable(stream_read):
+                value = stream_read()
+                if isinstance(value, bytes):
+                    return value
+                if isinstance(value, str):
+                    return value.encode()
+    raise RuntimeError("Tencent COS get_object response does not contain a readable body")
 
 
 def _datetime_to_iso(value: datetime | None) -> str | None:

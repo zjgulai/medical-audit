@@ -783,11 +783,12 @@ Query 参数：
 - `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED=true`，否则返回 `409 document upload indexing is not enabled`。
 - 上传记录必须存在且 `metadata.index_readiness.status=ready`。
 - 上传记录必须为 `visibility=private`、`status=retained`、`metadata.index_status=not-indexed`。
-- 当前阶段只支持读取本地隔离区文件；COS-only 对象若本地隔离文件不可用，会返回 `409` 和 `reason=document-upload-local-file-unavailable`。
+- 优先读取本地隔离区文件；若本地隔离文件不存在，必须存在匹配当前 storage provider 的 `document_storage_objects` 记录，且对象读取后的 sha256 必须与上传记录一致。
+- COS-only 对象读取失败、对象记录缺失或 sha256 不匹配时，接口返回 `409`，不会写入候选索引 staging。
 
 staging 行为：
 
-- 读取本地隔离区文件，复用现有抽取器和切块器生成个人材料 chunk。
+- 读取本地隔离区文件，或从已记录 object storage 对象读取内容并写入受控 `.index-staging/<upload_id>/...` staging 文件，复用现有抽取器和切块器生成个人材料 chunk。
 - 写入 `source_package_versions`、`source_documents`、`document_chunks`、`chunk_embeddings` 和 `index_versions`。
 - `source_collection=personal-materials`。
 - `index_versions.status=candidate`，不改动 active index。
@@ -809,13 +810,13 @@ staging 行为：
 
 - 本接口是本地可验证的候选索引 staging，不等同于生产个人材料检索可见。
 - 运行态检索层已经具备 `created_by/visibility` 用户级隔离：普通 `auditor` 只能召回本人 `private` 上传，`department-head` 和 `system-admin` 具备 read-all 范围。
-- 在进入生产 active retrieval 前，还必须补齐生产 embedding provider 门禁、candidate 发布审计、生产写入授权和生产 reload 验收。
+- 在进入生产 active retrieval 前，还必须补齐生产 embedding provider 门禁、candidate 发布审计、生产写入授权、生产 COS-only staging E2E 和生产 reload 验收。
 - 当前 `index activation` 已 fail-closed 阻断 `personal-materials` staging 版本被激活；只有完成上述生产门禁后，才能重新评估该阻断条件。
 
 当前边界：
 
 - 默认 `/documents` 链路只完成个人材料留存、列表读取、人工审批/外部结果状态变更和入索引治理门禁表达；只有显式启用 `index-ingestion` 后才写入候选索引 staging。
-- `index-ingestion` 不执行病毒扫描、脱敏改写、COS 对象拉取、签名 URL 生成、active index 发布或生命周期清理。
+- `index-ingestion` 不执行病毒扫描、脱敏改写、签名 URL 生成、active index 发布或生命周期清理；COS-only 路径只做内部对象读取、sha256 校验和受控 staging 文件落地。
 - 上传、COS 对象存储和签名下载分别遵循 `POST /documents/uploads` 与 `GET /documents/uploads/{upload_id}/download` 的边界；不能把其中任一项通过当作全链路生产入索引完成。
 - 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
 

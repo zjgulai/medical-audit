@@ -106,6 +106,11 @@ class ApiState:
         tencent_cos_client = tencent_cos_put_object_client_from_settings(
             settings.document_storage
         )
+        document_object_storage = document_object_storage_from_settings(
+            settings.document_storage,
+            upload_root=document_upload_root,
+            tencent_cos_client=tencent_cos_client,
+        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -123,11 +128,7 @@ class ApiState:
             document_upload_store=SqlAlchemyDocumentUploadStore(
                 settings.database_url,
                 upload_root=document_upload_root,
-                object_storage=document_object_storage_from_settings(
-                    settings.document_storage,
-                    upload_root=document_upload_root,
-                    tencent_cos_client=tencent_cos_client,
-                ),
+                object_storage=document_object_storage,
                 record_storage_objects=_document_storage_object_records_enabled(settings),
             ),
             document_upload_governance=document_upload_governance_policy_from_settings(
@@ -145,6 +146,7 @@ class ApiState:
                 database_url=settings.database_url,
                 upload_root=document_upload_root,
                 settings=settings.document_upload_indexing,
+                object_storage=document_object_storage,
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
