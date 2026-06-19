@@ -209,12 +209,17 @@ def _build_report(
     )
     ready_not_indexed_uploads = _int(db.get("ready_not_indexed_uploads"))
     staged_uploads = _int(db.get("staged_uploads"))
+    candidate_versions = _int(db.get("personal_material_candidate_versions"))
+    personal_material_chunks = _int(db.get("personal_material_chunks"))
     active_versions = _int(db.get("personal_material_active_versions"))
     active_chunks = _int(db.get("personal_material_active_chunks"))
     ready_local_available = _int(db.get("ready_not_indexed_local_file_available_count"))
     if require_indexing_enabled and not indexing_enabled:
         issues.append("document-upload-indexing-disabled")
-    if require_ready_upload and ready_not_indexed_uploads < 1:
+    completed_candidate_staging = (
+        staged_uploads > 0 and candidate_versions > 0 and personal_material_chunks > 0
+    )
+    if require_ready_upload and ready_not_indexed_uploads < 1 and not completed_candidate_staging:
         issues.append("no-ready-upload-for-indexing")
     if (
         require_local_file_available
@@ -239,11 +244,9 @@ def _build_report(
         "ready_not_indexed_uploads": ready_not_indexed_uploads,
         "ready_not_indexed_local_file_available_count": ready_local_available,
         "staged_uploads": staged_uploads,
-        "personal_material_candidate_versions": _int(
-            db.get("personal_material_candidate_versions")
-        ),
+        "personal_material_candidate_versions": candidate_versions,
         "personal_material_active_versions": active_versions,
-        "personal_material_chunks": _int(db.get("personal_material_chunks")),
+        "personal_material_chunks": personal_material_chunks,
         "personal_material_active_chunks": active_chunks,
         "active_retrieval_activated": active_retrieval_activated,
     }
