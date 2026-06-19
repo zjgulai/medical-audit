@@ -33,6 +33,29 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-19 个人材料实际入索引 readiness 只读审计
+
+- 已新增生产只读 readiness gate：`scripts/audit-production-personal-material-indexing-readiness.py`。
+- 本脚本通过 SSH 读取远端 env、容器健康和 PostgreSQL 只读统计，不调用会写审计日志的 `/documents/uploads` 列表、下载元信息或入索引 API。
+- 当前生产只读报告 `tmp/outputs/production-personal-material-indexing-readiness-20260619.json` 返回 `status=blocked`；该状态是预期门禁结果，不代表生产故障。
+- 当前 blockers：
+  - `document-upload-indexing-disabled`：生产未设置 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED`，`index_version_key` 和 `source_package_version_key` 也未设置。
+  - `ready-upload-local-file-unavailable`：生产有 `1` 条 `ready` 且 `not-indexed` 的个人材料，但该样本为 COS-only 对象，本地 `/opt/medical-audit/document-uploads/...` 隔离文件不存在；当前 indexer 仍只能读取本地隔离文件。
+- 当前生产读数：`total_uploads=17`、`ready_not_indexed_uploads=1`、`staged_uploads=0`、`personal_material_candidate_versions=0`、`personal_material_active_versions=0`、`personal_material_chunks=0`、`personal_material_active_chunks=0`。
+- 当前 ready 样本：`document-upload-e212a5d410f1`，storage provider 为 `tencent-cos`，object key 为 `personal-materials/prod/2026/06/18/document-upload-e212a5d410f1/1221041ef4f7bf0c7ff7bf081996ad128862a0149b1066d35a1f198e721c7838.txt`。
+- 证据边界：本轮为 `L3-production-read-only`，`production_write=false`、`api_write=false`、`db_write=false`、`audit_log_write_expected=false`、`external_provider_call=false`、`index_ingestion_triggered=false`、`active_retrieval_activated=false`。
+- 下一步不能直接打开生产入索引开关；必须先补齐 COS object 读取型 indexer 或受控对象下载到隔离区的 staging 方案，再做单条样本写入型 staging E2E。
+
+推荐只读审计命令：
+
+```bash
+uv run python scripts/audit-production-personal-material-indexing-readiness.py \
+  --ssh-key ai_video.pem \
+  --expected-deploy-sha c21d985e6853ffcbd4cb06cdf27deb03ab2861bc \
+  --json-output tmp/outputs/production-personal-material-indexing-readiness-YYYYMMDD.json \
+  --markdown-output tmp/outputs/production-personal-material-indexing-readiness-YYYYMMDD.md
+```
+
 ### 2026-06-19 PR #149 `ruleset-v1` DLP 生产 gate、env 激活与 `/documents` 写入 E2E
 
 - PR #148 `codex/pr147-deploy-state-sync` 已合并到 `main`，merge commit 为 `0cb184f98d6db689f9d5254a6c8d09090d20548e`；该 PR 为 PR #147 生产部署状态同步 docs-only 合并，不代表生产业务部署前进。
