@@ -385,6 +385,95 @@ def test_run_production_documents_readonly_probe_skips_upload_endpoints() -> Non
     assert not any("/documents/uploads" in url for url in called_urls)
 
 
+def test_audit_production_personal_material_indexing_readiness_script_is_readonly() -> None:
+    script_path = Path("scripts/audit-production-personal-material-indexing-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "COS_SECRET" not in script_text
+    assert "tmp/outputs/production-personal-material-indexing-readiness-latest.json" in script_text
+    assert "production_write" in script_text
+    assert "api_write" in script_text
+    assert "audit_log_write_expected" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_ingestion_triggered" in script_text
+    assert "active_retrieval_activated" in script_text
+    assert "/index-ingestion" not in script_text
+    assert '"POST"' not in script_text
+    assert "method='POST'" not in script_text
+    assert 'method="POST"' not in script_text
+
+
+def test_audit_production_personal_material_indexing_readiness_builds_blocked_report() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_indexing_readiness",
+        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
+    )
+    remote_report = {
+        "deploy_sha": "c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
+        "document_upload_indexing": {
+            "env_ok": True,
+            "env": {
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": "",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": "",
+            },
+            "db_ok": True,
+            "db": {
+                "total_uploads": 12,
+                "ready_not_indexed_uploads": 2,
+                "staged_uploads": 0,
+                "personal_material_candidate_versions": 0,
+                "personal_material_active_versions": 0,
+                "personal_material_chunks": 0,
+                "personal_material_active_chunks": 0,
+                "ready_not_indexed_samples": [
+                    {
+                        "upload_key": "document-upload-ready-cos",
+                        "storage_path": "personal-materials/prod/object.txt",
+                        "storage_provider": "tencent-cos",
+                        "local_file_exists": False,
+                    }
+                ],
+            },
+        },
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
+        require_indexing_enabled=True,
+        require_ready_upload=True,
+        require_local_file_available=True,
+        require_no_active_personal_materials=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == [
+        "document-upload-indexing-disabled",
+        "ready-upload-local-file-unavailable",
+    ]
+    assert report["summary"]["ready_not_indexed_uploads"] == 2
+    assert report["summary"]["active_retrieval_activated"] is False
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["api_write"] is False
+    assert report["boundaries"]["audit_log_write_expected"] is False
+    assert report["boundaries"]["index_ingestion_triggered"] is False
+    assert report["boundaries"]["active_retrieval_activated"] is False
+
+
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
