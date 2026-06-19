@@ -989,6 +989,208 @@ def test_documents_upload_index_ingestion_stages_ready_upload(
     assert index_version.document_count == 1
 
 
+def test_documents_upload_index_ingestion_stages_cos_only_ready_upload(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-cos.db'}"
+    upload_root = tmp_path / "document-uploads"
+    fake_cos_client = FakeTencentCosClient()
+    object_storage = TencentCosDocumentObjectStorage(
+        client=fake_cos_client,
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        prefix="personal-materials/test",
+    )
+    indexing_settings = DocumentUploadIndexingSettings(
+        enabled=True,
+        source_package_version_key="personal-materials-cos-test",
+        index_version_key="personal-materials-cos-test",
+    )
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+        object_storage=object_storage,
+        record_storage_objects=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=indexing_settings,
+        object_storage=object_storage,
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "cos-only-note.txt",
+                "COS-only 个人材料：基金监管审计补充证据。".encode(),
+                "text/plain",
+            )
+        },
+    )
+    upload_id = upload_response.json()["item"]["id"]
+    storage_path = str(upload_response.json()["item"]["storage_path"])
+    assert not (upload_root / storage_path).exists()
+    approval_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "COS-only 材料已完成治理。"},
+    )
+    assert approval_response.status_code == 200
+
+    ingestion_response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert ingestion_response.status_code == 200
+    body = ingestion_response.json()
+    assert body["item"]["index_status"] == "staged-for-index"
+    assert body["ingestion"]["status"] == "staged-for-index"
+    assert body["ingestion"]["source_collection"] == "personal-materials"
+    assert body["ingestion"]["live_retrieval_activated"] is False
+    assert fake_cos_client.get_object_calls == [
+        {
+            "bucket": "medical-audit-prod",
+            "region": "ap-guangzhou",
+            "object_key": storage_path,
+        }
+    ]
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        source_document = session.scalars(select(SourceDocument)).one()
+        chunk = session.scalars(select(DocumentChunk)).one()
+        index_version = session.scalars(select(IndexVersion)).one()
+
+    assert ".index-staging" in source_document.absolute_path
+    assert Path(source_document.absolute_path).is_file()
+    assert source_document.relative_path == f"personal-materials/{upload_id}/cos-only-note.txt"
+    assert source_document.extra_metadata["storage_provider"] == "tencent-cos"
+    assert source_document.extra_metadata["object_key"] == storage_path
+    assert chunk.extra_metadata["upload_key"] == upload_id
+    assert chunk.extra_metadata["live_retrieval_activated"] is False
+    assert index_version.status == "candidate"
+    assert index_version.extra_metadata["live_retrieval_activated"] is False
+
+
+def test_documents_upload_index_ingestion_blocks_cos_object_sha256_mismatch(
+    tmp_path: Path,
+) -> None:
+    class PassingVirusScanner:
+        provider = "local-test-virus"
+
+        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="virus-scan",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"sha256 {context.sha256} accepted",
+            )
+
+    class PassingDlpReviewer:
+        provider = "local-test-dlp"
+
+        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
+            return GovernanceCheckResult(
+                check_type="dlp-review",
+                provider=self.provider,
+                status="passed",
+                blocker=None,
+                detail=f"{context.file_name} contains no test DLP findings",
+            )
+
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-cos-sha.db'}"
+    upload_root = tmp_path / "document-uploads"
+    fake_cos_client = FakeTencentCosClient()
+    object_storage = TencentCosDocumentObjectStorage(
+        client=fake_cos_client,
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        prefix="personal-materials/test",
+    )
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+        object_storage=object_storage,
+        record_storage_objects=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=DocumentUploadIndexingSettings(enabled=True),
+        object_storage=object_storage,
+    )
+    state.document_upload_governance = DocumentUploadGovernancePolicy(
+        virus_scanner=PassingVirusScanner(),
+        dlp_reviewer=PassingDlpReviewer(),
+    )
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("cos-note.txt", b"original evidence", "text/plain")},
+    )
+    upload_id = upload_response.json()["item"]["id"]
+    storage_path = str(upload_response.json()["item"]["storage_path"])
+    fake_cos_client.objects[storage_path] = b"tampered evidence"
+    approval_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "材料已完成治理。"},
+    )
+    assert approval_response.status_code == 200
+
+    response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "document-upload-object-sha256-mismatch"
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
+    assert state.operation_logs[-1]["payload"]["reason"] == (
+        "document-upload-object-sha256-mismatch"
+    )
+
+
 def test_documents_upload_index_ingestion_blocks_when_upload_is_not_ready(
     tmp_path: Path,
 ) -> None:
@@ -2654,6 +2856,9 @@ class FakeTencentCosClient:
         signed_url: str = "https://cos.example/signed-download",
     ) -> None:
         self.signed_url = signed_url
+        self.objects: dict[str, bytes] = {}
+        self.put_calls: list[dict[str, object]] = []
+        self.get_object_calls: list[dict[str, object]] = []
         self.presign_calls: list[dict[str, object]] = []
 
     def put_object(
@@ -2669,6 +2874,19 @@ class FakeTencentCosClient:
         kms_key_id: str | None,
         storage_class: str,
     ) -> dict[str, str | None]:
+        self.objects[object_key] = content
+        self.put_calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+                "content_type": content_type,
+                "metadata": metadata,
+                "encryption_mode": encryption_mode,
+                "kms_key_id": kms_key_id,
+                "storage_class": storage_class,
+            }
+        )
         return {"etag": '"etag"', "version_id": "version-1"}
 
     def create_presigned_download_url(
@@ -2688,6 +2906,22 @@ class FakeTencentCosClient:
             }
         )
         return self.signed_url
+
+    def get_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+    ) -> bytes:
+        self.get_object_calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+            }
+        )
+        return self.objects[object_key]
 
 
 def _write_text(path: Path, content: str) -> Path:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -10,11 +11,13 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from medical_audit_kb.api.document_upload_governance_store import DocumentObjectStorage
 from medical_audit_kb.api.document_upload_store import _connect_args, _sync_database_url
 from medical_audit_kb.core.config import DocumentUploadIndexingSettings
 from medical_audit_kb.db.models import (
     ChunkEmbedding,
     DocumentChunk,
+    DocumentStorageObject,
     DocumentUploadRecord,
     IndexVersion,
     SourceDocument,
@@ -81,11 +84,20 @@ class DocumentUploadIngestionError(RuntimeError):
         self.payload = payload or {}
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedUploadSource:
+    path: Path
+    ingestion_source: str
+    storage_provider: str | None = None
+    object_key: str | None = None
+
+
 @dataclass(slots=True)
 class SqlAlchemyDocumentUploadIndexer:
     database_url: str
     upload_root: Path
     settings: DocumentUploadIndexingSettings
+    object_storage: DocumentObjectStorage | None = None
     _engine: Engine = field(init=False, repr=False)
     _session_factory: sessionmaker[Session] = field(init=False, repr=False)
 
@@ -118,11 +130,13 @@ class SqlAlchemyDocumentUploadIndexer:
             if metadata.get("index_status") == "staged-for-index":
                 return _already_staged_result(upload, metadata, provider=provider)
             _validate_upload_ready(upload, metadata)
-            source_path = _resolve_local_upload_path(
+            source = _resolve_upload_source(
+                session,
                 self.upload_root,
-                storage_path=upload.storage_path,
+                upload=upload,
+                object_storage=self.object_storage,
             )
-            extraction = extract_file(source_path)
+            extraction = extract_file(source.path)
             if extraction.status != ExtractionStatus.EXTRACTED:
                 raise DocumentUploadIngestionError(
                     "document-upload-extraction-not-ready",
@@ -144,7 +158,7 @@ class SqlAlchemyDocumentUploadIndexer:
                 session,
                 package=package,
                 upload=upload,
-                source_path=source_path,
+                source=source,
                 media_type=extraction.media_type,
             )
             session.flush()
@@ -217,6 +231,7 @@ def document_upload_indexer_from_settings(
     database_url: str,
     upload_root: Path,
     settings: DocumentUploadIndexingSettings,
+    object_storage: DocumentObjectStorage | None = None,
 ) -> SqlAlchemyDocumentUploadIndexer | None:
     if not settings.enabled:
         return None
@@ -224,6 +239,7 @@ def document_upload_indexer_from_settings(
         database_url=database_url,
         upload_root=upload_root,
         settings=settings,
+        object_storage=object_storage,
     )
 
 
@@ -255,7 +271,71 @@ def _validate_upload_ready(upload: DocumentUploadRecord, metadata: dict[str, obj
         )
 
 
-def _resolve_local_upload_path(upload_root: Path, *, storage_path: str) -> Path:
+def _resolve_upload_source(
+    session: Session,
+    upload_root: Path,
+    *,
+    upload: DocumentUploadRecord,
+    object_storage: DocumentObjectStorage | None,
+) -> ResolvedUploadSource:
+    local_path = _resolve_local_upload_path(
+        upload_root,
+        storage_path=upload.storage_path,
+        raise_when_missing=False,
+    )
+    if local_path is not None:
+        return ResolvedUploadSource(path=local_path, ingestion_source="local-quarantine")
+    if object_storage is None:
+        raise DocumentUploadIngestionError(
+            "document-upload-local-file-unavailable",
+            "document upload local quarantine file is unavailable for indexing",
+            payload={"storage_path": upload.storage_path},
+        )
+    storage_object = _get_ingestable_storage_object(
+        session,
+        upload_key=upload.upload_key,
+        provider=object_storage.provider,
+    )
+    if storage_object is None:
+        raise DocumentUploadIngestionError(
+            "document-upload-storage-object-unavailable",
+            "document upload storage object is unavailable for indexing",
+            payload={
+                "upload_key": upload.upload_key,
+                "storage_provider": object_storage.provider,
+            },
+        )
+    read_result = object_storage.read_object(object_key=storage_object.object_key)
+    actual_sha256 = hashlib.sha256(read_result.content).hexdigest()
+    if actual_sha256 != upload.sha256:
+        raise DocumentUploadIngestionError(
+            "document-upload-object-sha256-mismatch",
+            "document upload object sha256 does not match the retained upload record",
+            payload={
+                "upload_key": upload.upload_key,
+                "expected_sha256": upload.sha256,
+                "actual_sha256": actual_sha256,
+            },
+        )
+    staged_path = _write_staged_upload_source(
+        upload_root,
+        upload=upload,
+        content=read_result.content,
+    )
+    return ResolvedUploadSource(
+        path=staged_path,
+        ingestion_source="object-storage-staging",
+        storage_provider=storage_object.provider,
+        object_key=storage_object.object_key,
+    )
+
+
+def _resolve_local_upload_path(
+    upload_root: Path,
+    *,
+    storage_path: str,
+    raise_when_missing: bool = True,
+) -> Path | None:
     relative_path = Path(storage_path)
     if relative_path.is_absolute() or ".." in relative_path.parts:
         raise DocumentUploadIngestionError(
@@ -264,12 +344,47 @@ def _resolve_local_upload_path(upload_root: Path, *, storage_path: str) -> Path:
         )
     source_path = upload_root / relative_path
     if not source_path.exists() or not source_path.is_file():
+        if not raise_when_missing:
+            return None
         raise DocumentUploadIngestionError(
             "document-upload-local-file-unavailable",
             "document upload local quarantine file is unavailable for indexing",
             payload={"storage_path": storage_path},
         )
     return source_path
+
+
+def _get_ingestable_storage_object(
+    session: Session,
+    *,
+    upload_key: str,
+    provider: str,
+) -> DocumentStorageObject | None:
+    return session.scalars(
+        select(DocumentStorageObject)
+        .where(
+            DocumentStorageObject.upload_key == upload_key,
+            DocumentStorageObject.provider == provider,
+            DocumentStorageObject.storage_status.in_(("object-stored", "local-quarantine")),
+        )
+        .order_by(DocumentStorageObject.created_at.desc())
+    ).first()
+
+
+def _write_staged_upload_source(
+    upload_root: Path,
+    *,
+    upload: DocumentUploadRecord,
+    content: bytes,
+) -> Path:
+    staged_path = upload_root / ".index-staging" / upload.upload_key / _safe_file_name(
+        upload.file_name
+    )
+    staged_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = staged_path.with_suffix(f"{staged_path.suffix}.tmp")
+    temp_path.write_bytes(content)
+    temp_path.replace(staged_path)
+    return staged_path
 
 
 def _upsert_source_package(
@@ -311,10 +426,22 @@ def _upsert_source_document(
     *,
     package: SourcePackageVersion,
     upload: DocumentUploadRecord,
-    source_path: Path,
+    source: ResolvedUploadSource,
     media_type: str,
 ) -> SourceDocument:
     relative_path = _source_relative_path(upload)
+    source_metadata: dict[str, object] = {
+        "source": "document-upload",
+        "upload_key": upload.upload_key,
+        "created_by": upload.created_by,
+        "visibility": upload.visibility,
+        "storage_path": upload.storage_path,
+        "ingestion_source": source.ingestion_source,
+    }
+    if source.storage_provider:
+        source_metadata["storage_provider"] = source.storage_provider
+    if source.object_key:
+        source_metadata["object_key"] = source.object_key
     document = session.scalars(
         select(SourceDocument).where(
             SourceDocument.source_package_version_id == package.id,
@@ -325,20 +452,14 @@ def _upsert_source_document(
         "source_package_version_id": package.id,
         "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
         "relative_path": relative_path,
-        "absolute_path": str(source_path),
+        "absolute_path": str(source.path),
         "file_name": _safe_file_name(upload.file_name),
         "file_ext": f".{upload.extension.lower()}",
         "media_type": media_type,
         "sha256": upload.sha256,
         "size_bytes": upload.size_bytes,
         "status": DocumentStatus.INDEXED.value,
-        "extra_metadata": {
-            "source": "document-upload",
-            "upload_key": upload.upload_key,
-            "created_by": upload.created_by,
-            "visibility": upload.visibility,
-            "storage_path": upload.storage_path,
-        },
+        "extra_metadata": source_metadata,
     }
     if document is None:
         document = SourceDocument(**values)

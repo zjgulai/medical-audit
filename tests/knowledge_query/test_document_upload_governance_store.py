@@ -134,6 +134,19 @@ def test_tencent_cos_storage_uses_injected_client_without_file_name_in_key() -> 
             "expires_in_seconds": 300,
         }
     ]
+    read_result = storage.read_object(object_key=result.object_key)
+    assert read_result.provider == "tencent-cos"
+    assert read_result.bucket == "medical-audit-prod"
+    assert read_result.region == "ap-guangzhou"
+    assert read_result.object_key == result.object_key
+    assert read_result.content == b"policy evidence"
+    assert client.get_object_calls == [
+        {
+            "bucket": "medical-audit-prod",
+            "region": "ap-guangzhou",
+            "object_key": result.object_key,
+        }
+    ]
 
 
 def test_tencent_cos_sdk_client_translates_contract_to_python_sdk_put_object() -> None:
@@ -215,6 +228,25 @@ def test_tencent_cos_sdk_client_translates_presigned_download_url() -> None:
             "Bucket": "medical-audit-prod",
             "Key": "personal-materials/prod/object.txt",
             "Expired": 600,
+        }
+    ]
+
+
+def test_tencent_cos_sdk_client_translates_get_object() -> None:
+    sdk_client = FakeTencentCosSdkClient(response={"Body": b"policy evidence"})
+    client = TencentCosSdkPutObjectClient(sdk_client=sdk_client)
+
+    result = client.get_object(
+        bucket="medical-audit-prod",
+        region="ap-guangzhou",
+        object_key="personal-materials/prod/object.txt",
+    )
+
+    assert result == b"policy evidence"
+    assert sdk_client.get_object_calls == [
+        {
+            "Bucket": "medical-audit-prod",
+            "Key": "personal-materials/prod/object.txt",
         }
     ]
 
@@ -794,6 +826,8 @@ class FakeTencentCosClient:
         self.version_id = version_id
         self.signed_url = signed_url
         self.calls: list[dict[str, object]] = []
+        self.objects: dict[str, bytes] = {}
+        self.get_object_calls: list[dict[str, object]] = []
         self.presign_calls: list[dict[str, object]] = []
 
     def put_object(
@@ -822,6 +856,7 @@ class FakeTencentCosClient:
                 "storage_class": storage_class,
             }
         )
+        self.objects[object_key] = content
         return {"etag": self.etag, "version_id": self.version_id}
 
     def create_presigned_download_url(
@@ -842,6 +877,22 @@ class FakeTencentCosClient:
         )
         return self.signed_url
 
+    def get_object(
+        self,
+        *,
+        bucket: str,
+        region: str,
+        object_key: str,
+    ) -> bytes:
+        self.get_object_calls.append(
+            {
+                "bucket": bucket,
+                "region": region,
+                "object_key": object_key,
+            }
+        )
+        return self.objects[object_key]
+
 
 class FakeTencentCosSdkClient:
     def __init__(
@@ -854,6 +905,7 @@ class FakeTencentCosSdkClient:
         self.signed_url = signed_url
         self.calls: list[dict[str, object]] = []
         self.presign_calls: list[dict[str, object]] = []
+        self.get_object_calls: list[dict[str, object]] = []
 
     def put_object(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -862,6 +914,10 @@ class FakeTencentCosSdkClient:
     def get_presigned_download_url(self, **kwargs: object) -> str:
         self.presign_calls.append(kwargs)
         return self.signed_url
+
+    def get_object(self, **kwargs: object) -> dict[str, object]:
+        self.get_object_calls.append(kwargs)
+        return dict(self.response)
 
 
 class FakeTencentCosSdkModule:

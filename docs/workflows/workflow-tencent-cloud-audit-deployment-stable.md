@@ -33,6 +33,13 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-19 COS-only 个人材料候选入索引本地切片
+
+- 已新增本地代码切片：`SqlAlchemyDocumentUploadIndexer` 可在本地隔离文件缺失时，通过匹配当前 storage provider 的 `document_storage_objects` 记录读取 object storage 内容，校验 sha256 后写入 `.index-staging/<upload_id>/...`，再复用现有抽取、切块和 deterministic fake embedding 流程写入 candidate staging。
+- 已新增 fail-closed 校验：对象记录缺失、provider 不匹配、对象读取失败或 sha256 不一致时，不写入 candidate staging。
+- 当前证据等级为本地测试/受控 staging 级别；本节不代表腾讯云生产已部署，不代表生产 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED` 已打开，也不代表 active personal-material 检索命中完成。
+- 下一步需要在合并后先部署代码，再执行单条 COS-only ready 样本的授权写入型 staging E2E；E2E 仍必须保持 `live_retrieval_activated=false`，不能顺手发布 active index。
+
 ### 2026-06-19 个人材料实际入索引 readiness 只读审计
 
 - 已新增生产只读 readiness gate：`scripts/audit-production-personal-material-indexing-readiness.py`。
@@ -40,7 +47,7 @@ source: human+ai
 - 当前生产只读报告 `tmp/outputs/production-personal-material-indexing-readiness-20260619.json` 返回 `status=blocked`；该状态是预期门禁结果，不代表生产故障。
 - 当前 blockers：
   - `document-upload-indexing-disabled`：生产未设置 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED`，`index_version_key` 和 `source_package_version_key` 也未设置。
-  - `ready-upload-local-file-unavailable`：生产有 `1` 条 `ready` 且 `not-indexed` 的个人材料，但该样本为 COS-only 对象，本地 `/opt/medical-audit/document-uploads/...` 隔离文件不存在；当前 indexer 仍只能读取本地隔离文件。
+  - `ready-upload-local-file-unavailable`：生产有 `1` 条 `ready` 且 `not-indexed` 的个人材料，但该样本为 COS-only 对象，本地 `/opt/medical-audit/document-uploads/...` 隔离文件不存在；截至该只读报告生成时，生产 indexer 仍只能读取本地隔离文件。
 - 当前生产读数：`total_uploads=17`、`ready_not_indexed_uploads=1`、`staged_uploads=0`、`personal_material_candidate_versions=0`、`personal_material_active_versions=0`、`personal_material_chunks=0`、`personal_material_active_chunks=0`。
 - 当前 ready 样本：`document-upload-e212a5d410f1`，storage provider 为 `tencent-cos`，object key 为 `personal-materials/prod/2026/06/18/document-upload-e212a5d410f1/1221041ef4f7bf0c7ff7bf081996ad128862a0149b1066d35a1f198e721c7838.txt`。
 - 证据边界：本轮为 `L3-production-read-only`，`production_write=false`、`api_write=false`、`db_write=false`、`audit_log_write_expected=false`、`external_provider_call=false`、`index_ingestion_triggered=false`、`active_retrieval_activated=false`。
