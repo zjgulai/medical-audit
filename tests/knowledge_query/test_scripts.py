@@ -474,6 +474,61 @@ def test_audit_production_personal_material_indexing_readiness_builds_blocked_re
     assert report["boundaries"]["active_retrieval_activated"] is False
 
 
+def test_audit_production_personal_material_indexing_readiness_passes_completed_staging() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_indexing_readiness",
+        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
+    )
+    remote_report = {
+        "deploy_sha": "550a445012267ba1211f5881b1d441264f3a3056",
+        "document_upload_indexing": {
+            "env_ok": True,
+            "env": {
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "true",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": (
+                    "personal-materials-cos-staging-pr152-20260619"
+                ),
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": (
+                    "personal-materials-cos-staging-pr152-20260619"
+                ),
+            },
+            "db_ok": True,
+            "db": {
+                "total_uploads": 18,
+                "ready_not_indexed_uploads": 0,
+                "ready_not_indexed_local_file_available_count": 0,
+                "staged_uploads": 2,
+                "personal_material_candidate_versions": 1,
+                "personal_material_active_versions": 0,
+                "personal_material_chunks": 2,
+                "personal_material_active_chunks": 0,
+                "ready_not_indexed_samples": [],
+            },
+        },
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="550a445012267ba1211f5881b1d441264f3a3056",
+        require_indexing_enabled=True,
+        require_ready_upload=True,
+        require_local_file_available=True,
+        require_no_active_personal_materials=True,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["ready_not_indexed_uploads"] == 0
+    assert report["summary"]["staged_uploads"] == 2
+    assert report["summary"]["personal_material_chunks"] == 2
+    assert report["summary"]["personal_material_active_chunks"] == 0
+    assert report["boundaries"]["active_retrieval_activated"] is False
+
+
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
