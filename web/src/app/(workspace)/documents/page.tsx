@@ -443,7 +443,7 @@ function DocumentUploadPanel({
   readonly uploads: readonly DocumentUploadItem[];
 }) {
   return (
-    <section className="audit-panel-rail p-5">
+    <section className="audit-panel-rail min-w-0 overflow-hidden p-5">
       <div className="flex items-start justify-between gap-3">
         <h2 className="audit-section-title">个人材料</h2>
         <StatusPill tone={status === "ready" ? "success" : status === "uploading" || status === "loading" ? "info" : "warning"}>
@@ -474,7 +474,7 @@ function DocumentUploadPanel({
         {message ? <p className="audit-meta break-words">{message}</p> : null}
       </form>
 
-      <div className="mt-5 space-y-2">
+      <div className="mt-5 min-w-0 space-y-2 overflow-hidden">
         {uploads.length > 0 ? (
           uploads.map((item) => (
             <DocumentUploadRow
@@ -508,14 +508,14 @@ function DocumentUploadRow({
   readonly updating: boolean;
 }) {
   return (
-    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
+    <article className="min-w-0 overflow-hidden rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</h3>
+        <div className="min-w-0 overflow-hidden">
+          <h3 className="block max-w-full truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</h3>
           <p className="audit-meta mt-1">
             {item.extension.toUpperCase()} / {item.size_kb} KB / {formatDateTime(item.created_at)}
           </p>
-          <p className="audit-meta mt-1">上传人：{item.created_by ?? "unknown"}</p>
+          <p className="audit-meta mt-1 break-all">上传人：{item.created_by ?? "unknown"}</p>
           <p className="audit-meta mt-1">
             安全：{securityStatusLabel(item.security_scan_status)} / DLP：{dlpStatusLabel(item.dlp_status)}
           </p>
