@@ -1053,3 +1053,10 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 每次声称完成前必须同时给出代码证据、页面证据、测试证据和生产边界。
 - 每次生产写入前必须先有备份和回滚路径。
 - 每次文档同步必须明确 `fixture`、`fallback`、`dry-run`、`read-only` 和 `production` 的边界。
+
+### 2.0.11 2026-06-23 Batch 8.4 发布候选合入 main 与生产部署
+- 发布候选 `codex/medical-audit-release-auth-workbench-20260623`(main+5) 已推远端并合入 main，main tip `c10b3d3b`。
+- 生产已部署 `c10b3d3b` 并 `--apply-schema`；app/pg/clamav 均 healthy，`matching_embedding_count=49051`。
+- 受控 API 鉴权已在生产 enforce 生效：`production:frontend-acceptance` 通过，`p0=0 p1=0`，`/audit/logs` 与 `/audit/logs/export` 满足无角色 401、管理员 200。
+- 写入前已备份：`pre-deploy-20260623T171314`（app/env/db 1.0G/nginx/web 全套）。
+- 边界：部署后 e2e smoke 因重启窗口瞬时 reset 记为 fail，已由 frontend-acceptance 与状态审计(app_health=healthy)覆盖；P0-04 生产鉴权侧实质推进，真实 SSO/会话签发仍待后续。
