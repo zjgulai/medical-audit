@@ -322,6 +322,46 @@ CREATE TABLE IF NOT EXISTS audit_agents (
     CONSTRAINT ck_audit_agents_category CHECK (category IN ('业务类', '效率类', '研究类'))
 );
 
+CREATE TABLE IF NOT EXISTS audit_agent_prompt_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id uuid NOT NULL REFERENCES audit_agents(id) ON DELETE CASCADE,
+    version integer NOT NULL,
+    prompt text NOT NULL,
+    change_summary text NOT NULL DEFAULT 'initial prompt',
+    created_by text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_audit_agent_prompt_versions_agent_version UNIQUE (agent_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS audit_agent_invocations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id uuid REFERENCES audit_agents(id) ON DELETE SET NULL,
+    agent_key text NOT NULL,
+    prompt_version integer NOT NULL DEFAULT 1,
+    prompt_version_key text NOT NULL,
+    invocation_source text NOT NULL,
+    question text,
+    conversation_ref text,
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_agent_feedback (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id uuid REFERENCES audit_agents(id) ON DELETE SET NULL,
+    invocation_id uuid REFERENCES audit_agent_invocations(id) ON DELETE SET NULL,
+    agent_key text NOT NULL,
+    prompt_version integer NOT NULL DEFAULT 1,
+    rating text NOT NULL,
+    comment text NOT NULL DEFAULT '',
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_audit_agent_feedback_rating
+        CHECK (rating IN ('effective', 'needs_review', 'unsafe'))
+);
+
 CREATE TABLE IF NOT EXISTS audit_project_members (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     member_key text NOT NULL UNIQUE,
@@ -337,6 +377,51 @@ CREATE TABLE IF NOT EXISTS audit_project_members (
     CONSTRAINT ck_audit_project_members_role
         CHECK (role IN ('项目负责人', '审计员', '业务专家', '信息科', '只读观察员')),
     CONSTRAINT ck_audit_project_members_status CHECK (status IN ('在项目中', '待确认'))
+);
+
+CREATE TABLE IF NOT EXISTS auth_departments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    department_key text NOT NULL UNIQUE,
+    name text NOT NULL,
+    parent_department_key text,
+    status text NOT NULL DEFAULT 'active',
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_auth_departments_status CHECK (status IN ('active', 'inactive'))
+);
+
+CREATE TABLE IF NOT EXISTS auth_users (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_key text NOT NULL UNIQUE,
+    display_name text NOT NULL,
+    department_key text REFERENCES auth_departments(department_key) ON DELETE SET NULL,
+    status text NOT NULL DEFAULT 'active',
+    created_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_auth_users_status CHECK (status IN ('active', 'disabled', 'pending'))
+);
+
+CREATE TABLE IF NOT EXISTS auth_user_role_assignments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    assignment_key text NOT NULL UNIQUE,
+    user_key text NOT NULL REFERENCES auth_users(user_key) ON DELETE CASCADE,
+    role text NOT NULL,
+    scope_type text NOT NULL DEFAULT 'global',
+    scope_key text,
+    status text NOT NULL DEFAULT 'active',
+    assigned_by text,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_auth_user_role_assignments_role
+        CHECK (role IN ('admin', 'technician', 'director', 'member')),
+    CONSTRAINT ck_auth_user_role_assignments_scope
+        CHECK (scope_type IN ('global', 'project', 'department')),
+    CONSTRAINT ck_auth_user_role_assignments_status
+        CHECK (status IN ('active', 'revoked', 'pending'))
 );
 
 CREATE TABLE IF NOT EXISTS audit_projects (
@@ -625,12 +710,40 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_visibility ON review_comments (vi
 CREATE INDEX IF NOT EXISTS idx_audit_agents_category ON audit_agents (category);
 CREATE INDEX IF NOT EXISTS idx_audit_agents_status ON audit_agents (status);
 CREATE INDEX IF NOT EXISTS idx_audit_agents_updated_at ON audit_agents (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_prompt_versions_agent
+    ON audit_agent_prompt_versions (agent_id);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_prompt_versions_created_at
+    ON audit_agent_prompt_versions (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_invocations_agent_key
+    ON audit_agent_invocations (agent_key);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_invocations_created_at
+    ON audit_agent_invocations (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_feedback_agent_key
+    ON audit_agent_feedback (agent_key);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_feedback_invocation
+    ON audit_agent_feedback (invocation_id);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_feedback_created_at
+    ON audit_agent_feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_project_members_project
     ON audit_project_members (project_key);
 CREATE INDEX IF NOT EXISTS idx_audit_project_members_role ON audit_project_members (role);
 CREATE INDEX IF NOT EXISTS idx_audit_project_members_status ON audit_project_members (status);
 CREATE INDEX IF NOT EXISTS idx_audit_project_members_updated_at
     ON audit_project_members (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_departments_status ON auth_departments (status);
+CREATE INDEX IF NOT EXISTS idx_auth_departments_parent
+    ON auth_departments (parent_department_key);
+CREATE INDEX IF NOT EXISTS idx_auth_users_department ON auth_users (department_key);
+CREATE INDEX IF NOT EXISTS idx_auth_users_status ON auth_users (status);
+CREATE INDEX IF NOT EXISTS idx_auth_users_updated_at ON auth_users (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_user_role_assignments_user
+    ON auth_user_role_assignments (user_key);
+CREATE INDEX IF NOT EXISTS idx_auth_user_role_assignments_role
+    ON auth_user_role_assignments (role);
+CREATE INDEX IF NOT EXISTS idx_auth_user_role_assignments_scope
+    ON auth_user_role_assignments (scope_type, scope_key);
+CREATE INDEX IF NOT EXISTS idx_auth_user_role_assignments_status
+    ON auth_user_role_assignments (status);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_status ON audit_projects (status);
 CREATE INDEX IF NOT EXISTS idx_audit_projects_scenario ON audit_projects (scenario_key);
 CREATE INDEX IF NOT EXISTS idx_his_source_batches_project ON his_source_batches (project_id);

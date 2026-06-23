@@ -60,6 +60,24 @@ def test_hybrid_search_filters_by_source_year_region_document_type_and_topic() -
     assert [result.chunk.chunk_id for result in results] == [ids["law"]]
 
 
+def test_hybrid_search_title_only_matches_title_metadata_not_body_text() -> None:
+    engine, ids = _build_engine()
+
+    title_results = engine.search(
+        "医保基金监管条例",
+        filters=RetrievalFilters(title_only=True, title_query="医保基金监管条例"),
+        top_k=5,
+    )
+    body_results = engine.search(
+        "保留医保基金审核依据",
+        filters=RetrievalFilters(title_only=True, title_query="保留医保基金审核依据"),
+        top_k=5,
+    )
+
+    assert [result.chunk.chunk_id for result in title_results] == [ids["law"]]
+    assert body_results == ()
+
+
 def test_hybrid_search_source_weight_prioritizes_rule_basis_when_scores_tie() -> None:
     provider = DeterministicFakeEmbeddingProvider(dimension=32)
     shared_text = "医保基金监管共同依据"
@@ -108,47 +126,6 @@ def test_retrieval_filters_accept_multiple_metadata_values() -> None:
     assert not filters.matches({"region": ["海南"], "business_topic": "fund-supervision"})
 
 
-def test_hybrid_search_filters_personal_materials_by_owner_or_read_all() -> None:
-    provider = DeterministicFakeEmbeddingProvider(dimension=32)
-    owner_id = uuid4()
-    other_id = uuid4()
-    chunks = [
-        _chunk_input(
-            owner_id,
-            "个人补充材料 医保基金审核依据",
-            source_collection=SourceCollection.PERSONAL_MATERIALS,
-            locator={"type": "personal-upload"},
-            created_by="auditor-1",
-            visibility="private",
-        ),
-        _chunk_input(
-            other_id,
-            "个人补充材料 医保基金审核依据",
-            source_collection=SourceCollection.PERSONAL_MATERIALS,
-            locator={"type": "personal-upload"},
-            created_by="auditor-2",
-            visibility="private",
-        ),
-    ]
-    engine = _engine_from_chunks(provider, chunks, rerank=False)
-
-    default_results = engine.search("个人补充材料 医保基金审核依据", top_k=5)
-    owner_results = engine.search(
-        "个人补充材料 医保基金审核依据",
-        filters=RetrievalFilters(personal_upload_user_key="auditor-1"),
-        top_k=5,
-    )
-    read_all_results = engine.search(
-        "个人补充材料 医保基金审核依据",
-        filters=RetrievalFilters(personal_upload_read_all=True),
-        top_k=5,
-    )
-
-    assert default_results == ()
-    assert [result.chunk.chunk_id for result in owner_results] == [owner_id]
-    assert {result.chunk.chunk_id for result in read_all_results} == {owner_id, other_id}
-
-
 def _build_engine() -> tuple[HybridSearchEngine, dict[str, UUID]]:
     provider = DeterministicFakeEmbeddingProvider(dimension=32)
     ids = {
@@ -174,6 +151,7 @@ def _build_engine() -> tuple[HybridSearchEngine, dict[str, UUID]]:
             region="国家",
             document_type="law",
             business_topic="fund-supervision",
+            title="医保基金监管条例",
         ),
         _chunk_input(
             ids["rule"],
@@ -252,26 +230,21 @@ def _chunk_input(
     region: str = "国家",
     document_type: str = "law",
     business_topic: str = "fund-supervision",
-    created_by: str | None = None,
-    visibility: str | None = None,
+    title: str | None = None,
 ) -> ChunkEmbeddingInput:
-    metadata: dict[str, object] = {
-        "source_collection": source_collection.value,
-        "locator": locator,
-        "index_version_key": "index-v1",
-        "source_package_version_key": "package-v1",
-        "article_number": article_number,
-        "year": year,
-        "region": region,
-        "document_type": document_type,
-        "business_topic": business_topic,
-    }
-    if created_by is not None:
-        metadata["created_by"] = created_by
-    if visibility is not None:
-        metadata["visibility"] = visibility
     return ChunkEmbeddingInput(
         chunk_id=chunk_id,
         text=text,
-        metadata=metadata,
+        metadata={
+            "source_collection": source_collection.value,
+            "locator": locator,
+            "index_version_key": "index-v1",
+            "source_package_version_key": "package-v1",
+            "article_number": article_number,
+            "year": year,
+            "region": region,
+            "document_type": document_type,
+            "business_topic": business_topic,
+            **({"title": title, "title_path": [title]} if title else {}),
+        },
     )

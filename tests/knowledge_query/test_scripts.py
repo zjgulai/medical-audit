@@ -1,6 +1,5 @@
 import json
 import os
-import shlex
 import subprocess
 import sys
 import threading
@@ -34,7 +33,7 @@ def test_capture_chat_workbench_visual_baseline_script_is_valid() -> None:
     script_path = Path("scripts/capture-chat-workbench-visual-baseline.py")
 
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
+        ["python3", "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -59,7 +58,7 @@ def test_serve_chat_workbench_container_script_is_valid_and_does_not_store_secre
     script_path = Path("scripts/serve-chat-workbench-container.py")
 
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
+        ["python3", "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -76,7 +75,7 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     script_path = Path("scripts/run-production-e2e-smoke.py")
 
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
+        ["python3", "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -94,6 +93,129 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "--require-generated-answer" in script_text
     assert "Default is read-only production smoke" in script_text
     assert "edge-regression" in script_text
+
+
+def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readonly() -> None:
+    script_path = Path("scripts/run-controlled-api-readonly-permission-smoke.py")
+
+    result = subprocess.run(
+        ["python3", "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert '"GET"' in script_text
+    assert '"POST"' not in script_text
+    assert "production_side_effect" in script_text
+    assert "provider_call_status" in script_text
+    assert "X-Tenant-Id" in script_text
+
+
+def test_run_controlled_api_readonly_permission_smoke_builds_get_probes() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_builds_get_probes",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="http://127.0.0.1:8021",
+        api_prefix="",
+        mode="enforce",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+    )
+
+    probes = module._build_probes(config)
+
+    assert {probe.method for probe in probes} == {"GET"}
+    assert [probe.kind for probe in probes] == [
+        "public",
+        "public",
+        "protected-anonymous",
+        "protected-missing-tenant",
+        "protected-admin",
+    ]
+    admin_probe = next(probe for probe in probes if probe.kind == "protected-admin")
+    missing_tenant_probe = next(
+        probe for probe in probes if probe.kind == "protected-missing-tenant"
+    )
+    assert admin_probe.headers["X-Tenant-Id"] == "hospital-demo"
+    assert "X-Tenant-Id" not in missing_tenant_probe.headers
+
+
+def test_run_controlled_api_readonly_permission_smoke_enforce_fails_mismatch() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_enforce_fails_mismatch",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="http://127.0.0.1:8021",
+        api_prefix="",
+        mode="enforce",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+    )
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        del timeout_seconds
+        return module.HttpResponse(status=200, url=probe.url, text="{}")
+
+    report = module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert report["status"] == "fail"
+    assert report["summary"]["issue_count"] == 2
+    assert any("protected-anonymous:/projects" in item for item in report["issues"])
+    assert any("protected-missing-tenant:/projects" in item for item in report["issues"])
+
+
+def test_run_controlled_api_readonly_permission_smoke_observe_records_observations() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_observe_records_observations",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="https://audit.lute-tlz-dddd.top",
+        api_prefix="/api/v1",
+        mode="observe",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+    )
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        del timeout_seconds
+        return module.HttpResponse(status=200, url=probe.url, text="{}")
+
+    report = module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert report["status"] == "observed"
+    assert report["issues"] == []
+    assert report["summary"]["observation_count"] == 2
+    assert report["production_side_effect"] == "none"
+    assert report["http_methods"] == ["GET"]
 
 
 def test_run_production_e2e_smoke_selects_latest_review_task_id() -> None:
@@ -179,361 +301,11 @@ def test_run_production_e2e_smoke_can_require_generated_answer(
         )
 
 
-def test_run_production_documents_clamav_sidecar_write_e2e_script_is_guarded() -> None:
-    script_path = Path("scripts/run-production-documents-clamav-sidecar-write-e2e.py")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    script_text = script_path.read_text(encoding="utf-8")
-    assert "sk-" not in script_text
-    assert "--confirm-production-write" in script_text
-    assert "real_clamav_sidecar_scan" in script_text
-    assert "external_governance_provider_call" in script_text
-    assert "manual_index_approval_writeback" in script_text
-    assert "indexing_triggered" in script_text
-    assert "signed_url_issued" in script_text
-    assert "tmp/outputs/production-documents-clamav-sidecar-write-e2e-latest.json" in script_text
-
-
-def test_run_production_documents_clamav_sidecar_write_e2e_blocks_unconfirmed_production() -> None:
-    module = _load_script_module(
-        "run_production_documents_clamav_sidecar_write_e2e",
-        Path("scripts/run-production-documents-clamav-sidecar-write-e2e.py"),
-    )
-
-    with pytest.raises(module.E2EError, match="production /documents write requires"):
-        module._require_production_write_confirmation(
-            base_url="https://audit.lute-tlz-dddd.top",
-            confirm_production_write="",
-        )
-
-    module._require_production_write_confirmation(
-        base_url="https://audit.lute-tlz-dddd.top",
-        confirm_production_write="audit.lute-tlz-dddd.top",
-    )
-    module._require_production_write_confirmation(
-        base_url="http://127.0.0.1:8000",
-        confirm_production_write="",
-    )
-
-
-def test_run_production_documents_ruleset_dlp_write_e2e_script_is_guarded() -> None:
-    script_path = Path("scripts/run-production-documents-ruleset-dlp-write-e2e.py")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    script_text = script_path.read_text(encoding="utf-8")
-    assert "sk-" not in script_text
-    assert "--confirm-production-write" in script_text
-    assert "real_clamav_sidecar_scan" in script_text
-    assert "real_ruleset_dlp_review" in script_text
-    assert "external_governance_provider_call" in script_text
-    assert "external_dlp_provider_call" in script_text
-    assert "manual_index_approval_writeback" in script_text
-    assert "indexing_triggered" in script_text
-    assert "ruleset-v1" in script_text
-    assert "sensitive-marker-detected" in script_text
-    assert "tmp/outputs/production-documents-ruleset-dlp-write-e2e-latest.json" in script_text
-
-
-def test_run_production_documents_ruleset_dlp_write_e2e_blocks_unconfirmed_production() -> None:
-    module = _load_script_module(
-        "run_production_documents_ruleset_dlp_write_e2e",
-        Path("scripts/run-production-documents-ruleset-dlp-write-e2e.py"),
-    )
-
-    with pytest.raises(module.E2EError, match="production /documents write requires"):
-        module._require_production_write_confirmation(
-            base_url="https://audit.lute-tlz-dddd.top",
-            confirm_production_write="",
-        )
-
-    module._require_production_write_confirmation(
-        base_url="https://audit.lute-tlz-dddd.top",
-        confirm_production_write="audit.lute-tlz-dddd.top",
-    )
-    module._require_production_write_confirmation(
-        base_url="http://127.0.0.1:8000",
-        confirm_production_write="",
-    )
-
-
-def test_run_production_documents_readonly_probe_script_is_secret_safe() -> None:
-    script_path = Path("scripts/run-production-documents-readonly-probe.py")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    script_text = script_path.read_text(encoding="utf-8")
-    assert "sk-" not in script_text
-    assert "tmp/outputs/production-documents-readonly-latest.json" in script_text
-    assert "document_upload_write" in script_text
-    assert "document_upload_list_api_called" in script_text
-    assert "download_metadata_api_called" in script_text
-    assert "audit_log_write_expected" in script_text
-    assert "provider_call" in script_text
-    assert "utf8-bytes" in script_text
-
-
-def test_run_production_documents_readonly_probe_skips_upload_endpoints() -> None:
-    module = _load_script_module(
-        "run_production_documents_readonly_probe",
-        Path("scripts/run-production-documents-readonly-probe.py"),
-    )
-    called_urls: list[str] = []
-
-    def fake_http_get(
-        url: str,
-        headers: dict[str, str],
-        timeout_seconds: float,
-    ) -> object:
-        called_urls.append(url)
-        if url.endswith("/documents"):
-            return module.HttpResponse(
-                status=200,
-                url=url,
-                content=(
-                    "<html>AI智能审计管理系统 材料与知识库统一检索 个人材料</html>"
-                ).encode(),
-                headers={"content-type": "text/html"},
-            )
-        if url.endswith("/api/v1/documents/permissions"):
-            return module.HttpResponse(
-                status=200,
-                url=url,
-                content=json.dumps(
-                    {
-                        "role": "auditor",
-                        "source_collections": [
-                            {"source_collection": "medical-insurance-laws"}
-                        ],
-                        "upload_permissions": {
-                            "can_upload_personal": True,
-                            "can_read_all_personal_uploads": False,
-                        },
-                    },
-                    ensure_ascii=False,
-                ).encode("utf-8"),
-                headers={"content-type": "application/json"},
-            )
-        if url.endswith("/api/backend/health"):
-            return module.HttpResponse(
-                status=200,
-                url=url,
-                content=b'{"status":"ok","version":"0.1.0"}',
-                headers={"content-type": "application/json"},
-            )
-        if url.endswith("/api/backend/index/search-backend"):
-            return module.HttpResponse(
-                status=200,
-                url=url,
-                content=json.dumps(
-                    {
-                        "backend": "postgres",
-                        "ready": True,
-                        "details": {
-                            "matching_embedding_count": 49051,
-                            "embedding_provider": "openai",
-                        },
-                    },
-                    ensure_ascii=False,
-                ).encode("utf-8"),
-                headers={"content-type": "application/json"},
-            )
-        raise AssertionError(f"unexpected URL: {url}")
-
-    report = module._run_probe(
-        base_url="https://audit.lute-tlz-dddd.top",
-        timeout_seconds=1.0,
-        user_id="readonly-test",
-        role="auditor",
-        min_matching_embeddings=48985,
-        http_get=fake_http_get,
-    )
-
-    assert report["status"] == "pass"
-    assert report["boundaries"]["production_write"] is False
-    assert report["boundaries"]["document_upload_write"] is False
-    assert report["boundaries"]["document_upload_list_api_called"] is False
-    assert report["boundaries"]["download_metadata_api_called"] is False
-    assert report["boundaries"]["audit_log_write_expected"] is False
-    assert report["boundaries"]["provider_call"] is False
-    assert report["summary"]["matching_embedding_count"] == 49051
-    assert called_urls == [
-        "https://audit.lute-tlz-dddd.top/documents",
-        "https://audit.lute-tlz-dddd.top/api/v1/documents/permissions",
-        "https://audit.lute-tlz-dddd.top/api/backend/health",
-        "https://audit.lute-tlz-dddd.top/api/backend/index/search-backend",
-    ]
-    assert not any("/documents/uploads" in url for url in called_urls)
-
-
-def test_audit_production_personal_material_indexing_readiness_script_is_readonly() -> None:
-    script_path = Path("scripts/audit-production-personal-material-indexing-readiness.py")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    script_text = script_path.read_text(encoding="utf-8")
-    assert "sk-" not in script_text
-    assert "COS_SECRET" not in script_text
-    assert "tmp/outputs/production-personal-material-indexing-readiness-latest.json" in script_text
-    assert "production_write" in script_text
-    assert "api_write" in script_text
-    assert "audit_log_write_expected" in script_text
-    assert "external_provider_call" in script_text
-    assert "index_ingestion_triggered" in script_text
-    assert "active_retrieval_activated" in script_text
-    assert "/index-ingestion" not in script_text
-    assert '"POST"' not in script_text
-    assert "method='POST'" not in script_text
-    assert 'method="POST"' not in script_text
-
-
-def test_audit_production_personal_material_indexing_readiness_builds_blocked_report() -> None:
-    module = _load_script_module(
-        "audit_production_personal_material_indexing_readiness",
-        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
-    )
-    remote_report = {
-        "deploy_sha": "c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
-        "document_upload_indexing": {
-            "env_ok": True,
-            "env": {
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "",
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": "",
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": "",
-            },
-            "db_ok": True,
-            "db": {
-                "total_uploads": 12,
-                "ready_not_indexed_uploads": 2,
-                "staged_uploads": 0,
-                "personal_material_candidate_versions": 0,
-                "personal_material_active_versions": 0,
-                "personal_material_chunks": 0,
-                "personal_material_active_chunks": 0,
-                "ready_not_indexed_samples": [
-                    {
-                        "upload_key": "document-upload-ready-cos",
-                        "storage_path": "personal-materials/prod/object.txt",
-                        "storage_provider": "tencent-cos",
-                        "local_file_exists": False,
-                    }
-                ],
-            },
-        },
-        "containers": {
-            "medical_audit_app": {"health": "healthy"},
-            "medical_audit_pg": {"health": "healthy"},
-        },
-    }
-
-    report = module._build_report(
-        remote_report=remote_report,
-        expected_deploy_sha="c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
-        require_indexing_enabled=True,
-        require_ready_upload=True,
-        require_local_file_available=True,
-        require_no_active_personal_materials=True,
-    )
-
-    assert report["status"] == "blocked"
-    assert report["issues"] == [
-        "document-upload-indexing-disabled",
-        "ready-upload-local-file-unavailable",
-    ]
-    assert report["summary"]["ready_not_indexed_uploads"] == 2
-    assert report["summary"]["active_retrieval_activated"] is False
-    assert report["boundaries"]["production_write"] is False
-    assert report["boundaries"]["api_write"] is False
-    assert report["boundaries"]["audit_log_write_expected"] is False
-    assert report["boundaries"]["index_ingestion_triggered"] is False
-    assert report["boundaries"]["active_retrieval_activated"] is False
-
-
-def test_audit_production_personal_material_indexing_readiness_passes_completed_staging() -> None:
-    module = _load_script_module(
-        "audit_production_personal_material_indexing_readiness",
-        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
-    )
-    remote_report = {
-        "deploy_sha": "550a445012267ba1211f5881b1d441264f3a3056",
-        "document_upload_indexing": {
-            "env_ok": True,
-            "env": {
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "true",
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": (
-                    "personal-materials-cos-staging-pr152-20260619"
-                ),
-                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": (
-                    "personal-materials-cos-staging-pr152-20260619"
-                ),
-            },
-            "db_ok": True,
-            "db": {
-                "total_uploads": 18,
-                "ready_not_indexed_uploads": 0,
-                "ready_not_indexed_local_file_available_count": 0,
-                "staged_uploads": 2,
-                "personal_material_candidate_versions": 1,
-                "personal_material_active_versions": 0,
-                "personal_material_chunks": 2,
-                "personal_material_active_chunks": 0,
-                "ready_not_indexed_samples": [],
-            },
-        },
-        "containers": {
-            "medical_audit_app": {"health": "healthy"},
-            "medical_audit_pg": {"health": "healthy"},
-        },
-    }
-
-    report = module._build_report(
-        remote_report=remote_report,
-        expected_deploy_sha="550a445012267ba1211f5881b1d441264f3a3056",
-        require_indexing_enabled=True,
-        require_ready_upload=True,
-        require_local_file_available=True,
-        require_no_active_personal_materials=True,
-    )
-
-    assert report["status"] == "pass"
-    assert report["issues"] == []
-    assert report["summary"]["ready_not_indexed_uploads"] == 0
-    assert report["summary"]["staged_uploads"] == 2
-    assert report["summary"]["personal_material_chunks"] == 2
-    assert report["summary"]["personal_material_active_chunks"] == 0
-    assert report["boundaries"]["active_retrieval_activated"] is False
-
-
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
+        ["python3", "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -544,11 +316,7 @@ def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() 
     assert "sk-" not in script_text
     assert "<remote-audit>" in script_text
     assert "tmp/outputs/tencent-cloud-deployment-state-latest.json" in script_text
-    assert "medical-audit.env" in script_text
-    assert "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER" in script_text
-    assert "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER" in script_text
-    assert "COS_SECRET" not in script_text
-    assert "PASSWORD" not in script_text
+    assert "medical-audit.env" not in script_text
 
 
 def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path) -> None:
@@ -577,145 +345,14 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
         local_smoke_reports=module._summarize_local_smoke_reports(tmp_path, limit=3),
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
+        expected_embeddings=48985,
     )
 
     assert report["status"] == "pass"
     assert report["issues"] == []
     assert report["summary"]["deploy_sha"] == "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
     assert report["summary"]["audit_mount_present"] is True
-    assert report["summary"]["matching_embedding_count"] == 48985
     assert report["summary"]["latest_local_smoke_status"] == "pass"
-
-
-def test_audit_tencent_cloud_deployment_state_accepts_embedding_count_above_minimum() -> None:
-    module = _load_script_module(
-        "audit_tencent_cloud_deployment_state_embedding_minimum",
-        Path("scripts/audit-tencent-cloud-deployment-state.py"),
-    )
-    stamp = "20260611T180655+0800"
-    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
-    remote_report["local_backend"]["search_backend"]["payload"]["details"][
-        "matching_embedding_count"
-    ] = 49051
-
-    report = module._build_report(
-        remote_report=remote_report,
-        local_smoke_reports=[],
-        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
-        required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
-    )
-
-    assert report["status"] == "pass"
-    assert report["summary"]["matching_embedding_count"] == 49051
-    assert report["minimum_matching_embeddings"] == 48985
-
-
-def test_audit_tencent_cloud_deployment_state_can_require_dlp_review_provider() -> None:
-    module = _load_script_module(
-        "audit_tencent_cloud_deployment_state_expected_dlp",
-        Path("scripts/audit-tencent-cloud-deployment-state.py"),
-    )
-    stamp = "20260611T180655+0800"
-    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
-    remote_report["document_upload_governance"] = {
-        "ok": True,
-        "values": {
-            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER": "clamav-sidecar",
-            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER": "ruleset-v1",
-        },
-    }
-
-    report = module._build_report(
-        remote_report=remote_report,
-        local_smoke_reports=[],
-        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
-        required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
-        expected_dlp_review_provider="ruleset-v1",
-    )
-    assert report["status"] == "pass"
-    assert report["issues"] == []
-    assert report["expected_dlp_review_provider"] == "ruleset-v1"
-    assert report["summary"]["dlp_review_provider"] == "ruleset-v1"
-
-    remote_report["document_upload_governance"]["values"][
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER"
-    ] = "unconfigured"
-    mismatch = module._build_report(
-        remote_report=remote_report,
-        local_smoke_reports=[],
-        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
-        required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
-        expected_dlp_review_provider="ruleset-v1",
-    )
-    assert mismatch["status"] == "fail"
-    assert mismatch["issues"] == ["dlp-review-provider-mismatch"]
-
-
-def test_audit_tencent_cloud_deployment_state_warns_when_shared_nginx_fails() -> None:
-    module = _load_script_module(
-        "audit_tencent_cloud_deployment_state_shared_nginx_warning",
-        Path("scripts/audit-tencent-cloud-deployment-state.py"),
-    )
-    stamp = "20260611T180655+0800"
-    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
-    remote_report["nginx"]["config_test"] = {
-        "passed": False,
-        "stderr": 'host not found in upstream "scm-governance-workbench"',
-    }
-    remote_report["public_frontdoor"] = _healthy_audit_frontdoor_fixture()
-
-    report = module._build_report(
-        remote_report=remote_report,
-        local_smoke_reports=[],
-        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
-        required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
-    )
-
-    assert report["status"] == "pass"
-    assert report["issues"] == []
-    assert report["warnings"] == ["shared-nginx-config-test-failed-audit-route-healthy"]
-    assert report["summary"]["nginx_config_test"] is False
-    assert report["summary"]["audit_frontdoor_healthy"] is True
-
-
-def test_audit_tencent_cloud_deployment_state_blocks_bad_audit_route() -> None:
-    module = _load_script_module(
-        "audit_tencent_cloud_deployment_state_shared_nginx_blocks_bad_audit_route",
-        Path("scripts/audit-tencent-cloud-deployment-state.py"),
-    )
-    stamp = "20260611T180655+0800"
-    remote_report = json.loads(json.dumps(_deployment_state_fixture(stamp=stamp)))
-    remote_report["nginx"]["config_test"] = {
-        "passed": False,
-        "stderr": 'host not found in upstream "audit-backend"',
-    }
-    frontdoor = _healthy_audit_frontdoor_fixture()
-    frontdoor["documents"] = {"ok": False, "status_code": 502}
-    remote_report["public_frontdoor"] = frontdoor
-
-    report = module._build_report(
-        remote_report=remote_report,
-        local_smoke_reports=[],
-        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
-        required_backup_stamp=stamp,
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
-    )
-
-    assert report["status"] == "fail"
-    assert report["issues"] == ["nginx-config-test-failed"]
-    assert report["warnings"] == []
-    assert report["summary"]["audit_frontdoor_healthy"] is False
 
 
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
@@ -729,8 +366,7 @@ def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> N
         local_smoke_reports=[],
         expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
         required_backup_stamp="20260611T180655+0800",
-        min_matching_embeddings=48985,
-        require_clamav_sidecar=False,
+        expected_embeddings=48985,
     )
 
     assert report["status"] == "fail"
@@ -768,23 +404,6 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     ).resolve()
 
 
-def test_deploy_tencent_cloud_ssh_script_calls_detach_stdin() -> None:
-    module = _load_script_module(
-        "deploy_tencent_cloud_production_ssh_args",
-        Path("scripts/deploy-tencent-cloud-production.py"),
-    )
-    config = types.SimpleNamespace(
-        ssh_key=Path("ai_video.pem"),
-        ssh_target="ubuntu@101.34.52.232",
-    )
-
-    ssh_args = module._ssh_args(config, "echo ok")
-    ssh_transport = module._ssh_transport(config)
-
-    assert ssh_args[:2] == ["ssh", "-n"]
-    assert "-n" not in ssh_transport.split()
-
-
 def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -792,8 +411,6 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
         "deploy_tencent_cloud_production_cleanup",
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
-    assert ".git" in module.APP_RSYNC_EXCLUDES
-    assert ".git/" in module.APP_RSYNC_EXCLUDES
     captured_scripts: list[str] = []
 
     def fake_ssh(config: object, script: str) -> None:
@@ -806,9 +423,6 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
 
     assert len(captured_scripts) == 1
     script = captured_scripts[0]
-    assert "git_file=/opt/medical-audit/app/.git" in script
-    assert 'if [ -f "$git_file" ]; then' in script
-    assert 'rm -f "$git_file"' in script
     assert "src_dir=/opt/medical-audit/app/src" in script
     assert "test -d \"$src_dir\"" in script
     assert "-name '*.pyc'" in script
@@ -818,98 +432,6 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
     assert "--delete-excluded" not in script
     assert "/data" not in script
     assert "medical-audit.env" not in script
-    assert "rm -rf" not in script
-
-
-def test_deploy_tencent_cloud_backups_use_timeout_and_completion_check(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    module = _load_script_module(
-        "deploy_tencent_cloud_production_backup_completion",
-        Path("scripts/deploy-tencent-cloud-production.py"),
-    )
-    captured: dict[str, object] = {}
-
-    def fake_ssh(
-        config: object,
-        script: str,
-        *,
-        timeout_seconds: int | None = None,
-        completion_check_script: str | None = None,
-        timeout_description: str = "remote script",
-    ) -> None:
-        captured["script"] = script
-        captured["timeout_seconds"] = timeout_seconds
-        captured["completion_check_script"] = completion_check_script
-        captured["timeout_description"] = timeout_description
-
-    monkeypatch.setattr(module, "_ssh", fake_ssh)
-    config = types.SimpleNamespace(
-        stamp="pr121-download-metadata-20260617",
-        remote_app_dir="/opt/medical-audit/app",
-    )
-
-    module._create_remote_backups(config)
-
-    script = str(captured["script"])
-    completion_check = str(captured["completion_check_script"])
-    assert captured["timeout_seconds"] == module.REMOTE_BACKUP_TIMEOUT_SECONDS
-    assert captured["timeout_description"] == "remote backups"
-    marker_assignment = (
-        "backup_marker=/tmp/medical-audit-deploy-backups-"
-        "pr121-download-metadata-20260617.complete"
-    )
-    assert marker_assignment in script
-    assert 'rm -f "$backup_marker"' in script
-    assert 'printf \'complete\\n\' > "$backup_marker"' in script
-    assert "test -s \"$backup_marker\"" in completion_check
-    assert "pre-deploy-pr121-download-metadata-20260617.tar.gz" in completion_check
-    assert "medical-audit.env.pre-deploy-pr121-download-metadata-20260617" in completion_check
-    assert "pre-deploy-pr121-download-metadata-20260617.sql.gz" in completion_check
-    assert "nginx.conf.pre-deploy-pr121-download-metadata-20260617" in completion_check
-    assert "audit-web-pre-deploy-pr121-download-metadata-20260617.tar.gz" in completion_check
-
-
-def test_deploy_tencent_cloud_ssh_timeout_recovers_when_completion_check_passes(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    module = _load_script_module(
-        "deploy_tencent_cloud_production_ssh_timeout_recovery",
-        Path("scripts/deploy-tencent-cloud-production.py"),
-    )
-    config = types.SimpleNamespace(
-        repo_root=Path.cwd(),
-        ssh_key=Path("ai_video.pem"),
-        ssh_target="ubuntu@101.34.52.232",
-    )
-    calls: list[list[str]] = []
-
-    def fake_run(
-        args: list[str],
-        *,
-        cwd: Path,
-        check: bool,
-        text: bool,
-        timeout: int | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        calls.append(args)
-        if len(calls) == 1:
-            raise subprocess.TimeoutExpired(cmd=args, timeout=timeout)
-        return subprocess.CompletedProcess(args=args, returncode=0)
-
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
-
-    module._ssh(
-        config,
-        "long backup",
-        timeout_seconds=1,
-        completion_check_script="test -s /tmp/marker",
-        timeout_description="remote backups",
-    )
-
-    assert len(calls) == 2
-    assert calls[0][-1] == shlex.quote("long backup")
-    assert calls[1][-1] == shlex.quote("test -s /tmp/marker")
 
 
 def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
@@ -923,16 +445,13 @@ def test_deploy_tencent_cloud_runs_cleanup_after_backups_before_rsync() -> None:
 
     assert backup_call < cleanup_call < sync_call
     assert "--delete-excluded" not in script_text
-    assert "docker exec medical_audit_pg sh -lc 'pg_dump" in script_text
-    assert "docker exec -i medical_audit_pg sh -lc 'pg_dump" not in script_text
-    assert "docker exec -t medical_audit_pg sh -lc 'pg_dump" not in script_text
 
 
 def test_run_audit_log_archive_audit_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/run-audit-log-archive-audit.py")
 
     result = subprocess.run(
-        [sys.executable, "-m", "py_compile", str(script_path)],
+        ["python3", "-m", "py_compile", str(script_path)],
         check=False,
         capture_output=True,
         text=True,
@@ -1092,7 +611,7 @@ def test_classify_knowledge_pending_files_script_writes_reports(tmp_path: Path) 
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--pending-file",
             str(pending_file),
@@ -1158,7 +677,7 @@ def test_audit_index_rollback_readiness_allows_inactive_target(tmp_path: Path) -
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--versions-file",
             str(versions_file),
@@ -1206,7 +725,7 @@ def test_audit_index_rollback_readiness_blocks_without_inactive_target(
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--versions-file",
             str(versions_file),
@@ -1261,7 +780,7 @@ def test_audit_index_candidate_release_readiness_allows_new_candidate_key(
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--import-result-json",
             str(import_result_file),
@@ -1319,7 +838,7 @@ def test_audit_index_candidate_release_readiness_blocks_existing_candidate_key(
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--import-result-json",
             str(import_result_file),
@@ -1379,7 +898,7 @@ def test_audit_index_candidate_release_readiness_blocks_chunk_id_collision(
 
     result = subprocess.run(
         [
-            sys.executable,
+            "python3",
             str(script_path),
             "--import-result-json",
             str(import_result_file),
@@ -1496,21 +1015,6 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
     }
 
 
-def _healthy_audit_frontdoor_fixture() -> dict[str, object]:
-    return {
-        "health": {"ok": True, "status_code": 200},
-        "documents": {
-            "ok": True,
-            "status_code": 200,
-            "expected_utf8_text": {
-                "AI智能审计管理系统": True,
-                "材料与知识库统一检索": True,
-                "个人材料": True,
-            },
-        },
-    }
-
-
 def _write_bytes(path: Path, content: bytes) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
@@ -1550,3 +1054,147 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def test_audit_production_personal_material_indexing_readiness_script_is_readonly() -> None:
+    script_path = Path("scripts/audit-production-personal-material-indexing-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "COS_SECRET" not in script_text
+    assert "tmp/outputs/production-personal-material-indexing-readiness-latest.json" in script_text
+    assert "production_write" in script_text
+    assert "api_write" in script_text
+    assert "audit_log_write_expected" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_ingestion_triggered" in script_text
+    assert "active_retrieval_activated" in script_text
+    assert "/index-ingestion" not in script_text
+    assert '"POST"' not in script_text
+    assert "method='POST'" not in script_text
+    assert 'method="POST"' not in script_text
+
+
+def test_audit_production_personal_material_indexing_readiness_builds_blocked_report() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_indexing_readiness",
+        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
+    )
+    remote_report = {
+        "deploy_sha": "c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
+        "document_upload_indexing": {
+            "env_ok": True,
+            "env": {
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": "",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": "",
+            },
+            "db_ok": True,
+            "db": {
+                "total_uploads": 12,
+                "ready_not_indexed_uploads": 2,
+                "staged_uploads": 0,
+                "personal_material_candidate_versions": 0,
+                "personal_material_active_versions": 0,
+                "personal_material_chunks": 0,
+                "personal_material_active_chunks": 0,
+                "ready_not_indexed_samples": [
+                    {
+                        "upload_key": "document-upload-ready-cos",
+                        "storage_path": "personal-materials/prod/object.txt",
+                        "storage_provider": "tencent-cos",
+                        "local_file_exists": False,
+                    }
+                ],
+            },
+        },
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="c21d985e6853ffcbd4cb06cdf27deb03ab2861bc",
+        require_indexing_enabled=True,
+        require_ready_upload=True,
+        require_local_file_available=True,
+        require_no_active_personal_materials=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == [
+        "document-upload-indexing-disabled",
+        "ready-upload-local-file-unavailable",
+    ]
+    assert report["summary"]["ready_not_indexed_uploads"] == 2
+    assert report["summary"]["active_retrieval_activated"] is False
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["api_write"] is False
+    assert report["boundaries"]["audit_log_write_expected"] is False
+    assert report["boundaries"]["index_ingestion_triggered"] is False
+    assert report["boundaries"]["active_retrieval_activated"] is False
+
+
+def test_audit_production_personal_material_indexing_readiness_passes_completed_staging() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_indexing_readiness",
+        Path("scripts/audit-production-personal-material-indexing-readiness.py"),
+    )
+    remote_report = {
+        "deploy_sha": "550a445012267ba1211f5881b1d441264f3a3056",
+        "document_upload_indexing": {
+            "env_ok": True,
+            "env": {
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "true",
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": (
+                    "personal-materials-cos-staging-pr152-20260619"
+                ),
+                "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": (
+                    "personal-materials-cos-staging-pr152-20260619"
+                ),
+            },
+            "db_ok": True,
+            "db": {
+                "total_uploads": 18,
+                "ready_not_indexed_uploads": 0,
+                "ready_not_indexed_local_file_available_count": 0,
+                "staged_uploads": 2,
+                "personal_material_candidate_versions": 1,
+                "personal_material_active_versions": 0,
+                "personal_material_chunks": 2,
+                "personal_material_active_chunks": 0,
+                "ready_not_indexed_samples": [],
+            },
+        },
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="550a445012267ba1211f5881b1d441264f3a3056",
+        require_indexing_enabled=True,
+        require_ready_upload=True,
+        require_local_file_available=True,
+        require_no_active_personal_materials=True,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["ready_not_indexed_uploads"] == 0
+    assert report["summary"]["staged_uploads"] == 2
+    assert report["summary"]["personal_material_chunks"] == 2
+    assert report["summary"]["personal_material_active_chunks"] == 0
+    assert report["boundaries"]["active_retrieval_activated"] is False

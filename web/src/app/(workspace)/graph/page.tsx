@@ -1,25 +1,77 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
-import { graphNodes, graphRelations, GraphNode, GraphNodeKind, GraphRelation } from "@/lib/portal-data";
+import { fetchGraphWorkbench } from "@/lib/api-client";
+import type {
+  GraphWorkbenchNode,
+  GraphWorkbenchNodeKind,
+  GraphWorkbenchRelation,
+  GraphWorkbenchResponse
+} from "@/lib/api-types";
+import { graphNodes, graphRelations } from "@/lib/portal-data";
 
-const graphNodeKindOrder: readonly GraphNodeKind[] = ["项目", "知识库", "文档", "规则", "疑点", "复核", "报告", "整改"];
+const graphNodeKindOrder: readonly GraphWorkbenchNodeKind[] = ["项目", "知识库", "文档", "规则", "疑点", "复核", "报告", "整改"];
 
-const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
-const graphEdges = graphRelations.map((relation) => ({
-  relation,
-  source: getGraphNode(relation.sourceId),
-  target: getGraphNode(relation.targetId)
-}));
-
-const kindStats = graphNodeKindOrder.map((kind) => ({
-  kind,
-  count: graphNodes.filter((node) => node.kind === kind).length
-}));
-
-const strongRelationCount = graphRelations.filter((relation) => relation.strength === "强").length;
-const pendingRelationCount = graphRelations.filter((relation) => relation.strength === "待补").length;
+const staticGraphWorkbench: GraphWorkbenchResponse = {
+  format: "graph-workbench-v1",
+  generated_at: "static-fallback",
+  graph_id: "SELF-CHECK-FUND-20260607",
+  graph_title: "医保基金使用合规专项图谱",
+  graph_scope: "医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。",
+  nodes: graphNodes,
+  relations: graphRelations,
+  metrics: buildGraphMetrics(graphNodes, graphRelations),
+  evidence_grade: "static-fallback",
+  production_side_effect: "none",
+  store: { ready: false, backend: "portal-data-static-fallback" }
+};
 
 export default function GraphPage() {
+  const [workbench, setWorkbench] = useState<GraphWorkbenchResponse>(staticGraphWorkbench);
+  const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
+
+  useEffect(() => {
+    let active = true;
+
+    fetchGraphWorkbench()
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(response);
+        setBackendStatus("ready");
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(staticGraphWorkbench);
+        setBackendStatus("fallback");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const nodes = workbench.nodes;
+  const relations = workbench.relations;
+  const kindStats = useMemo(
+    () =>
+      graphNodeKindOrder.map((kind) => ({
+        kind,
+        count: workbench.metrics.node_kind_counts[kind] ?? nodes.filter((node) => node.kind === kind).length
+      })),
+    [nodes, workbench.metrics.node_kind_counts]
+  );
+  const graphEdges = useMemo(() => buildGraphEdges(nodes, relations), [nodes, relations]);
+  const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
+  const statusLabel =
+    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+
   return (
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
@@ -27,6 +79,9 @@ export default function GraphPage() {
         <p className="audit-copy mt-2">按审计链路查看项目、知识、规则、疑点、复核和整改覆盖。</p>
         <div className="mt-3">
           <SearchBackendStatusPill />
+        </div>
+        <div className="mt-3">
+          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-2">
           {kindStats.map((item) => (
@@ -51,19 +106,21 @@ export default function GraphPage() {
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <GraphMetric label="节点类型" value={`${kindStats.length} 类`} />
-          <GraphMetric label="关系链路" value={`${graphRelations.length} 条`} />
-          <GraphMetric label="强证据关系" value={`${strongRelationCount} 条`} />
-          <GraphMetric label="待补关系" value={`${pendingRelationCount} 条`} />
+          <GraphMetric label="节点类型" value={`${workbench.metrics.node_kind_count} 类`} />
+          <GraphMetric label="关系链路" value={`${workbench.metrics.relation_count} 条`} />
+          <GraphMetric label="强证据关系" value={`${workbench.metrics.strong_relation_count} 条`} />
+          <GraphMetric label="待补关系" value={`${workbench.metrics.pending_relation_count} 条`} />
         </div>
 
         <section className="audit-panel-muted mt-6 p-4" aria-labelledby="graph-preview-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="graph-preview-title" className="audit-section-title">
-                医保基金使用合规专项图谱
+                {workbench.graph_title}
               </h2>
-              <p className="audit-meta mt-1">SELF-CHECK-FUND-20260607 · 证据链静态预览</p>
+              <p className="audit-meta mt-1">
+                {workbench.graph_id} · {backendStatus === "ready" ? "API 只读预览" : "证据链静态预览"}
+              </p>
             </div>
             <StatusPill tone="success">证据链覆盖</StatusPill>
           </div>
@@ -96,7 +153,7 @@ export default function GraphPage() {
                 />
               ))}
 
-              {graphNodes.map((node) => (
+              {nodes.map((node) => (
                 <GraphSvgNode key={node.id} node={node} />
               ))}
             </svg>
@@ -108,7 +165,7 @@ export default function GraphPage() {
             证据链关系
           </h2>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {graphRelations.map((relation) => (
+            {relations.map((relation) => (
               <RelationCard key={relation.id} relation={relation} />
             ))}
           </div>
@@ -119,7 +176,7 @@ export default function GraphPage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">节点证据</h2>
           <div className="mt-4 space-y-3">
-            {graphNodes.map((node) => (
+            {nodes.map((node) => (
               <a key={node.id} className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -145,6 +202,41 @@ export default function GraphPage() {
   );
 }
 
+function buildGraphMetrics(
+  nodes: readonly GraphWorkbenchNode[],
+  relations: readonly GraphWorkbenchRelation[]
+): GraphWorkbenchResponse["metrics"] {
+  const nodeKindCounts = Object.fromEntries(
+    graphNodeKindOrder.map((kind) => [kind, nodes.filter((node) => node.kind === kind).length])
+  ) as Record<GraphWorkbenchNodeKind, number>;
+
+  return {
+    node_count: nodes.length,
+    node_kind_count: graphNodeKindOrder.length,
+    node_kind_counts: nodeKindCounts,
+    relation_count: relations.length,
+    strong_relation_count: relations.filter((relation) => relation.strength === "强").length,
+    pending_relation_count: relations.filter((relation) => relation.strength === "待补").length
+  };
+}
+
+function buildGraphEdges(
+  nodes: readonly GraphWorkbenchNode[],
+  relations: readonly GraphWorkbenchRelation[]
+) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return relations.flatMap((relation) => {
+    const source = nodeById.get(relation.sourceId);
+    const target = nodeById.get(relation.targetId);
+
+    if (!source || !target) {
+      return [];
+    }
+
+    return [{ relation, source, target }];
+  });
+}
+
 function GraphMetric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="audit-panel-muted p-4">
@@ -154,7 +246,7 @@ function GraphMetric({ label, value }: { readonly label: string; readonly value:
   );
 }
 
-function GraphSvgNode({ node }: { readonly node: GraphNode }) {
+function GraphSvgNode({ node }: { readonly node: GraphWorkbenchNode }) {
   const style = graphNodeStyleByKind[node.kind];
 
   return (
@@ -172,7 +264,7 @@ function GraphSvgNode({ node }: { readonly node: GraphNode }) {
   );
 }
 
-function RelationCard({ relation }: { readonly relation: GraphRelation }) {
+function RelationCard({ relation }: { readonly relation: GraphWorkbenchRelation }) {
   return (
     <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -190,17 +282,7 @@ function RelationCard({ relation }: { readonly relation: GraphRelation }) {
   );
 }
 
-function getGraphNode(id: string): GraphNode {
-  const node = nodeById.get(id);
-
-  if (!node) {
-    throw new Error(`Missing graph node: ${id}`);
-  }
-
-  return node;
-}
-
-function getNodeStatusTone(status: GraphNode["status"]) {
+function getNodeStatusTone(status: GraphWorkbenchNode["status"]) {
   if (status === "可引用" || status === "已归集") {
     return "success";
   }
@@ -212,7 +294,7 @@ function getNodeStatusTone(status: GraphNode["status"]) {
   return "info";
 }
 
-function getRelationTone(strength: GraphRelation["strength"]) {
+function getRelationTone(strength: GraphWorkbenchRelation["strength"]) {
   if (strength === "强") {
     return "success";
   }
@@ -224,7 +306,7 @@ function getRelationTone(strength: GraphRelation["strength"]) {
   return "warning";
 }
 
-const graphNodeStyleByKind: Record<GraphNodeKind, { readonly rect: string; readonly dot: string }> = {
+const graphNodeStyleByKind: Record<GraphWorkbenchNodeKind, { readonly rect: string; readonly dot: string }> = {
   项目: {
     rect: "fill-blue-50 stroke-blue-200",
     dot: "fill-blue-600"

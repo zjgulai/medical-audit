@@ -1,30 +1,86 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { StatusPill } from "@/components/ui/status-pill";
+import { fetchRemediationWorkbench } from "@/lib/api-client";
+import type {
+  RemediationCaseApiItem,
+  RemediationClosureGateApiItem,
+  RemediationEvidenceRequestApiItem,
+  RemediationTimelineApiItem,
+  RemediationWorkbenchResponse
+} from "@/lib/api-types";
 import {
   remediationCases,
   remediationClosureGates,
   remediationEvidenceRequests,
   remediationTimeline
 } from "@/lib/portal-data";
-import type {
-  RemediationCase,
-  RemediationClosureGate,
-  RemediationEvidenceRequest,
-  RemediationTimelineItem
-} from "@/lib/portal-data";
 
-const activeCaseCount = remediationCases.filter((item) => item.status !== "已关闭").length;
-const pendingEvidenceCount = remediationEvidenceRequests.filter((item) => item.status === "待上传" || item.status === "需退回").length;
-const blockedGateCount = remediationClosureGates.filter((gate) => gate.status === "阻断").length;
-const averageProgress = Math.round(remediationCases.reduce((sum, item) => sum + item.progress, 0) / remediationCases.length);
+const staticRemediationWorkbench: RemediationWorkbenchResponse = {
+  format: "remediation-workbench-v1",
+  generated_at: "static-fallback",
+  workbench_id: "FUND-USAGE-REMEDIATION",
+  workbench_title: "整改事项与补证闭环",
+  workbench_scope: "把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。",
+  remediation_cases: remediationCases,
+  evidence_requests: remediationEvidenceRequests,
+  closure_gates: remediationClosureGates,
+  timeline: remediationTimeline,
+  metrics: buildRemediationMetrics(
+    remediationCases,
+    remediationEvidenceRequests,
+    remediationClosureGates,
+    remediationTimeline
+  ),
+  evidence_grade: "static-fallback",
+  production_side_effect: "none",
+  store: { ready: false, backend: "portal-data-static-fallback" }
+};
 
 export default function RemediationPage() {
+  const [workbench, setWorkbench] = useState<RemediationWorkbenchResponse>(staticRemediationWorkbench);
+  const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
+
+  useEffect(() => {
+    let active = true;
+
+    fetchRemediationWorkbench()
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(response);
+        setBackendStatus("ready");
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(staticRemediationWorkbench);
+        setBackendStatus("fallback");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
+  const statusLabel =
+    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+
   return (
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">整改事项</h2>
         <p className="audit-copy mt-2">按责任科室和验收状态跟踪报告后的整改闭环。</p>
+        <div className="mt-3">
+          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+        </div>
         <div className="mt-5 space-y-3">
-          {remediationCases.map((item) => (
+          {workbench.remediation_cases.map((item) => (
             <RemediationIndexCard key={item.id} item={item} />
           ))}
         </div>
@@ -34,19 +90,19 @@ export default function RemediationPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">补证整改</p>
-            <h1 className="audit-page-title">整改事项与补证闭环</h1>
+            <h1 className="audit-page-title">{workbench.workbench_title}</h1>
             <p className="audit-copy mt-2 max-w-3xl">
-              把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。
+              {workbench.workbench_scope}
             </p>
           </div>
           <StatusPill tone="warning">验收门禁</StatusPill>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <RemediationMetric label="未关闭事项" value={`${activeCaseCount} 项`} />
-          <RemediationMetric label="待补证材料" value={`${pendingEvidenceCount} 份`} />
-          <RemediationMetric label="阻断门禁" value={`${blockedGateCount} 项`} />
-          <RemediationMetric label="平均进度" value={`${averageProgress}%`} />
+          <RemediationMetric label="未关闭事项" value={`${workbench.metrics.active_case_count} 项`} />
+          <RemediationMetric label="待补证材料" value={`${workbench.metrics.pending_evidence_count} 份`} />
+          <RemediationMetric label="阻断门禁" value={`${workbench.metrics.blocked_gate_count} 项`} />
+          <RemediationMetric label="平均进度" value={`${workbench.metrics.average_progress}%`} />
         </div>
 
         <section className="mt-6" aria-labelledby="remediation-ledger-title">
@@ -60,7 +116,7 @@ export default function RemediationPage() {
           </div>
 
           <div className="mt-4 grid gap-3">
-            {remediationCases.map((item) => (
+            {workbench.remediation_cases.map((item) => (
               <RemediationCard key={item.id} item={item} />
             ))}
           </div>
@@ -72,7 +128,7 @@ export default function RemediationPage() {
               补证请求
             </h2>
             <div className="mt-4 grid gap-3">
-              {remediationEvidenceRequests.map((request) => (
+              {workbench.evidence_requests.map((request) => (
                 <EvidenceRequestCard key={request.id} request={request} />
               ))}
             </div>
@@ -92,7 +148,7 @@ export default function RemediationPage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">关闭门禁</h2>
           <div className="mt-4 space-y-3">
-            {remediationClosureGates.map((gate) => (
+            {workbench.closure_gates.map((gate) => (
               <ClosureGateCard key={gate.id} gate={gate} />
             ))}
           </div>
@@ -101,7 +157,7 @@ export default function RemediationPage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">整改动态</h2>
           <div className="mt-4 space-y-3">
-            {remediationTimeline.map((item) => (
+            {workbench.timeline.map((item) => (
               <TimelineCard key={item.id} item={item} />
             ))}
           </div>
@@ -117,7 +173,28 @@ export default function RemediationPage() {
   );
 }
 
-function RemediationIndexCard({ item }: { readonly item: RemediationCase }) {
+function buildRemediationMetrics(
+  cases: readonly RemediationCaseApiItem[],
+  evidenceRequests: readonly RemediationEvidenceRequestApiItem[],
+  closureGates: readonly RemediationClosureGateApiItem[],
+  timeline: readonly RemediationTimelineApiItem[]
+): RemediationWorkbenchResponse["metrics"] {
+  return {
+    case_count: cases.length,
+    active_case_count: cases.filter((item) => item.status !== "已关闭").length,
+    closed_case_count: cases.filter((item) => item.status === "已关闭").length,
+    pending_evidence_count: evidenceRequests.filter(
+      (item) => item.status === "待上传" || item.status === "需退回"
+    ).length,
+    blocked_gate_count: closureGates.filter((gate) => gate.status === "阻断").length,
+    average_progress: cases.length
+      ? Math.round(cases.reduce((sum, item) => sum + item.progress, 0) / cases.length)
+      : 0,
+    timeline_count: timeline.length
+  };
+}
+
+function RemediationIndexCard({ item }: { readonly item: RemediationCaseApiItem }) {
   return (
     <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={item.href}>
       <div className="flex items-start justify-between gap-3">
@@ -143,7 +220,7 @@ function RemediationMetric({ label, value }: { readonly label: string; readonly 
   );
 }
 
-function RemediationCard({ item }: { readonly item: RemediationCase }) {
+function RemediationCard({ item }: { readonly item: RemediationCaseApiItem }) {
   return (
     <article className="audit-panel-muted p-4">
       <div className="flex items-start justify-between gap-3">
@@ -182,7 +259,7 @@ function RemediationCard({ item }: { readonly item: RemediationCase }) {
   );
 }
 
-function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenceRequest }) {
+function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenceRequestApiItem }) {
   return (
     <article className="audit-panel-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -202,7 +279,7 @@ function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenc
   );
 }
 
-function ClosureGateCard({ gate }: { readonly gate: RemediationClosureGate }) {
+function ClosureGateCard({ gate }: { readonly gate: RemediationClosureGateApiItem }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -217,7 +294,7 @@ function ClosureGateCard({ gate }: { readonly gate: RemediationClosureGate }) {
   );
 }
 
-function TimelineCard({ item }: { readonly item: RemediationTimelineItem }) {
+function TimelineCard({ item }: { readonly item: RemediationTimelineApiItem }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -268,7 +345,7 @@ function getProgressWidthClass(value: number) {
   return "w-1/5";
 }
 
-function getRemediationStatusTone(status: RemediationCase["status"]) {
+function getRemediationStatusTone(status: RemediationCaseApiItem["status"]) {
   if (status === "已关闭") {
     return "success";
   }
@@ -280,7 +357,7 @@ function getRemediationStatusTone(status: RemediationCase["status"]) {
   return "warning";
 }
 
-function getEvidenceStatusTone(status: RemediationEvidenceRequest["status"]) {
+function getEvidenceStatusTone(status: RemediationEvidenceRequestApiItem["status"]) {
   if (status === "已验收") {
     return "success";
   }
@@ -296,7 +373,7 @@ function getEvidenceStatusTone(status: RemediationEvidenceRequest["status"]) {
   return "warning";
 }
 
-function getGateTone(status: RemediationClosureGate["status"]) {
+function getGateTone(status: RemediationClosureGateApiItem["status"]) {
   if (status === "通过") {
     return "success";
   }

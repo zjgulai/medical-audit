@@ -4,9 +4,13 @@ import copy
 from collections.abc import Mapping, Sequence
 from typing import cast
 
+from fastapi import HTTPException
+
+from medical_audit_kb.api.auth import Permission, has_permission, normalize_hospital_role
 from medical_audit_kb.api.auth_context import normalize_role_key
 
-AUDIT_LOG_READER_ROLES = frozenset({"system-admin", "department-head"})
+AUDIT_LOG_READER_ROLES = frozenset({"admin", "director", "it-admin", "department-head"})
+LEGACY_AUDIT_LOG_READER_ROLES = frozenset({"department-head", "system-admin"})
 AUDIT_LOG_RETENTION_DAYS = 180
 REDACTED_VALUE = "[REDACTED]"
 SENSITIVE_AUDIT_LOG_KEYS = frozenset(
@@ -22,12 +26,17 @@ SENSITIVE_AUDIT_LOG_KEYS = frozenset(
 
 
 def can_read_audit_logs(role: str | None) -> bool:
-    return normalize_role_key(role, allow_unknown=True) in AUDIT_LOG_READER_ROLES
+    if normalize_role_key(role, allow_unknown=True) in LEGACY_AUDIT_LOG_READER_ROLES:
+        return True
+    try:
+        return has_permission(normalize_hospital_role(role), Permission.READ_AUDIT_LOGS)
+    except HTTPException:
+        return False
 
 
 def audit_log_policy_payload() -> dict[str, object]:
     return {
-        "reader_roles": ["it-admin", *sorted(AUDIT_LOG_READER_ROLES)],
+        "reader_roles": sorted(AUDIT_LOG_READER_ROLES),
         "retention_days": AUDIT_LOG_RETENTION_DAYS,
         "redaction": {
             "mode": "response-only",

@@ -578,6 +578,114 @@ class AuditAgent(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+    prompt_versions: Mapped[list[AuditAgentPromptVersion]] = relationship(
+        back_populates="agent",
+        cascade="all, delete-orphan",
+        order_by="AuditAgentPromptVersion.version",
+    )
+    invocations: Mapped[list[AuditAgentInvocation]] = relationship(
+        back_populates="agent",
+        cascade="all, delete-orphan",
+        order_by="AuditAgentInvocation.created_at",
+    )
+    feedback_entries: Mapped[list[AuditAgentFeedback]] = relationship(
+        back_populates="agent",
+        cascade="all, delete-orphan",
+        order_by="AuditAgentFeedback.created_at",
+    )
+
+
+class AuditAgentPromptVersion(Base):
+    __tablename__ = "audit_agent_prompt_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_id",
+            "version",
+            name="uq_audit_agent_prompt_versions_agent_version",
+        ),
+        Index("idx_audit_agent_prompt_versions_agent", "agent_id"),
+        Index("idx_audit_agent_prompt_versions_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    agent_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_agents.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    change_summary: Mapped[str] = mapped_column(Text, nullable=False, default="initial prompt")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    agent: Mapped[AuditAgent] = relationship(back_populates="prompt_versions")
+
+
+class AuditAgentInvocation(Base):
+    __tablename__ = "audit_agent_invocations"
+    __table_args__ = (
+        Index("idx_audit_agent_invocations_agent_key", "agent_key"),
+        Index("idx_audit_agent_invocations_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    agent_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_agents.id", ondelete="SET NULL")
+    )
+    agent_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    prompt_version_key: Mapped[str] = mapped_column(Text, nullable=False)
+    invocation_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    question: Mapped[str | None] = mapped_column(Text)
+    conversation_ref: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    agent: Mapped[AuditAgent | None] = relationship(back_populates="invocations")
+    feedback_entries: Mapped[list[AuditAgentFeedback]] = relationship(
+        back_populates="invocation",
+        cascade="all, delete-orphan",
+        order_by="AuditAgentFeedback.created_at",
+    )
+
+
+class AuditAgentFeedback(Base):
+    __tablename__ = "audit_agent_feedback"
+    __table_args__ = (
+        Index("idx_audit_agent_feedback_agent_key", "agent_key"),
+        Index("idx_audit_agent_feedback_invocation", "invocation_id"),
+        Index("idx_audit_agent_feedback_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    agent_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_agents.id", ondelete="SET NULL")
+    )
+    invocation_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_agent_invocations.id", ondelete="SET NULL")
+    )
+    agent_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    rating: Mapped[str] = mapped_column(String(32), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    agent: Mapped[AuditAgent | None] = relationship(back_populates="feedback_entries")
+    invocation: Mapped[AuditAgentInvocation | None] = relationship(
+        back_populates="feedback_entries"
+    )
 
 
 class AuditProjectMember(Base):
@@ -606,6 +714,96 @@ class AuditProjectMember(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+
+
+class AuthDepartment(Base):
+    __tablename__ = "auth_departments"
+    __table_args__ = (
+        Index("idx_auth_departments_status", "status"),
+        Index("idx_auth_departments_parent", "parent_department_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    department_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_department_key: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="active")
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    users: Mapped[list[AuthUser]] = relationship(back_populates="department")
+
+
+class AuthUser(Base):
+    __tablename__ = "auth_users"
+    __table_args__ = (
+        Index("idx_auth_users_department", "department_key"),
+        Index("idx_auth_users_status", "status"),
+        Index("idx_auth_users_updated_at", "updated_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    department_key: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("auth_departments.department_key", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="active")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    department: Mapped[AuthDepartment | None] = relationship(back_populates="users")
+    role_assignments: Mapped[list[AuthUserRoleAssignment]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class AuthUserRoleAssignment(Base):
+    __tablename__ = "auth_user_role_assignments"
+    __table_args__ = (
+        Index("idx_auth_user_role_assignments_user", "user_key"),
+        Index("idx_auth_user_role_assignments_role", "role"),
+        Index("idx_auth_user_role_assignments_scope", "scope_type", "scope_key"),
+        Index("idx_auth_user_role_assignments_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    user_key: Mapped[str] = mapped_column(
+        String(128), ForeignKey("auth_users.user_key", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(48), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(48), nullable=False, default="global")
+    scope_key: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="active")
+    assigned_by: Mapped[str | None] = mapped_column(Text)
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped[AuthUser] = relationship(back_populates="role_assignments")
 
 
 class AuditProject(Base):

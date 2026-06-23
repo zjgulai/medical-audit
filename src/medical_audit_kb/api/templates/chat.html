@@ -120,7 +120,7 @@
           <p class="rail-note">追问优先补充适用条件、例外情形和原始凭证。</p>
           <div class="prompt-stack prompt-chips">
             {% for item in follow_up_questions %}
-              <a href="/pages/chat?question={{ item|urlencode }}">{{ item }}</a>
+              <a href="/pages/chat?question={{ item|urlencode }}{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}">{{ item }}</a>
             {% endfor %}
           </div>
         </aside>
@@ -140,9 +140,9 @@
                   推荐从“是否合规、依据是什么、还需核验哪些材料”三个角度提问。当前版本会优先返回可点击原文预览。
                 </p>
                 <div class="example-question-grid" aria-label="推荐问题模板">
-                  <a href="/pages/chat?question={{ '门诊超量开药应该核对哪些医保审核依据？'|urlencode }}">超量开药依据</a>
-                  <a href="/pages/chat?question={{ '医保目录限制条件应该如何核验？'|urlencode }}">目录限制核验</a>
-                  <a href="/pages/chat?question={{ '重复收费应查看哪些监管规则？'|urlencode }}">重复收费规则</a>
+                  <a href="/pages/chat?question={{ '门诊超量开药应该核对哪些医保审核依据？'|urlencode }}{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}">超量开药依据</a>
+                  <a href="/pages/chat?question={{ '医保目录限制条件应该如何核验？'|urlencode }}{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}">目录限制核验</a>
+                  <a href="/pages/chat?question={{ '重复收费应查看哪些监管规则？'|urlencode }}{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}">重复收费规则</a>
                 </div>
               </section>
             {% endif %}
@@ -205,10 +205,13 @@
                     <button type="submit">创建复核任务</button>
                   </form>
                   <a
-                    href="/pages/chat/export?question={{ question|urlencode }}&format=markdown{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+                    href="/pages/chat/export?question={{ question|urlencode }}&format=markdown{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
                   >导出 Markdown 底稿</a>
                   <a
-                    href="/pages/chat/export?question={{ question|urlencode }}&format=json{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+                    href="/pages/chat/export?question={{ question|urlencode }}&format=docx{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
+                  >导出 Word 底稿</a>
+                  <a
+                    href="/pages/chat/export?question={{ question|urlencode }}&format=json{% if selected_agent %}&agent={{ selected_agent|urlencode }}{% endif %}{% if selected_project_name %}&project_name={{ selected_project_name|urlencode }}{% endif %}{% for collection in selected_collections %}&source_collection={{ collection|urlencode }}{% endfor %}"
                   >导出 JSON 记录</a>
                   <span>导出内容包含回答、引用、chunk/index/package 和复核清单。</span>
                 </div>
@@ -233,6 +236,12 @@
                 aria-describedby="chat-question-help"
                 required
               >{{ question }}</textarea>
+              {% if selected_agent %}
+                <input type="hidden" name="agent" value="{{ selected_agent }}">
+              {% endif %}
+              {% if selected_project_name %}
+                <input type="hidden" name="project_name" value="{{ selected_project_name }}">
+              {% endif %}
 
               <details class="filter-drawer">
                 <summary>限定知识来源</summary>

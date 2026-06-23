@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import (
@@ -14,7 +14,7 @@ from medical_audit_kb.api.app import (
     record_index_run,
     record_operation,
 )
-from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
+from medical_audit_kb.api.auth import AuthenticatedUser, Permission, require_permission
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -94,13 +94,10 @@ class EvaluationRunRequest(BaseModel):
 def rebuild_index(
     payload: IndexRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
-        state,
-        current_user=current_user,
-        operation="index-rebuild",
-    )
+    _require_index_manager(state, x_user_id=x_user_id, x_role=x_role, action="index-rebuild")
     run_result = state.index_pipeline.run_full_rebuild(
         state.source_root,
         package_version_key=payload.package_version_key,
@@ -113,13 +110,10 @@ def rebuild_index(
 def incremental_index(
     payload: IndexRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
-        state,
-        current_user=current_user,
-        operation="index-incremental",
-    )
+    _require_index_manager(state, x_user_id=x_user_id, x_role=x_role, action="index-incremental")
     if state.current_snapshot is None:
         raise HTTPException(status_code=409, detail="no previous snapshot for incremental index")
     run_result = state.index_pipeline.run_incremental(
@@ -135,13 +129,10 @@ def incremental_index(
 def retry_file(
     payload: RetryFileRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
-        state,
-        current_user=current_user,
-        operation="index-retry-file",
-    )
+    _require_index_manager(state, x_user_id=x_user_id, x_role=x_role, action="index-retry-file")
     run_result = state.index_pipeline.retry_file(
         state.source_root,
         relative_path=payload.relative_path,
@@ -190,12 +181,14 @@ def search_backend_status(state: Annotated[ApiState, Depends(get_api_state)]) ->
 def activate_postgres_index_version(
     payload: IndexVersionSwitchRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
+    _require_index_manager(
         state,
-        current_user=current_user,
-        operation="index-version-activate",
+        x_user_id=x_user_id,
+        x_role=x_role,
+        action="index-version-activate",
     )
     try:
         result = activate_index_version(
@@ -222,12 +215,14 @@ def activate_postgres_index_version(
 def rollback_postgres_index_version(
     payload: IndexVersionSwitchRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
+    _require_index_manager(
         state,
-        current_user=current_user,
-        operation="index-version-rollback",
+        x_user_id=x_user_id,
+        x_role=x_role,
+        action="index-version-rollback",
     )
     try:
         result = rollback_index_version(
@@ -254,12 +249,14 @@ def rollback_postgres_index_version(
 def run_post_release_evaluation(
     payload: EvaluationRunRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
+    _require_index_manager(
         state,
-        current_user=current_user,
-        operation="index-evaluation-run",
+        x_user_id=x_user_id,
+        x_role=x_role,
+        action="index-evaluation-run",
     )
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search backend is not ready")
@@ -375,12 +372,14 @@ def postgres_index_status(state: Annotated[ApiState, Depends(get_api_state)]) ->
 def load_postgres_search_backend(
     payload: PostgresSearchBackendRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_index_admin(
+    user = _require_index_manager(
         state,
-        current_user=current_user,
-        operation="search-backend-postgres-load",
+        x_user_id=x_user_id,
+        x_role=x_role,
+        action="search-backend-postgres-load",
     )
     try:
         embedding_provider = _build_embedding_provider(payload)
@@ -419,30 +418,27 @@ def load_postgres_search_backend(
             "embedding_model": embedding_provider.model_name,
             "embedding_dimension": embedding_provider.dimension,
             "matching_embedding_count": matching_embedding_count,
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
         },
     )
     return response
 
 
-def _require_index_admin(
+def _require_index_manager(
     state: ApiState,
     *,
-    current_user: CurrentUser,
-    operation: str,
-) -> None:
-    if current_user.primary_role == "system-admin":
-        return
-    record_operation(
+    x_user_id: str | None,
+    x_role: str | None,
+    action: str,
+) -> AuthenticatedUser:
+    return require_permission(
         state,
-        "index-admin-access-denied",
-        auth_audit_payload(
-            current_user,
-            attempted_action=operation,
-            status_code=403,
-            reason="index operation requires it-admin role",
-        ),
+        permission=Permission.MANAGE_INDEX,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action=action,
     )
-    raise HTTPException(status_code=403, detail="index operation requires it-admin role")
 
 
 def _build_embedding_provider(payload: PostgresSearchBackendRequest) -> EmbeddingProvider:

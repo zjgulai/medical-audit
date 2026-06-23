@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from medical_audit_kb.domain.constants import SourceCollection
 
@@ -13,16 +14,11 @@ class RetrievalFilters:
     regions: tuple[str, ...] = ()
     document_types: tuple[str, ...] = ()
     business_topics: tuple[str, ...] = ()
-    personal_upload_user_key: str | None = None
-    personal_upload_read_all: bool = False
+    title_only: bool = False
+    title_query: str = ""
 
     def matches(self, metadata: Mapping[str, object]) -> bool:
         checks = (
-            _matches_personal_upload_access(
-                metadata,
-                user_key=self.personal_upload_user_key,
-                read_all=self.personal_upload_read_all,
-            ),
             _matches_any(
                 metadata,
                 "source_collection",
@@ -32,6 +28,7 @@ class RetrievalFilters:
             _matches_any(metadata, "region", self.regions),
             _matches_any(metadata, "document_type", self.document_types),
             _matches_any(metadata, "business_topic", self.business_topics),
+            _matches_title(metadata, self.title_query) if self.title_only else True,
         )
         return all(checks)
 
@@ -44,29 +41,13 @@ class RetrievalFilters:
                 self.regions,
                 self.document_types,
                 self.business_topics,
-                self.personal_upload_user_key,
-                self.personal_upload_read_all,
+                self.title_only,
             )
         )
 
 
 def _collection_values(collections: tuple[SourceCollection, ...]) -> tuple[str, ...]:
     return tuple(collection.value for collection in collections)
-
-
-def _matches_personal_upload_access(
-    metadata: Mapping[str, object],
-    *,
-    user_key: str | None,
-    read_all: bool,
-) -> bool:
-    if metadata.get("source_collection") != SourceCollection.PERSONAL_MATERIALS.value:
-        return True
-    if read_all:
-        return True
-    if user_key is None:
-        return False
-    return metadata.get("visibility") == "private" and metadata.get("created_by") == user_key
 
 
 def _matches_any(
@@ -82,3 +63,49 @@ def _matches_any(
     if isinstance(value, list | tuple | set | frozenset):
         return bool(set(value).intersection(accepted))
     return value in accepted
+
+
+def _matches_title(metadata: Mapping[str, object], query: str) -> bool:
+    terms = tuple(_query_terms(query))
+    if not terms:
+        return True
+    haystack = _title_haystack(metadata).lower()
+    return any(term in haystack for term in terms)
+
+
+def _query_terms(query: str) -> Iterable[str]:
+    normalized = query.strip().lower()
+    if not normalized:
+        return ()
+    compact = "".join(normalized.split())
+    terms = [compact] if compact else []
+    terms.extend(part for part in normalized.split() if part)
+    return tuple(dict.fromkeys(terms))
+
+
+def _title_haystack(metadata: Mapping[str, object]) -> str:
+    values: list[str] = []
+    for key in ("title", "document_title", "file_name", "source_path"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            values.append(value)
+    _extend_string_values(values, metadata.get("title_path"))
+
+    locator = metadata.get("locator")
+    if isinstance(locator, Mapping):
+        for key in ("title", "document_title", "file_name", "source_path"):
+            value = locator.get(key)
+            if isinstance(value, str):
+                values.append(value)
+                if key == "source_path":
+                    values.append(Path(value).stem)
+        _extend_string_values(values, locator.get("title_path"))
+    return "\n".join(values)
+
+
+def _extend_string_values(values: list[str], candidate: object) -> None:
+    if isinstance(candidate, str):
+        values.append(candidate)
+        return
+    if isinstance(candidate, list | tuple | set | frozenset):
+        values.extend(item for item in candidate if isinstance(item, str))

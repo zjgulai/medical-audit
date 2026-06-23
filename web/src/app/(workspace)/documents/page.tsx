@@ -7,13 +7,15 @@ import {
   fetchDocumentPermissions,
   fetchDocumentUploads,
   fetchQueryHistory,
+  indexPersonalDocument,
   runKnowledgeQuery,
+  updateDocumentUploadGovernance,
   uploadPersonalDocument
 } from "@/lib/api-client";
 import type {
-  DocumentIndexReadinessBlocker,
   DocumentPermissionsResponse,
   DocumentUploadItem,
+  PersonalUploadMatch,
   QueryCitation,
   QueryHistoryItem,
   QueryResponse,
@@ -34,6 +36,7 @@ type DocumentSearchState =
 type HistoryStatus = "loading" | "ready" | "unavailable";
 type PermissionStatus = "loading" | "ready" | "unavailable";
 type UploadStatus = "loading" | "ready" | "uploading" | "unavailable";
+type DocumentGovernanceAction = DocumentUploadItem["governance_status"];
 
 const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
   "medical-insurance-laws",
@@ -41,16 +44,11 @@ const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
   "medical-insurance-catalog",
   "risk-negative-list"
 ];
-const INDEX_READINESS_BLOCKER_LABELS: Record<DocumentIndexReadinessBlocker, string> = {
-  "virus-scan-required": "待病毒扫描",
-  "dlp-review-required": "待脱敏审查",
-  "manual-index-approval-required": "待入索引审批",
-  "manual-index-approval-rejected": "入索引已驳回"
-};
 
 export default function DocumentsPage() {
   const totalDocuments = documentCategoryStats.reduce((sum, category) => sum + category.documentCount, 0);
   const [query, setQuery] = useState("");
+  const [titleOnly, setTitleOnly] = useState(false);
   const [selectedCollections, setSelectedCollections] = useState<readonly SourceCollection[]>([]);
   const [searchState, setSearchState] = useState<DocumentSearchState>({ status: "idle" });
   const [history, setHistory] = useState<readonly QueryHistoryItem[]>([]);
@@ -127,6 +125,10 @@ export default function DocumentsPage() {
 
   const canUploadPersonal =
     permissionStatus === "ready" && (documentPermissions?.upload_permissions.can_upload_personal ?? false);
+  const canGovernPersonalUploads =
+    permissionStatus === "ready" && (documentPermissions?.upload_permissions.can_govern_personal_uploads ?? false);
+  const filteredConversationDocuments = filterPortalDocuments(conversationDocuments, query, titleOnly);
+  const filteredKnowledgeDocuments = filterPortalDocuments(knowledgeDocuments, query, titleOnly);
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,7 +143,8 @@ export default function DocumentsPage() {
       const result = await runKnowledgeQuery({
         question: normalizedQuery,
         top_k: 8,
-        source_collections: selectedCollections
+        source_collections: selectedCollections,
+        title_only: titleOnly
       });
       setSearchState({ status: "success", result });
       await refreshHistory();
@@ -181,7 +184,7 @@ export default function DocumentsPage() {
     setUploadMessage("");
     try {
       const result = await uploadPersonalDocument(selectedUploadFile);
-      setUploadMessage(`${result.item.name} 已留存，入索引门禁：${indexReadinessText(result.item)}`);
+      setUploadMessage(`${result.item.name} 已留存，治理状态：${governanceStatusLabel(result.item.governance_status)}`);
       setSelectedUploadFile(null);
       await refreshDocumentUploads();
     } catch {
@@ -190,16 +193,47 @@ export default function DocumentsPage() {
     }
   }
 
+  async function updateUploadGovernance(uploadId: string, governanceStatus: DocumentGovernanceAction) {
+    setUploadStatus("uploading");
+    setUploadMessage("");
+    try {
+      const result = await updateDocumentUploadGovernance(uploadId, {
+        governance_status: governanceStatus,
+        note: governanceNoteForStatus(governanceStatus)
+      });
+      setUploadMessage(`${result.item.name} 已更新为：${governanceStatusLabel(result.item.governance_status)}`);
+      await refreshDocumentUploads();
+    } catch {
+      setUploadStatus("unavailable");
+      setUploadMessage("材料治理状态更新失败。");
+    }
+  }
+
+  async function indexUpload(uploadId: string) {
+    setUploadStatus("uploading");
+    setUploadMessage("");
+    try {
+      const result = await indexPersonalDocument(uploadId);
+      setUploadMessage(
+        `${result.item.name} 本地入索引状态：${personalIndexStatusLabel(result.item.personal_index_status)}`
+      );
+      await refreshDocumentUploads();
+    } catch {
+      setUploadStatus("unavailable");
+      setUploadMessage("材料入索引任务执行失败。");
+    }
+  }
+
   return (
     <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="audit-section-title">文档源</h2>
+          <h2 className="audit-section-title">知识库分类统计</h2>
           <StatusPill tone={permissionStatus === "ready" ? "success" : permissionStatus === "loading" ? "info" : "warning"}>
             {permissionStatus === "ready" ? "权限已连接" : permissionStatus === "loading" ? "读取中" : "权限不可用"}
           </StatusPill>
         </div>
-        <p className="audit-copy mt-2">按审计材料来源限定后端检索范围。</p>
+        <p className="audit-copy mt-2">按审计材料来源限定后端检索范围，文档数用于判断检索覆盖。</p>
         <div className="mt-5 space-y-3">
           {documentCategoryStats.map((category) => (
             <DocumentSourceCard
@@ -220,7 +254,10 @@ export default function DocumentsPage() {
             <h1 className="audit-page-title">材料与知识库统一检索</h1>
             <p className="audit-copy mt-2 max-w-3xl">围绕当前审计项目检索对话文档、知识库文档和可引用材料。</p>
           </div>
-          <StatusPill tone={searchState.status === "success" ? "success" : "info"}>API-first</StatusPill>
+          <div className="flex flex-wrap gap-2">
+            <StatusPill tone={searchState.status === "success" ? "success" : "info"}>引用优先</StatusPill>
+            <StatusPill tone="neutral">无引用不下结论</StatusPill>
+          </div>
         </div>
 
         <form className="audit-panel-muted mt-6 p-5" onSubmit={submitSearch}>
@@ -234,6 +271,20 @@ export default function DocumentsPage() {
               value={query}
             />
           </label>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2">
+            <label className="audit-focus-ring flex cursor-pointer items-center gap-2 rounded-[var(--audit-radius-sm)] px-1 py-1 text-sm font-semibold text-[var(--audit-ink)]">
+              <input
+                checked={titleOnly}
+                className="h-4 w-4 accent-[var(--audit-primary)]"
+                onChange={(event) => setTitleOnly(event.target.checked)}
+                type="checkbox"
+              />
+              仅标题
+            </label>
+            <p className="audit-meta">
+              {titleOnly ? "仅标题模式会同步传入后端 title_only=true，并只在标题和路径元数据上匹配引用。" : "全文模式会展示标题、摘要和知识库文档推荐。"}
+            </p>
+          </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="audit-meta">检索范围：{selectedScopeText}</div>
             <div className="flex flex-wrap gap-3">
@@ -260,7 +311,7 @@ export default function DocumentsPage() {
             label="本次引用"
             value={searchState.status === "success" ? String(searchState.result.citations.length) : "-"}
           />
-          <Metric label="引用入口" value="已开启" />
+          <Metric label="检索模式" value={titleOnly ? "仅标题" : "全文"} />
         </div>
 
         <div className="mt-6">
@@ -268,16 +319,19 @@ export default function DocumentsPage() {
         </div>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
-          <DocumentList title="对话文档" documents={conversationDocuments} />
-          <DocumentList title="知识库文档" documents={knowledgeDocuments} />
+          <DocumentList title="对话文档" documents={filteredConversationDocuments} />
+          <DocumentList title="知识库文档" documents={filteredKnowledgeDocuments} />
         </div>
       </section>
 
       <aside className="min-w-0 space-y-4">
         <DocumentUploadPanel
           canUpload={canUploadPersonal}
+          canGovern={canGovernPersonalUploads}
           message={uploadMessage}
+          onGovernanceUpdate={updateUploadGovernance}
           onFileChange={setSelectedUploadFile}
+          onIndex={indexUpload}
           onSubmit={submitDocumentUpload}
           selectedFile={selectedUploadFile}
           status={uploadStatus}
@@ -367,16 +421,22 @@ function DocumentSourceCard({
 
 function DocumentUploadPanel({
   canUpload,
+  canGovern,
   message,
+  onGovernanceUpdate,
   onFileChange,
+  onIndex,
   onSubmit,
   selectedFile,
   status,
   uploads
 }: {
   readonly canUpload: boolean;
+  readonly canGovern: boolean;
   readonly message: string;
+  readonly onGovernanceUpdate: (uploadId: string, governanceStatus: DocumentGovernanceAction) => void;
   readonly onFileChange: (file: File | null) => void;
+  readonly onIndex: (uploadId: string) => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   readonly selectedFile: File | null;
   readonly status: UploadStatus;
@@ -416,7 +476,16 @@ function DocumentUploadPanel({
 
       <div className="mt-5 space-y-2">
         {uploads.length > 0 ? (
-          uploads.map((item) => <DocumentUploadRow item={item} key={item.id} />)
+          uploads.map((item) => (
+            <DocumentUploadRow
+              canGovern={canGovern}
+              item={item}
+              key={item.id}
+              onGovernanceUpdate={onGovernanceUpdate}
+              onIndex={onIndex}
+              updating={status === "uploading"}
+            />
+          ))
         ) : (
           <p className="audit-copy">暂无个人材料留存。</p>
         )}
@@ -425,7 +494,19 @@ function DocumentUploadPanel({
   );
 }
 
-function DocumentUploadRow({ item }: { readonly item: DocumentUploadItem }) {
+function DocumentUploadRow({
+  canGovern,
+  item,
+  onGovernanceUpdate,
+  onIndex,
+  updating
+}: {
+  readonly canGovern: boolean;
+  readonly item: DocumentUploadItem;
+  readonly onGovernanceUpdate: (uploadId: string, governanceStatus: DocumentGovernanceAction) => void;
+  readonly onIndex: (uploadId: string) => void;
+  readonly updating: boolean;
+}) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -434,10 +515,71 @@ function DocumentUploadRow({ item }: { readonly item: DocumentUploadItem }) {
           <p className="audit-meta mt-1">
             {item.extension.toUpperCase()} / {item.size_kb} KB / {formatDateTime(item.created_at)}
           </p>
+          <p className="audit-meta mt-1">上传人：{item.created_by ?? "unknown"}</p>
+          <p className="audit-meta mt-1">
+            安全：{securityStatusLabel(item.security_scan_status)} / DLP：{dlpStatusLabel(item.dlp_status)}
+          </p>
+          <p className="audit-meta mt-1">
+            本地索引：{personalIndexStatusLabel(item.personal_index_status)}
+            {item.personal_index_chunk_count > 0 ? ` / ${item.personal_index_chunk_count} 块` : ""}
+          </p>
+          {item.personal_index_error ? (
+            <p className="audit-meta mt-1 break-words">索引提示：{item.personal_index_error}</p>
+          ) : null}
+          {item.governance_note ? <p className="audit-meta mt-1 break-words">{item.governance_note}</p> : null}
+          {item.security_findings.length > 0 ? (
+            <p className="audit-meta mt-1 break-words">治理提示：{item.security_findings.join("、")}</p>
+          ) : null}
         </div>
-        <StatusPill tone="warning">待治理</StatusPill>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <StatusPill tone={governanceStatusTone(item.governance_status)}>
+            {governanceStatusLabel(item.governance_status)}
+          </StatusPill>
+          <span className="audit-meta">{indexStatusLabel(item.index_status)}</span>
+        </div>
       </div>
-      <p className="audit-meta mt-2">入索引门禁：{indexReadinessText(item)}</p>
+      {canGovern ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="audit-focus-ring audit-btn audit-btn-secondary min-h-8 px-3 py-1.5 text-xs"
+            disabled={updating || item.governance_status === "approved-for-index"}
+            onClick={() => onGovernanceUpdate(item.id, "approved-for-index")}
+            type="button"
+          >
+            准入索引
+          </button>
+          <button
+            className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs"
+            disabled={updating || item.governance_status === "blocked"}
+            onClick={() => onGovernanceUpdate(item.id, "blocked")}
+            type="button"
+          >
+            阻断
+          </button>
+          <button
+            className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs"
+            disabled={updating || item.governance_status === "pending-review"}
+            onClick={() => onGovernanceUpdate(item.id, "pending-review")}
+            type="button"
+          >
+            退回复核
+          </button>
+          <button
+            className="audit-focus-ring audit-btn audit-btn-secondary min-h-8 px-3 py-1.5 text-xs"
+            disabled={updating || !canRunPersonalIndex(item)}
+            onClick={() => onIndex(item.id)}
+            type="button"
+          >
+            入索引
+          </button>
+        </div>
+      ) : null}
+      <a
+        className="audit-focus-ring audit-btn audit-btn-secondary mt-3 min-h-8 px-3 py-1.5 text-xs"
+        href={item.download_url}
+      >
+        下载留存文件
+      </a>
     </article>
   );
 }
@@ -472,6 +614,8 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
 
   const { result } = state;
   const chatHref = `/chat?question=${encodeURIComponent(result.question)}`;
+  const citationGroups = groupCitationsBySource(result.citations);
+  const personalMatches = result.personal_upload_matches ?? [];
   return (
     <section className="audit-panel-muted p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -484,15 +628,53 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
         </StatusPill>
       </div>
       <p className="audit-copy mt-4">{result.answer}</p>
+      {result.citations.length === 0 ? (
+        <div className="mt-4 rounded-[var(--audit-radius-md)] border border-amber-200 bg-amber-50 p-4">
+          <h3 className="audit-compact-title text-amber-950">引用不足</h3>
+          <p className="mt-2 text-sm leading-6 text-amber-900">
+            当前检索未返回可核验引用，只能作为补证线索，不能直接形成审计结论。
+          </p>
+        </div>
+      ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <span className="audit-chip">confidence: {result.confidence}</span>
         <span className="audit-chip">fallback: {result.fallback_used ? "yes" : "no"}</span>
         <span className="audit-chip">query_log_index: {result.query_log_index}</span>
+        <span className="audit-chip">个人材料: {personalMatches.length}</span>
       </div>
       <div className="mt-5 space-y-4">
+        {personalMatches.length > 0 ? (
+          <section className="rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="audit-compact-title">个人材料命中</h3>
+                <p className="audit-meta mt-1">仅作为当前权限下的补证线索，不替代法规引用。</p>
+              </div>
+              <StatusPill tone="info">{personalMatches.length} 条</StatusPill>
+            </div>
+            <div className="mt-3 space-y-3">
+              {personalMatches.map((match) => (
+                <DocumentPersonalMatchCard key={match.id} match={match} />
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="space-y-3">
-          {result.citations.map((citation) => (
-            <DocumentCitationCard citation={citation} key={citation.citation_id} />
+          {citationGroups.map((group) => (
+            <section className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4" key={group.sourceCollection}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="audit-compact-title">引用分组：{group.label}</h3>
+                  <p className="audit-meta mt-1">{group.sourceCollection}</p>
+                </div>
+                <StatusPill tone="neutral">{group.citations.length} 条引用</StatusPill>
+              </div>
+              <div className="mt-3 space-y-3">
+                {group.citations.map((citation) => (
+                  <DocumentCitationCard citation={citation} key={citation.citation_id} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
         <aside className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
@@ -513,6 +695,24 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
         </aside>
       </div>
     </section>
+  );
+}
+
+function DocumentPersonalMatchCard({ match }: { readonly match: PersonalUploadMatch }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="audit-compact-title">{match.name}</p>
+          <p className="audit-meta mt-1">
+            {match.extension.toUpperCase()} / chunk {match.chunk_index + 1} / score {match.score}
+          </p>
+          <p className="audit-meta mt-1 break-words">{locatorSummary(match.locator)}</p>
+        </div>
+        <StatusPill tone="info">个人材料</StatusPill>
+      </div>
+      <p className="audit-copy mt-3">{match.snippet}</p>
+    </article>
   );
 }
 
@@ -548,33 +748,39 @@ function DocumentList({ title, documents }: { readonly title: string; readonly d
         <StatusPill tone="neutral">{documents.length} 份</StatusPill>
       </div>
       <div className="mt-4 space-y-3">
-        {documents.map((document) => (
-          <article key={document.id} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="audit-card-title">{document.title}</h3>
-                <p className="audit-meta mt-1">
-                  {document.libraryName} / {document.owner} / {document.updatedAt}
-                </p>
+        {documents.length > 0 ? (
+          documents.map((document) => (
+            <article key={document.id} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="audit-card-title">{document.title}</h3>
+                  <p className="audit-meta mt-1">
+                    {document.libraryName} / {document.owner} / {document.updatedAt}
+                  </p>
+                </div>
+                <StatusPill tone={document.status === "可审证" ? "success" : document.status === "待补引用" ? "warning" : "neutral"}>
+                  {document.status}
+                </StatusPill>
               </div>
-              <StatusPill tone={document.status === "可审证" ? "success" : document.status === "待补引用" ? "warning" : "neutral"}>
-                {document.status}
-              </StatusPill>
-            </div>
-            <p className="audit-copy mt-3">{document.summary}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <a className="audit-focus-ring audit-btn audit-btn-primary" href={document.href}>
-                查看引用
-              </a>
-              <a
-                className="audit-focus-ring audit-btn audit-btn-secondary"
-                href={document.chatHref}
-              >
-                转入 AI 对话
-              </a>
-            </div>
-          </article>
-        ))}
+              <p className="audit-copy mt-3">{document.summary}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a className="audit-focus-ring audit-btn audit-btn-primary" href={document.href}>
+                  查看引用
+                </a>
+                <a
+                  className="audit-focus-ring audit-btn audit-btn-secondary"
+                  href={document.chatHref}
+                >
+                  转入 AI 对话
+                </a>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="rounded-[var(--audit-radius-md)] border border-dashed border-[var(--audit-line)] bg-white p-4 audit-copy">
+            当前关键词没有匹配的标题文档，可切换为全文模式或直接执行后端检索。
+          </p>
+        )}
       </div>
     </section>
   );
@@ -603,6 +809,33 @@ function historySourceCollections(item: QueryHistoryItem): readonly SourceCollec
   );
 }
 
+function filterPortalDocuments(
+  documents: readonly PortalDocumentItem[],
+  query: string,
+  titleOnly: boolean
+): readonly PortalDocumentItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!titleOnly || !normalizedQuery) {
+    return documents;
+  }
+  return documents.filter((document) => document.title.toLowerCase().includes(normalizedQuery));
+}
+
+function groupCitationsBySource(citations: readonly QueryCitation[]): readonly {
+  readonly sourceCollection: SourceCollection;
+  readonly label: string;
+  readonly citations: readonly QueryCitation[];
+}[] {
+  return SOURCE_COLLECTIONS.map((sourceCollection) => {
+    const category = documentCategoryStats.find((item) => item.sourceCollection === sourceCollection);
+    return {
+      sourceCollection,
+      label: category?.name ?? sourceCollection,
+      citations: citations.filter((citation) => citation.source_collection === sourceCollection)
+    };
+  }).filter((group) => group.citations.length > 0);
+}
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -616,11 +849,77 @@ function formatDateTime(value: string): string {
   });
 }
 
-function indexReadinessText(item: DocumentUploadItem): string {
-  if (item.index_readiness.blockers.length === 0) {
-    return item.index_status;
+function governanceStatusLabel(status: DocumentUploadItem["governance_status"]): string {
+  if (status === "approved-for-index") {
+    return "准入索引";
   }
-  return item.index_readiness.blockers.map((blocker) => INDEX_READINESS_BLOCKER_LABELS[blocker]).join("、");
+  if (status === "blocked") {
+    return "已阻断";
+  }
+  return "待治理";
+}
+
+function governanceStatusTone(status: DocumentUploadItem["governance_status"]) {
+  if (status === "approved-for-index") {
+    return "success";
+  }
+  if (status === "blocked") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function indexStatusLabel(status: DocumentUploadItem["index_status"]): string {
+  if (status === "index-ready") {
+    return "index-ready";
+  }
+  if (status === "blocked") {
+    return "index-blocked";
+  }
+  return "not-indexed";
+}
+
+function personalIndexStatusLabel(status: DocumentUploadItem["personal_index_status"]): string {
+  if (status === "indexed") {
+    return "已入本地索引";
+  }
+  if (status === "failed") {
+    return "入索引失败";
+  }
+  return "未入本地索引";
+}
+
+function canRunPersonalIndex(item: DocumentUploadItem): boolean {
+  return (
+    item.governance_status === "approved-for-index" &&
+    item.index_status === "index-ready" &&
+    item.security_scan_status === "local-policy-passed" &&
+    item.dlp_status === "clear"
+  );
+}
+
+function securityStatusLabel(status: DocumentUploadItem["security_scan_status"]): string {
+  if (status === "local-policy-review") {
+    return "本地策略待复核";
+  }
+  return "本地策略通过";
+}
+
+function dlpStatusLabel(status: DocumentUploadItem["dlp_status"]): string {
+  if (status === "needs-review") {
+    return "待复核";
+  }
+  return "未提示";
+}
+
+function governanceNoteForStatus(status: DocumentGovernanceAction): string {
+  if (status === "approved-for-index") {
+    return "已通过本地材料治理，可进入后续索引任务队列。";
+  }
+  if (status === "blocked") {
+    return "材料暂不进入索引，需补充脱敏、DLP 或人工复核。";
+  }
+  return "退回待治理状态，等待管理员、技术人员或主任复核。";
 }
 
 function locatorSummary(locator: Record<string, unknown>): string {

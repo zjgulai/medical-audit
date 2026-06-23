@@ -14,6 +14,326 @@ export type SearchBackendStatusResponse = {
   readonly details?: SearchBackendDetails;
 };
 
+export type GraphWorkbenchNodeKind = "项目" | "知识库" | "文档" | "规则" | "疑点" | "复核" | "报告" | "整改";
+
+export type GraphWorkbenchNode = {
+  readonly id: string;
+  readonly label: string;
+  readonly kind: GraphWorkbenchNodeKind;
+  readonly status: "已归集" | "可引用" | "待复核" | "门禁中" | "跟踪中";
+  readonly description: string;
+  readonly metric: string;
+  readonly href: string;
+  readonly x: number;
+  readonly y: number;
+};
+
+export type GraphWorkbenchRelation = {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly targetId: string;
+  readonly source: string;
+  readonly relation: string;
+  readonly target: string;
+  readonly evidence: string;
+  readonly strength: "强" | "中" | "待补";
+};
+
+export type GraphWorkbenchResponse = {
+  readonly format: "graph-workbench-v1";
+  readonly generated_at: string;
+  readonly graph_id: string;
+  readonly graph_title: string;
+  readonly graph_scope: string;
+  readonly nodes: readonly GraphWorkbenchNode[];
+  readonly relations: readonly GraphWorkbenchRelation[];
+  readonly metrics: {
+    readonly node_count: number;
+    readonly node_kind_count: number;
+    readonly node_kind_counts: Record<GraphWorkbenchNodeKind, number>;
+    readonly relation_count: number;
+    readonly strong_relation_count: number;
+    readonly pending_relation_count: number;
+  };
+  readonly evidence_grade: string;
+  readonly production_side_effect: "none" | string;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type RuleLibraryApiItem = {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly domain: "收费明细" | "医保目录" | "处方用药" | "参保身份";
+  readonly status: "已启用" | "待补字段" | "待复核" | "只读";
+  readonly sourceCollection: string;
+  readonly evidenceScope: string;
+  readonly evidenceCount: number;
+  readonly findingCount: number;
+  readonly owner: "内审部" | "业务专家" | "信息科";
+  readonly updatedAt: string;
+  readonly href: string;
+  readonly chatHref: string;
+};
+
+export type RuleSourceCoverageApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly sourceCollection: string;
+  readonly ruleCount: number;
+  readonly indexStatus: "可引用" | "待同步" | "只读";
+  readonly health: string;
+  readonly href: string;
+};
+
+export type RuleRunSnapshotApiItem = {
+  readonly id: string;
+  readonly ruleCode: string;
+  readonly inputTable: string;
+  readonly lastRunAt: string;
+  readonly hitCount: number;
+  readonly linkedFinding: string;
+  readonly nextAction: string;
+};
+
+export type RuleControlGateApiItem = {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "通过" | "阻断" | "待人工确认";
+  readonly detail: string;
+  readonly owner: "审计员" | "业务专家" | "信息科";
+};
+
+export type RulesWorkbenchResponse = {
+  readonly format: "rules-workbench-v1";
+  readonly generated_at: string;
+  readonly ruleset_id: string;
+  readonly ruleset_title: string;
+  readonly ruleset_scope: string;
+  readonly rule_library_items: readonly RuleLibraryApiItem[];
+  readonly source_coverages: readonly RuleSourceCoverageApiItem[];
+  readonly run_snapshots: readonly RuleRunSnapshotApiItem[];
+  readonly control_gates: readonly RuleControlGateApiItem[];
+  readonly metrics: {
+    readonly rule_count: number;
+    readonly enabled_rule_count: number;
+    readonly pending_rule_count: number;
+    readonly total_finding_count: number;
+    readonly blocked_gate_count: number;
+    readonly source_count: number;
+    readonly run_count: number;
+  };
+  readonly evidence_grade: string;
+  readonly production_side_effect: "none" | string;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type RemediationCaseApiItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly department: string;
+  readonly owner: "医保办" | "财务科" | "信息科" | "药剂科";
+  readonly status: "待整改" | "整改中" | "待验收" | "已关闭";
+  readonly dueDate: string;
+  readonly reportNo: string;
+  readonly sourceFinding: string;
+  readonly progress: number;
+  readonly evidenceStatus: "待补证" | "已提交" | "需退回" | "已验收";
+  readonly nextAction: string;
+  readonly href: string;
+};
+
+export type RemediationEvidenceRequestApiItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly linkedCaseId: string;
+  readonly kind: "HIS 凭证" | "附件归档" | "负责人确认" | "退费凭证";
+  readonly status: "待上传" | "已提交" | "需退回" | "已验收";
+  readonly owner: "医保办" | "财务科" | "信息科" | "项目负责人";
+  readonly dueDate: string;
+  readonly detail: string;
+  readonly href: string;
+};
+
+export type RemediationClosureGateApiItem = {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "通过" | "阻断" | "待人工确认";
+  readonly detail: string;
+  readonly owner: "审计员" | "项目负责人" | "信息科";
+};
+
+export type RemediationTimelineApiItem = {
+  readonly id: string;
+  readonly time: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly status: "已记录" | "待处理" | "已阻断";
+};
+
+export type RemediationWorkbenchResponse = {
+  readonly format: "remediation-workbench-v1";
+  readonly generated_at: string;
+  readonly workbench_id: string;
+  readonly workbench_title: string;
+  readonly workbench_scope: string;
+  readonly remediation_cases: readonly RemediationCaseApiItem[];
+  readonly evidence_requests: readonly RemediationEvidenceRequestApiItem[];
+  readonly closure_gates: readonly RemediationClosureGateApiItem[];
+  readonly timeline: readonly RemediationTimelineApiItem[];
+  readonly metrics: {
+    readonly case_count: number;
+    readonly active_case_count: number;
+    readonly closed_case_count: number;
+    readonly pending_evidence_count: number;
+    readonly blocked_gate_count: number;
+    readonly average_progress: number;
+    readonly timeline_count: number;
+  };
+  readonly evidence_grade: string;
+  readonly production_side_effect: "none" | string;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type ArchivePackageApiItem = {
+  readonly id: string;
+  readonly projectName: string;
+  readonly archiveNo: string;
+  readonly status: "已归档" | "归档前检查" | "待归档" | "材料阻断";
+  readonly reportNo: string;
+  readonly owner: string;
+  readonly archiveScope: string;
+  readonly evidenceSummary: string;
+  readonly signedAt: string;
+  readonly retainedUntil: string;
+  readonly href: string;
+  readonly logHref: string;
+};
+
+export type ArchiveAuditRunApiItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly status: "通过" | "阻断" | "待人工确认" | "待配置";
+  readonly time: string;
+  readonly archiveRoot: string;
+  readonly manifestCount: number;
+  readonly failedCount: number;
+  readonly detail: string;
+};
+
+export type ArchiveSignatureItemApiItem = {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "验签通过" | "已生成" | "待生成";
+  readonly sha256: string;
+  readonly detail: string;
+};
+
+export type ArchivePolicyItemApiItem = {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+};
+
+export type ArchiveTimelineApiItem = {
+  readonly id: string;
+  readonly time: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly status: "已部署" | "已入档" | "待补证" | "已记录";
+};
+
+export type ArchiveWorkbenchResponse = {
+  readonly format: "archive-workbench-v1";
+  readonly generated_at: string;
+  readonly archive_id: string;
+  readonly archive_title: string;
+  readonly archive_scope: string;
+  readonly archive_packages: readonly ArchivePackageApiItem[];
+  readonly audit_runs: readonly ArchiveAuditRunApiItem[];
+  readonly signature_items: readonly ArchiveSignatureItemApiItem[];
+  readonly policy_items: readonly ArchivePolicyItemApiItem[];
+  readonly timeline: readonly ArchiveTimelineApiItem[];
+  readonly metrics: {
+    readonly package_count: number;
+    readonly archived_package_count: number;
+    readonly pending_package_count: number;
+    readonly blocked_package_count: number;
+    readonly audit_run_count: number;
+    readonly signature_count: number;
+    readonly policy_count: number;
+    readonly timeline_count: number;
+    readonly latest_archive_run_status: string;
+  };
+  readonly evidence_grade: string;
+  readonly production_side_effect: "none" | string;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AuthRole =
+  | "admin"
+  | "technician"
+  | "director"
+  | "member"
+  | "it-admin"
+  | "department-head"
+  | "auditor";
+
+export type AuthUserRoleAssignmentItem = {
+  readonly assignment_key: string;
+  readonly role: string;
+  readonly scope_type: string;
+  readonly scope_key: string | null;
+  readonly status: string;
+  readonly assigned_by: string | null;
+  readonly metadata: Record<string, unknown>;
+  readonly source: string;
+};
+
+export type AuthUserProfile = {
+  readonly user_key: string;
+  readonly display_name: string;
+  readonly department_key: string | null;
+  readonly department_name: string | null;
+  readonly status: string;
+  readonly created_by: string | null;
+  readonly metadata: Record<string, unknown>;
+  readonly role_assignments: readonly AuthUserRoleAssignmentItem[];
+  readonly source: string;
+};
+
+export type AuthSessionResponse = {
+  readonly user_identifier: string;
+  readonly role: string;
+  readonly role_label: string;
+  readonly permissions: readonly string[];
+  readonly legacy_api_role: string;
+  readonly tenant_id: string | null;
+  readonly auth_source: string;
+  readonly profile_status: string | null;
+  readonly auth_scope_type: string | null;
+  readonly auth_scope_key: string | null;
+  readonly auth_mode: "header_transition_layer";
+  readonly profile: AuthUserProfile | null;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
 export type TableAnalysisColumnType = "数值" | "日期" | "标识" | "文本" | "空列";
 
 export type TableAnalysisColumnProfile = {
@@ -89,27 +409,7 @@ export type DocumentSourcePermissionItem = {
 export type DocumentUploadPermissions = {
   readonly can_upload_personal: boolean;
   readonly can_read_all_personal_uploads: boolean;
-};
-
-export type DocumentIndexReadinessBlocker =
-  | "virus-scan-required"
-  | "dlp-review-required"
-  | "manual-index-approval-required"
-  | "manual-index-approval-rejected";
-
-export type DocumentIndexReadinessCheck = {
-  readonly check_type: "virus-scan" | "dlp-review" | "manual-index-approval";
-  readonly provider: string;
-  readonly status: "passed" | "blocked";
-  readonly blocker: DocumentIndexReadinessBlocker | null;
-  readonly detail: string;
-};
-
-export type DocumentIndexReadiness = {
-  readonly status: "blocked" | "ready" | "rejected";
-  readonly blockers: readonly DocumentIndexReadinessBlocker[];
-  readonly next_action: "complete-upload-governance" | "ingest-personal-upload" | "review-manual-index-rejection";
-  readonly checks: readonly DocumentIndexReadinessCheck[];
+  readonly can_govern_personal_uploads: boolean;
 };
 
 export type DocumentPermissionsResponse = {
@@ -131,37 +431,21 @@ export type DocumentUploadItem = {
   readonly created_by: string | null;
   readonly created_at: string;
   readonly retention_status: "retained";
-  readonly index_status: "not-indexed";
-  readonly index_readiness: DocumentIndexReadiness;
-};
-
-export type DocumentStorageObjectItem = {
-  readonly upload_key: string;
-  readonly provider: "local" | "tencent-cos";
-  readonly bucket: string | null;
-  readonly region: string | null;
-  readonly object_key: string;
-  readonly object_version: string | null;
-  readonly etag: string | null;
-  readonly sha256: string;
-  readonly size_bytes: number;
-  readonly storage_class: string | null;
-  readonly encryption_mode: string | null;
-  readonly storage_status: "local-quarantine" | "object-stored" | "object-missing";
-  readonly retention_until: string | null;
-  readonly created_at: string;
-  readonly updated_at: string;
-};
-
-export type DocumentUploadDownloadAccess = {
-  readonly status: "metadata-only";
-  readonly access_scope: "owner" | "read-all";
-  readonly delivery: "not-issued";
-  readonly reason: "signed-download-not-configured";
-  readonly signed_url: string | null;
-  readonly expires_at: string | null;
-  readonly storage_path: string;
-  readonly storage_objects: readonly DocumentStorageObjectItem[];
+  readonly index_status: "not-indexed" | "index-ready" | "blocked";
+  readonly governance_status: "pending-review" | "approved-for-index" | "blocked";
+  readonly governance_note: string;
+  readonly governed_by: string | null;
+  readonly governed_at: string | null;
+  readonly security_scan_status: "local-policy-passed" | "local-policy-review";
+  readonly security_scan_provider: "local-policy";
+  readonly dlp_status: "clear" | "needs-review";
+  readonly security_findings: readonly string[];
+  readonly personal_index_status: "not-indexed" | "indexed" | "failed";
+  readonly personal_indexed_at: string | null;
+  readonly personal_indexed_by: string | null;
+  readonly personal_index_chunk_count: number;
+  readonly personal_index_error: string;
+  readonly download_url: string;
 };
 
 export type DocumentUploadListResponse = {
@@ -182,16 +466,17 @@ export type DocumentUploadResponse = {
   readonly permissions: DocumentUploadPermissions;
 };
 
-export type DocumentUploadDownloadResponse = {
-  readonly item: DocumentUploadItem;
-  readonly download: DocumentUploadDownloadAccess;
-  readonly permissions: DocumentUploadPermissions;
+export type DocumentUploadGovernanceRequest = {
+  readonly governance_status: DocumentUploadItem["governance_status"];
+  readonly note?: string;
 };
 
 export type QueryRequest = {
   readonly question: string;
   readonly top_k?: number;
   readonly source_collections?: readonly SourceCollection[];
+  readonly title_only?: boolean;
+  readonly agent?: string | null;
 };
 
 export type QueryBasisItem = {
@@ -222,6 +507,19 @@ export type QueryCitation = {
   readonly source_package_version_key: string | null;
 };
 
+export type PersonalUploadMatch = {
+  readonly id: string;
+  readonly upload_id: string;
+  readonly name: string;
+  readonly extension: string;
+  readonly created_by: string | null;
+  readonly indexed_at: string | null;
+  readonly chunk_index: number;
+  readonly snippet: string;
+  readonly score: number;
+  readonly locator: Record<string, unknown>;
+};
+
 export type QueryResponse = {
   readonly question: string;
   readonly answer: string;
@@ -229,8 +527,10 @@ export type QueryResponse = {
   readonly fallback_used: boolean;
   readonly basis_groups: readonly QueryBasisGroup[];
   readonly citations: readonly QueryCitation[];
+  readonly personal_upload_matches: readonly PersonalUploadMatch[];
   readonly query_log_index: number;
   readonly query_log_id?: string | null;
+  readonly agent_invocation_id?: string | null;
 };
 
 export type QueryHistoryItem = {
@@ -332,6 +632,74 @@ export type AuditFindingsResponse = {
   };
 };
 
+export type WorkpaperTemplateRegistryItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly source_template_id: string;
+  readonly source_table: string;
+  readonly source_file_name: string;
+  readonly sheet_name: string;
+  readonly output_type: "底稿草稿" | "问题清单" | "复核摘要" | string;
+  readonly registry_status: "active" | string;
+  readonly expected_columns: readonly string[];
+  readonly key_checks: readonly string[];
+  readonly evidence_bindings: readonly string[];
+  readonly prompt: string;
+  readonly chat_href: string;
+};
+
+export type ReportDownloadLinks = {
+  readonly page: string;
+  readonly task_docx: string;
+  readonly report_docx: string | null;
+  readonly report_markdown: string | null;
+  readonly report_json: string | null;
+};
+
+export type ReportWorkbenchEntry = {
+  readonly id: string;
+  readonly title: string;
+  readonly status: "草稿" | "门禁阻断" | "已签发" | string;
+  readonly report_no: string;
+  readonly owner: string;
+  readonly source: string;
+  readonly included_finding_count: number;
+  readonly appendix_count: number;
+  readonly gate_summary: string;
+  readonly updated_at: string;
+  readonly href: string;
+  readonly download_links: ReportDownloadLinks;
+};
+
+export type ReportWorkbenchEvidenceSource = {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: "疑点" | "底稿" | "附件" | "负责人确认" | string;
+  readonly reference: string;
+  readonly status: "已纳入" | "待补证" | "只读" | string;
+  readonly href: string;
+};
+
+export type ReportWorkbenchResponse = {
+  readonly format: "report-workbench-v1";
+  readonly generated_at: string;
+  readonly template_registry_status: string;
+  readonly workpaper_templates: readonly WorkpaperTemplateRegistryItem[];
+  readonly report_entries: readonly ReportWorkbenchEntry[];
+  readonly report_evidence_sources: readonly ReportWorkbenchEvidenceSource[];
+  readonly metrics: {
+    readonly report_count: number;
+    readonly signed_report_count: number;
+    readonly blocked_report_count: number;
+    readonly included_finding_count: number;
+    readonly docx_download_count: number;
+  };
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
 export type ApiAgentCategory = "效率类" | "业务类" | "研究类";
 
 export type AuditAgentApiItem = {
@@ -343,11 +711,31 @@ export type AuditAgentApiItem = {
   readonly knowledge_base: string;
   readonly project_name: string;
   readonly status: string;
+  readonly prompt_version: number;
+  readonly prompt_version_key: string;
+  readonly visibility_scope: "project" | "system";
+  readonly allowed_roles: readonly string[];
+  readonly prompt_versions: readonly AgentPromptVersionApiItem[];
   readonly created_by: string | null;
   readonly created_at?: string;
   readonly updated_at: string;
   readonly source: "custom" | "system-default" | string;
   readonly metadata: Record<string, unknown>;
+};
+
+export type AgentPromptVersionApiItem = {
+  readonly version: number;
+  readonly prompt: string;
+  readonly change_summary: string;
+  readonly is_active: boolean;
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly review_status: "pending-review" | "approved" | "changes-requested";
+  readonly review_note: string;
+  readonly requested_by: string | null;
+  readonly reviewed_by: string | null;
+  readonly reviewed_at: string | null;
+  readonly review_updated_at: string | null;
 };
 
 export type AgentsResponse = {
@@ -366,11 +754,129 @@ export type AgentCreateRequest = {
   readonly prompt: string;
   readonly knowledge_base?: string;
   readonly project_name?: string;
+  readonly visibility_scope?: "project" | "system";
+  readonly allowed_roles?: readonly string[];
   readonly metadata?: Record<string, unknown>;
 };
 
 export type AgentCreateResponse = {
   readonly item: AuditAgentApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentDetailResponse = AgentCreateResponse;
+
+export type AgentPromptVersionsResponse = {
+  readonly items: readonly AgentPromptVersionApiItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentPromptVersionCreateRequest = {
+  readonly prompt: string;
+  readonly change_summary: string;
+  readonly review_note?: string;
+};
+
+export type AgentPromptVersionReviewRequest = {
+  readonly version: number;
+  readonly review_status: "pending-review" | "approved" | "changes-requested";
+  readonly review_note?: string;
+};
+
+export type AgentPromptVersionRollbackRequest = {
+  readonly version: number;
+};
+
+export type AgentLifecycleRequest = {
+  readonly status: "active" | "inactive" | "archived";
+  readonly reason?: string;
+};
+
+export type AgentInvocationApiItem = {
+  readonly id: string;
+  readonly agent_key: string;
+  readonly prompt_version: number;
+  readonly prompt_version_key: string;
+  readonly invocation_source: string;
+  readonly question: string | null;
+  readonly conversation_ref: string | null;
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type AgentInvocationCreateRequest = {
+  readonly invocation_source?: string;
+  readonly question?: string | null;
+  readonly conversation_ref?: string | null;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type AgentInvocationResponse = {
+  readonly item: AgentInvocationApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentInvocationsResponse = {
+  readonly items: readonly AgentInvocationApiItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentFeedbackRating = "effective" | "needs_review" | "unsafe";
+
+export type AgentFeedbackSummary = {
+  readonly total: number;
+  readonly effective: number;
+  readonly needs_review: number;
+  readonly unsafe: number;
+  readonly latest_rating: AgentFeedbackRating | null;
+};
+
+export type AgentFeedbackApiItem = {
+  readonly id: string;
+  readonly agent_key: string;
+  readonly invocation_id: string | null;
+  readonly prompt_version: number;
+  readonly rating: AgentFeedbackRating;
+  readonly comment: string;
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly metadata: Record<string, unknown>;
+};
+
+export type AgentFeedbackCreateRequest = {
+  readonly invocation_id?: string | null;
+  readonly rating: AgentFeedbackRating;
+  readonly comment?: string;
+  readonly metadata?: Record<string, unknown>;
+};
+
+export type AgentFeedbackResponse = {
+  readonly item: AgentFeedbackApiItem;
+  readonly ratings: readonly AgentFeedbackRating[];
+  readonly summary: AgentFeedbackSummary;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+};
+
+export type AgentFeedbackListResponse = {
+  readonly items: readonly AgentFeedbackApiItem[];
+  readonly ratings: readonly AgentFeedbackRating[];
+  readonly summary: AgentFeedbackSummary;
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;

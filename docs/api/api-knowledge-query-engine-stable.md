@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-api
 status: stable
 created: 2026-05-31
-updated: 2026-06-19
+updated: 2026-06-22
 owner: self
 source: human+ai
 ---
@@ -19,13 +19,218 @@ source: human+ai
 - 健康检查：`GET /health`
 - 权限头：`X-User-Id`、`X-Role`
 
-允许查询和门户配置写入角色：
+当前医院角色：
 
-- `auditor`
-- `it-admin`
-- `department-head`
+- `admin` / `管理员`：账号、权限、成员分配、索引维护、审计日志读取。
+- `technician` / `技术人员`：数据和索引维护、智能体配置，不能签发底稿。
+- `director` / `主任`：复核、签发、审计日志读取、项目级材料读取。
+- `member` / `普通成员`：审证、补证、草稿和个人材料上传。
 
-索引管理操作只允许 `X-Role: it-admin`。
+兼容旧角色值：
+
+- `auditor` 等价于 `member`。
+- `it-admin` 等价于 `admin`。
+- `department-head` 等价于 `director`。
+
+索引管理操作允许 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。需要权限的写接口优先读取 `auth_users` 中当前 `X-User-Id` 对应的 `active/global` 角色授权；没有持久化 profile 时继续兼容 `X-Role`。缺少 `X-Role` 且无法从持久化 profile 解析角色时返回 `401`；角色存在但无动作权限、或持久化 profile 处于 `disabled/pending` 时返回 `403`，并记录 `authorization-denied` 操作日志。
+
+权限底座边界：
+
+- `auth_departments`、`auth_users`、`auth_user_role_assignments` 已作为最小持久化权限底座进入 schema。
+- `/auth/session`、`/auth/roles`、`/auth/users` 和 `/auth/users/{user_key}/role-assignments` 已提供 header 过渡层 API；`/auth/session` 已接受 `X-Project-Key` 和本地 `X-Tenant-Id`，并返回项目授权 scope 和 `tenant_id`。
+- `require_permission` 已优先使用持久化用户的 `active/global/project` 角色授权，并拒绝 `disabled/pending` 用户访问受控写入口。
+- `/query`、`/documents/permissions`、`/documents/uploads`、`/audit/logs`、`/audit/logs/export` 和 `/pages/audit-logs` 已接入持久化用户优先解析；命中持久化 profile 时以 `active/global/project` 角色和用户状态为准，未命中时继续兼容 `X-Role`。
+- `/auth/users/{user_key}` 支持软禁用/恢复用户，`/auth/users/{user_key}/role-assignments/{assignment_key}` 支持撤销/恢复角色授权；当前不做物理删除。
+- 受控 API 鉴权中间件的本地强制模式已要求 `X-Tenant-Id`，但当前不存储密码、token、private key 或 SSO 凭据；真实医院 SSO、登录会话签发、正式租户身份来源和科室层级同步仍未完成。
+
+### 权限接口
+
+#### `GET /auth/roles`
+
+返回医院四类角色、权限动作和旧角色兼容映射。无需写权限。
+
+#### `GET /auth/session`
+
+基于 `X-User-Id`、`X-Role`、`X-Project-Key` 和 `X-Tenant-Id` 返回当前 header 过渡层会话、权限动作、兼容旧角色、项目授权 scope、本地 `tenant_id` 和持久化用户 profile。若 `X-User-Id` 命中持久化用户且存在 `active/global/project` 角色授权，返回角色以持久化授权为准，并通过 `auth_source` 标明来源；缺少 `X-Role` 且没有持久化授权时按普通成员只读 session 处理，不代表正式登录。
+
+#### `GET /auth/users`
+
+返回用户、科室和角色授权列表。需要 `manage_project_members` 权限，即 `admin/管理员` 或兼容旧值 `it-admin`。未授权返回 `401/403` 并记录 `authorization-denied`。
+
+#### `POST /auth/users`
+
+创建最小用户 profile。需要 `manage_project_members` 权限。
+
+请求体：
+
+```json
+{
+  "display_name": "医保办主任",
+  "department_key": "medical-insurance-office",
+  "status": "active"
+}
+```
+
+#### `PATCH /auth/users/{user_key}`
+
+更新最小用户 profile。需要 `manage_project_members` 权限。当前用于软禁用、恢复、调整展示名、科室和 metadata；不删除账号。
+
+请求体示例：
+
+```json
+{
+  "status": "disabled"
+}
+```
+
+#### `POST /auth/users/{user_key}/role-assignments`
+
+给用户分配医院角色。需要 `manage_project_members` 权限。
+
+请求体：
+
+```json
+{
+  "role": "director",
+  "scope_type": "project",
+  "scope_key": "CATALOG-LIMIT-202606",
+  "status": "active"
+}
+```
+
+#### `PATCH /auth/users/{user_key}/role-assignments/{assignment_key}`
+
+更新角色授权。需要 `manage_project_members` 权限。当前用于将授权状态设置为 `revoked` 或恢复为 `active`；不删除授权记录。
+
+请求体示例：
+
+```json
+{
+  "status": "revoked"
+}
+```
+
+### 智能体接口
+
+#### `GET /agents`
+
+返回可用于新对话选择的 active 提示词型智能体。前端通过 `X-User-Id`、`X-Role` 传入当前角色时，后端会按 `allowed_roles` 过滤可见范围；未传 header 的兼容读取仍返回 active 默认智能体和 active 自定义智能体。
+
+响应字段补充：
+
+- `prompt_version`：当前提示词版本号。
+- `prompt_version_key`：当前提示词版本标识，格式为 `{agent_id}@v{version}`。
+- `prompt_versions`：提示词版本数组，包含 `version`、`prompt`、`change_summary`、`created_by`、`created_at`。
+- `visibility_scope`：`project` 或 `system`。
+- `allowed_roles`：允许选择该智能体的医院角色。
+- `status`：`active`、`inactive` 或 `archived`。列表只返回 `active`。
+
+#### `GET /agents/{agent_key}`
+
+返回单个智能体详情。该接口可读取 `inactive/archived` 自定义智能体，用于历史对话追溯；默认系统智能体也可按固定 key 查询。不存在时返回 `404`。
+
+#### `GET /agents/{agent_key}/prompt-versions`
+
+返回单个智能体的提示词版本历史。该接口用于前端版本对比和回滚前核验；默认系统智能体返回 `v1` 合成版本，自定义智能体读取 `audit_agent_prompt_versions`。
+
+#### `POST /agents`
+
+创建提示词型智能体。需要 `manage_agents` 权限，普通成员无权发布系统级或项目级智能体。请求体在原有字段基础上支持：
+
+```json
+{
+  "visibility_scope": "project",
+  "allowed_roles": ["admin", "technician", "director", "member"]
+}
+```
+
+创建成功后写入 `audit_agents`，并在 `audit_agent_prompt_versions` 创建 `v1` 提示词版本。该接口仍不执行外部 AI provider 调用。
+
+#### `POST /agents/{agent_key}/prompt-versions`
+
+新增提示词版本并把智能体当前 prompt 更新到新版本。需要 `manage_agents` 权限。
+
+请求体：
+
+```json
+{
+  "prompt": "更新后的提示词",
+  "change_summary": "说明本次提示词变更原因"
+}
+```
+
+成功后记录 `agent-prompt-version-create` 操作日志。
+
+#### `POST /agents/{agent_key}/prompt-versions/rollback`
+
+按历史版本回滚提示词。需要 `manage_agents` 权限。回滚会生成一个新的当前版本，`change_summary` 记录为回滚来源，不覆盖历史版本。
+
+请求体：
+
+```json
+{
+  "version": 1
+}
+```
+
+成功后记录 `agent-prompt-version-rollback` 操作日志。
+
+#### `POST /agents/{agent_key}/lifecycle`
+
+更新自定义智能体生命周期。需要 `manage_agents` 权限。`inactive` 或 `archived` 后不会进入 `GET /agents` 的新对话选择列表，但仍可通过 `GET /agents/{agent_key}` 追溯。
+
+请求体：
+
+```json
+{
+  "status": "inactive",
+  "reason": "提示词待复核"
+}
+```
+
+成功后记录 `agent-lifecycle-update` 操作日志。
+
+#### `GET /agents/{agent_key}/invocations`
+
+返回单个智能体最近调用记录。需要 `manage_agents` 权限，用于管理员、技术人员或主任复盘智能体使用情况。
+
+#### `POST /agents/{agent_key}/invocations`
+
+登记一次智能体使用记录。需要 `query_knowledge` 权限，不执行外部模型调用。
+
+请求体：
+
+```json
+{
+  "invocation_source": "agent-workspace",
+  "question": "目录限制核验试用",
+  "conversation_ref": "local-chat-draft",
+  "metadata": {}
+}
+```
+
+成功后写入 `audit_agent_invocations` 并记录 `agent-invocation-create` 操作日志。
+
+#### `GET /agents/{agent_key}/feedback`
+
+返回单个智能体最近效果反馈。需要 `manage_agents` 权限。
+
+#### `POST /agents/{agent_key}/feedback`
+
+提交智能体效果反馈。需要 `query_knowledge` 权限，`rating` 仅允许 `effective`、`needs_review`、`unsafe`。
+
+请求体：
+
+```json
+{
+  "invocation_id": "可选调用记录 ID",
+  "rating": "needs_review",
+  "comment": "需要补充目录限制原文适用条件。",
+  "metadata": {}
+}
+```
+
+成功后写入 `audit_agent_feedback` 并记录 `agent-feedback-create` 操作日志。
 
 ## 2. 页面入口
 
@@ -52,17 +257,17 @@ Query 参数：
 - 分组依据
 - 原文预览入口
 - 创建复核任务入口
-- 审计底稿 Markdown/JSON 导出入口
+- 审计底稿 Markdown/Word/JSON 导出入口
 
 ### `GET /pages/chat/export`
 
-导出当前单轮对话的审计底稿，支持 JSON 和 Markdown 两种格式。该接口会重新执行一次引用型查询，因此要求检索后端已加载；没有引用依据时不生成底稿。
+导出当前单轮对话的审计底稿，支持 JSON、Markdown 和 Word/docx。该接口会重新执行一次引用型查询，因此要求检索后端已加载；没有引用依据时不生成底稿。
 
 Query 参数：
 
 - `question`：必填，自然语言问题。
 - `source_collection`：可重复传入，值为来源集合枚举。
-- `format`：`json` 或 `markdown`，默认 `json`。
+- `format`：`json`、`markdown` 或 `docx`，默认 `json`。
 
 导出内容：
 
@@ -75,6 +280,7 @@ Query 参数：
 
 - `format=json`：`application/json`，下载文件名 `auditscope-dossier.json`。
 - `format=markdown`：`text/markdown`，下载文件名 `auditscope-dossier.md`。
+- `format=docx`：`application/vnd.openxmlformats-officedocument.wordprocessingml.document`，下载文件名 `auditscope-dossier.docx`。docx 内容由同一份 Markdown 底稿即时转换，不新增外部 provider 调用。
 
 状态码：
 
@@ -94,11 +300,48 @@ Query 参数：
 - 复核任务列表。
 - 每个任务的问题、创建时间、更新时间、引用数量、承办人、报告门禁预检、结案门禁预检和结案只读提示。
 - 复核状态、承办人、复核意见、复核结论、底稿状态、底稿编号、底稿说明、负责人确认状态、确认人、确认时间、手工附件清单、附件文件上传归档、报告标题、报告摘要和整改建议编辑表单。
-- 任务级 Markdown/JSON 导出入口。
-- 报告草稿 Markdown/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
+- 任务级 Markdown/Word/JSON 导出入口。
+- 报告草稿 Markdown/Word/JSON 导出入口。确认违规任务必须具备复核结论、底稿就绪、负责人确认和至少 1 条附件登记后才能导出报告草稿。
 - 正式报告签发入口。签发会冻结当前报告草稿 Markdown 正文并保存 `sha256`，签发后不能重复签发。
 - 整改跟踪入口。正式报告签发后才能生成整改事项，整改事项绑定已签发报告编号和正文 `sha256`。
 - 结案门禁和关闭后只读锁定。确认违规、已签发或已生成整改事项的任务，必须在整改状态为 `accepted` 后才能保存为 `closed`；任务一旦进入 `closed`，状态更新、附件上传、正式报告签发和整改更新写接口均返回 `409`，并记录 `review-task-readonly-write-blocked` 操作日志。配置了数据库日志 store 时，该事件会同步写入 `audit_log_events`，页面查看、附件下载和导出仍允许。
+
+### `GET /reports/workpaper-templates`
+
+返回审计底稿 Word 模板 registry 元数据，覆盖三张医保费用模板：
+
+- `表1_医保费用汇总表-模版.xlsx`
+- `表2_医保费用分类汇总表-模版.xlsx`
+- `表3_就诊费用明细表-模版.xlsx`
+
+响应字段：
+
+- `format`：固定为 `workpaper-template-registry-v1`。
+- `registry_status`：当前模板 registry 状态。
+- `items`：模板列表，包含 `source_file_name`、`source_table`、`sheet_name`、`expected_columns`、`key_checks`、`evidence_bindings`、`prompt` 和 `chat_href`。
+- `store`：当前 registry 来源，现阶段为本地静态模板 registry。
+
+当前边界：该接口提供可复用模板元数据和字段绑定，不读取生产文件、不执行模板文件上传、不调用外部 provider，也不代表电子签章或证书级正式报告模板。
+
+### `GET /reports/workbench`
+
+返回 Next `/reports` 页面使用的报告工作台数据，包含模板 registry、复核任务映射出的报告记录、证据来源和统计。
+
+响应字段：
+
+- `format`：固定为 `report-workbench-v1`。
+- `workpaper_templates`：同一套模板 registry 元数据。
+- `report_entries`：由 `review_tasks` 生成的报告记录，包含报告状态、编号、门禁摘要、附件数、任务 Word 下载链接和报告 Word 下载链接。
+- `report_evidence_sources`：由复核任务底稿、附件和报告门禁映射出的证据来源。
+- `metrics`：报告数、已签发报告数、门禁阻断数、纳入疑点数和可下载报告 docx 数。
+
+下载链接行为：
+
+- `download_links.task_docx` 始终指向 `/review-tasks/{task_id}/export?format=docx`。
+- `download_links.report_docx` 仅在报告草稿已过门禁或正式报告已签发时提供；未过门禁时为 `null`。
+- 已签发报告的 `report_docx` 指向冻结正文的 `/review-tasks/{task_id}/signed-report?format=docx`。
+
+当前边界：该接口只做本地 API-first 聚合和下载链接编排；docx 仍由既有 Markdown 即时转换，不新增 provider 调用，不代表生产验收、电子签章或对象存储归档。
 
 ### `POST /pages/review-tasks/create`
 
@@ -185,11 +428,11 @@ Form 字段：
 
 ### `GET /review-tasks/{task_id}/export`
 
-导出任务级复核记录，支持 JSON 和 Markdown 两种格式。
+导出任务级复核记录，支持 JSON、Markdown 和 Word/docx。
 
 Query 参数：
 
-- `format`：`json` 或 `markdown`，默认 `json`。
+- `format`：`json`、`markdown` 或 `docx`，默认 `json`。
 
 导出内容：
 
@@ -204,6 +447,7 @@ Query 参数：
 
 - `format=json`：`application/json`，下载文件名 `{task_id}.json`。
 - `format=markdown`：`text/markdown`，下载文件名 `{task_id}.md`。
+- `format=docx`：`application/vnd.openxmlformats-officedocument.wordprocessingml.document`，下载文件名 `{task_id}.docx`。
 
 状态码：
 
@@ -212,11 +456,11 @@ Query 参数：
 
 ### `GET /review-tasks/{task_id}/report-draft`
 
-导出任务级报告草稿，支持 JSON 和 Markdown 两种格式。该接口只在任务级 `report_gate.ready_for_report=true` 时可用；确认违规任务必须完成复核状态闭合、复核意见、复核结论、底稿就绪、负责人确认和附件登记。
+导出任务级报告草稿，支持 JSON、Markdown 和 Word/docx。该接口只在任务级 `report_gate.ready_for_report=true` 时可用；确认违规任务必须完成复核状态闭合、复核意见、复核结论、底稿就绪、负责人确认和附件登记。
 
 Query 参数：
 
-- `format`：`json` 或 `markdown`，默认 `markdown`。
+- `format`：`json`、`markdown` 或 `docx`，默认 `markdown`。
 
 导出内容：
 
@@ -229,6 +473,7 @@ Query 参数：
 
 - `format=json`：`application/json`，下载文件名 `{task_id}-report-draft.json`。
 - `format=markdown`：`text/markdown`，下载文件名 `{task_id}-report-draft.md`。
+- `format=docx`：`application/vnd.openxmlformats-officedocument.wordprocessingml.document`，下载文件名 `{task_id}-report-draft.docx`。
 
 状态码：
 
@@ -263,16 +508,17 @@ Form 字段：
 
 ### `GET /review-tasks/{task_id}/signed-report`
 
-下载已签发正式报告，支持 JSON 和 Markdown 两种格式。下载内容来自签发时冻结的 `dossier.signed_report.content`，不会因后续编辑报告草稿而变化。
+下载已签发正式报告，支持 JSON、Markdown 和 Word/docx。下载内容来自签发时冻结的 `dossier.signed_report.content`，不会因后续编辑报告草稿而变化；docx 是从冻结 Markdown 正文即时生成，签发正文 `content_sha256` 仍以冻结 Markdown 为准。
 
 Query 参数：
 
-- `format`：`json` 或 `markdown`，默认 `markdown`。
+- `format`：`json`、`markdown` 或 `docx`，默认 `markdown`。
 
 响应：
 
 - `format=json`：`application/json`，下载文件名 `{task_id}-signed-report.json`。
 - `format=markdown`：`text/markdown`，下载文件名 `{task_id}-signed-report.md`。
+- `format=docx`：`application/vnd.openxmlformats-officedocument.wordprocessingml.document`，下载文件名 `{task_id}-signed-report.docx`。
 
 状态码：
 
@@ -364,93 +610,15 @@ Query 参数：
 - 验收历史：展示最近报告，并提供 `GET /index/evaluation/history` JSON 列表入口
 - 操作日志导出入口
 
-## 3. 门户配置接口
-
-门户配置写接口当前仍基于请求头角色做最小边界控制，不等于真实登录会话、部门权限或全站 RBAC。允许角色为 `auditor`、`it-admin` 和 `department-head`；未知角色返回 `403`，并通过 `record_operation` 记录拒绝事件。配置了数据库审计日志 store 时，同一事件会同步写入 `audit_log_events`。
-
-### `GET /agents`
-
-返回系统默认智能体和自定义智能体。
-
-响应核心字段：
-
-- `items`
-- `categories`
-- `store.ready`
-- `store.backend`
-
-### `POST /agents`
-
-新增提示词型智能体。
-
-请求头：
-
-- `X-User-Id`：创建人标识；缺省为 `anonymous`。
-- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
-
-请求体核心字段：
-
-- `name`
-- `category`
-- `topic`
-- `prompt`
-- `knowledge_base`
-- `project_name`
-- `metadata`
-
-错误：
-
-- `403`：角色不在允许列表，并记录 `agent-access-denied`，payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
-- `409`：持久化智能体 store 不可用。
-- `422`：分类或请求体字段非法。
-
-### `GET /projects`
-
-返回系统默认项目和成员计数。
-
-响应核心字段：
-
-- `items`
-- `roles`
-- `statuses`
-- `store.ready`
-- `store.backend`
-
-### `GET /projects/{project_key}/members`
-
-返回指定项目的系统默认成员和自定义成员。
-
-错误：
-
-- `404`：项目不存在。
-
-### `POST /projects/{project_key}/members`
-
-新增项目成员。
-
-请求头：
-
-- `X-User-Id`：创建人标识；缺省为 `anonymous`。
-- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
-
-请求体核心字段：
-
-- `name`
-- `role`
-- `department`
-- `status`
-- `metadata`
-
-错误：
-
-- `403`：角色不在允许列表，并记录 `project-member-access-denied`，payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
-- `404`：项目不存在。
-- `409`：持久化项目成员 store 不可用。
-- `422`：成员角色、状态或请求体字段非法。
-
-## 4. 查询接口
+## 3. 查询接口
 
 ### `POST /query`
+
+认证行为：
+
+- 接口读取 `X-User-Id`、`X-Role`；若 `X-User-Id` 命中 `auth_users` 且存在 `active/global` 角色授权，以持久化角色为准。
+- 持久化 profile 为 `disabled/pending` 时返回 `403`；没有持久化 profile 时继续兼容旧 `X-Role`，缺省按 `member/auditor` 处理。
+- 查询日志记录使用解析后的 `user_identifier`，并在进程内日志中保留 `effective_role` 和 `auth_source`。
 
 请求体：
 
@@ -462,9 +630,15 @@ Query 参数：
   "years": [2024],
   "regions": ["国家"],
   "document_types": ["rule"],
-  "business_topics": ["prescription-audit"]
+  "business_topics": ["prescription-audit"],
+  "title_only": false
 }
 ```
+
+过滤说明：
+
+- `title_only=true` 时，后端只在索引元数据中的 `title`、`document_title`、`title_path`、`file_name`、`source_path` 和 locator 对应字段上匹配问题关键词；正文命中不会单独进入结果。
+- `title_only` 默认 `false`，保持既有全文检索行为。
 
 返回体核心字段：
 
@@ -475,14 +649,6 @@ Query 参数：
 - `citations`：引用列表，含 `chunk_id`、`source_collection`、locator、索引版本和资料包版本。
 - `query_log_index`：本次查询日志索引。
 - `query_log_id`：持久化查询历史 ID；当查询历史 store 不可用或写入失败时为 `null`，主查询结果不因历史写入失败而中断。
-
-个人材料检索隔离：
-
-- 请求 `source_collections` 包含 `personal-materials` 时，仍先执行角色级来源权限检查。
-- 普通 `auditor` 只能召回 `source_collection=personal-materials`、`visibility=private` 且 `created_by` 等于当前 `X-User-Id` 的 chunk。
-- `department-head` 和 `system-admin` 可召回全部已进入运行态索引的 `personal-materials` chunk。
-- 未携带用户上下文的底层检索默认过滤 `personal-materials`，避免后台调用绕过用户级隔离。
-- `personal-materials` 引用在回答中归为 `personal_material_basis`，页面标题为 `个人材料依据`。
 
 错误：
 
@@ -507,7 +673,8 @@ Query 参数：
         "years": [],
         "regions": [],
         "document_types": [],
-        "business_topics": []
+        "business_topics": [],
+        "title_only": false
       },
       "answer_summary": "问题：医保基金审核依据如何留痕？...",
       "retrieved_chunk_ids": ["11111111-1111-4111-8111-111111111111"],
@@ -528,7 +695,7 @@ Query 参数：
 - 如果服务未配置查询历史 store，接口回退返回进程内最近日志，`store.ready=false`、`store.backend="memory"`。
 - 如果查询历史 store 读取失败，接口同样回退到进程内最近日志，`store.ready=false`，并返回结构化 `error.error_type`，不暴露数据库连接串或异常正文。
 
-## 5. 文档接口
+## 4. 文档接口
 
 ### `GET /documents/permissions`
 
@@ -536,7 +703,8 @@ Query 参数：
 
 请求头：
 
-- `X-Role`：`auditor`、`it-admin` 或 `department-head`；缺省按 `auditor` 处理。
+- `X-User-Id`：当前用户标识；命中持久化用户时优先使用其 `active/global` 角色授权和用户状态。
+- `X-Role`：`member`、`admin`、`technician`、`director`，或兼容旧值 `auditor`、`it-admin`、`department-head`；缺省按 `member/auditor` 处理。
 
 响应示例：
 
@@ -549,17 +717,12 @@ Query 参数：
       "label": "法规政策",
       "scope": "公开知识库",
       "access": "read"
-    },
-    {
-      "source_collection": "personal-materials",
-      "label": "个人材料",
-      "scope": "本人上传",
-      "access": "read"
     }
   ],
   "upload_permissions": {
     "can_upload_personal": true,
-    "can_read_all_personal_uploads": false
+    "can_read_all_personal_uploads": false,
+    "can_govern_personal_uploads": false
   }
 }
 ```
@@ -567,6 +730,7 @@ Query 参数：
 错误：
 
 - `403`：角色无查询权限。
+- `403`：持久化用户 profile 处于 `disabled/pending`。
 
 ### `GET /documents/uploads`
 
@@ -575,7 +739,7 @@ Query 参数：
 请求头：
 
 - `X-User-Id`：当前用户标识；缺省为 `anonymous`。
-- `X-Role`：`auditor`、`it-admin` 或 `department-head`。
+- `X-Role`：`member`、`admin`、`technician`、`director`，或兼容旧值 `auditor`、`it-admin`、`department-head`。
 
 Query 参数：
 
@@ -583,8 +747,11 @@ Query 参数：
 
 权限行为：
 
-- `auditor` 只读取自己上传的个人材料。
-- `it-admin` 和 `department-head` 可读取全部个人材料留存记录。
+- 命中持久化用户时，列表读取以持久化 `active/global` 角色为准；例如持久化主任即使 header 仍是 `auditor`，也可读取全部个人材料。
+- 持久化用户处于 `disabled/pending` 时返回 `403`。
+- `member/auditor` 和 `technician` 只读取自己上传的个人材料。
+- `admin/it-admin` 和 `director/department-head` 可读取全部个人材料留存记录。
+- `admin/it-admin`、`technician` 和 `director/department-head` 可治理个人材料入索引状态；`member/auditor` 不能治理。
 
 响应核心字段：
 
@@ -607,15 +774,16 @@ Query 参数：
 - `created_by`
 - `created_at`
 - `retention_status`
-- `index_status`：可选 `not-indexed`、`staged-for-index`、`indexed`、`indexing-failed`；当前个人材料入索引 API 仅推进到 `staged-for-index`。
-- `index_readiness`
-
-`index_readiness` 返回入索引治理状态：
-
-- `status`：可选 `blocked`、`ready`、`rejected`。
-- `blockers`：可包含 `virus-scan-required`、`dlp-review-required`、`manual-index-approval-required`、`manual-index-approval-rejected`。
-- `next_action`：可选 `complete-upload-governance`、`ingest-personal-upload`、`review-manual-index-rejection`。
-- `checks`：逐项返回 `virus-scan`、`dlp-review` 和 `manual-index-approval` 的 `provider`、`status`、`blocker` 和 `detail`；外部治理 provider 还可返回 `result_code`、`risk_level`、`job_key`、`external_job_id` 和 `finished_at`
+- `index_status`
+- `governance_status`
+- `governance_note`
+- `governed_by`
+- `governed_at`
+- `security_scan_status`
+- `security_scan_provider`
+- `dlp_status`
+- `security_findings`
+- `download_url`
 
 ### `POST /documents/uploads`
 
@@ -632,193 +800,53 @@ Query 参数：
 - 配置 `document_upload_store` 后，接口会把原始上传文件写入受控留存目录，并写入 `document_upload_records`。
 - 留存目录优先使用 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_ROOT`，未配置时使用 `index_root/document-uploads`。
 - 文件名使用系统生成的 `document-upload-*` 记录号，不复用原始文件名作为物理文件名。
-- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户、`metadata.index_status=not-indexed` 和 `metadata.index_readiness`。
-- `metadata.index_readiness` 用于表达入索引前置治理门禁；旧记录缺少该字段时，API 按默认 blocked 门禁返回。
-- 上传治理策略已拆为可替换 adapter：病毒扫描 adapter、DLP 审查 adapter 和人工入索引审批 gate。默认 adapter 为 `unconfigured`，会阻断入索引并返回对应 blocker。
-
-治理 adapter 配置：
-
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER`：可选 `unconfigured`、`local-test`、`tencent-ci-virus`、`clamav-sidecar`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER`：可选 `unconfigured`、`local-test`、`ruleset-v1`、`external-dlp`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_TEST_MODE`：仅 `local-test` 生效，可选 `normal`、`false-positive`、`false-negative`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST`：`clamav-sidecar` 生效，默认 `127.0.0.1`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT`：`clamav-sidecar` 生效，默认 `3310`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS`：`clamav-sidecar` 生效，默认 `3.0`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES`：`clamav-sidecar` 生效，默认 `131072`。
-- `local-test` 仅用于本地和测试环境验收治理链路，不等于生产级病毒扫描、DLP 或合规审批能力。
-- `clamav-sidecar` 为本地 ClamAV sidecar 病毒扫描 adapter：运行上传治理时通过 TCP INSTREAM 协议把文件内容发送给配置的 sidecar；`clean` 返回 `virus-scan=passed` 和 `result_code=clean`，`infected`、`timeout`、`error` 均 fail-closed 返回 `virus-scan=blocked`。响应只保留病毒签名或错误摘要，不返回原始上传内容。
-- `ruleset-v1` 为应用级本地 DLP 规则 adapter：当前识别身份证、手机号、医保号、住院号、患者姓名、诊断、地址和费用明细等敏感标记；命中时返回 `dlp-review=blocked`、`result_code=sensitive-marker-detected`、`risk_level` 和不含原文值的 `findings`，未命中时返回 `dlp-review=passed`、`result_code=no-sensitive-marker`。该 adapter 不调用企业 DLP，不改写或脱敏原始文件。
-- `tencent-ci-virus` 和 `external-dlp` 当前表达为外部治理 pending 边界：上传响应保留 `blocked`，对应 check 返回 `result_code=pending-external-result`，必须等外部扫描或 DLP 结果写回后才能消除 blocker。该阶段不调用外部 provider，也不宣称生产级扫描或企业级脱敏完成。
-
-生产验收状态：
-
-- 2026-06-19 生产环境已激活 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER=clamav-sidecar` 与 `MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER=ruleset-v1`。
-- 生产写入型 E2E `tmp/outputs/production-documents-ruleset-dlp-write-e2e-after-activation-20260619.json` 已验证 clean 样本上传 `document-upload-c3bd6dcf9917` 返回 `dlp-review=passed/result_code=no-sensitive-marker`，sensitive 样本上传 `document-upload-2d7265f12e5d` 返回 `dlp-review=blocked/result_code=sensitive-marker-detected`。
-- 该生产验收只证明本应用内置规则集可执行并 fail-closed；不证明企业 DLP、脱敏改写、外部 provider 调用、人工审批写回或个人材料实际入索引。
-
-外部治理 provider preflight：
-
-- `scripts/run-document-governance-provider-preflight.py --config <path>` 只读取配置，不调用病毒扫描、DLP、对象存储或生产 API；报告固定返回 `external_provider_call_performed=false` 和 `production_write_performed=false`。
-- 默认 `unconfigured`、`local-test` 或 `ruleset-v1` 时，preflight 可通过；其中 `ruleset-v1` 只表示应用级本地 DLP 规则可用，不表示企业 DLP 或脱敏改写能力已具备。
-- 配置 `clamav-sidecar` 时，preflight 返回 `stage=local-sidecar` 并可通过；该检查只证明本地 sidecar adapter 已接入配置，不连接 ClamAV sidecar、不验证病毒库版本、不扫描生产文件。
-- 配置 `tencent-ci-virus` 或 `external-dlp` 时，preflight 会返回 `blocked`，并用 `*-external-provider-call-not-implemented` 标记真实外部调用 adapter 仍未接入；当前已具备治理结果写回结构，但未执行 provider call。
-- 如需在部署门禁中强制要求外部 provider，可增加 `--require-external-provider`；未配置外部 provider 时返回 `external-governance-provider-not-configured`。
-
-外部治理 job submitter 契约：
-
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_GOVERNANCE_JOB_SUBMITTER_PROVIDER` 默认为 `disabled`；默认生产行为不创建治理 job，也不调用 provider。
-- `local-recording` 只用于本地或预生产链路验收：上传后会把 `result_code=pending-external-result` 的病毒扫描和 DLP check 写入 `document_upload_governance_jobs`，状态为 `pending`，`result_payload.external_provider_call_performed=false`，`result_payload.production_write_performed=false`。
-- provider endpoint/secret 只保存环境变量名：`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCAN_JOB_SECRET_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_ENV`、`MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_ENV`；接口和日志不保存 secret 值。
-- `local-recording` 证明异步 job 记录和后续结果回写结构可联通，不证明腾讯云 CI、ClamAV、DLP 或任何外部治理系统已经执行扫描。
-
-个人材料入索引 staging 配置：
-
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED` 默认为 `false`；默认生产行为不创建个人材料 indexer。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_EMBEDDING_DIMENSION` 默认 `32`，仅用于确定性 fake embedding 的本地/测试验收。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY` 默认 `personal-materials-candidate`。
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY` 默认 `personal-materials-candidate`。
-- 当前实现只生成 `index_version_status=candidate` 的 staging 索引版本，固定 `external_provider_call_performed=false`、`live_retrieval_activated=false`；它证明上传材料可抽取、切块、写入候选索引表和状态机，不表示生产 live retrieval 已包含个人材料。
+- 数据库记录保存原始文件名、扩展名、大小、`sha256`、相对留存路径、`visibility=private`、`status=retained`、上传用户、`metadata.index_status=not-indexed`、`metadata.governance_status=pending-review`、本地策略扫描状态和 DLP 标记。
+- `security_scan_provider=local-policy` 表示仅执行本地关键词/文件类型策略检查；这不是外部杀毒引擎或医院级 DLP 服务。
 
 ### `GET /documents/uploads/{upload_id}/download`
 
-返回个人材料下载授权元信息。该接口用于建立下载权限隔离边界，并在对象存储和签名器可用时签发短期下载 URL。
+下载个人材料留存文件。读取权限与列表一致但更严格按单条记录判断：
 
-请求头：
+- 上传本人可下载自己的材料。
+- `admin/it-admin` 和 `director/department-head` 可下载全部个人材料。
+- 其他普通成员不可见，返回 `404` 并记录 `authorization-denied`，避免暴露他人上传记录是否存在。
 
-- `X-User-Id`：当前用户标识；缺省为 `anonymous`。
-- `X-Role`：`auditor`、`it-admin` 或 `department-head`。
+响应头：
 
-权限行为：
+- `Content-Disposition`：使用原始文件名下载。
+- `X-Document-Upload-Id`
+- `X-Document-Security-Scan`
+- `X-Document-DLP-Status`
 
-- 上传人可读取本人上传材料的下载元信息，`download.access_scope=owner`。
-- `it-admin` 和 `department-head` 可读取全部个人材料下载元信息，`download.access_scope=read-all`。
-- 其他普通 `auditor` 访问非本人上传时返回 `404 document upload not found`，避免泄露个人材料是否存在，并记录 `document-upload-download-access-denied` 操作日志。
+成功下载会记录 `document-upload-download` 操作日志。
 
-响应核心字段：
+### `POST /documents/uploads/{upload_id}/governance`
 
-- `item`：同 `GET /documents/uploads` 的单条上传记录。
-- `download.status`：`download-ready` 表示已签发短期下载 URL；`metadata-only` 表示只返回授权元信息。
-- `download.delivery`：`signed-url` 表示通过对象存储短期签名 URL 交付；`not-issued` 表示未签发 URL。
-- `download.reason`：`signed-url-issued`、`signed-download-not-configured` 或 `signed-url-not-available`。
-- `download.signed_url`：已授权且签发成功时返回短期 URL；未签发时为 `null`。该 URL 不写入操作日志。
-- `download.expires_at`：短期 URL 过期时间；未签发时为 `null`。
-- `download.storage_path`：上传记录中的受控存储路径。
-- `download.storage_objects`：已记录的对象存储元信息，包含 `provider`、`bucket`、`region`、`object_key`、`sha256`、`storage_status`、`storage_class`、`encryption_mode` 等字段。
-- `permissions`：当前角色的个人材料上传权限。
-
-当前边界：
-
-- 签名 URL 仅在已授权用户访问、存在 `provider=tencent-cos` 且 `storage_status=object-stored` 的对象记录、并且运行态 COS SDK signer 可用时签发。
-- local provider、缺少对象记录、对象状态不可交付或签名器不可用时，接口保持 `metadata-only`，不会回退为本地文件直出。
-- 本接口证明授权签发边界和审计事件可记录，不证明生产级病毒扫描、DLP/脱敏、个人材料实际入索引或长期留存生命周期已完成。
-- `storage_objects` 只对已授权用户返回；接口不返回 COS secret、真实密钥或文件正文。
-- 操作日志记录 `delivery`、`reason`、`signed_url_issued` 和 `signed_url_expires_at`，但不保存 `signed_url` 本身。
-
-生产验收：
-
-- 2026-06-18 PR #128 已将 COS signed URL 下载交付部署到生产，生产 E2E 报告 `tmp/outputs/production-documents-signed-download-e2e-after-pr128-20260618.json` 为 `status=pass`；验证对象 `document-upload-73805d5ac457` 的 owner 可取得短期 URL 并完成真实对象下载，下载内容 `sha256` 和大小匹配，非 owner 普通 `auditor` 返回 `404`，审计日志记录签发事实但不保存 URL 本体。
-
-### `POST /documents/uploads/{upload_id}/index-readiness/manual-approval`
-
-对个人材料执行人工入索引审批决策。该接口只更新 `metadata.index_readiness`，不把文件写入检索索引。
-
-权限：
-
-- 允许角色：`department-head`、`system-admin`。
-- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
-- 普通 `auditor` 不允许审批，会返回 `403`，并记录 `document-upload-index-approval-access-denied` 操作日志。
+更新个人材料治理状态。需要管理员、技术人员或主任角色；普通成员不能调用。
 
 请求体：
 
-- `decision`：可选 `approved`、`rejected`。
-- `note`：必填，最长 `1000` 字符，用于保留审批理由。
+```json
+{
+  "governance_status": "approved-for-index",
+  "note": "已完成材料治理。"
+}
+```
 
-状态变更：
+状态映射：
 
-- `approved`：将 `manual-index-approval` check 置为 `passed`；若病毒扫描和 DLP check 均已 passed，则整体 `status=ready`、`next_action=ingest-personal-upload`。
-- `approved`：若病毒扫描或 DLP check 仍 blocked，则只消除人工审批 blocker，整体仍为 `blocked`。
-- `rejected`：将 `manual-index-approval` check 置为 `blocked`，blocker 为 `manual-index-approval-rejected`，整体 `status=rejected`、`next_action=review-manual-index-rejection`。
+- `pending-review` -> `index_status=not-indexed`
+- `approved-for-index` -> `index_status=index-ready`
+- `blocked` -> `index_status=blocked`
 
-### `POST /documents/uploads/{upload_id}/index-readiness/governance-result`
-
-回写个人材料外部治理结果。该接口用于把外部病毒扫描或 DLP 审查结果写回 `metadata.index_readiness`，不调用外部 provider，不写入检索索引。
-
-权限：
-
-- 允许角色：`department-head`、`system-admin`。
-- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
-- 普通 `auditor` 不允许回写，会返回 `403`，并记录 `document-upload-governance-result-access-denied` 操作日志。
-
-请求体：
-
-- `check_type`：可选 `virus-scan`、`dlp-review`。
-- `provider`：结果来源，例如 `tencent-ci-virus`、`clamav-sidecar`、`ruleset-v1` 或 `external-dlp`。
-- `status`：可选 `passed`、`blocked`。
-- `detail`：必填，最长 `1000` 字符，用于保留结果说明。
-- `result_code`：可选外部结果码，例如 `normal`、`malware-detected`、`no-sensitive-marker`。
-- `risk_level`：可选风险等级，主要用于 DLP 结果。
-- `external_job_id`：可选外部任务号。
-- `finished_at`：可选外部完成时间字符串。
-
-状态变更：
-
-- `status=passed`：对应 `virus-scan` 或 `dlp-review` check 置为 `passed`，清除该 check blocker。
-- `status=blocked`：对应 check 保持 `blocked`，`virus-scan` 写回 `virus-scan-required`，`dlp-review` 写回 `dlp-review-required`。
-- 若外部结果和人工审批均已 passed，则整体 `status=ready`、`next_action=ingest-personal-upload`；否则整体仍保持 `blocked` 或 `rejected`。
-- 操作日志记录 `document-upload-governance-result-update`，包含 `check_type`、`provider`、结果状态、结果码、外部任务号和更新后的 blockers。
-
-### `POST /documents/uploads/{upload_id}/index-ingestion`
-
-将已通过治理门禁的个人材料写入候选索引 staging 表。该接口是受控 staging，不发布到生产 active index，不触发 live retrieval 重载，也不调用外部 embedding/provider。
-
-权限：
-
-- 允许角色：`department-head`、`system-admin`。
-- 兼容旧角色：`X-Role: it-admin` 会归一化为 `system-admin`。
-- 普通 `auditor` 不允许触发，会返回 `403`，并记录 `document-upload-index-ingestion-access-denied` 操作日志。
-
-前置条件：
-
-- `MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED=true`，否则返回 `409 document upload indexing is not enabled`。
-- 上传记录必须存在且 `metadata.index_readiness.status=ready`。
-- 上传记录必须为 `visibility=private`、`status=retained`、`metadata.index_status=not-indexed`。
-- 优先读取本地隔离区文件；若本地隔离文件不存在，必须存在匹配当前 storage provider 的 `document_storage_objects` 记录，且对象读取后的 sha256 必须与上传记录一致。
-- COS-only 对象读取失败、对象记录缺失或 sha256 不匹配时，接口返回 `409`，不会写入候选索引 staging。
-
-staging 行为：
-
-- 读取本地隔离区文件，或从已记录 object storage 对象读取内容并写入受控 `.index-staging/<upload_id>/...` staging 文件，复用现有抽取器和切块器生成个人材料 chunk。
-- 写入 `source_package_versions`、`source_documents`、`document_chunks`、`chunk_embeddings` 和 `index_versions`。
-- `source_collection=personal-materials`。
-- `index_versions.status=candidate`，不改动 active index。
-- `personal-materials` candidate 版本在 `metadata.live_retrieval_activated=false` 时会被 `index activation` 门禁阻断，不能发布为 active index。
-- embedding 使用确定性 fake provider，接口不读取 Kimi/OpenAI/腾讯云等外部 provider key，不发生外部 provider call。
-- 上传记录推进为 `metadata.index_status=staged-for-index`，并写入 `metadata.index_ingestion` 记录 chunk 数、embedding 数、candidate key 和 `live_retrieval_activated=false`。
-
-响应核心字段：
-
-- `item`：更新后的上传记录。
-- `ingestion.status`：`staged-for-index` 或 `already-staged`。
-- `ingestion.source_collection`：固定 `personal-materials`。
-- `ingestion.index_version_status`：固定 `candidate`。
-- `ingestion.chunk_count`、`embedding_count`：本次 staging 写入数量。
-- `ingestion.external_provider_call_performed=false`。
-- `ingestion.live_retrieval_activated=false`。
+接口返回与 `POST /documents/uploads` 相同的 `item`、`store` 和 `permissions` 结构，并记录 `document-upload-governance-update` 操作日志。若本地策略扫描或 DLP 标记为待复核，接口会阻断 `approved-for-index`，返回 `409`，并记录 `document-upload-governance-blocked`。
 
 当前边界：
 
-- 本接口是本地可验证的候选索引 staging，不等同于生产个人材料检索可见。
-- 运行态检索层已经具备 `created_by/visibility` 用户级隔离：普通 `auditor` 只能召回本人 `private` 上传，`department-head` 和 `system-admin` 具备 read-all 范围。
-- 在进入生产 active retrieval 前，还必须补齐生产 embedding provider 门禁、candidate 发布审计、生产写入授权、生产 COS-only staging E2E 和生产 reload 验收。
-- 当前 `index activation` 已 fail-closed 阻断 `personal-materials` staging 版本被激活；只有完成上述生产门禁后，才能重新评估该阻断条件。
-
-当前边界：
-
-- 默认 `/documents` 链路只完成个人材料留存、列表读取、人工审批/外部结果状态变更和入索引治理门禁表达；只有显式启用 `index-ingestion` 后才写入候选索引 staging。
-- `index-ingestion` 不执行病毒扫描、脱敏改写、签名 URL 生成、active index 发布或生命周期清理；COS-only 路径只做内部对象读取、sha256 校验和受控 staging 文件落地。
-- 上传、COS 对象存储和签名下载分别遵循 `POST /documents/uploads` 与 `GET /documents/uploads/{upload_id}/download` 的边界；不能把其中任一项通过当作全链路生产入索引完成。
-- 当前权限模型仍基于 `X-Role`、`X-User-Id` 请求头，不等于真实登录会话和科室级权限体系。
+- 本接口只完成个人材料留存、列表读取、受控下载、本地策略扫描/DLP 标记和本地治理状态标记，不把上传材料写入检索索引。
+- `index-ready` 表示材料已通过本地治理、可进入后续索引任务队列，不代表真实向量索引已有该文件内容。
+- 本接口不执行外部杀毒引擎扫描、真实医院 DLP 服务、脱敏改写、对象存储上传或生命周期清理。
+- 当前权限模型已优先读取本地持久化用户、全局/项目角色授权和本地租户头契约，但仍通过 `X-Role`、`X-User-Id`、`X-Project-Key` 和 `X-Tenant-Id` 作为过渡输入，不等于真实登录会话、医院 SSO、正式租户身份来源和科室级权限体系。
 
 状态码：
 
@@ -827,7 +855,7 @@ staging 行为：
 - `413`：文件超过大小限制。
 - `422`：扩展名不支持或空文件。
 
-## 6. 数据分析接口
+## 5. 数据分析接口
 
 ### `POST /analytics/table-upload`
 
@@ -910,7 +938,7 @@ Query 参数：
 - `retention_status`
 - `audit_signals`
 
-## 7. 原文预览接口
+## 6. 原文预览接口
 
 ### `GET /preview/{chunk_id}`
 
@@ -934,13 +962,11 @@ Query 参数：
 - `404`：引用不存在或源文件不存在。
 - `422`：locator 无法解析。
 
-## 8. 索引接口
-
-索引写接口仍基于 `X-Role: it-admin` 做管理权限判断。拒绝访问时返回 `403`，并记录 `index-admin-access-denied` 操作日志；payload 包含 `attempted_action`、`user_identifier`、`role`、`status_code` 和拒绝原因。
+## 7. 索引接口
 
 ### `POST /index/rebuild`
 
-全量重建索引。需要 `X-Role: it-admin`。
+全量重建索引。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。
 
 ```json
 {
@@ -950,11 +976,11 @@ Query 参数：
 
 ### `POST /index/incremental`
 
-基于当前快照执行增量索引。需要 `X-Role: it-admin`。如果没有历史快照，返回 `409`。
+基于当前快照执行增量索引。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。如果没有历史快照，返回 `409`。
 
 ### `POST /index/retry-file`
 
-重试单个文件。需要 `X-Role: it-admin`。
+重试单个文件。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。
 
 ```json
 {
@@ -969,7 +995,7 @@ Query 参数：
 
 ### `POST /index/versions/activate`
 
-显式激活一个 PostgreSQL index version。需要 `X-Role: it-admin`。
+显式激活一个 PostgreSQL index version。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。
 
 请求体：
 
@@ -1001,13 +1027,14 @@ Query 参数：
 
 错误：
 
-- `403`：缺少 `X-Role: it-admin`，并记录 `index-admin-access-denied`。
+- `401`：缺少 `X-Role`。
+- `403`：角色无索引管理权限。
 - `409`：目标版本不存在，或状态不允许激活。
 - `503`：PostgreSQL 写入失败。
 
 ### `POST /index/versions/rollback`
 
-显式回滚到历史 PostgreSQL index version。需要 `X-Role: it-admin`。
+显式回滚到历史 PostgreSQL index version。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。
 
 请求体：
 
@@ -1025,7 +1052,7 @@ Query 参数：
 
 ### `POST /index/evaluation/run`
 
-运行发布后固定验收。需要 `X-Role: it-admin`，并要求 API 进程内检索后端已加载。
+运行发布后固定验收。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`，并要求 API 进程内检索后端已加载。
 
 请求体默认值：
 
@@ -1097,7 +1124,8 @@ Query 参数：
 
 错误：
 
-- `403`：缺少 `X-Role: it-admin`。
+- `401`：缺少 `X-Role`。
+- `403`：角色无索引管理权限。
 - `409`：检索后端未加载、评测集文件不可用、评测集格式错误或没有可引用依据。
 
 ### `GET /index/evaluation/history`
@@ -1186,7 +1214,7 @@ Query 参数：
 
 ### `POST /index/search-backend/postgres`
 
-显式加载 PostgreSQL + pgvector 检索后端。需要 `X-Role: it-admin`。
+显式加载 PostgreSQL + pgvector 检索后端。需要 `X-Role: admin`、`X-Role: technician` 或兼容旧值 `X-Role: it-admin`。
 
 Kimi 主索引运行参数：
 
@@ -1212,7 +1240,7 @@ Kimi 主索引运行参数：
 
 加载成功后，`details.matching_embedding_count` 必须大于 `0`。当前生产 Kimi 主索引期望值为 `49051`。
 
-## 9. 操作日志接口
+## 8. 操作日志接口
 
 ### `GET /operation/logs`
 
@@ -1224,19 +1252,19 @@ Kimi 主索引运行参数：
 
 ### `GET /audit/logs`
 
-查询持久化审计日志 `audit_log_events`。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。响应会对 `api_key`、`authorization`、`credential`、`password`、`secret`、`token` 等敏感字段做 response-only 脱敏，当前策略保留周期为 `180` 天，保留期外事件通过 `medical-audit-kb audit-log-retention` 执行显式归档和清理。
+查询持久化审计日志 `audit_log_events`。需要 `read_audit_logs` 权限，即持久化 `admin/director` 角色或兼容旧值 `X-Role: it-admin`、`X-Role: department-head`；其他角色返回 `403`，并记录 `authorization-denied`。持久化 profile 为 `disabled/pending` 时同样返回 `403`。支持按 `action`、`entity_type`、`entity_id`、`user_identifier`、`created_from`、`created_to` 和 `limit` 过滤。该接口读取数据库日志 store；未配置时返回空列表和 `store.ready=false`，不把进程内临时日志伪装成持久化审计链。响应会对 `api_key`、`authorization`、`credential`、`password`、`secret`、`token` 等敏感字段做 response-only 脱敏，当前策略保留周期为 `180` 天，保留期外事件通过 `medical-audit-kb audit-log-retention` 执行显式归档和清理。
 
 ### `GET /audit/logs/export`
 
-导出持久化审计日志 JSON。需要 `X-Role: it-admin` 或 `X-Role: department-head`；其他角色返回 `403`，并记录 `audit-logs-access-denied`。授权导出会记录 `audit-logs-export` 操作。未配置数据库日志 store 时返回 `409`。默认导出上限为 `500` 条，可按同一组过滤参数缩小范围。导出结果同样应用 response-only 脱敏策略。
+导出持久化审计日志 JSON。需要 `read_audit_logs` 权限；持久化 `admin/director` 角色优先于兼容 header，未授权返回 `401/403` 并记录 `authorization-denied`。授权导出会记录 `audit-logs-export` 操作。未配置数据库日志 store 时返回 `409`。默认导出上限为 `500` 条，可按同一组过滤参数缩小范围。导出结果同样应用 response-only 脱敏策略。
 
 ### `GET /pages/audit-logs`
 
-审计日志台页面。需要认证代理或 API client 注入 `X-Role: it-admin` 或 `X-Role: department-head` 后才展示事件；未授权角色只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
+审计日志台页面。需要持久化 `admin/director` 角色或认证代理/API client 注入兼容旧值 `X-Role: it-admin`、`X-Role: department-head` 后才展示事件；未授权或已停用用户仍返回页面，但只显示权限提示，不渲染事件、payload 或 metadata。用于按任务、用户、动作和时间范围追踪查询、导出、复核、签发、整改和结案阻断事件，并提供当前筛选结果的 JSON 导出入口。
 
 当前未完成：证书级非对称签名/电子签章、长期留存介质迁移和外部告警接入。后台自动清理不作为默认安全路径；生产执行必须先显式归档再删除数据库中过期事件。
 
-## 10. CLI 命令
+## 9. CLI 命令
 
 ### `medical-audit-kb acceptance-run`
 

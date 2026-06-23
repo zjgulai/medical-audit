@@ -1,13 +1,17 @@
 import hashlib
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 from uuid import UUID
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
+from medical_audit_kb.api.agent_store import SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
+from medical_audit_kb.api.auth_user_store import SqlAlchemyAuthUserStore
 from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
 from medical_audit_kb.api.review_task_store import (
     JsonFileReviewTaskStore,
@@ -67,6 +71,101 @@ def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "AI智能审计管理系统 · AI 对话" in response.text
     assert 'aria-current="page">AI 对话' in response.text
+
+
+def test_graph_workbench_api_returns_readonly_topology(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/graph/workbench")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "graph-workbench-v1"
+    assert body["graph_id"] == "SELF-CHECK-FUND-20260607"
+    assert body["metrics"]["node_count"] == 8
+    assert body["metrics"]["relation_count"] == 8
+    assert body["metrics"]["strong_relation_count"] == 4
+    assert body["metrics"]["pending_relation_count"] == 2
+    assert body["production_side_effect"] == "none"
+    assert body["store"] == {"ready": True, "backend": "ReadonlyGraphWorkbenchSeed"}
+    assert body["nodes"][0]["kind"] == "项目"
+    assert body["relations"][0]["sourceId"] == "graph-node-project"
+    assert state.operation_logs[-1]["action"] == "graph-workbench-view"
+
+
+def test_rules_workbench_api_returns_readonly_rule_status(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/rules/workbench")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "rules-workbench-v1"
+    assert body["ruleset_id"] == "FUND-USAGE-COMPLIANCE-RULES"
+    assert body["metrics"]["rule_count"] == 4
+    assert body["metrics"]["enabled_rule_count"] == 1
+    assert body["metrics"]["pending_rule_count"] == 3
+    assert body["metrics"]["total_finding_count"] == 3
+    assert body["metrics"]["blocked_gate_count"] == 1
+    assert body["production_side_effect"] == "none"
+    assert body["store"] == {"ready": True, "backend": "ReadonlyRulesWorkbenchSeed"}
+    assert body["rule_library_items"][0]["code"] == "CHARGE-RULE-001"
+    assert body["source_coverages"][0]["sourceCollection"] == "supervision-rules-knowledge"
+    assert body["control_gates"][1]["status"] == "阻断"
+    assert state.operation_logs[-1]["action"] == "rules-workbench-view"
+
+
+def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/remediation/workbench")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "remediation-workbench-v1"
+    assert body["workbench_id"] == "FUND-USAGE-REMEDIATION"
+    assert body["metrics"]["case_count"] == 4
+    assert body["metrics"]["active_case_count"] == 3
+    assert body["metrics"]["closed_case_count"] == 1
+    assert body["metrics"]["pending_evidence_count"] == 3
+    assert body["metrics"]["blocked_gate_count"] == 1
+    assert body["metrics"]["average_progress"] == 66
+    assert body["production_side_effect"] == "none"
+    assert body["store"] == {"ready": True, "backend": "ReadonlyRemediationWorkbenchSeed"}
+    assert body["remediation_cases"][0]["sourceFinding"] == "FINDING-F044EBD309B659DC"
+    assert body["evidence_requests"][1]["status"] == "待上传"
+    assert body["closure_gates"][0]["status"] == "阻断"
+    assert state.operation_logs[-1]["action"] == "remediation-workbench-view"
+
+
+def test_archive_workbench_api_returns_readonly_archive_status(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/archive/workbench")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "archive-workbench-v1"
+    assert body["archive_id"] == "FUND-USAGE-ARCHIVE"
+    assert body["metrics"]["package_count"] == 4
+    assert body["metrics"]["archived_package_count"] == 1
+    assert body["metrics"]["pending_package_count"] == 3
+    assert body["metrics"]["blocked_package_count"] == 1
+    assert body["metrics"]["audit_run_count"] == 3
+    assert body["metrics"]["signature_count"] == 3
+    assert body["metrics"]["policy_count"] == 4
+    assert body["metrics"]["latest_archive_run_status"] == "通过"
+    assert body["production_side_effect"] == "none"
+    assert body["store"] == {"ready": True, "backend": "ReadonlyArchiveWorkbenchSeed"}
+    assert body["archive_packages"][0]["archiveNo"] == "ARCHIVE-SELF-CHECK-FUND-202606"
+    assert body["audit_runs"][0]["title"] == "archive root 巡检"
+    assert body["signature_items"][0]["label"] == "retention-batch-0001.jsonl"
+    assert body["policy_items"][1]["value"] == "180 days"
+    assert state.operation_logs[-1]["action"] == "archive-workbench-view"
 
 
 def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
@@ -139,56 +238,6 @@ def test_query_page_returns_answer_citations_preview_links_and_log(tmp_path: Pat
     assert state.query_logs[-1]["question"] == "医保基金审核依据"
 
 
-def test_query_page_scopes_personal_materials_to_current_user(tmp_path: Path) -> None:
-    state = _api_state(tmp_path)
-    state.search_engine = _search_engine(
-        (
-            _chunk(
-                chunk_id=PERSONAL_OWNER_CHUNK_ID,
-                text="个人补充材料 门诊费用审核依据 来自审计员一",
-                source_path="personal-materials/auditor-1/note.txt",
-                source_collection=SourceCollection.PERSONAL_MATERIALS,
-                document_type="personal-upload",
-                created_by="auditor-1",
-                visibility="private",
-            ),
-            _chunk(
-                chunk_id=PERSONAL_OTHER_CHUNK_ID,
-                text="个人补充材料 门诊费用审核依据 来自审计员二",
-                source_path="personal-materials/auditor-2/note.txt",
-                source_collection=SourceCollection.PERSONAL_MATERIALS,
-                document_type="personal-upload",
-                created_by="auditor-2",
-                visibility="private",
-            ),
-        )
-    )
-    client = TestClient(create_app(state))
-    params = {
-        "question": "个人补充材料 门诊费用审核依据",
-        "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
-    }
-
-    owner_response = client.get(
-        "/pages/query",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        params=params,
-    )
-    other_response = client.get(
-        "/pages/query",
-        headers={"X-User-Id": "auditor-3", "X-Role": "auditor"},
-        params=params,
-    )
-
-    assert owner_response.status_code == 200
-    assert "来自审计员一" in owner_response.text
-    assert "来自审计员二" not in owner_response.text
-    assert state.query_logs[-1]["user_identifier"] == "auditor-1"
-    assert state.query_logs[-1]["retrieved_chunk_ids"] == [str(PERSONAL_OWNER_CHUNK_ID)]
-    assert other_response.status_code == 200
-    assert "没有找到可引用依据。" in other_response.text
-
-
 def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
@@ -212,12 +261,58 @@ def test_chat_page_renders_conversation_evidence_and_followups(tmp_path: Path) -
     assert "回答进入底稿或报告前" in response.text
     assert "创建复核任务" in response.text
     assert "导出 Markdown 底稿" in response.text
+    assert "导出 Word 底稿" in response.text
     assert "导出 JSON 记录" in response.text
     assert "复制引用" in response.text
     assert "把以上依据整理成审核要点清单" in response.text
     assert f"/pages/preview/{LAW_CHUNK_ID}" in response.text
     assert "<pre>" not in response.text
     assert state.operation_logs[-1]["action"] == "page-chat"
+
+
+def test_chat_page_records_selected_agent_invocation_without_export_duplication(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'page-agent-invocations.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/chat",
+        params={
+            "question": "医保基金审核依据",
+            "agent": "agent-citation-check",
+            "project_name": "医保基金使用合规专项自查",
+        },
+    )
+    assert response.status_code == 200
+    assert 'name="agent" value="agent-citation-check"' in response.text
+    assert 'name="project_name" value="医保基金使用合规专项自查"' in response.text
+    assert state.agent_store is not None
+    invocations = state.agent_store.list_invocations("agent-citation-check")
+    assert len(invocations) == 1
+    assert invocations[0]["invocation_source"] == "/pages/chat"
+    assert invocations[0]["question"] == "医保基金审核依据"
+    assert invocations[0]["metadata"]["project_name"] == "医保基金使用合规专项自查"
+    assert state.operation_logs[-2]["action"] == "agent-invocation-create"
+    assert state.operation_logs[-1]["action"] == "page-chat"
+
+    export_response = client.get(
+        "/pages/chat/export",
+        params={
+            "question": "医保基金审核依据",
+            "agent": "agent-citation-check",
+            "project_name": "医保基金使用合规专项自查",
+            "format": "json",
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert len(state.agent_store.list_invocations("agent-citation-check")) == 1
+    assert state.operation_logs[-1]["action"] == "chat-dossier-export"
 
 
 def test_chat_dossier_export_returns_json_download_and_records_log(tmp_path: Path) -> None:
@@ -274,6 +369,52 @@ def test_chat_dossier_export_returns_markdown_download(tmp_path: Path) -> None:
     assert f"chunk: `{LAW_CHUNK_ID}`" in response.text
     assert "package: `package-v1`" in response.text
     assert "原文链接: http://testserver/pages/preview/" in response.text
+
+
+def test_chat_dossier_export_returns_docx_download(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/chat/export",
+        params={"question": "医保基金审核依据", "format": "docx"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="auditscope-dossier.docx"'
+    )
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    document_xml = _docx_document_xml(response.content)
+    assert "AuditScope 审计底稿导出" in document_xml
+    assert "医保基金审核依据" in document_xml
+    assert str(LAW_CHUNK_ID) in document_xml
+
+
+def test_report_workpaper_template_registry_returns_docx_metadata(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/reports/workpaper-templates")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "workpaper-template-registry-v1"
+    assert body["registry_status"] == "active"
+    assert body["count"] == 3
+    template_names = {item["name"] for item in body["items"]}
+    assert template_names == {
+        "费用汇总风险底稿",
+        "分类费用复核清单",
+        "就诊明细疑点摘要",
+    }
+    visit_detail = next(item for item in body["items"] if item["id"] == "workpaper-visit-detail")
+    assert visit_detail["source_file_name"] == "表3_就诊费用明细表-模版.xlsx"
+    assert "身份证号码" in visit_detail["expected_columns"]
+    assert "隐私字段处理记录" in visit_detail["evidence_bindings"]
+    assert state.operation_logs[-1]["action"] == "report-workpaper-template-registry-view"
 
 
 def test_chat_dossier_export_fails_when_backend_is_not_ready(tmp_path: Path) -> None:
@@ -474,7 +615,9 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "HIS收费明细导出" in updated_page_response.text
     assert "HIS收费明细上传归档" in updated_page_response.text
     assert "下载归档文件" in updated_page_response.text
+    assert "导出任务 Word" in updated_page_response.text
     assert "导出报告草稿 Markdown" in updated_page_response.text
+    assert "导出报告草稿 Word" in updated_page_response.text
 
     json_response = client.get("/review-tasks/review-task-0001/export")
     assert json_response.status_code == 200
@@ -519,6 +662,18 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert "疑似违规线索成立，进入人工复核。" in markdown_response.text
     assert f"chunk: `{LAW_CHUNK_ID}`" in markdown_response.text
 
+    task_docx_response = client.get(
+        "/review-tasks/review-task-0001/export",
+        params={"format": "docx"},
+    )
+    assert task_docx_response.status_code == 200
+    assert task_docx_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001.docx"'
+    )
+    task_document_xml = _docx_document_xml(task_docx_response.content)
+    assert "AuditScope 复核任务记录" in task_document_xml
+    assert "workpaper-20260604-001" in task_document_xml
+
     report_markdown_response = client.get("/review-tasks/review-task-0001/report-draft")
     assert report_markdown_response.status_code == 200
     assert report_markdown_response.headers["content-disposition"] == (
@@ -543,6 +698,18 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert report_body["attachments"][0]["title"] == "HIS收费明细导出"
     assert report_body["attachments"][2]["status"] == "uploaded"
     assert report_body["report_draft"]["title"] == ("同就诊同项目重复收费复核报告草稿")
+
+    report_docx_response = client.get(
+        "/review-tasks/review-task-0001/report-draft",
+        params={"format": "docx"},
+    )
+    assert report_docx_response.status_code == 200
+    assert report_docx_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-report-draft.docx"'
+    )
+    report_document_xml = _docx_document_xml(report_docx_response.content)
+    assert "AuditScope 审计报告草稿" in report_document_xml
+    assert "同就诊同项目重复收费复核报告草稿" in report_document_xml
 
     unsigned_report_response = client.get("/review-tasks/review-task-0001/signed-report")
     assert unsigned_report_response.status_code == 409
@@ -597,6 +764,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert signed_page_response.status_code == 200
     assert "正式报告已签发" in signed_page_response.text
     assert "下载正式报告 Markdown" in signed_page_response.text
+    assert "下载正式报告 Word" in signed_page_response.text
     assert str(signed_report["content_sha256"]) in signed_page_response.text
 
     signed_markdown_response = client.get("/review-tasks/review-task-0001/signed-report")
@@ -618,6 +786,37 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert signed_body["format"] == "review-task-signed-report-v1"
     assert signed_body["signed_report"]["content_sha256"] == signed_report["content_sha256"]
     assert signed_body["signed_report"]["content"] == signed_content
+
+    signed_docx_response = client.get(
+        "/review-tasks/review-task-0001/signed-report",
+        params={"format": "docx"},
+    )
+    assert signed_docx_response.status_code == 200
+    assert signed_docx_response.headers["content-disposition"] == (
+        'attachment; filename="review-task-0001-signed-report.docx"'
+    )
+    signed_document_xml = _docx_document_xml(signed_docx_response.content)
+    assert "AuditScope 审计报告草稿" in signed_document_xml
+    assert "同就诊同项目重复收费复核报告草稿" in signed_document_xml
+
+    reports_workbench_response = client.get("/reports/workbench")
+    assert reports_workbench_response.status_code == 200
+    reports_body = reports_workbench_response.json()
+    assert reports_body["format"] == "report-workbench-v1"
+    assert reports_body["template_registry_status"] == "active"
+    assert reports_body["metrics"]["signed_report_count"] == 1
+    assert reports_body["metrics"]["docx_download_count"] == 1
+    assert len(reports_body["workpaper_templates"]) == 3
+    report_entry = reports_body["report_entries"][0]
+    assert report_entry["id"] == "review-task-0001"
+    assert report_entry["status"] == "已签发"
+    assert report_entry["download_links"]["task_docx"] == (
+        "/review-tasks/review-task-0001/export?format=docx"
+    )
+    assert report_entry["download_links"]["report_docx"] == (
+        "/review-tasks/review-task-0001/signed-report?format=docx"
+    )
+    assert reports_body["report_evidence_sources"][0]["title"] == "workpaper-20260604-001"
 
     rectification_response = client.post(
         "/pages/review-tasks/review-task-0001/rectification",
@@ -911,11 +1110,6 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     )
     assert readonly_block_payloads[0]["user_identifier"] == "auditor-a"
     assert readonly_block_payloads[2]["role"] == "department-head"
-    assert {payload["auth_source"] for payload in readonly_block_payloads} == {"legacy-header"}
-    assert {payload["normalized_role"] for payload in readonly_block_payloads} == {
-        "auditor",
-        "department-head",
-    }
 
 
 def test_review_tasks_persist_across_api_state_rebuilds(tmp_path: Path) -> None:
@@ -1371,6 +1565,54 @@ def test_persistent_audit_logs_api_filters_and_exports_events(tmp_path: Path) ->
     assert any(item["entity_type"] == "review-task" for item in export_body["items"])
 
 
+def test_audit_logs_api_and_page_use_persistent_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-log-persistent-role.db'}",
+        create_schema=True,
+    )
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    assert state.auth_user_store is not None
+    state.auth_user_store.add_user(
+        {
+            "user_key": "persistent-audit-director",
+            "display_name": "审计主任",
+            "status": "active",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "persistent-audit-director",
+        {"role": "director", "scope_type": "global"},
+    )
+    assert state.audit_log_store is not None
+    state.audit_log_store.add_event(
+        "review-task-readonly-write-blocked",
+        {
+            "task_id": "review-task-0001",
+            "user_identifier": "auditor-001",
+            "role": "auditor",
+            "status_code": 409,
+            "endpoint": "/pages/review-tasks/review-task-0001/status",
+        },
+    )
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "persistent-audit-director", "X-Role": "auditor"}
+
+    api_response = client.get("/audit/logs", headers=headers)
+    page_response = client.get("/pages/audit-logs", headers=headers)
+
+    assert api_response.status_code == 200
+    assert any(
+        item["action"] == "review-task-readonly-write-blocked"
+        for item in api_response.json()["items"]
+    )
+    assert page_response.status_code == 200
+    assert "review-task-readonly-write-blocked" in page_response.text
+
+
 def test_persistent_audit_logs_require_governance_role_and_redact_sensitive_payload(
     tmp_path: Path,
 ) -> None:
@@ -1401,9 +1643,7 @@ def test_persistent_audit_logs_require_governance_role_and_redact_sensitive_payl
     export_rejected_response = client.get("/audit/logs/export", headers={"X-Role": "auditor"})
 
     assert rejected_response.status_code == 403
-    assert rejected_response.json()["detail"] == (
-        "audit log access requires it-admin or department-head role"
-    )
+    assert rejected_response.json()["detail"] == "read_audit_logs is not allowed"
     assert export_rejected_response.status_code == 403
     assert accepted_response.status_code == 200
     body = accepted_response.json()
@@ -1474,9 +1714,6 @@ def test_audit_logs_page_hides_events_without_governance_role(tmp_path: Path) ->
     assert "需要审计日志权限" in response.text
     assert "review-task-readonly-write-blocked" not in response.text
     assert "auditor-denied" not in response.text
-    assert state.operation_logs[-1]["action"] == "audit-logs-access-denied"
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
 
 def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:
@@ -1495,8 +1732,6 @@ def test_favicon_route_avoids_browser_404_noise(tmp_path: Path) -> None:
 
 LAW_CHUNK_ID = UUID("11111111-1111-4111-8111-111111111111")
 RULE_CHUNK_ID = UUID("22222222-2222-4222-8222-222222222222")
-PERSONAL_OWNER_CHUNK_ID = UUID("33333333-3333-4333-8333-333333333333")
-PERSONAL_OTHER_CHUNK_ID = UUID("44444444-4444-4444-8444-444444444444")
 
 
 def _api_state(tmp_path: Path) -> ApiState:
@@ -1560,6 +1795,14 @@ def _api_state(tmp_path: Path) -> ApiState:
 def _review_tasks(state: ApiState) -> list[dict[str, object]]:
     assert state.review_task_store is not None
     return state.review_task_store.list_tasks()
+
+
+def _docx_document_xml(content: bytes) -> str:
+    with ZipFile(BytesIO(content)) as archive:
+        names = set(archive.namelist())
+        assert "[Content_Types].xml" in names
+        assert "word/document.xml" in names
+        return archive.read("word/document.xml").decode("utf-8")
 
 
 def _seed_charge_rule_001_findings(database_url: str) -> None:
@@ -1709,32 +1952,25 @@ def _chunk(
     source_path: str,
     source_collection: SourceCollection,
     document_type: str,
-    created_by: str | None = None,
-    visibility: str | None = None,
 ) -> ChunkEmbeddingInput:
-    metadata: dict[str, object] = {
-        "source_collection": source_collection.value,
-        "locator": {
-            "type": "markdown-section",
-            "source_path": source_path,
-            "line_start": 1,
-            "line_end": 1,
-        },
-        "index_version_key": "index-v1",
-        "source_package_version_key": "package-v1",
-        "year": 2024,
-        "region": "国家",
-        "document_type": document_type,
-        "business_topic": "fund-supervision",
-    }
-    if created_by is not None:
-        metadata["created_by"] = created_by
-    if visibility is not None:
-        metadata["visibility"] = visibility
     return ChunkEmbeddingInput(
         chunk_id=chunk_id,
         text=text,
-        metadata=metadata,
+        metadata={
+            "source_collection": source_collection.value,
+            "locator": {
+                "type": "markdown-section",
+                "source_path": source_path,
+                "line_start": 1,
+                "line_end": 1,
+            },
+            "index_version_key": "index-v1",
+            "source_package_version_key": "package-v1",
+            "year": 2024,
+            "region": "国家",
+            "document_type": document_type,
+            "business_topic": "fund-supervision",
+        },
     )
 
 

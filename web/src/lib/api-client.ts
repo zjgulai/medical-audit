@@ -1,13 +1,28 @@
 import type {
   AgentCreateRequest,
   AgentCreateResponse,
+  AgentDetailResponse,
+  AgentFeedbackCreateRequest,
+  AgentFeedbackListResponse,
+  AgentFeedbackResponse,
+  AgentInvocationCreateRequest,
+  AgentInvocationResponse,
+  AgentInvocationsResponse,
+  AgentLifecycleRequest,
+  AgentPromptVersionCreateRequest,
+  AgentPromptVersionRollbackRequest,
+  AgentPromptVersionReviewRequest,
+  AgentPromptVersionsResponse,
   AgentsResponse,
+  ArchiveWorkbenchResponse,
+  AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  DocumentUploadGovernanceRequest,
   DocumentPermissionsResponse,
-  DocumentUploadDownloadResponse,
   DocumentUploadListResponse,
   DocumentUploadResponse,
+  GraphWorkbenchResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectMembersResponse,
@@ -15,10 +30,14 @@ import type {
   QueryHistoryResponse,
   QueryRequest,
   QueryResponse,
+  RemediationWorkbenchResponse,
+  ReportWorkbenchResponse,
+  RulesWorkbenchResponse,
   SearchBackendStatusResponse,
   TableAnalysisUploadHistoryResponse,
   TableAnalysisUploadResponse
 } from "./api-types";
+import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
 
 function assertBackendProxyClientRuntime(): void {
   if (typeof window === "undefined") {
@@ -43,14 +62,16 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function getJsonWithAuditHeaders<T>(path: string): Promise<T> {
+async function getJsonWithAuditHeaders<T>(
+  path: string,
+  headers: Record<string, string> = auditClientHeaders()
+): Promise<T> {
   assertBackendProxyClientRuntime();
 
   const response = await fetch(path, {
     headers: {
       Accept: "application/json",
-      "X-Role": "auditor",
-      "X-User-Id": "next-knowledge-query"
+      ...headers
     },
     cache: "no-store"
   });
@@ -62,7 +83,11 @@ async function getJsonWithAuditHeaders<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function postJson<T>(path: string, payload: unknown): Promise<T> {
+async function postJson<T>(
+  path: string,
+  payload: unknown,
+  headers: Record<string, string> = auditClientHeaders()
+): Promise<T> {
   assertBackendProxyClientRuntime();
 
   const response = await fetch(path, {
@@ -70,8 +95,7 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "X-Role": "auditor",
-      "X-User-Id": "next-knowledge-query"
+      ...headers
     },
     body: JSON.stringify(payload),
     cache: "no-store"
@@ -91,8 +115,7 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
     method: "POST",
     headers: {
       Accept: "application/json",
-      "X-Role": "auditor",
-      "X-User-Id": "next-knowledge-query"
+      ...auditClientHeaders()
     },
     body: formData,
     cache: "no-store"
@@ -110,7 +133,14 @@ export function fetchBackendHealth(): Promise<BackendHealthResponse> {
 }
 
 export function fetchSearchBackendStatus(): Promise<SearchBackendStatusResponse> {
-  return getJson<SearchBackendStatusResponse>("/api/backend/index/search-backend");
+  return getJsonWithAuditHeaders<SearchBackendStatusResponse>("/api/backend/index/search-backend");
+}
+
+export function fetchAuthSession(): Promise<AuthSessionResponse> {
+  return getJsonWithAuditHeaders<AuthSessionResponse>(
+    "/api/v1/auth/session",
+    auditProjectClientHeaders()
+  );
 }
 
 export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse> {
@@ -118,7 +148,7 @@ export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse>
 }
 
 export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
-  return getJson<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
+  return getJsonWithAuditHeaders<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
 }
 
 export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {
@@ -127,9 +157,29 @@ export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindings
     params.set("review_status", reviewStatus);
   }
   const queryString = params.toString();
-  return getJson<AuditFindingsResponse>(
+  return getJsonWithAuditHeaders<AuditFindingsResponse>(
     `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
   );
+}
+
+export function fetchReportWorkbench(): Promise<ReportWorkbenchResponse> {
+  return getJsonWithAuditHeaders<ReportWorkbenchResponse>("/api/v1/reports/workbench");
+}
+
+export function fetchGraphWorkbench(): Promise<GraphWorkbenchResponse> {
+  return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
+}
+
+export function fetchRulesWorkbench(): Promise<RulesWorkbenchResponse> {
+  return getJsonWithAuditHeaders<RulesWorkbenchResponse>("/api/v1/rules/workbench");
+}
+
+export function fetchRemediationWorkbench(): Promise<RemediationWorkbenchResponse> {
+  return getJsonWithAuditHeaders<RemediationWorkbenchResponse>("/api/v1/remediation/workbench");
+}
+
+export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
+  return getJsonWithAuditHeaders<ArchiveWorkbenchResponse>("/api/v1/archive/workbench");
 }
 
 export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
@@ -139,7 +189,7 @@ export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResp
 }
 
 export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {
-  return getJson<TableAnalysisUploadHistoryResponse>("/api/v1/analytics/table-uploads");
+  return getJsonWithAuditHeaders<TableAnalysisUploadHistoryResponse>("/api/v1/analytics/table-uploads");
 }
 
 export function fetchDocumentPermissions(): Promise<DocumentPermissionsResponse> {
@@ -156,26 +206,136 @@ export function uploadPersonalDocument(file: File): Promise<DocumentUploadRespon
   return postForm<DocumentUploadResponse>("/api/v1/documents/uploads", formData);
 }
 
-export function fetchDocumentUploadDownload(uploadId: string): Promise<DocumentUploadDownloadResponse> {
-  return getJsonWithAuditHeaders<DocumentUploadDownloadResponse>(
-    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/download`
+export function updateDocumentUploadGovernance(
+  uploadId: string,
+  payload: DocumentUploadGovernanceRequest
+): Promise<DocumentUploadResponse> {
+  return postJson<DocumentUploadResponse>(
+    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/governance`,
+    payload
+  );
+}
+
+export function indexPersonalDocument(uploadId: string): Promise<DocumentUploadResponse> {
+  return postJson<DocumentUploadResponse>(
+    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/index`,
+    {}
   );
 }
 
 export function fetchAgents(): Promise<AgentsResponse> {
-  return getJson<AgentsResponse>("/api/v1/agents");
+  return getJsonWithAuditHeaders<AgentsResponse>("/api/v1/agents", auditAgentClientHeaders());
+}
+
+export function fetchAuditAgent(agentId: string): Promise<AgentDetailResponse> {
+  return getJsonWithAuditHeaders<AgentDetailResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}`,
+    auditAgentClientHeaders()
+  );
 }
 
 export function createAuditAgent(payload: AgentCreateRequest): Promise<AgentCreateResponse> {
-  return postJson<AgentCreateResponse>("/api/v1/agents", payload);
+  return postJson<AgentCreateResponse>("/api/v1/agents", payload, auditAgentClientHeaders());
+}
+
+export function fetchAuditAgentPromptVersions(
+  agentId: string
+): Promise<AgentPromptVersionsResponse> {
+  return getJsonWithAuditHeaders<AgentPromptVersionsResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions`,
+    auditAgentClientHeaders()
+  );
+}
+
+export function createAuditAgentPromptVersion(
+  agentId: string,
+  payload: AgentPromptVersionCreateRequest
+): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions`,
+    payload,
+    auditAgentClientHeaders()
+  );
+}
+
+export function rollbackAuditAgentPromptVersion(
+  agentId: string,
+  payload: AgentPromptVersionRollbackRequest
+): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions/rollback`,
+    payload,
+    auditAgentClientHeaders()
+  );
+}
+
+export function reviewAuditAgentPromptVersion(
+  agentId: string,
+  payload: AgentPromptVersionReviewRequest
+): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions/review`,
+    payload,
+    auditAgentClientHeaders()
+  );
+}
+
+export function updateAuditAgentLifecycle(
+  agentId: string,
+  payload: AgentLifecycleRequest
+): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/lifecycle`,
+    payload,
+    auditAgentClientHeaders()
+  );
+}
+
+export function fetchAuditAgentInvocations(agentId: string): Promise<AgentInvocationsResponse> {
+  return getJsonWithAuditHeaders<AgentInvocationsResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/invocations`,
+    auditAgentClientHeaders()
+  );
+}
+
+export function recordAuditAgentInvocation(
+  agentId: string,
+  payload: AgentInvocationCreateRequest
+): Promise<AgentInvocationResponse> {
+  return postJson<AgentInvocationResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/invocations`,
+    payload,
+    auditAgentClientHeaders()
+  );
+}
+
+export function fetchAuditAgentFeedback(agentId: string): Promise<AgentFeedbackListResponse> {
+  return getJsonWithAuditHeaders<AgentFeedbackListResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/feedback`,
+    auditAgentClientHeaders()
+  );
+}
+
+export function submitAuditAgentFeedback(
+  agentId: string,
+  payload: AgentFeedbackCreateRequest
+): Promise<AgentFeedbackResponse> {
+  return postJson<AgentFeedbackResponse>(
+    `/api/v1/agents/${encodeURIComponent(agentId)}/feedback`,
+    payload,
+    auditAgentClientHeaders()
+  );
 }
 
 export function fetchProjects(): Promise<ProjectsResponse> {
-  return getJson<ProjectsResponse>("/api/v1/projects");
+  return getJsonWithAuditHeaders<ProjectsResponse>("/api/v1/projects", auditProjectClientHeaders());
 }
 
 export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
-  return getJson<ProjectMembersResponse>(`/api/v1/projects/${encodeURIComponent(projectId)}/members`);
+  return getJsonWithAuditHeaders<ProjectMembersResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
+    auditProjectClientHeaders(projectId)
+  );
 }
 
 export function createProjectMember(
@@ -184,6 +344,7 @@ export function createProjectMember(
 ): Promise<ProjectMemberCreateResponse> {
   return postJson<ProjectMemberCreateResponse>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
-    payload
+    payload,
+    auditProjectClientHeaders(projectId)
   );
 }

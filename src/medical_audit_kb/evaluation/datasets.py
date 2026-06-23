@@ -235,6 +235,8 @@ def _filters(payload: object) -> RetrievalFilters:
         regions=_str_tuple(payload.get("regions")),
         document_types=_str_tuple(payload.get("document_types")),
         business_topics=_str_tuple(payload.get("business_topics")),
+        title_only=bool(payload.get("title_only", False)),
+        title_query=_optional_str(payload.get("title_query")) or "",
     )
 
 

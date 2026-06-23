@@ -93,10 +93,10 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "reports",
-    label: "审计底稿/报告",
+    label: "审计底稿生成",
     href: "/reports",
     symbol: "稿",
-    description: "进入底稿生成、报告签发和整改导出。",
+    description: "按提示词模板生成底稿草稿，并衔接报告签发和整改导出。",
     emphasis: "standard",
     target: "workspace"
   },
@@ -189,32 +189,32 @@ function requireNavigationItemById(id: string): NavigationItem {
 export const navigationGroups: readonly NavigationGroup[] = [
   {
     id: "audit-task",
-    label: "审计任务",
+    label: "核心功能",
     items: [
-      requireNavigationItemById("workspace"),
       requireNavigationItemById("ai-chat"),
-      requireNavigationItemById("guided-check"),
-      requireNavigationItemById("projects"),
-      requireNavigationItemById("remediation"),
+      requireNavigationItemById("agent-market"),
+      requireNavigationItemById("documents"),
+      requireNavigationItemById("analytics"),
       requireNavigationItemById("reports")
     ]
   },
   {
     id: "agents",
-    label: "智能体",
-    items: [requireNavigationItemById("my-agents"), requireNavigationItemById("agent-market")]
+    label: "专题审计",
+    items: [
+      requireNavigationItemById("workspace"),
+      requireNavigationItemById("guided-check"),
+      requireNavigationItemById("projects"),
+      requireNavigationItemById("remediation")
+    ]
   },
   {
     id: "tools",
-    label: "常用工具",
-    items: [requireNavigationItemById("analytics"), requireNavigationItemById("graph")]
-  },
-  {
-    id: "resources",
-    label: "审计资源",
+    label: "知识底座",
     items: [
+      requireNavigationItemById("my-agents"),
       requireNavigationItemById("knowledge-base"),
-      requireNavigationItemById("documents"),
+      requireNavigationItemById("graph"),
       requireNavigationItemById("rules"),
       requireNavigationItemById("archive")
     ]

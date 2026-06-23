@@ -52,7 +52,8 @@ describe("KnowledgeQueryWorkbench", () => {
           index_version_key: "index-v1",
           source_package_version_key: "package-v1"
         }
-      ]
+      ],
+      personal_upload_matches: []
     });
 
     render(<KnowledgeQueryWorkbench />);

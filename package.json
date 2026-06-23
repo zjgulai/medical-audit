@@ -19,6 +19,10 @@
     "web:typecheck": "pnpm --filter medical-audit-web typecheck",
     "web:test": "pnpm --filter medical-audit-web test",
     "web:e2e": "pnpm --filter medical-audit-web e2e",
+    "local:fullstack:e2e": "uv run python scripts/run-local-fullstack-e2e.py",
+    "local:postgres:readonly": "uv run python scripts/run-local-fullstack-e2e.py --backend-mode postgres-readonly",
+    "local:permission:readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py",
+    "production:permission-readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py --base-url https://audit.lute-tlz-dddd.top --api-prefix /api/v1 --mode observe --json-output tmp/outputs/production-permission-readonly-smoke-latest.json",
     "production:frontend-acceptance": "node scripts/run-production-frontend-acceptance-gate.mjs"
   }
 }

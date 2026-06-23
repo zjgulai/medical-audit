@@ -82,6 +82,8 @@ def _filters(payload: object) -> RetrievalFilters:
         regions=_str_tuple(payload.get("regions")),
         document_types=_str_tuple(payload.get("document_types")),
         business_topics=_str_tuple(payload.get("business_topics")),
+        title_only=bool(payload.get("title_only", False)),
+        title_query=_optional_str(payload.get("title_query")) or "",
     )
 
 
@@ -89,6 +91,14 @@ def _required_str(payload: Mapping[object, object], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value:
         raise ValueError(f"answer evaluation case must contain {key}")
+    return value
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("optional string field must be a string")
     return value
 
 

@@ -2,19 +2,36 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createAuditAgent,
+  createAuditAgentPromptVersion,
   createProjectMember,
   fetchAnalysisUploadHistory,
+  fetchArchiveWorkbench,
+  fetchAuthSession,
   fetchAuditFindings,
+  fetchAuditAgent,
+  fetchAuditAgentFeedback,
+  fetchAuditAgentInvocations,
   fetchAgents,
+  fetchAuditAgentPromptVersions,
   fetchBackendHealth,
-  fetchDocumentUploadDownload,
   fetchDocumentPermissions,
   fetchDocumentUploads,
+  fetchGraphWorkbench,
   fetchProjectMembers,
   fetchProjects,
   fetchQueryHistory,
+  fetchRemediationWorkbench,
+  fetchReportWorkbench,
+  fetchRulesWorkbench,
   fetchSearchBackendStatus,
+  rollbackAuditAgentPromptVersion,
+  indexPersonalDocument,
+  recordAuditAgentInvocation,
+  reviewAuditAgentPromptVersion,
   runKnowledgeQuery,
+  submitAuditAgentFeedback,
+  updateAuditAgentLifecycle,
+  updateDocumentUploadGovernance,
   uploadAnalysisTable,
   uploadPersonalDocument
 } from "./api-client";
@@ -82,6 +99,7 @@ describe("api-client", () => {
           fallback_used: true,
           basis_groups: [],
           citations: [],
+          personal_upload_matches: [],
           query_log_index: 0
         })
       }))
@@ -90,7 +108,8 @@ describe("api-client", () => {
     const result = await runKnowledgeQuery({
       question: "医保基金审核依据",
       top_k: 5,
-      source_collections: ["medical-insurance-laws"]
+      source_collections: ["medical-insurance-laws"],
+      title_only: true
     });
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/query", {
@@ -98,17 +117,69 @@ describe("api-client", () => {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       body: JSON.stringify({
         question: "医保基金审核依据",
         top_k: 5,
-        source_collections: ["medical-insurance-laws"]
+        source_collections: ["medical-insurance-laws"],
+        title_only: true
       }),
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
+  });
+
+  it("fetches auth session through the versioned API proxy with current audit headers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          user_identifier: "next-admin",
+          role: "admin",
+          role_label: "管理员",
+          permissions: ["manage_project_members"],
+          legacy_api_role: "it-admin",
+          tenant_id: "hospital-demo",
+          auth_source: "persistent_role",
+          profile_status: "active",
+          auth_scope_type: "global",
+          auth_scope_key: null,
+          auth_mode: "header_transition_layer",
+          profile: {
+            user_key: "next-admin",
+            display_name: "系统管理员",
+            department_key: "it-department",
+            department_name: "信息科",
+            status: "active",
+            created_by: "system",
+            metadata: {},
+            role_assignments: [],
+            source: "system-default"
+          },
+          store: { ready: true, backend: "SqlAlchemyAuthUserStore" }
+        })
+      }))
+    );
+
+    const session = await fetchAuthSession();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/auth/session", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607"
+      },
+      cache: "no-store"
+    });
+    expect(session.role).toBe("admin");
+    expect(session.tenant_id).toBe("hospital-demo");
+    expect(session.profile?.display_name).toBe("系统管理员");
   });
 
   it("fetches persisted query history through the versioned API proxy", async () => {
@@ -137,7 +208,12 @@ describe("api-client", () => {
     const result = await fetchQueryHistory();
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/query/logs?limit=8", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.items[0].question).toBe("医保基金审核依据");
@@ -170,10 +246,233 @@ describe("api-client", () => {
     const result = await fetchAuditFindings("pending-review");
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/audit-findings?review_status=pending-review", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.filters.review_status).toBe("pending-review");
+  });
+
+  it("fetches report workbench through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "report-workbench-v1",
+          generated_at: "2026-06-21T00:00:00Z",
+          template_registry_status: "active",
+          workpaper_templates: [],
+          report_entries: [],
+          report_evidence_sources: [],
+          metrics: {
+            report_count: 0,
+            signed_report_count: 0,
+            blocked_report_count: 0,
+            included_finding_count: 0,
+            docx_download_count: 0
+          },
+          store: { ready: true, backend: "InMemoryReviewTaskStore" }
+        })
+      }))
+    );
+
+    const result = await fetchReportWorkbench();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/reports/workbench", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.format).toBe("report-workbench-v1");
+  });
+
+  it("fetches graph workbench through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "graph-workbench-v1",
+          generated_at: "2026-06-22T00:00:00Z",
+          graph_id: "SELF-CHECK-FUND-20260607",
+          graph_title: "医保基金使用合规专项图谱",
+          graph_scope: "医保基金使用合规专项自查。",
+          nodes: [],
+          relations: [],
+          metrics: {
+            node_count: 0,
+            node_kind_count: 0,
+            node_kind_counts: {},
+            relation_count: 0,
+            strong_relation_count: 0,
+            pending_relation_count: 0
+          },
+          evidence_grade: "local-readonly-api",
+          production_side_effect: "none",
+          store: { ready: true, backend: "ReadonlyGraphWorkbenchSeed" }
+        })
+      }))
+    );
+
+    const result = await fetchGraphWorkbench();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/graph/workbench", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.format).toBe("graph-workbench-v1");
+  });
+
+  it("fetches rules workbench through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "rules-workbench-v1",
+          generated_at: "2026-06-22T00:00:00Z",
+          ruleset_id: "FUND-USAGE-COMPLIANCE-RULES",
+          ruleset_title: "医保基金使用合规专题规则库",
+          ruleset_scope: "汇总监管两库、医保目录、风险清单和对话审证沉淀。",
+          rule_library_items: [],
+          source_coverages: [],
+          run_snapshots: [],
+          control_gates: [],
+          metrics: {
+            rule_count: 0,
+            enabled_rule_count: 0,
+            pending_rule_count: 0,
+            total_finding_count: 0,
+            blocked_gate_count: 0,
+            source_count: 0,
+            run_count: 0
+          },
+          evidence_grade: "local-readonly-api",
+          production_side_effect: "none",
+          store: { ready: true, backend: "ReadonlyRulesWorkbenchSeed" }
+        })
+      }))
+    );
+
+    const result = await fetchRulesWorkbench();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/rules/workbench", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.format).toBe("rules-workbench-v1");
+  });
+
+  it("fetches remediation workbench through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "remediation-workbench-v1",
+          generated_at: "2026-06-22T00:00:00Z",
+          workbench_id: "FUND-USAGE-REMEDIATION",
+          workbench_title: "整改事项与补证闭环",
+          workbench_scope: "把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。",
+          remediation_cases: [],
+          evidence_requests: [],
+          closure_gates: [],
+          timeline: [],
+          metrics: {
+            case_count: 0,
+            active_case_count: 0,
+            closed_case_count: 0,
+            pending_evidence_count: 0,
+            blocked_gate_count: 0,
+            average_progress: 0,
+            timeline_count: 0
+          },
+          evidence_grade: "local-readonly-api",
+          production_side_effect: "none",
+          store: { ready: true, backend: "ReadonlyRemediationWorkbenchSeed" }
+        })
+      }))
+    );
+
+    const result = await fetchRemediationWorkbench();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/remediation/workbench", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.format).toBe("remediation-workbench-v1");
+  });
+
+  it("fetches archive workbench through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "archive-workbench-v1",
+          generated_at: "2026-06-22T00:00:00Z",
+          archive_id: "FUND-USAGE-ARCHIVE",
+          archive_title: "项目档案与审计日志归档",
+          archive_scope: "汇总项目档案包、审计日志归档、签名链和归档前阻断原因。",
+          archive_packages: [],
+          audit_runs: [],
+          signature_items: [],
+          policy_items: [],
+          timeline: [],
+          metrics: {
+            package_count: 0,
+            archived_package_count: 0,
+            pending_package_count: 0,
+            blocked_package_count: 0,
+            audit_run_count: 0,
+            signature_count: 0,
+            policy_count: 0,
+            timeline_count: 0,
+            latest_archive_run_status: "无"
+          },
+          evidence_grade: "local-readonly-api",
+          production_side_effect: "none",
+          store: { ready: true, backend: "ReadonlyArchiveWorkbenchSeed" }
+        })
+      }))
+    );
+
+    const result = await fetchArchiveWorkbench();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/archive/workbench", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.format).toBe("archive-workbench-v1");
   });
 
   it("fetches audit agents through the versioned API proxy", async () => {
@@ -207,7 +506,13 @@ describe("api-client", () => {
     const result = await fetchAgents();
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/agents", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("agent-citation-check");
@@ -249,8 +554,9 @@ describe("api-client", () => {
       method: "POST",
       headers: {
         Accept: "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       cache: "no-store"
     });
@@ -294,7 +600,12 @@ describe("api-client", () => {
     const result = await fetchAnalysisUploadHistory();
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/analytics/table-uploads", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("analytics-upload-001");
@@ -317,7 +628,8 @@ describe("api-client", () => {
           ],
           upload_permissions: {
             can_upload_personal: true,
-            can_read_all_personal_uploads: false
+            can_read_all_personal_uploads: false,
+            can_govern_personal_uploads: false
           }
         })
       }))
@@ -328,8 +640,9 @@ describe("api-client", () => {
     expect(fetch).toHaveBeenCalledWith("/api/v1/documents/permissions", {
       headers: {
         Accept: "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       cache: "no-store"
     });
@@ -357,44 +670,27 @@ describe("api-client", () => {
               created_at: "2026-06-15T00:00:00Z",
               retention_status: "retained",
               index_status: "not-indexed",
-              index_readiness: {
-                status: "blocked",
-                blockers: [
-                  "virus-scan-required",
-                  "dlp-review-required",
-                  "manual-index-approval-required"
-                ],
-                next_action: "complete-upload-governance",
-                checks: [
-                  {
-                    check_type: "virus-scan",
-                    provider: "unconfigured",
-                    status: "blocked",
-                    blocker: "virus-scan-required",
-                    detail: "virus scan adapter is not configured for pdf upload"
-                  },
-                  {
-                    check_type: "dlp-review",
-                    provider: "unconfigured",
-                    status: "blocked",
-                    blocker: "dlp-review-required",
-                    detail: "DLP review adapter is not configured for pdf upload"
-                  },
-                  {
-                    check_type: "manual-index-approval",
-                    provider: "manual",
-                    status: "blocked",
-                    blocker: "manual-index-approval-required",
-                    detail: "manual index approval is required before ingesting policy.pdf"
-                  }
-                ]
-              }
+              governance_status: "pending-review",
+              governance_note: "",
+              governed_by: null,
+              governed_at: null,
+              security_scan_status: "local-policy-passed",
+              security_scan_provider: "local-policy",
+              dlp_status: "clear",
+              security_findings: [],
+              personal_index_status: "not-indexed",
+              personal_indexed_at: null,
+              personal_indexed_by: null,
+              personal_index_chunk_count: 0,
+              personal_index_error: "",
+              download_url: "/api/v1/documents/uploads/document-upload-001/download"
             }
           ],
           store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
           permissions: {
             can_upload_personal: true,
-            can_read_all_personal_uploads: false
+            can_read_all_personal_uploads: false,
+            can_govern_personal_uploads: false
           }
         })
       }))
@@ -405,8 +701,9 @@ describe("api-client", () => {
     expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads", {
       headers: {
         Accept: "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       cache: "no-store"
     });
@@ -433,43 +730,26 @@ describe("api-client", () => {
             created_at: "2026-06-15T00:00:00Z",
             retention_status: "retained",
             index_status: "not-indexed",
-            index_readiness: {
-              status: "blocked",
-              blockers: [
-                "virus-scan-required",
-                "dlp-review-required",
-                "manual-index-approval-required"
-              ],
-              next_action: "complete-upload-governance",
-              checks: [
-                {
-                  check_type: "virus-scan",
-                  provider: "unconfigured",
-                  status: "blocked",
-                  blocker: "virus-scan-required",
-                  detail: "virus scan adapter is not configured for pdf upload"
-                },
-                {
-                  check_type: "dlp-review",
-                  provider: "unconfigured",
-                  status: "blocked",
-                  blocker: "dlp-review-required",
-                  detail: "DLP review adapter is not configured for pdf upload"
-                },
-                {
-                  check_type: "manual-index-approval",
-                  provider: "manual",
-                  status: "blocked",
-                  blocker: "manual-index-approval-required",
-                  detail: "manual index approval is required before ingesting policy.pdf"
-                }
-              ]
-            }
+            governance_status: "pending-review",
+            governance_note: "",
+            governed_by: null,
+            governed_at: null,
+            security_scan_status: "local-policy-passed",
+            security_scan_provider: "local-policy",
+            dlp_status: "clear",
+            security_findings: [],
+            personal_index_status: "not-indexed",
+            personal_indexed_at: null,
+            personal_indexed_by: null,
+            personal_index_chunk_count: 0,
+            personal_index_error: "",
+            download_url: "/api/v1/documents/uploads/document-upload-001/download"
           },
           store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
           permissions: {
             can_upload_personal: true,
-            can_read_all_personal_uploads: false
+            can_read_all_personal_uploads: false,
+            can_govern_personal_uploads: false
           }
         })
       }))
@@ -484,17 +764,17 @@ describe("api-client", () => {
       method: "POST",
       headers: {
         Accept: "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       cache: "no-store"
     });
     expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
     expect(result.item.index_status).toBe("not-indexed");
-    expect(result.item.index_readiness.blockers).toContain("virus-scan-required");
   });
 
-  it("fetches document upload download metadata through the versioned API proxy", async () => {
+  it("updates personal document governance through the versioned API proxy", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -513,44 +793,115 @@ describe("api-client", () => {
             created_by: "next-knowledge-query",
             created_at: "2026-06-15T00:00:00Z",
             retention_status: "retained",
-            index_status: "not-indexed",
-            index_readiness: {
-              status: "blocked",
-              blockers: ["virus-scan-required"],
-              next_action: "complete-upload-governance",
-              checks: []
-            }
+            index_status: "index-ready",
+            governance_status: "approved-for-index",
+            governance_note: "已完成材料治理。",
+            governed_by: "next-admin",
+            governed_at: "2026-06-21T00:00:00Z",
+            security_scan_status: "local-policy-passed",
+            security_scan_provider: "local-policy",
+            dlp_status: "clear",
+            security_findings: [],
+            personal_index_status: "not-indexed",
+            personal_indexed_at: null,
+            personal_indexed_by: null,
+            personal_index_chunk_count: 0,
+            personal_index_error: "",
+            download_url: "/api/v1/documents/uploads/document-upload-001/download"
           },
-          download: {
-            status: "metadata-only",
-            access_scope: "owner",
-            delivery: "not-issued",
-            reason: "signed-download-not-configured",
-            signed_url: null,
-            expires_at: null,
-            storage_path: "2026/06/15/document-upload-001.pdf",
-            storage_objects: []
-          },
+          store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
           permissions: {
             can_upload_personal: true,
-            can_read_all_personal_uploads: false
+            can_read_all_personal_uploads: true,
+            can_govern_personal_uploads: true
           }
         })
       }))
     );
 
-    const result = await fetchDocumentUploadDownload("document-upload-001");
+    const result = await updateDocumentUploadGovernance("document-upload-001", {
+      governance_status: "approved-for-index",
+      note: "已完成材料治理。"
+    });
 
-    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads/document-upload-001/download", {
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads/document-upload-001/governance", {
+      method: "POST",
       headers: {
         Accept: "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "Content-Type": "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
+      body: JSON.stringify({
+        governance_status: "approved-for-index",
+        note: "已完成材料治理。"
+      }),
       cache: "no-store"
     });
-    expect(result.download.status).toBe("metadata-only");
-    expect(result.download.signed_url).toBeNull();
+    expect(result.item.index_status).toBe("index-ready");
+  });
+
+  it("starts personal document local indexing through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "document-upload-001",
+            name: "policy.pdf",
+            extension: "pdf",
+            size_bytes: 128,
+            size_kb: 1,
+            sha256: "c".repeat(64),
+            storage_path: "2026/06/15/document-upload-001.pdf",
+            visibility: "private",
+            status: "retained",
+            created_by: "next-knowledge-query",
+            created_at: "2026-06-15T00:00:00Z",
+            retention_status: "retained",
+            index_status: "index-ready",
+            governance_status: "approved-for-index",
+            governance_note: "已完成材料治理。",
+            governed_by: "next-admin",
+            governed_at: "2026-06-21T00:00:00Z",
+            security_scan_status: "local-policy-passed",
+            security_scan_provider: "local-policy",
+            dlp_status: "clear",
+            security_findings: [],
+            personal_index_status: "indexed",
+            personal_indexed_at: "2026-06-21T00:00:00Z",
+            personal_indexed_by: "next-admin",
+            personal_index_chunk_count: 1,
+            personal_index_error: "",
+            download_url: "/api/v1/documents/uploads/document-upload-001/download"
+          },
+          store: { ready: true, backend: "SqlAlchemyDocumentUploadStore" },
+          permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: true,
+            can_govern_personal_uploads: true
+          }
+        })
+      }))
+    );
+
+    const result = await indexPersonalDocument("document-upload-001");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/uploads/document-upload-001/index", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({}),
+      cache: "no-store"
+    });
+    expect(result.item.personal_index_status).toBe("indexed");
   });
 
   it("creates audit agents through the versioned API proxy", async () => {
@@ -592,8 +943,10 @@ describe("api-client", () => {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
       },
       body: JSON.stringify({
         name: "目录限制核验助手",
@@ -606,6 +959,450 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.item.id).toBe("agent-custom-001");
+  });
+
+  it("updates audit agent prompt versions through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "agent-custom-001",
+            name: "目录限制核验助手",
+            category: "业务类",
+            topic: "医保目录限制条件核验",
+            prompt: "补充原文引用约束。",
+            knowledge_base: "医保目录库",
+            project_name: "医保目录限制条件核验",
+            status: "active",
+            prompt_version: 2,
+            prompt_version_key: "agent-custom-001@v2",
+            visibility_scope: "project",
+            allowed_roles: ["admin", "technician", "director", "member"],
+            created_by: "next-admin",
+            updated_at: "2026-06-22T00:00:00Z",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await createAuditAgentPromptVersion("agent-custom-001", {
+      prompt: "补充原文引用约束。",
+      change_summary: "补充原文引用约束。"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents/agent-custom-001/prompt-versions", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({
+        prompt: "补充原文引用约束。",
+        change_summary: "补充原文引用约束。"
+      }),
+      cache: "no-store"
+    });
+    expect(result.item.prompt_version).toBe(2);
+  });
+
+  it("rolls back audit agent prompt versions through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "agent-custom-001",
+            name: "目录限制核验助手",
+            category: "业务类",
+            topic: "医保目录限制条件核验",
+            prompt: "初始提示词。",
+            knowledge_base: "医保目录库",
+            project_name: "医保目录限制条件核验",
+            status: "active",
+            prompt_version: 3,
+            prompt_version_key: "agent-custom-001@v3",
+            visibility_scope: "project",
+            allowed_roles: ["admin", "technician", "director", "member"],
+            created_by: "next-admin",
+            updated_at: "2026-06-22T00:00:00Z",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await rollbackAuditAgentPromptVersion("agent-custom-001", { version: 1 });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents/agent-custom-001/prompt-versions/rollback", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({ version: 1 }),
+      cache: "no-store"
+    });
+    expect(result.item.prompt_version).toBe(3);
+  });
+
+  it("reviews audit agent prompt versions through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "agent-custom-001",
+            name: "目录限制核验助手",
+            category: "业务类",
+            topic: "医保目录限制条件核验",
+            prompt: "补充原文引用约束。",
+            knowledge_base: "医保目录库",
+            project_name: "医保目录限制条件核验",
+            status: "active",
+            prompt_version: 2,
+            prompt_version_key: "agent-custom-001@v2",
+            visibility_scope: "project",
+            allowed_roles: ["admin", "technician", "director", "member"],
+            created_by: "next-admin",
+            updated_at: "2026-06-22T00:00:00Z",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await reviewAuditAgentPromptVersion("agent-custom-001", {
+      version: 2,
+      review_status: "approved",
+      review_note: "主任已复核引用边界。"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents/agent-custom-001/prompt-versions/review", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({
+        version: 2,
+        review_status: "approved",
+        review_note: "主任已复核引用边界。"
+      }),
+      cache: "no-store"
+    });
+    expect(result.item.prompt_version).toBe(2);
+  });
+
+  it("updates audit agent lifecycle through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "agent-custom-001",
+            name: "目录限制核验助手",
+            category: "业务类",
+            topic: "医保目录限制条件核验",
+            prompt: "初始提示词。",
+            knowledge_base: "医保目录库",
+            project_name: "医保目录限制条件核验",
+            status: "inactive",
+            prompt_version: 1,
+            prompt_version_key: "agent-custom-001@v1",
+            visibility_scope: "project",
+            allowed_roles: ["admin", "technician", "director", "member"],
+            created_by: "next-admin",
+            updated_at: "2026-06-22T00:00:00Z",
+            source: "custom",
+            metadata: { lifecycle_reason: "工作台下架，保留历史追溯。" }
+          },
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      }))
+    );
+
+    const result = await updateAuditAgentLifecycle("agent-custom-001", {
+      status: "inactive",
+      reason: "工作台下架，保留历史追溯。"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/agents/agent-custom-001/lifecycle", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({
+        status: "inactive",
+        reason: "工作台下架，保留历史追溯。"
+      }),
+      cache: "no-store"
+    });
+    expect(result.item.status).toBe("inactive");
+  });
+
+  it("fetches audit agent detail and prompt versions through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => ({
+        ok: true,
+        json: async () =>
+          path.endsWith("/prompt-versions")
+            ? {
+                items: [
+                  {
+                    version: 1,
+                    prompt: "初始提示词。",
+                    change_summary: "initial prompt",
+                    created_by: "next-admin",
+                    created_at: "2026-06-22T00:00:00Z"
+                  }
+                ],
+                store: { ready: true, backend: "SqlAlchemyAgentStore" }
+              }
+            : {
+                item: {
+                  id: "agent-custom-001",
+                  name: "目录限制核验助手",
+                  category: "业务类",
+                  topic: "医保目录限制条件核验",
+                  prompt: "初始提示词。",
+                  knowledge_base: "医保目录库",
+                  project_name: "医保目录限制条件核验",
+                  status: "active",
+                  prompt_version: 1,
+                  prompt_version_key: "agent-custom-001@v1",
+                  prompt_versions: [
+                    {
+                      version: 1,
+                      prompt: "初始提示词。",
+                      change_summary: "initial prompt",
+                      created_by: "next-admin",
+                      created_at: "2026-06-22T00:00:00Z"
+                    }
+                  ],
+                  visibility_scope: "project",
+                  allowed_roles: ["admin", "technician", "director", "member"],
+                  created_by: "next-admin",
+                  updated_at: "2026-06-22T00:00:00Z",
+                  source: "custom",
+                  metadata: {}
+                },
+                store: { ready: true, backend: "SqlAlchemyAgentStore" }
+              }
+      }))
+    );
+
+    const detail = await fetchAuditAgent("agent-custom-001");
+    const versions = await fetchAuditAgentPromptVersions("agent-custom-001");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/v1/agents/agent-custom-001", {
+      headers: {
+        Accept: "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/v1/agents/agent-custom-001/prompt-versions", {
+      headers: {
+        Accept: "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(detail.item.prompt_versions).toHaveLength(1);
+    expect(versions.items[0].version).toBe(1);
+  });
+
+  it("records and fetches audit agent invocations through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => ({
+        ok: true,
+        json: async () =>
+          path.endsWith("/invocations")
+            ? {
+                items: [
+                  {
+                    id: "agent-invocation-001",
+                    agent_key: "agent-custom-001",
+                    prompt_version: 2,
+                    prompt_version_key: "agent-custom-001@v2",
+                    invocation_source: "agent-workspace",
+                    question: "目录限制核验试用",
+                    conversation_ref: null,
+                    created_by: "next-admin",
+                    created_at: "2026-06-22T00:00:00Z",
+                    metadata: {}
+                  }
+                ],
+                store: { ready: true, backend: "SqlAlchemyAgentStore" }
+              }
+            : {}
+      }))
+    );
+
+    const list = await fetchAuditAgentInvocations("agent-custom-001");
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        item: list.items[0],
+        store: { ready: true, backend: "SqlAlchemyAgentStore" }
+      })
+    } as Response);
+    const created = await recordAuditAgentInvocation("agent-custom-001", {
+      invocation_source: "agent-workspace",
+      question: "目录限制核验试用"
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/v1/agents/agent-custom-001/invocations", {
+      headers: {
+        Accept: "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/v1/agents/agent-custom-001/invocations", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({
+        invocation_source: "agent-workspace",
+        question: "目录限制核验试用"
+      }),
+      cache: "no-store"
+    });
+    expect(created.item.id).toBe("agent-invocation-001");
+  });
+
+  it("submits and fetches audit agent feedback through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => ({
+        ok: true,
+        json: async () =>
+          path.endsWith("/feedback")
+            ? {
+                items: [
+                  {
+                    id: "agent-feedback-001",
+                    agent_key: "agent-custom-001",
+                    invocation_id: "agent-invocation-001",
+                    prompt_version: 2,
+                    rating: "needs_review",
+                    comment: "需要补充目录限制原文适用条件。",
+                    created_by: "next-admin",
+                    created_at: "2026-06-22T00:00:00Z",
+                    metadata: {}
+                  }
+                ],
+                ratings: ["effective", "needs_review", "unsafe"],
+                summary: {
+                  total: 1,
+                  effective: 0,
+                  needs_review: 1,
+                  unsafe: 0,
+                  latest_rating: "needs_review"
+                },
+                store: { ready: true, backend: "SqlAlchemyAgentStore" }
+              }
+            : {}
+      }))
+    );
+
+    const list = await fetchAuditAgentFeedback("agent-custom-001");
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        item: list.items[0],
+        ratings: ["effective", "needs_review", "unsafe"],
+        summary: {
+          total: 1,
+          effective: 0,
+          needs_review: 1,
+          unsafe: 0,
+          latest_rating: "needs_review"
+        },
+        store: { ready: true, backend: "SqlAlchemyAgentStore" }
+      })
+    } as Response);
+    const created = await submitAuditAgentFeedback("agent-custom-001", {
+      invocation_id: "agent-invocation-001",
+      rating: "needs_review",
+      comment: "需要补充目录限制原文适用条件。"
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/v1/agents/agent-custom-001/feedback", {
+      headers: {
+        Accept: "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/v1/agents/agent-custom-001/feedback", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Name": "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify({
+        invocation_id: "agent-invocation-001",
+        rating: "needs_review",
+        comment: "需要补充目录限制原文适用条件。"
+      }),
+      cache: "no-store"
+    });
+    expect(created.item.rating).toBe("needs_review");
   });
 
   it("fetches projects through the versioned API proxy", async () => {
@@ -638,7 +1435,13 @@ describe("api-client", () => {
     const result = await fetchProjects();
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/projects", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("SELF-CHECK-FUND-20260607");
@@ -674,7 +1477,13 @@ describe("api-client", () => {
     const result = await fetchProjectMembers("SELF-CHECK-FUND-20260607");
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/projects/SELF-CHECK-FUND-20260607/members", {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("member-auditor");
@@ -714,8 +1523,10 @@ describe("api-client", () => {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        "X-Role": "auditor",
-        "X-User-Id": "next-knowledge-query"
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin",
+        "X-Project-Key": "CATALOG-LIMIT-202606"
       },
       body: JSON.stringify({
         name: "赵审计",

@@ -4,16 +4,28 @@ import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from medical_audit_kb.db.models import AuditAgent, Base, utc_now
+from medical_audit_kb.db.models import (
+    AuditAgent,
+    AuditAgentFeedback,
+    AuditAgentInvocation,
+    AuditAgentPromptVersion,
+    Base,
+    utc_now,
+)
 
 AGENT_CATEGORIES = ("业务类", "效率类", "研究类")
 AGENT_ID_PREFIX = "agent-custom-"
+AGENT_STATUSES = ("active", "inactive", "archived")
+AGENT_VISIBILITY_SCOPES = ("project", "system")
+AGENT_ALLOWED_ROLES = ("admin", "technician", "director", "member")
+AGENT_FEEDBACK_RATINGS = ("effective", "needs_review", "unsafe")
+AGENT_PROMPT_REVIEW_STATUSES = ("pending-review", "approved", "changes-requested")
 
 DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
     {
@@ -28,7 +40,16 @@ DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
         "created_by": "system",
         "updated_at": "2026-06-12",
         "source": "system-default",
-        "metadata": {},
+        "prompt_version": 1,
+        "prompt_version_key": "agent-citation-check@v1",
+        "visibility_scope": "system",
+        "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        "metadata": {
+            "prompt_version": 1,
+            "prompt_version_key": "agent-citation-check@v1",
+            "visibility_scope": "system",
+            "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        },
     },
     {
         "id": "agent-duplicate-charge",
@@ -45,7 +66,16 @@ DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
         "created_by": "system",
         "updated_at": "2026-06-11",
         "source": "system-default",
-        "metadata": {},
+        "prompt_version": 1,
+        "prompt_version_key": "agent-duplicate-charge@v1",
+        "visibility_scope": "system",
+        "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        "metadata": {
+            "prompt_version": 1,
+            "prompt_version_key": "agent-duplicate-charge@v1",
+            "visibility_scope": "system",
+            "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        },
     },
     {
         "id": "agent-report-draft",
@@ -59,16 +89,105 @@ DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
         "created_by": "system",
         "updated_at": "2026-06-10",
         "source": "system-default",
-        "metadata": {},
+        "prompt_version": 1,
+        "prompt_version_key": "agent-report-draft@v1",
+        "visibility_scope": "system",
+        "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        "metadata": {
+            "prompt_version": 1,
+            "prompt_version_key": "agent-report-draft@v1",
+            "visibility_scope": "system",
+            "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        },
     },
 )
 
 
 class AgentStore(Protocol):
-    def list_agents(self) -> list[dict[str, object]]:
+    def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
+        pass
+
+    def get_agent(self, agent_key: str) -> dict[str, object] | None:
+        pass
+
+    def list_prompt_versions(self, agent_key: str) -> list[dict[str, object]]:
         pass
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
+        pass
+
+    def add_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        prompt: str,
+        change_summary: str,
+        review_note: str | None,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        pass
+
+    def update_prompt_version_review(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        review_status: str,
+        review_note: str,
+        reviewed_by: str | None,
+    ) -> dict[str, object]:
+        pass
+
+    def rollback_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        pass
+
+    def update_agent_lifecycle(
+        self,
+        agent_key: str,
+        *,
+        status: str,
+        reason: str,
+        updated_by: str | None,
+    ) -> dict[str, object]:
+        pass
+
+    def record_invocation(
+        self,
+        agent_key: str,
+        *,
+        invocation_source: str,
+        question: str | None,
+        conversation_ref: str | None,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        pass
+
+    def list_invocations(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        pass
+
+    def record_feedback(
+        self,
+        agent_key: str,
+        *,
+        invocation_id: str | None,
+        rating: str,
+        comment: str,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        pass
+
+    def list_feedback(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        pass
+
+    def feedback_summary(self, agent_key: str) -> dict[str, object]:
         pass
 
 
@@ -89,19 +208,37 @@ class SqlAlchemyAgentStore:
             Base.metadata.create_all(self._engine)
         self._session_factory = sessionmaker(self._engine, expire_on_commit=False)
 
-    def list_agents(self) -> list[dict[str, object]]:
+    def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
         with self._session_factory() as session:
-            statement = (
-                select(AuditAgent)
-                .where(AuditAgent.status == "active")
-                .order_by(AuditAgent.updated_at.desc(), AuditAgent.created_at.desc())
+            statement = select(AuditAgent).order_by(
+                AuditAgent.updated_at.desc(),
+                AuditAgent.created_at.desc(),
             )
+            if not include_inactive:
+                statement = statement.where(AuditAgent.status == "active")
             return [_agent_to_payload(agent) for agent in session.scalars(statement).all()]
+
+    def get_agent(self, agent_key: str) -> dict[str, object] | None:
+        with self._session_factory() as session:
+            agent = session.scalar(select(AuditAgent).where(AuditAgent.agent_key == agent_key))
+            return _agent_to_payload(agent) if agent is not None else None
+
+    def list_prompt_versions(self, agent_key: str) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            agent = session.scalar(select(AuditAgent).where(AuditAgent.agent_key == agent_key))
+            if agent is None:
+                default_agent = _default_agent_payload(agent_key)
+                if default_agent is None:
+                    raise KeyError(f"agent not found: {agent_key}")
+                return _payload_prompt_versions(default_agent)
+            return _agent_prompt_versions_payload(agent)
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
         now = utc_now()
+        agent_key = _new_agent_key()
+        metadata = _governance_metadata(values, agent_key=agent_key, version=1)
         agent = AuditAgent(
-            agent_key=_new_agent_key(),
+            agent_key=agent_key,
             name=str(values["name"]),
             category=str(values["category"]),
             topic=str(values["topic"]),
@@ -110,27 +247,310 @@ class SqlAlchemyAgentStore:
             project_name=str(values["project_name"]),
             status="active",
             created_by=_optional_str(values.get("created_by")),
-            extra_metadata=_dict_value(values.get("metadata")),
+            extra_metadata=metadata,
             created_at=now,
             updated_at=now,
         )
         with self._session_factory.begin() as session:
             session.add(agent)
             session.flush()
+            prompt_version = AuditAgentPromptVersion(
+                agent_id=agent.id,
+                version=1,
+                prompt=agent.prompt,
+                change_summary="initial prompt",
+                created_by=agent.created_by,
+                created_at=now,
+            )
+            session.add(prompt_version)
+            session.flush()
+            return _agent_to_payload(agent, prompt_version=1, prompt_versions=[prompt_version])
+
+    def add_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        prompt: str,
+        change_summary: str,
+        review_note: str | None,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        with self._session_factory.begin() as session:
+            agent = _load_agent_for_update(session, agent_key)
+            existing_versions = list(agent.prompt_versions)
+            next_version = _latest_prompt_version(agent) + 1
+            now = utc_now()
+            prompt_version = AuditAgentPromptVersion(
+                agent_id=agent.id,
+                version=next_version,
+                prompt=prompt,
+                change_summary=change_summary,
+                created_by=created_by,
+                created_at=now,
+            )
+            session.add(prompt_version)
+            agent.updated_at = now
+            _set_agent_prompt_review_metadata(
+                agent,
+                version=next_version,
+                status="pending-review",
+                note=review_note or change_summary,
+                requested_by=created_by,
+                reviewed_by=None,
+                reviewed_at=None,
+                updated_at=now,
+            )
+            session.flush()
+            return _agent_to_payload(
+                agent,
+                prompt_versions=[*existing_versions, prompt_version],
+            )
+
+    def update_prompt_version_review(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        review_status: str,
+        review_note: str,
+        reviewed_by: str | None,
+    ) -> dict[str, object]:
+        validate_agent_prompt_review_status(review_status)
+        with self._session_factory.begin() as session:
+            agent = _load_agent_for_update(session, agent_key)
+            existing_versions = list(agent.prompt_versions)
+            if not any(item.version == version for item in existing_versions):
+                raise KeyError(f"agent prompt version not found: {agent_key}@v{version}")
+            target = next(item for item in existing_versions if item.version == version)
+            now = utc_now()
+            if review_status == "approved":
+                agent.prompt = target.prompt
+                _set_agent_version_metadata(agent, version=version)
+            agent.updated_at = now
+            _set_agent_prompt_review_metadata(
+                agent,
+                version=version,
+                status=review_status,
+                note=review_note,
+                requested_by=None,
+                reviewed_by=reviewed_by,
+                reviewed_at=now,
+                updated_at=now,
+            )
+            session.flush()
+            return _agent_to_payload(agent, prompt_versions=existing_versions)
+
+    def rollback_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        with self._session_factory.begin() as session:
+            agent = _load_agent_for_update(session, agent_key)
+            existing_versions = list(agent.prompt_versions)
+            target = next((item for item in existing_versions if item.version == version), None)
+            if target is None:
+                raise KeyError(f"agent prompt version not found: {agent_key}@v{version}")
+            next_version = _latest_prompt_version(agent) + 1
+            now = utc_now()
+            prompt_version = AuditAgentPromptVersion(
+                agent_id=agent.id,
+                version=next_version,
+                prompt=target.prompt,
+                change_summary=f"rollback to v{version}",
+                created_by=created_by,
+                created_at=now,
+            )
+            session.add(prompt_version)
+            agent.prompt = target.prompt
+            agent.updated_at = now
+            _set_agent_version_metadata(agent, version=next_version)
+            _set_agent_prompt_review_metadata(
+                agent,
+                version=next_version,
+                status="approved",
+                note=f"rollback to v{version}",
+                requested_by=created_by,
+                reviewed_by=created_by,
+                reviewed_at=now,
+                updated_at=now,
+            )
+            session.flush()
+            return _agent_to_payload(
+                agent,
+                prompt_version=next_version,
+                prompt_versions=[*existing_versions, prompt_version],
+            )
+
+    def update_agent_lifecycle(
+        self,
+        agent_key: str,
+        *,
+        status: str,
+        reason: str,
+        updated_by: str | None,
+    ) -> dict[str, object]:
+        validate_agent_status(status)
+        with self._session_factory.begin() as session:
+            agent = _load_agent_for_update(session, agent_key)
+            agent.status = status
+            agent.updated_at = utc_now()
+            metadata = _dict_value(agent.extra_metadata)
+            metadata["lifecycle_reason"] = reason
+            metadata["lifecycle_updated_by"] = updated_by
+            metadata["lifecycle_updated_at"] = _datetime_to_iso(agent.updated_at)
+            agent.extra_metadata = metadata
+            session.flush()
             return _agent_to_payload(agent)
+
+    def record_invocation(
+        self,
+        agent_key: str,
+        *,
+        invocation_source: str,
+        question: str | None,
+        conversation_ref: str | None,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        with self._session_factory.begin() as session:
+            agent = session.scalar(select(AuditAgent).where(AuditAgent.agent_key == agent_key))
+            agent_payload = (
+                _agent_to_payload(agent) if agent is not None else _default_agent_payload(agent_key)
+            )
+            if agent_payload is None:
+                raise KeyError(f"agent not found: {agent_key}")
+            if str(agent_payload.get("status") or "active") != "active":
+                raise ValueError(f"agent is not active: {agent_key}")
+            invocation = AuditAgentInvocation(
+                agent_id=agent.id if agent is not None else None,
+                agent_key=agent_key,
+                prompt_version=_int_value(agent_payload.get("prompt_version"), default=1),
+                prompt_version_key=str(
+                    agent_payload.get("prompt_version_key") or f"{agent_key}@v1"
+                ),
+                invocation_source=invocation_source,
+                question=question,
+                conversation_ref=conversation_ref,
+                created_by=created_by,
+                extra_metadata=copy.deepcopy(metadata),
+                created_at=utc_now(),
+            )
+            session.add(invocation)
+            session.flush()
+            return _invocation_to_payload(invocation)
+
+    def list_invocations(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            statement = (
+                select(AuditAgentInvocation)
+                .where(AuditAgentInvocation.agent_key == agent_key)
+                .order_by(AuditAgentInvocation.created_at.desc())
+                .limit(limit)
+            )
+            return [_invocation_to_payload(item) for item in session.scalars(statement).all()]
+
+    def record_feedback(
+        self,
+        agent_key: str,
+        *,
+        invocation_id: str | None,
+        rating: str,
+        comment: str,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        validate_agent_feedback_rating(rating)
+        with self._session_factory.begin() as session:
+            agent = session.scalar(select(AuditAgent).where(AuditAgent.agent_key == agent_key))
+            agent_payload = (
+                _agent_to_payload(agent) if agent is not None else _default_agent_payload(agent_key)
+            )
+            if agent_payload is None:
+                raise KeyError(f"agent not found: {agent_key}")
+            invocation = _load_invocation(session, invocation_id) if invocation_id else None
+            if invocation is not None and invocation.agent_key != agent_key:
+                raise KeyError(f"agent invocation does not belong to agent: {invocation_id}")
+            prompt_version = (
+                invocation.prompt_version
+                if invocation is not None
+                else _int_value(agent_payload.get("prompt_version"), default=1)
+            )
+            feedback = AuditAgentFeedback(
+                agent_id=agent.id if agent is not None else None,
+                invocation_id=invocation.id if invocation is not None else None,
+                agent_key=agent_key,
+                prompt_version=prompt_version,
+                rating=rating,
+                comment=comment,
+                created_by=created_by,
+                extra_metadata=copy.deepcopy(metadata),
+                created_at=utc_now(),
+            )
+            session.add(feedback)
+            session.flush()
+            return _feedback_to_payload(feedback)
+
+    def list_feedback(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            statement = (
+                select(AuditAgentFeedback)
+                .where(AuditAgentFeedback.agent_key == agent_key)
+                .order_by(AuditAgentFeedback.created_at.desc())
+                .limit(limit)
+            )
+            return [_feedback_to_payload(item) for item in session.scalars(statement).all()]
+
+    def feedback_summary(self, agent_key: str) -> dict[str, object]:
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(AuditAgentFeedback.rating, func.count(AuditAgentFeedback.id))
+                .where(AuditAgentFeedback.agent_key == agent_key)
+                .group_by(AuditAgentFeedback.rating)
+            ).all()
+            latest = session.scalar(
+                select(AuditAgentFeedback)
+                .where(AuditAgentFeedback.agent_key == agent_key)
+                .order_by(AuditAgentFeedback.created_at.desc())
+                .limit(1)
+            )
+        return _feedback_summary_payload(
+            {str(rating): int(count) for rating, count in rows},
+            latest_rating=latest.rating if latest is not None else None,
+        )
 
 
 @dataclass(slots=True)
 class InMemoryAgentStore:
     agents: list[dict[str, object]] = field(default_factory=list)
+    invocations: list[dict[str, object]] = field(default_factory=list)
+    feedback_entries: list[dict[str, object]] = field(default_factory=list)
 
-    def list_agents(self) -> list[dict[str, object]]:
-        return [copy.deepcopy(agent) for agent in self.agents]
+    def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
+        return [
+            _enrich_agent_payload(copy.deepcopy(agent))
+            for agent in self.agents
+            if include_inactive or agent.get("status") == "active"
+        ]
+
+    def get_agent(self, agent_key: str) -> dict[str, object] | None:
+        agent = next((item for item in self.agents if item.get("id") == agent_key), None)
+        return _enrich_agent_payload(copy.deepcopy(agent)) if agent is not None else None
+
+    def list_prompt_versions(self, agent_key: str) -> list[dict[str, object]]:
+        agent = self.get_agent(agent_key) or _default_agent_payload(agent_key)
+        if agent is None:
+            raise KeyError(f"agent not found: {agent_key}")
+        return _payload_prompt_versions(agent)
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
         now = _datetime_to_iso(utc_now())
+        agent_key = _new_agent_key()
+        metadata = _governance_metadata(values, agent_key=agent_key, version=1)
         agent: dict[str, object] = {
-            "id": _new_agent_key(),
+            "id": agent_key,
             "name": str(values["name"]),
             "category": str(values["category"]),
             "topic": str(values["topic"]),
@@ -142,20 +562,268 @@ class InMemoryAgentStore:
             "created_at": now,
             "updated_at": now,
             "source": "custom",
-            "metadata": _dict_value(values.get("metadata")),
+            "metadata": metadata,
         }
+        agent["prompt_versions"] = [
+            {
+                "version": 1,
+                "prompt": agent["prompt"],
+                "change_summary": "initial prompt",
+                "created_by": agent["created_by"],
+                "created_at": now,
+            }
+        ]
+        _set_payload_version_fields(agent, version=1)
         self.agents.insert(0, agent)
-        return copy.deepcopy(agent)
+        return _enrich_agent_payload(copy.deepcopy(agent))
+
+    def add_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        prompt: str,
+        change_summary: str,
+        review_note: str | None,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        agent = self._agent_for_update(agent_key)
+        prompt_versions = _payload_prompt_versions(agent)
+        next_version = _latest_payload_prompt_version(agent) + 1
+        now = _datetime_to_iso(utc_now())
+        prompt_versions.append(
+            {
+                "version": next_version,
+                "prompt": prompt,
+                "change_summary": change_summary,
+                "created_by": created_by,
+                "created_at": now,
+            }
+        )
+        agent["updated_at"] = now
+        agent["prompt_versions"] = prompt_versions
+        _set_payload_prompt_review_metadata(
+            agent,
+            version=next_version,
+            status="pending-review",
+            note=review_note or change_summary,
+            requested_by=created_by,
+            reviewed_by=None,
+            reviewed_at=None,
+            updated_at=now,
+        )
+        return _enrich_agent_payload(copy.deepcopy(agent))
+
+    def update_prompt_version_review(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        review_status: str,
+        review_note: str,
+        reviewed_by: str | None,
+    ) -> dict[str, object]:
+        validate_agent_prompt_review_status(review_status)
+        agent = self._agent_for_update(agent_key)
+        prompt_versions = _payload_prompt_versions(agent)
+        if not any(
+            _int_value(item.get("version"), default=0) == version for item in prompt_versions
+        ):
+            raise KeyError(f"agent prompt version not found: {agent_key}@v{version}")
+        target = next(
+            item
+            for item in prompt_versions
+            if _int_value(item.get("version"), default=0) == version
+        )
+        now = _datetime_to_iso(utc_now())
+        if review_status == "approved":
+            agent["prompt"] = str(target["prompt"])
+            _set_payload_version_fields(agent, version=version)
+        agent["updated_at"] = now
+        _set_payload_prompt_review_metadata(
+            agent,
+            version=version,
+            status=review_status,
+            note=review_note,
+            requested_by=None,
+            reviewed_by=reviewed_by,
+            reviewed_at=now,
+            updated_at=now,
+        )
+        return _enrich_agent_payload(copy.deepcopy(agent))
+
+    def rollback_prompt_version(
+        self,
+        agent_key: str,
+        *,
+        version: int,
+        created_by: str | None,
+    ) -> dict[str, object]:
+        agent = self._agent_for_update(agent_key)
+        prompt_versions = _payload_prompt_versions(agent)
+        target = next(
+            (
+                item
+                for item in prompt_versions
+                if _int_value(item.get("version"), default=0) == version
+            ),
+            None,
+        )
+        if target is None:
+            raise KeyError(f"agent prompt version not found: {agent_key}@v{version}")
+        next_version = _latest_payload_prompt_version(agent) + 1
+        now = _datetime_to_iso(utc_now())
+        prompt_versions.append(
+            {
+                "version": next_version,
+                "prompt": str(target["prompt"]),
+                "change_summary": f"rollback to v{version}",
+                "created_by": created_by,
+                "created_at": now,
+            }
+        )
+        agent["prompt"] = str(target["prompt"])
+        agent["updated_at"] = now
+        agent["prompt_versions"] = prompt_versions
+        _set_payload_version_fields(agent, version=next_version)
+        _set_payload_prompt_review_metadata(
+            agent,
+            version=next_version,
+            status="approved",
+            note=f"rollback to v{version}",
+            requested_by=created_by,
+            reviewed_by=created_by,
+            reviewed_at=now,
+            updated_at=now,
+        )
+        return _enrich_agent_payload(copy.deepcopy(agent))
+
+    def update_agent_lifecycle(
+        self,
+        agent_key: str,
+        *,
+        status: str,
+        reason: str,
+        updated_by: str | None,
+    ) -> dict[str, object]:
+        validate_agent_status(status)
+        agent = self._agent_for_update(agent_key)
+        agent["status"] = status
+        agent["updated_at"] = _datetime_to_iso(utc_now())
+        metadata = _dict_value(agent.get("metadata"))
+        metadata["lifecycle_reason"] = reason
+        metadata["lifecycle_updated_by"] = updated_by
+        metadata["lifecycle_updated_at"] = agent["updated_at"]
+        agent["metadata"] = metadata
+        return _enrich_agent_payload(copy.deepcopy(agent))
+
+    def record_invocation(
+        self,
+        agent_key: str,
+        *,
+        invocation_source: str,
+        question: str | None,
+        conversation_ref: str | None,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        agent = self.get_agent(agent_key) or _default_agent_payload(agent_key)
+        if agent is None:
+            raise KeyError(f"agent not found: {agent_key}")
+        if str(agent.get("status") or "active") != "active":
+            raise ValueError(f"agent is not active: {agent_key}")
+        invocation = {
+            "id": str(uuid4()),
+            "agent_key": agent_key,
+            "prompt_version": _int_value(agent.get("prompt_version"), default=1),
+            "prompt_version_key": str(agent.get("prompt_version_key") or f"{agent_key}@v1"),
+            "invocation_source": invocation_source,
+            "question": question,
+            "conversation_ref": conversation_ref,
+            "created_by": created_by,
+            "created_at": _datetime_to_iso(utc_now()),
+            "metadata": copy.deepcopy(metadata),
+        }
+        self.invocations.insert(0, invocation)
+        return copy.deepcopy(invocation)
+
+    def list_invocations(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        return [
+            copy.deepcopy(item)
+            for item in self.invocations
+            if item.get("agent_key") == agent_key
+        ][:limit]
+
+    def record_feedback(
+        self,
+        agent_key: str,
+        *,
+        invocation_id: str | None,
+        rating: str,
+        comment: str,
+        created_by: str | None,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        validate_agent_feedback_rating(rating)
+        agent = self.get_agent(agent_key) or _default_agent_payload(agent_key)
+        if agent is None:
+            raise KeyError(f"agent not found: {agent_key}")
+        invocation = (
+            next((item for item in self.invocations if item.get("id") == invocation_id), None)
+            if invocation_id
+            else None
+        )
+        if invocation_id and invocation is None:
+            raise KeyError(f"agent invocation not found: {invocation_id}")
+        if invocation is not None and invocation.get("agent_key") != agent_key:
+            raise KeyError(f"agent invocation does not belong to agent: {invocation_id}")
+        feedback: dict[str, object] = {
+            "id": str(uuid4()),
+            "agent_key": agent_key,
+            "invocation_id": invocation_id,
+            "prompt_version": _int_value(
+                invocation.get("prompt_version") if invocation else agent.get("prompt_version"),
+                default=1,
+            ),
+            "rating": rating,
+            "comment": comment,
+            "created_by": created_by,
+            "created_at": _datetime_to_iso(utc_now()),
+            "metadata": copy.deepcopy(metadata),
+        }
+        self.feedback_entries.insert(0, feedback)
+        return copy.deepcopy(feedback)
+
+    def list_feedback(self, agent_key: str, *, limit: int = 20) -> list[dict[str, object]]:
+        return [
+            copy.deepcopy(item)
+            for item in self.feedback_entries
+            if item.get("agent_key") == agent_key
+        ][:limit]
+
+    def feedback_summary(self, agent_key: str) -> dict[str, object]:
+        entries = [item for item in self.feedback_entries if item.get("agent_key") == agent_key]
+        counts = {
+            rating: sum(1 for item in entries if item.get("rating") == rating)
+            for rating in AGENT_FEEDBACK_RATINGS
+        }
+        latest_rating = str(entries[0]["rating"]) if entries else None
+        return _feedback_summary_payload(counts, latest_rating=latest_rating)
+
+    def _agent_for_update(self, agent_key: str) -> dict[str, object]:
+        agent = next((item for item in self.agents if item.get("id") == agent_key), None)
+        if agent is None:
+            raise KeyError(f"agent not found: {agent_key}")
+        return agent
 
 
 def combined_agent_payloads(custom_agents: list[dict[str, object]]) -> list[dict[str, object]]:
     seen_ids = {str(agent.get("id")) for agent in custom_agents}
     defaults = [
-        copy.deepcopy(agent)
+        _enrich_agent_payload(copy.deepcopy(agent))
         for agent in DEFAULT_AGENT_PAYLOADS
         if str(agent["id"]) not in seen_ids
     ]
-    return [*custom_agents, *defaults]
+    return [*[_enrich_agent_payload(agent) for agent in custom_agents], *defaults]
 
 
 def validate_agent_category(category: str) -> str:
@@ -164,8 +832,52 @@ def validate_agent_category(category: str) -> str:
     return category
 
 
-def _agent_to_payload(agent: AuditAgent) -> dict[str, object]:
+def validate_agent_status(status: str) -> str:
+    if status not in AGENT_STATUSES:
+        raise ValueError(f"unsupported agent status: {status}")
+    return status
+
+
+def validate_agent_visibility_scope(scope: str) -> str:
+    if scope not in AGENT_VISIBILITY_SCOPES:
+        raise ValueError(f"unsupported agent visibility scope: {scope}")
+    return scope
+
+
+def validate_agent_feedback_rating(rating: str) -> str:
+    if rating not in AGENT_FEEDBACK_RATINGS:
+        raise ValueError(f"unsupported agent feedback rating: {rating}")
+    return rating
+
+
+def validate_agent_prompt_review_status(status: str) -> str:
+    if status not in AGENT_PROMPT_REVIEW_STATUSES:
+        raise ValueError(f"unsupported agent prompt review status: {status}")
+    return status
+
+
+def _feedback_summary_payload(
+    counts: dict[str, int],
+    *,
+    latest_rating: str | None,
+) -> dict[str, object]:
+    normalized_counts = {rating: int(counts.get(rating, 0)) for rating in AGENT_FEEDBACK_RATINGS}
     return {
+        "total": sum(normalized_counts.values()),
+        "effective": normalized_counts["effective"],
+        "needs_review": normalized_counts["needs_review"],
+        "unsafe": normalized_counts["unsafe"],
+        "latest_rating": latest_rating,
+    }
+
+
+def _agent_to_payload(
+    agent: AuditAgent,
+    *,
+    prompt_version: int | None = None,
+    prompt_versions: list[AuditAgentPromptVersion] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "id": agent.agent_key,
         "name": agent.name,
         "category": agent.category,
@@ -179,7 +891,295 @@ def _agent_to_payload(agent: AuditAgent) -> dict[str, object]:
         "updated_at": _datetime_to_iso(agent.updated_at),
         "source": "custom",
         "metadata": copy.deepcopy(agent.extra_metadata),
+        "prompt_versions": [
+            _prompt_version_to_payload(item)
+            for item in sorted(
+                prompt_versions if prompt_versions is not None else agent.prompt_versions,
+                key=lambda item: item.version,
+            )
+        ],
     }
+    _set_payload_version_fields(payload, version=prompt_version or _active_prompt_version(agent))
+    return _enrich_agent_payload(payload)
+
+
+def _load_agent_for_update(session: Session, agent_key: str) -> AuditAgent:
+    agent = session.scalar(select(AuditAgent).where(AuditAgent.agent_key == agent_key))
+    if agent is None:
+        raise KeyError(f"agent not found: {agent_key}")
+    return agent
+
+
+def _load_invocation(session: Session, invocation_id: str) -> AuditAgentInvocation:
+    try:
+        parsed_id = UUID(invocation_id)
+    except ValueError as exc:
+        raise KeyError(f"agent invocation not found: {invocation_id}") from exc
+    invocation = session.get(AuditAgentInvocation, parsed_id)
+    if invocation is None:
+        raise KeyError(f"agent invocation not found: {invocation_id}")
+    return invocation
+
+
+def _latest_prompt_version(agent: AuditAgent) -> int:
+    return max((item.version for item in agent.prompt_versions), default=1)
+
+
+def _active_prompt_version(agent: AuditAgent) -> int:
+    metadata = _dict_value(agent.extra_metadata)
+    return _int_value(metadata.get("prompt_version"), default=_latest_prompt_version(agent))
+
+
+def _set_agent_version_metadata(agent: AuditAgent, *, version: int) -> None:
+    metadata = _dict_value(agent.extra_metadata)
+    metadata["prompt_version"] = version
+    metadata["prompt_version_key"] = f"{agent.agent_key}@v{version}"
+    agent.extra_metadata = metadata
+
+
+def _set_agent_prompt_review_metadata(
+    agent: AuditAgent,
+    *,
+    version: int,
+    status: str,
+    note: str,
+    requested_by: str | None,
+    reviewed_by: str | None,
+    reviewed_at: datetime | None,
+    updated_at: datetime,
+) -> None:
+    metadata = _dict_value(agent.extra_metadata)
+    _set_prompt_review_entry(
+        metadata,
+        version=version,
+        status=status,
+        note=note,
+        requested_by=requested_by,
+        reviewed_by=reviewed_by,
+        reviewed_at=_datetime_to_iso(reviewed_at) if reviewed_at is not None else None,
+        updated_at=_datetime_to_iso(updated_at),
+    )
+    agent.extra_metadata = metadata
+
+
+def _set_payload_version_fields(payload: dict[str, object], *, version: int) -> None:
+    agent_key = str(payload["id"])
+    metadata = _dict_value(payload.get("metadata"))
+    metadata["prompt_version"] = version
+    metadata["prompt_version_key"] = f"{agent_key}@v{version}"
+    payload["metadata"] = metadata
+    payload["prompt_version"] = version
+    payload["prompt_version_key"] = f"{agent_key}@v{version}"
+
+
+def _set_payload_prompt_review_metadata(
+    payload: dict[str, object],
+    *,
+    version: int,
+    status: str,
+    note: str,
+    requested_by: str | None,
+    reviewed_by: str | None,
+    reviewed_at: str | None,
+    updated_at: str,
+) -> None:
+    metadata = _dict_value(payload.get("metadata"))
+    _set_prompt_review_entry(
+        metadata,
+        version=version,
+        status=status,
+        note=note,
+        requested_by=requested_by,
+        reviewed_by=reviewed_by,
+        reviewed_at=reviewed_at,
+        updated_at=updated_at,
+    )
+    payload["metadata"] = metadata
+
+
+def _set_prompt_review_entry(
+    metadata: dict[str, object],
+    *,
+    version: int,
+    status: str,
+    note: str,
+    requested_by: str | None,
+    reviewed_by: str | None,
+    reviewed_at: str | None,
+    updated_at: str,
+) -> None:
+    validate_agent_prompt_review_status(status)
+    reviews = _prompt_version_reviews(metadata)
+    previous = reviews.get(str(version))
+    previous_entry = previous if isinstance(previous, dict) else {}
+    requested_by_value = requested_by
+    if requested_by_value is None and isinstance(previous_entry.get("requested_by"), str):
+        requested_by_value = str(previous_entry["requested_by"])
+    reviews[str(version)] = {
+        "status": status,
+        "note": note,
+        "requested_by": requested_by_value,
+        "reviewed_by": reviewed_by,
+        "reviewed_at": reviewed_at,
+        "updated_at": updated_at,
+    }
+    metadata["prompt_version_reviews"] = reviews
+
+
+def _enrich_agent_payload(payload: dict[str, object]) -> dict[str, object]:
+    metadata = _dict_value(payload.get("metadata"))
+    agent_key = str(payload["id"])
+    version = _int_value(metadata.get("prompt_version"), default=1)
+    prompt_version_key = str(metadata.get("prompt_version_key") or f"{agent_key}@v{version}")
+    visibility_scope = validate_agent_visibility_scope(
+        str(metadata.get("visibility_scope") or payload.get("visibility_scope") or "project")
+    )
+    allowed_roles = _string_list_value(
+        metadata.get("allowed_roles") or payload.get("allowed_roles"),
+        default=list(AGENT_ALLOWED_ROLES),
+    )
+    metadata["prompt_version"] = version
+    metadata["prompt_version_key"] = prompt_version_key
+    metadata["visibility_scope"] = visibility_scope
+    metadata["allowed_roles"] = allowed_roles
+    payload["metadata"] = metadata
+    payload["prompt_version"] = version
+    payload["prompt_version_key"] = prompt_version_key
+    payload["visibility_scope"] = visibility_scope
+    payload["allowed_roles"] = allowed_roles
+    payload["prompt_versions"] = _payload_prompt_versions(payload)
+    return payload
+
+
+def _governance_metadata(
+    values: dict[str, object],
+    *,
+    agent_key: str,
+    version: int,
+) -> dict[str, object]:
+    metadata = _dict_value(values.get("metadata"))
+    visibility_scope = validate_agent_visibility_scope(
+        str(values.get("visibility_scope") or "project")
+    )
+    allowed_roles = _string_list_value(
+        values.get("allowed_roles"),
+        default=list(AGENT_ALLOWED_ROLES),
+    )
+    metadata["prompt_version"] = version
+    metadata["prompt_version_key"] = f"{agent_key}@v{version}"
+    metadata["visibility_scope"] = visibility_scope
+    metadata["allowed_roles"] = allowed_roles
+    _set_prompt_review_entry(
+        metadata,
+        version=version,
+        status="approved",
+        note="initial prompt",
+        requested_by=_optional_str(values.get("created_by")),
+        reviewed_by=_optional_str(values.get("created_by")),
+        reviewed_at=None,
+        updated_at="",
+    )
+    return metadata
+
+
+def _payload_prompt_versions(agent: dict[str, object]) -> list[dict[str, object]]:
+    metadata = _dict_value(agent.get("metadata"))
+    raw_versions = agent.get("prompt_versions")
+    if isinstance(raw_versions, list):
+        versions = [dict(item) for item in raw_versions if isinstance(item, dict)]
+    else:
+        versions = [
+            {
+                "version": 1,
+                "prompt": str(agent["prompt"]),
+                "change_summary": "initial prompt",
+                "created_by": agent.get("created_by"),
+                "created_at": str(agent.get("created_at") or agent.get("updated_at") or ""),
+            }
+        ]
+    return [_enrich_prompt_version_review_payload(item, metadata) for item in versions]
+
+
+def _agent_prompt_versions_payload(agent: AuditAgent) -> list[dict[str, object]]:
+    metadata = _dict_value(agent.extra_metadata)
+    versions = [
+        _prompt_version_to_payload(item)
+        for item in sorted(agent.prompt_versions, key=lambda version: version.version)
+    ]
+    return [_enrich_prompt_version_review_payload(item, metadata) for item in versions]
+
+
+def _prompt_version_to_payload(version: AuditAgentPromptVersion) -> dict[str, object]:
+    return {
+        "version": version.version,
+        "prompt": version.prompt,
+        "change_summary": version.change_summary,
+        "created_by": version.created_by,
+        "created_at": _datetime_to_iso(version.created_at),
+    }
+
+
+def _enrich_prompt_version_review_payload(
+    version: dict[str, object],
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    version_number = _int_value(version.get("version"), default=1)
+    reviews = _prompt_version_reviews(metadata)
+    raw_review = reviews.get(str(version_number))
+    review = raw_review if isinstance(raw_review, dict) else {}
+    status = validate_agent_prompt_review_status(str(review.get("status") or "approved"))
+    active_version = _int_value(metadata.get("prompt_version"), default=1)
+    version["review_status"] = status
+    version["review_note"] = str(review.get("note") or "")
+    version["requested_by"] = _optional_str(review.get("requested_by"))
+    version["reviewed_by"] = _optional_str(review.get("reviewed_by"))
+    version["reviewed_at"] = _optional_str(review.get("reviewed_at"))
+    version["review_updated_at"] = _optional_str(review.get("updated_at"))
+    version["is_active"] = version_number == active_version
+    return version
+
+
+def _prompt_version_reviews(metadata: dict[str, object]) -> dict[str, object]:
+    raw_reviews = metadata.get("prompt_version_reviews")
+    if isinstance(raw_reviews, dict):
+        return dict(raw_reviews)
+    return {}
+
+
+def _invocation_to_payload(invocation: AuditAgentInvocation) -> dict[str, object]:
+    return {
+        "id": str(invocation.id),
+        "agent_key": invocation.agent_key,
+        "prompt_version": invocation.prompt_version,
+        "prompt_version_key": invocation.prompt_version_key,
+        "invocation_source": invocation.invocation_source,
+        "question": invocation.question,
+        "conversation_ref": invocation.conversation_ref,
+        "created_by": invocation.created_by,
+        "created_at": _datetime_to_iso(invocation.created_at),
+        "metadata": copy.deepcopy(invocation.extra_metadata),
+    }
+
+
+def _feedback_to_payload(feedback: AuditAgentFeedback) -> dict[str, object]:
+    return {
+        "id": str(feedback.id),
+        "agent_key": feedback.agent_key,
+        "invocation_id": str(feedback.invocation_id) if feedback.invocation_id else None,
+        "prompt_version": feedback.prompt_version,
+        "rating": feedback.rating,
+        "comment": feedback.comment,
+        "created_by": feedback.created_by,
+        "created_at": _datetime_to_iso(feedback.created_at),
+        "metadata": copy.deepcopy(feedback.extra_metadata),
+    }
+
+
+def _latest_payload_prompt_version(agent: dict[str, object]) -> int:
+    return max(
+        (_int_value(item.get("version"), default=1) for item in _payload_prompt_versions(agent)),
+        default=1,
+    )
 
 
 def _new_agent_key() -> str:
@@ -203,6 +1203,32 @@ def _dict_value(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return copy.deepcopy(value)
     return {}
+
+
+def _int_value(value: object, *, default: int) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _default_agent_payload(agent_key: str) -> dict[str, object] | None:
+    agent = next(
+        (dict(agent) for agent in DEFAULT_AGENT_PAYLOADS if agent["id"] == agent_key),
+        None,
+    )
+    return _enrich_agent_payload(agent) if agent is not None else None
+
+
+def _string_list_value(value: object, *, default: list[str]) -> list[str]:
+    if isinstance(value, list):
+        normalized = [str(item) for item in value if str(item) in AGENT_ALLOWED_ROLES]
+        return normalized or default
+    return default
 
 
 def _sync_database_url(database_url: str) -> str:

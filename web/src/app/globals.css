@@ -2,31 +2,31 @@
 
 :root {
   color-scheme: light;
-  --audit-bg: #f3f6fb;
+  --audit-bg: #eef6ff;
   --audit-surface: #ffffff;
   --audit-surface-raised: #ffffff;
-  --audit-surface-muted: #f7f9fc;
-  --audit-surface-subtle: #eef3f8;
-  --audit-ink: #101828;
-  --audit-ink-muted: #475467;
-  --audit-ink-subtle: #667085;
-  --audit-line: #d7e0ea;
-  --audit-line-soft: #e5ebf3;
-  --audit-primary: #175cd3;
-  --audit-primary-hover: #1849a9;
-  --audit-primary-soft: #eef4ff;
-  --audit-primary-line: #bdd7ff;
+  --audit-surface-muted: #f5f9ff;
+  --audit-surface-subtle: #e8f2fd;
+  --audit-ink: #17233c;
+  --audit-ink-muted: #465772;
+  --audit-ink-subtle: #6d7f99;
+  --audit-line: #cfe0f2;
+  --audit-line-soft: #e4eef8;
+  --audit-primary: #1d75c9;
+  --audit-primary-hover: #145ea8;
+  --audit-primary-soft: #eaf5ff;
+  --audit-primary-line: #acd3f6;
   --audit-blue: var(--audit-primary);
-  --audit-blue-deep: #173b7a;
-  --audit-cyan: #0e9384;
+  --audit-blue-deep: #232d54;
+  --audit-cyan: #0d9488;
   --audit-amber: #b54708;
   --audit-red: #b42318;
   --audit-green: #067647;
-  --audit-radius-lg: 16px;
-  --audit-radius-md: 10px;
-  --audit-radius-sm: 8px;
-  --audit-shadow-card: 0 14px 32px rgb(16 24 40 / 0.06);
-  --audit-shadow-rail: 0 8px 24px rgb(16 24 40 / 0.045);
+  --audit-radius-lg: 10px;
+  --audit-radius-md: 8px;
+  --audit-radius-sm: 6px;
+  --audit-shadow-card: 0 14px 32px rgb(23 62 105 / 0.07);
+  --audit-shadow-rail: 0 8px 24px rgb(23 62 105 / 0.055);
   --audit-font-sans: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   --audit-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
 }
@@ -43,7 +43,9 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, var(--audit-bg) 28rem);
+  background:
+    linear-gradient(180deg, #f8fbff 0%, var(--audit-bg) 24rem),
+    radial-gradient(circle at 18% 0%, rgb(213 234 255 / 0.48), transparent 26rem);
   color: var(--audit-ink);
   font-family: var(--audit-font-sans);
   text-rendering: optimizeLegibility;
@@ -62,7 +64,7 @@ select {
 }
 
 .audit-focus-ring:focus-visible {
-  outline: 3px solid rgb(23 92 211 / 0.28);
+  outline: 3px solid rgb(29 117 201 / 0.28);
   outline-offset: 2px;
 }
 
@@ -182,7 +184,7 @@ select {
   width: 100%;
   border: 1px solid var(--audit-line);
   border-radius: var(--audit-radius-md);
-  background: var(--audit-surface-muted);
+  background: #ffffff;
   color: var(--audit-ink);
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -283,7 +285,7 @@ select {
 }
 
 .audit-row-selected {
-  background: #eef6ff;
+  background: var(--audit-primary-soft);
   box-shadow: inset 3px 0 0 var(--audit-primary);
 }
 
@@ -327,7 +329,44 @@ select {
   display: block;
   border: 1px dashed var(--audit-primary-line);
   border-radius: var(--audit-radius-lg);
-  background: #f4f8ff;
+  background: var(--audit-surface-muted);
+}
+
+.audit-shell-grid {
+  background:
+    linear-gradient(90deg, rgb(29 117 201 / 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(29 117 201 / 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.audit-sidebar-shell {
+  background:
+    linear-gradient(180deg, #fbfdff 0%, #f3f9ff 100%);
+}
+
+.audit-sidebar-link {
+  min-height: 2.5rem;
+}
+
+.audit-topbar-input {
+  border: 1px solid var(--audit-line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--audit-ink);
+}
+
+.audit-login-shell {
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgb(35 45 84 / 0.96), rgb(20 94 168 / 0.92)),
+    linear-gradient(180deg, #eff7ff, #ffffff);
+}
+
+.audit-login-card {
+  border: 1px solid rgb(255 255 255 / 0.78);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 24px 70px rgb(10 31 68 / 0.24);
 }
 
 @media (max-width: 640px) {

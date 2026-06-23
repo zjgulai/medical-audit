@@ -5,7 +5,7 @@ module: frontend
 topic: ai-audit-portal-refactor
 status: stable
 created: 2026-06-12
-updated: 2026-06-12
+updated: 2026-06-21
 owner: self
 source: human+ai
 ---
@@ -249,3 +249,253 @@ pnpm production:frontend-acceptance -- \
 - 不把提示词型智能体描述成自主 agent。
 - 不把上传表格分析结果描述成正式审计结论。
 - 不删除现有生产入口，直到新入口通过回归验证。
+
+## 9. 2026-06-21 第一阶段执行记录
+
+本轮执行范围：前端门户壳层、登录页、浅蓝视觉 token、左侧导航分组、顶部状态栏、角色视图和阶段测试。
+
+已完成：
+
+- 新增 `/login` 登录界面，复用 `ref/前端/LOGO.png` 生成的前端 public 品牌资产。
+- 将左侧导航重组为 `核心功能 / 专题审计 / 知识底座 / 系统管理`，核心功能直接覆盖 `AI 对话`、`智能体广场`、`文档检索`、`AI 数据分析`、`审计底稿生成`。
+- 顶部栏新增全局检索输入、项目专题、后端待检测提示、AI 草稿人工确认提示、主任视图和四类角色视图。
+- 视觉 token 调整为浅蓝医院内审工作台风格，圆角和间距更接近工业软件工作台。
+- 保留现有 `web/src/lib/api-client.ts` 和后端 `/api/v1/*`、`/pages/*` 契约；本阶段未删除后端能力。
+
+本地验收：
+
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`70` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面，新增 `/login`。
+- Playwright 本地视觉检查：`/login` 和 `/workspace` 在 `1440x900` 下均为 `h1Count=1`、无横向溢出。
+- 截图：
+  - `tmp/screenshots/phase1-ui-login-20260621.png`
+  - `tmp/screenshots/phase1-ui-workspace-20260621.png`
+
+边界：
+
+- 本轮为本地前端重构和本地验收，未执行生产部署。
+- 本轮未启动后端联调；顶部 `后端待检测` 是当前界面状态提示，不代表生产或本地 API 状态。
+- 审计底稿生成仍沿用现有底稿/报告入口；未新增 Word/docx 生成后端适配层。
+- 登录页为 UI 重构入口，真实认证、单点登录和权限生效不在本阶段完成范围内。
+
+## 10. 2026-06-21 Phase 2 模板工作流执行记录
+
+本轮执行范围：医保费用模板驱动的 `AI 数据分析` 与 `审计底稿生成` 前端切片。
+
+已完成：
+
+- 在 `web/src/lib/portal-data.ts` 中新增三张医保费用模板元数据：`表1 医保费用汇总表`、`表2 医保费用分类汇总表`、`表3 就诊费用明细表`。
+- 在 `/analytics` 数据分析工作台新增常用表模板选择、模板字段、核验重点和分析要求联动。
+- 保持上传解析仍走现有 `uploadAnalysisTable` 后端 API；本轮只增加模板引导，不改解析后端。
+- 在 `/reports` 底稿生成页新增三类提示词模板：费用汇总风险底稿、分类费用复核清单、就诊明细疑点摘要。
+- 底稿模板只进入 AI 对话和复核任务绑定入口，不宣称已具备 Word/docx 导出。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`22` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`70` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/analytics` 和 `/reports` 在 `1440x900` 下均为 `h1Count=1`、无横向溢出。
+- 截图：
+  - `tmp/screenshots/phase2-template-workflow-analytics-20260621.png`
+  - `tmp/screenshots/phase2-template-workflow-reports-20260621.png`
+
+边界：
+
+- 本轮仍为本地前端重构和本地验收，未执行生产部署。
+- 本轮没有 provider call，也没有生产或本地业务数据写入。
+- Excel 模板已转化为 UI 元数据和提示词入口；未把模板文件内容写入后端配置、种子数据或生产知识库。
+- 真实权限、正式认证、Word/docx 导出、正式报告签发仍保持后续阶段任务。
+
+## 11. 2026-06-21 Phase 2 AI 对话工作台执行记录
+
+本轮执行范围：`AI 对话` 第一屏从跳转表单升级为审证入口工作台。
+
+已完成：
+
+- 将 `/chat` 重构为三栏工作台：问题构建、审证表单、推荐问题与证据边界。
+- 左侧展示审证步骤和知识来源覆盖，保持来源集合与文档检索页面一致。
+- 中间保留智能体选择、审计问题输入、来源限定和进入后端审证深页的表单。
+- 右侧展示推荐问题、证据边界和回答进入草稿态的输出去向。
+- 保持提交路径为 `/pages/chat`，未新增 provider 调用或后端写入。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`22` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`70` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/chat` 在 `1440x900` 下 `h1Count=1`、无横向溢出。
+- 截图：`tmp/screenshots/phase2-chat-workbench-20260621.png`。
+
+边界：
+
+- 本轮仍为本地前端 UI 重构，未执行生产部署。
+- 本轮未启动 FastAPI 做本地 API 联调；`/chat` 表单仍交接到既有后端深页。
+- 本轮没有 provider call，也没有生产或本地业务数据写入。
+
+## 12. 2026-06-21 Phase 2 智能体模板创建闭环执行记录
+
+本轮执行范围：提示词型智能体的广场模板、我的智能体新增表单和保存前边界提示。
+
+已完成：
+
+- `/agent-market` 智能体广场保留分类筛选和搜索，模板卡片入口改为 `套用并新增智能体`，跳转到 `/agents?template={id}#new-agent`。
+- `/agents` 新增表单支持从模板参数预填名称、分类、审计专题、关联知识库、关联项目和提示词。
+- `/agents` 右侧模板推荐支持在当前页套用模板；页面明确提示点击保存前不会写入后端。
+- 新增智能体仍通过既有 `createAuditAgent` 调用 `/api/v1/agents`；本轮未新增存储层，也未绕过后端持久化契约。
+- 修复模板锚点滚动遮挡问题，避免 `#new-agent` 被顶部栏覆盖。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`23` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`71` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/agent-market` 和 `/agents?template=template-identity-risk#new-agent` 在 `1440x900` 下均为 `h1Count=1`、无横向溢出；模板入口、模板预填和保存前不写入提示均可见。
+- 截图：
+  - `tmp/screenshots/phase2-agent-template-market-20260621.png`
+  - `tmp/screenshots/phase2-agent-template-prefill-20260621.png`
+
+边界：
+
+- 本轮仍为本地前端 UI 重构，未执行生产部署。
+- 本轮没有 provider call，也没有生产业务数据写入。
+- 模板预填不是新增成功；只有点击 `新增智能体` 并通过现有后端接口后才进入我的智能体列表。
+- 智能体提示词版本治理、版本对比 UI、下架/停用、软归档、角色可见范围、调用记录和效果反馈已完成本地首切片；生产部署验收、真实对话自动调用挂接、逐行 diff/审批流、反馈统计看板和真实权限闭环仍保持后续任务。
+
+## 13. 2026-06-21 Phase 3 文档检索首页执行记录
+
+本轮执行范围：`文档检索` 首页的信息架构、仅标题模式、引用分组和知识库只读联动。
+
+已完成：
+
+- `/documents` 左侧来源区升级为 `知识库分类统计`，继续按法规政策、监管两库、医保目录和风险清单限定后端检索范围。
+- `/documents` 检索框新增 `仅标题` 开关；该模式用于前端文档卡片筛选，后端仍按现有全文检索接口返回引用。
+- `/documents` 顶部新增 `无引用不下结论` 门禁提示，检索结果无引用时只作为补证线索。
+- `/documents` 检索结果按 `source_collection` 分组展示引用，并保留 `/pages/preview/{chunk_id}` 原文核验入口和转入 AI 对话入口。
+- `/knowledge-base` 保持个人、系统、公开知识库只读展示，作为统一检索首页的索引覆盖入口。
+- 本轮未修改 `web/src/lib/api-client.ts`、`web/src/lib/api-types.ts` 或 FastAPI router。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`23` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`71` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/documents` 和 `/knowledge-base` 在 `1440x900` 下均为 `h1Count=1`、无横向溢出；`/documents` 中仅标题、无引用门禁和知识库分类统计均可见。
+- 截图：
+  - `tmp/screenshots/phase3-document-search-home-20260621.png`
+  - `tmp/screenshots/phase3-knowledge-base-readonly-20260621.png`
+
+边界：
+
+- 本轮仍为本地前端 UI 重构，未执行生产部署。
+- 本轮没有 provider call，也没有生产业务数据写入。
+- 本轮未启动本地 FastAPI 做 API 联调；知识库页的检索索引状态在本地后端未启动时可显示异常。
+- `仅标题` 已接入后端 `title_only` 查询参数和标题/路径元数据过滤；本地页面仍保留前端文档卡片筛选用于降低用户扫描成本。
+
+## 14. 2026-06-21 Phase 3 权限角色 UI 映射执行记录
+
+本轮执行范围：`项目管理` 页的医院权限角色矩阵和新增成员表单映射。
+
+已完成：
+
+- 在 `web/src/lib/portal-data.ts` 中新增四类医院权限角色：`管理员`、`技术人员`、`主任`、`普通成员`。
+- 四类医院权限角色当前映射到既有项目成员角色，后端项目成员角色枚举暂不变。
+- `/projects` 主内容区新增 `医院权限角色矩阵`，展示职责、可执行操作和当前权限边界。
+- `/projects` 新增成员表单增加 `权限角色视图`，选择 `技术人员` 时同步映射 `项目成员角色=信息科` 和 `部门=信息科`。
+- 页面明确提示权限角色视图只做前端映射，真实账号开通、权限生效和禁用移除仍需后续后端认证体系验证。
+- 本轮未修改 `web/src/lib/api-client.ts`、`web/src/lib/api-types.ts` 或 FastAPI router。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`23` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`71` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/projects` 在 `1440x1100` 下 `h1Count=1`、无横向溢出；`医院权限角色矩阵`、`权限角色视图` 和前端映射边界提示均可见；选择 `技术人员` 后项目成员角色和部门均映射为 `信息科`。
+- 截图：`tmp/screenshots/phase3-role-permission-projects-20260621.png`。
+
+边界：
+
+- 本轮仍为本地前端 UI 重构，未执行生产部署。
+- 本轮没有 provider call，也没有生产业务数据写入。
+- 医院权限角色矩阵当前只做前端视图和新增成员表单映射，不代表真实权限、账号开通、SSO、禁用移除或审计日志权限闭环已经生效。
+- 后端仍使用既有项目成员角色契约；真实用户、角色、科室、权限模型和角色枚举治理保持后续阶段任务。
+
+## 15. 2026-06-21 Phase 5 知识图谱只读入口验收记录
+
+本轮执行范围：`知识图谱` 入口的只读关系预览和本地验收。
+
+已完成：
+
+- `/graph` 已提供医保基金使用合规专项的只读图谱入口，覆盖项目、知识库、文档、规则、疑点、复核、报告和整改节点。
+- 图谱主区展示静态 SVG 关系预览、节点类型统计、关系链路统计、强证据关系和待补关系。
+- 页面下方展示证据链关系卡片，右侧展示节点证据入口，并保留转入 `/documents` 核验证据来源的入口。
+- 图谱数据来自前端 `graphNodes` 和 `graphRelations`，本轮不引入动态图数据库或新增后端查询契约。
+- 单测已覆盖正常检索索引状态和本地后端不可用时的图谱拓扑保留。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`23` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`71` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright 本地视觉检查：`/graph` 在 `1440x1000` 和 `390x844` 下均为 `h1Count=1`、无横向溢出；`审计知识图谱静态关系预览`、`节点证据`、`证据链关系` 和 `首期只读` 均可见。
+- 截图：
+  - `tmp/screenshots/phase5-graph-readonly-desktop-20260621.png`
+  - `tmp/screenshots/phase5-graph-readonly-mobile-20260621.png`
+
+边界：
+
+- 本轮仍为本地前端 UI 验收和状态同步，未执行生产部署。
+- 本轮没有 provider call，也没有生产业务数据写入。
+- 本地视觉验收未启动 FastAPI 后端；图谱页的索引状态提示不代表本轮完成前后端联调。
+- 当前图谱是前端只读关系预览，不代表已经具备动态图数据库、图谱编辑、图谱查询 API 或自动证据链推理能力。
+
+## 16. 2026-06-21 Phase 5 规则整改归档入口验收记录
+
+本轮执行范围：`专题规则库`、`补证整改`、`项目档案` 三个回归收口入口的本地验收和状态同步。
+
+已完成：
+
+- `/rules` 已展示规则来源覆盖、规则清单、最近运行、发布门禁和规则输出边界。
+- `/rules` 保留进入 `/pages/index-admin` 的索引管理入口，以及转入疑点和 AI 审证的工作流入口。
+- `/remediation` 已展示整改台账、补证请求、关闭门禁、整改动态和图谱证据链入口。
+- `/archive` 已展示项目档案包、审计日志治理策略、归档巡检、签名链和入档动态。
+- `/archive` 保留受控审计日志台和日志导出入口，界面继续提示日志查询和导出必须经过权限校验。
+- 本批次未修改 `web/src/lib/api-client.ts`、`web/src/lib/api-types.ts` 或 FastAPI router。
+
+本地验收：
+
+- `pnpm --dir web test -- src/app/'(workspace)'/workspace-pages.test.tsx`：通过，`23` 个 tests。
+- `pnpm --dir web lint`：通过。
+- `pnpm --dir web typecheck`：通过。
+- `pnpm --dir web test`：通过，`11` 个 test files、`71` 个 tests。
+- `pnpm --dir web build`：通过，生成 `21/21` 个静态页面。
+- Playwright production server 本地视觉检查：`/rules`、`/remediation`、`/archive` 在 `1440x1000` 和 `390x844` 下均为 `h1Count=1`、无横向溢出。
+- 截图：
+  - `tmp/screenshots/phase5-rules-prod-desktop-20260621.png`
+  - `tmp/screenshots/phase5-rules-prod-mobile-20260621.png`
+  - `tmp/screenshots/phase5-remediation-prod-desktop-20260621.png`
+  - `tmp/screenshots/phase5-remediation-prod-mobile-20260621.png`
+  - `tmp/screenshots/phase5-archive-prod-desktop-20260621.png`
+  - `tmp/screenshots/phase5-archive-prod-mobile-20260621.png`
+
+边界：
+
+- `validation_scope=local_ui`。
+- `backend_loopback_status=not_started`。
+- `production_side_effect=none`。
+- `provider_call_status=not_called`。
+- 当前三页使用前端静态关系和既有兼容入口；规则执行、整改写入、审计日志权限、归档签名和长期留存仍按后续后端/生产验收链路处理。

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.responses import Response as StarletteResponse
 
 from medical_audit_kb import __version__
 from medical_audit_kb.api.agent_store import AgentStore, SqlAlchemyAgentStore
@@ -18,28 +22,11 @@ from medical_audit_kb.api.analytics_upload_store import (
 )
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
-from medical_audit_kb.api.document_upload_governance import (
-    DocumentUploadGovernancePolicy,
-    document_upload_governance_policy_from_settings,
-)
-from medical_audit_kb.api.document_upload_governance_jobs import (
-    document_upload_governance_job_submitter_from_settings,
-)
-from medical_audit_kb.api.document_upload_governance_store import (
-    DocumentUploadGovernanceJobSubmitter,
-    DocumentUploadGovernanceStore,
-    SqlAlchemyDocumentUploadGovernanceStore,
-)
-from medical_audit_kb.api.document_upload_ingestion import (
-    SqlAlchemyDocumentUploadIndexer,
-    document_upload_indexer_from_settings,
-)
+from medical_audit_kb.api.auth import normalize_tenant_id, resolve_authenticated_user
+from medical_audit_kb.api.auth_user_store import AuthUserStore, SqlAlchemyAuthUserStore
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
-    document_object_storage_from_settings,
-    document_storage_objects_schema_ready,
-    tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
@@ -89,28 +76,12 @@ class ApiState:
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
     document_upload_store: DocumentUploadStore | None = None
-    document_upload_governance: DocumentUploadGovernancePolicy = field(
-        default_factory=DocumentUploadGovernancePolicy
-    )
-    document_upload_governance_store: DocumentUploadGovernanceStore | None = None
-    document_upload_governance_job_submitter: DocumentUploadGovernanceJobSubmitter | None = None
-    document_upload_indexer: SqlAlchemyDocumentUploadIndexer | None = None
     query_history_store: QueryHistoryStore | None = None
+    auth_user_store: AuthUserStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
-        document_upload_root = settings.document_upload_root or (
-            settings.index_root / "document-uploads"
-        )
-        tencent_cos_client = tencent_cos_put_object_client_from_settings(
-            settings.document_storage
-        )
-        document_object_storage = document_object_storage_from_settings(
-            settings.document_storage,
-            upload_root=document_upload_root,
-            tencent_cos_client=tencent_cos_client,
-        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -127,28 +98,11 @@ class ApiState:
             ),
             document_upload_store=SqlAlchemyDocumentUploadStore(
                 settings.database_url,
-                upload_root=document_upload_root,
-                object_storage=document_object_storage,
-                record_storage_objects=_document_storage_object_records_enabled(settings),
-            ),
-            document_upload_governance=document_upload_governance_policy_from_settings(
-                settings.document_upload_governance
-            ),
-            document_upload_governance_store=_document_upload_governance_store_from_settings(
-                settings
-            ),
-            document_upload_governance_job_submitter=(
-                document_upload_governance_job_submitter_from_settings(
-                    settings.document_upload_governance
-                )
-            ),
-            document_upload_indexer=document_upload_indexer_from_settings(
-                database_url=settings.database_url,
-                upload_root=document_upload_root,
-                settings=settings.document_upload_indexing,
-                object_storage=document_object_storage,
+                upload_root=settings.document_upload_root
+                or settings.index_root / "document-uploads",
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
+            auth_user_store=SqlAlchemyAuthUserStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
         )
 
@@ -165,10 +119,123 @@ class HealthResponse(BaseModel):
     data_root: str
 
 
-def create_app(api_state: ApiState | None = None) -> FastAPI:
+CONTROLLED_API_AUTH_ENV = "MEDICAL_AUDIT_CONTROLLED_API_AUTH"
+CONTROLLED_API_TENANT_HEADER = "X-Tenant-Id"
+CONTROLLED_API_AUTH_VALUES = frozenset({"1", "true", "yes", "enforce", "required"})
+CONTROLLED_API_PUBLIC_EXACT_PATHS = frozenset(
+    {
+        "/",
+        "/health",
+        "/favicon.ico",
+        "/auth/roles",
+        "/index/postgres-status",
+    }
+)
+CONTROLLED_API_PUBLIC_PREFIXES = ("/static/", "/preview/")
+CONTROLLED_API_PROTECTED_EXACT_PATHS = frozenset(
+    {
+        "/auth/session",
+        "/query",
+        "/projects",
+    }
+)
+CONTROLLED_API_PROTECTED_PREFIXES = (
+    "/agents",
+    "/analytics",
+    "/archive/",
+    "/audit/",
+    "/audit-findings",
+    "/auth/users",
+    "/documents",
+    "/graph/",
+    "/index",
+    "/operation/logs",
+    "/pages/chat/export",
+    "/pages/audit-findings",
+    "/pages/review-tasks",
+    "/projects/",
+    "/query/",
+    "/remediation/",
+    "/reports/",
+    "/review-tasks/",
+    "/rules/",
+)
+
+
+def create_app(
+    api_state: ApiState | None = None,
+    *,
+    enforce_controlled_api_auth: bool | None = None,
+) -> FastAPI:
     state = api_state or ApiState.from_settings(load_settings())
     app = FastAPI(title="Medical Audit Knowledge Query API", version=__version__)
     app.state.api_state = state
+
+    if _controlled_api_auth_enabled(enforce_controlled_api_auth):
+
+        @app.middleware("http")
+        async def controlled_api_auth_middleware(
+            request: Request,
+            call_next: Callable[[Request], Awaitable[StarletteResponse]],
+        ) -> StarletteResponse:
+            if _should_authenticate_controlled_api_path(
+                request.url.path,
+                request.method,
+            ):
+                tenant_id = normalize_tenant_id(request.headers.get(CONTROLLED_API_TENANT_HEADER))
+                if tenant_id is None:
+                    record_operation(
+                        state,
+                        "authorization-denied",
+                        {
+                            "attempted_action": "controlled-api-auth",
+                            "permission": "access_controlled_api",
+                            "path": request.url.path,
+                            "method": request.method,
+                            "user_identifier": request.headers.get("X-User-Id")
+                            or "anonymous",
+                            "role": request.headers.get("X-Role") or "anonymous",
+                            "tenant_id": None,
+                            "status_code": 401,
+                            "reason": f"{CONTROLLED_API_TENANT_HEADER} header is required",
+                        },
+                    )
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": f"{CONTROLLED_API_TENANT_HEADER} header is required"},
+                    )
+                try:
+                    user = resolve_authenticated_user(
+                        state,
+                        x_user_id=request.headers.get("X-User-Id"),
+                        x_role=request.headers.get("X-Role"),
+                        project_key=_project_key_for_auth_middleware(request),
+                        tenant_id=tenant_id,
+                    )
+                except HTTPException as exc:
+                    record_operation(
+                        state,
+                        "authorization-denied",
+                        {
+                            "attempted_action": "controlled-api-auth",
+                            "permission": "access_controlled_api",
+                            "path": request.url.path,
+                            "method": request.method,
+                            "user_identifier": request.headers.get("X-User-Id")
+                            or "anonymous",
+                            "role": request.headers.get("X-Role") or "anonymous",
+                            "tenant_id": tenant_id,
+                            "status_code": exc.status_code,
+                            "reason": str(exc.detail),
+                        },
+                    )
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                    )
+                request.state.authenticated_user = user
+            return await call_next(request)
+
     app.mount(
         "/static",
         StaticFiles(directory=Path(__file__).parent / "static"),
@@ -197,15 +264,19 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
 
     from medical_audit_kb.api.routes_agents import router as agents_router
     from medical_audit_kb.api.routes_analytics import router as analytics_router
+    from medical_audit_kb.api.routes_auth import router as auth_router
     from medical_audit_kb.api.routes_documents import router as documents_router
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
     from medical_audit_kb.api.routes_preview import router as preview_router
     from medical_audit_kb.api.routes_projects import router as projects_router
     from medical_audit_kb.api.routes_query import router as query_router
+    from medical_audit_kb.api.routes_workbench import router as workbench_router
 
     app.include_router(pages_router)
     app.include_router(query_router)
+    app.include_router(workbench_router)
+    app.include_router(auth_router)
     app.include_router(agents_router)
     app.include_router(analytics_router)
     app.include_router(documents_router)
@@ -213,6 +284,34 @@ def create_app(api_state: ApiState | None = None) -> FastAPI:
     app.include_router(index_router)
     app.include_router(preview_router)
     return app
+
+
+def _controlled_api_auth_enabled(enforce_controlled_api_auth: bool | None) -> bool:
+    if enforce_controlled_api_auth is not None:
+        return enforce_controlled_api_auth
+    return os.getenv(CONTROLLED_API_AUTH_ENV, "").strip().lower() in CONTROLLED_API_AUTH_VALUES
+
+
+def _should_authenticate_controlled_api_path(path: str, method: str) -> bool:
+    if method.upper() == "OPTIONS":
+        return False
+    if path in CONTROLLED_API_PUBLIC_EXACT_PATHS:
+        return False
+    if any(path.startswith(prefix) for prefix in CONTROLLED_API_PUBLIC_PREFIXES):
+        return False
+    if path in CONTROLLED_API_PROTECTED_EXACT_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in CONTROLLED_API_PROTECTED_PREFIXES)
+
+
+def _project_key_for_auth_middleware(request: Request) -> str | None:
+    project_key = request.headers.get("X-Project-Key")
+    if project_key:
+        return project_key
+    parts = [part for part in request.url.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "projects":
+        return urllib.parse.unquote(parts[1])
+    return None
 
 
 def answer_generation_provider_from_settings(
@@ -251,21 +350,6 @@ def answer_generation_provider_from_settings(
         )
 
     raise ValueError(f"unsupported answer provider: {provider}")
-
-
-def _document_storage_object_records_enabled(settings: KnowledgeQuerySettings) -> bool:
-    return bool(
-        settings.document_storage.record_storage_objects
-        and document_storage_objects_schema_ready(settings.database_url)
-    )
-
-
-def _document_upload_governance_store_from_settings(
-    settings: KnowledgeQuerySettings,
-) -> DocumentUploadGovernanceStore | None:
-    if settings.document_upload_governance.governance_job_submitter_provider == "disabled":
-        return None
-    return SqlAlchemyDocumentUploadGovernanceStore(settings.database_url)
 
 
 def get_api_state(request: Request) -> ApiState:

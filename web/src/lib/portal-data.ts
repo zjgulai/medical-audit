@@ -9,6 +9,54 @@ export type AuditAgent = {
   readonly knowledgeBase: string;
   readonly projectName: string;
   readonly updatedAt: string;
+  readonly status?: string;
+  readonly promptVersion?: number;
+  readonly promptVersionKey?: string;
+  readonly promptVersions?: readonly AuditAgentPromptVersion[];
+  readonly visibilityScope?: "project" | "system";
+  readonly allowedRoles?: readonly string[];
+};
+
+export type AuditAgentPromptReviewStatus = "pending-review" | "approved" | "changes-requested";
+
+export type AuditAgentPromptVersion = {
+  readonly version: number;
+  readonly prompt: string;
+  readonly changeSummary: string;
+  readonly isActive: boolean;
+  readonly createdBy: string | null;
+  readonly createdAt: string;
+  readonly reviewStatus: AuditAgentPromptReviewStatus;
+  readonly reviewNote: string;
+  readonly requestedBy: string | null;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+  readonly reviewUpdatedAt: string | null;
+};
+
+export type AuditTableTemplate = {
+  readonly id: string;
+  readonly name: string;
+  readonly shortName: string;
+  readonly fileName: string;
+  readonly sheetName: string;
+  readonly auditUse: string;
+  readonly expectedColumns: readonly string[];
+  readonly keyChecks: readonly string[];
+  readonly analysisRequest: string;
+};
+
+export type WorkpaperPromptTemplate = {
+  readonly id: string;
+  readonly name: string;
+  readonly sourceTemplateId: AuditTableTemplate["id"];
+  readonly sourceTable: string;
+  readonly sourceFileName?: string;
+  readonly templateStatus?: string;
+  readonly outputType: "底稿草稿" | "问题清单" | "复核摘要";
+  readonly evidenceBindings: readonly string[];
+  readonly prompt: string;
+  readonly href: string;
 };
 
 export type KnowledgeBaseCard = {
@@ -29,6 +77,16 @@ export type PortalProjectMember = {
   readonly role: "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
   readonly department: string;
   readonly status: "在项目中" | "待确认";
+};
+
+export type HospitalPermissionRole = {
+  readonly id: string;
+  readonly name: "管理员" | "技术人员" | "主任" | "普通成员";
+  readonly mapsToProjectRole: PortalProjectMember["role"];
+  readonly departmentHint: string;
+  readonly responsibility: string;
+  readonly allowedActions: readonly string[];
+  readonly boundary: string;
 };
 
 export type PortalProjectSummary = {
@@ -148,6 +206,10 @@ export type ReportEntry = {
   readonly gateSummary: string;
   readonly updatedAt: string;
   readonly href: string;
+  readonly taskDocxHref?: string | null;
+  readonly reportDocxHref?: string | null;
+  readonly reportMarkdownHref?: string | null;
+  readonly reportJsonHref?: string | null;
 };
 
 export type ReportGateItem = {
@@ -388,6 +450,120 @@ export const auditAgentTemplates: readonly AuditAgent[] = [
   }
 ];
 
+export const auditTableTemplates: readonly AuditTableTemplate[] = [
+  {
+    id: "medical-expense-summary",
+    name: "医保费用汇总表",
+    shortName: "表1",
+    fileName: "表1_医保费用汇总表-模版.xlsx",
+    sheetName: "汇总表",
+    auditUse: "按费用分类汇总人次、人数、医疗总费用、现金支付、账户支付和医保基金支付口径。",
+    expectedColumns: [
+      "费用分类",
+      "人次",
+      "人数",
+      "平均费",
+      "医疗总费用",
+      "现金支付",
+      "账户支付",
+      "统筹支付",
+      "记账合计"
+    ],
+    keyChecks: [
+      "医疗总费用与支付分项是否存在口径不一致",
+      "统筹支付、账户支付、现金支付是否能回溯到明细",
+      "重点费用分类是否存在异常占比或环比突增"
+    ],
+    analysisRequest: "按费用分类核对医疗总费用、现金支付、账户支付、统筹支付和记账合计，识别基金支付异常占比和需下钻的分类。"
+  },
+  {
+    id: "medical-expense-category-summary",
+    name: "医保费用分类汇总表",
+    shortName: "表2",
+    fileName: "表2_医保费用分类汇总表-模版.xlsx",
+    sheetName: "汇总表",
+    auditUse: "按医保费用类别比较人次、人数、平均费用和基金支付结构。",
+    expectedColumns: [
+      "费用分类",
+      "人次",
+      "人数",
+      "平均费用",
+      "医疗总费用",
+      "现金支付",
+      "账户支付",
+      "统筹支付",
+      "公务员补助"
+    ],
+    keyChecks: [
+      "平均费用是否存在明显偏离",
+      "基金支付与现金支付结构是否符合费用类别预期",
+      "分类口径是否能与就诊明细表闭环"
+    ],
+    analysisRequest: "按医保费用分类比较平均费用、医疗总费用、统筹支付和现金支付结构，找出需要结合就诊明细复核的分类。"
+  },
+  {
+    id: "visit-expense-detail",
+    name: "就诊费用明细表",
+    shortName: "表3",
+    fileName: "表3_就诊费用明细表-模版.xlsx",
+    sheetName: "明细表",
+    auditUse: "逐就诊记录核验姓名、身份证号、入院诊断、医疗费用、自费金额和基金支付分项。",
+    expectedColumns: [
+      "序号",
+      "职工类型",
+      "就诊记录号",
+      "姓名",
+      "身份证号码",
+      "入院诊断",
+      "医疗费用/总额",
+      "自费金额",
+      "统筹支付",
+      "公务员补助",
+      "大额支付",
+      "账户支付"
+    ],
+    keyChecks: [
+      "同一就诊记录是否存在重复收费或异常支付",
+      "自费金额与统筹支付是否出现不合理组合",
+      "身份证号、就诊记录号等直接身份字段需按权限处理"
+    ],
+    analysisRequest: "按就诊记录号、诊断、医疗费用、自费金额和医保支付分项识别重复收费、支付范围异常和需要人工复核的明细。"
+  }
+];
+
+export const workpaperPromptTemplates: readonly WorkpaperPromptTemplate[] = [
+  {
+    id: "workpaper-summary-risk",
+    name: "费用汇总风险底稿",
+    sourceTemplateId: "medical-expense-summary",
+    sourceTable: "表1 医保费用汇总表",
+    outputType: "底稿草稿",
+    evidenceBindings: ["费用分类汇总", "支付分项合计", "异常占比说明", "人工复核意见"],
+    prompt: "基于已上传的医保费用汇总表和已核验引用依据，生成费用分类风险底稿草稿；只写已确认数据事实、待补证项和人工复核意见。",
+    href: "/chat?agent=agent-report-draft&question=%E5%9F%BA%E4%BA%8E%E5%8C%BB%E4%BF%9D%E8%B4%B9%E7%94%A8%E6%B1%87%E6%80%BB%E8%A1%A8%E7%94%9F%E6%88%90%E5%BA%95%E7%A8%BF%E8%8D%89%E7%A8%BF"
+  },
+  {
+    id: "workpaper-category-review",
+    name: "分类费用复核清单",
+    sourceTemplateId: "medical-expense-category-summary",
+    sourceTable: "表2 医保费用分类汇总表",
+    outputType: "问题清单",
+    evidenceBindings: ["平均费用偏离", "基金支付结构", "分类口径说明", "需下钻明细"],
+    prompt: "基于医保费用分类汇总表，列出平均费用、基金支付结构和分类口径需要复核的问题清单；不能直接形成结论的内容标为待人工确认。",
+    href: "/chat?agent=agent-citation-check&question=%E5%8C%BB%E4%BF%9D%E8%B4%B9%E7%94%A8%E5%88%86%E7%B1%BB%E6%B1%87%E6%80%BB%E8%A1%A8%E5%BA%94%E5%BD%A2%E6%88%90%E5%93%AA%E4%BA%9B%E5%A4%8D%E6%A0%B8%E6%B8%85%E5%8D%95"
+  },
+  {
+    id: "workpaper-visit-detail",
+    name: "就诊明细疑点摘要",
+    sourceTemplateId: "visit-expense-detail",
+    sourceTable: "表3 就诊费用明细表",
+    outputType: "复核摘要",
+    evidenceBindings: ["就诊记录号", "诊断与费用", "自费和基金支付", "隐私字段处理记录"],
+    prompt: "基于就诊费用明细表，按就诊记录输出疑点摘要、证据字段和隐私字段处理提醒；只把已人工确认的疑点纳入底稿草稿。",
+    href: "/chat?agent=agent-report-draft&question=%E5%9F%BA%E4%BA%8E%E5%B0%B1%E8%AF%8A%E8%B4%B9%E7%94%A8%E6%98%8E%E7%BB%86%E8%A1%A8%E6%95%B4%E7%90%86%E7%96%91%E7%82%B9%E6%91%98%E8%A6%81"
+  }
+];
+
 export const knowledgeBases: readonly KnowledgeBaseCard[] = [
   {
     id: "kb-personal",
@@ -445,6 +621,45 @@ export const defaultProjectMembers: readonly PortalProjectMember[] = [
     role: "信息科",
     department: "信息科",
     status: "待确认"
+  }
+];
+
+export const hospitalPermissionRoles: readonly HospitalPermissionRole[] = [
+  {
+    id: "hospital-admin",
+    name: "管理员",
+    mapsToProjectRole: "项目负责人",
+    departmentHint: "信息科",
+    responsibility: "开设账号、分配项目角色、查看全局项目和知识库状态。",
+    allowedActions: ["账号开设", "角色分配", "索引状态查看", "审计日志查看"],
+    boundary: "首期仅展示权限配置视图，真实账号和全站权限仍需后端认证体系生效。"
+  },
+  {
+    id: "hospital-technician",
+    name: "技术人员",
+    mapsToProjectRole: "信息科",
+    departmentHint: "信息科",
+    responsibility: "负责数据导入、字段补证、索引协助和接口状态排查。",
+    allowedActions: ["数据与索引协助", "字段补证", "接口状态核验", "材料留存协助"],
+    boundary: "技术人员可协助数据链路，不代表拥有业务结论签发权限。"
+  },
+  {
+    id: "hospital-director",
+    name: "主任",
+    mapsToProjectRole: "项目负责人",
+    departmentHint: "内审部",
+    responsibility: "负责专项审计范围确认、复核意见、底稿和报告签发前把关。",
+    allowedActions: ["专题范围确认", "疑点复核", "底稿确认", "整改跟踪"],
+    boundary: "主任视图只标识人工把关责任，正式签发仍按后续底稿/报告门禁执行。"
+  },
+  {
+    id: "hospital-member",
+    name: "普通成员",
+    mapsToProjectRole: "审计员",
+    departmentHint: "内审部",
+    responsibility: "执行日常检索、AI 对话、表格分析和补证记录整理。",
+    allowedActions: ["文档检索", "AI 对话", "数据分析", "补证记录"],
+    boundary: "普通成员可形成线索和草稿，不能直接绕过引用和人工复核门禁。"
   }
 ];
 

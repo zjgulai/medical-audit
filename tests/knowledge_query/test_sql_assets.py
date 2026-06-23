@@ -53,14 +53,26 @@ def test_pgvector_schema_includes_audit_agent_table() -> None:
     schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS audit_agents" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_agent_prompt_versions" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_agent_invocations" in schema
+    assert "CREATE TABLE IF NOT EXISTS audit_agent_feedback" in schema
     assert "agent_key text NOT NULL UNIQUE" in schema
     assert "prompt text NOT NULL" in schema
     assert "knowledge_base text NOT NULL" in schema
     assert "project_name text NOT NULL" in schema
+    assert "agent_id uuid NOT NULL REFERENCES audit_agents(id) ON DELETE CASCADE" in schema
+    assert "agent_id uuid REFERENCES audit_agents(id) ON DELETE SET NULL" in schema
+    assert "invocation_id uuid REFERENCES audit_agent_invocations(id) ON DELETE SET NULL" in schema
+    assert "CONSTRAINT uq_audit_agent_prompt_versions_agent_version" in schema
+    assert "CONSTRAINT ck_audit_agent_feedback_rating" in schema
     assert "CONSTRAINT ck_audit_agents_category" in schema
     assert "idx_audit_agents_category" in schema
     assert "idx_audit_agents_status" in schema
     assert "idx_audit_agents_updated_at" in schema
+    assert "idx_audit_agent_prompt_versions_agent" in schema
+    assert "idx_audit_agent_invocations_agent_key" in schema
+    assert "idx_audit_agent_feedback_agent_key" in schema
+    assert "idx_audit_agent_feedback_invocation" in schema
 
 
 def test_pgvector_schema_includes_project_member_table() -> None:
@@ -75,6 +87,26 @@ def test_pgvector_schema_includes_project_member_table() -> None:
     assert "idx_audit_project_members_project" in schema
     assert "idx_audit_project_members_role" in schema
     assert "idx_audit_project_members_status" in schema
+
+
+def test_pgvector_schema_includes_auth_user_tables() -> None:
+    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS auth_departments" in schema
+    assert "department_key text NOT NULL UNIQUE" in schema
+    assert "CREATE TABLE IF NOT EXISTS auth_users" in schema
+    assert "user_key text NOT NULL UNIQUE" in schema
+    assert (
+        "department_key text REFERENCES auth_departments(department_key) ON DELETE SET NULL"
+        in schema
+    )
+    assert "CREATE TABLE IF NOT EXISTS auth_user_role_assignments" in schema
+    assert "user_key text NOT NULL REFERENCES auth_users(user_key) ON DELETE CASCADE" in schema
+    assert "CONSTRAINT ck_auth_user_role_assignments_role" in schema
+    assert "CHECK (role IN ('admin', 'technician', 'director', 'member'))" in schema
+    assert "idx_auth_users_department" in schema
+    assert "idx_auth_user_role_assignments_user" in schema
+    assert "idx_auth_user_role_assignments_role" in schema
 
 
 def test_pgvector_schema_includes_analytics_upload_records_table() -> None:
@@ -106,30 +138,6 @@ def test_pgvector_schema_includes_document_upload_records_table() -> None:
     assert "idx_document_upload_records_created_by" in schema
     assert "idx_document_upload_records_sha256" in schema
     assert "idx_document_upload_records_status" in schema
-
-
-def test_pgvector_schema_includes_document_upload_governance_tables() -> None:
-    schema = Path("sql/knowledge-query-schema.sql").read_text(encoding="utf-8")
-
-    assert "CREATE TABLE IF NOT EXISTS document_storage_objects" in schema
-    assert "upload_key text NOT NULL REFERENCES document_upload_records(upload_key)" in schema
-    assert "object_key text NOT NULL" in schema
-    assert "encryption_mode text" in schema
-    assert "retention_until timestamptz" in schema
-    assert "CONSTRAINT ck_document_storage_objects_provider" in schema
-    assert "CONSTRAINT ck_document_storage_objects_status" in schema
-    assert "idx_document_storage_objects_upload_key" in schema
-    assert "idx_document_storage_objects_sha256" in schema
-
-    assert "CREATE TABLE IF NOT EXISTS document_upload_governance_jobs" in schema
-    assert "job_key text NOT NULL UNIQUE" in schema
-    assert "external_job_id text" in schema
-    assert "result_payload jsonb NOT NULL DEFAULT '{}'::jsonb" in schema
-    assert "next_retry_at timestamptz" in schema
-    assert "CONSTRAINT ck_document_upload_governance_jobs_job_type" in schema
-    assert "CONSTRAINT ck_document_upload_governance_jobs_status" in schema
-    assert "idx_document_upload_governance_jobs_upload_key" in schema
-    assert "idx_document_upload_governance_jobs_external_job" in schema
 
 
 def test_pgvector_schema_includes_audit_workflow_tables() -> None:

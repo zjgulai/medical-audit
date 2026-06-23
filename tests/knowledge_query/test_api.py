@@ -7,8 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
-from sqlalchemy import create_engine, event, select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.analytics_upload_store import (
@@ -16,26 +15,12 @@ from medical_audit_kb.api.analytics_upload_store import (
     InMemoryAnalyticsUploadStore,
     SqlAlchemyAnalyticsUploadStore,
 )
-from medical_audit_kb.api.app import (
-    ApiState,
-    _document_storage_object_records_enabled,
-    create_app,
+from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.auth_user_store import (
+    AUTH_ROLE_ASSIGNMENT_ID_PREFIX,
+    AUTH_USER_ID_PREFIX,
+    SqlAlchemyAuthUserStore,
 )
-from medical_audit_kb.api.document_upload_governance import (
-    ClamAvSidecarScanResult,
-    DocumentUploadGovernanceContext,
-    DocumentUploadGovernancePolicy,
-    GovernanceCheckResult,
-    document_upload_governance_policy_from_settings,
-)
-from medical_audit_kb.api.document_upload_governance_jobs import (
-    LocalRecordingDocumentUploadGovernanceJobSubmitter,
-)
-from medical_audit_kb.api.document_upload_governance_store import (
-    SqlAlchemyDocumentUploadGovernanceStore,
-    TencentCosDocumentObjectStorage,
-)
-from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
     InMemoryDocumentUploadStore,
@@ -49,20 +34,7 @@ from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
     SqlAlchemyQueryHistoryStore,
 )
-from medical_audit_kb.core.config import (
-    DocumentStorageSettings,
-    DocumentUploadGovernanceSettings,
-    DocumentUploadIndexingSettings,
-    KnowledgeQuerySettings,
-    ModelProviderSettings,
-)
-from medical_audit_kb.db.models import (
-    ChunkEmbedding,
-    DocumentChunk,
-    IndexVersion,
-    SourceDocument,
-    SourcePackageVersion,
-)
+from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -80,15 +52,11 @@ from medical_audit_kb.indexing.vector_index import (
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
 from medical_audit_kb.retrieval.rerank import FakeRerankProvider
 
-
-class FakeClamAvSidecarClient:
-    def __init__(self, result: ClamAvSidecarScanResult) -> None:
-        self.result = result
-        self.calls: list[tuple[bytes, str]] = []
-
-    def scan(self, content: bytes, *, file_name: str) -> ClamAvSidecarScanResult:
-        self.calls.append((content, file_name))
-        return self.result
+PROJECT_NAME_HEADER = (
+    "%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91"
+    "%E4%BD%BF%E7%94%A8%E5%90%88%E8%A7%84"
+    "%E4%B8%93%E9%A1%B9%E8%87%AA%E6%9F%A5"
+)
 
 
 def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
@@ -100,6 +68,463 @@ def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["data_root"] == str(tmp_path / "data")
+
+
+def test_auth_api_lists_roles_and_manages_users(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'auth-users.db'}"
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    roles_response = client.get("/auth/roles")
+
+    assert roles_response.status_code == 200
+    roles_body = roles_response.json()
+    assert roles_body["mode"] == "header_transition_layer"
+    assert [item["role"] for item in roles_body["items"]] == [
+        "admin",
+        "technician",
+        "director",
+        "member",
+    ]
+    assert roles_body["compatibility"]["it-admin"] == "admin"
+
+    session_response = client.get(
+        "/auth/session",
+        headers={
+            "X-User-Id": "next-admin",
+            "X-Role": "admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
+    assert session_response.status_code == 200
+    session_body = session_response.json()
+    assert session_body["role"] == "admin"
+    assert session_body["tenant_id"] == "hospital-demo"
+    assert session_body["profile"]["user_key"] == "next-admin"
+
+    create_response = client.post(
+        "/auth/users",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "display_name": "医保办主任",
+            "department_key": "medical-insurance-office",
+        },
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["user_key"].startswith(AUTH_USER_ID_PREFIX)
+    assert created["display_name"] == "医保办主任"
+    assert created["department_key"] == "medical-insurance-office"
+    assert state.operation_logs[-1]["action"] == "auth-user-create"
+
+    assign_response = client.post(
+        f"/auth/users/{created['user_key']}/role-assignments",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={"role": "director", "scope_type": "project", "scope_key": "CATALOG-LIMIT-202606"},
+    )
+    assert assign_response.status_code == 200
+    assignment = assign_response.json()["item"]
+    assert assignment["assignment_key"].startswith(AUTH_ROLE_ASSIGNMENT_ID_PREFIX)
+    assert assignment["role"] == "director"
+    assert assignment["scope_type"] == "project"
+    assert state.operation_logs[-1]["action"] == "auth-user-role-assign"
+
+    users_response = client.get(
+        "/auth/users",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    assert users_response.status_code == 200
+    users_body = users_response.json()
+    assert users_body["store"]["backend"] == "SqlAlchemyAuthUserStore"
+    assert users_body["departments"][0]["department_key"]
+    assert any(item["user_key"] == created["user_key"] for item in users_body["items"])
+
+    second_state = _api_state(tmp_path / "second")
+    second_state.auth_user_store = SqlAlchemyAuthUserStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_users = second_client.get(
+        "/auth/users",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    ).json()["items"]
+    persisted = next(item for item in persisted_users if item["user_key"] == created["user_key"])
+    assert persisted["role_assignments"][0]["role"] == "director"
+
+
+def test_auth_api_rejects_member_user_management(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/auth/users",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+    )
+    missing_role_response = client.post(
+        "/auth/users",
+        json={"display_name": "未授权成员"},
+    )
+
+    assert response.status_code == 403
+    assert missing_role_response.status_code == 401
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+
+
+def test_controlled_api_auth_middleware_enforces_user_headers_and_status(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+
+    health_response = client.get("/health")
+    roles_response = client.get("/auth/roles")
+    anonymous_projects_response = client.get("/projects")
+    assert health_response.status_code == 200
+    assert roles_response.status_code == 200
+    assert anonymous_projects_response.status_code == 401
+    denied_payload = state.operation_logs[-1]["payload"]
+    assert denied_payload["attempted_action"] == "controlled-api-auth"
+    assert denied_payload["path"] == "/projects"
+    assert denied_payload["permission"] == "access_controlled_api"
+    assert denied_payload["tenant_id"] is None
+    assert denied_payload["reason"] == "X-Tenant-Id header is required"
+
+    missing_tenant_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+    )
+    missing_tenant_payload = state.operation_logs[-1]["payload"]
+    assert missing_tenant_response.status_code == 401
+    assert missing_tenant_payload["path"] == "/projects"
+    assert missing_tenant_payload["tenant_id"] is None
+    assert missing_tenant_payload["reason"] == "X-Tenant-Id header is required"
+
+    member_projects_response = client.get(
+        "/projects",
+        headers={
+            "X-User-Id": "member-1",
+            "X-Role": "member",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
+    create_disabled_response = client.post(
+        "/auth/users",
+        headers={
+            "X-User-Id": "admin-1",
+            "X-Role": "admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+        json={
+            "user_key": "disabled-api-user",
+            "display_name": "中间件停用用户",
+            "department_key": "audit-office",
+            "status": "disabled",
+        },
+    )
+    disabled_graph_response = client.get(
+        "/graph/workbench",
+        headers={
+            "X-User-Id": "disabled-api-user",
+            "X-Role": "admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
+
+    assert member_projects_response.status_code == 200
+    assert create_disabled_response.status_code == 200
+    assert disabled_graph_response.status_code == 403
+    disabled_denied_payload = state.operation_logs[-1]["payload"]
+    assert disabled_denied_payload["attempted_action"] == "controlled-api-auth"
+    assert disabled_denied_payload["path"] == "/graph/workbench"
+    assert disabled_denied_payload["tenant_id"] == "hospital-demo"
+    assert disabled_denied_payload["reason"] == "auth user status is disabled"
+
+
+def test_permission_resolver_prefers_persisted_global_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'agents.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    create_user_response = client.post(
+        "/auth/users",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "user_key": "persistent-technician",
+            "display_name": "持久化技术人员",
+            "department_key": "it-department",
+        },
+    )
+    assert create_user_response.status_code == 200
+
+    assign_response = client.post(
+        "/auth/users/persistent-technician/role-assignments",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={"role": "technician", "scope_type": "global"},
+    )
+    assert assign_response.status_code == 200
+
+    session_response = client.get(
+        "/auth/session",
+        headers={"X-User-Id": "persistent-technician", "X-Role": "member"},
+    )
+    assert session_response.status_code == 200
+    session_body = session_response.json()
+    assert session_body["role"] == "technician"
+    assert session_body["auth_source"] == "persistent_role"
+    assert session_body["profile_status"] == "active"
+
+    agent_response = client.post(
+        "/agents",
+        headers={"X-User-Id": "persistent-technician", "X-Role": "member"},
+        json={
+            "name": "持久化权限助手",
+            "category": "业务类",
+            "topic": "医保基金使用合规",
+            "prompt": "仅基于授权角色进行配置。",
+        },
+    )
+    assert agent_response.status_code == 200
+    assert state.operation_logs[-1]["action"] == "agent-create"
+    assert state.operation_logs[-1]["payload"]["role"] == "technician"
+
+    project_member_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "persistent-technician", "X-Role": "admin"},
+        json={"name": "持久化越权用户", "role": "审计员", "department": "医保办"},
+    )
+    assert project_member_response.status_code == 403
+    denied_payload = state.operation_logs[-1]["payload"]
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+    assert denied_payload["effective_role"] == "technician"
+    assert denied_payload["auth_source"] == "persistent_role"
+    assert denied_payload["permission"] == "manage_project_members"
+
+
+def test_permission_resolver_uses_project_scoped_role_for_matching_project(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    create_user_response = client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "user_key": "project-director",
+            "display_name": "项目主任",
+            "department_key": "audit-office",
+        },
+    )
+    assert create_user_response.status_code == 200
+    assign_response = client.post(
+        "/auth/users/project-director/role-assignments",
+        headers=admin_headers,
+        json={
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    )
+    assert assign_response.status_code == 200
+
+    scoped_session_response = client.get(
+        "/auth/session",
+        headers={
+            "X-User-Id": "project-director",
+            "X-Role": "member",
+            "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        },
+    )
+    other_project_session_response = client.get(
+        "/auth/session",
+        headers={
+            "X-User-Id": "project-director",
+            "X-Role": "admin",
+            "X-Project-Key": "CATALOG-LIMIT-202606",
+        },
+    )
+    allowed_member_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "project-director", "X-Role": "member"},
+        json={"name": "项目授权成员", "role": "审计员", "department": "医保办"},
+    )
+    blocked_member_response = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers={"X-User-Id": "project-director", "X-Role": "admin"},
+        json={"name": "跨项目越权成员", "role": "审计员", "department": "医保办"},
+    )
+
+    assert scoped_session_response.status_code == 200
+    scoped_session = scoped_session_response.json()
+    assert scoped_session["role"] == "admin"
+    assert scoped_session["auth_source"] == "persistent_project_role"
+    assert scoped_session["auth_scope_type"] == "project"
+    assert scoped_session["auth_scope_key"] == "SELF-CHECK-FUND-20260607"
+    assert other_project_session_response.status_code == 200
+    other_project_session = other_project_session_response.json()
+    assert other_project_session["role"] == "member"
+    assert other_project_session["auth_source"] == "persistent_profile_without_project_role"
+    assert allowed_member_response.status_code == 200
+    assert allowed_member_response.json()["item"]["created_by"] == "project-director"
+    assert blocked_member_response.status_code == 403
+    denied_payload = state.operation_logs[-1]["payload"]
+    assert denied_payload["attempted_action"] == "project-member-create"
+    assert denied_payload["effective_role"] == "member"
+    assert denied_payload["auth_source"] == "persistent_profile_without_project_role"
+    assert denied_payload["auth_scope_type"] == "project"
+    assert denied_payload["auth_scope_key"] == "CATALOG-LIMIT-202606"
+
+
+def test_permission_resolver_denies_disabled_persisted_user(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    create_user_response = client.post(
+        "/auth/users",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "user_key": "disabled-admin",
+            "display_name": "停用管理员",
+            "department_key": "it-department",
+            "status": "disabled",
+        },
+    )
+    assert create_user_response.status_code == 200
+
+    agent_response = client.post(
+        "/agents",
+        headers={"X-User-Id": "disabled-admin", "X-Role": "admin"},
+        json={
+            "name": "停用用户不应保存",
+            "category": "业务类",
+            "topic": "医保基金使用合规",
+            "prompt": "停用用户不能写入。",
+        },
+    )
+
+    assert agent_response.status_code == 403
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+    assert state.operation_logs[-1]["payload"]["user_identifier"] == "disabled-admin"
+    assert state.operation_logs[-1]["payload"]["reason"] == "auth user status is disabled"
+
+
+def test_auth_api_updates_user_status_and_role_assignment(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    create_user_response = client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "user_key": "managed-director",
+            "display_name": "待管理主任",
+            "department_key": "audit-office",
+        },
+    )
+    assert create_user_response.status_code == 200
+    assign_response = client.post(
+        "/auth/users/managed-director/role-assignments",
+        headers=admin_headers,
+        json={"role": "director", "scope_type": "global"},
+    )
+    assert assign_response.status_code == 200
+    assignment_key = assign_response.json()["item"]["assignment_key"]
+
+    disabled_response = client.patch(
+        "/auth/users/managed-director",
+        headers=admin_headers,
+        json={"status": "disabled"},
+    )
+    assert disabled_response.status_code == 200
+    assert disabled_response.json()["item"]["status"] == "disabled"
+    assert state.operation_logs[-1]["action"] == "auth-user-update"
+
+    disabled_session_response = client.get(
+        "/auth/session",
+        headers={"X-User-Id": "managed-director", "X-Role": "director"},
+    )
+    assert disabled_session_response.status_code == 403
+    assert disabled_session_response.json()["detail"] == "auth user status is disabled"
+
+    active_response = client.patch(
+        "/auth/users/managed-director",
+        headers=admin_headers,
+        json={"status": "active", "display_name": "已恢复主任"},
+    )
+    assert active_response.status_code == 200
+    assert active_response.json()["item"]["status"] == "active"
+    assert active_response.json()["item"]["display_name"] == "已恢复主任"
+
+    restored_session_response = client.get(
+        "/auth/session",
+        headers={"X-User-Id": "managed-director", "X-Role": "member"},
+    )
+    assert restored_session_response.status_code == 200
+    assert restored_session_response.json()["role"] == "director"
+
+    revoke_response = client.patch(
+        f"/auth/users/managed-director/role-assignments/{assignment_key}",
+        headers=admin_headers,
+        json={"status": "revoked"},
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["item"]["status"] == "revoked"
+    assert state.operation_logs[-1]["action"] == "auth-user-role-assignment-update"
+
+    downgraded_session_response = client.get(
+        "/auth/session",
+        headers={"X-User-Id": "managed-director", "X-Role": "admin"},
+    )
+    assert downgraded_session_response.status_code == 200
+    downgraded_session = downgraded_session_response.json()
+    assert downgraded_session["role"] == "member"
+    assert downgraded_session["auth_source"] == "persistent_profile_without_global_role"
+
+    restore_assignment_response = client.patch(
+        f"/auth/users/managed-director/role-assignments/{assignment_key}",
+        headers=admin_headers,
+        json={"status": "active"},
+    )
+    assert restore_assignment_response.status_code == 200
+    assert restore_assignment_response.json()["item"]["status"] == "active"
+    restored_role_response = client.get(
+        "/auth/session",
+        headers={"X-User-Id": "managed-director", "X-Role": "member"},
+    )
+    assert restored_role_response.status_code == 200
+    assert restored_role_response.json()["role"] == "director"
 
 
 def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) -> None:
@@ -122,7 +547,7 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
 
     create_response = client.post(
         "/agents",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        headers={"X-User-Id": "director-1", "X-Role": "director"},
         json={
             "name": "目录限制核验助手",
             "category": "业务类",
@@ -136,12 +561,15 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     assert create_response.status_code == 200
     created = create_response.json()["item"]
     assert created["id"].startswith(AGENT_ID_PREFIX)
-    assert created["created_by"] == "auditor-1"
+    assert created["created_by"] == "director-1"
     assert created["source"] == "custom"
+    assert created["status"] == "active"
+    assert created["prompt_version"] == 1
+    assert created["prompt_version_key"] == f"{created['id']}@v1"
+    assert created["visibility_scope"] == "project"
+    assert created["allowed_roles"] == ["admin", "technician", "director", "member"]
     assert state.operation_logs[-1]["action"] == "agent-create"
-    assert state.operation_logs[-1]["payload"]["role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
+    assert state.operation_logs[-1]["payload"]["role"] == "director"
 
     second_state = _api_state(tmp_path / "second")
     second_state.agent_store = SqlAlchemyAgentStore(database_url)
@@ -151,6 +579,334 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     assert persisted_items[0]["id"] == created["id"]
     assert persisted_items[0]["name"] == "目录限制核验助手"
     assert any(item["id"] == "agent-citation-check" for item in persisted_items)
+
+
+def test_agents_api_fallback_defaults_include_prompt_version_metadata(tmp_path: Path) -> None:
+    class UnavailableAgentStore:
+        def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
+            raise SQLAlchemyError("agent store unavailable")
+
+    state = _api_state(tmp_path)
+    state.agent_store = UnavailableAgentStore()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+
+    response = client.get("/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["store"] == {"ready": False, "backend": "unavailable"}
+    assert body["items"][0]["id"] == "agent-citation-check"
+    assert body["items"][0]["prompt_versions"][0]["version"] == 1
+    assert body["items"][0]["prompt_versions"][0]["is_active"] is True
+
+
+def test_agents_api_tracks_prompt_versions_lifecycle_and_history(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents-governance.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "director-1", "X-Role": "director"}
+
+    create_response = client.post(
+        "/agents",
+        headers=headers,
+        json={
+            "name": "目录限制核验助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "仅基于目录限制字段输出待补证问题。",
+            "knowledge_base": "医保目录库",
+            "project_name": "医保目录限制条件核验",
+            "visibility_scope": "system",
+            "allowed_roles": ["director", "member"],
+        },
+    )
+    agent = create_response.json()["item"]
+    agent_id = str(agent["id"])
+
+    update_response = client.post(
+        f"/agents/{agent_id}/prompt-versions",
+        headers=headers,
+        json={
+            "prompt": "仅基于目录限制字段和原文引用输出待补证问题。",
+            "change_summary": "补充原文引用约束。",
+            "review_note": "待主任复核原文引用边界。",
+        },
+    )
+    updated = update_response.json()["item"]
+    changes_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/review",
+        headers=headers,
+        json={
+            "version": 2,
+            "review_status": "changes-requested",
+            "review_note": "需补充原文引用边界说明。",
+        },
+    )
+    changes_requested = changes_response.json()["item"]
+    review_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/review",
+        headers=headers,
+        json={
+            "version": 2,
+            "review_status": "approved",
+            "review_note": "主任已复核提示词引用边界。",
+        },
+    )
+    reviewed = review_response.json()["item"]
+    rollback_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/rollback",
+        headers=headers,
+        json={"version": 1},
+    )
+    rolled_back = rollback_response.json()["item"]
+    versions_response = client.get(f"/agents/{agent_id}/prompt-versions")
+    invocation_response = client.post(
+        f"/agents/{agent_id}/invocations",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+        json={
+            "invocation_source": "agent-workspace",
+            "question": "目录限制核验试用",
+            "conversation_ref": "local-chat-draft",
+        },
+    )
+    invocation = invocation_response.json()["item"]
+    feedback_response = client.post(
+        f"/agents/{agent_id}/feedback",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+        json={
+            "invocation_id": invocation["id"],
+            "rating": "effective",
+            "comment": "引用约束清晰，可继续使用。",
+        },
+    )
+    invocations_response = client.get(f"/agents/{agent_id}/invocations", headers=headers)
+    feedback_list_response = client.get(f"/agents/{agent_id}/feedback", headers=headers)
+    inactive_response = client.post(
+        f"/agents/{agent_id}/lifecycle",
+        headers=headers,
+        json={"status": "inactive", "reason": "提示词待复核"},
+    )
+    archived_response = client.post(
+        f"/agents/{agent_id}/lifecycle",
+        headers=headers,
+        json={"status": "archived", "reason": "软归档，不物理删除"},
+    )
+    list_response = client.get("/agents")
+    detail_response = client.get(f"/agents/{agent_id}")
+
+    assert create_response.status_code == 200
+    assert agent["visibility_scope"] == "system"
+    assert agent["allowed_roles"] == ["director", "member"]
+    assert update_response.status_code == 200
+    assert updated["prompt_version"] == 1
+    assert updated["prompt"] == "仅基于目录限制字段输出待补证问题。"
+    assert updated["prompt_versions"][0]["is_active"] is True
+    assert updated["prompt_versions"][1]["review_status"] == "pending-review"
+    assert updated["prompt_versions"][1]["is_active"] is False
+    assert updated["prompt_versions"][1]["review_note"] == "待主任复核原文引用边界。"
+    assert changes_response.status_code == 200
+    assert changes_requested["prompt_version"] == 1
+    assert changes_requested["prompt"] == "仅基于目录限制字段输出待补证问题。"
+    assert changes_requested["prompt_versions"][1]["review_status"] == "changes-requested"
+    assert changes_requested["prompt_versions"][1]["is_active"] is False
+    assert review_response.status_code == 200
+    assert reviewed["prompt_version"] == 2
+    assert reviewed["prompt"] == "仅基于目录限制字段和原文引用输出待补证问题。"
+    assert reviewed["prompt_versions"][0]["is_active"] is False
+    assert reviewed["prompt_versions"][1]["is_active"] is True
+    assert reviewed["prompt_versions"][1]["review_status"] == "approved"
+    assert reviewed["prompt_versions"][1]["review_note"] == "主任已复核提示词引用边界。"
+    assert reviewed["prompt_versions"][1]["reviewed_by"] == "director-1"
+    assert "agent-prompt-version-review" in [entry["action"] for entry in state.operation_logs]
+    assert rollback_response.status_code == 200
+    assert rolled_back["prompt_version"] == 3
+    assert rolled_back["prompt"] == "仅基于目录限制字段输出待补证问题。"
+    assert rolled_back["prompt_versions"][2]["review_status"] == "approved"
+    assert rolled_back["prompt_versions"][2]["is_active"] is True
+    assert [item["version"] for item in rolled_back["prompt_versions"]] == [1, 2, 3]
+    assert versions_response.status_code == 200
+    assert [item["version"] for item in versions_response.json()["items"]] == [1, 2, 3]
+    assert versions_response.json()["items"][2]["is_active"] is True
+    assert invocation_response.status_code == 200
+    assert invocation["agent_key"] == agent_id
+    assert invocation["prompt_version"] == 3
+    assert invocation["question"] == "目录限制核验试用"
+    assert feedback_response.status_code == 200
+    assert feedback_response.json()["item"]["invocation_id"] == invocation["id"]
+    assert feedback_response.json()["item"]["rating"] == "effective"
+    assert feedback_response.json()["summary"]["effective"] == 1
+    assert feedback_response.json()["summary"]["latest_rating"] == "effective"
+    assert invocations_response.json()["items"][0]["id"] == invocation["id"]
+    assert feedback_list_response.json()["items"][0]["comment"] == "引用约束清晰，可继续使用。"
+    assert feedback_list_response.json()["summary"] == {
+        "total": 1,
+        "effective": 1,
+        "needs_review": 0,
+        "unsafe": 0,
+        "latest_rating": "effective",
+    }
+    assert inactive_response.status_code == 200
+    assert inactive_response.json()["item"]["status"] == "inactive"
+    assert archived_response.status_code == 200
+    assert archived_response.json()["item"]["status"] == "archived"
+    assert agent_id not in {item["id"] for item in list_response.json()["items"]}
+    assert detail_response.status_code == 200
+    assert detail_response.json()["item"]["id"] == agent_id
+    assert detail_response.json()["item"]["status"] == "archived"
+    assert detail_response.json()["item"]["metadata"]["lifecycle_reason"] == "软归档，不物理删除"
+    assert [entry["action"] for entry in state.operation_logs[-9:]] == [
+        "agent-prompt-versions-view",
+        "agent-invocation-create",
+        "agent-feedback-create",
+        "agent-invocations-view",
+        "agent-feedback-view",
+        "agent-lifecycle-update",
+        "agent-lifecycle-update",
+        "agents-list",
+        "agent-detail-view",
+    ]
+
+
+def test_agents_api_restricts_prompt_activation_to_admin_and_director(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents-prompt-activation-role.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    technician_headers = {"X-User-Id": "technician-1", "X-Role": "technician"}
+    director_headers = {"X-User-Id": "director-1", "X-Role": "director"}
+
+    create_response = client.post(
+        "/agents",
+        headers=technician_headers,
+        json={
+            "name": "技术配置候选助手",
+            "category": "业务类",
+            "topic": "医保基金使用合规",
+            "prompt": "输出待补证问题。",
+            "knowledge_base": "项目默认知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+        },
+    )
+    agent_id = str(create_response.json()["item"]["id"])
+    update_response = client.post(
+        f"/agents/{agent_id}/prompt-versions",
+        headers=technician_headers,
+        json={
+            "prompt": "输出待补证问题，并标注引用依据。",
+            "change_summary": "技术人员补充引用依据约束。",
+            "review_note": "待主任复核。",
+        },
+    )
+    technician_review_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/review",
+        headers=technician_headers,
+        json={
+            "version": 2,
+            "review_status": "approved",
+            "review_note": "技术人员尝试激活。",
+        },
+    )
+    technician_rollback_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/rollback",
+        headers=technician_headers,
+        json={"version": 1},
+    )
+    director_review_response = client.post(
+        f"/agents/{agent_id}/prompt-versions/review",
+        headers=director_headers,
+        json={
+            "version": 2,
+            "review_status": "approved",
+            "review_note": "主任复核通过。",
+        },
+    )
+
+    assert create_response.status_code == 200
+    assert update_response.status_code == 200
+    assert update_response.json()["item"]["prompt_version"] == 1
+    assert technician_review_response.status_code == 403
+    assert (
+        technician_review_response.json()["detail"]
+        == "agent prompt activation requires admin or director role"
+    )
+    assert technician_rollback_response.status_code == 403
+    assert director_review_response.status_code == 200
+    reviewed = director_review_response.json()["item"]
+    assert reviewed["prompt_version"] == 2
+    assert reviewed["prompt_versions"][1]["is_active"] is True
+    denied_actions = [
+        entry["payload"]["attempted_action"]
+        for entry in state.operation_logs
+        if entry["action"] == "authorization-denied"
+    ]
+    assert "agent-prompt-version-review" in denied_actions
+    assert "agent-prompt-version-rollback" in denied_actions
+
+
+def test_agents_api_filters_project_scope_and_blocks_cross_project_invocation(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents-project-scope.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    project_a_headers = {
+        "X-User-Id": "admin-1",
+        "X-Role": "admin",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
+    project_b_headers = {
+        "X-User-Id": "admin-2",
+        "X-Role": "admin",
+        "X-Project-Name": "other-project",
+    }
+
+    create_response = client.post(
+        "/agents",
+        headers=project_a_headers,
+        json={
+            "name": "项目内目录限制核验助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "只在当前项目空间内用于目录限制条件核验。",
+            "knowledge_base": "项目默认知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+        },
+    )
+    created = create_response.json()["item"]
+    agent_id = str(created["id"])
+
+    project_a_list = client.get("/agents", headers=project_a_headers)
+    project_b_list = client.get("/agents", headers=project_b_headers)
+    blocked_detail = client.get(f"/agents/{agent_id}", headers=project_b_headers)
+    blocked_invocation = client.post(
+        f"/agents/{agent_id}/invocations",
+        headers={**project_b_headers, "X-User-Id": "member-2", "X-Role": "member"},
+        json={"invocation_source": "agent-workspace", "question": "跨项目调用"},
+    )
+    allowed_invocation = client.post(
+        f"/agents/{agent_id}/invocations",
+        headers={**project_a_headers, "X-User-Id": "member-1", "X-Role": "member"},
+        json={"invocation_source": "agent-workspace", "question": "本项目调用"},
+    )
+
+    assert create_response.status_code == 200
+    assert agent_id in {item["id"] for item in project_a_list.json()["items"]}
+    assert agent_id not in {item["id"] for item in project_b_list.json()["items"]}
+    assert "agent-citation-check" in {item["id"] for item in project_b_list.json()["items"]}
+    assert blocked_detail.status_code == 403
+    assert blocked_detail.json()["detail"] == "agent project scope does not match current project"
+    assert blocked_invocation.status_code == 403
+    assert allowed_invocation.status_code == 200
+    assert allowed_invocation.json()["item"]["question"] == "本项目调用"
+    assert any(entry["action"] == "agent-project-scope-denied" for entry in state.operation_logs)
 
 
 def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
@@ -174,39 +930,33 @@ def test_agents_api_rejects_unknown_category(tmp_path: Path) -> None:
     assert response.status_code == 422
 
 
-def test_agents_api_records_denied_write_for_unknown_role(tmp_path: Path) -> None:
+def test_agents_api_enforces_manage_agent_permission(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.agent_store = SqlAlchemyAgentStore(
         f"sqlite:///{tmp_path / 'agents.db'}",
         create_schema=True,
     )
     client = TestClient(create_app(state))
+    payload = {
+        "name": "成员自建系统智能体",
+        "category": "业务类",
+        "topic": "医保基金使用合规",
+        "prompt": "输出审计问题。",
+        "visibility_scope": "system",
+    }
 
-    response = client.post(
+    unauthenticated_response = client.post("/agents", json=payload)
+    member_response = client.post(
         "/agents",
-        headers={"X-User-Id": "guest-1", "X-Role": "guest"},
-        json={
-            "name": "访客助手",
-            "category": "业务类",
-            "topic": "医保基金使用合规",
-            "prompt": "输出审计问题。",
-        },
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+        json=payload,
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "role is not allowed"
-    assert state.operation_logs[-1] == {
-        "action": "agent-access-denied",
-        "payload": {
-            "attempted_action": "agent-create",
-            "user_identifier": "guest-1",
-            "role": "guest",
-            "normalized_role": "guest",
-            "auth_source": "legacy-header",
-            "status_code": 403,
-            "reason": "role is not allowed",
-        },
-    }
+    assert unauthenticated_response.status_code == 401
+    assert member_response.status_code == 403
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+    assert state.operation_logs[-1]["payload"]["attempted_action"] == "agent-create"
+    assert state.operation_logs[-1]["payload"]["permission"] == "manage_agents"
 
 
 def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
@@ -234,7 +984,7 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
 
     create_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
         json={
             "name": "赵审计",
             "role": "审计员",
@@ -247,11 +997,9 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert created["id"].startswith(PROJECT_MEMBER_ID_PREFIX)
     assert created["project_key"] == "CATALOG-LIMIT-202606"
     assert created["status"] == "待确认"
-    assert created["created_by"] == "auditor-1"
+    assert created["created_by"] == "admin-1"
     assert state.operation_logs[-1]["action"] == "project-member-create"
-    assert state.operation_logs[-1]["payload"]["actor_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
+    assert state.operation_logs[-1]["payload"]["actor_role"] == "admin"
 
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
@@ -285,32 +1033,39 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
             "department": "医保办",
         },
     )
-    forbidden_actor_response = client.post(
-        "/projects/SELF-CHECK-FUND-20260607/members",
-        headers={"X-User-Id": "guest-1", "X-Role": "guest"},
-        json={
-            "name": "访客成员",
-            "role": "审计员",
-            "department": "医保办",
-        },
-    )
 
     assert missing_response.status_code == 404
     assert invalid_role_response.status_code == 422
-    assert forbidden_actor_response.status_code == 403
-    assert forbidden_actor_response.json()["detail"] == "role is not allowed"
-    assert state.operation_logs[-1] == {
-        "action": "project-member-access-denied",
-        "payload": {
-            "attempted_action": "project-member-create",
-            "user_identifier": "guest-1",
-            "role": "guest",
-            "normalized_role": "guest",
-            "auth_source": "legacy-header",
-            "status_code": 403,
-            "reason": "role is not allowed",
-        },
+
+
+def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    payload = {
+        "name": "赵审计",
+        "role": "审计员",
+        "department": "医保办",
     }
+
+    unauthenticated_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        json=payload,
+    )
+    director_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "director-1", "X-Role": "director"},
+        json=payload,
+    )
+
+    assert unauthenticated_response.status_code == 401
+    assert director_response.status_code == 403
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+    assert state.operation_logs[-1]["payload"]["attempted_action"] == "project-member-create"
+    assert state.operation_logs[-1]["payload"]["permission"] == "manage_project_members"
 
 
 def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
@@ -455,12 +1210,11 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         "supervision-rules-knowledge",
         "medical-insurance-catalog",
         "risk-negative-list",
-        "personal-materials",
     ]
-    assert permissions_body["source_collections"][-1]["scope"] == "本人上传"
     assert permissions_body["upload_permissions"] == {
         "can_upload_personal": True,
         "can_read_all_personal_uploads": False,
+        "can_govern_personal_uploads": False,
     }
 
     upload_response = client.post(
@@ -477,54 +1231,19 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert uploaded["extension"] == "pdf"
     assert uploaded["retention_status"] == "retained"
     assert uploaded["index_status"] == "not-indexed"
-    assert uploaded["index_readiness"] == {
-        "status": "blocked",
-        "blockers": [
-            "virus-scan-required",
-            "dlp-review-required",
-            "manual-index-approval-required",
-        ],
-        "next_action": "complete-upload-governance",
-        "checks": [
-            {
-                "check_type": "virus-scan",
-                "provider": "unconfigured",
-                "status": "blocked",
-                "blocker": "virus-scan-required",
-                "detail": "virus scan adapter is not configured for pdf upload",
-            },
-            {
-                "check_type": "dlp-review",
-                "provider": "unconfigured",
-                "status": "blocked",
-                "blocker": "dlp-review-required",
-                "detail": "DLP review adapter is not configured for pdf upload",
-            },
-            {
-                "check_type": "manual-index-approval",
-                "provider": "manual",
-                "status": "blocked",
-                "blocker": "manual-index-approval-required",
-                "detail": "manual index approval is required before ingesting policy.pdf",
-            },
-        ],
-    }
+    assert uploaded["governance_status"] == "pending-review"
+    assert uploaded["governance_note"] == ""
+    assert uploaded["governed_by"] is None
+    assert uploaded["governed_at"] is None
+    assert uploaded["security_scan_status"] == "local-policy-passed"
+    assert uploaded["security_scan_provider"] == "local-policy"
+    assert uploaded["dlp_status"] == "clear"
+    assert uploaded["security_findings"] == []
+    assert uploaded["download_url"] == f"/api/v1/documents/uploads/{uploaded['id']}/download"
     assert uploaded["sha256"]
     assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
     assert state.operation_logs[-1]["action"] == "document-upload"
     assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
-    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "blocked"
-    assert state.operation_logs[-1]["payload"]["index_readiness_blockers"] == [
-        "virus-scan-required",
-        "dlp-review-required",
-        "manual-index-approval-required",
-    ]
-    assert (
-        state.operation_logs[-1]["payload"]["index_readiness_checks"]
-        == uploaded["index_readiness"]["checks"]
-    )
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
 
     retained_path = upload_root / uploaded["storage_path"]
     assert retained_path.exists()
@@ -537,12 +1256,30 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert owner_response.status_code == 200
     assert owner_response.json()["items"][0]["id"] == uploaded["id"]
 
+    owner_download_response = client.get(
+        f"/documents/uploads/{uploaded['id']}/download",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+    assert owner_download_response.status_code == 200
+    assert owner_download_response.content == b"%PDF-1.4 policy"
+    assert owner_download_response.headers["x-document-upload-id"] == uploaded["id"]
+    assert owner_download_response.headers["x-document-security-scan"] == "local-policy-passed"
+    assert state.operation_logs[-1]["action"] == "document-upload-download"
+
     other_auditor_response = client.get(
         "/documents/uploads",
         headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
     )
     assert other_auditor_response.status_code == 200
     assert other_auditor_response.json()["items"] == []
+
+    other_download_response = client.get(
+        f"/documents/uploads/{uploaded['id']}/download",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+    )
+    assert other_download_response.status_code == 404
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+    assert state.operation_logs[-1]["payload"]["attempted_action"] == "document-upload-download"
 
     admin_response = client.get(
         "/documents/uploads",
@@ -551,7 +1288,43 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert admin_response.status_code == 200
     admin_body = admin_response.json()
     assert admin_body["permissions"]["can_read_all_personal_uploads"] is True
+    assert admin_body["permissions"]["can_govern_personal_uploads"] is True
     assert admin_body["items"][0]["id"] == uploaded["id"]
+
+    admin_download_response = client.get(
+        f"/documents/uploads/{uploaded['id']}/download",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+    )
+    assert admin_download_response.status_code == 200
+    assert admin_download_response.content == b"%PDF-1.4 policy"
+
+    member_governance_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/governance",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"governance_status": "approved-for-index", "note": "member should not approve"},
+    )
+    assert member_governance_response.status_code == 403
+
+    governance_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/governance",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={"governance_status": "approved-for-index", "note": "已完成材料治理。"},
+    )
+    assert governance_response.status_code == 200
+    governed = governance_response.json()["item"]
+    assert governed["governance_status"] == "approved-for-index"
+    assert governed["governance_note"] == "已完成材料治理。"
+    assert governed["governed_by"] == "admin-1"
+    assert governed["governed_at"]
+    assert governed["index_status"] == "index-ready"
+    assert state.operation_logs[-1]["action"] == "document-upload-governance-update"
+
+    governed_admin_items = client.get(
+        "/documents/uploads",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+    ).json()["items"]
+    assert governed_admin_items[0]["governance_status"] == "approved-for-index"
+    assert governed_admin_items[0]["index_status"] == "index-ready"
 
     second_state = _api_state(tmp_path / "second")
     second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
@@ -564,1423 +1337,51 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
     ).json()["items"]
     assert persisted_items[0]["id"] == uploaded["id"]
+    assert persisted_items[0]["governance_status"] == "approved-for-index"
+    assert persisted_items[0]["index_status"] == "index-ready"
 
 
-def test_documents_upload_download_metadata_is_permission_scoped(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'document-downloads.db'}"
-    upload_root = tmp_path / "document-uploads"
+def test_documents_permissions_use_persistent_role_and_status_gate(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
         create_schema=True,
-        record_storage_objects=True,
     )
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    owner_response = client.get(
-        f"/documents/uploads/{upload_id}/download",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    )
-
-    assert owner_response.status_code == 200
-    owner_body = owner_response.json()
-    assert owner_body["item"]["id"] == upload_id
-    assert owner_body["download"] == {
-        "status": "metadata-only",
-        "access_scope": "owner",
-        "delivery": "not-issued",
-        "reason": "signed-download-not-configured",
-        "signed_url": None,
-        "expires_at": None,
-        "storage_path": owner_body["item"]["storage_path"],
-        "storage_objects": owner_body["download"]["storage_objects"],
-    }
-    assert owner_body["download"]["storage_objects"][0]["provider"] == "local"
-    assert owner_body["download"]["storage_objects"][0]["storage_status"] == "local-quarantine"
-    assert (
-        owner_body["download"]["storage_objects"][0]["object_key"]
-        == owner_body["item"]["storage_path"]
-    )
-    assert state.operation_logs[-1]["action"] == "document-upload-download-metadata"
-    assert state.operation_logs[-1]["payload"]["access_scope"] == "owner"
-    assert state.operation_logs[-1]["payload"]["signed_url_issued"] is False
-
-    other_response = client.get(
-        f"/documents/uploads/{upload_id}/download",
-        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
-    )
-
-    assert other_response.status_code == 404
-    assert other_response.json()["detail"] == "document upload not found"
-    assert state.operation_logs[-1]["action"] == "document-upload-download-access-denied"
-    assert state.operation_logs[-1]["payload"]["status_code"] == 404
-
-    head_response = client.get(
-        f"/documents/uploads/{upload_id}/download",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert head_response.status_code == 200
-    assert head_response.json()["download"]["access_scope"] == "read-all"
-
-
-def test_documents_upload_download_issues_signed_url_for_cos_object(
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'document-signed-downloads.db'}"
-    upload_root = tmp_path / "document-uploads"
-    fake_cos_client = FakeTencentCosClient(
-        signed_url="https://cos.example/signed-download?sign=q-sign-algorithm",
-    )
-    state = _api_state(
-        tmp_path,
-        document_storage=DocumentStorageSettings(signed_url_ttl_seconds=300),
-    )
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-        object_storage=TencentCosDocumentObjectStorage(
-            client=fake_cos_client,
-            bucket="medical-audit-prod",
-            region="ap-guangzhou",
-            prefix="personal-materials/test",
-        ),
-        record_storage_objects=True,
-    )
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    owner_response = client.get(
-        f"/documents/uploads/{upload_id}/download",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    )
-
-    assert owner_response.status_code == 200
-    owner_body = owner_response.json()
-    assert owner_body["download"]["status"] == "download-ready"
-    assert owner_body["download"]["delivery"] == "signed-url"
-    assert owner_body["download"]["reason"] == "signed-url-issued"
-    assert owner_body["download"]["signed_url"] == (
-        "https://cos.example/signed-download?sign=q-sign-algorithm"
-    )
-    assert owner_body["download"]["expires_at"].endswith("Z")
-    assert owner_body["download"]["storage_objects"][0]["provider"] == "tencent-cos"
-    assert owner_body["download"]["storage_objects"][0]["storage_status"] == "object-stored"
-    assert fake_cos_client.presign_calls == [
+    assert state.auth_user_store is not None
+    state.auth_user_store.add_user(
         {
-            "bucket": "medical-audit-prod",
-            "region": "ap-guangzhou",
-            "object_key": owner_body["download"]["storage_objects"][0]["object_key"],
-            "expires_in_seconds": 300,
+            "user_key": "persistent-document-director",
+            "display_name": "文档主任",
+            "status": "active",
         }
-    ]
-    assert state.operation_logs[-1]["action"] == "document-upload-download-metadata"
-    assert state.operation_logs[-1]["payload"]["signed_url_issued"] is True
-    assert state.operation_logs[-1]["payload"]["delivery"] == "signed-url"
-    assert state.operation_logs[-1]["payload"]["reason"] == "signed-url-issued"
-    assert "signed_url" not in state.operation_logs[-1]["payload"]
-
-    other_response = client.get(
-        f"/documents/uploads/{upload_id}/download",
-        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
     )
-
-    assert other_response.status_code == 404
-    assert len(fake_cos_client.presign_calls) == 1
-
-
-def test_documents_upload_governance_adapters_clear_scan_and_dlp_blockers(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    state = _api_state(tmp_path)
-    state.document_upload_store = InMemoryDocumentUploadStore(
-        upload_root=tmp_path / "document-uploads",
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
+    state.auth_user_store.assign_role(
+        "persistent-document-director",
+        {"role": "director", "scope_type": "global"},
     )
     client = TestClient(create_app(state))
 
-    response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-
-    assert response.status_code == 200
-    readiness = response.json()["item"]["index_readiness"]
-    assert readiness["status"] == "blocked"
-    assert readiness["blockers"] == ["manual-index-approval-required"]
-    assert readiness["checks"] == [
-        {
-            "check_type": "virus-scan",
-            "provider": "local-test-virus",
-            "status": "passed",
-            "blocker": None,
-            "detail": f"sha256 {response.json()['item']['sha256']} accepted",
-        },
-        {
-            "check_type": "dlp-review",
-            "provider": "local-test-dlp",
-            "status": "passed",
-            "blocker": None,
-            "detail": "policy.txt contains no test DLP findings",
-        },
-        {
-            "check_type": "manual-index-approval",
-            "provider": "manual",
-            "status": "blocked",
-            "blocker": "manual-index-approval-required",
-            "detail": "manual index approval is required before ingesting policy.txt",
-        },
-    ]
-
-
-def test_documents_upload_manual_index_approval_marks_ready_and_persists(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-readiness.db'}"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=tmp_path / "document-uploads",
-        create_schema=True,
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "审查通过，准许进入后续入索引队列。"},
-    )
-
-    assert approval_response.status_code == 200
-    item = approval_response.json()["item"]
-    assert item["id"] == upload_id
-    assert item["index_status"] == "not-indexed"
-    assert item["index_readiness"] == {
-        "status": "ready",
-        "blockers": [],
-        "next_action": "ingest-personal-upload",
-        "checks": [
-            {
-                "check_type": "virus-scan",
-                "provider": "local-test-virus",
-                "status": "passed",
-                "blocker": None,
-                "detail": f"sha256 {item['sha256']} accepted",
-            },
-            {
-                "check_type": "dlp-review",
-                "provider": "local-test-dlp",
-                "status": "passed",
-                "blocker": None,
-                "detail": "policy.txt contains no test DLP findings",
-            },
-            {
-                "check_type": "manual-index-approval",
-                "provider": "manual",
-                "status": "passed",
-                "blocker": None,
-                "detail": (
-                    "manual index approval approved by head-1: 审查通过，准许进入后续入索引队列。"
-                ),
-            },
-        ],
-    }
-    assert state.operation_logs[-1]["action"] == "document-upload-index-readiness-update"
-    assert state.operation_logs[-1]["payload"]["upload_id"] == upload_id
-    assert state.operation_logs[-1]["payload"]["decision"] == "approved"
-    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "ready"
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "department-head"
-
-    second_state = _api_state(tmp_path / "second")
-    second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=tmp_path / "document-uploads",
-    )
-    second_client = TestClient(create_app(second_state))
-    persisted = second_client.get(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
-    assert persisted["id"] == upload_id
-    assert persisted["index_readiness"]["status"] == "ready"
-
-
-def test_documents_upload_index_ingestion_stages_ready_upload(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion.db'}"
-    upload_root = tmp_path / "document-uploads"
-    indexing_settings = DocumentUploadIndexingSettings(
-        enabled=True,
-        source_package_version_key="personal-materials-test",
-        index_version_key="personal-materials-test",
-    )
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=indexing_settings,
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={
-            "file": (
-                "personal-note.txt",
-                "个人补充材料：门诊费用审核依据。\n第二行证据。".encode(),
-                "text/plain",
-            )
-        },
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "材料已完成病毒与DLP治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    ingestion_response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert ingestion_response.status_code == 200
-    body = ingestion_response.json()
-    assert body["item"]["index_status"] == "staged-for-index"
-    assert body["ingestion"]["status"] == "staged-for-index"
-    assert body["ingestion"]["source_collection"] == "personal-materials"
-    assert body["ingestion"]["index_version_status"] == "candidate"
-    assert body["ingestion"]["chunk_count"] == 1
-    assert body["ingestion"]["embedding_count"] == 1
-    assert body["ingestion"]["embedding_provider"] == "fake"
-    assert body["ingestion"]["external_provider_call_performed"] is False
-    assert body["ingestion"]["live_retrieval_activated"] is False
-    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion"
-    assert state.operation_logs[-1]["payload"]["index_status"] == "staged-for-index"
-    assert state.operation_logs[-1]["payload"]["live_retrieval_activated"] is False
-
-    engine = create_engine(database_url)
-    with Session(engine) as session:
-        source_document = session.scalars(select(SourceDocument)).one()
-        chunk = session.scalars(select(DocumentChunk)).one()
-        embedding = session.scalars(select(ChunkEmbedding)).one()
-        index_version = session.scalars(select(IndexVersion)).one()
-
-    assert source_document.source_collection == "personal-materials"
-    assert source_document.relative_path == f"personal-materials/{upload_id}/personal-note.txt"
-    assert chunk.extra_metadata["upload_key"] == upload_id
-    assert chunk.extra_metadata["live_retrieval_activated"] is False
-    assert embedding.provider == "fake"
-    assert embedding.dimension == 32
-    assert index_version.status == "candidate"
-    assert index_version.chunk_count == 1
-    assert index_version.document_count == 1
-
-
-def test_documents_upload_index_ingestion_uses_pgvector_insert_for_postgres(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-pgvector.db'}"
-    upload_root = tmp_path / "document-uploads"
-    indexing_settings = DocumentUploadIndexingSettings(
-        enabled=True,
-        source_package_version_key="personal-materials-pgvector-test",
-        index_version_key="personal-materials-pgvector-test",
-        embedding_dimension=1024,
-    )
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=indexing_settings,
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    chunk_embedding_inserts: list[str] = []
-
-    def capture_chunk_embedding_insert(
-        conn: object,
-        cursor: object,
-        statement: str,
-        parameters: object,
-        context: object,
-        executemany: bool,
-    ) -> None:
-        if "INSERT INTO chunk_embeddings" in statement:
-            chunk_embedding_inserts.append(statement)
-
-    event.listen(
-        state.document_upload_indexer._engine,
-        "before_cursor_execute",
-        capture_chunk_embedding_insert,
-    )
-    state.document_upload_indexer._engine.dialect.name = "postgresql"
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={
-            "file": (
-                "personal-note.txt",
-                "个人补充材料：门诊费用审核依据。\n第二行证据。".encode(),
-                "text/plain",
-            )
-        },
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "材料已完成病毒与DLP治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    ingestion_response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert ingestion_response.status_code == 200
-    assert chunk_embedding_inserts
-    assert any("AS vector" in statement for statement in chunk_embedding_inserts)
-
-
-def test_documents_upload_index_ingestion_blocks_wrong_pgvector_dimension(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-pgvector-dim.db'}"
-    upload_root = tmp_path / "document-uploads"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=DocumentUploadIndexingSettings(
-            enabled=True,
-            source_package_version_key="personal-materials-pgvector-dim-test",
-            index_version_key="personal-materials-pgvector-dim-test",
-            embedding_dimension=32,
-        ),
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    state.document_upload_indexer._engine.dialect.name = "postgresql"
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={
-            "file": (
-                "personal-note.txt",
-                "个人补充材料：门诊费用审核依据。".encode(),
-                "text/plain",
-            )
-        },
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "材料已完成病毒与DLP治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "document-upload-embedding-dimension-unsupported"
-    assert response.json()["detail"]["embedding_dimension"] == 32
-    assert response.json()["detail"]["expected_embedding_dimension"] == 1024
-
-
-def test_documents_upload_index_ingestion_stages_cos_only_ready_upload(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-cos.db'}"
-    upload_root = tmp_path / "document-uploads"
-    fake_cos_client = FakeTencentCosClient()
-    object_storage = TencentCosDocumentObjectStorage(
-        client=fake_cos_client,
-        bucket="medical-audit-prod",
-        region="ap-guangzhou",
-        prefix="personal-materials/test",
-    )
-    indexing_settings = DocumentUploadIndexingSettings(
-        enabled=True,
-        source_package_version_key="personal-materials-cos-test",
-        index_version_key="personal-materials-cos-test",
-    )
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-        object_storage=object_storage,
-        record_storage_objects=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=indexing_settings,
-        object_storage=object_storage,
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={
-            "file": (
-                "cos-only-note.txt",
-                "COS-only 个人材料：基金监管审计补充证据。".encode(),
-                "text/plain",
-            )
-        },
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    storage_path = str(upload_response.json()["item"]["storage_path"])
-    assert not (upload_root / storage_path).exists()
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "COS-only 材料已完成治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    ingestion_response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert ingestion_response.status_code == 200
-    body = ingestion_response.json()
-    assert body["item"]["index_status"] == "staged-for-index"
-    assert body["ingestion"]["status"] == "staged-for-index"
-    assert body["ingestion"]["source_collection"] == "personal-materials"
-    assert body["ingestion"]["live_retrieval_activated"] is False
-    assert fake_cos_client.get_object_calls == [
-        {
-            "bucket": "medical-audit-prod",
-            "region": "ap-guangzhou",
-            "object_key": storage_path,
-        }
-    ]
-
-    engine = create_engine(database_url)
-    with Session(engine) as session:
-        source_document = session.scalars(select(SourceDocument)).one()
-        chunk = session.scalars(select(DocumentChunk)).one()
-        index_version = session.scalars(select(IndexVersion)).one()
-
-    assert ".index-staging" in source_document.absolute_path
-    assert Path(source_document.absolute_path).is_file()
-    assert source_document.relative_path == f"personal-materials/{upload_id}/cos-only-note.txt"
-    assert source_document.extra_metadata["storage_provider"] == "tencent-cos"
-    assert source_document.extra_metadata["object_key"] == storage_path
-    assert chunk.extra_metadata["upload_key"] == upload_id
-    assert chunk.extra_metadata["live_retrieval_activated"] is False
-    assert index_version.status == "candidate"
-    assert index_version.extra_metadata["live_retrieval_activated"] is False
-
-
-def test_documents_upload_index_ingestion_blocks_cos_object_sha256_mismatch(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-cos-sha.db'}"
-    upload_root = tmp_path / "document-uploads"
-    fake_cos_client = FakeTencentCosClient()
-    object_storage = TencentCosDocumentObjectStorage(
-        client=fake_cos_client,
-        bucket="medical-audit-prod",
-        region="ap-guangzhou",
-        prefix="personal-materials/test",
-    )
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-        object_storage=object_storage,
-        record_storage_objects=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=DocumentUploadIndexingSettings(enabled=True),
-        object_storage=object_storage,
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("cos-note.txt", b"original evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    storage_path = str(upload_response.json()["item"]["storage_path"])
-    fake_cos_client.objects[storage_path] = b"tampered evidence"
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "材料已完成治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "document-upload-object-sha256-mismatch"
-    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
-    assert state.operation_logs[-1]["payload"]["reason"] == (
-        "document-upload-object-sha256-mismatch"
-    )
-
-
-def test_documents_upload_index_ingestion_blocks_when_upload_is_not_ready(
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-blocked.db'}"
-    upload_root = tmp_path / "document-uploads"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=DocumentUploadIndexingSettings(enabled=True),
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "document-upload-not-ready-for-indexing"
-    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
-    assert state.operation_logs[-1]["payload"]["reason"] == (
-        "document-upload-not-ready-for-indexing"
-    )
-
-
-def test_documents_upload_index_ingestion_blocks_index_version_key_collision(
-    tmp_path: Path,
-) -> None:
-    class PassingVirusScanner:
-        provider = "local-test-virus"
-
-        def scan(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="virus-scan",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"sha256 {context.sha256} accepted",
-            )
-
-    class PassingDlpReviewer:
-        provider = "local-test-dlp"
-
-        def review(self, context: DocumentUploadGovernanceContext) -> GovernanceCheckResult:
-            return GovernanceCheckResult(
-                check_type="dlp-review",
-                provider=self.provider,
-                status="passed",
-                blocker=None,
-                detail=f"{context.file_name} contains no test DLP findings",
-            )
-
-    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion-collision.db'}"
-    upload_root = tmp_path / "document-uploads"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=upload_root,
-        create_schema=True,
-    )
-    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
-        database_url=database_url,
-        upload_root=upload_root,
-        settings=DocumentUploadIndexingSettings(
-            enabled=True,
-            source_package_version_key="personal-materials-new",
-            index_version_key="active-system-index",
-        ),
-    )
-    state.document_upload_governance = DocumentUploadGovernancePolicy(
-        virus_scanner=PassingVirusScanner(),
-        dlp_reviewer=PassingDlpReviewer(),
-    )
-    engine = create_engine(database_url)
-    with Session(engine) as session:
-        package = SourcePackageVersion(
-            version_key="system-package",
-            source_root_path=str(tmp_path / "data"),
-            description="Existing system package.",
-            extra_metadata={"source": "persistent-jsonl"},
-        )
-        session.add(package)
-        session.flush()
-        session.add(
-            IndexVersion(
-                source_package_version_id=package.id,
-                version_key="active-system-index",
-                status="active",
-                chunk_count=0,
-                document_count=0,
-                extra_metadata={"source": "persistent-jsonl"},
-            )
-        )
-        session.commit()
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-    approval_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={"decision": "approved", "note": "材料已完成治理。"},
-    )
-    assert approval_response.status_code == 200
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "document-upload-index-version-key-collision"
-    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
-    assert state.operation_logs[-1]["payload"]["index_version_key"] == "active-system-index"
-
-
-def test_documents_upload_index_ingestion_requires_enabled_indexer(
-    tmp_path: Path,
-) -> None:
-    state = _api_state(tmp_path)
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-ingestion",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "document upload indexing is not enabled"
-    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
-    assert state.operation_logs[-1]["payload"]["reason"] == "document-upload-indexing-disabled"
-
-
-def test_documents_upload_manual_index_rejection_marks_rejected(
-    tmp_path: Path,
-) -> None:
-    state = _api_state(tmp_path)
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    rejection_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
-        json={"decision": "rejected", "note": "材料来源不足，退回补证。"},
-    )
-
-    assert rejection_response.status_code == 200
-    readiness = rejection_response.json()["item"]["index_readiness"]
-    assert readiness["status"] == "rejected"
-    assert readiness["blockers"] == [
-        "virus-scan-required",
-        "dlp-review-required",
-        "manual-index-approval-rejected",
-    ]
-    assert readiness["next_action"] == "review-manual-index-rejection"
-    assert readiness["checks"][-1] == {
-        "check_type": "manual-index-approval",
-        "provider": "manual",
-        "status": "blocked",
-        "blocker": "manual-index-approval-rejected",
-        "detail": "manual index approval rejected by admin-1: 材料来源不足，退回补证。",
-    }
-
-
-def test_documents_upload_governance_result_update_marks_check_and_persists(
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'document-governance-result.db'}"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=tmp_path / "document-uploads",
-        create_schema=True,
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="tencent-ci-virus",
-            dlp_review_provider="external-dlp",
-        )
-    )
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    result_response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/governance-result",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json={
-            "check_type": "virus-scan",
-            "provider": "tencent-ci-virus",
-            "status": "passed",
-            "detail": "Tencent CI scan finished without malware findings.",
-            "result_code": "normal",
-            "external_job_id": "ci-virus-job-1",
-            "finished_at": "2026-06-18T12:00:00Z",
-        },
-    )
-
-    assert result_response.status_code == 200
-    item = result_response.json()["item"]
-    readiness = item["index_readiness"]
-    assert readiness["status"] == "blocked"
-    assert readiness["blockers"] == ["dlp-review-required", "manual-index-approval-required"]
-    assert readiness["checks"][0] == {
-        "check_type": "virus-scan",
-        "provider": "tencent-ci-virus",
-        "status": "passed",
-        "blocker": None,
-        "detail": "Tencent CI scan finished without malware findings.",
-        "external_job_id": "ci-virus-job-1",
-        "result_code": "normal",
-        "finished_at": "2026-06-18T12:00:00Z",
-    }
-    assert state.operation_logs[-1]["action"] == "document-upload-governance-result-update"
-    assert state.operation_logs[-1]["payload"]["upload_id"] == upload_id
-    assert state.operation_logs[-1]["payload"]["check_type"] == "virus-scan"
-    assert state.operation_logs[-1]["payload"]["index_readiness_status"] == "blocked"
-
-    second_state = _api_state(tmp_path / "second")
-    second_state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=tmp_path / "document-uploads",
-    )
-    persisted = (
-        TestClient(create_app(second_state))
-        .get(
-            "/documents/uploads",
-            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        )
-        .json()["items"][0]
-    )
-    assert persisted["id"] == upload_id
-    assert persisted["index_readiness"]["checks"][0]["status"] == "passed"
-    assert persisted["index_readiness"]["checks"][0]["external_job_id"] == "ci-virus-job-1"
-
-
-def test_documents_upload_records_external_governance_jobs_in_local_mode(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("VIRUS_SCAN_JOB_SECRET", "actual-secret-value")
-    monkeypatch.setenv("DLP_REVIEW_JOB_SECRET", "actual-secret-value")
-    database_url = f"sqlite:///{tmp_path / 'document-governance-jobs-api.db'}"
-    state = _api_state(tmp_path)
-    state.document_upload_store = SqlAlchemyDocumentUploadStore(
-        database_url=database_url,
-        upload_root=tmp_path / "document-uploads",
-        create_schema=True,
-        record_storage_objects=True,
-    )
-    state.document_upload_governance_store = SqlAlchemyDocumentUploadGovernanceStore(
-        database_url=database_url
-    )
-    state.document_upload_governance_job_submitter = (
-        LocalRecordingDocumentUploadGovernanceJobSubmitter(
-            provider_env_contracts={
-                "tencent-ci-virus": {
-                    "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
-                    "secret_env": "VIRUS_SCAN_JOB_SECRET",
-                },
-                "external-dlp": {
-                    "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
-                    "secret_env": "DLP_REVIEW_JOB_SECRET",
-                },
-            }
-        )
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="tencent-ci-virus",
-            dlp_review_provider="external-dlp",
-        )
-    )
-    client = TestClient(create_app(state))
-
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-
-    assert upload_response.status_code == 200
-    upload_body = upload_response.json()
-    upload_id = upload_body["item"]["id"]
-    assert upload_body["store"]["governance_job_count"] == 2
-    assert state.operation_logs[-1]["payload"]["governance_job_count"] == 2
-    jobs = state.document_upload_governance_store.list_governance_jobs(upload_id)
-    assert [job["job_type"] for job in jobs] == ["virus-scan", "dlp-review"]
-    assert [job["provider"] for job in jobs] == ["tencent-ci-virus", "external-dlp"]
-    assert [job["status"] for job in jobs] == ["pending", "pending"]
-    assert jobs[0]["result_payload"]["external_provider_call_performed"] is False
-    assert jobs[0]["result_payload"]["production_write_performed"] is False
-    assert jobs[0]["result_payload"]["provider_env_contract"] == {
-        "endpoint_env": "VIRUS_SCAN_JOB_ENDPOINT",
-        "secret_env": "VIRUS_SCAN_JOB_SECRET",
-    }
-    assert jobs[1]["result_payload"]["provider_env_contract"] == {
-        "endpoint_env": "DLP_REVIEW_JOB_ENDPOINT",
-        "secret_env": "DLP_REVIEW_JOB_SECRET",
-    }
-    assert "actual-secret-value" not in json.dumps(jobs, ensure_ascii=False)
-
-
-def test_documents_upload_governance_result_update_rejects_auditor(
-    tmp_path: Path,
-) -> None:
-    denied_reason = (
-        "document upload governance result update requires department-head or system-admin role"
-    )
-    state = _api_state(tmp_path)
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/governance-result",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        json={
-            "check_type": "dlp-review",
-            "provider": "external-dlp",
-            "status": "passed",
-            "detail": "普通审计员尝试回写治理结果。",
-            "result_code": "no-sensitive-marker",
-        },
-    )
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == denied_reason
-    assert state.operation_logs[-1] == {
-        "action": "document-upload-governance-result-access-denied",
-        "payload": {
-            "attempted_action": "document-upload-governance-result-update",
-            "upload_id": upload_id,
-            "check_type": "dlp-review",
-            "user_identifier": "auditor-1",
-            "role": "auditor",
-            "normalized_role": "auditor",
-            "auth_source": "legacy-header",
-            "status_code": 403,
-            "reason": denied_reason,
-        },
-    }
-
-
-def test_documents_upload_manual_index_approval_rejects_auditor(
-    tmp_path: Path,
-) -> None:
-    denied_reason = "document upload index approval requires department-head or system-admin role"
-    state = _api_state(tmp_path)
-    client = TestClient(create_app(state))
-    upload_response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"policy evidence", "text/plain")},
-    )
-    upload_id = upload_response.json()["item"]["id"]
-
-    response = client.post(
-        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        json={"decision": "approved", "note": "普通审计员尝试批准。"},
-    )
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == denied_reason
-    assert state.operation_logs[-1] == {
-        "action": "document-upload-index-approval-access-denied",
-        "payload": {
-            "attempted_action": "document-upload-index-readiness-update",
-            "upload_id": upload_id,
-            "user_identifier": "auditor-1",
-            "role": "auditor",
-            "normalized_role": "auditor",
-            "auth_source": "legacy-header",
-            "status_code": 403,
-            "reason": denied_reason,
-        },
-    }
-
-
-def test_documents_upload_local_test_governance_detects_markers(
-    tmp_path: Path,
-) -> None:
-    state = _api_state(tmp_path)
-    state.document_upload_store = InMemoryDocumentUploadStore(
-        upload_root=tmp_path / "document-uploads",
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="local-test",
-            dlp_review_provider="local-test",
-        )
-    )
-    client = TestClient(create_app(state))
-
-    response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"EICAR patient_id=123", "text/plain")},
-    )
-
-    assert response.status_code == 200
-    readiness = response.json()["item"]["index_readiness"]
-    assert readiness["blockers"] == [
-        "virus-scan-required",
-        "dlp-review-required",
-        "manual-index-approval-required",
-    ]
-    assert readiness["checks"] == [
-        {
-            "check_type": "virus-scan",
-            "provider": "local-test",
-            "status": "blocked",
-            "blocker": "virus-scan-required",
-            "detail": "local test virus marker detected",
-        },
-        {
-            "check_type": "dlp-review",
-            "provider": "local-test",
-            "status": "blocked",
-            "blocker": "dlp-review-required",
-            "detail": "local test DLP marker detected",
-        },
-        {
-            "check_type": "manual-index-approval",
-            "provider": "manual",
-            "status": "blocked",
-            "blocker": "manual-index-approval-required",
-            "detail": "manual index approval is required before ingesting policy.txt",
-        },
-    ]
-
-
-def test_documents_upload_clamav_sidecar_clean_result_passes_virus_check(
-    tmp_path: Path,
-) -> None:
-    clamav_client = FakeClamAvSidecarClient(ClamAvSidecarScanResult(status="clean"))
-    state = _api_state(tmp_path)
-    state.document_upload_store = InMemoryDocumentUploadStore(
-        upload_root=tmp_path / "document-uploads",
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="clamav-sidecar",
-            dlp_review_provider="local-test",
-        ),
-        clamav_client=clamav_client,
-    )
-    client = TestClient(create_app(state))
-
-    response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"clean policy evidence", "text/plain")},
-    )
-
-    assert response.status_code == 200
-    readiness = response.json()["item"]["index_readiness"]
-    assert clamav_client.calls == [(b"clean policy evidence", "policy.txt")]
-    assert readiness["blockers"] == ["manual-index-approval-required"]
-    assert readiness["checks"][0] == {
-        "check_type": "virus-scan",
-        "provider": "clamav-sidecar",
-        "status": "passed",
-        "blocker": None,
-        "detail": "clamav-sidecar found no malware",
-        "result_code": "clean",
-    }
-
-
-def test_documents_upload_ruleset_v1_dlp_blocks_sensitive_findings(
-    tmp_path: Path,
-) -> None:
-    state = _api_state(tmp_path)
-    state.document_upload_store = InMemoryDocumentUploadStore(
-        upload_root=tmp_path / "document-uploads",
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="local-test",
-            dlp_review_provider="ruleset-v1",
-        )
-    )
-    client = TestClient(create_app(state))
-
-    response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={
-            "file": (
-                "patient-ledger.txt",
-                (
-                    "患者姓名：张三\n"
-                    "身份证：110105199001011234\n"
-                    "手机号：13800138000\n"
-                    "诊断：高血压\n"
-                ).encode(),
-                "text/plain",
-            )
-        },
-    )
-
-    assert response.status_code == 200
-    readiness = response.json()["item"]["index_readiness"]
-    dlp_check = readiness["checks"][1]
-    assert readiness["blockers"] == [
-        "dlp-review-required",
-        "manual-index-approval-required",
-    ]
-    assert dlp_check["provider"] == "ruleset-v1"
-    assert dlp_check["status"] == "blocked"
-    assert dlp_check["risk_level"] == "high"
-    assert dlp_check["result_code"] == "sensitive-marker-detected"
-    assert dlp_check["findings"][0]["rule_id"] == "id-card-number"
-    assert dlp_check["findings"][1]["rule_id"] == "mobile-phone-number"
-    serialized = json.dumps(response.json(), ensure_ascii=False)
-    assert "张三" not in serialized
-    assert "110105199001011234" not in serialized
-    assert "13800138000" not in serialized
-
-
-def test_documents_upload_local_test_governance_supports_false_positive_and_negative(
-    tmp_path: Path,
-) -> None:
-    state = _api_state(tmp_path)
-    state.document_upload_store = InMemoryDocumentUploadStore(
-        upload_root=tmp_path / "document-uploads",
-    )
-    state.document_upload_governance = document_upload_governance_policy_from_settings(
-        DocumentUploadGovernanceSettings(
-            virus_scan_provider="local-test",
-            dlp_review_provider="local-test",
-            virus_scan_test_mode="false-positive",
-            dlp_review_test_mode="false-negative",
-        )
-    )
-    client = TestClient(create_app(state))
-
-    response = client.post(
-        "/documents/uploads",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("policy.txt", b"patient_id=123", "text/plain")},
-    )
-
-    assert response.status_code == 200
-    readiness = response.json()["item"]["index_readiness"]
-    assert readiness["blockers"] == [
-        "virus-scan-required",
-        "manual-index-approval-required",
-    ]
-    assert readiness["checks"] == [
-        {
-            "check_type": "virus-scan",
-            "provider": "local-test",
-            "status": "blocked",
-            "blocker": "virus-scan-required",
-            "detail": "local false-positive virus test blocked upload",
-        },
-        {
-            "check_type": "dlp-review",
-            "provider": "local-test",
-            "status": "passed",
-            "blocker": None,
-            "detail": "local false-negative DLP test passed upload",
-        },
-        {
-            "check_type": "manual-index-approval",
-            "provider": "manual",
-            "status": "blocked",
-            "blocker": "manual-index-approval-required",
-            "detail": "manual index approval is required before ingesting policy.txt",
-        },
-    ]
+    permissions_response = client.get(
+        "/documents/permissions",
+        headers={"X-User-Id": "persistent-document-director", "X-Role": "auditor"},
+    )
+    disabled_user = state.auth_user_store.update_user(
+        "persistent-document-director",
+        {"status": "disabled"},
+    )
+    denied_response = client.get(
+        "/documents/permissions",
+        headers={"X-User-Id": "persistent-document-director", "X-Role": "director"},
+    )
+
+    assert permissions_response.status_code == 200
+    permissions_body = permissions_response.json()
+    assert permissions_body["role"] == "department-head"
+    assert permissions_body["upload_permissions"]["can_read_all_personal_uploads"] is True
+    assert permissions_body["upload_permissions"]["can_govern_personal_uploads"] is True
+    assert disabled_user["status"] == "disabled"
+    assert denied_response.status_code == 403
+    assert denied_response.json()["detail"] == "auth user status is disabled"
 
 
 def test_documents_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
@@ -1999,80 +1400,118 @@ def test_documents_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
     assert response.json()["detail"] == "unsupported document file extension"
 
 
-def test_api_state_gates_document_storage_object_records(
+def test_documents_upload_local_policy_blocks_index_approval_until_review(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    enabled_settings = _knowledge_query_settings(
-        tmp_path / "enabled",
-        document_storage=DocumentStorageSettings(record_storage_objects=True),
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
     )
-    disabled_settings = _knowledge_query_settings(
-        tmp_path / "disabled",
-        document_storage=DocumentStorageSettings(record_storage_objects=False),
-    )
+    client = TestClient(create_app(state))
 
-    monkeypatch.setattr(
-        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
-        lambda _database_url: True,
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("notes.txt", "password=example", "text/plain")},
     )
 
-    assert _document_storage_object_records_enabled(disabled_settings) is False
-    assert _document_storage_object_records_enabled(enabled_settings) is True
-    enabled_state = ApiState.from_settings(enabled_settings)
-    assert isinstance(enabled_state.document_upload_store, SqlAlchemyDocumentUploadStore)
-    assert enabled_state.document_upload_store.record_storage_objects is True
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()["item"]
+    assert uploaded["security_scan_status"] == "local-policy-review"
+    assert uploaded["dlp_status"] == "needs-review"
+    assert uploaded["security_findings"] == ["sensitive-keyword:credential"]
 
-    monkeypatch.setattr(
-        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
-        lambda _database_url: False,
+    governance_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/governance",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={"governance_status": "approved-for-index", "note": "review later"},
     )
 
-    assert _document_storage_object_records_enabled(enabled_settings) is False
-    blocked_state = ApiState.from_settings(enabled_settings)
-    assert isinstance(blocked_state.document_upload_store, SqlAlchemyDocumentUploadStore)
-    assert blocked_state.document_upload_store.record_storage_objects is False
-
-
-def test_api_state_uses_cos_bootstrap_only_when_enabled(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_client = FakeTencentCosClient()
-    calls: list[DocumentStorageSettings] = []
-
-    def fake_bootstrap(settings: DocumentStorageSettings) -> FakeTencentCosClient:
-        calls.append(settings)
-        return fake_client
-
-    monkeypatch.setattr(
-        "medical_audit_kb.api.app.tencent_cos_put_object_client_from_settings",
-        fake_bootstrap,
+    assert governance_response.status_code == 409
+    assert governance_response.json()["detail"] == (
+        "document upload security review is required before index approval"
     )
-    monkeypatch.setattr(
-        "medical_audit_kb.api.app.document_storage_objects_schema_ready",
-        lambda _database_url: False,
+    assert state.operation_logs[-1]["action"] == "document-upload-governance-blocked"
+    assert state.operation_logs[-1]["payload"]["security_finding_count"] == 1
+
+
+def test_personal_document_index_is_governed_and_query_scoped(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
     )
-    settings = _knowledge_query_settings(
-        tmp_path / "cos-bootstrap",
-        document_storage=DocumentStorageSettings.model_validate(
-            {
-                "provider": "tencent-cos",
-                "cos_bucket": "medical-audit-prod",
-                "cos_region": "ap-guangzhou",
-                "cos_secret_id_env": "COS_SECRET_ID",
-                "cos_secret_key_env": "COS_SECRET_KEY",
-                "cos_sdk_bootstrap_enabled": True,
-            }
-        ),
+    client = TestClient(create_app(state))
+
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "local-note.txt",
+                "院内个人材料提示：医保基金审核依据需核对院内报销清单。",
+                "text/plain",
+            )
+        },
     )
 
-    state = ApiState.from_settings(settings)
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()["item"]
+    assert uploaded["personal_index_status"] == "not-indexed"
+    assert uploaded["personal_index_chunk_count"] == 0
 
-    assert calls == [settings.document_storage]
-    assert isinstance(state.document_upload_store, SqlAlchemyDocumentUploadStore)
-    assert isinstance(state.document_upload_store.object_storage, TencentCosDocumentObjectStorage)
-    assert state.document_upload_store.object_storage.client is fake_client
+    unapproved_index_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/index",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+    assert unapproved_index_response.status_code == 409
+    assert unapproved_index_response.json()["detail"] == (
+        "document upload must be approved before personal index"
+    )
+
+    governance_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/governance",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={"governance_status": "approved-for-index", "note": "可进入个人材料索引。"},
+    )
+    assert governance_response.status_code == 200
+
+    index_response = client.post(
+        f"/documents/uploads/{uploaded['id']}/index",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
+    assert index_response.status_code == 200
+    indexed = index_response.json()["item"]
+    assert indexed["personal_index_status"] == "indexed"
+    assert indexed["personal_index_chunk_count"] == 1
+    assert indexed["personal_indexed_by"] == "auditor-1"
+    assert state.operation_logs[-1]["action"] == "document-upload-index"
+
+    owner_query_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+    assert owner_query_response.status_code == 200
+    owner_body = owner_query_response.json()
+    assert owner_body["personal_upload_matches"][0]["upload_id"] == uploaded["id"]
+    assert "院内个人材料提示" in owner_body["personal_upload_matches"][0]["snippet"]
+    assert state.query_logs[-1]["personal_upload_match_count"] == 1
+
+    other_query_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+    assert other_query_response.status_code == 200
+    assert other_query_response.json()["personal_upload_matches"] == []
+
+    admin_query_response = client.post(
+        "/query",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+    assert admin_query_response.status_code == 200
+    assert admin_query_response.json()["personal_upload_matches"][0]["upload_id"] == uploaded["id"]
 
 
 def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: Path) -> None:
@@ -2099,9 +1538,90 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert logs_response.status_code == 200
     assert logs_response.json()["items"][0]["user_identifier"] == "auditor-1"
     assert logs_response.json()["items"][0]["filters"]["top_k"] == 2
+
+
+def test_query_endpoint_records_selected_agent_invocation(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'query-agent-invocations.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={
+            "X-User-Id": "auditor-1",
+            "X-Role": "auditor",
+            "X-Project-Name": PROJECT_NAME_HEADER,
+        },
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "agent": "agent-citation-check",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["agent_invocation_id"]
+    assert state.agent_store is not None
+    invocations = state.agent_store.list_invocations("agent-citation-check")
+    assert invocations[0]["id"] == body["agent_invocation_id"]
+    assert invocations[0]["invocation_source"] == "/query"
+    assert invocations[0]["question"] == "医保基金审核依据"
+    assert invocations[0]["metadata"]["filters"]["agent"] == "agent-citation-check"
+    assert state.operation_logs[-2]["action"] == "agent-invocation-create"
     assert state.operation_logs[-1]["action"] == "query"
-    assert state.operation_logs[-1]["payload"]["normalized_role"] == "auditor"
-    assert state.operation_logs[-1]["payload"]["auth_source"] == "legacy-header"
+    assert state.operation_logs[-1]["payload"]["agent_invocation_id"] == body["agent_invocation_id"]
+
+
+def test_query_endpoint_supports_title_only_filter(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "title_only": True},
+    )
+    unmatched_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "不存在的标题", "top_k": 2, "title_only": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["citations"][0]["source_collection"] == "medical-insurance-laws"
+    assert state.query_logs[-1]["filters"]["title_only"] is True
+    assert state.operation_logs[-1]["payload"]["filters"]["title_only"] is True
+    assert unmatched_response.status_code == 404
+
+
+def test_query_endpoint_uses_persistent_user_status_gate(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    assert state.auth_user_store is not None
+    state.auth_user_store.add_user(
+        {
+            "user_key": "disabled-query-user",
+            "display_name": "停用查询用户",
+            "status": "disabled",
+        }
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "disabled-query-user", "X-Role": "it-admin"},
+        json={"question": "医保基金审核依据", "top_k": 2},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "auth user status is disabled"
 
 
 def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
@@ -2139,63 +1659,6 @@ def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
     second_client = TestClient(create_app(second_state))
     persisted_items = second_client.get("/query/logs").json()["items"]
     assert persisted_items[0]["id"] == body["query_log_id"]
-
-
-def test_query_endpoint_scopes_personal_materials_by_owner_and_read_all(
-    tmp_path: Path,
-) -> None:
-    owner_id = uuid4()
-    other_id = uuid4()
-    state = _api_state(tmp_path)
-    state.search_engine = _search_engine_from_chunks(
-        [
-            _personal_chunk(
-                owner_id,
-                "个人补充材料 门诊费用审核依据 来自审计员一",
-                created_by="auditor-1",
-            ),
-            _personal_chunk(
-                other_id,
-                "个人补充材料 门诊费用审核依据 来自审计员二",
-                created_by="auditor-2",
-            ),
-        ]
-    )
-    client = TestClient(create_app(state))
-    payload = {
-        "question": "个人补充材料 门诊费用审核依据",
-        "top_k": 5,
-        "source_collections": ["personal-materials"],
-    }
-
-    owner_response = client.post(
-        "/query",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        json=payload,
-    )
-    other_response = client.post(
-        "/query",
-        headers={"X-User-Id": "auditor-3", "X-Role": "auditor"},
-        json=payload,
-    )
-    head_response = client.post(
-        "/query",
-        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
-        json=payload,
-    )
-
-    assert owner_response.status_code == 200
-    assert [item["chunk_id"] for item in owner_response.json()["citations"]] == [
-        str(owner_id)
-    ]
-    assert other_response.status_code == 404
-    assert other_response.json()["detail"] == "no cited evidence found"
-    assert head_response.status_code == 200
-    assert {item["chunk_id"] for item in head_response.json()["citations"]} == {
-        str(owner_id),
-        str(other_id),
-    }
-    assert state.query_logs[-1]["user_identifier"] == "head-1"
 
 
 def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> None:
@@ -2329,6 +1792,21 @@ def test_index_rebuild_incremental_lists_and_permissions(tmp_path: Path) -> None
     assert jobs[-1]["status"] == "succeeded"
     assert pending[0]["relative_path"] == "风险负面清单/risk.png"
     assert failures == []
+
+
+def test_index_rebuild_allows_technician_role(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    _write_text(state.source_root / "医保目录" / "catalog.md", "# 医保目录\n医保目录内容")
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/index/rebuild",
+        headers={"X-User-Id": "technician-1", "X-Role": "technician"},
+        json={"package_version_key": "technician-package"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["job_type"] == "full-rebuild"
 
 
 def test_index_retry_file_reports_missing_target(tmp_path: Path) -> None:
@@ -2540,21 +2018,10 @@ def test_index_version_activate_and_rollback_actions_require_admin(
 
     forbidden_response = client.post(
         "/index/versions/activate",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        headers={"X-Role": "auditor"},
         json={"index_version_key": "candidate-next"},
     )
     assert forbidden_response.status_code == 403
-    denied_log = state.operation_logs[-1]
-    assert denied_log["action"] == "index-admin-access-denied"
-    assert denied_log["payload"] == {
-        "attempted_action": "index-version-activate",
-        "user_identifier": "auditor-1",
-        "role": "auditor",
-        "normalized_role": "auditor",
-        "auth_source": "legacy-header",
-        "status_code": 403,
-        "reason": "index operation requires it-admin role",
-    }
 
     activate_response = client.post(
         "/index/versions/activate",
@@ -2567,7 +2034,7 @@ def test_index_version_activate_and_rollback_actions_require_admin(
 
     rollback_response = client.post(
         "/index/versions/rollback",
-        headers={"X-Role": "system-admin"},
+        headers={"X-Role": "it-admin"},
         json={"index_version_key": "active-old"},
     )
     assert rollback_response.status_code == 200
@@ -2872,11 +2339,7 @@ def test_index_evaluation_run_requires_ready_search_backend(tmp_path: Path) -> N
     assert "search backend is not ready" in response.json()["detail"]
 
 
-def _api_state(
-    tmp_path: Path,
-    *,
-    document_storage: DocumentStorageSettings | None = None,
-) -> ApiState:
+def _api_state(tmp_path: Path) -> ApiState:
     source_root = tmp_path / "data"
     source_file = source_root / "全量法律" / "law.md"
     _write_text(
@@ -2888,10 +2351,22 @@ def _api_state(
             ]
         ),
     )
-    settings = _knowledge_query_settings(
-        tmp_path,
+    settings = KnowledgeQuerySettings(
         data_root=source_root,
-        document_storage=document_storage,
+        index_root=tmp_path / "index",
+        database_url="postgresql+psycopg://user:pass@localhost:5433/db",
+        model_provider=ModelProviderSettings(
+            provider="fake",
+            api_key_env="OPENAI_API_KEY",
+            embedding_model="fake",
+            chat_model="fake",
+        ),
+        source_collection_weights={
+            "medical-insurance-catalog": 1.25,
+            "supervision-rules-knowledge": 1.35,
+            "risk-negative-list": 1.1,
+            "medical-insurance-laws": 1.0,
+        },
     )
     state = ApiState.from_settings(settings)
     state.audit_log_store = None
@@ -2909,63 +2384,33 @@ def _api_state(
     return state
 
 
-def _knowledge_query_settings(
-    tmp_path: Path,
-    *,
-    data_root: Path | None = None,
-    document_storage: DocumentStorageSettings | None = None,
-) -> KnowledgeQuerySettings:
-    return KnowledgeQuerySettings(
-        data_root=data_root or tmp_path / "data",
-        index_root=tmp_path / "index",
-        database_url="postgresql+psycopg://user:pass@localhost:5433/db",
-        model_provider=ModelProviderSettings(
-            provider="fake",
-            api_key_env="OPENAI_API_KEY",
-            embedding_model="fake",
-            chat_model="fake",
-        ),
-        document_storage=document_storage or DocumentStorageSettings(),
-        source_collection_weights={
-            "medical-insurance-catalog": 1.25,
-            "supervision-rules-knowledge": 1.35,
-            "risk-negative-list": 1.1,
-            "medical-insurance-laws": 1.0,
+def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
+    provider = DeterministicFakeEmbeddingProvider(dimension=32)
+    chunk = ChunkEmbeddingInput(
+        chunk_id=chunk_id,
+        text="第一条 医疗机构应当保留医保基金审核依据。",
+        metadata={
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "locator": {
+                "type": "law-article",
+                "source_path": source_path,
+                "line_start": 1,
+                "line_end": 1,
+                "article_number": "第一条",
+            },
+            "index_version_key": "index-v1",
+            "source_package_version_key": "package-v1",
+            "title": "医保基金审核依据",
+            "source_path": source_path,
+            "title_path": ["医保基金审核依据"],
+            "year": 2024,
+            "region": "国家",
+            "document_type": "law",
+            "business_topic": "fund-supervision",
         },
     )
-
-
-def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
-    return _search_engine_from_chunks(
-        [
-            ChunkEmbeddingInput(
-                chunk_id=chunk_id,
-                text="第一条 医疗机构应当保留医保基金审核依据。",
-                metadata={
-                    "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
-                    "locator": {
-                        "type": "law-article",
-                        "source_path": source_path,
-                        "line_start": 1,
-                        "line_end": 1,
-                        "article_number": "第一条",
-                    },
-                    "index_version_key": "index-v1",
-                    "source_package_version_key": "package-v1",
-                    "year": 2024,
-                    "region": "国家",
-                    "document_type": "law",
-                    "business_topic": "fund-supervision",
-                },
-            )
-        ]
-    )
-
-
-def _search_engine_from_chunks(chunks: Sequence[ChunkEmbeddingInput]) -> HybridSearchEngine:
-    provider = DeterministicFakeEmbeddingProvider(dimension=32)
     vector_index = InMemoryVectorIndex(dimension=provider.dimension)
-    vector_index.upsert(build_chunk_embedding_records(chunks, provider=provider))
+    vector_index.upsert(build_chunk_embedding_records([chunk], provider=provider))
     bm25_index = InMemoryBM25Index()
     bm25_index.upsert(
         [
@@ -2974,7 +2419,6 @@ def _search_engine_from_chunks(chunks: Sequence[ChunkEmbeddingInput]) -> HybridS
                 text=chunk.text,
                 metadata=chunk.metadata,
             )
-            for chunk in chunks
         ]
     )
     return HybridSearchEngine(
@@ -2982,30 +2426,6 @@ def _search_engine_from_chunks(chunks: Sequence[ChunkEmbeddingInput]) -> HybridS
         vector_index=vector_index,
         bm25_index=bm25_index,
         rerank_provider=FakeRerankProvider(),
-    )
-
-
-def _personal_chunk(chunk_id: UUID, text: str, *, created_by: str) -> ChunkEmbeddingInput:
-    return ChunkEmbeddingInput(
-        chunk_id=chunk_id,
-        text=text,
-        metadata={
-            "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
-            "locator": {
-                "type": "personal-upload",
-                "source_path": f"personal-materials/{created_by}/note.txt",
-                "line_start": 1,
-                "line_end": 1,
-            },
-            "index_version_key": "personal-materials-test",
-            "source_package_version_key": "personal-materials-test",
-            "year": 2026,
-            "region": "本院",
-            "document_type": "personal-upload",
-            "business_topic": "fund-supervision",
-            "created_by": created_by,
-            "visibility": "private",
-        },
     )
 
 
@@ -3029,81 +2449,6 @@ class FailingQueryHistoryStore:
     def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
         _ = limit
         raise RuntimeError("history database unavailable")
-
-
-class FakeTencentCosClient:
-    def __init__(
-        self,
-        *,
-        signed_url: str = "https://cos.example/signed-download",
-    ) -> None:
-        self.signed_url = signed_url
-        self.objects: dict[str, bytes] = {}
-        self.put_calls: list[dict[str, object]] = []
-        self.get_object_calls: list[dict[str, object]] = []
-        self.presign_calls: list[dict[str, object]] = []
-
-    def put_object(
-        self,
-        *,
-        bucket: str,
-        region: str,
-        object_key: str,
-        content: bytes,
-        content_type: str,
-        metadata: dict[str, str],
-        encryption_mode: str,
-        kms_key_id: str | None,
-        storage_class: str,
-    ) -> dict[str, str | None]:
-        self.objects[object_key] = content
-        self.put_calls.append(
-            {
-                "bucket": bucket,
-                "region": region,
-                "object_key": object_key,
-                "content_type": content_type,
-                "metadata": metadata,
-                "encryption_mode": encryption_mode,
-                "kms_key_id": kms_key_id,
-                "storage_class": storage_class,
-            }
-        )
-        return {"etag": '"etag"', "version_id": "version-1"}
-
-    def create_presigned_download_url(
-        self,
-        *,
-        bucket: str,
-        region: str,
-        object_key: str,
-        expires_in_seconds: int,
-    ) -> str:
-        self.presign_calls.append(
-            {
-                "bucket": bucket,
-                "region": region,
-                "object_key": object_key,
-                "expires_in_seconds": expires_in_seconds,
-            }
-        )
-        return self.signed_url
-
-    def get_object(
-        self,
-        *,
-        bucket: str,
-        region: str,
-        object_key: str,
-    ) -> bytes:
-        self.get_object_calls.append(
-            {
-                "bucket": bucket,
-                "region": region,
-                "object_key": object_key,
-            }
-        )
-        return self.objects[object_key]
 
 
 def _write_text(path: Path, content: str) -> Path:

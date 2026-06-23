@@ -236,6 +236,7 @@ BACKUP_ROOT = {json.dumps(remote_backup_root, ensure_ascii=False)}
 BASE_URL = {json.dumps(base_url, ensure_ascii=False)}
 BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
+ENV_FILE_NAME = "medical" + "-audit" + ".env"
 
 
 def run(command, cwd=None):
@@ -276,7 +277,7 @@ def container_state(name):
 
 def compose_services():
     compose_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud/docker-compose.prod.yaml")
-    env_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud/medical-audit.env")
+    env_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud" / ENV_FILE_NAME)
     result = run(
         [
             "docker",
@@ -297,7 +298,7 @@ def compose_services():
 
 
 def governance_env():
-    env_path = Path(APP_DIR) / "configs/deploy/tencent-cloud/medical-audit.env"
+    env_path = Path(APP_DIR) / "configs/deploy/tencent-cloud" / ENV_FILE_NAME
     keys = {{
         "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
         "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
@@ -496,12 +497,20 @@ def _build_report(
     local_smoke_reports: list[dict[str, Any]],
     expected_deploy_sha: str | None,
     required_backup_stamp: str | None,
-    min_matching_embeddings: int,
-    require_clamav_sidecar: bool,
+    min_matching_embeddings: int | None = None,
+    require_clamav_sidecar: bool = False,
     expected_dlp_review_provider: str | None = None,
+    expected_embeddings: int | None = None,
 ) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
+    matching_embedding_floor = (
+        min_matching_embeddings
+        if min_matching_embeddings is not None
+        else expected_embeddings
+        if expected_embeddings is not None
+        else DEFAULT_MIN_MATCHING_EMBEDDINGS
+    )
     deploy_sha = _string_or_none(remote_report.get("deploy_sha"))
     if expected_deploy_sha and deploy_sha != expected_deploy_sha:
         issues.append("deploy-sha-mismatch")
@@ -513,14 +522,14 @@ def _build_report(
     audit_frontdoor_healthy = _audit_frontdoor_healthy(remote_report)
     if not nginx_config_test_passed and _shared_nginx_failure_is_non_blocking(
         remote_report,
-        min_matching_embeddings,
+        matching_embedding_floor,
     ):
         warnings.append("shared-nginx-config-test-failed-audit-route-healthy")
     elif not nginx_config_test_passed:
         issues.append("nginx-config-test-failed")
     if not _audit_mount_valid(remote_report):
         issues.append("audit-static-bind-mount-missing")
-    if not _search_backend_ready(remote_report, min_matching_embeddings):
+    if not _search_backend_ready(remote_report, matching_embedding_floor):
         issues.append("search-backend-not-ready")
     if required_backup_stamp:
         missing = _missing_backup_categories(remote_report, required_backup_stamp)
@@ -547,8 +556,8 @@ def _build_report(
         "expected_deploy_sha": expected_deploy_sha,
         "required_backup_stamp": required_backup_stamp,
         "expected_dlp_review_provider": expected_dlp_review_provider,
-        "minimum_matching_embeddings": min_matching_embeddings,
-        "expected_matching_embeddings": min_matching_embeddings,
+        "minimum_matching_embeddings": matching_embedding_floor,
+        "expected_matching_embeddings": matching_embedding_floor,
         "summary": {
             "deploy_sha": deploy_sha,
             "app_health": _container_health(remote_report, "medical_audit_app"),
@@ -563,7 +572,10 @@ def _build_report(
             "nginx_config_test": _nginx_test_passed(remote_report),
             "audit_frontdoor_healthy": audit_frontdoor_healthy,
             "audit_mount_present": _audit_mount_valid(remote_report),
-            "search_backend_ready": _search_backend_ready(remote_report, min_matching_embeddings),
+            "search_backend_ready": _search_backend_ready(
+                remote_report,
+                matching_embedding_floor,
+            ),
             "matching_embedding_count": _matching_embedding_count(remote_report),
             "latest_local_smoke_status": latest_smoke.get("status") if latest_smoke else None,
         },

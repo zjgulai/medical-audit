@@ -1,5 +1,18 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
+import { fetchArchiveWorkbench } from "@/lib/api-client";
+import type {
+  ArchiveAuditRunApiItem,
+  ArchivePackageApiItem,
+  ArchivePolicyItemApiItem,
+  ArchiveSignatureItemApiItem,
+  ArchiveTimelineApiItem,
+  ArchiveWorkbenchResponse
+} from "@/lib/api-types";
 import {
   archiveAuditRuns,
   archivePackages,
@@ -7,20 +20,62 @@ import {
   archiveSignatureItems,
   archiveTimeline
 } from "@/lib/portal-data";
-import type {
-  ArchiveAuditRun,
-  ArchivePackage,
-  ArchivePolicyItem,
-  ArchiveSignatureItem,
-  ArchiveTimelineItem
-} from "@/lib/portal-data";
 
-const archivedPackageCount = archivePackages.filter((item) => item.status === "已归档").length;
-const pendingPackageCount = archivePackages.filter((item) => item.status !== "已归档").length;
-const blockedPackageCount = archivePackages.filter((item) => item.status === "材料阻断").length;
-const latestArchiveRun = archiveAuditRuns[0];
+const staticArchiveWorkbench: ArchiveWorkbenchResponse = {
+  format: "archive-workbench-v1",
+  generated_at: "static-fallback",
+  archive_id: "FUND-USAGE-ARCHIVE",
+  archive_title: "项目档案与审计日志归档",
+  archive_scope: "汇总项目档案包、审计日志归档、签名链和归档前阻断原因，首期只读展示归档状态和受控导出入口。",
+  archive_packages: archivePackages,
+  audit_runs: archiveAuditRuns,
+  signature_items: archiveSignatureItems,
+  policy_items: archivePolicyItems,
+  timeline: archiveTimeline,
+  metrics: buildArchiveMetrics(
+    archivePackages,
+    archiveAuditRuns,
+    archiveSignatureItems,
+    archivePolicyItems,
+    archiveTimeline
+  ),
+  evidence_grade: "static-fallback",
+  production_side_effect: "none",
+  store: { ready: false, backend: "portal-data-static-fallback" }
+};
 
 export default function ArchivePage() {
+  const [workbench, setWorkbench] = useState<ArchiveWorkbenchResponse>(staticArchiveWorkbench);
+  const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
+
+  useEffect(() => {
+    let active = true;
+
+    fetchArchiveWorkbench()
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(response);
+        setBackendStatus("ready");
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(staticArchiveWorkbench);
+        setBackendStatus("fallback");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
+  const statusLabel =
+    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+
   return (
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
@@ -29,8 +84,11 @@ export default function ArchivePage() {
         <div className="mt-3">
           <SearchBackendStatusPill />
         </div>
+        <div className="mt-3">
+          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+        </div>
         <div className="mt-5 space-y-3">
-          {archivePackages.map((item) => (
+          {workbench.archive_packages.map((item) => (
             <ArchiveIndexCard key={item.id} item={item} />
           ))}
         </div>
@@ -40,19 +98,19 @@ export default function ArchivePage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">项目档案</p>
-            <h1 className="audit-page-title">项目档案与审计日志归档</h1>
+            <h1 className="audit-page-title">{workbench.archive_title}</h1>
             <p className="audit-copy mt-2 max-w-3xl">
-              汇总项目档案包、审计日志归档、签名链和归档前阻断原因，保留到后台审计日志台的受控入口。
+              {workbench.archive_scope}
             </p>
           </div>
           <StatusPill tone="info">首期只读</StatusPill>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ArchiveMetric label="已归档项目" value={`${archivedPackageCount} 个`} />
-          <ArchiveMetric label="待归档档案" value={`${pendingPackageCount} 个`} />
-          <ArchiveMetric label="材料阻断" value={`${blockedPackageCount} 项`} />
-          <ArchiveMetric label="巡检状态" value={latestArchiveRun.status} />
+          <ArchiveMetric label="已归档项目" value={`${workbench.metrics.archived_package_count} 个`} />
+          <ArchiveMetric label="待归档档案" value={`${workbench.metrics.pending_package_count} 个`} />
+          <ArchiveMetric label="材料阻断" value={`${workbench.metrics.blocked_package_count} 项`} />
+          <ArchiveMetric label="巡检状态" value={workbench.metrics.latest_archive_run_status} />
         </div>
 
         <section className="mt-6" aria-labelledby="archive-package-title">
@@ -69,7 +127,7 @@ export default function ArchivePage() {
           </div>
 
           <div className="mt-4 grid gap-3">
-            {archivePackages.map((item) => (
+            {workbench.archive_packages.map((item) => (
               <ArchivePackageCard key={item.id} item={item} />
             ))}
           </div>
@@ -81,7 +139,7 @@ export default function ArchivePage() {
               审计日志治理策略
             </h2>
             <div className="mt-4 grid gap-3">
-              {archivePolicyItems.map((item) => (
+              {workbench.policy_items.map((item) => (
                 <ArchivePolicyCard key={item.id} item={item} />
               ))}
             </div>
@@ -104,7 +162,7 @@ export default function ArchivePage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">归档巡检</h2>
           <div className="mt-4 space-y-3">
-            {archiveAuditRuns.map((item) => (
+            {workbench.audit_runs.map((item) => (
               <ArchiveAuditRunCard key={item.id} item={item} />
             ))}
           </div>
@@ -113,7 +171,7 @@ export default function ArchivePage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">签名链</h2>
           <div className="mt-4 space-y-3">
-            {archiveSignatureItems.map((item) => (
+            {workbench.signature_items.map((item) => (
               <ArchiveSignatureCard key={item.id} item={item} />
             ))}
           </div>
@@ -122,7 +180,7 @@ export default function ArchivePage() {
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">入档动态</h2>
           <div className="mt-4 space-y-3">
-            {archiveTimeline.map((item) => (
+            {workbench.timeline.map((item) => (
               <ArchiveTimelineCard key={item.id} item={item} />
             ))}
           </div>
@@ -132,7 +190,7 @@ export default function ArchivePage() {
   );
 }
 
-function ArchiveIndexCard({ item }: { readonly item: ArchivePackage }) {
+function ArchiveIndexCard({ item }: { readonly item: ArchivePackageApiItem }) {
   return (
     <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={item.href}>
       <div className="flex items-start justify-between gap-3">
@@ -156,7 +214,7 @@ function ArchiveMetric({ label, value }: { readonly label: string; readonly valu
   );
 }
 
-function ArchivePackageCard({ item }: { readonly item: ArchivePackage }) {
+function ArchivePackageCard({ item }: { readonly item: ArchivePackageApiItem }) {
   return (
     <article className="audit-panel-muted p-4">
       <div className="flex items-start justify-between gap-3">
@@ -198,7 +256,7 @@ function ArchivePackageCard({ item }: { readonly item: ArchivePackage }) {
   );
 }
 
-function ArchivePolicyCard({ item }: { readonly item: ArchivePolicyItem }) {
+function ArchivePolicyCard({ item }: { readonly item: ArchivePolicyItemApiItem }) {
   return (
     <article className="audit-panel-muted p-4">
       <p className="audit-meta font-semibold">{item.label}</p>
@@ -208,7 +266,7 @@ function ArchivePolicyCard({ item }: { readonly item: ArchivePolicyItem }) {
   );
 }
 
-function ArchiveAuditRunCard({ item }: { readonly item: ArchiveAuditRun }) {
+function ArchiveAuditRunCard({ item }: { readonly item: ArchiveAuditRunApiItem }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -234,7 +292,7 @@ function ArchiveAuditRunCard({ item }: { readonly item: ArchiveAuditRun }) {
   );
 }
 
-function ArchiveSignatureCard({ item }: { readonly item: ArchiveSignatureItem }) {
+function ArchiveSignatureCard({ item }: { readonly item: ArchiveSignatureItemApiItem }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -247,7 +305,7 @@ function ArchiveSignatureCard({ item }: { readonly item: ArchiveSignatureItem })
   );
 }
 
-function ArchiveTimelineCard({ item }: { readonly item: ArchiveTimelineItem }) {
+function ArchiveTimelineCard({ item }: { readonly item: ArchiveTimelineApiItem }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
       <div className="flex items-start justify-between gap-3">
@@ -262,7 +320,7 @@ function ArchiveTimelineCard({ item }: { readonly item: ArchiveTimelineItem }) {
   );
 }
 
-function getArchivePackageTone(status: ArchivePackage["status"]) {
+function getArchivePackageTone(status: ArchivePackageApiItem["status"]) {
   if (status === "已归档") {
     return "success";
   }
@@ -278,7 +336,7 @@ function getArchivePackageTone(status: ArchivePackage["status"]) {
   return "warning";
 }
 
-function getArchiveRunTone(status: ArchiveAuditRun["status"]) {
+function getArchiveRunTone(status: ArchiveAuditRunApiItem["status"]) {
   if (status === "通过") {
     return "success";
   }
@@ -290,7 +348,7 @@ function getArchiveRunTone(status: ArchiveAuditRun["status"]) {
   return "warning";
 }
 
-function getSignatureTone(status: ArchiveSignatureItem["status"]) {
+function getSignatureTone(status: ArchiveSignatureItemApiItem["status"]) {
   if (status === "验签通过") {
     return "success";
   }
@@ -300,4 +358,24 @@ function getSignatureTone(status: ArchiveSignatureItem["status"]) {
   }
 
   return "warning";
+}
+
+function buildArchiveMetrics(
+  packages: readonly ArchivePackageApiItem[],
+  auditRuns: readonly ArchiveAuditRunApiItem[],
+  signatureItems: readonly ArchiveSignatureItemApiItem[],
+  policyItems: readonly ArchivePolicyItemApiItem[],
+  timeline: readonly ArchiveTimelineApiItem[]
+): ArchiveWorkbenchResponse["metrics"] {
+  return {
+    package_count: packages.length,
+    archived_package_count: packages.filter((item) => item.status === "已归档").length,
+    pending_package_count: packages.filter((item) => item.status !== "已归档").length,
+    blocked_package_count: packages.filter((item) => item.status === "材料阻断").length,
+    audit_run_count: auditRuns.length,
+    signature_count: signatureItems.length,
+    policy_count: policyItems.length,
+    timeline_count: timeline.length,
+    latest_archive_run_status: auditRuns[0]?.status ?? "无"
+  };
 }

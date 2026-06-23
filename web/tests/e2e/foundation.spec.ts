@@ -36,14 +36,14 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await expect(primaryNavigation.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
   await expect(primaryNavigation.getByRole("link", { name: /AI 数据分析/ })).toHaveAttribute("href", "/analytics");
   await expect(primaryNavigation.getByRole("link", { name: /知识图谱/ })).toHaveAttribute("href", "/graph");
-  await expect(primaryNavigation.getByRole("link", { name: "审计底稿/报告" })).toHaveAttribute("href", "/reports");
+  await expect(primaryNavigation.getByRole("link", { name: "审计底稿生成" })).toHaveAttribute("href", "/reports");
   await expect(primaryNavigation.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
 });
 
 test("Next-native AI chat portal is reachable", async ({ page }) => {
   await page.goto("/chat");
 
-  await expect(page.getByRole("heading", { name: "选择智能体后进入审证对话" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI 审证对话工作台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "进入审证对话" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开后端深页" })).toHaveAttribute("href", "/pages/chat");
 });
@@ -109,8 +109,9 @@ test("project management exposes project list and member workflow", async ({ pag
   await page.getByLabel("部门").fill("医保办");
   await page.getByRole("button", { name: "添加成员" }).click();
 
-  await expect(page.getByText("赵审计")).toBeVisible();
-  await expect(page.getByText("医保办")).toBeVisible();
+  const createdMemberRow = page.getByRole("row").filter({ hasText: "赵审计" }).last();
+  await expect(createdMemberRow).toBeVisible();
+  await expect(createdMemberRow.getByRole("cell", { name: "医保办" })).toBeVisible();
 });
 
 test("agent marketplace filters templates and agents enter portal chat", async ({ page }) => {
@@ -158,14 +159,17 @@ test("document search homepage exposes history and document groups", async ({ pa
   await expect(page.getByLabel("审计问题或文档关键词")).toBeVisible();
   await expect(page.getByLabel("仅标题")).toBeVisible();
   await expect(page.getByRole("heading", { name: "搜索历史" })).toBeVisible();
-  await expect(page.getByText("医保基金支付异常")).toBeVisible();
   await expect(page.getByText("监管两库")).toBeVisible();
   await expect(page.getByText("risk-negative-list")).toBeVisible();
+  await page.getByLabel("审计问题或文档关键词").fill("医保基金审核依据是什么");
+  await page.getByRole("button", { name: "执行检索" }).click();
+  await expect(page.getByRole("heading", { name: "医保基金审核依据是什么" })).toBeVisible();
+  await expect(page.getByText("1 条引用").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "对话文档" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "知识库文档" })).toBeVisible();
   await expect(page.getByText("重复收费疑点复核对话")).toBeVisible();
   await expect(page.getByText("医保目录限制条件资料包")).toBeVisible();
-  await expect(page.getByRole("link", { name: "转入 AI 对话" }).first()).toHaveAttribute("href", "/chat");
+  await expect(page.getByRole("link", { name: "转入 AI 对话" }).first()).toHaveAttribute("href", /\/chat/);
 });
 
 test("knowledge graph exposes read-only relationship coverage", async ({ page }) => {
@@ -217,6 +221,8 @@ test("report homepage exposes gates, evidence and remediation", async ({ page })
   await expect(page.getByText("纳入疑点").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "历史生成记录" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "报告门禁预检" }).first()).toBeVisible();
+  await expect(page.getByText("表1_医保费用汇总表-模版.xlsx")).toBeVisible();
+  await expect(page.getByText("模板字段已注册").first()).toBeVisible();
   await expect(page.getByText("底稿与负责人确认")).toBeVisible();
   await expect(page.getByText("附件登记与报告草稿")).toBeVisible();
   await expect(page.getByRole("heading", { name: "底稿证据来源" })).toBeVisible();

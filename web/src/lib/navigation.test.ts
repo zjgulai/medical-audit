@@ -81,21 +81,19 @@ describe("primaryNavigation", () => {
 
   it("groups the sidebar around audit workbench concepts", () => {
     expect(navigationGroups.map((group) => group.label)).toEqual([
-      "审计任务",
-      "智能体",
-      "常用工具",
-      "审计资源",
+      "核心功能",
+      "专题审计",
+      "知识底座",
       "系统管理"
     ]);
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
-      "/workspace",
       "/chat",
-      "/guided-check",
-      "/projects",
-      "/remediation",
+      "/agent-market",
+      "/documents",
+      "/analytics",
       "/reports"
     ]);
-    expect(navigationGroups[4].items).toEqual(systemNavigation);
+    expect(navigationGroups[3].items).toEqual(systemNavigation);
   });
 
   it("keeps workbench home and backend system routes addressable for tabs", () => {

@@ -1,25 +1,36 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
 
+from medical_audit_kb.api.agent_store import (
+    AgentStore,
+    InMemoryAgentStore,
+    combined_agent_payloads,
+)
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
 from medical_audit_kb.api.audit_log_policy import (
     audit_log_policy_payload,
-    can_read_audit_logs,
     redact_audit_log_events,
 )
-from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
+from medical_audit_kb.api.auth import (
+    AuthenticatedUser,
+    HospitalRole,
+    Permission,
+    require_permission,
+    resolve_authenticated_user,
+)
 from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     enforce_source_collection_access,
-    normalize_role,
 )
 from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
 from medical_audit_kb.domain.constants import SourceCollection
@@ -50,19 +61,37 @@ class QueryRequest(BaseModel):
     regions: list[str] = Field(default_factory=list)
     document_types: list[str] = Field(default_factory=list)
     business_topics: list[str] = Field(default_factory=list)
+    title_only: bool = False
+    agent: str | None = Field(default=None, max_length=128)
 
 
 @router.post("/query")
 def query(
     payload: QueryRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    x_project_name: Annotated[str | None, Header(alias="X-Project-Name")] = None,
 ) -> dict[str, object]:
-    role = normalize_role(current_user.primary_role)
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     enforce_source_collection_access(
         role=role,
         source_collections=tuple(payload.source_collections),
     )
+    agent_key = _normalize_agent_key(payload.agent)
+    if agent_key is not None:
+        _validate_agent_selection(
+            state,
+            agent_key,
+            request_project_name=x_project_name,
+            attempted_action="query-agent-select",
+        )
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search engine is not initialized")
 
@@ -72,8 +101,8 @@ def query(
         regions=tuple(payload.regions),
         document_types=tuple(payload.document_types),
         business_topics=tuple(payload.business_topics),
-        personal_upload_user_key=current_user.user_key,
-        personal_upload_read_all=can_read_all_personal_uploads(role),
+        title_only=payload.title_only,
+        title_query=payload.question if payload.title_only else "",
     )
     results = state.search_engine.search(payload.question, filters=filters, top_k=payload.top_k)
     try:
@@ -89,40 +118,70 @@ def query(
             locator=citation.locator,
             citation_text=citation.snippet,
         )
+    personal_upload_matches = _personal_upload_matches(
+        state=state,
+        user=user,
+        role=role,
+        query_text=payload.question,
+        limit=5,
+    )
 
     filter_payload = _query_filter_payload(payload)
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
-    log_entry = {
-        "user_identifier": current_user.user_key,
+    agent_invocation_id: str | None = None
+    log_entry: dict[str, object] = {
+        "user_identifier": user.user_identifier,
         "role": role,
-        "normalized_role": current_user.primary_role,
-        "auth_source": current_user.auth_source,
+        "effective_role": user.role.value,
+        "auth_source": user.auth_source,
         "question": payload.question,
+        "agent_id": agent_key,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
         "citation_count": len(answer.citations),
+        "personal_upload_match_count": len(personal_upload_matches),
     }
     state.query_logs.append(log_entry)
     persisted_log, query_history_error = try_add_query_history(
         state.query_history_store,
         {
-            "user_identifier": current_user.user_key,
+            "user_identifier": user.user_identifier,
             "question": payload.question,
             "filters": filter_payload,
             "answer_summary": answer.answer[:500],
             "retrieved_chunk_ids": retrieved_chunk_ids,
         },
     )
+    if agent_key is not None:
+        invocation = _record_query_agent_invocation(
+            state,
+            agent_key=agent_key,
+            question=payload.question,
+            user_identifier=user.user_identifier,
+            filters=filter_payload,
+            query_log_id=str(persisted_log.get("id")) if persisted_log else None,
+            query_log_index=len(state.query_logs) - 1,
+            citation_count=len(answer.citations),
+            request_project_name=x_project_name,
+        )
+        agent_invocation_id = str(invocation["id"])
     record_operation(
         state,
         "query",
-        auth_audit_payload(
-            current_user,
-            question=payload.question,
-            citation_count=len(answer.citations),
-            query_log_id=persisted_log.get("id") if persisted_log else None,
-            query_history_error=query_history_error,
-        ),
+        {
+            "question": payload.question,
+            "citation_count": len(answer.citations),
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+            "agent_id": agent_key,
+            "agent_invocation_id": agent_invocation_id,
+            "query_log_id": persisted_log.get("id") if persisted_log else None,
+            "query_history_error": query_history_error,
+            "filters": filter_payload,
+            "personal_upload_match_count": len(personal_upload_matches),
+        },
     )
 
     return {
@@ -163,8 +222,10 @@ def query(
             }
             for citation in answer.citations
         ],
+        "personal_upload_matches": personal_upload_matches,
         "query_log_index": len(state.query_logs) - 1,
         "query_log_id": persisted_log.get("id") if persisted_log else None,
+        "agent_invocation_id": agent_invocation_id,
     }
 
 
@@ -207,7 +268,164 @@ def _query_filter_payload(payload: QueryRequest) -> dict[str, object]:
         "regions": list(payload.regions),
         "document_types": list(payload.document_types),
         "business_topics": list(payload.business_topics),
+        "title_only": payload.title_only,
+        "agent": _normalize_agent_key(payload.agent),
     }
+
+
+def _record_query_agent_invocation(
+    state: ApiState,
+    *,
+    agent_key: str,
+    question: str,
+    user_identifier: str,
+    filters: dict[str, object],
+    query_log_id: str | None,
+    query_log_index: int,
+    citation_count: int,
+    request_project_name: str | None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "filters": filters,
+        "query_log_id": query_log_id,
+        "query_log_index": query_log_index,
+        "citation_count": citation_count,
+        "project_name": _normalize_project_name(request_project_name),
+    }
+    try:
+        invocation = _agent_store(state).record_invocation(
+            agent_key,
+            invocation_source="/query",
+            question=question,
+            conversation_ref=query_log_id or f"query-log-index:{query_log_index}",
+            created_by=user_identifier,
+            metadata=metadata,
+        )
+        record_operation(
+            state,
+            "agent-invocation-create",
+            {
+                "agent_id": agent_key,
+                "invocation_id": invocation["id"],
+                "prompt_version": invocation["prompt_version"],
+                "created_by": user_identifier,
+                "invocation_source": "/query",
+            },
+        )
+        return invocation
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="agent not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="persistent agent store is not available",
+        ) from exc
+
+
+def _validate_agent_selection(
+    state: ApiState,
+    agent_key: str,
+    *,
+    request_project_name: str | None,
+    attempted_action: str,
+) -> dict[str, object]:
+    try:
+        agent = _agent_payload_for_key(state, agent_key)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="persistent agent store is not available",
+        ) from exc
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    if str(agent.get("status") or "active") != "active":
+        raise HTTPException(status_code=409, detail=f"agent is not active: {agent_key}")
+    _enforce_agent_project_scope(
+        state,
+        agent,
+        request_project_name=request_project_name,
+        attempted_action=attempted_action,
+    )
+    return agent
+
+
+def _agent_payload_for_key(state: ApiState, agent_key: str) -> dict[str, object] | None:
+    agent = _agent_store(state).get_agent(agent_key)
+    if agent is not None:
+        return agent
+    return next(
+        (dict(agent) for agent in combined_agent_payloads([]) if agent["id"] == agent_key),
+        None,
+    )
+
+
+def _agent_store(state: ApiState) -> AgentStore:
+    if state.agent_store is None:
+        state.agent_store = InMemoryAgentStore()
+    return state.agent_store
+
+
+def _enforce_agent_project_scope(
+    state: ApiState,
+    agent: dict[str, object],
+    *,
+    request_project_name: str | None,
+    attempted_action: str,
+) -> None:
+    normalized_project = _normalize_project_name(request_project_name)
+    if not normalized_project or str(agent.get("visibility_scope") or "project") != "project":
+        return
+    agent_project_name = str(agent.get("project_name") or "").strip()
+    if agent_project_name == normalized_project:
+        return
+    record_operation(
+        state,
+        "agent-project-scope-denied",
+        {
+            "agent_id": str(agent.get("id") or ""),
+            "agent_project_name": agent_project_name,
+            "request_project_name": normalized_project,
+            "attempted_action": attempted_action,
+        },
+    )
+    raise HTTPException(
+        status_code=403,
+        detail="agent project scope does not match current project",
+    )
+
+
+def _normalize_project_name(project_name: str | None) -> str | None:
+    if project_name is None:
+        return None
+    normalized = urllib.parse.unquote(project_name.strip())
+    return normalized or None
+
+
+def _normalize_agent_key(agent_key: str | None) -> str | None:
+    if agent_key is None:
+        return None
+    normalized = agent_key.strip()
+    return normalized or None
+
+
+def _personal_upload_matches(
+    *,
+    state: ApiState,
+    user: AuthenticatedUser,
+    role: str,
+    query_text: str,
+    limit: int,
+) -> list[dict[str, object]]:
+    if state.document_upload_store is None:
+        return []
+    return state.document_upload_store.search_personal_index(
+        query=query_text,
+        created_by=user.user_identifier,
+        include_all=can_read_all_personal_uploads(role),
+        limit=limit,
+    )
 
 
 @router.get("/operation/logs")
@@ -265,7 +483,8 @@ def audit_findings(
 @router.get("/audit/logs")
 def audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -283,7 +502,7 @@ def audit_logs(
         created_to=created_to,
         limit=limit,
     )
-    _require_audit_log_reader(state, current_user=current_user)
+    _require_audit_log_reader(state, x_role=x_role, x_user_id=x_user_id)
     if state.audit_log_store is None:
         return {
             "items": [],
@@ -311,7 +530,8 @@ def audit_logs(
 @router.get("/audit/logs/export")
 def export_audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -320,7 +540,7 @@ def export_audit_logs(
     created_to: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 500,
 ) -> Response:
-    _require_audit_log_reader(state, current_user=current_user)
+    user = _require_audit_log_reader(state, x_role=x_role, x_user_id=x_user_id)
     if state.audit_log_store is None:
         raise HTTPException(status_code=409, detail="persistent audit log store is not configured")
 
@@ -339,6 +559,10 @@ def export_audit_logs(
         {
             "filters": filters,
             "limit": limit,
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
         },
     )
     items = state.audit_log_store.list_events(
@@ -426,20 +650,13 @@ def _audit_finding_store_unavailable_readiness() -> dict[str, object]:
 def _require_audit_log_reader(
     state: ApiState,
     *,
-    current_user: CurrentUser,
-) -> None:
-    if can_read_audit_logs(current_user.primary_role):
-        return
-    record_operation(
+    x_role: str | None,
+    x_user_id: str | None,
+) -> AuthenticatedUser:
+    return require_permission(
         state,
-        "audit-logs-access-denied",
-        auth_audit_payload(
-            current_user,
-            status_code=403,
-            reason="audit log access requires governance role",
-        ),
-    )
-    raise HTTPException(
-        status_code=403,
-        detail="audit log access requires it-admin or department-head role",
+        permission=Permission.READ_AUDIT_LOGS,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="audit-logs-read",
     )

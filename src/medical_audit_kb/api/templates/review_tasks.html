@@ -176,9 +176,11 @@
               <div class="review-task-actions">
                 <button type="submit">保存复核状态</button>
                 <a href="/review-tasks/{{ task.task_id }}/export?format=markdown">导出任务 Markdown</a>
+                <a href="/review-tasks/{{ task.task_id }}/export?format=docx">导出任务 Word</a>
                 <a href="/review-tasks/{{ task.task_id }}/export?format=json">导出任务 JSON</a>
                 {% if task.report_gate.ready_for_report %}
                   <a href="/review-tasks/{{ task.task_id }}/report-draft?format=markdown">导出报告草稿 Markdown</a>
+                  <a href="/review-tasks/{{ task.task_id }}/report-draft?format=docx">导出报告草稿 Word</a>
                   <a href="/review-tasks/{{ task.task_id }}/report-draft?format=json">导出报告草稿 JSON</a>
                 {% else %}
                   <span class="review-disabled-action">报告草稿需先通过门禁</span>
@@ -243,6 +245,7 @@
                 </dl>
                 <div class="review-task-actions">
                   <a href="/review-tasks/{{ task.task_id }}/signed-report?format=markdown">下载正式报告 Markdown</a>
+                  <a href="/review-tasks/{{ task.task_id }}/signed-report?format=docx">下载正式报告 Word</a>
                   <a href="/review-tasks/{{ task.task_id }}/signed-report?format=json">下载正式报告 JSON</a>
                 </div>
               {% elif task.report_gate.ready_for_report %}

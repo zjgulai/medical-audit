@@ -2,11 +2,14 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { useAuditUser } from "@/components/shell/audit-user-context";
 import { StatusPill } from "@/components/ui/status-pill";
 import { createProjectMember, fetchProjectMembers, fetchProjects } from "@/lib/api-client";
 import type { ProjectMemberApiItem, ProjectSummaryApiItem } from "@/lib/api-types";
 import {
   defaultProjectMembers,
+  hospitalPermissionRoles,
+  HospitalPermissionRole,
   portalProjectSummaries,
   PortalProjectMember,
   PortalProjectSummary
@@ -22,12 +25,14 @@ const projectStatusTone: Record<PortalProjectSummary["status"], "neutral" | "war
 type StoreStatus = "loading" | "ready" | "fallback" | "saving";
 
 export function ProjectManagementWorkbench() {
+  const auditUser = useAuditUser();
   const project = currentSelfCheckProject;
   const [projects, setProjects] = useState<readonly PortalProjectSummary[]>(portalProjectSummaries);
   const [selectedProjectId, setSelectedProjectId] = useState(project.id);
   const [members, setMembers] = useState<readonly PortalProjectMember[]>(defaultMembersForProject(project.id));
   const [projectQuery, setProjectQuery] = useState("");
   const [name, setName] = useState("");
+  const [permissionRoleId, setPermissionRoleId] = useState(hospitalPermissionRoles[3].id);
   const [role, setRole] = useState<PortalProjectMember["role"]>("审计员");
   const [department, setDepartment] = useState("内审部");
   const [projectStoreStatus, setProjectStoreStatus] = useState<StoreStatus>("loading");
@@ -44,6 +49,9 @@ export function ProjectManagementWorkbench() {
     );
   });
   const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? projects[0] ?? portalProjectSummaries[0];
+  const selectedPermissionRole =
+    hospitalPermissionRoles.find((item) => item.id === permissionRoleId) ?? hospitalPermissionRoles[3];
+  const canManageProjectMembers = auditUser.can("manage_project_members");
   const activeProjectCount = projects.filter((item) => item.status === "进行中").length;
   const pendingProjectCount = projects.filter((item) => item.status === "待启动").length;
 
@@ -103,6 +111,11 @@ export function ProjectManagementWorkbench() {
 
   async function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManageProjectMembers) {
+      setErrorMessage("当前角色无成员分配权限。");
+      return;
+    }
+
     const normalizedName = name.trim();
     const normalizedDepartment = department.trim();
 
@@ -129,8 +142,19 @@ export function ProjectManagementWorkbench() {
       setMemberStoreStatus(response.store.ready ? "ready" : "fallback");
     } catch {
       setMemberStoreStatus("fallback");
-      setErrorMessage("成员未保存，后端项目成员接口暂不可用。");
+      setErrorMessage("成员未保存，请检查后端连接和当前角色权限。");
     }
+  }
+
+  function applyPermissionRole(nextRoleId: string) {
+    const nextRole = hospitalPermissionRoles.find((item) => item.id === nextRoleId);
+    if (!nextRole) {
+      return;
+    }
+
+    setPermissionRoleId(nextRole.id);
+    setRole(nextRole.mapsToProjectRole);
+    setDepartment(nextRole.departmentHint);
   }
 
   return (
@@ -235,7 +259,7 @@ export function ProjectManagementWorkbench() {
             <div className="min-w-0">
               <p className="audit-kicker">项目成员</p>
               <h2 className="audit-section-title mt-2">{selectedProject.name}</h2>
-              <p className="audit-copy mt-2">角色展示和新增入口先用于首期项目空间组织，权限生效后置。</p>
+              <p className="audit-copy mt-2">角色展示和新增入口已接入当前医院角色权限。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusPill tone={projectStatusTone[selectedProject.status]}>{selectedProject.status}</StatusPill>
@@ -270,6 +294,27 @@ export function ProjectManagementWorkbench() {
             </table>
           </div>
         </div>
+
+        <div className="audit-panel min-w-0 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="audit-kicker">权限角色</p>
+              <h2 className="audit-section-title mt-2">医院权限角色矩阵</h2>
+              <p className="audit-copy mt-2">按用户提出的四类角色组织操作边界；后端项目成员角色暂不变。</p>
+            </div>
+            <StatusPill tone="success">权限已接入</StatusPill>
+          </div>
+          <div className="mt-5 grid gap-3 lg:grid-cols-2">
+            {hospitalPermissionRoles.map((permissionRole) => (
+              <PermissionRoleCard
+                key={permissionRole.id}
+                permissionRole={permissionRole}
+                selected={permissionRole.id === permissionRoleId}
+                onSelect={() => applyPermissionRole(permissionRole.id)}
+              />
+            ))}
+          </div>
+        </div>
       </section>
 
       <aside className="min-w-0 space-y-4">
@@ -297,8 +342,25 @@ export function ProjectManagementWorkbench() {
               />
             </label>
             <label className="block">
-              <span className="audit-label">角色</span>
+              <span className="audit-label">权限角色视图</span>
               <select
+                aria-label="权限角色视图"
+                className="audit-focus-ring audit-input mt-2 px-3 py-2"
+                value={permissionRoleId}
+                onChange={(event) => applyPermissionRole(event.target.value)}
+              >
+                {hospitalPermissionRoles.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <p className="audit-meta mt-2">{selectedPermissionRole.responsibility}</p>
+            </label>
+            <label className="block">
+              <span className="audit-label">项目成员角色</span>
+              <select
+                aria-label="项目成员角色"
                 className="audit-focus-ring audit-input mt-2 px-3 py-2"
                 value={role}
                 onChange={(event) => setRole(event.target.value as PortalProjectMember["role"])}
@@ -309,6 +371,7 @@ export function ProjectManagementWorkbench() {
                   </option>
                 ))}
               </select>
+              <p className="audit-meta mt-2">提交到现有后端角色：{selectedPermissionRole.mapsToProjectRole}</p>
             </label>
             <label className="block">
               <span className="audit-label">部门</span>
@@ -326,10 +389,13 @@ export function ProjectManagementWorkbench() {
             <button
               className="audit-focus-ring audit-btn audit-btn-primary w-full"
               type="submit"
-              disabled={memberStoreStatus === "saving"}
+              disabled={memberStoreStatus === "saving" || !canManageProjectMembers}
             >
               {memberStoreStatus === "saving" ? "保存中" : "添加成员"}
             </button>
+            {!canManageProjectMembers ? (
+              <p className="audit-meta">当前角色只能查看项目成员，不能分配账号或权限。</p>
+            ) : null}
           </form>
         </section>
       </aside>
@@ -425,6 +491,46 @@ function ProjectNavigatorItem({
       <span className="mt-2 inline-flex">
         <StatusPill tone={projectStatusTone[item.status]}>{item.status}</StatusPill>
       </span>
+    </button>
+  );
+}
+
+function PermissionRoleCard({
+  permissionRole,
+  selected,
+  onSelect
+}: {
+  readonly permissionRole: HospitalPermissionRole;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={selected}
+      className={`audit-focus-ring rounded-[var(--audit-radius-md)] border p-4 text-left ${
+        selected
+          ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)]"
+          : "border-[var(--audit-line)] bg-[var(--audit-surface-muted)] hover:bg-white"
+      }`}
+      onClick={onSelect}
+      type="button"
+    >
+      <span className="flex flex-wrap items-start justify-between gap-3">
+        <span>
+          <span className="audit-card-title block">{permissionRole.name}</span>
+          <span className="audit-meta mt-1 block">映射项目角色：{permissionRole.mapsToProjectRole}</span>
+        </span>
+        <StatusPill tone={selected ? "info" : "neutral"}>{permissionRole.departmentHint}</StatusPill>
+      </span>
+      <span className="audit-copy mt-3 block">{permissionRole.responsibility}</span>
+      <span className="mt-3 flex flex-wrap gap-2">
+        {permissionRole.allowedActions.map((action) => (
+          <span className="audit-chip" key={action}>
+            {action}
+          </span>
+        ))}
+      </span>
+      <span className="audit-meta mt-3 block">{permissionRole.boundary}</span>
     </button>
   );
 }

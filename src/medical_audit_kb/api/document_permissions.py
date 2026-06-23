@@ -4,7 +4,12 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
-from medical_audit_kb.api.role_policy import AUDIT_ROLES, normalize_audit_role
+from medical_audit_kb.api.auth import (
+    HospitalRole,
+    Permission,
+    has_permission,
+    normalize_hospital_role,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 
 DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
@@ -13,14 +18,6 @@ DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
     SourceCollection.MEDICAL_INSURANCE_CATALOG: ("医保目录", "系统知识库"),
     SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
 }
-PERSONAL_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
-    SourceCollection.PERSONAL_MATERIALS: ("个人材料", "本人上传"),
-}
-
-READ_ALL_PERSONAL_UPLOAD_ROLES = frozenset({"system-admin", "department-head"})
-READ_OWN_PERSONAL_UPLOAD_ROLES = AUDIT_ROLES
-QUERY_ROLES = AUDIT_ROLES
-
 
 @dataclass(frozen=True, slots=True)
 class DocumentPermission:
@@ -39,24 +36,24 @@ class DocumentPermission:
 
 
 def normalize_role(role: str | None) -> str:
-    return normalize_audit_role(role)
+    try:
+        normalized = normalize_hospital_role(role, default=HospitalRole.MEMBER)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            raise HTTPException(status_code=403, detail="role is not allowed to query") from exc
+        raise
+    if not has_permission(normalized, Permission.QUERY_KNOWLEDGE):
+        raise HTTPException(status_code=403, detail="role is not allowed to query")
+    return _legacy_api_role(normalized)
 
 
 def can_read_all_personal_uploads(role: str) -> bool:
-    return role in READ_ALL_PERSONAL_UPLOAD_ROLES
-
-
-def can_read_own_personal_uploads(role: str) -> bool:
-    return role in READ_OWN_PERSONAL_UPLOAD_ROLES
+    normalized = normalize_hospital_role(role, default=HospitalRole.MEMBER)
+    return has_permission(normalized, Permission.READ_ALL_PERSONAL_UPLOADS)
 
 
 def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
     # Current system collections are readable by all authenticated audit roles.
-    labels = dict(DOCUMENT_SOURCE_COLLECTION_LABELS)
-    if can_read_own_personal_uploads(role):
-        labels.update(PERSONAL_SOURCE_COLLECTION_LABELS)
-    if can_read_all_personal_uploads(role):
-        labels[SourceCollection.PERSONAL_MATERIALS] = ("个人材料", "全部授权上传")
     return tuple(
         DocumentPermission(
             source_collection=collection,
@@ -64,7 +61,7 @@ def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
             scope=scope,
             access="read",
         )
-        for collection, (label, scope) in labels.items()
+        for collection, (label, scope) in DOCUMENT_SOURCE_COLLECTION_LABELS.items()
     )
 
 
@@ -90,3 +87,13 @@ def enforce_source_collection_access(
                 "denied_source_collections": denied,
             },
         )
+
+
+def _legacy_api_role(role: HospitalRole) -> str:
+    if role == HospitalRole.ADMIN:
+        return "it-admin"
+    if role == HospitalRole.TECHNICIAN:
+        return "technician"
+    if role == HospitalRole.DIRECTOR:
+        return "department-head"
+    return "auditor"

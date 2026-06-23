@@ -2,11 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchAuditFindings } from "@/lib/api-client";
+import { fetchReportWorkbench } from "@/lib/api-client";
 import { StatusPill } from "@/components/ui/status-pill";
-import { rectificationSummaries, reportEntries, reportEvidenceSources, reportGateItems } from "@/lib/portal-data";
-import type { RectificationSummary, ReportEntry, ReportEvidenceSource, ReportGateItem } from "@/lib/portal-data";
-import type { AuditFinding } from "@/lib/api-types";
+import {
+  rectificationSummaries,
+  reportEntries,
+  reportEvidenceSources,
+  reportGateItems,
+  workpaperPromptTemplates
+} from "@/lib/portal-data";
+import type {
+  RectificationSummary,
+  ReportEntry,
+  ReportEvidenceSource,
+  ReportGateItem,
+  WorkpaperPromptTemplate
+} from "@/lib/portal-data";
+import type {
+  ReportWorkbenchEntry,
+  ReportWorkbenchEvidenceSource,
+  WorkpaperTemplateRegistryItem
+} from "@/lib/api-types";
 
 const reportWorkflowSteps = [
   {
@@ -27,6 +43,7 @@ const reportWorkflowSteps = [
 ] as const;
 
 type ReportPageDashboardData = {
+  readonly workpaperPromptTemplates: readonly WorkpaperPromptTemplate[];
   readonly reportEntries: readonly ReportEntry[];
   readonly reportEvidenceSources: readonly ReportEvidenceSource[];
 };
@@ -37,18 +54,9 @@ type LoadState =
   | { readonly status: "error" };
 
 const initialDashboardData: ReportPageDashboardData = {
+  workpaperPromptTemplates,
   reportEntries,
   reportEvidenceSources
-};
-
-const reviewStatusLabel: Record<string, string> = {
-  "pending-review": "待复核",
-  "needs-evidence": "需补证",
-  "confirmed-violation": "确认违规",
-  "rule-issue": "规则问题",
-  "data-issue": "数据问题",
-  "not-violation": "未发现违规",
-  closed: "已关闭"
 };
 
 export default function ReportsPage() {
@@ -58,19 +66,20 @@ export default function ReportsPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetchAuditFindings()
+    fetchReportWorkbench()
       .then((response) => {
         if (cancelled) {
           return;
         }
-        if (response.items.length === 0) {
-          return;
-        }
-        const mappedEntries = mapFindingsToReportEntries(response.items);
-        const mappedEvidenceSources = mapFindingsToEvidenceSources(response.items);
+        const mappedTemplates = mapWorkbenchTemplates(response.workpaper_templates);
+        const mappedEntries = mapWorkbenchEntries(response.report_entries);
+        const mappedEvidenceSources = mapWorkbenchEvidenceSources(response.report_evidence_sources);
         setDashboardData({
-          reportEntries: mappedEntries,
-          reportEvidenceSources: mappedEvidenceSources
+          workpaperPromptTemplates:
+            mappedTemplates.length > 0 ? mappedTemplates : workpaperPromptTemplates,
+          reportEntries: mappedEntries.length > 0 ? mappedEntries : reportEntries,
+          reportEvidenceSources:
+            mappedEvidenceSources.length > 0 ? mappedEvidenceSources : reportEvidenceSources
         });
         setLoadState({ status: "backend" });
       })
@@ -152,6 +161,23 @@ export default function ReportsPage() {
           <ReportMetric label="待整改" value={`${openRectificationCount} 项`} />
         </div>
 
+        <section className="mt-6" aria-labelledby="workpaper-template-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="workpaper-template-title" className="audit-section-title">
+                提示词模板生成
+              </h2>
+              <p className="audit-copy mt-1">按三张医保费用模板绑定证据字段，生成底稿草稿、问题清单或复核摘要。</p>
+            </div>
+            <StatusPill tone="warning">仅草稿</StatusPill>
+          </div>
+          <div className="mt-4 grid gap-3 2xl:grid-cols-3">
+            {dashboardData.workpaperPromptTemplates.map((template) => (
+              <WorkpaperPromptCard key={template.id} template={template} />
+            ))}
+          </div>
+        </section>
+
         <section className="mt-6" aria-labelledby="report-records-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="report-records-title" className="audit-section-title">
@@ -220,58 +246,124 @@ export default function ReportsPage() {
   );
 }
 
-function mapFindingsToReportEntries(items: readonly AuditFinding[]): readonly ReportEntry[] {
+function mapWorkbenchTemplates(
+  items: readonly WorkpaperTemplateRegistryItem[]
+): readonly WorkpaperPromptTemplate[] {
   return items.map((finding, index) => {
-    const status = mapFindingReviewStatusToReportStatus(finding.review_status);
-    const evidenceCount = finding.evidence_items.length;
-    const findingStatusLabel = reviewStatusLabel[finding.review_status] ?? finding.review_status;
-
     return {
-      id: finding.finding_key,
-      title: `${finding.finding_type} · ${finding.finding_key}`,
-      status,
-      reportNo: makeReportNo(finding.finding_key, finding.updated_at),
-      owner: "审计员",
-      source: finding.review_task_id ?? finding.audit_task_key ?? `task-${String(index + 1).padStart(3, "0")}`,
-      includedFindingCount: status === "门禁阻断" || status === "草稿" ? 0 : 1,
-      appendixCount: evidenceCount,
-      gateSummary: `${findingStatusLabel}（疑点类型：${finding.finding_type}）`,
-      updatedAt: formatDate(finding.updated_at),
-      href: "/pages/review-tasks"
+      id: finding.id,
+      name: finding.name,
+      sourceTemplateId: finding.source_template_id as WorkpaperPromptTemplate["sourceTemplateId"],
+      sourceTable: finding.source_table,
+      sourceFileName: finding.source_file_name,
+      templateStatus: finding.registry_status === "active" ? "模板字段已注册" : finding.registry_status,
+      outputType: mapWorkpaperOutputType(finding.output_type),
+      evidenceBindings: finding.evidence_bindings,
+      prompt: finding.prompt,
+      href: finding.chat_href || workpaperPromptTemplates[index]?.href || "/chat"
     };
   });
 }
 
-function mapFindingsToEvidenceSources(items: readonly AuditFinding[]): readonly ReportEvidenceSource[] {
-  const sourceItems = items.slice(0, 6).map((finding) => ({
-    id: `source-${finding.finding_key}`,
-    title: finding.finding_key,
-    kind: "疑点" as const,
-    reference: `${finding.finding_type} · ${finding.evidence_items.length} 条证据`,
-    status: finding.evidence_items.length > 0 ? ("已纳入" as const) : ("待补证" as const),
-    href: "/findings"
+function mapWorkbenchEntries(items: readonly ReportWorkbenchEntry[]): readonly ReportEntry[] {
+  return items.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    status: mapReportStatus(entry.status),
+    reportNo: entry.report_no,
+    owner: entry.owner,
+    source: entry.source,
+    includedFindingCount: entry.included_finding_count,
+    appendixCount: entry.appendix_count,
+    gateSummary: entry.gate_summary,
+    updatedAt: formatDate(entry.updated_at),
+    href: entry.href,
+    taskDocxHref: entry.download_links.task_docx,
+    reportDocxHref: entry.download_links.report_docx,
+    reportMarkdownHref: entry.download_links.report_markdown,
+    reportJsonHref: entry.download_links.report_json
   }));
-  return sourceItems.length > 0 ? sourceItems : reportEvidenceSources;
 }
 
-function makeReportNo(findingKey: string, updatedAt: string): string {
-  const prefix = formatDate(updatedAt).replace(/-/g, "");
-  const suffix = findingKey.slice(-6).toUpperCase();
-  return `REPORT-${prefix}-${suffix}`;
+function mapWorkbenchEvidenceSources(
+  items: readonly ReportWorkbenchEvidenceSource[]
+): readonly ReportEvidenceSource[] {
+  return items.slice(0, 6).map((source) => ({
+    id: source.id,
+    title: source.title,
+    kind: mapEvidenceKind(source.kind),
+    reference: source.reference,
+    status: mapEvidenceStatus(source.status),
+    href: source.href
+  }));
 }
 
 function formatDate(value: string): string {
   return value.includes("T") ? value.split("T")[0] : value.slice(0, 10);
 }
 
-function mapFindingReviewStatusToReportStatus(reviewStatus: string): ReportEntry["status"] {
-  if (reviewStatus === "pending-review") {
-    return "草稿";
+function mapWorkpaperOutputType(value: string): WorkpaperPromptTemplate["outputType"] {
+  if (value === "底稿草稿" || value === "问题清单" || value === "复核摘要") {
+    return value;
   }
-  if (reviewStatus === "needs-evidence") {
-    return "门禁阻断";
+  return "底稿草稿";
+}
+
+function mapReportStatus(value: string): ReportEntry["status"] {
+  if (value === "草稿" || value === "门禁阻断" || value === "已签发") {
+    return value;
   }
-  return "已签发";
+  return "草稿";
+}
+
+function mapEvidenceKind(value: string): ReportEvidenceSource["kind"] {
+  if (value === "疑点" || value === "底稿" || value === "附件" || value === "负责人确认") {
+    return value;
+  }
+  return "底稿";
+}
+
+function mapEvidenceStatus(value: string): ReportEvidenceSource["status"] {
+  if (value === "已纳入" || value === "待补证" || value === "只读") {
+    return value;
+  }
+  return "待补证";
+}
+
+function WorkpaperPromptCard({ template }: { readonly template: WorkpaperPromptTemplate }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="audit-card-title">{template.name}</h3>
+          <p className="audit-meta mt-1">{template.sourceTable}</p>
+          {template.sourceFileName ? (
+            <p className="audit-meta mt-1 break-words">{template.sourceFileName}</p>
+          ) : null}
+        </div>
+        <StatusPill tone="info">{template.outputType}</StatusPill>
+      </div>
+      <p className="audit-copy mt-3">{template.prompt}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {template.evidenceBindings.map((binding) => (
+          <span key={binding} className="audit-chip bg-white">
+            {binding}
+          </span>
+        ))}
+        {template.templateStatus ? (
+          <span className="audit-chip bg-white">{template.templateStatus}</span>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-8 px-3 py-1.5 text-xs" href={template.href}>
+          套用模板
+        </a>
+        <a className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href="/pages/review-tasks">
+          绑定复核任务
+        </a>
+      </div>
+    </article>
+  );
 }
 
 function ReportMetric({ label, value }: { readonly label: string; readonly value: string }) {
@@ -323,9 +415,25 @@ function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
         </div>
       </dl>
 
-      <a className="audit-focus-ring audit-btn audit-btn-primary mt-4 w-full" href={entry.href}>
-        查看详情
-      </a>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a className="audit-focus-ring audit-btn audit-btn-primary min-h-9 flex-1 px-3 py-2 text-sm" href={entry.href}>
+          查看详情
+        </a>
+        {entry.taskDocxHref ? (
+          <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-2 text-sm" href={entry.taskDocxHref}>
+            任务 Word
+          </a>
+        ) : null}
+        {entry.reportDocxHref ? (
+          <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-2 text-sm" href={entry.reportDocxHref}>
+            报告 Word
+          </a>
+        ) : (
+          <span className="inline-flex min-h-9 items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2 text-sm font-semibold text-[var(--audit-ink-muted)]">
+            报告 Word 需过门禁
+          </span>
+        )}
+      </div>
     </article>
   );
 }

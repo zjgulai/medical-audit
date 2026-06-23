@@ -34,7 +34,10 @@ export default function AgentMarketPage() {
             模板仅覆盖医疗/医保审计首期场景，添加后仍按提示词型智能体使用，不执行多步自主编排。
           </p>
         </div>
-        <StatusPill tone="info">模板</StatusPill>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill tone="info">提示词型</StatusPill>
+          <StatusPill tone="neutral">保存后生效</StatusPill>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -84,9 +87,9 @@ export default function AgentMarketPage() {
             </div>
             <a
               className="audit-focus-ring audit-btn audit-btn-primary mt-4"
-              href={`/agents?template=${template.id}`}
+              href={`/agents?template=${template.id}#new-agent`}
             >
-              添加到我的智能体
+              套用并新增智能体
             </a>
           </article>
         ))}

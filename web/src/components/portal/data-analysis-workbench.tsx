@@ -9,6 +9,7 @@ import type {
   TableAnalysisUploadHistoryItem,
   TableAnalysisUploadResponse
 } from "@/lib/api-types";
+import { auditTableTemplates, type AuditTableTemplate } from "@/lib/portal-data";
 
 type UploadProfile = {
   readonly name: string;
@@ -106,6 +107,9 @@ function buildErrorProfile(file: File, message: string): UploadProfile {
 }
 
 export function DataAnalysisWorkbench() {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<AuditTableTemplate["id"]>(auditTableTemplates[0]?.id ?? "");
+  const selectedTemplate = auditTableTemplates.find((template) => template.id === selectedTemplateId) ?? auditTableTemplates[0];
+  const [analysisRequirement, setAnalysisRequirement] = useState(selectedTemplate?.analysisRequest ?? "");
   const [profile, setProfile] = useState<UploadProfile | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("data");
@@ -127,6 +131,11 @@ export function DataAnalysisWorkbench() {
   useEffect(() => {
     void refreshHistory();
   }, [refreshHistory]);
+
+  function selectTemplate(template: AuditTableTemplate) {
+    setSelectedTemplateId(template.id);
+    setAnalysisRequirement(template.analysisRequest);
+  }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -163,10 +172,16 @@ export function DataAnalysisWorkbench() {
     if (!profile) {
       return (
         <div className="audit-panel-muted p-6 text-center">
-          <h2 className="audit-section-title">等待上传数据文件</h2>
+          <h2 className="audit-section-title">等待上传{selectedTemplate?.shortName ?? "审计"}数据文件</h2>
           <p className="audit-copy mx-auto mt-2 max-w-xl">
             选择 CSV 或 XLSX 文件后，后端会生成字段画像、质量提示和审计初步分析。
           </p>
+          {selectedTemplate && (
+            <div className="mt-5 grid gap-4 text-left lg:grid-cols-2">
+              <AnalysisList title="模板字段" items={selectedTemplate.expectedColumns.slice(0, 8)} />
+              <AnalysisList title="核验重点" items={selectedTemplate.keyChecks} />
+            </div>
+          )}
         </div>
       );
     }
@@ -337,10 +352,37 @@ map_audit_signals()`}</pre>
   }
 
   return (
-    <main className="grid min-w-0 gap-4 xl:grid-cols-[16rem_minmax(0,1fr)_16rem]">
+    <main className="grid min-w-0 gap-4 xl:grid-cols-[18rem_minmax(0,1fr)_17rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">数据分析助手</h2>
-        <p className="audit-copy mt-2">按参考工作台组织上传、预检、产物和报告。首期不执行生产级自动审计。</p>
+        <p className="audit-copy mt-2">按医保费用模板组织上传、预检、产物和报告。首期不执行生产级自动审计。</p>
+        <section className="mt-5" aria-labelledby="table-template-title">
+          <h3 id="table-template-title" className="audit-compact-title">常用表模板</h3>
+          <div className="mt-3 space-y-2">
+            {auditTableTemplates.map((template) => {
+              const isSelected = selectedTemplateId === template.id;
+              return (
+                <button
+                  key={template.id}
+                  className={`audit-focus-ring w-full rounded-[var(--audit-radius-md)] border p-3 text-left transition ${
+                    isSelected
+                      ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)]"
+                      : "border-[var(--audit-line)] bg-white hover:bg-[var(--audit-surface-muted)]"
+                  }`}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => selectTemplate(template)}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-[var(--audit-ink)]">{template.shortName} · {template.name}</span>
+                    <span className="audit-meta">{template.sheetName}</span>
+                  </span>
+                  <span className="mt-2 block audit-meta">{template.auditUse}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
         <div className="mt-5 space-y-3">
           {[
             ["da_list_files", isUploading ? "处理中" : profile ? "完成" : "等待"],
@@ -364,7 +406,8 @@ map_audit_signals()`}</pre>
           <span className="audit-label">分析要求</span>
           <textarea
             className="audit-focus-ring audit-input mt-2 min-h-28 resize-y px-3 py-2"
-            defaultValue="识别字段质量，判断是否具备重复收费、目录限制或医保支付核验基础。"
+            value={analysisRequirement}
+            onChange={(event) => setAnalysisRequirement(event.target.value)}
           />
         </label>
       </aside>
@@ -375,7 +418,7 @@ map_audit_signals()`}</pre>
             <p className="audit-kicker">AI 数据分析</p>
             <h1 className="audit-page-title">上传表格分析工作台</h1>
             <p className="audit-copy mt-2 max-w-3xl">
-              左侧记录分析过程，中间展示代码、终端、图表、数据和报告，右侧管理上传文件。
+              左侧选择医保费用模板，中间展示代码、终端、图表、数据和报告，右侧管理上传文件。
             </p>
           </div>
           <StatusPill tone={isUploading ? "info" : profile?.status === "parsed" ? "success" : profile?.status === "error" ? "danger" : "warning"}>
@@ -402,14 +445,34 @@ map_audit_signals()`}</pre>
           ))}
         </div>
 
+        {selectedTemplate && (
+          <section className="mt-5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[var(--audit-primary)]">当前模板：{selectedTemplate.shortName}</p>
+                <h2 className="audit-card-title mt-1">{selectedTemplate.name}</h2>
+                <p className="audit-meta mt-1">{selectedTemplate.fileName} / {selectedTemplate.sheetName}</p>
+              </div>
+              <StatusPill tone="info">模板引导</StatusPill>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedTemplate.expectedColumns.slice(0, 6).map((column) => (
+                <span key={column} className="audit-chip bg-white">
+                  {column}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="mt-5">{renderTabContent()}</div>
       </section>
 
       <aside className="min-w-0 space-y-4">
         <label className="audit-focus-ring audit-upload-drop p-5">
-          <span className="audit-card-title block">选择 `.csv`、`.xlsx` 或 `.xlsm` 文件</span>
+          <span className="audit-card-title block">上传{selectedTemplate?.shortName ?? ""}填报文件</span>
           <span className="audit-copy mt-2 block">
-            表格会交由后端解析，生成字段、行数、空值、重复行和审计线索概览。
+            支持 `.csv`、`.xlsx`、`.xlsm`；表格会交由后端解析，生成字段、行数、空值、重复行和审计线索概览。
           </span>
           <input
             aria-label="上传审计表格"

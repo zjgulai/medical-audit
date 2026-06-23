@@ -1,31 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
-from medical_audit_kb.api.auth_context import CurrentUser, auth_audit_payload, get_current_user
+from medical_audit_kb.api.auth import (
+    HospitalRole,
+    Permission,
+    has_permission,
+    normalize_hospital_role,
+    resolve_authenticated_user,
+)
 from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     document_permissions_for_role,
-    normalize_role,
-)
-from medical_audit_kb.api.document_upload_governance import (
-    DocumentUploadGovernanceContext,
-    apply_governance_check_result,
-    apply_manual_index_decision,
-)
-from medical_audit_kb.api.document_upload_governance_jobs import (
-    submit_required_document_upload_governance_jobs,
-)
-from medical_audit_kb.api.document_upload_governance_store import (
-    DocumentObjectStorageSignedUrlResult,
-)
-from medical_audit_kb.api.document_upload_ingestion import (
-    DocumentUploadIngestionError,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 
@@ -33,16 +24,11 @@ router = APIRouter(prefix="/documents")
 
 MAX_DOCUMENT_UPLOAD_BYTES = 20 * 1024 * 1024
 SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt", "csv", "xlsx", "xlsm"}
-MANUAL_INDEX_APPROVAL_ROLES = frozenset({"system-admin", "department-head"})
-MANUAL_INDEX_APPROVAL_DENIED_REASON = (
-    "document upload index approval requires department-head or system-admin role"
-)
-GOVERNANCE_RESULT_UPDATE_DENIED_REASON = (
-    "document upload governance result update requires department-head or system-admin role"
-)
-INDEX_INGESTION_DENIED_REASON = (
-    "document upload index ingestion requires department-head or system-admin role"
-)
+DocumentIndexStatus = Literal["not-indexed", "index-ready", "blocked"]
+DocumentGovernanceStatus = Literal["pending-review", "approved-for-index", "blocked"]
+DocumentSecurityScanStatus = Literal["local-policy-passed", "local-policy-review"]
+DocumentDlpStatus = Literal["clear", "needs-review"]
+PersonalDocumentIndexStatus = Literal["not-indexed", "indexed", "failed"]
 
 
 class DocumentSourcePermissionItem(BaseModel):
@@ -59,6 +45,7 @@ class DocumentUploadPermissions(BaseModel):
 
     can_upload_personal: bool
     can_read_all_personal_uploads: bool
+    can_govern_personal_uploads: bool
 
 
 class DocumentIndexReadinessCheck(BaseModel):
@@ -122,45 +109,22 @@ class DocumentUploadItem(BaseModel):
     created_by: str | None
     created_at: str
     retention_status: Literal["retained"]
-    index_status: Literal["not-indexed", "staged-for-index", "indexed", "indexing-failed"]
+    index_status: DocumentIndexStatus
     index_readiness: DocumentIndexReadiness
-
-
-class DocumentStorageObjectItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    upload_key: str
-    provider: Literal["local", "tencent-cos"]
-    bucket: str | None
-    region: str | None
-    object_key: str
-    object_version: str | None
-    etag: str | None
-    sha256: str
-    size_bytes: int
-    storage_class: str | None
-    encryption_mode: str | None
-    storage_status: Literal["local-quarantine", "object-stored", "object-missing"]
-    retention_until: str | None
-    created_at: str
-    updated_at: str
-
-
-class DocumentUploadDownloadAccess(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["metadata-only", "download-ready"]
-    access_scope: Literal["owner", "read-all"]
-    delivery: Literal["not-issued", "signed-url"]
-    reason: Literal[
-        "signed-download-not-configured",
-        "signed-url-issued",
-        "signed-url-not-available",
-    ]
-    signed_url: str | None
-    expires_at: str | None
-    storage_path: str
-    storage_objects: list[DocumentStorageObjectItem]
+    governance_status: DocumentGovernanceStatus
+    governance_note: str
+    governed_by: str | None
+    governed_at: str | None
+    security_scan_status: DocumentSecurityScanStatus
+    security_scan_provider: Literal["local-policy"]
+    dlp_status: DocumentDlpStatus
+    security_findings: list[str]
+    personal_index_status: PersonalDocumentIndexStatus
+    personal_indexed_at: str | None
+    personal_indexed_by: str | None
+    personal_index_chunk_count: int
+    personal_index_error: str
+    download_url: str
 
 
 class DocumentUploadListResponse(BaseModel):
@@ -179,77 +143,43 @@ class DocumentUploadResponse(BaseModel):
     permissions: DocumentUploadPermissions
 
 
-class DocumentUploadDownloadResponse(BaseModel):
+class DocumentUploadGovernanceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    item: DocumentUploadItem
-    download: DocumentUploadDownloadAccess
-    permissions: DocumentUploadPermissions
-
-
-class DocumentUploadIndexIngestionDetails(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["staged-for-index", "already-staged"]
-    upload_key: str
-    source_collection: str
-    source_package_version_key: str
-    index_version_key: str
-    index_version_status: Literal["candidate"]
-    source_document_id: str
-    chunk_count: int
-    embedding_count: int
-    embedding_provider: str
-    embedding_model: str
-    embedding_dimension: int
-    external_provider_call_performed: bool
-    live_retrieval_activated: bool
-
-
-class DocumentUploadIndexIngestionResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    item: DocumentUploadItem
-    ingestion: DocumentUploadIndexIngestionDetails
-    store: dict[str, object]
-    permissions: DocumentUploadPermissions
-
-
-class ManualIndexApprovalRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    decision: Literal["approved", "rejected"]
-    note: str = Field(min_length=1, max_length=1000)
-
-
-class GovernanceResultUpdateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    check_type: Literal["virus-scan", "dlp-review"]
-    provider: str = Field(min_length=1, max_length=96)
-    status: Literal["passed", "blocked"]
-    detail: str = Field(min_length=1, max_length=1000)
-    external_job_id: str | None = Field(default=None, min_length=1, max_length=128)
-    risk_level: str | None = Field(default=None, min_length=1, max_length=64)
-    result_code: str | None = Field(default=None, min_length=1, max_length=96)
-    finished_at: str | None = Field(default=None, min_length=1, max_length=64)
+    governance_status: DocumentGovernanceStatus
+    note: str = Field(default="", max_length=500)
 
 
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
 def document_permissions(
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> DocumentPermissionsResponse:
-    role = normalize_role(current_user.primary_role)
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     return _permissions_response(role)
 
 
 @router.get("/uploads", response_model=DocumentUploadListResponse)
 def list_document_uploads(
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> DocumentUploadListResponse:
-    role = normalize_role(current_user.primary_role)
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     permissions = _upload_permissions(role)
     if state.document_upload_store is None:
         return DocumentUploadListResponse(
@@ -258,11 +188,10 @@ def list_document_uploads(
             permissions=permissions,
         )
 
-    user_identifier = current_user.user_key
     items = [
         DocumentUploadItem.model_validate(item)
         for item in state.document_upload_store.list_uploads(
-            created_by=user_identifier,
+            created_by=user.user_identifier,
             include_all=permissions.can_read_all_personal_uploads,
             limit=limit,
         )
@@ -270,12 +199,15 @@ def list_document_uploads(
     record_operation(
         state,
         "document-upload-list",
-        auth_audit_payload(
-            current_user,
-            count=len(items),
-            limit=limit,
-            include_all=permissions.can_read_all_personal_uploads,
-        ),
+        {
+            "count": len(items),
+            "limit": limit,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+            "include_all": permissions.can_read_all_personal_uploads,
+        },
     )
     return DocumentUploadListResponse(
         items=items,
@@ -288,10 +220,19 @@ def list_document_uploads(
 async def upload_document(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> DocumentUploadResponse:
-    role = normalize_role(current_user.primary_role)
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     permissions = _upload_permissions(role)
+    if not has_permission(user.role, Permission.UPLOAD_PERSONAL_DOCUMENT):
+        raise HTTPException(status_code=403, detail="upload_personal_document is not allowed")
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
 
@@ -306,206 +247,33 @@ async def upload_document(
     if not content:
         raise HTTPException(status_code=422, detail="uploaded document file is empty")
 
-    user_identifier = current_user.user_key
-    governance_context = DocumentUploadGovernanceContext.from_upload(
-        file_name=file_name,
-        extension=extension,
-        content=content,
+    item = DocumentUploadItem.model_validate(
+        state.document_upload_store.add_upload(
+            file_name=file_name,
+            extension=extension,
+            content=content,
+            created_by=user.user_identifier,
+        )
     )
-    index_readiness = state.document_upload_governance.evaluate(governance_context)
-    upload_record = state.document_upload_store.add_upload(
-        file_name=file_name,
-        extension=extension,
-        content=content,
-        created_by=user_identifier,
-        index_readiness=index_readiness,
-    )
-    governance_jobs = _submit_governance_jobs_for_upload(
-        state=state,
-        upload=upload_record,
-        index_readiness=index_readiness,
-    )
-    item = DocumentUploadItem.model_validate(upload_record)
     record_operation(
         state,
         "document-upload",
-        auth_audit_payload(
-            current_user,
-            upload_id=item.id,
-            file_name=item.name,
-            extension=item.extension,
-            size_bytes=item.size_bytes,
-            retention_status=item.retention_status,
-            index_status=item.index_status,
-            index_readiness_status=item.index_readiness.status,
-            index_readiness_blockers=item.index_readiness.blockers,
-            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
-            governance_job_count=len(governance_jobs),
-            governance_job_keys=[
-                job.get("job_key") for job in governance_jobs if job.get("job_key") is not None
-            ],
-        ),
-    )
-    return DocumentUploadResponse(
-        item=item,
-        store={
-            "ready": True,
-            "backend": state.document_upload_store.__class__.__name__,
-            "governance_job_count": len(governance_jobs),
+        {
+            "upload_id": item.id,
+            "file_name": item.name,
+            "extension": item.extension,
+            "size_bytes": item.size_bytes,
+            "retention_status": item.retention_status,
+            "index_status": item.index_status,
+            "governance_status": item.governance_status,
+            "security_scan_status": item.security_scan_status,
+            "dlp_status": item.dlp_status,
+            "security_finding_count": len(item.security_findings),
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
         },
-        permissions=permissions,
-    )
-
-
-@router.get("/uploads/{upload_id}/download", response_model=DocumentUploadDownloadResponse)
-def get_document_upload_download_metadata(
-    upload_id: str,
-    state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> DocumentUploadDownloadResponse:
-    role = normalize_role(current_user.primary_role)
-    permissions = _upload_permissions(role)
-    if state.document_upload_store is None:
-        raise HTTPException(status_code=409, detail="document upload store is not configured")
-
-    upload = state.document_upload_store.get_upload(upload_id)
-    if upload is None:
-        raise HTTPException(status_code=404, detail="document upload not found")
-
-    access_scope = _document_upload_access_scope(
-        upload=upload,
-        current_user=current_user,
-        permissions=permissions,
-    )
-    if access_scope is None:
-        record_operation(
-            state,
-            "document-upload-download-access-denied",
-            auth_audit_payload(
-                current_user,
-                attempted_action="document-upload-download-metadata",
-                upload_id=upload_id,
-                status_code=404,
-                reason="document upload not found",
-            ),
-        )
-        raise HTTPException(status_code=404, detail="document upload not found")
-
-    item = DocumentUploadItem.model_validate(upload)
-    storage_objects = [
-        DocumentStorageObjectItem.model_validate(storage_object)
-        for storage_object in state.document_upload_store.list_storage_objects(upload_id)
-    ]
-    signed_url_result = _create_document_upload_signed_url(
-        state=state,
-        storage_objects=storage_objects,
-    )
-    signed_url_issued = signed_url_result is not None
-    delivery: Literal["not-issued", "signed-url"] = (
-        "signed-url" if signed_url_issued else "not-issued"
-    )
-    reason: Literal[
-        "signed-download-not-configured",
-        "signed-url-issued",
-        "signed-url-not-available",
-    ] = (
-        "signed-url-issued"
-        if signed_url_result is not None
-        else _download_not_issued_reason(storage_objects)
-    )
-    expires_at = (
-        _datetime_to_response_iso(signed_url_result.expires_at)
-        if signed_url_result is not None
-        else None
-    )
-    record_operation(
-        state,
-        "document-upload-download-metadata",
-        auth_audit_payload(
-            current_user,
-            upload_id=item.id,
-            access_scope=access_scope,
-            storage_object_count=len(storage_objects),
-            delivery=delivery,
-            reason=reason,
-            signed_url_issued=signed_url_issued,
-            signed_url_expires_at=expires_at,
-        ),
-    )
-    return DocumentUploadDownloadResponse(
-        item=item,
-        download=DocumentUploadDownloadAccess(
-            status="download-ready" if signed_url_issued else "metadata-only",
-            access_scope=access_scope,
-            delivery=delivery,
-            reason=reason,
-            signed_url=signed_url_result.signed_url if signed_url_result is not None else None,
-            expires_at=expires_at,
-            storage_path=item.storage_path,
-            storage_objects=storage_objects,
-        ),
-        permissions=permissions,
-    )
-
-
-@router.post(
-    "/uploads/{upload_id}/index-readiness/manual-approval",
-    response_model=DocumentUploadResponse,
-)
-def decide_manual_index_approval(
-    upload_id: str,
-    request: ManualIndexApprovalRequest,
-    state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> DocumentUploadResponse:
-    role = normalize_role(current_user.primary_role)
-    permissions = _upload_permissions(role)
-    if state.document_upload_store is None:
-        raise HTTPException(status_code=409, detail="document upload store is not configured")
-    if role not in MANUAL_INDEX_APPROVAL_ROLES:
-        record_operation(
-            state,
-            "document-upload-index-approval-access-denied",
-            auth_audit_payload(
-                current_user,
-                attempted_action="document-upload-index-readiness-update",
-                upload_id=upload_id,
-                status_code=403,
-                reason=MANUAL_INDEX_APPROVAL_DENIED_REASON,
-            ),
-        )
-        raise HTTPException(status_code=403, detail=MANUAL_INDEX_APPROVAL_DENIED_REASON)
-
-    current_upload = state.document_upload_store.get_upload(upload_id)
-    if current_upload is None:
-        raise HTTPException(status_code=404, detail="document upload not found")
-
-    index_readiness = apply_manual_index_decision(
-        cast(dict[str, object], current_upload["index_readiness"]),
-        decision=request.decision,
-        actor=current_user.user_key,
-        note=request.note,
-    )
-    updated = state.document_upload_store.update_index_readiness(
-        upload_key=upload_id,
-        index_readiness=index_readiness,
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="document upload not found")
-
-    item = DocumentUploadItem.model_validate(updated)
-    record_operation(
-        state,
-        "document-upload-index-readiness-update",
-        auth_audit_payload(
-            current_user,
-            upload_id=item.id,
-            decision=request.decision,
-            index_status=item.index_status,
-            index_readiness_status=item.index_readiness.status,
-            index_readiness_blockers=item.index_readiness.blockers,
-            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
-        ),
     )
     return DocumentUploadResponse(
         item=item,
@@ -514,162 +282,258 @@ def decide_manual_index_approval(
     )
 
 
-@router.post(
-    "/uploads/{upload_id}/index-readiness/governance-result",
-    response_model=DocumentUploadResponse,
-)
-def update_governance_result(
+@router.get("/uploads/{upload_id}/download")
+def download_document_upload(
     upload_id: str,
-    request: GovernanceResultUpdateRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> DocumentUploadResponse:
-    role = normalize_role(current_user.primary_role)
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> Response:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     permissions = _upload_permissions(role)
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
-    if role not in MANUAL_INDEX_APPROVAL_ROLES:
+
+    retained = state.document_upload_store.read_upload_content(upload_id=upload_id)
+    if retained is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    item_payload, content = retained
+    item = DocumentUploadItem.model_validate(item_payload)
+    if not _can_download_upload(
+        item=item,
+        user_identifier=user.user_identifier,
+        permissions=permissions,
+    ):
         record_operation(
             state,
-            "document-upload-governance-result-access-denied",
-            auth_audit_payload(
-                current_user,
-                attempted_action="document-upload-governance-result-update",
-                upload_id=upload_id,
-                check_type=request.check_type,
-                status_code=403,
-                reason=GOVERNANCE_RESULT_UPDATE_DENIED_REASON,
-            ),
+            "authorization-denied",
+            {
+                "attempted_action": "document-upload-download",
+                "permission": "owner_or_read_all_personal_uploads",
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "profile_status": user.profile_status,
+                "status_code": 404,
+                "reason": "document upload download is not visible for this user",
+            },
         )
-        raise HTTPException(status_code=403, detail=GOVERNANCE_RESULT_UPDATE_DENIED_REASON)
-
-    current_upload = state.document_upload_store.get_upload(upload_id)
-    if current_upload is None:
         raise HTTPException(status_code=404, detail="document upload not found")
 
-    index_readiness = apply_governance_check_result(
-        cast(dict[str, object], current_upload["index_readiness"]),
-        check_type=request.check_type,
-        provider=request.provider,
-        status=request.status,
-        detail=request.detail,
-        external_job_id=request.external_job_id,
-        risk_level=request.risk_level,
-        result_code=request.result_code,
-        finished_at=request.finished_at,
-    )
-    updated = state.document_upload_store.update_index_readiness(
-        upload_key=upload_id,
-        index_readiness=index_readiness,
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="document upload not found")
-
-    item = DocumentUploadItem.model_validate(updated)
     record_operation(
         state,
-        "document-upload-governance-result-update",
-        auth_audit_payload(
-            current_user,
-            upload_id=item.id,
-            check_type=request.check_type,
-            provider=request.provider,
-            result_status=request.status,
-            result_code=request.result_code,
-            risk_level=request.risk_level,
-            external_job_id=request.external_job_id,
-            index_status=item.index_status,
-            index_readiness_status=item.index_readiness.status,
-            index_readiness_blockers=item.index_readiness.blockers,
-            index_readiness_checks=[check.model_dump() for check in item.index_readiness.checks],
-        ),
+        "document-upload-download",
+        {
+            "upload_id": item.id,
+            "extension": item.extension,
+            "size_bytes": item.size_bytes,
+            "security_scan_status": item.security_scan_status,
+            "dlp_status": item.dlp_status,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+            "owner": item.created_by,
+        },
     )
-    return DocumentUploadResponse(
-        item=item,
-        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
-        permissions=permissions,
+    return Response(
+        content=content,
+        media_type=_download_media_type(item.extension),
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(_safe_download_filename(item.name))}"
+            ),
+            "X-Document-Upload-Id": item.id,
+            "X-Document-Security-Scan": item.security_scan_status,
+            "X-Document-DLP-Status": item.dlp_status,
+        },
     )
 
 
-@router.post(
-    "/uploads/{upload_id}/index-ingestion",
-    response_model=DocumentUploadIndexIngestionResponse,
-)
-def ingest_document_upload_index(
+@router.post("/uploads/{upload_id}/governance", response_model=DocumentUploadResponse)
+def update_document_upload_governance(
     upload_id: str,
+    payload: DocumentUploadGovernanceRequest,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> DocumentUploadIndexIngestionResponse:
-    role = normalize_role(current_user.primary_role)
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentUploadResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
     permissions = _upload_permissions(role)
+    if not permissions.can_govern_personal_uploads:
+        record_operation(
+            state,
+            "authorization-denied",
+            {
+                "attempted_action": "document-upload-governance-update",
+                "permission": "manage_index_or_read_all_personal_uploads",
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "profile_status": user.profile_status,
+                "status_code": 403,
+                "reason": "document upload governance requires admin, technician, or director role",
+            },
+        )
+        raise HTTPException(status_code=403, detail="document upload governance is not allowed")
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
-    if role not in MANUAL_INDEX_APPROVAL_ROLES:
-        record_operation(
-            state,
-            "document-upload-index-ingestion-access-denied",
-            auth_audit_payload(
-                current_user,
-                attempted_action="document-upload-index-ingestion",
-                upload_id=upload_id,
-                status_code=403,
-                reason=INDEX_INGESTION_DENIED_REASON,
-            ),
-        )
-        raise HTTPException(status_code=403, detail=INDEX_INGESTION_DENIED_REASON)
-    if state.document_upload_indexer is None:
-        record_operation(
-            state,
-            "document-upload-index-ingestion-blocked",
-            auth_audit_payload(
-                current_user,
-                upload_id=upload_id,
-                status_code=409,
-                reason="document-upload-indexing-disabled",
-            ),
-        )
-        raise HTTPException(status_code=409, detail="document upload indexing is not enabled")
 
-    try:
-        result = state.document_upload_indexer.ingest_upload(
-            upload_id,
-            actor=current_user.user_key,
-        )
-    except DocumentUploadIngestionError as exc:
+    current_payload = state.document_upload_store.get_upload(upload_id=upload_id)
+    if current_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    current_item = DocumentUploadItem.model_validate(current_payload)
+    if payload.governance_status == "approved-for-index" and not _is_security_cleared(current_item):
         record_operation(
             state,
-            "document-upload-index-ingestion-blocked",
-            auth_audit_payload(
-                current_user,
-                upload_id=upload_id,
-                status_code=exc.status_code,
-                reason=exc.reason,
-                **exc.payload,
-            ),
+            "document-upload-governance-blocked",
+            {
+                "upload_id": current_item.id,
+                "requested_governance_status": payload.governance_status,
+                "security_scan_status": current_item.security_scan_status,
+                "dlp_status": current_item.dlp_status,
+                "security_finding_count": len(current_item.security_findings),
+                "user_identifier": user.user_identifier,
+                "role": role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+            },
         )
         raise HTTPException(
-            status_code=exc.status_code,
-            detail={"message": exc.detail, "reason": exc.reason, **exc.payload},
-        ) from exc
+            status_code=409,
+            detail="document upload security review is required before index approval",
+        )
 
-    updated = state.document_upload_store.get_upload(upload_id)
-    if updated is None:
+    item_payload = state.document_upload_store.update_governance(
+        upload_id=upload_id,
+        governance_status=payload.governance_status,
+        index_status=_index_status_for_governance(payload.governance_status),
+        governed_by=user.user_identifier,
+        governance_note=payload.note.strip(),
+    )
+    if item_payload is None:
         raise HTTPException(status_code=404, detail="document upload not found")
-    item = DocumentUploadItem.model_validate(updated)
-    ingestion = DocumentUploadIndexIngestionDetails.model_validate(result.to_dict())
+
+    item = DocumentUploadItem.model_validate(item_payload)
     record_operation(
         state,
-        "document-upload-index-ingestion",
-        auth_audit_payload(
-            current_user,
-            upload_id=item.id,
-            index_status=item.index_status,
-            **ingestion.model_dump(),
-        ),
+        "document-upload-governance-update",
+        {
+            "upload_id": item.id,
+            "governance_status": item.governance_status,
+            "index_status": item.index_status,
+            "governed_by": user.user_identifier,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+        },
     )
-    return DocumentUploadIndexIngestionResponse(
+    return DocumentUploadResponse(
         item=item,
-        ingestion=ingestion,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post("/uploads/{upload_id}/index", response_model=DocumentUploadResponse)
+def index_document_upload(
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentUploadResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+
+    current_payload = state.document_upload_store.get_upload(upload_id=upload_id)
+    if current_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    current_item = DocumentUploadItem.model_validate(current_payload)
+    if not _can_index_upload(
+        item=current_item,
+        user_identifier=user.user_identifier,
+        permissions=permissions,
+    ):
+        record_operation(
+            state,
+            "authorization-denied",
+            {
+                "attempted_action": "document-upload-index",
+                "permission": "owner_or_govern_personal_uploads",
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "profile_status": user.profile_status,
+                "status_code": 403,
+                "reason": "document upload index requires owner or governance role",
+            },
+        )
+        raise HTTPException(status_code=403, detail="document upload index is not allowed")
+    if current_item.governance_status != "approved-for-index":
+        raise HTTPException(
+            status_code=409,
+            detail="document upload must be approved before personal index",
+        )
+    if current_item.index_status != "index-ready":
+        raise HTTPException(
+            status_code=409,
+            detail="document upload is not ready for personal index",
+        )
+    if not _is_security_cleared(current_item):
+        raise HTTPException(
+            status_code=409,
+            detail="document upload security review is required before personal index",
+        )
+
+    item_payload = state.document_upload_store.index_upload(
+        upload_id=upload_id,
+        indexed_by=user.user_identifier,
+    )
+    if item_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(item_payload)
+    record_operation(
+        state,
+        "document-upload-index",
+        {
+            "upload_id": item.id,
+            "personal_index_status": item.personal_index_status,
+            "personal_index_chunk_count": item.personal_index_chunk_count,
+            "personal_index_error": item.personal_index_error,
+            "indexed_by": user.user_identifier,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+        },
+    )
+    return DocumentUploadResponse(
+        item=item,
         store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
         permissions=permissions,
     )
@@ -690,82 +554,65 @@ def _upload_permissions(role: str) -> DocumentUploadPermissions:
     return DocumentUploadPermissions(
         can_upload_personal=True,
         can_read_all_personal_uploads=can_read_all_personal_uploads(role),
+        can_govern_personal_uploads=_can_govern_personal_uploads(role),
     )
-
-
-def _submit_governance_jobs_for_upload(
-    *,
-    state: ApiState,
-    upload: dict[str, object],
-    index_readiness: dict[str, object],
-) -> list[dict[str, object]]:
-    if (
-        state.document_upload_store is None
-        or state.document_upload_governance_store is None
-        or state.document_upload_governance_job_submitter is None
-    ):
-        return []
-    return submit_required_document_upload_governance_jobs(
-        upload=upload,
-        index_readiness=index_readiness,
-        storage_objects=state.document_upload_store.list_storage_objects(str(upload["id"])),
-        store=state.document_upload_governance_store,
-        submitter=state.document_upload_governance_job_submitter,
-    )
-
-
-def _document_upload_access_scope(
-    *,
-    upload: dict[str, object],
-    current_user: CurrentUser,
-    permissions: DocumentUploadPermissions,
-) -> Literal["owner", "read-all"] | None:
-    if upload.get("created_by") == current_user.user_key:
-        return "owner"
-    if permissions.can_read_all_personal_uploads:
-        return "read-all"
-    return None
-
-
-def _create_document_upload_signed_url(
-    *,
-    state: ApiState,
-    storage_objects: list[DocumentStorageObjectItem],
-) -> DocumentObjectStorageSignedUrlResult | None:
-    if state.document_upload_store is None:
-        return None
-    for storage_object in storage_objects:
-        if (
-            storage_object.provider != "tencent-cos"
-            or storage_object.storage_status != "object-stored"
-        ):
-            continue
-        signed_url_result = state.document_upload_store.create_presigned_download_url(
-            storage_object=storage_object.model_dump(),
-            expires_in_seconds=state.settings.document_storage.signed_url_ttl_seconds,
-        )
-        if signed_url_result is not None:
-            return signed_url_result
-    return None
-
-
-def _download_not_issued_reason(
-    storage_objects: list[DocumentStorageObjectItem],
-) -> Literal["signed-download-not-configured", "signed-url-not-available"]:
-    for storage_object in storage_objects:
-        if (
-            storage_object.provider == "tencent-cos"
-            and storage_object.storage_status == "object-stored"
-        ):
-            return "signed-url-not-available"
-    return "signed-download-not-configured"
-
-
-def _datetime_to_response_iso(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
 
 
 def _file_extension(file_name: str) -> str:
     if "." not in file_name:
         return ""
     return file_name.rsplit(".", maxsplit=1)[-1].lower()
+
+
+def _can_govern_personal_uploads(role: str) -> bool:
+    try:
+        normalized = normalize_hospital_role(role, default=HospitalRole.MEMBER)
+    except HTTPException:
+        return False
+    return normalized in {HospitalRole.ADMIN, HospitalRole.TECHNICIAN, HospitalRole.DIRECTOR}
+
+
+def _index_status_for_governance(status: DocumentGovernanceStatus) -> DocumentIndexStatus:
+    if status == "approved-for-index":
+        return "index-ready"
+    if status == "blocked":
+        return "blocked"
+    return "not-indexed"
+
+
+def _can_download_upload(
+    *,
+    item: DocumentUploadItem,
+    user_identifier: str,
+    permissions: DocumentUploadPermissions,
+) -> bool:
+    return item.created_by == user_identifier or permissions.can_read_all_personal_uploads
+
+
+def _can_index_upload(
+    *,
+    item: DocumentUploadItem,
+    user_identifier: str,
+    permissions: DocumentUploadPermissions,
+) -> bool:
+    return item.created_by == user_identifier or permissions.can_govern_personal_uploads
+
+
+def _is_security_cleared(item: DocumentUploadItem) -> bool:
+    return item.security_scan_status == "local-policy-passed" and item.dlp_status == "clear"
+
+
+def _download_media_type(extension: str) -> str:
+    return {
+        "pdf": "application/pdf",
+        "md": "text/markdown; charset=utf-8",
+        "txt": "text/plain; charset=utf-8",
+        "csv": "text/csv; charset=utf-8",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    }.get(extension, "application/octet-stream")
+
+
+def _safe_download_filename(file_name: str) -> str:
+    cleaned = file_name.replace("/", "_").replace("\\", "_").strip()
+    return cleaned or "document-upload"

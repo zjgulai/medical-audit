@@ -33,10 +33,17 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("知识库")).toBeInTheDocument();
     expect(screen.getByText("AI 数据分析")).toBeInTheDocument();
     expect(screen.getByText("项目管理")).toBeInTheDocument();
+    expect(screen.getByText("审计底稿生成")).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "已打开模块" })).toBeInTheDocument();
+    expect(screen.getByLabelText("角色权限视图")).toBeInTheDocument();
     expect(screen.getByText(/医保基金使用合规专项自查/)).toBeInTheDocument();
     expect(screen.getByText(/单院医保内审试运行/)).toBeInTheDocument();
-    expect(screen.getByText("医保基金使用合规")).toBeInTheDocument();
+    expect(screen.getAllByText("医保基金使用合规").length).toBeGreaterThan(0);
+    expect(screen.getByText("管理员视图")).toBeInTheDocument();
+    for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
+      expect(screen.getByRole("button", { name: new RegExp(role) })).toBeInTheDocument();
+    }
+    expect(screen.getByText("后端待检测")).toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("aria-current", "page");

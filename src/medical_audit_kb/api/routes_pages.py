@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 
+from medical_audit_kb.api.agent_store import AgentStore, InMemoryAgentStore, combined_agent_payloads
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
 from medical_audit_kb.api.audit_finding_store import (
     AuditFindingNotFoundError,
@@ -22,20 +23,10 @@ from medical_audit_kb.api.audit_finding_store import (
 )
 from medical_audit_kb.api.audit_log_policy import (
     audit_log_policy_payload,
-    can_read_audit_logs,
     redact_audit_log_events,
 )
-from medical_audit_kb.api.auth_context import (
-    CurrentUser,
-    auth_audit_payload,
-    current_user_from_request,
-    get_current_user,
-)
-from medical_audit_kb.api.document_permissions import (
-    can_read_all_personal_uploads,
-    enforce_source_collection_access,
-    normalize_role,
-)
+from medical_audit_kb.api.auth import Permission, has_permission, resolve_authenticated_user
+from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
     list_evaluation_history,
@@ -132,7 +123,144 @@ SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
         "description": "高风险负面清单、案例和风险线索。",
         "audit_hint": "用于辅助排查异常模式。",
     },
+    SourceCollection.PERSONAL_MATERIALS: {
+        "title": "个人材料",
+        "description": "用户上传的院内材料、台账和复核附件。",
+        "audit_hint": "用于补充院内证据，需先完成材料治理。",
+    },
 }
+
+WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
+    {
+        "id": "workpaper-summary-risk",
+        "name": "费用汇总风险底稿",
+        "source_template_id": "medical-expense-summary",
+        "source_table": "表1 医保费用汇总表",
+        "source_file_name": "表1_医保费用汇总表-模版.xlsx",
+        "sheet_name": "汇总表",
+        "output_type": "底稿草稿",
+        "registry_status": "active",
+        "expected_columns": (
+            "费用分类",
+            "人次",
+            "人数",
+            "平均费",
+            "医疗总费用",
+            "现金支付",
+            "账户支付",
+            "统筹支付",
+            "记账合计",
+        ),
+        "key_checks": (
+            "医疗总费用与支付分项是否存在口径不一致",
+            "统筹支付、账户支付、现金支付是否能回溯到明细",
+            "重点费用分类是否存在异常占比或环比突增",
+        ),
+        "evidence_bindings": (
+            "费用分类汇总",
+            "支付分项合计",
+            "异常占比说明",
+            "人工复核意见",
+        ),
+        "prompt": (
+            "基于已上传的医保费用汇总表和已核验引用依据，生成费用分类风险底稿草稿；"
+            "只写已确认数据事实、待补证项和人工复核意见。"
+        ),
+        "chat_href": (
+            "/chat?agent=agent-report-draft&question="
+            "%E5%9F%BA%E4%BA%8E%E5%8C%BB%E4%BF%9D%E8%B4%B9%E7%94%A8"
+            "%E6%B1%87%E6%80%BB%E8%A1%A8%E7%94%9F%E6%88%90%E5%BA%95"
+            "%E7%A8%BF%E8%8D%89%E7%A8%BF"
+        ),
+    },
+    {
+        "id": "workpaper-category-review",
+        "name": "分类费用复核清单",
+        "source_template_id": "medical-expense-category-summary",
+        "source_table": "表2 医保费用分类汇总表",
+        "source_file_name": "表2_医保费用分类汇总表-模版.xlsx",
+        "sheet_name": "汇总表",
+        "output_type": "问题清单",
+        "registry_status": "active",
+        "expected_columns": (
+            "费用分类",
+            "人次",
+            "人数",
+            "平均费用",
+            "医疗总费用",
+            "现金支付",
+            "账户支付",
+            "统筹支付",
+            "公务员补助",
+        ),
+        "key_checks": (
+            "平均费用是否存在明显偏离",
+            "基金支付与现金支付结构是否符合费用类别预期",
+            "分类口径是否能与就诊明细表闭环",
+        ),
+        "evidence_bindings": (
+            "平均费用偏离",
+            "基金支付结构",
+            "分类口径说明",
+            "需下钻明细",
+        ),
+        "prompt": (
+            "基于医保费用分类汇总表，列出平均费用、基金支付结构和分类口径需要复核的"
+            "问题清单；不能直接形成结论的内容标为待人工确认。"
+        ),
+        "chat_href": (
+            "/chat?agent=agent-citation-check&question="
+            "%E5%8C%BB%E4%BF%9D%E8%B4%B9%E7%94%A8%E5%88%86%E7%B1%BB"
+            "%E6%B1%87%E6%80%BB%E8%A1%A8%E5%BA%94%E5%BD%A2%E6%88%90"
+            "%E5%93%AA%E4%BA%9B%E5%A4%8D%E6%A0%B8%E6%B8%85%E5%8D%95"
+        ),
+    },
+    {
+        "id": "workpaper-visit-detail",
+        "name": "就诊明细疑点摘要",
+        "source_template_id": "visit-expense-detail",
+        "source_table": "表3 就诊费用明细表",
+        "source_file_name": "表3_就诊费用明细表-模版.xlsx",
+        "sheet_name": "明细表",
+        "output_type": "复核摘要",
+        "registry_status": "active",
+        "expected_columns": (
+            "序号",
+            "职工类型",
+            "就诊记录号",
+            "姓名",
+            "身份证号码",
+            "入院诊断",
+            "医疗费用/总额",
+            "自费金额",
+            "统筹支付",
+            "公务员补助",
+            "大额支付",
+            "账户支付",
+        ),
+        "key_checks": (
+            "同一就诊记录是否存在重复收费或异常支付",
+            "自费金额与统筹支付是否出现不合理组合",
+            "身份证号、就诊记录号等直接身份字段需按权限处理",
+        ),
+        "evidence_bindings": (
+            "就诊记录号",
+            "诊断与费用",
+            "自费和基金支付",
+            "隐私字段处理记录",
+        ),
+        "prompt": (
+            "基于就诊费用明细表，按就诊记录输出疑点摘要、证据字段和隐私字段处理提醒；"
+            "只把已人工确认的疑点纳入底稿草稿。"
+        ),
+        "chat_href": (
+            "/chat?agent=agent-report-draft&question="
+            "%E5%9F%BA%E4%BA%8E%E5%B0%B1%E8%AF%8A%E8%B4%B9%E7%94%A8"
+            "%E6%98%8E%E7%BB%86%E8%A1%A8%E6%95%B4%E7%90%86%E7%96%91"
+            "%E7%82%B9%E6%91%98%E8%A6%81"
+        ),
+    },
+)
 
 
 @router.get("/")
@@ -151,10 +279,8 @@ def query_page(
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
 ) -> object:
     selected_collections = tuple(source_collection or ())
-    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
-        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-query",
@@ -165,7 +291,7 @@ def query_page(
         "query.html",
         {
             "question": question or "",
-            "source_collections": list(SOURCE_COLLECTION_UI),
+            "source_collections": list(SourceCollection),
             "source_collection_cards": _source_collection_cards(selected_collections),
             "selected_collections": {item.value for item in selected_collections},
             "answer": answer_payload,
@@ -182,24 +308,29 @@ def chat_page(
     state: Annotated[ApiState, Depends(get_api_state)],
     question: Annotated[str | None, Query()] = None,
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
+    agent: Annotated[str | None, Query(max_length=128)] = None,
+    project_name: Annotated[str | None, Query(max_length=256)] = None,
 ) -> object:
     selected_collections = tuple(source_collection or ())
-    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
-        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-chat",
+        agent_key=agent,
+        request_project_name=project_name,
+        record_agent_invocation=True,
     )
     return templates.TemplateResponse(
         request,
         "chat.html",
         {
             "question": question or "",
-            "source_collections": list(SOURCE_COLLECTION_UI),
+            "source_collections": list(SourceCollection),
             "source_collection_cards": _source_collection_cards(selected_collections),
             "selected_collections": {item.value for item in selected_collections},
+            "selected_agent": agent or "",
+            "selected_project_name": project_name or "",
             "answer": answer_payload,
             "answer_quality": _answer_quality_context(answer_payload),
             "follow_up_questions": _follow_up_questions(question, answer_payload),
@@ -216,16 +347,20 @@ def chat_dossier_export(
     state: Annotated[ApiState, Depends(get_api_state)],
     question: Annotated[str, Query(min_length=1)],
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
-    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "json",
+    agent: Annotated[str | None, Query(max_length=128)] = None,
+    project_name: Annotated[str | None, Query(max_length=256)] = None,
+    format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "json",
 ) -> Response:
+    _ = (agent, project_name)
     selected_collections = tuple(source_collection or ())
-    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
-        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="page-chat-export-query",
+        agent_key=None,
+        request_project_name=None,
+        record_agent_invocation=False,
     )
     if error_message is not None or answer_payload is None:
         status_code = 409 if state.search_engine is None else 404
@@ -251,6 +386,13 @@ def chat_dossier_export(
             content=_render_audit_dossier_markdown(dossier),
             media_type="text/markdown; charset=utf-8",
             headers=_download_headers("auditscope-dossier.md"),
+        )
+    if format == "docx":
+        return _docx_download_response(
+            _render_audit_dossier_markdown(dossier),
+            filename="auditscope-dossier.docx",
+            title="AuditScope 审计底稿导出",
+            subject=str(dossier["question"]),
         )
     return Response(
         content=json.dumps(dossier, ensure_ascii=False, indent=2) + "\n",
@@ -285,11 +427,67 @@ def review_tasks_page(
     )
 
 
+@router.get("/reports/workpaper-templates")
+def report_workpaper_templates(
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> dict[str, object]:
+    templates_payload = tuple(
+        _workpaper_template_registry_item(item) for item in WORKPAPER_TEMPLATE_REGISTRY
+    )
+    record_operation(
+        state,
+        "report-workpaper-template-registry-view",
+        {"template_count": len(templates_payload), "registry_status": "active"},
+    )
+    return {
+        "format": "workpaper-template-registry-v1",
+        "generated_at": _utc_now_iso(),
+        "registry_status": "active",
+        "items": templates_payload,
+        "count": len(templates_payload),
+        "store": {"ready": True, "backend": "static-template-registry"},
+    }
+
+
+@router.get("/reports/workbench")
+def reports_workbench(
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> dict[str, object]:
+    review_tasks = tuple(reversed(_review_tasks(state)))
+    report_entries = tuple(_review_task_report_entry(task) for task in review_tasks)
+    report_evidence_sources = tuple(
+        _review_task_report_evidence_source(task) for task in review_tasks
+    )
+    templates_payload = tuple(
+        _workpaper_template_registry_item(item) for item in WORKPAPER_TEMPLATE_REGISTRY
+    )
+    metrics = _report_workbench_metrics(report_entries)
+    record_operation(
+        state,
+        "report-workbench-view",
+        {
+            "template_count": len(templates_payload),
+            "report_count": len(report_entries),
+            "signed_report_count": metrics["signed_report_count"],
+            "docx_download_count": metrics["docx_download_count"],
+        },
+    )
+    return {
+        "format": "report-workbench-v1",
+        "generated_at": _utc_now_iso(),
+        "template_registry_status": "active",
+        "workpaper_templates": templates_payload,
+        "report_entries": report_entries,
+        "report_evidence_sources": report_evidence_sources,
+        "metrics": metrics,
+        "store": {"ready": True, "backend": _review_task_store(state).__class__.__name__},
+    }
+
+
 @router.get("/pages/audit-logs")
 def audit_logs_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     action: Annotated[str | None, Query(max_length=96)] = None,
     entity_type: Annotated[str | None, Query(max_length=64)] = None,
     entity_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -307,15 +505,40 @@ def audit_logs_page(
         created_to=created_to,
         limit=limit,
     )
-    can_access_audit_logs = can_read_audit_logs(current_user.primary_role)
+    user_role = request.headers.get("X-Role")
+    user_identifier_header = request.headers.get("X-User-Id")
+    user_identifier_for_log = user_identifier_header or "anonymous"
+    effective_role_for_log = "anonymous"
+    auth_source_for_log = "header"
+    try:
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=user_identifier_header,
+            x_role=user_role,
+        )
+        user_identifier_for_log = user.user_identifier
+        effective_role_for_log = user.role.value
+        auth_source_for_log = user.auth_source
+        can_access_audit_logs = has_permission(user.role, Permission.READ_AUDIT_LOGS)
+    except HTTPException as exc:
+        can_access_audit_logs = False
+        auth_source_for_log = "denied"
+        effective_role_for_log = user_role or "anonymous"
+        denied_status_code = exc.status_code
+    else:
+        denied_status_code = 403
     record_operation(
         state,
         "page-audit-logs-view" if can_access_audit_logs else "audit-logs-access-denied",
-        auth_audit_payload(
-            current_user,
-            filters=filters,
-            status_code=200 if can_access_audit_logs else 403,
-        ),
+        {
+            "filters": filters,
+            "user_identifier": user_identifier_for_log,
+            "role": user_role or "anonymous",
+            "effective_role": effective_role_for_log,
+            "auth_source": auth_source_for_log,
+            "status_code": 200 if can_access_audit_logs else 403,
+            "auth_status_code": 200 if can_access_audit_logs else denied_status_code,
+        },
     )
     audit_log_events = []
     if can_access_audit_logs and state.audit_log_store is not None:
@@ -429,10 +652,8 @@ async def create_review_task_page(
     form = await _urlencoded_form(request)
     question = _form_required_str(form, "question")
     selected_collections = _source_collections_from_form(form)
-    current_user = current_user_from_request(request)
     answer_payload, error_message = _run_page_query(
         state,
-        current_user=current_user,
         question=question,
         selected_collections=selected_collections,
         operation_name="review-task-create-query",
@@ -589,7 +810,7 @@ def download_review_task_attachment(
 def review_task_export(
     task_id: str,
     state: Annotated[ApiState, Depends(get_api_state)],
-    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "json",
+    format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "json",
 ) -> Response:
     task = _review_task_by_id(state, task_id)
     payload = _review_task_export_payload(task)
@@ -604,6 +825,13 @@ def review_task_export(
             media_type="text/markdown; charset=utf-8",
             headers=_download_headers(f"{task_id}.md"),
         )
+    if format == "docx":
+        return _docx_download_response(
+            _render_review_task_markdown(payload),
+            filename=f"{task_id}.docx",
+            title="AuditScope 复核任务记录",
+            subject=str(payload["question"]),
+        )
     return Response(
         content=json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         media_type="application/json",
@@ -615,7 +843,7 @@ def review_task_export(
 def review_task_report_draft_export(
     task_id: str,
     state: Annotated[ApiState, Depends(get_api_state)],
-    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "markdown",
+    format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "markdown",
 ) -> Response:
     task = _review_task_by_id(state, task_id)
     payload = _review_task_report_draft_payload(task)
@@ -630,8 +858,17 @@ def review_task_report_draft_export(
             media_type="application/json",
             headers=_download_headers(f"{task_id}-report-draft.json"),
         )
+    markdown = _render_review_task_report_draft_markdown(payload)
+    if format == "docx":
+        report_draft = _dict_value(payload.get("report_draft"))
+        return _docx_download_response(
+            markdown,
+            filename=f"{task_id}-report-draft.docx",
+            title=str(report_draft.get("title") or "AuditScope 审计报告草稿"),
+            subject=str(payload["question"]),
+        )
     return Response(
-        content=_render_review_task_report_draft_markdown(payload),
+        content=markdown,
         media_type="text/markdown; charset=utf-8",
         headers=_download_headers(f"{task_id}-report-draft.md"),
     )
@@ -686,7 +923,7 @@ async def sign_review_task_report_page(
 def review_task_signed_report_export(
     task_id: str,
     state: Annotated[ApiState, Depends(get_api_state)],
-    format: Annotated[str, Query(pattern="^(json|markdown)$")] = "markdown",
+    format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "markdown",
 ) -> Response:
     task = _review_task_by_id(state, task_id)
     payload = _review_task_signed_report_payload(task)
@@ -702,8 +939,16 @@ def review_task_signed_report_export(
             headers=_download_headers(f"{task_id}-signed-report.json"),
         )
     signed_report = _dict_value(payload.get("signed_report"))
+    markdown = str(signed_report.get("content", ""))
+    if format == "docx":
+        return _docx_download_response(
+            markdown,
+            filename=f"{task_id}-signed-report.docx",
+            title=str(signed_report.get("report_id") or "AuditScope 正式报告"),
+            subject=str(payload["question"]),
+        )
     return Response(
-        content=str(signed_report.get("content", "")),
+        content=markdown,
         media_type="text/markdown; charset=utf-8",
         headers=_download_headers(f"{task_id}-signed-report.md"),
     )
@@ -969,28 +1214,32 @@ def _audit_log_severity(event: dict[str, object]) -> str:
 def _run_page_query(
     state: ApiState,
     *,
-    current_user: CurrentUser,
     question: str | None,
     selected_collections: tuple[SourceCollection, ...],
     operation_name: str,
+    agent_key: str | None = None,
+    request_project_name: str | None = None,
+    record_agent_invocation: bool = False,
 ) -> tuple[dict[str, object] | None, str | None]:
-    role = normalize_role(current_user.primary_role)
-    enforce_source_collection_access(
-        role=role,
-        source_collections=selected_collections,
-    )
     if not question:
         return None, None
     if state.search_engine is None:
         return None, "检索引擎尚未初始化。"
+    normalized_agent_key = _normalize_agent_key(agent_key)
+    selected_agent: dict[str, object] | None = None
+    if record_agent_invocation and normalized_agent_key is not None:
+        selected_agent, agent_error = _validate_page_agent_selection(
+            state,
+            normalized_agent_key,
+            request_project_name=request_project_name,
+            attempted_action=operation_name,
+        )
+        if agent_error is not None:
+            return None, agent_error
 
     results = state.search_engine.search(
         question,
-        filters=RetrievalFilters(
-            source_collections=selected_collections,
-            personal_upload_user_key=current_user.user_key,
-            personal_upload_read_all=can_read_all_personal_uploads(role),
-        ),
+        filters=RetrievalFilters(source_collections=selected_collections),
         top_k=5,
     )
     try:
@@ -1013,17 +1262,22 @@ def _run_page_query(
         "fallback_used": answer.fallback_used,
         "basis_groups": answer.basis_groups,
         "citations": answer.citations,
+        "agent_id": normalized_agent_key,
+        "agent_name": str(selected_agent.get("name")) if selected_agent is not None else None,
+        "agent_invocation_id": None,
     }
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     filter_payload = {
         "top_k": 5,
         "source_collections": [item.value for item in selected_collections],
+        "agent": normalized_agent_key,
     }
     state.query_logs.append(
         {
-            "user_identifier": current_user.user_key,
-            "role": role,
+            "user_identifier": "page-user",
+            "role": "auditor",
             "question": question,
+            "agent_id": normalized_agent_key,
             "filters": filter_payload,
             "retrieved_chunk_ids": retrieved_chunk_ids,
             "citation_count": len(answer.citations),
@@ -1032,24 +1286,174 @@ def _run_page_query(
     persisted_log, query_history_error = try_add_query_history(
         state.query_history_store,
         {
-            "user_identifier": current_user.user_key,
+            "user_identifier": "page-user",
             "question": question,
             "filters": filter_payload,
             "answer_summary": answer.answer[:500],
             "retrieved_chunk_ids": retrieved_chunk_ids,
         },
     )
+    if record_agent_invocation and normalized_agent_key is not None:
+        invocation, invocation_error = _record_page_agent_invocation(
+            state,
+            agent_key=normalized_agent_key,
+            question=question,
+            selected_collections=selected_collections,
+            query_log_id=str(persisted_log.get("id")) if persisted_log else None,
+            query_log_index=len(state.query_logs) - 1,
+            citation_count=len(answer.citations),
+            request_project_name=request_project_name,
+        )
+        if invocation_error is not None:
+            return None, invocation_error
+        assert invocation is not None
+        answer_payload["agent_invocation_id"] = str(invocation["id"])
     record_operation(
         state,
         operation_name,
         {
             "question": question,
             "citation_count": len(answer.citations),
+            "agent_id": normalized_agent_key,
+            "agent_invocation_id": answer_payload["agent_invocation_id"],
             "query_log_id": persisted_log.get("id") if persisted_log else None,
             "query_history_error": query_history_error,
         },
     )
     return answer_payload, None
+
+
+def _record_page_agent_invocation(
+    state: ApiState,
+    *,
+    agent_key: str,
+    question: str,
+    selected_collections: tuple[SourceCollection, ...],
+    query_log_id: str | None,
+    query_log_index: int,
+    citation_count: int,
+    request_project_name: str | None,
+) -> tuple[dict[str, object] | None, str | None]:
+    metadata: dict[str, object] = {
+        "filters": {
+            "top_k": 5,
+            "source_collections": [item.value for item in selected_collections],
+            "agent": agent_key,
+        },
+        "query_log_id": query_log_id,
+        "query_log_index": query_log_index,
+        "citation_count": citation_count,
+        "project_name": _normalize_project_name(request_project_name),
+    }
+    try:
+        invocation = _agent_store(state).record_invocation(
+            agent_key,
+            invocation_source="/pages/chat",
+            question=question,
+            conversation_ref=query_log_id or f"page-query-log-index:{query_log_index}",
+            created_by="page-user",
+            metadata=metadata,
+        )
+    except KeyError:
+        return None, "选择的智能体不存在。"
+    except ValueError:
+        return None, "选择的智能体已下架，不能用于新的对话。"
+    except SQLAlchemyError:
+        return None, "智能体调用记录存储不可用。"
+    record_operation(
+        state,
+        "agent-invocation-create",
+        {
+            "agent_id": agent_key,
+            "invocation_id": invocation["id"],
+            "prompt_version": invocation["prompt_version"],
+            "created_by": "page-user",
+            "invocation_source": "/pages/chat",
+        },
+    )
+    return invocation, None
+
+
+def _validate_page_agent_selection(
+    state: ApiState,
+    agent_key: str,
+    *,
+    request_project_name: str | None,
+    attempted_action: str,
+) -> tuple[dict[str, object] | None, str | None]:
+    try:
+        agent = _agent_payload_for_key(state, agent_key)
+    except SQLAlchemyError:
+        return None, "智能体存储不可用。"
+    if agent is None:
+        return None, "选择的智能体不存在。"
+    if str(agent.get("status") or "active") != "active":
+        return None, "选择的智能体已下架，不能用于新的对话。"
+    scope_error = _agent_project_scope_error(
+        state,
+        agent,
+        request_project_name=request_project_name,
+        attempted_action=attempted_action,
+    )
+    if scope_error is not None:
+        return None, scope_error
+    return agent, None
+
+
+def _agent_payload_for_key(state: ApiState, agent_key: str) -> dict[str, object] | None:
+    agent = _agent_store(state).get_agent(agent_key)
+    if agent is not None:
+        return agent
+    return next(
+        (dict(agent) for agent in combined_agent_payloads([]) if agent["id"] == agent_key),
+        None,
+    )
+
+
+def _agent_store(state: ApiState) -> AgentStore:
+    if state.agent_store is None:
+        state.agent_store = InMemoryAgentStore()
+    return state.agent_store
+
+
+def _agent_project_scope_error(
+    state: ApiState,
+    agent: dict[str, object],
+    *,
+    request_project_name: str | None,
+    attempted_action: str,
+) -> str | None:
+    normalized_project = _normalize_project_name(request_project_name)
+    if not normalized_project or str(agent.get("visibility_scope") or "project") != "project":
+        return None
+    agent_project_name = str(agent.get("project_name") or "").strip()
+    if agent_project_name == normalized_project:
+        return None
+    record_operation(
+        state,
+        "agent-project-scope-denied",
+        {
+            "agent_id": str(agent.get("id") or ""),
+            "agent_project_name": agent_project_name,
+            "request_project_name": normalized_project,
+            "attempted_action": attempted_action,
+        },
+    )
+    return "选择的智能体不属于当前项目空间。"
+
+
+def _normalize_project_name(project_name: str | None) -> str | None:
+    if project_name is None:
+        return None
+    normalized = urllib.parse.unquote(project_name.strip())
+    return normalized or None
+
+
+def _normalize_agent_key(agent_key: str | None) -> str | None:
+    if agent_key is None:
+        return None
+    normalized = agent_key.strip()
+    return normalized or None
 
 
 def _audit_dossier_payload(
@@ -1208,6 +1612,12 @@ def _string_list(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value)
 
 
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return tuple(str(item) for item in value)
+    return ()
+
+
 def _dict_list(value: object) -> tuple[dict[str, object], ...]:
     if not isinstance(value, list):
         return ()
@@ -1248,6 +1658,168 @@ def _utc_now_iso() -> str:
 
 def _download_headers(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+
+def _docx_download_response(
+    markdown: str,
+    *,
+    filename: str,
+    title: str,
+    subject: str | None = None,
+) -> Response:
+    return Response(
+        content=markdown_to_docx(markdown, title=title, subject=subject),
+        media_type=DOCX_MEDIA_TYPE,
+        headers=_download_headers(filename),
+    )
+
+
+def _workpaper_template_registry_item(template: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "id": str(template["id"]),
+        "name": str(template["name"]),
+        "source_template_id": str(template["source_template_id"]),
+        "source_table": str(template["source_table"]),
+        "source_file_name": str(template["source_file_name"]),
+        "sheet_name": str(template["sheet_name"]),
+        "output_type": str(template["output_type"]),
+        "registry_status": str(template["registry_status"]),
+        "expected_columns": _string_sequence(template.get("expected_columns")),
+        "key_checks": _string_sequence(template.get("key_checks")),
+        "evidence_bindings": _string_sequence(template.get("evidence_bindings")),
+        "prompt": str(template["prompt"]),
+        "chat_href": str(template["chat_href"]),
+    }
+
+
+def _review_task_report_entry(task: dict[str, object]) -> dict[str, object]:
+    payload = _review_task_export_payload(task)
+    dossier = _with_review_task_governance_defaults(_dict_value(payload.get("dossier")))
+    report_gate = _dict_value(payload.get("report_gate"))
+    signed_report = _signed_report_context(dossier)
+    workpaper = _workpaper_context(dossier)
+    attachments = _attachment_items(dossier)
+    report_draft = _report_draft_context(dossier, payload)
+    task_id = str(payload["task_id"])
+    encoded_task_id = urllib.parse.quote(task_id)
+    report_download_prefix = _report_download_prefix(
+        encoded_task_id=encoded_task_id,
+        ready_for_report=bool(report_gate.get("ready_for_report")),
+        signed=bool(signed_report["signed"]),
+    )
+    report_status = _report_entry_status(
+        ready_for_report=bool(report_gate.get("ready_for_report")),
+        signed=bool(signed_report["signed"]),
+    )
+    report_docx_href = (
+        f"{report_download_prefix}?format=docx" if report_download_prefix is not None else None
+    )
+    return {
+        "id": task_id,
+        "title": str(report_draft.get("title") or payload["question"]),
+        "status": report_status,
+        "report_no": _report_entry_no(
+            task_id=task_id,
+            signed_report=signed_report,
+            workpaper=workpaper,
+        ),
+        "owner": str(payload.get("assigned_to") or "未指定"),
+        "source": str(payload.get("source", "review-task")),
+        "included_finding_count": 1 if report_status != "门禁阻断" else 0,
+        "appendix_count": len(attachments),
+        "gate_summary": str(report_gate.get("status_label") or "未执行报告门禁"),
+        "updated_at": str(payload["updated_at"]),
+        "href": "/pages/review-tasks",
+        "download_links": {
+            "page": "/pages/review-tasks",
+            "task_docx": f"/review-tasks/{encoded_task_id}/export?format=docx",
+            "report_docx": report_docx_href,
+            "report_markdown": (
+                f"{report_download_prefix}?format=markdown"
+                if report_download_prefix is not None
+                else None
+            ),
+            "report_json": (
+                f"{report_download_prefix}?format=json"
+                if report_download_prefix is not None
+                else None
+            ),
+        },
+    }
+
+
+def _review_task_report_evidence_source(task: dict[str, object]) -> dict[str, object]:
+    payload = _review_task_export_payload(task)
+    dossier = _with_review_task_governance_defaults(_dict_value(payload.get("dossier")))
+    report_gate = _dict_value(payload.get("report_gate"))
+    workpaper = _workpaper_context(dossier)
+    attachments = _attachment_items(dossier)
+    task_id = str(payload["task_id"])
+    workpaper_id = str(workpaper.get("workpaper_id") or "").strip()
+    return {
+        "id": f"evidence-{task_id}",
+        "title": workpaper_id or task_id,
+        "kind": "底稿",
+        "reference": f"{task_id} · 附件 {len(attachments)} 条",
+        "status": "已纳入" if report_gate.get("ready_for_report") else "待补证",
+        "href": "/pages/review-tasks",
+    }
+
+
+def _report_workbench_metrics(report_entries: Sequence[dict[str, object]]) -> dict[str, int]:
+    return {
+        "report_count": len(report_entries),
+        "signed_report_count": sum(
+            1 for entry in report_entries if entry.get("status") == "已签发"
+        ),
+        "blocked_report_count": sum(
+            1 for entry in report_entries if entry.get("status") == "门禁阻断"
+        ),
+        "included_finding_count": sum(
+            _non_negative_int(entry.get("included_finding_count")) for entry in report_entries
+        ),
+        "docx_download_count": sum(
+            1
+            for entry in report_entries
+            if _dict_value(entry.get("download_links")).get("report_docx")
+        ),
+    }
+
+
+def _report_entry_status(*, ready_for_report: bool, signed: bool) -> str:
+    if signed:
+        return "已签发"
+    if ready_for_report:
+        return "草稿"
+    return "门禁阻断"
+
+
+def _report_download_prefix(
+    *,
+    encoded_task_id: str,
+    ready_for_report: bool,
+    signed: bool,
+) -> str | None:
+    if signed:
+        return f"/review-tasks/{encoded_task_id}/signed-report"
+    if ready_for_report:
+        return f"/review-tasks/{encoded_task_id}/report-draft"
+    return None
+
+
+def _report_entry_no(
+    *,
+    task_id: str,
+    signed_report: dict[str, object],
+    workpaper: dict[str, object],
+) -> str:
+    report_id = str(signed_report.get("report_id") or "").strip()
+    if report_id:
+        return report_id
+    workpaper_id = str(workpaper.get("workpaper_id") or "").strip()
+    if workpaper_id:
+        return workpaper_id
+    return f"DRAFT-{task_id}"
 
 
 def _create_review_task(
@@ -1794,19 +2366,19 @@ def _ensure_review_task_writable(
 ) -> None:
     if str(task.get("status", "")).strip() == "closed":
         detail = "review task is closed and read-only"
-        current_user = current_user_from_request(request)
         record_operation(
             state,
             "review-task-readonly-write-blocked",
-            auth_audit_payload(
-                current_user,
-                task_id=str(task.get("task_id", "")),
-                task_status="closed",
-                attempted_action=attempted_action,
-                endpoint=endpoint,
-                status_code=409,
-                reason=detail,
-            ),
+            {
+                "task_id": str(task.get("task_id", "")),
+                "task_status": "closed",
+                "attempted_action": attempted_action,
+                "endpoint": endpoint,
+                "status_code": 409,
+                "reason": detail,
+                "user_identifier": request.headers.get("X-User-Id") or "anonymous",
+                "role": request.headers.get("X-Role") or "auditor",
+            },
         )
         raise HTTPException(status_code=409, detail=detail)
 
@@ -2532,7 +3104,7 @@ def _source_collection_cards(
             "audit_hint": SOURCE_COLLECTION_UI[collection]["audit_hint"],
             "selected": collection.value in selected_values,
         }
-        for collection in SOURCE_COLLECTION_UI
+        for collection in SourceCollection
     )
 
 
