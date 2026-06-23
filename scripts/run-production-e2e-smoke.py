@@ -23,6 +23,11 @@ DEFAULT_REGRESSION_URLS = (
     "https://voc.lute-tlz-dddd.top/",
     "https://lute-tlz-dddd.top/",
 )
+DEFAULT_TENANT_ID = "hospital-demo"
+DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
+DEFAULT_USER_ID = "production-smoke-auditor"
+DEFAULT_ADMIN_USER_ID = "production-smoke-admin"
+DEFAULT_USER_ROLE = "auditor"
 REQUIRED_PAGES = {
     "/pages/chat": ("AI智能审计管理系统", "AI 对话", "检索后端"),
     "/pages/query": ("医保审核知识库查询", "文档检索"),
@@ -50,7 +55,13 @@ class SmokeAuth:
     admin_api_key: str | None
     api_key_env: str | None
     admin_api_key_env: str | None
+    tenant_id: str = DEFAULT_TENANT_ID
+    project_key: str = DEFAULT_PROJECT_KEY
+    user_id: str = DEFAULT_USER_ID
+    user_role: str = DEFAULT_USER_ROLE
+    admin_user_id: str = DEFAULT_ADMIN_USER_ID
     admin_role: str = "it-admin"
+    include_context_headers: bool = False
 
     def headers(self, *, admin: bool = False) -> dict[str, str]:
         token = self.admin_api_key if admin else self.api_key
@@ -59,7 +70,16 @@ class SmokeAuth:
         headers: dict[str, str] = {}
         if token is not None:
             headers["X-API-Key"] = token
-        if admin:
+        if self.include_context_headers:
+            headers.update(
+                {
+                    "X-User-Id": self.admin_user_id if admin else self.user_id,
+                    "X-Role": self.admin_role if admin else self.user_role,
+                    "X-Project-Key": self.project_key,
+                    "X-Tenant-Id": self.tenant_id,
+                }
+            )
+        elif admin:
             headers["X-Role"] = self.admin_role
         return headers
 
@@ -70,6 +90,9 @@ class SmokeAuth:
             "admin_role": self.admin_role,
             "api_key_configured": self.api_key is not None,
             "admin_api_key_configured": self.admin_api_key is not None,
+            "tenant_id": self.tenant_id,
+            "project_key": self.project_key,
+            "user_role": self.user_role,
         }
 
 
@@ -231,6 +254,11 @@ def _parse_args() -> argparse.Namespace:
         default="it-admin",
         help="Role used for backend admin checks.",
     )
+    parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
+    parser.add_argument("--project-key", default=DEFAULT_PROJECT_KEY)
+    parser.add_argument("--user-id", default=DEFAULT_USER_ID)
+    parser.add_argument("--user-role", default=DEFAULT_USER_ROLE)
+    parser.add_argument("--admin-user-id", default=DEFAULT_ADMIN_USER_ID)
     parser.add_argument(
         "--regression-url",
         action="append",
@@ -271,6 +299,12 @@ def _auth_from_args(args: argparse.Namespace) -> SmokeAuth:
         api_key=api_key,
         admin_api_key=admin_api_key,
         admin_role=admin_role,
+        tenant_id=str(args.tenant_id),
+        project_key=str(args.project_key),
+        user_id=str(args.user_id),
+        user_role=str(args.user_role),
+        admin_user_id=str(args.admin_user_id),
+        include_context_headers=True,
         api_key_env=api_key_env,
         admin_api_key_env=admin_api_key_env,
     )
@@ -424,7 +458,10 @@ def _check_audit_log_permissions(
         method="GET",
         timeout_seconds=timeout_seconds,
     )
-    _require(unauthorized_api.status == 403, "audit logs API should return 403 without role")
+    _require(
+        unauthorized_api.status in {401, 403},
+        "audit logs API should return 401/403 without role",
+    )
 
     authorized_api = _get_json(
         f"{base_url}/audit/logs",

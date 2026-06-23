@@ -16,6 +16,10 @@ EMBEDDING_DIMENSION="${KIMI_EMBEDDING_DIMENSION:-1024}"
 EMBEDDING_BASE_URL="${KIMI_EMBEDDING_BASE_URL:-https://api.kimi.com/coding/v1}"
 EMBEDDING_BATCH_SIZE="${KIMI_EMBEDDING_BATCH_SIZE:-16}"
 API_KEY_ENV="${KIMI_API_KEY_ENV:-KIMI_API_KEY}"
+AUDIT_TENANT_ID="${MEDICAL_AUDIT_INTERNAL_TENANT_ID:-hospital-demo}"
+AUDIT_PROJECT_KEY="${MEDICAL_AUDIT_INTERNAL_PROJECT_KEY:-SELF-CHECK-FUND-20260607}"
+AUDIT_INTERNAL_USER_ID="${MEDICAL_AUDIT_INTERNAL_USER_ID:-local-bootstrap-admin}"
+AUDIT_INTERNAL_ROLE="${MEDICAL_AUDIT_INTERNAL_ROLE:-it-admin}"
 
 DEBUG_DIR="${MEDICAL_AUDIT_KB_DEBUG_DIR:-tmp/debug}"
 HEALTH_OUTPUT="${DEBUG_DIR}/serve-chat-workbench-health.json"
@@ -55,7 +59,12 @@ assert_port_is_not_serving_stale_api() {
     return
   fi
 
-  curl -fsS "${API_URL}/index/search-backend" > "${BACKEND_OUTPUT}" || true
+  curl -fsS \
+    -H "X-User-Id: ${AUDIT_INTERNAL_USER_ID}" \
+    -H "X-Role: ${AUDIT_INTERNAL_ROLE}" \
+    -H "X-Project-Key: ${AUDIT_PROJECT_KEY}" \
+    -H "X-Tenant-Id: ${AUDIT_TENANT_ID}" \
+    "${API_URL}/index/search-backend" > "${BACKEND_OUTPUT}" || true
   if grep -q '"ready":true' "${BACKEND_OUTPUT}"; then
     printf 'API is already running and search backend is ready: %s/pages/chat\n' "${API_URL}"
     exit 0
@@ -87,7 +96,10 @@ load_postgres_backend() {
     curl -sS -o "${BACKEND_OUTPUT}" -w '%{http_code}' \
       -X POST "${API_URL}/index/search-backend/postgres" \
       -H 'Content-Type: application/json' \
-      -H 'X-Role: it-admin' \
+      -H "X-User-Id: ${AUDIT_INTERNAL_USER_ID}" \
+      -H "X-Role: ${AUDIT_INTERNAL_ROLE}" \
+      -H "X-Project-Key: ${AUDIT_PROJECT_KEY}" \
+      -H "X-Tenant-Id: ${AUDIT_TENANT_ID}" \
       -d "{
         \"embedding_provider\":\"${EMBEDDING_PROVIDER}\",
         \"embedding_model\":\"${EMBEDDING_MODEL}\",

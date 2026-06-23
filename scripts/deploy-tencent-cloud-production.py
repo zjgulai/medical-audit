@@ -262,7 +262,13 @@ if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1
   sed -n '1,20p' /tmp/medical-audit-nginx-test.log
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
-curl -fsS http://127.0.0.1:18080/index/search-backend >/dev/null
+auth_headers=(
+  -H 'X-User-Id: deploy-smoke-admin'
+  -H 'X-Role: it-admin'
+  -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
+  -H 'X-Tenant-Id: hospital-demo'
+)
+curl -fsS "${{auth_headers[@]}}" http://127.0.0.1:18080/index/search-backend >/dev/null
 """
     _ssh(config, script)
 
@@ -473,8 +479,15 @@ if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1
   sed -n '1,20p' /tmp/medical-audit-nginx-test.log
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
-curl -fsS http://127.0.0.1:18080/index/search-backend >/dev/null
-curl -fsS {shlex.quote(config.base_url)}/api/v1/index/search-backend >/dev/null
+auth_headers=(
+  -H 'X-User-Id: deploy-smoke-admin'
+  -H 'X-Role: it-admin'
+  -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
+  -H 'X-Tenant-Id: hospital-demo'
+)
+curl -fsS "${{auth_headers[@]}}" http://127.0.0.1:18080/index/search-backend >/dev/null
+curl -fsS "${{auth_headers[@]}}" \
+  {shlex.quote(config.base_url)}/api/v1/index/search-backend >/dev/null
 """
     _ssh(config, script)
 

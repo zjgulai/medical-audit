@@ -12,6 +12,11 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
+DEFAULT_TENANT_ID = "hospital-demo"
+DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
+DEFAULT_INTERNAL_USER_ID = "container-bootstrap-admin"
+DEFAULT_INTERNAL_ROLE = "it-admin"
+
 
 def main() -> int:
     host = os.getenv("MEDICAL_AUDIT_KB_HOST", "0.0.0.0")
@@ -86,7 +91,7 @@ def _load_postgres_backend(api_url: str) -> None:
     response = _post_json(
         f"{api_url}/index/search-backend/postgres",
         payload,
-        headers={"X-Role": "it-admin"},
+        headers=_internal_auth_headers(),
     )
     if response.get("ready") is not True:
         raise SystemExit("search backend response is not ready")
@@ -130,6 +135,15 @@ def _post_json(
     if not isinstance(value, dict):
         raise RuntimeError(f"unexpected JSON response from {url}: {value!r}")
     return value
+
+
+def _internal_auth_headers() -> dict[str, str]:
+    return {
+        "X-User-Id": os.getenv("MEDICAL_AUDIT_INTERNAL_USER_ID", DEFAULT_INTERNAL_USER_ID),
+        "X-Role": os.getenv("MEDICAL_AUDIT_INTERNAL_ROLE", DEFAULT_INTERNAL_ROLE),
+        "X-Project-Key": os.getenv("MEDICAL_AUDIT_INTERNAL_PROJECT_KEY", DEFAULT_PROJECT_KEY),
+        "X-Tenant-Id": os.getenv("MEDICAL_AUDIT_INTERNAL_TENANT_ID", DEFAULT_TENANT_ID),
+    }
 
 
 def _nested(value: Mapping[str, object], first: str, second: str) -> object:

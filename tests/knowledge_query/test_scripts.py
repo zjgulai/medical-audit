@@ -27,6 +27,8 @@ def test_serve_chat_workbench_script_is_valid_and_does_not_store_secret() -> Non
     script_text = script_path.read_text(encoding="utf-8")
     assert "KIMI_API_KEY" in script_text
     assert "sk-" not in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
 
 
 def test_capture_chat_workbench_visual_baseline_script_is_valid() -> None:
@@ -69,6 +71,29 @@ def test_serve_chat_workbench_container_script_is_valid_and_does_not_store_secre
     assert "KIMI_API_KEY" in script_text
     assert "sk-" not in script_text
     assert "urllib.request" in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
+
+
+def test_serve_chat_workbench_container_internal_auth_headers(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "serve_chat_workbench_container_internal_auth_headers",
+        Path("scripts/serve-chat-workbench-container.py"),
+    )
+
+    monkeypatch.setenv("MEDICAL_AUDIT_INTERNAL_USER_ID", "bootstrap-user")
+    monkeypatch.setenv("MEDICAL_AUDIT_INTERNAL_ROLE", "it-admin")
+    monkeypatch.setenv("MEDICAL_AUDIT_INTERNAL_PROJECT_KEY", "project-a")
+    monkeypatch.setenv("MEDICAL_AUDIT_INTERNAL_TENANT_ID", "tenant-a")
+
+    assert module._internal_auth_headers() == {
+        "X-User-Id": "bootstrap-user",
+        "X-Role": "it-admin",
+        "X-Project-Key": "project-a",
+        "X-Tenant-Id": "tenant-a",
+    }
 
 
 def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() -> None:
