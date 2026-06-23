@@ -14,6 +14,9 @@ const repoRoot = path.resolve(path.dirname(__filename), "..");
 const DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top";
 const DEFAULT_OUTPUT = "tmp/outputs/production-frontend-acceptance-latest.json";
 const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-latest";
+const DEFAULT_TENANT_ID = "hospital-demo";
+const DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
+const DEFAULT_ADMIN_USER_ID = "frontend-acceptance-admin";
 
 const viewports = [
   { name: "desktop", width: 1440, height: 1100 },
@@ -22,7 +25,7 @@ const viewports = [
 
 const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
-  { route: "/chat", requiredText: [/选择智能体后进入审证对话/, /引用依据核验助手|重复收费复核助手|底稿摘要助手/] },
+  { route: "/chat", requiredText: [/常用审证入口/, /门诊超量开药依据核验|重复收费疑点复核|目录限制交叉审核/] },
   {
     route: "/agents",
     requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
@@ -143,42 +146,58 @@ function readOptionalEnv(name) {
   return trimmed ? trimmed : null;
 }
 
+function readBooleanEnv(name) {
+  return ["1", "true", "yes"].includes((process.env[name] ?? "").trim().toLowerCase());
+}
+
 async function snapshot(page) {
-  return page.evaluate(() => {
-    const isVisible = (element) => {
-      const style = window.getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
-    };
-    const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
-      .filter(isVisible)
-      .map((element) =>
-        [
-          element.textContent,
-          element.getAttribute("aria-label"),
-          element.getAttribute("placeholder"),
-          element.getAttribute("name"),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim(),
-      )
-      .filter(Boolean);
-    const root = document.documentElement;
-    return {
-      title: document.title,
-      bodyText: document.body?.innerText ?? "",
-      headings: Array.from(document.querySelectorAll("h1,h2,h3"))
-        .filter(isVisible)
-        .map((element) => element.textContent?.trim())
-        .filter(Boolean),
-      controlText,
-      fileInputCount: document.querySelectorAll('input[type="file"]').length,
-      scrollWidth: root.scrollWidth,
-      clientWidth: root.clientWidth,
-      horizontalOverflow: root.scrollWidth > root.clientWidth + 2,
-    };
-  });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await page.evaluate(() => {
+        const isVisible = (element) => {
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+        };
+        const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
+          .filter(isVisible)
+          .map((element) =>
+            [
+              element.textContent,
+              element.getAttribute("aria-label"),
+              element.getAttribute("placeholder"),
+              element.getAttribute("name"),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .trim(),
+          )
+          .filter(Boolean);
+        const root = document.documentElement;
+        return {
+          title: document.title,
+          bodyText: document.body?.innerText ?? "",
+          headings: Array.from(document.querySelectorAll("h1,h2,h3"))
+            .filter(isVisible)
+            .map((element) => element.textContent?.trim())
+            .filter(Boolean),
+          controlText,
+          fileInputCount: document.querySelectorAll('input[type="file"]').length,
+          scrollWidth: root.scrollWidth,
+          clientWidth: root.clientWidth,
+          horizontalOverflow: root.scrollWidth > root.clientWidth + 2,
+        };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("Execution context was destroyed") || attempt === 3) {
+        throw error;
+      }
+      await page.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+  }
+  throw new Error("snapshot failed");
 }
 
 function issue(severity, type, message) {
@@ -280,7 +299,10 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
       timeoutMs,
       headers: {
         Accept: "application/json",
+        "X-User-Id": DEFAULT_ADMIN_USER_ID,
         "X-Role": adminRole,
+        "X-Project-Key": DEFAULT_PROJECT_KEY,
+        "X-Tenant-Id": DEFAULT_TENANT_ID,
         ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
       },
     });
@@ -298,8 +320,8 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
       allowed_body_sample: allowed.bodyText.slice(0, 220),
     };
 
-    if (denied.status !== 403) {
-      throw new Error(`${item.path} should return 403 without role`);
+    if (![401, 403].includes(denied.status)) {
+      throw new Error(`${item.path} should return 401/403 without role`);
     }
     if (allowed.status !== 200) {
       throw new Error(`${item.path} should return 200 with role`);
@@ -316,16 +338,29 @@ async function run() {
   const screenshotDir = resolveRepoPath(options.screenshotDir);
   const adminApiKey = readOptionalEnv(options.adminApiKeyEnv);
   const adminRole = options.adminRole || "it-admin";
+  const acceptanceHeaders = {
+    "X-User-Id": DEFAULT_ADMIN_USER_ID,
+    "X-Role": adminRole,
+    "X-Project-Key": DEFAULT_PROJECT_KEY,
+    "X-Tenant-Id": DEFAULT_TENANT_ID,
+  };
+  const captureScreenshots = readBooleanEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS");
   let apiCheckResult = null;
   let apiCheckError = null;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.mkdirSync(screenshotDir, { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server", "--proxy-server=direct://", "--proxy-bypass-list=*"],
+  });
   const checks = [];
   try {
     for (const viewport of viewports) {
-      const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+      const context = await browser.newContext({
+        viewport: { width: viewport.width, height: viewport.height },
+        extraHTTPHeaders: acceptanceHeaders,
+      });
       for (const routeCheck of routeChecks) {
         const page = await context.newPage();
         const consoleErrors = [];
@@ -374,13 +409,25 @@ async function run() {
           failedRequests,
           issues: classify({ status, error, consoleErrors, failedRequests }, routeCheck, data),
         };
-        if (check.issues.length > 0) {
+        if (captureScreenshots && check.issues.length > 0) {
           const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
           const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
-          await page.screenshot({ path: screenshotPath, fullPage: true });
-          check.screenshot = screenshotPath;
+          try {
+            await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
+            check.screenshot = screenshotPath;
+          } catch (caught) {
+            check.screenshot_error = caught instanceof Error ? caught.message : String(caught);
+          }
         }
         checks.push(check);
+        console.error(
+          JSON.stringify({
+            route: routeCheck.route,
+            viewport: viewport.name,
+            status,
+            issue_count: check.issues.length,
+          }),
+        );
         await page.close();
       }
       await context.close();
@@ -416,6 +463,7 @@ async function run() {
       check_count: checks.length,
       viewports: viewports.map((viewport) => viewport.name),
       api_checks: apiCheckResult || { error: apiCheckError },
+      screenshot_capture: captureScreenshots,
       p0,
       p1,
     },

@@ -873,6 +873,9 @@ function indexStatusLabel(status: DocumentUploadItem["index_status"]): string {
   if (status === "index-ready") {
     return "index-ready";
   }
+  if (status === "staged-for-index") {
+    return "staged-for-index";
+  }
   if (status === "blocked") {
     return "index-blocked";
   }

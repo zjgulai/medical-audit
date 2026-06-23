@@ -431,7 +431,7 @@ export type DocumentUploadItem = {
   readonly created_by: string | null;
   readonly created_at: string;
   readonly retention_status: "retained";
-  readonly index_status: "not-indexed" | "index-ready" | "blocked";
+  readonly index_status: "not-indexed" | "index-ready" | "staged-for-index" | "blocked";
   readonly governance_status: "pending-review" | "approved-for-index" | "blocked";
   readonly governance_note: string;
   readonly governed_by: string | null;

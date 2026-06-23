@@ -237,6 +237,13 @@ BASE_URL = {json.dumps(base_url, ensure_ascii=False)}
 BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
 ENV_FILE_NAME = "medical" + "-audit" + ".env"
+AUDIT_HEADERS = {{
+    "User-Agent": "medical-audit-state-audit/1.0",
+    "X-User-Id": "deployment-state-auditor",
+    "X-Role": "it-admin",
+    "X-Project-Key": "SELF-CHECK-FUND-20260607",
+    "X-Tenant-Id": "hospital-demo",
+}}
 
 
 def run(command, cwd=None):
@@ -358,9 +365,10 @@ def read_file(path):
         return None
 
 
-def http_json(url):
+def http_json(url, headers=None):
     try:
-        with urllib.request.urlopen(url, timeout=20) as response:
+        request = urllib.request.Request(url, headers=headers or {{}})
+        with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read().decode("utf-8")
         try:
             payload = json.loads(body)
@@ -445,7 +453,10 @@ report = {{
     }},
     "local_backend": {{
         "health": http_json("http://127.0.0.1:18080/health"),
-        "search_backend": http_json("http://127.0.0.1:18080/index/search-backend"),
+        "search_backend": http_json(
+            "http://127.0.0.1:18080/index/search-backend",
+            headers=AUDIT_HEADERS,
+        ),
     }},
     "public_frontdoor": {{
         "health": http_status(BASE_URL + "/api/v1/health"),

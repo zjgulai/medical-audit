@@ -145,12 +145,12 @@ function assertGate(report) {
     p1_count: p1.length,
   });
   requireStatus(
-    auditLogs.denied_status === 403 && auditLogs.allowed_status === 200,
+    [401, 403].includes(auditLogs.denied_status) && auditLogs.allowed_status === 200,
     "audit logs API permission gate failed",
     auditLogs,
   );
   requireStatus(
-    auditLogExports.denied_status === 403 && auditLogExports.allowed_status === 200,
+    [401, 403].includes(auditLogExports.denied_status) && auditLogExports.allowed_status === 200,
     "audit logs export API permission gate failed",
     auditLogExports,
   );

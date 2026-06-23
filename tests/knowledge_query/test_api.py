@@ -34,6 +34,7 @@ from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
     SqlAlchemyQueryHistoryStore,
 )
+from medical_audit_kb.api.routes_documents import DocumentUploadItem
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
@@ -1244,6 +1245,8 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert upload_body["store"]["backend"] == "SqlAlchemyDocumentUploadStore"
     assert state.operation_logs[-1]["action"] == "document-upload"
     assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
+    staged_payload = {**uploaded, "index_status": "staged-for-index"}
+    assert DocumentUploadItem.model_validate(staged_payload).index_status == "staged-for-index"
 
     retained_path = upload_root / uploaded["storage_path"]
     assert retained_path.exists()

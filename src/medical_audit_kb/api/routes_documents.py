@@ -24,7 +24,7 @@ router = APIRouter(prefix="/documents")
 
 MAX_DOCUMENT_UPLOAD_BYTES = 20 * 1024 * 1024
 SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt", "csv", "xlsx", "xlsm"}
-DocumentIndexStatus = Literal["not-indexed", "index-ready", "blocked"]
+DocumentIndexStatus = Literal["not-indexed", "index-ready", "staged-for-index", "blocked"]
 DocumentGovernanceStatus = Literal["pending-review", "approved-for-index", "blocked"]
 DocumentSecurityScanStatus = Literal["local-policy-passed", "local-policy-review"]
 DocumentDlpStatus = Literal["clear", "needs-review"]
