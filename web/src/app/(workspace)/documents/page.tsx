@@ -457,7 +457,7 @@ function DocumentUploadPanel({
           <input
             accept=".pdf,.md,.txt,.csv,.xlsx,.xlsm"
             aria-label="上传个人知识库材料"
-            className="audit-focus-ring mt-2 block w-full rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2 text-sm text-[var(--audit-ink)] file:mr-3 file:rounded-[var(--audit-radius-sm)] file:border-0 file:bg-[var(--audit-primary-soft)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[var(--audit-primary)]"
+            className="audit-focus-ring mt-2 block w-full min-w-0 max-w-full rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2 text-sm text-[var(--audit-ink)] file:mr-3 file:rounded-[var(--audit-radius-sm)] file:border-0 file:bg-[var(--audit-primary-soft)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-[var(--audit-primary)]"
             disabled={!canUpload || status === "uploading"}
             id="personal-document-upload"
             onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
@@ -509,7 +509,7 @@ function DocumentUploadRow({
 }) {
   return (
     <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</h3>
           <p className="audit-meta mt-1">
@@ -752,7 +752,7 @@ function DocumentList({ title, documents }: { readonly title: string; readonly d
           documents.map((document) => (
             <article key={document.id} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h3 className="audit-card-title">{document.title}</h3>
                   <p className="audit-meta mt-1">
                     {document.libraryName} / {document.owner} / {document.updatedAt}
