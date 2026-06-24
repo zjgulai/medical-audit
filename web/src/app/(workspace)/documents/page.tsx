@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   fetchDocumentPermissions,
@@ -257,6 +258,7 @@ export default function DocumentsPage() {
           <div className="flex flex-wrap gap-2">
             <StatusPill tone={searchState.status === "success" ? "success" : "info"}>引用优先</StatusPill>
             <StatusPill tone="neutral">无引用不下结论</StatusPill>
+            <DataSourceBadge source="hybrid" />
           </div>
         </div>
 

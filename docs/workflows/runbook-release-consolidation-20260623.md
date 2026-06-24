@@ -1,5 +1,5 @@
 ---
-title: 发布候选收口执行手册（在本机执行）
+title: 发布候选收口完整执行手册（在本机执行）
 doc_type: workflow
 module: project-governance
 topic: release-consolidation-runbook
@@ -10,48 +10,38 @@ owner: self
 source: human+ai
 ---
 
-# 发布候选收口执行手册（在本机执行）
+# 发布候选收口完整执行手册（在本机执行）
 
-> 沙箱环境无法访问 GitHub（代理 403），发布分支 worktree 也不在沙箱挂载内，因此以下命令请在你本机（`/Users/pray/...`）执行。
-> 已完成的只读核验结论：发布分支 `codex/medical-audit-release-auth-workbench-20260623` = `main` + 5 个干净提交，且**已逐字节捕获陈旧 worktree 的全部新代码**（auth/workbench/docx/登录页/E2E 脚本等均 0-diff）。未进发布分支的只有非交付物（`.codex/ .kiro/ drafts/ opendesign/ ref/`）和新审计报告。
+> 沙箱无法访问 GitHub 且发布 worktree 不在挂载内，以下全部在你本机执行。
+> 已核验：`push` 成功（origin 上已有发布分支）、文档已入库（发布分支 = `main + 6`，tip `c10b3d3b`）、发布分支已逐字节捕获全部新代码。
+> 仍待你本机确认/执行：质量闸、合入 main、同步本地 main、生产部署与验收、worktree/分支清理。
 
-## 当前 worktree 布局（实测）
-
-| worktree 路径 | 分支 | 状态 |
-| --- | --- | --- |
-| `/Users/pray/project/medical_audit` | `codex/answer-provider-gate-plan` (b298c6c8, 落后 main 138) | 陈旧脏 worktree，成果已被发布分支捕获，待丢弃 |
-| `/Users/pray/project/medical_audit_release_auth_workbench_20260623` | `codex/medical-audit-release-auth-workbench-20260623` (main+5) | **发布候选**，未推远端 |
-| `/Users/pray/project/medical_audit_minimal_pr` | `main` (950ecbda) | |
-| `~/.config/superpowers/worktrees/.../frontend-plan-02-projects-dashboard` | `codex/frontend-plan-02-projects-dashboard` | |
-
-## Step 1 — 立刻推送发布候选（最高优先，消除唯一高危点）
+## 0. 路径与变量（先设好，后续命令直接用）
 
 ```bash
-cd /Users/pray/project/medical_audit_release_auth_workbench_20260623
-git push -u origin codex/medical-audit-release-auth-workbench-20260623
+REL=/Users/pray/project/medical_audit_release_auth_workbench_20260623   # 发布分支 worktree
+MAINWT=/Users/pray/project/medical_audit_minimal_pr                     # main worktree
+STALE=/Users/pray/project/medical_audit                                 # 陈旧 worktree(answer-provider-gate-plan)
+BR=codex/medical-audit-release-auth-workbench-20260623
+DOMAIN=audit.lute-tlz-dddd.top
 ```
 
-完成后 `release-auth-workbench` 即有 GitHub 异地副本，F-01 解除。
-
-## Step 2 — 把新审计报告纳入发布分支
-
-报告与本手册当前在陈旧 worktree 内：
-`/Users/pray/project/medical_audit/docs/workflows/workflow-deep-audit-and-remediation-plan-20260623.md`
-`/Users/pray/project/medical_audit/docs/workflows/runbook-release-consolidation-20260623.md`
+## 1. 现状核验（确认 push/合并真实状态）
 
 ```bash
-cd /Users/pray/project/medical_audit_release_auth_workbench_20260623
-cp /Users/pray/project/medical_audit/docs/workflows/workflow-deep-audit-and-remediation-plan-20260623.md docs/workflows/
-cp /Users/pray/project/medical_audit/docs/workflows/runbook-release-consolidation-20260623.md docs/workflows/
-git add docs/workflows/workflow-deep-audit-and-remediation-plan-20260623.md docs/workflows/runbook-release-consolidation-20260623.md
-git commit -m "docs: add deep audit report and release consolidation runbook"
-git push
+cd "$REL"
+git fetch origin --prune
+git log origin/main --oneline -3            # 顶部若已是发布分支合并提交 = 已合入 main
+git rev-list --left-right --count origin/main...origin/$BR   # 右值=0 表示发布分支已全部进 main
+git status -sb
 ```
 
-## Step 3 — 在发布分支跑全量质量闸（不要在陈旧 worktree 跑）
+判读：若 `origin/main` 顶部还不是发布分支的合并 → 继续第 3 步合并；若已是 → 跳到第 4 步同步本地 main。
+
+## 2. 在发布分支跑全量质量闸（合并前必须全绿）
 
 ```bash
-cd /Users/pray/project/medical_audit_release_auth_workbench_20260623
+cd "$REL"
 uv run ruff check .
 uv run mypy src
 uv run pytest tests/knowledge_query
@@ -62,43 +52,101 @@ pnpm --filter medical-audit-web build
 uv run python scripts/run-local-fullstack-e2e.py
 ```
 
-预期（对照台账历史基线）：mypy 88 files、pytest ~288–292 passed、web 91 tests、build 21/21、E2E 16 passed。
+预期基线：mypy 88 files、pytest ~288–292 passed、web 91 tests、build 21/21、E2E 16 passed。任一不过先贴输出再合并。
 
-## Step 4 — 开 PR 合入 main（人工评审后再合，不要自动合）
+## 3. 合入 main（二选一）
+
+方式 A — GitHub 网页/CLI 开 PR 评审后合并（推荐，留评审痕迹）：
 
 ```bash
-cd /Users/pray/project/medical_audit_release_auth_workbench_20260623
-gh pr create --base main --head codex/medical-audit-release-auth-workbench-20260623 \
-  --title "release: auth workbench + controlled api auth (main+5)" \
-  --body "发布候选：本地权限底座/受控API鉴权/workbench API/docx导出/登录页。已通过全量质量闸。详见 docs/workflows/workflow-deep-audit-and-remediation-plan-20260623.md。"
+cd "$REL"
+gh pr create --base main --head "$BR" \
+  --title "release: auth workbench + controlled api auth" \
+  --body "本地权限底座/受控API鉴权/workbench API/docx导出/登录页；含深度审计报告。详见 docs/workflows/workflow-deep-audit-and-remediation-plan-20260623.md"
+gh pr merge "$BR" --merge        # 评审通过后执行
 ```
 
-## Step 5 — 合并并生产部署后，再清理（务必在确认无遗漏后）
+方式 B — 本地 fast-forward 合并后推送（发布分支已含 main，可 FF）：
 
 ```bash
-# 确认发布候选已合入 main 且生产部署+只读 smoke 通过后：
-git worktree remove /Users/pray/project/medical_audit   # 丢弃陈旧 answer-provider-gate-plan worktree
-git branch -D codex/answer-provider-gate-plan            # 删除陈旧分支（其成果已在 main）
+cd "$MAINWT"
+git fetch origin --prune
+git checkout main && git pull --ff-only origin main
+git merge --ff-only "$BR"
+git push origin main
 ```
 
-> 注意：`git worktree remove` 会删除该 worktree 目录下的未提交内容。执行前确认陈旧 worktree 里没有你还想保留的零散改动（核验已确认所有新代码均已进发布分支；剩余 untracked 仅为 `.codex/ .kiro/ drafts/ opendesign/ ref/` 等非交付物，按需另行备份 `ref/` 参考资料和 `opendesign/` 设计资产）。
-
-## Step 6 — 分支治理（Phase B，可在主线收口后进行）
+## 4. 同步所有本地 worktree 的 main
 
 ```bash
-# 远端：删除已 0-ahead origin/main 的历史 PR 分支（保留 docs-only-merge-sha-boundary、documents-history-production-sync 待确认）
-git branch -r --merged origin/main | grep 'origin/codex/' | sed 's#origin/##' \
-  | grep -vE 'docs-only-merge-sha-boundary|documents-history-production-sync' \
+cd "$MAINWT" && git pull --ff-only origin main
+git log main --oneline -1        # 确认本地 main 已是合并后的 tip
+# 校验新代码已进 main：
+git cat-file -e main:src/medical_audit_kb/api/auth.py && echo "auth.py in main OK"
+git cat-file -e main:src/medical_audit_kb/api/routes_workbench.py && echo "routes_workbench in main OK"
+```
+
+## 5. 生产部署（默认只读 preflight → 备份 → 写入 → smoke）
+
+> 本次发布**新增 auth 数据表**，部署须带 `--apply-schema`。脚本默认是只读 preflight，`--execute` 才写生产，并要求 `--confirm-production`。SSH key 用项目内 `ai_video.pem`。
+
+```bash
+cd "$MAINWT"            # 从干净 main 部署
+# 5.1 只读 preflight（不写生产，先看通过）
+uv run python scripts/deploy-tencent-cloud-production.py
+
+# 5.2 正式部署（写生产，自动按 stamp 做远端备份；含 schema 应用与部署后 smoke）
+uv run python scripts/deploy-tencent-cloud-production.py \
+  --execute --confirm-production "$DOMAIN" \
+  --apply-schema --include-review-write
+```
+
+> 部署前确认：`git status` 干净（脚本默认拒绝 dirty，勿用 `--allow-dirty` 绕过）；`ai_video.pem` 在当前目录；如本次要在生产开启受控 API 鉴权，需同时配置生产 env `MEDICAL_AUDIT_CONTROLLED_API_AUTH` 和 Nginx 头注入（见 `docs/workflows/workflow-tencent-cloud-audit-deployment-stable.md`），否则保持默认关闭以免锁死访问。
+
+## 6. 生产验收（只读 smoke + 部署状态审计 + 前端语义）
+
+```bash
+cd "$MAINWT"
+# 部署状态只读审计（用合并后的真实 SHA 和当前 embedding 计数 49051）
+uv run python scripts/audit-tencent-cloud-deployment-state.py \
+  --expected-deploy-sha "$(git rev-parse HEAD)"
+# 生产 E2E 只读 smoke（注意当前匹配 embeddings=49051）
+uv run python scripts/run-production-e2e-smoke.py --expected-matching-embeddings 49051
+# 权限只读 smoke（观测模式）
+pnpm production:permission-readonly
+# 前端语义验收
+pnpm production:frontend-acceptance
+```
+
+判读：状态审计 `status=pass`、`issues=[]`；E2E smoke `pass`；前端 `p0=[] p1=[]`。
+
+## 7. 清理（确认合并 + 部署 + smoke 全通过后再做）
+
+```bash
+# 7.1 删除陈旧 worktree 和分支（其成果已在 main）
+cd "$MAINWT"
+git worktree remove "$STALE"
+git worktree prune
+git branch -D codex/answer-provider-gate-plan
+
+# 7.2 远端：删已合并的历史 PR 分支（保留两个尚有未并提交的）
+git branch -r --merged origin/main | sed 's#origin/##' | grep '^ *codex/' \
+  | grep -vE 'docs-only-merge-sha-boundary|documents-history-production-sync|medical-audit-release-auth-workbench' \
   | xargs -I{} git push origin --delete {}
 
-# 本地：删除已并入 main 的死分支（先 review 列表，再删）
-git branch --merged main | grep codex/ | xargs -I{} git branch -d {}
+# 7.3 本地：删已并入 main 的死分支
+git branch --merged main | grep 'codex/' | grep -v 'answer-provider-gate-plan' | xargs -I{} git branch -d {}
+
+# 7.4 复核
+git worktree list
+git branch -a | wc -l
 ```
 
-## 完成判据
+## 8. 完成判据（全绿才算收口）
 
-- `release-auth-workbench` 已在 GitHub；
-- 全量质量闸绿；
-- PR 评审通过并合入 main；
-- 生产从 main 部署并通过只读 smoke；
-- 陈旧 worktree/分支已移除，`git worktree list` 与 `git branch -a` 清爽可解释。
+- `origin/$BR` 已存在；发布分支已合入 main（`origin/main...origin/$BR` 右值=0）。
+- 质量闸全绿。
+- 生产部署 `status=pass`、新 auth 表已 apply、部署后 smoke `pass`。
+- 生产只读权限 smoke / 前端语义验收通过。
+- 陈旧 worktree/分支清理完毕，`git branch -a` 数量回到个位数活跃分支。
+- 审计报告与本 runbook 已在 main。

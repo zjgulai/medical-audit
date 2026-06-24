@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchReportWorkbench } from "@/lib/api-client";
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   rectificationSummaries,
@@ -149,9 +150,12 @@ export default function ReportsPage() {
               把复核结论、底稿、附件、负责人确认和整改事项组织成可追溯的报告首页。
             </p>
           </div>
-          <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>
-            {dataSourceTag}
-          </StatusPill>
+          <div className="flex flex-col items-end gap-2">
+            <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>
+              {dataSourceTag}
+            </StatusPill>
+            <DataSourceBadge source="hybrid" />
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

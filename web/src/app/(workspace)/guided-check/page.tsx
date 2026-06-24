@@ -1,3 +1,4 @@
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   guidedCheckEvidenceItems,
@@ -32,7 +33,10 @@ export default function GuidedCheckPage() {
                 按项目范围、数据、规则、审证对话、底稿报告串联自查路径；AI 只给出带引用的审证问题和复核建议，不直接生成正式结论。
               </p>
             </div>
-            <StatusPill tone="info">提示词型智能体</StatusPill>
+            <div className="flex flex-col items-end gap-2">
+              <StatusPill tone="info">提示词型智能体</StatusPill>
+              <DataSourceBadge source="static" />
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="自查概览">

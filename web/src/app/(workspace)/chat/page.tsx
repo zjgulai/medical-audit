@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchAgents } from "@/lib/api-client";
 import type { AuditAgentApiItem } from "@/lib/api-types";
@@ -127,6 +128,7 @@ export default function ChatPortalPage() {
             <StatusPill tone={agentStatus === "ready" ? "success" : "neutral"}>
               {agentStatus === "ready" ? "智能体已同步" : agentStatus === "loading" ? "智能体同步中" : "默认智能体"}
             </StatusPill>
+            <DataSourceBadge source="hybrid" />
           </div>
         </div>
 

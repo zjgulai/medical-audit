@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchRemediationWorkbench } from "@/lib/api-client";
 import type {
@@ -95,7 +96,10 @@ export default function RemediationPage() {
               {workbench.workbench_scope}
             </p>
           </div>
-          <StatusPill tone="warning">验收门禁</StatusPill>
+          <div className="flex flex-col items-end gap-2">
+            <StatusPill tone="warning">验收门禁</StatusPill>
+            <DataSourceBadge source="hybrid" />
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

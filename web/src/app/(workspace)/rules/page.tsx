@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchRulesWorkbench } from "@/lib/api-client";
 import type {
@@ -94,7 +95,10 @@ export default function RulesPage() {
               {workbench.ruleset_scope}
             </p>
           </div>
-          <StatusPill tone="info">首期只读</StatusPill>
+          <div className="flex flex-col items-end gap-2">
+            <StatusPill tone="info">首期只读</StatusPill>
+            <DataSourceBadge source="hybrid" />
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

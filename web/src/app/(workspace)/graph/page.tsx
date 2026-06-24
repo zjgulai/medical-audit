@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchGraphWorkbench } from "@/lib/api-client";
 import type {
@@ -102,7 +103,10 @@ export default function GraphPage() {
               医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。
             </p>
           </div>
-          <StatusPill tone="info">首期只读</StatusPill>
+          <div className="flex flex-col items-end gap-2">
+            <StatusPill tone="info">首期只读</StatusPill>
+            <DataSourceBadge source="hybrid" />
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
