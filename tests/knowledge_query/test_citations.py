@@ -41,6 +41,34 @@ class UncitedProvider:
         return "这是一个没有引用标记的回答。"
 
 
+class FullWidthMarkerProvider:
+    provider = "fake"
+    model_name = "fullwidth-marker"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        return "结论：存在重复收费风险【C1】。"
+
+
+class ParenMarkerProvider:
+    provider = "fake"
+    model_name = "paren-marker"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        return "结论：违规收费(C1)。"
+
+
+class EmbeddedTokenUncitedProvider:
+    provider = "fake"
+    model_name = "embedded-token-uncited"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        # 含嵌入式字母数字串 VITC1，但不是引用标记，不得被误判为带引用
+        return "建议复核 VITC1 批次相关费用。"
+
+
 def test_build_citations_preserves_locator_and_versions() -> None:
     result = _result(
         SourceCollection.MEDICAL_INSURANCE_LAWS,
@@ -177,6 +205,36 @@ def test_answer_falls_back_when_provider_returns_uncited_answer() -> None:
     assert answer.generation_error == "generated answer does not contain citation markers"
     assert "风险负面清单提示违规收费风险" in answer.answer
     assert "[C1]" in answer.answer
+
+
+def test_answer_accepts_full_width_and_paren_citation_marker_variants() -> None:
+    for provider in (FullWidthMarkerProvider(), ParenMarkerProvider()):
+        answer = build_citation_backed_answer(
+            "是否存在违规收费？",
+            (
+                _result(
+                    SourceCollection.RISK_NEGATIVE_LIST,
+                    text="风险负面清单提示违规收费风险。",
+                    score=0.8,
+                ),
+            ),
+            generation_provider=provider,
+        )
+
+        assert answer.fallback_used is False, provider.model_name
+        assert answer.generation_error is None
+        assert answer.citations[0].marker == "[C1]"
+
+
+def test_answer_marker_detection_ignores_embedded_alphanumeric_tokens() -> None:
+    answer = build_citation_backed_answer(
+        "是否可以直接下结论？",
+        (_result(SourceCollection.RISK_NEGATIVE_LIST, text="风险负面清单提示违规收费风险。"),),
+        generation_provider=EmbeddedTokenUncitedProvider(),
+    )
+
+    assert answer.fallback_used is True
+    assert answer.generation_error == "generated answer does not contain citation markers"
 
 
 def test_answer_without_citations_is_rejected() -> None:
