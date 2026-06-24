@@ -77,6 +77,7 @@ def load_postgres_hybrid_search_engine(
     database_url: str,
     embedding_provider: EmbeddingProvider,
     rerank_provider: RerankProvider | None = None,
+    source_collection_weights: dict[str, float] | None = None,
     index_version_status: str = "active",
     index_version_key: str | None = None,
 ) -> HybridSearchEngine:
@@ -99,6 +100,7 @@ def load_postgres_hybrid_search_engine(
         vector_index=vector_index,
         bm25_index=bm25_index,
         rerank_provider=rerank_provider or cast(RerankProvider, FakeRerankProvider()),
+        source_collection_weights=source_collection_weights,
     )
 
 

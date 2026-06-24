@@ -2,12 +2,14 @@ dataset_id: knowledge-query-answer-evaluation-cases-v1
 title: 知识库答案生成质量评测集 V1
 status: review
 created: "2026-06-01"
-updated: "2026-06-01"
+updated: "2026-06-24"
 owner: self
 source: human+ai
 description: >
   首版 answer-level 评测集，用于验证答案是否严格基于引用、是否覆盖关键术语、
   是否在证据不足时拒答。当前仍为 review，需要医保审核专家复核后转 stable。
+  标签约定：weak-recall=pgvector 易弱召回（用于强/弱召回分组度量 generate-or-safe-fallback）；
+  needs-corpus-verification=新增用例的 required 术语需人工对照真实语料确认后再移除该标签。
 cases:
   - case_id: answer-law-shanghai-fund-dedicated-use-001
     question: 上海市医疗保障条例中医疗保障基金是否必须专款专用？
@@ -38,7 +40,27 @@ cases:
     required_answer_terms: [霍乱]
     required_citation_terms: [A00.0, 霍乱]
     forbidden_answer_terms: [肺结核]
-    tags: [answerable, catalog, icd10]
+    tags: [answerable, catalog, icd10, weak-recall]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: answer-catalog-icd-hypertension-001
+    question: ICD-10医保2.0版中 I10 对应什么诊断？
+    expected_behavior: answer
+    required_evidence_terms: [I10, 高血压]
+    required_answer_terms: [高血压]
+    required_citation_terms: [I10, 高血压]
+    tags: [answerable, catalog, icd10, weak-recall, needs-corpus-verification]
+    filters:
+      source_collections: [medical-insurance-catalog]
+
+  - case_id: answer-catalog-icd-type2-diabetes-001
+    question: ICD-10医保2.0版中 E11 对应什么诊断？
+    expected_behavior: answer
+    required_evidence_terms: [E11, 糖尿病]
+    required_answer_terms: [糖尿病]
+    required_citation_terms: [E11, 糖尿病]
+    tags: [answerable, catalog, icd10, weak-recall, needs-corpus-verification]
     filters:
       source_collections: [medical-insurance-catalog]
 
@@ -48,7 +70,7 @@ cases:
     required_evidence_terms: ["0000", 疾病诊断编码不规范]
     required_answer_terms: ["0000"]
     required_citation_terms: [疾病诊断编码不规范]
-    tags: [answerable, catalog, drg]
+    tags: [answerable, catalog, drg, weak-recall]
     filters:
       source_collections: [medical-insurance-catalog]
 
@@ -59,7 +81,7 @@ cases:
     required_answer_terms: [头孢曲松]
     required_citation_terms: [注射剂]
     forbidden_answer_terms: [口服常释剂型]
-    tags: [answerable, catalog, drug]
+    tags: [answerable, catalog, drug, weak-recall]
     filters:
       source_collections: [medical-insurance-catalog]
 
