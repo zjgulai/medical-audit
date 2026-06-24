@@ -105,6 +105,45 @@ def test_hybrid_search_source_weight_prioritizes_rule_basis_when_scores_tie() ->
     assert results[0].source_weight > results[1].source_weight
 
 
+def test_hybrid_search_accepts_custom_source_collection_weights() -> None:
+    provider = DeterministicFakeEmbeddingProvider(dimension=32)
+    shared_text = "医保基金监管共同依据"
+    rule_id = uuid4()
+    law_id = uuid4()
+    chunks = [
+        _chunk_input(
+            rule_id,
+            shared_text,
+            source_collection=SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
+            locator={"type": "xlsx-row"},
+        ),
+        _chunk_input(
+            law_id,
+            shared_text,
+            source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+            locator={"type": "law-article"},
+        ),
+    ]
+
+    # 默认权重：规则(1.35) 排在法规(1.0) 之前。
+    default_results = _engine_from_chunks(provider, chunks, rerank=False).search(
+        shared_text, top_k=2
+    )
+    assert [result.chunk.chunk_id for result in default_results] == [rule_id, law_id]
+
+    # 注入候选权重把法规抬到最高 → 跨来源排序翻转，证明 A2 来源加权杠杆生效。
+    custom_results = _engine_from_chunks(
+        provider,
+        chunks,
+        rerank=False,
+        source_collection_weights={
+            SourceCollection.MEDICAL_INSURANCE_LAWS.value: 5.0,
+            SourceCollection.SUPERVISION_RULES_KNOWLEDGE.value: 1.0,
+        },
+    ).search(shared_text, top_k=2)
+    assert [result.chunk.chunk_id for result in custom_results] == [law_id, rule_id]
+
+
 def test_hybrid_search_returns_cross_source_recall() -> None:
     engine, ids = _build_engine()
 
@@ -197,6 +236,7 @@ def _engine_from_chunks(
     chunks: list[ChunkEmbeddingInput],
     *,
     rerank: bool,
+    source_collection_weights: dict[str, float] | None = None,
 ) -> HybridSearchEngine:
     vector_index = InMemoryVectorIndex(dimension=provider.dimension)
     vector_index.upsert(build_chunk_embedding_records(chunks, provider=provider))
@@ -216,6 +256,7 @@ def _engine_from_chunks(
         vector_index=vector_index,
         bm25_index=bm25_index,
         rerank_provider=FakeRerankProvider() if rerank else None,
+        source_collection_weights=source_collection_weights,
     )
 
 
