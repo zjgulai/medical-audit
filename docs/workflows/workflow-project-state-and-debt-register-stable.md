@@ -1060,3 +1060,35 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - 受控 API 鉴权已在生产 enforce 生效：`production:frontend-acceptance` 通过，`p0=0 p1=0`，`/audit/logs` 与 `/audit/logs/export` 满足无角色 401、管理员 200。
 - 写入前已备份：`pre-deploy-20260623T171314`（app/env/db 1.0G/nginx/web 全套）。
 - 边界：部署后 e2e smoke 因重启窗口瞬时 reset 记为 fail，已由 frontend-acceptance 与状态审计(app_health=healthy)覆盖；P0-04 生产鉴权侧实质推进，真实 SSO/会话签发仍待后续。
+
+### 2.0.12 2026-06-24 Batch 8.5 F2 检索/拒答调优工具链与召回杠杆（本地切片）
+
+状态口径：本节同步 F2 调优一批本地代码切片与 bench 工具链；未 push、未跑生产 bench、未改生产默认 reranker/来源权重、未写 answer provider env、未部署。E3/E4（`785a2bc0`）生产部署缺口仍独立待办（见文末）。
+
+交付切片（均从 `origin/main = d3ca0a1a` 拉干净分支，沙箱四证绿，以 patch 交付，待本机全量门禁 + push）：
+
+- B2 引用标记鲁棒性（分支 `codex/answer-marker-robustness`）：`generation/answer_builder.py:_contains_citation_marker` 改为容忍 `[C1]`/`【C1】`/`(C1)` 等变体并带字母数字边界保护，消除真实生成激活后的“假回退”；红线守住（无任何 `C<编号>` 仍判 fallback）。
+- C1 调优测试台 `scripts/run-answer-provider-tuning-bench.py`（分支 `codex/answer-tuning-bench-and-cases`，下同）：进程内 pgvector + provider 只读复刻，输出每问题 fallback/refusal/recall 及强/弱召回分组的 generate-or-safe-fallback 指标。
+- C2 弱召回评测集：`configs/evaluation/knowledge-query-answer-evaluation-cases-v1.yaml` 8→10 用例；目录类（ICD `A00.0`/DRG `0000`/药品）打 `weak-recall` 标签；新增 `I10`/`E11` ICD 用例（标 `needs-corpus-verification`，required 术语待对照真实语料确认）。
+- A1 域码感知 reranker：`retrieval/rerank.py` 新增 `DomainAwareRerankProvider`（精确域码命中强加权，确定性、零外部依赖，非 cross-encoder）+ `rerank_provider_from_name` 工厂；bench `--rerank {fake,domain}` 做 A/B；生产默认仍 `Fake`。
+- A2 来源加权杠杆：`retrieval/postgres_search.py:load_postgres_hybrid_search_engine` 加 `source_collection_weights` 透传 + bench `--source-weights-file`；`DEFAULT_SOURCE_WEIGHTS` 未改。
+
+本地验收证据（沙箱子集，py3.14 临时 venv + 最小依赖）：
+
+- B2：`test_citations.py` + `test_answer_providers.py` `16 passed`；`ruff`/`mypy` 绿。
+- C1/C2/A1/A2：`test_rerank.py` + `test_hybrid_search.py` + `test_answer_datasets.py` `15 passed`；bench `--help` 导入冒烟 `exit 0`；`ruff`/`mypy` 绿。
+- 汇总器 `f2-bench-summary.py`：合成数据验证，正确显示弱召回逐题 `refuse→gen` 翻转。
+- 一条龙脚本 `f2-bench-and-ship.sh`：`bash -n` 通过、全 dry-run `exit 0`、密钥不回显（`leak=0`）。
+
+生产 embedding 参数（已从架构稳定文档 + 仓库 13 处确认，bench 须同源）：`openai` 兼容 / `kimi-for-coding` / dim `1024` / base_url `https://api.kimi.com/coding/v1` / `KIMI_API_KEY`；`kimi-for-coding` 仅作 embedding（`/chat/completions` 返回 403），答案生成用 DeepSeek。
+
+当前边界：
+
+- `local verification (subset) only`：沙箱只跑相关子集门禁；本机须补全量 `uv run ruff check . && uv run mypy src && uv run pytest`。
+- `not pushed / not benched`：切片未 push，未在生产 pgvector + DeepSeek 上跑 bench。
+- `production defaults unchanged`：生产 reranker 仍 `Fake`、来源权重仍默认、未写 answer provider env、未部署。
+- `manual review required`：A1/A2 真实增益须 bench 量化；`I10`/`E11` 用例 required 术语待对照语料；是否切默认 reranker / 是否上 cross-encoder 待 bench 数据后定。
+
+并行未闭：E3/E4（`785a2bc0`）仍待部署生产（缺口 `c10b3d3b..d3ca0a1a`，纯前端 + 文档，部署不带 `--apply-schema`；详见 E3/E4 生产落地 handoff）。
+
+冻结日期：`2026-06-24`
