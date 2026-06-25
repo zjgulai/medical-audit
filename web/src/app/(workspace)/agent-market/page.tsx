@@ -1,183 +1,267 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { fetchAgents } from "@/lib/api-client";
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
-import { StatusPill } from "@/components/ui/status-pill";
-import type { AuditAgentApiItem } from "@/lib/api-types";
-import { AgentCategory, auditAgentTemplates } from "@/lib/portal-data";
+import promptsData from "@/data/audit-agent-prompts.json";
 
-type MarketFilter = "全部" | AgentCategory;
-type LoadStatus = "loading" | "ready" | "error";
+type AgentPrompt = {
+  readonly category: string;
+  readonly title: string;
+  readonly intro: string;
+  readonly scene: string;
+  readonly tags: string;
+  readonly prompt: string;
+  readonly source: string;
+};
 
-const marketFilters: readonly MarketFilter[] = ["全部", "业务类", "效率类", "研究类"];
+const auditAgents: readonly AgentPrompt[] = (() => {
+  const seen = new Set<string>();
+  return (promptsData as readonly AgentPrompt[]).filter((agent) => {
+    const key = `${agent.category}|${agent.title}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+})();
+
+const CATEGORY_ORDER = [
+  "财务收支审计",
+  "工程审计",
+  "采购招标审计",
+  "审计科研",
+  "固定资产审计",
+  "工具智能体"
+] as const;
+
+function firstLine(text: string): string {
+  const line = text
+    .split(/\n|，|。/)
+    .map((part) => part.trim())
+    .find((part) => part.length > 0);
+  return line ?? text.trim();
+}
+
+function tagList(tags: string): readonly string[] {
+  return tags
+    .split(/[、,，\s]+/)
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0)
+    .slice(0, 3);
+}
+
+function avatarUrl(seed: string): string {
+  return `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(seed)}&radius=14&backgroundColor=eef2f5,e1f5ee,faeeda,fcebeb`;
+}
 
 export default function AgentMarketPage() {
-  const [activeFilter, setActiveFilter] = useState<MarketFilter>("全部");
+  const [category, setCategory] = useState<string>("全部");
   const [query, setQuery] = useState("");
-  const [agents, setAgents] = useState<readonly AuditAgentApiItem[]>([]);
-  const [agentStatus, setAgentStatus] = useState<LoadStatus>("loading");
-  const [storeReady, setStoreReady] = useState(false);
+  const [selected, setSelected] = useState<AgentPrompt | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchAgents()
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        setAgents(result.items ?? []);
-        setStoreReady(Boolean(result.store?.ready));
-        setAgentStatus("ready");
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAgentStatus("error");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const agent of auditAgents) {
+      map[agent.category] = (map[agent.category] ?? 0) + 1;
+    }
+    return map;
   }, []);
 
-  const systemAgents = agents.filter((agent) => agent.source === "system-default");
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredTemplates = auditAgentTemplates.filter((template) => {
-    const matchesFilter = activeFilter === "全部" || template.category === activeFilter;
-    const matchesQuery =
-      !normalizedQuery ||
-      [template.name, template.topic, template.prompt, template.knowledgeBase, template.projectName].some((value) =>
-        value.toLowerCase().includes(normalizedQuery)
-      );
-
-    return matchesFilter && matchesQuery;
-  });
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return auditAgents.filter((agent) => {
+      const matchesCategory = category === "全部" || agent.category === category;
+      const matchesQuery =
+        !normalized ||
+        `${agent.title}${agent.intro}${agent.tags}${agent.scene}`.toLowerCase().includes(normalized);
+      return matchesCategory && matchesQuery;
+    });
+  }, [category, query]);
 
   return (
-    <main className="audit-panel p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="audit-kicker">智能体广场</p>
-          <h1 className="audit-page-title">医疗审计场景模板</h1>
-          <p className="mt-3 max-w-3xl audit-copy">
-            上方为后端已发布的系统智能体（实时），下方为可套用的示例模板；添加后仍按提示词型智能体使用，不执行多步自主编排。
-          </p>
+    <main className="space-y-5">
+      <section className="audit-panel p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="audit-kicker">智能体广场</p>
+            <h1 className="audit-page-title">审计提示词智能体</h1>
+            <p className="mt-2 audit-copy">{auditAgents.length} 个内置审计助手，选择后进入对话即用。</p>
+          </div>
+          <input
+            className="audit-focus-ring audit-input w-full max-w-xs px-3 py-2.5"
+            placeholder="搜索助手 / 场景 / 标签"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="搜索智能体"
+          />
         </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusPill tone="info">提示词型</StatusPill>
-          <StatusPill tone="neutral">保存后生效</StatusPill>
-          <DataSourceBadge source="hybrid" />
+
+        <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="智能体分类">
+          <CategoryChip
+            label="全部"
+            count={auditAgents.length}
+            active={category === "全部"}
+            onClick={() => setCategory("全部")}
+          />
+          {CATEGORY_ORDER.map((name) => (
+            <CategoryChip
+              key={name}
+              label={name.replace("审计", "")}
+              count={counts[name] ?? 0}
+              active={category === name}
+              onClick={() => setCategory(name)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="智能体列表">
+        {filtered.map((agent) => (
+          <button
+            key={`${agent.category}-${agent.title}`}
+            type="button"
+            onClick={() => setSelected(agent)}
+            className="audit-focus-ring audit-panel flex flex-col gap-3 p-4 text-left transition hover:border-[var(--audit-primary-line)]"
+          >
+            <div className="flex items-start gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={avatarUrl(agent.title)}
+                alt=""
+                width={40}
+                height={40}
+                loading="lazy"
+                className="size-10 shrink-0 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-subtle)]"
+              />
+              <h2 className="audit-card-title min-w-0 flex-1 leading-snug">{agent.title}</h2>
+            </div>
+            <p className="line-clamp-2 audit-copy text-[var(--audit-ink-muted)]">{firstLine(agent.intro)}</p>
+            <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+              <div className="flex min-w-0 flex-wrap gap-1.5">
+                {tagList(agent.tags).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-[var(--audit-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--audit-primary)]"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">用 ›</span>
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 ? (
+          <p className="audit-panel-muted p-6 audit-copy sm:col-span-2 xl:col-span-3">
+            没有匹配的智能体，换个关键词或分类试试。
+          </p>
+        ) : null}
+      </section>
+
+      {selected ? <AgentDetailDialog agent={selected} onClose={() => setSelected(null)} /> : null}
+    </main>
+  );
+}
+
+function CategoryChip({
+  label,
+  count,
+  active,
+  onClick
+}: {
+  readonly label: string;
+  readonly count: number;
+  readonly active: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`audit-focus-ring rounded-full px-3 py-1.5 text-sm transition ${
+        active
+          ? "bg-[var(--audit-primary)] font-semibold text-white"
+          : "border border-[var(--audit-line)] text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)]"
+      }`}
+    >
+      {label}
+      <span className={`ml-1.5 text-xs ${active ? "text-white/80" : "text-[var(--audit-ink-subtle)]"}`}>{count}</span>
+    </button>
+  );
+}
+
+function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; readonly onClose: () => void }) {
+  const chatHref = `/chat?agent=${encodeURIComponent(agent.title)}`;
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-[rgb(16_24_40/0.45)] p-0 sm:items-center sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={agent.title}
+      onClick={onClose}
+    >
+      <div
+        className="audit-panel max-h-[86vh] w-full max-w-2xl overflow-auto rounded-b-none p-6 sm:rounded-[var(--audit-radius-lg)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={avatarUrl(agent.title)}
+              alt=""
+              width={44}
+              height={44}
+              className="size-11 shrink-0 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-subtle)]"
+            />
+            <div>
+              <p className="audit-kicker">{agent.category.replace("审计", "")}</p>
+              <h2 className="mt-1 audit-section-title">{agent.title}</h2>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-lg text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)]"
+            aria-label="关闭"
+          >
+            ✕
+          </button>
+        </div>
+
+        {agent.scene ? (
+          <p className="mt-3 inline-block rounded-full bg-[var(--audit-surface-subtle)] px-3 py-1 text-xs text-[var(--audit-ink-muted)]">
+            适用：{agent.scene}
+          </p>
+        ) : null}
+
+        <p className="mt-3 whitespace-pre-line audit-copy">{agent.intro}</p>
+
+        <div className="mt-4">
+          <h3 className="audit-card-title">提示词</h3>
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--audit-radius-md)] bg-[var(--audit-surface-muted)] p-3 font-mono text-xs leading-5 text-[var(--audit-ink-muted)]">
+            {agent.prompt}
+          </pre>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          <a className="audit-focus-ring audit-btn audit-btn-primary" href={chatHref}>
+            用此智能体对话
+          </a>
+          <button
+            type="button"
+            className="audit-focus-ring audit-btn audit-btn-neutral"
+            onClick={() => {
+              void navigator.clipboard?.writeText(agent.prompt);
+            }}
+          >
+            复制提示词
+          </button>
         </div>
       </div>
-
-      <section className="audit-panel-muted mt-6 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="audit-section-title">系统已发布智能体（实时）</h2>
-          <StatusPill tone={agentStatus === "error" ? "warning" : "neutral"}>
-            {agentStatus === "ready"
-              ? `${systemAgents.length} 个系统智能体${storeReady ? "" : "（store 未就绪）"}`
-              : agentStatus === "error"
-                ? "加载失败"
-                : "加载中"}
-          </StatusPill>
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          {agentStatus === "loading" && <p className="audit-copy">正在从后端读取系统智能体…</p>}
-          {agentStatus === "error" && (
-            <p className="audit-copy text-amber-700">系统智能体读取失败，可先使用下方示例模板，稍后刷新。</p>
-          )}
-          {agentStatus === "ready" && systemAgents.length === 0 && (
-            <p className="audit-copy">后端暂无系统智能体，可从下方示例模板套用新增。</p>
-          )}
-          {systemAgents.map((agent) => (
-            <article key={agent.id} className="audit-panel min-w-0 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="audit-card-title">{agent.name}</h3>
-                  <p className="mt-1 audit-meta">{agent.topic}</p>
-                </div>
-                <StatusPill tone="success">系统</StatusPill>
-              </div>
-              <p className="mt-4 audit-copy">{agent.prompt}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="audit-chip">{agent.knowledge_base}</span>
-                <span className="audit-chip">{agent.project_name}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="audit-panel-muted mt-6 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="audit-section-title">示例模板（套用入口）</h2>
-          <DataSourceBadge source="static" />
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2" role="group" aria-label="智能体分类筛选">
-            {marketFilters.map((filter) => (
-              <button
-                key={filter}
-                className={`audit-focus-ring audit-btn ${
-                  activeFilter === filter
-                    ? "border-[var(--audit-primary)] bg-[var(--audit-primary)] text-white"
-                    : "audit-btn-neutral"
-                }`}
-                type="button"
-                onClick={() => setActiveFilter(filter)}
-                aria-pressed={activeFilter === filter}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
-          <label className="block min-w-72">
-            <span className="sr-only">搜索智能体模板</span>
-            <input
-              className="audit-focus-ring audit-input px-3 py-2"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索模板、专题、知识库"
-              aria-label="搜索智能体模板"
-            />
-          </label>
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {filteredTemplates.map((template) => (
-            <article key={template.id} className="audit-panel p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="audit-card-title">{template.name}</h3>
-                  <p className="mt-1 audit-meta">{template.topic}</p>
-                </div>
-                <StatusPill tone={template.category === "业务类" ? "success" : "neutral"}>{template.category}</StatusPill>
-              </div>
-              <p className="mt-4 audit-copy">{template.prompt}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="audit-chip">{template.knowledgeBase}</span>
-                <span className="audit-chip">{template.projectName}</span>
-              </div>
-              <a
-                className="audit-focus-ring audit-btn audit-btn-primary mt-4"
-                href={`/agents?template=${template.id}#new-agent`}
-              >
-                套用并新增智能体
-              </a>
-            </article>
-          ))}
-        </div>
-        {filteredTemplates.length === 0 && (
-          <p className="audit-panel mt-6 border-dashed px-4 py-6 text-center audit-copy">
-            没有匹配的医疗审计智能体模板。
-          </p>
-        )}
-      </section>
-    </main>
+    </div>
   );
 }
