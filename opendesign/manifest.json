@@ -1,0 +1,51 @@
+{
+  "generated": "2026-06-05T17:33:17+08:00",
+  "sections": [
+    {
+      "id": "mockups",
+      "label": "Mockups",
+      "groups": [
+        {
+          "slug": "audit-command-center",
+          "files": [
+            {
+              "label": "index.html",
+              "path": "mockups/audit-command-center/index.html"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "design-systems",
+      "label": "Design Systems",
+      "groups": [
+        {
+          "slug": "product-audit",
+          "files": [
+            {
+              "label": "README.md",
+              "path": "design-systems/product-audit/README.md"
+            },
+            {
+              "label": "SKILL.md",
+              "path": "design-systems/product-audit/SKILL.md"
+            },
+            {
+              "label": "tokens/colors_and_type.css",
+              "path": "design-systems/product-audit/tokens/colors_and_type.css"
+            },
+            {
+              "label": "brand/voice-and-tone.md",
+              "path": "design-systems/product-audit/brand/voice-and-tone.md"
+            },
+            {
+              "label": "ui-kit-auditscope/index.html",
+              "path": "design-systems/product-audit/ui-kit-auditscope/index.html"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
