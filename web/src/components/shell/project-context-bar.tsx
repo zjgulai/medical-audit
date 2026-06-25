@@ -15,7 +15,12 @@ import { useAuditUser } from "./audit-user-context";
 
 const defaultTabIds = ["workspace", "ai-chat", "analytics"] as const;
 
-export function ProjectContextBar() {
+type ProjectContextBarProps = {
+  readonly sidebarCollapsed?: boolean;
+  readonly onToggleSidebar?: () => void;
+};
+
+export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }: ProjectContextBarProps = {}) {
   const project = currentSelfCheckProject;
   const pathname = usePathname();
   const router = useRouter();
@@ -94,17 +99,30 @@ export function ProjectContextBar() {
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--audit-line)] bg-white/92 px-4 py-3 backdrop-blur-xl sm:px-6 md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="audit-meta font-semibold">当前模块</p>
-            <StatusPill tone="info">{project.auditTopic}</StatusPill>
-            <StatusPill tone="neutral">后端待检测</StatusPill>
-          </div>
-          <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
-            <div className="audit-section-title">{pageTitle}</div>
-            <p className="audit-meta pb-0.5">
-              {project.name} / {project.organizationName}
-            </p>
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {onToggleSidebar ? (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              className="audit-focus-ring mt-0.5 hidden size-9 shrink-0 place-items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white text-base text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)] md:grid"
+            >
+              <span aria-hidden="true" className="leading-none">☰</span>
+            </button>
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="audit-meta font-semibold">当前模块</p>
+              <StatusPill tone="info">{project.auditTopic}</StatusPill>
+              <StatusPill tone="neutral">后端待检测</StatusPill>
+            </div>
+            <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
+              <div className="audit-section-title">{pageTitle}</div>
+              <p className="audit-meta pb-0.5">
+                {project.name} / {project.organizationName}
+              </p>
+            </div>
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
@@ -147,7 +165,7 @@ export function ProjectContextBar() {
         </div>
       </div>
 
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="角色权限视图">
+      <div className="mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-1" aria-label="角色权限视图">
         {auditRoleOptions.map((role) => (
           <button
             key={role.id}
@@ -168,7 +186,7 @@ export function ProjectContextBar() {
         ))}
       </div>
 
-      <div className="mt-2 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="已打开模块">
+      <div className="mt-2 flex flex-nowrap gap-2 overflow-x-auto pb-1" role="tablist" aria-label="已打开模块">
         {openTabs.map((tab) => {
           const isActive = activeItem?.id === tab.id;
           const tabClassName = `audit-focus-ring inline-flex h-8 shrink-0 items-center gap-2 rounded-[var(--audit-radius-md)] border px-3 text-sm ${
