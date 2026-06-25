@@ -443,23 +443,30 @@ def _article_or_rule_hint(row: dict[str, object]) -> str | None:
     return None
 
 
+def _query_haystack(row: dict[str, object]) -> str:
+    text = str(row.get("text", ""))
+    source_path = str(row.get("source_path", ""))
+    # domain 是领域分类标签（供检索过滤），非内容；排除出 seed 相关性匹配，避免
+    # 「医保基金」之类标签把非医保内容的文档误配到「医保」查询上。
+    metadata = {
+        key: value
+        for key, value in _object_dict(row.get("metadata")).items()
+        if key != "domain"
+    }
+    return "\n".join((text, source_path, json.dumps(metadata, ensure_ascii=False)))
+
+
 def _matches_query_terms(row: dict[str, object], query_terms: tuple[str, ...]) -> bool:
     if not query_terms:
         return True
-    text = str(row.get("text", ""))
-    source_path = str(row.get("source_path", ""))
-    metadata = _object_dict(row.get("metadata"))
-    haystack = "\n".join((text, source_path, json.dumps(metadata, ensure_ascii=False)))
+    haystack = _query_haystack(row)
     return any(term in haystack for term in query_terms)
 
 
 def _query_term_match_count(row: dict[str, object], query_terms: tuple[str, ...]) -> int:
     if not query_terms:
         return 0
-    text = str(row.get("text", ""))
-    source_path = str(row.get("source_path", ""))
-    metadata = _object_dict(row.get("metadata"))
-    haystack = "\n".join((text, source_path, json.dumps(metadata, ensure_ascii=False)))
+    haystack = _query_haystack(row)
     return len([term for term in query_terms if term in haystack])
 
 

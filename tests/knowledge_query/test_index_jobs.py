@@ -78,12 +78,14 @@ def test_incremental_index_detects_added_modified_deleted_and_unchanged_files(
 def test_compare_snapshots_uses_only_index_candidates(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(source_root / "全量法律" / "医保政策.md", "医保政策")
-    _write_text(source_root / "全量法律" / "行政复议法.md", "非范围")
+    # 非 index_candidate 文件（不支持格式 → PENDING），compare 只比对 index_candidate，不计入。
+    # （全量入库后非医保法律已是 candidate，故改用 PENDING 文件验证该过滤逻辑。）
+    _write_binary(source_root / "全量法律" / "扫描件.png", b"\x89PNG\r\n")
     previous = ManifestIndexSnapshot.from_manifest(
         build_source_package_manifest(source_root, version_key="before")
     )
 
-    _write_text(source_root / "全量法律" / "行政复议法.md", "非范围修改后")
+    _write_binary(source_root / "全量法律" / "扫描件.png", b"\x89PNG\r\nmodified")
     current = ManifestIndexSnapshot.from_manifest(
         build_source_package_manifest(source_root, version_key="after")
     )

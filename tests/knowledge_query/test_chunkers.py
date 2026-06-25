@@ -36,6 +36,7 @@ def test_chunks_law_text_by_chapter_section_and_article() -> None:
         result,
         source_document_id=source_document_id,
         source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+        domain="医保基金",
         relative_path="全量法律/医疗保障基金使用监督管理条例.md",
     )
 
@@ -47,6 +48,8 @@ def test_chunks_law_text_by_chapter_section_and_article() -> None:
     assert chunks[0].locator["source_path"] == "全量法律/医疗保障基金使用监督管理条例.md"
     assert chunks[0].locator["type"] == "law-article"
     assert chunks[0].metadata["source_collection"] == "medical-insurance-laws"
+    # domain 进 chunk 元数据 → 专题检索可按 domain 过滤（默认不传时为 ""）。
+    assert chunks[0].metadata["domain"] == "医保基金"
     assert "审核依据" in chunks[0].text
 
 

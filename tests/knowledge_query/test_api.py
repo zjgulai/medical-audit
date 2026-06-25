@@ -1601,6 +1601,28 @@ def test_query_endpoint_supports_title_only_filter(tmp_path: Path) -> None:
     assert unmatched_response.status_code == 404
 
 
+def test_query_endpoint_scopes_to_topic_and_rejects_unknown(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    scoped = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "topic": "medical-insurance-fund"},
+    )
+    # 存量医保 chunk 无 domain 标签，靠 source_collection 兜底仍进专题。
+    assert scoped.status_code == 200
+    assert scoped.json()["citations"]
+    assert state.query_logs[-1]["filters"]["topic"] == "medical-insurance-fund"
+
+    unknown = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "topic": "no-such-topic"},
+    )
+    assert unknown.status_code == 400
+
+
 def test_query_endpoint_uses_persistent_user_status_gate(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.auth_user_store = SqlAlchemyAuthUserStore(
@@ -1774,7 +1796,8 @@ def test_index_rebuild_incremental_lists_and_permissions(tmp_path: Path) -> None
     assert rebuild_response.status_code == 200
     rebuild_summary = rebuild_response.json()["summary"]
     assert rebuild_summary["job_type"] == "full-rebuild"
-    assert rebuild_summary["index_candidate_file_count"] == 1
+    # 全量入库后 全量法律/law.md（医保内容、非医保文件名）也成候选 → catalog.md + law.md = 2。
+    assert rebuild_summary["index_candidate_file_count"] == 2
     assert rebuild_summary["pending_file_count"] == 1
 
     incremental_response = client.post(

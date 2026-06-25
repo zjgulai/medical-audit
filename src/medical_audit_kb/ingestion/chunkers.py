@@ -47,6 +47,7 @@ def chunk_extraction_result(
     *,
     source_document_id: UUID,
     source_collection: SourceCollection,
+    domain: str = "",
     relative_path: str | None = None,
     max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
     overlap_chars: int = DEFAULT_OVERLAP_CHARS,
@@ -60,6 +61,7 @@ def chunk_extraction_result(
             result.table_rows,
             source_document_id=source_document_id,
             source_collection=source_collection,
+            domain=domain,
             source_path=source_path,
         )
 
@@ -76,6 +78,7 @@ def chunk_extraction_result(
                 block,
                 source_document_id=source_document_id,
                 source_collection=source_collection,
+                domain=domain,
                 source_path=source_path,
                 next_chunk_index=len(chunks),
                 max_chunk_chars=max_chunk_chars,
@@ -90,6 +93,7 @@ def _chunk_table_rows(
     *,
     source_document_id: UUID,
     source_collection: SourceCollection,
+    domain: str,
     source_path: str,
 ) -> list[DocumentChunkCreate]:
     chunks: list[DocumentChunkCreate] = []
@@ -116,6 +120,7 @@ def _chunk_table_rows(
                 },
                 metadata={
                     "source_collection": source_collection.value,
+                    "domain": domain,
                     "cells": list(row.cells),
                     "values_by_header": row.values_by_header,
                 },
@@ -282,6 +287,7 @@ def _chunk_text_block(
     *,
     source_document_id: UUID,
     source_collection: SourceCollection,
+    domain: str,
     source_path: str,
     next_chunk_index: int,
     max_chunk_chars: int,
@@ -326,6 +332,7 @@ def _chunk_text_block(
                 locator=locator,
                 metadata={
                     "source_collection": source_collection.value,
+                    "domain": domain,
                     "is_windowed": len(windows) > 1,
                     **block.metadata,
                 },

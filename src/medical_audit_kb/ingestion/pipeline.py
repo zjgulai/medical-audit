@@ -251,6 +251,7 @@ class KnowledgeIndexPipeline:
                         result,
                         source_document_id=_document_uuid(file),
                         source_collection=file.source_collection,
+                        domain=file.domain,
                         relative_path=file.relative_path,
                         max_chunk_chars=self._max_chunk_chars,
                         overlap_chars=self._overlap_chars,

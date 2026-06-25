@@ -10,6 +10,8 @@ from medical_audit_kb.domain.constants import SourceCollection
 @dataclass(frozen=True, slots=True)
 class RetrievalFilters:
     source_collections: tuple[SourceCollection, ...] = ()
+    domains: tuple[str, ...] = ()
+    domain_fallback_collections: tuple[SourceCollection, ...] = ()
     years: tuple[int, ...] = ()
     regions: tuple[str, ...] = ()
     document_types: tuple[str, ...] = ()
@@ -24,6 +26,7 @@ class RetrievalFilters:
                 "source_collection",
                 _collection_values(self.source_collections),
             ),
+            _matches_domain_scope(metadata, self.domains, self.domain_fallback_collections),
             _matches_any(metadata, "year", self.years),
             _matches_any(metadata, "region", self.regions),
             _matches_any(metadata, "document_type", self.document_types),
@@ -37,6 +40,7 @@ class RetrievalFilters:
         return not any(
             (
                 self.source_collections,
+                self.domains,
                 self.years,
                 self.regions,
                 self.document_types,
@@ -44,6 +48,26 @@ class RetrievalFilters:
                 self.title_only,
             )
         )
+
+
+def _matches_domain_scope(
+    metadata: Mapping[str, object],
+    domains: tuple[str, ...],
+    fallback_collections: tuple[SourceCollection, ...],
+) -> bool:
+    """专题域过滤：命中 domain 即纳入；存量无 domain 的 chunk 按 source_collection 兜底。
+
+    增量去重不会重切旧文档，故已入库的存量 chunk 没有 `domain` 标签——这类按其
+    source_collection 是否属专题兜底集合判定，避免专题检索漏掉存量医保语料。
+    """
+    if not domains:
+        return True
+    domain_value = metadata.get("domain")
+    if domain_value in domains:
+        return True
+    if not domain_value and fallback_collections:
+        return metadata.get("source_collection") in _collection_values(fallback_collections)
+    return False
 
 
 def _collection_values(collections: tuple[SourceCollection, ...]) -> tuple[str, ...]:
