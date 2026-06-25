@@ -4,6 +4,7 @@ from medical_audit_kb.domain.constants import DocumentStatus, SourceCollection
 from medical_audit_kb.ingestion.inventory import (
     build_source_package_manifest,
     calculate_sha256,
+    classify_domain,
     classify_source_collection,
     is_medical_insurance_law,
 )
@@ -16,6 +17,7 @@ def test_inventory_builds_manifest_and_classifies_files(tmp_path: Path) -> None:
     _write_text(source_root / "风险负面清单" / "医保负面清单.txt", "风险")
     _write_text(source_root / "全量法律" / "医疗保障基金使用监督管理条例.md", "条例")
     _write_text(source_root / "全量法律" / "人民检察院刑事诉讼规则.md", "非医保")
+    _write_text(source_root / "全量法律" / "价格违法行为行政处罚规定.md", "价格")
     _write_text(source_root / "未知来源" / "unknown.md", "未知")
     _write_text(source_root / ".DS_Store", "system")
 
@@ -23,11 +25,10 @@ def test_inventory_builds_manifest_and_classifies_files(tmp_path: Path) -> None:
     by_relative_path = {file.relative_path: file for file in manifest.files}
 
     assert manifest.package_version.version_key == "unit-test-package"
-    assert manifest.package_version.metadata["total_files"] == 7
-    assert (
-        by_relative_path["医保目录/ICD-10医保2.0版.md"].source_collection
-        == SourceCollection.MEDICAL_INSURANCE_CATALOG
-    )
+    assert manifest.package_version.metadata["total_files"] == 8
+    catalog_file = by_relative_path["医保目录/ICD-10医保2.0版.md"]
+    assert catalog_file.source_collection == SourceCollection.MEDICAL_INSURANCE_CATALOG
+    assert catalog_file.domain == "医保基金"
     assert (
         by_relative_path["智能监管“两库”规则和知识点/第一批/规则.xlsx"].source_collection
         == SourceCollection.SUPERVISION_RULES_KNOWLEDGE
@@ -36,18 +37,24 @@ def test_inventory_builds_manifest_and_classifies_files(tmp_path: Path) -> None:
         by_relative_path["风险负面清单/医保负面清单.txt"].source_collection
         == SourceCollection.RISK_NEGATIVE_LIST
     )
-    assert (
-        by_relative_path["全量法律/医疗保障基金使用监督管理条例.md"].source_collection
-        == SourceCollection.MEDICAL_INSURANCE_LAWS
-    )
-    assert by_relative_path["全量法律/人民检察院刑事诉讼规则.md"].status == DocumentStatus.IGNORED
-    assert by_relative_path["全量法律/人民检察院刑事诉讼规则.md"].reason == "outside-v1-law-scope"
+    mi_law = by_relative_path["全量法律/医疗保障基金使用监督管理条例.md"]
+    assert mi_law.source_collection == SourceCollection.MEDICAL_INSURANCE_LAWS
+    assert mi_law.domain == "医保基金"
+    # 全量入库：非医保法律不再被丢弃，进 INDEX_CANDIDATE 并按领域打标签。
+    non_mi_law = by_relative_path["全量法律/人民检察院刑事诉讼规则.md"]
+    assert non_mi_law.source_collection == SourceCollection.MEDICAL_INSURANCE_LAWS
+    assert non_mi_law.status == DocumentStatus.INDEX_CANDIDATE
+    assert non_mi_law.domain == "其他"
+    price_law = by_relative_path["全量法律/价格违法行为行政处罚规定.md"]
+    assert price_law.status == DocumentStatus.INDEX_CANDIDATE
+    assert price_law.domain == "价格"
     assert by_relative_path["未知来源/unknown.md"].status == DocumentStatus.PENDING
     assert by_relative_path["未知来源/unknown.md"].reason == "unknown-source-collection"
     assert by_relative_path[".DS_Store"].status == DocumentStatus.IGNORED
-    assert len(manifest.index_candidates) == 4
+    assert len(manifest.index_candidates) == 6
     assert len(manifest.pending_files) == 1
-    assert len(manifest.ignored_files) == 2
+    assert len(manifest.ignored_files) == 1
+    assert manifest.package_version.metadata["domain_counts"]["医保基金"] == 4
 
 
 def test_inventory_calculates_stable_hashes_and_detects_duplicates(tmp_path: Path) -> None:
@@ -90,9 +97,27 @@ def test_collection_mapping_and_medical_law_keyword_filter() -> None:
     assert classify_source_collection(Path("全量法律/医疗机构管理条例.md")) == (
         SourceCollection.MEDICAL_INSURANCE_LAWS
     )
-    assert classify_source_collection(Path("全量法律/人民检察院刑事诉讼规则.md")) is None
+    # 全量入库：全量法律下的非医保文档也归入法律集合（不再返回 None 被丢弃）。
+    assert classify_source_collection(Path("全量法律/人民检察院刑事诉讼规则.md")) == (
+        SourceCollection.MEDICAL_INSURANCE_LAWS
+    )
     assert is_medical_insurance_law("DRG付费分组方案.md")
     assert not is_medical_insurance_law("行政复议法.md")
+
+
+def test_classify_domain_taxonomy() -> None:
+    # 策展三集合按来源即「医保基金」域。
+    assert classify_domain("任意.md", SourceCollection.MEDICAL_INSURANCE_CATALOG) == "医保基金"
+    assert classify_domain("任意.xlsx", SourceCollection.RISK_NEGATIVE_LIST) == "医保基金"
+    # 广义法律语料按文件名分类（医保关键词→医保基金；否则按领域词；都不命中→其他）。
+    laws = SourceCollection.MEDICAL_INSURANCE_LAWS
+    assert classify_domain("医疗保障基金使用监督管理条例.md", laws) == "医保基金"
+    assert classify_domain("价格违法行为行政处罚规定.md", laws) == "价格"
+    assert classify_domain("财政违法行为处罚处分条例.md", laws) == "财政"
+    assert classify_domain("政府采购法实施条例.md", laws) == "采购"
+    assert classify_domain("中华人民共和国统计法.md", laws) == "统计"
+    assert classify_domain("养犬管理条例.md", laws) == "其他"
+    assert classify_domain("餐厨垃圾管理办法.md", laws) == "其他"
 
 
 def _write_text(path: Path, content: str) -> Path:

@@ -39,6 +39,7 @@ from medical_audit_kb.generation.answer_builder import (
     build_citation_backed_answer,
 )
 from medical_audit_kb.retrieval.filters import RetrievalFilters
+from medical_audit_kb.retrieval.topics import get_topic
 
 router = APIRouter()
 
@@ -61,6 +62,7 @@ class QueryRequest(BaseModel):
     regions: list[str] = Field(default_factory=list)
     document_types: list[str] = Field(default_factory=list)
     business_topics: list[str] = Field(default_factory=list)
+    topic: str | None = Field(default=None, max_length=64)
     title_only: bool = False
     agent: str | None = Field(default=None, max_length=128)
 
@@ -95,8 +97,14 @@ def query(
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search engine is not initialized")
 
+    topic = get_topic(payload.topic)
+    if payload.topic and topic is None:
+        raise HTTPException(status_code=400, detail=f"unknown topic: {payload.topic}")
+
     filters = RetrievalFilters(
         source_collections=tuple(payload.source_collections),
+        domains=topic.domains if topic else (),
+        domain_fallback_collections=topic.fallback_collections if topic else (),
         years=tuple(payload.years),
         regions=tuple(payload.regions),
         document_types=tuple(payload.document_types),
@@ -268,6 +276,7 @@ def _query_filter_payload(payload: QueryRequest) -> dict[str, object]:
         "regions": list(payload.regions),
         "document_types": list(payload.document_types),
         "business_topics": list(payload.business_topics),
+        "topic": payload.topic,
         "title_only": payload.title_only,
         "agent": _normalize_agent_key(payload.agent),
     }
