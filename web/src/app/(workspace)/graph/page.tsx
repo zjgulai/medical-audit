@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchGraphWorkbench } from "@/lib/api-client";
 import type {
@@ -74,112 +73,96 @@ export default function GraphPage() {
     backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
 
   return (
-    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">节点覆盖</h2>
-        <p className="audit-copy mt-2">按审计链路查看项目、知识、规则、疑点、复核和整改覆盖。</p>
-        <div className="mt-3">
-          <SearchBackendStatusPill />
-        </div>
-        <div className="mt-3">
-          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
-        </div>
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          {kindStats.map((item) => (
-            <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2">
-              <p className="audit-meta font-semibold">{item.kind}</p>
-              <p className="audit-metric-value-sm mt-1">{item.count}</p>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      <section className="audit-panel min-w-0 p-6">
+    <main className="space-y-5">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="audit-kicker">知识图谱</p>
             <h1 className="audit-page-title">知识图谱入口</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。
-            </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <StatusPill tone="info">首期只读</StatusPill>
-            <DataSourceBadge source="hybrid" />
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchBackendStatusPill />
+            <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <GraphMetric label="节点类型" value={`${workbench.metrics.node_kind_count} 类`} />
           <GraphMetric label="关系链路" value={`${workbench.metrics.relation_count} 条`} />
           <GraphMetric label="强证据关系" value={`${workbench.metrics.strong_relation_count} 条`} />
           <GraphMetric label="待补关系" value={`${workbench.metrics.pending_relation_count} 条`} />
         </div>
+      </section>
 
-        <section className="audit-panel-muted mt-6 p-4" aria-labelledby="graph-preview-title">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 id="graph-preview-title" className="audit-section-title">
-                {workbench.graph_title}
-              </h2>
-              <p className="audit-meta mt-1">
-                {workbench.graph_id} · {backendStatus === "ready" ? "API 只读预览" : "证据链静态预览"}
-              </p>
+      <section className="audit-panel p-6">
+        <h2 className="audit-section-title">节点覆盖</h2>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+          {kindStats.map((item) => (
+            <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
+              <p className="audit-meta font-semibold">{item.kind}</p>
+              <p className="audit-metric-value-sm mt-1">{item.count}</p>
             </div>
-            <StatusPill tone="success">证据链覆盖</StatusPill>
+          ))}
+        </div>
+      </section>
+
+      <section className="audit-panel p-6" aria-labelledby="graph-preview-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 id="graph-preview-title" className="audit-section-title">{workbench.graph_title}</h2>
+            <p className="audit-meta mt-1">
+              {workbench.graph_id} · {backendStatus === "ready" ? "API 只读预览" : "证据链静态预览"}
+            </p>
           </div>
+          <StatusPill tone="success">证据链覆盖</StatusPill>
+        </div>
+        <div className="audit-table-shell mt-4 bg-white">
+          <svg
+            className="h-[32rem] w-full text-slate-700"
+            role="img"
+            aria-label="审计知识图谱静态关系预览"
+            viewBox="0 0 920 500"
+          >
+            <defs>
+              <marker id="graph-arrow" markerHeight="10" markerWidth="10" orient="auto" refX="8" refY="5">
+                <path d="M 0 0 L 10 5 L 0 10 z" className="fill-blue-400" />
+              </marker>
+            </defs>
 
-          <div className="audit-table-shell mt-4 bg-white">
-            <svg
-              className="h-[32rem] w-full text-slate-700"
-              role="img"
-              aria-label="审计知识图谱静态关系预览"
-              viewBox="0 0 920 500"
-            >
-              <defs>
-                <marker id="graph-arrow" markerHeight="10" markerWidth="10" orient="auto" refX="8" refY="5">
-                  <path d="M 0 0 L 10 5 L 0 10 z" className="fill-blue-400" />
-                </marker>
-              </defs>
+            {graphEdges.map(({ relation, source, target }) => (
+              <line
+                key={relation.id}
+                x1={source.x}
+                y1={source.y}
+                x2={target.x}
+                y2={target.y}
+                className={relation.strength === "待补" ? "stroke-amber-300" : "stroke-blue-300"}
+                markerEnd="url(#graph-arrow)"
+                strokeDasharray={relation.strength === "待补" ? "7 6" : undefined}
+                strokeLinecap="round"
+                strokeWidth="2"
+              />
+            ))}
 
-              {graphEdges.map(({ relation, source, target }) => (
-                <line
-                  key={relation.id}
-                  x1={source.x}
-                  y1={source.y}
-                  x2={target.x}
-                  y2={target.y}
-                  className={relation.strength === "待补" ? "stroke-amber-300" : "stroke-blue-300"}
-                  markerEnd="url(#graph-arrow)"
-                  strokeDasharray={relation.strength === "待补" ? "7 6" : undefined}
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                />
-              ))}
+            {nodes.map((node) => (
+              <GraphSvgNode key={node.id} node={node} />
+            ))}
+          </svg>
+        </div>
+      </section>
 
-              {nodes.map((node) => (
-                <GraphSvgNode key={node.id} node={node} />
-              ))}
-            </svg>
-          </div>
-        </section>
-
-        <section className="mt-6" aria-labelledby="graph-relations-title">
-          <h2 id="graph-relations-title" className="audit-section-title">
-            证据链关系
-          </h2>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <section className="audit-panel p-6" aria-labelledby="graph-relations-title">
+          <h2 id="graph-relations-title" className="audit-section-title">证据链关系</h2>
+          <div className="mt-4 grid gap-3">
             {relations.map((relation) => (
               <RelationCard key={relation.id} relation={relation} />
             ))}
           </div>
         </section>
-      </section>
-
-      <aside className="min-w-0 space-y-4">
-        <section className="audit-panel-rail p-5">
+        <section className="audit-panel p-6">
           <h2 className="audit-section-title">节点证据</h2>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3">
             {nodes.map((node) => (
               <a key={node.id} className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
                 <div className="flex items-start justify-between gap-3">
@@ -195,13 +178,12 @@ export default function GraphPage() {
             ))}
           </div>
         </section>
+      </div>
 
-        <a className="audit-focus-ring audit-callout block p-5" href="/documents">
-          <p className="audit-kicker">文档检索</p>
-          <h2 className="audit-section-title mt-2">核验证据来源</h2>
-          <p className="audit-copy mt-2">图谱中的文档、知识库和引用材料继续由统一检索页承载。</p>
-        </a>
-      </aside>
+      <a className="audit-focus-ring audit-action-card p-5" href="/documents">
+        <p className="audit-kicker">文档检索</p>
+        <h2 className="audit-section-title mt-2">核验证据来源</h2>
+      </a>
     </main>
   );
 }
