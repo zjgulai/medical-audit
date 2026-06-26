@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchRemediationWorkbench } from "@/lib/api-client";
 import type {
@@ -73,106 +72,68 @@ export default function RemediationPage() {
     backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
 
   return (
-    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">整改事项</h2>
-        <p className="audit-copy mt-2">按责任科室和验收状态跟踪报告后的整改闭环。</p>
-        <div className="mt-3">
-          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
-        </div>
-        <div className="mt-5 space-y-3">
-          {workbench.remediation_cases.map((item) => (
-            <RemediationIndexCard key={item.id} item={item} />
-          ))}
-        </div>
-      </aside>
-
-      <section className="audit-panel min-w-0 p-6">
+    <main className="space-y-5">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="audit-kicker">补证整改</p>
             <h1 className="audit-page-title">{workbench.workbench_title}</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              {workbench.workbench_scope}
-            </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <StatusPill tone="warning">验收门禁</StatusPill>
-            <DataSourceBadge source="hybrid" />
-          </div>
+          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <RemediationMetric label="未关闭事项" value={`${workbench.metrics.active_case_count} 项`} />
           <RemediationMetric label="待补证材料" value={`${workbench.metrics.pending_evidence_count} 份`} />
           <RemediationMetric label="阻断门禁" value={`${workbench.metrics.blocked_gate_count} 项`} />
           <RemediationMetric label="平均进度" value={`${workbench.metrics.average_progress}%`} />
         </div>
-
-        <section className="mt-6" aria-labelledby="remediation-ledger-title">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="remediation-ledger-title" className="audit-section-title">
-              整改台账
-            </h2>
-            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/reports">
-              查看报告来源
-            </a>
-          </div>
-
-          <div className="mt-4 grid gap-3">
-            {workbench.remediation_cases.map((item) => (
-              <RemediationCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-5" aria-labelledby="evidence-requests-title">
-          <div>
-            <h2 id="evidence-requests-title" className="audit-section-title">
-              补证请求
-            </h2>
-            <div className="mt-4 grid gap-3">
-              {workbench.evidence_requests.map((request) => (
-                <EvidenceRequestCard key={request.id} request={request} />
-              ))}
-            </div>
-          </div>
-
-          <aside className="audit-callout p-5">
-            <p className="audit-kicker">关闭规则</p>
-            <h3 className="audit-section-title mt-2">验收前不得结案</h3>
-            <p className="audit-copy mt-2">
-              整改说明、补证材料和负责人确认全部通过后，才能进入项目归档检查。
-            </p>
-          </aside>
-        </section>
       </section>
 
-      <aside className="min-w-0 space-y-4">
-        <section className="audit-panel-rail p-5">
+      <section className="audit-panel p-6" aria-labelledby="remediation-ledger-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="remediation-ledger-title" className="audit-section-title">整改台账</h2>
+          <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/reports">查看报告来源</a>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {workbench.remediation_cases.map((item) => (
+            <RemediationCard key={item.id} item={item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="audit-panel p-6" aria-labelledby="evidence-requests-title">
+        <h2 id="evidence-requests-title" className="audit-section-title">补证请求</h2>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {workbench.evidence_requests.map((request) => (
+            <EvidenceRequestCard key={request.id} request={request} />
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <section className="audit-panel p-6">
           <h2 className="audit-section-title">关闭门禁</h2>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3">
             {workbench.closure_gates.map((gate) => (
               <ClosureGateCard key={gate.id} gate={gate} />
             ))}
           </div>
         </section>
-
-        <section className="audit-panel-rail p-5">
+        <section className="audit-panel p-6">
           <h2 className="audit-section-title">整改动态</h2>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3">
             {workbench.timeline.map((item) => (
               <TimelineCard key={item.id} item={item} />
             ))}
           </div>
         </section>
+      </div>
 
-        <a className="audit-focus-ring audit-action-card p-5" href="/graph">
-          <p className="audit-kicker">知识图谱</p>
-          <h2 className="audit-section-title mt-2">查看整改证据链</h2>
-          <p className="audit-copy mt-2">整改事项已经和报告、复核、疑点、项目归档关系连通。</p>
-        </a>
-      </aside>
+      <a className="audit-focus-ring audit-action-card p-5" href="/graph">
+        <p className="audit-kicker">知识图谱</p>
+        <h2 className="audit-section-title mt-2">查看整改证据链</h2>
+      </a>
     </main>
   );
 }
@@ -196,23 +157,6 @@ function buildRemediationMetrics(
       : 0,
     timeline_count: timeline.length
   };
-}
-
-function RemediationIndexCard({ item }: { readonly item: RemediationCaseApiItem }) {
-  return (
-    <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={item.href}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.title}</h3>
-          <p className="audit-meta mt-1">{item.department} / {item.dueDate}</p>
-        </div>
-        <StatusPill tone={getRemediationStatusTone(item.status)}>{item.status}</StatusPill>
-      </div>
-      <div className="mt-3">
-        <ProgressBar value={item.progress} />
-      </div>
-    </a>
-  );
 }
 
 function RemediationMetric({ label, value }: { readonly label: string; readonly value: string }) {

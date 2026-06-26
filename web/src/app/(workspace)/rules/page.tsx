@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchRulesWorkbench } from "@/lib/api-client";
 import type {
@@ -69,100 +68,74 @@ export default function RulesPage() {
     backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
 
   return (
-    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">来源覆盖</h2>
-        <p className="audit-copy mt-2">按监管两库、医保目录、风险清单和对话沉淀查看规则覆盖。</p>
-        <div className="mt-3">
-          <SearchBackendStatusPill />
-        </div>
-        <div className="mt-3">
-          <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
-        </div>
-        <div className="mt-5 space-y-3">
-          {workbench.source_coverages.map((source) => (
-            <SourceCoverageCard key={source.id} source={source} />
-          ))}
-        </div>
-      </aside>
-
-      <section className="audit-panel min-w-0 p-6">
+    <main className="space-y-5">
+      <section className="audit-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="audit-kicker">专题规则库</p>
             <h1 className="audit-page-title">审计规则与依据总览</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              {workbench.ruleset_scope}
-            </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <StatusPill tone="info">首期只读</StatusPill>
-            <DataSourceBadge source="hybrid" />
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchBackendStatusPill />
+            <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <RulesMetric label="可运行规则" value={`${workbench.metrics.enabled_rule_count} 条`} />
           <RulesMetric label="待处理规则" value={`${workbench.metrics.pending_rule_count} 条`} />
           <RulesMetric label="已生成疑点" value={`${workbench.metrics.total_finding_count} 条`} />
           <RulesMetric label="阻断门禁" value={`${workbench.metrics.blocked_gate_count} 项`} />
         </div>
+      </section>
 
-        <section className="mt-6" aria-labelledby="rule-library-title">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="rule-library-title" className="audit-section-title">
-              规则清单
-            </h2>
-            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/index-admin">
-              打开索引管理
-            </a>
-          </div>
+      <section className="audit-panel p-6" aria-labelledby="rule-library-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="rule-library-title" className="audit-section-title">规则清单</h2>
+          <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/index-admin">
+            打开索引管理
+          </a>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {workbench.rule_library_items.map((rule) => (
+            <RuleCard key={rule.id} rule={rule} />
+          ))}
+        </div>
+      </section>
 
+      <div className="grid gap-5 xl:grid-cols-2">
+        <section className="audit-panel p-6">
+          <h2 className="audit-section-title">最近运行</h2>
           <div className="mt-4 grid gap-3">
-            {workbench.rule_library_items.map((rule) => (
-              <RuleCard key={rule.id} rule={rule} />
+            {workbench.run_snapshots.map((snapshot) => (
+              <RunSnapshotCard key={snapshot.id} snapshot={snapshot} />
             ))}
           </div>
         </section>
-
-        <section className="mt-6 grid gap-5" aria-labelledby="rule-runs-title">
-          <div>
-            <h2 id="rule-runs-title" className="audit-section-title">
-              最近运行
-            </h2>
-            <div className="mt-4 grid gap-3">
-              {workbench.run_snapshots.map((snapshot) => (
-                <RunSnapshotCard key={snapshot.id} snapshot={snapshot} />
-              ))}
-            </div>
+        <section className="audit-panel p-6">
+          <h2 className="audit-section-title">来源覆盖</h2>
+          <div className="mt-4 grid gap-3">
+            {workbench.source_coverages.map((source) => (
+              <SourceCoverageCard key={source.id} source={source} />
+            ))}
           </div>
-
-          <aside className="audit-callout p-5">
-            <p className="audit-kicker">输出边界</p>
-            <h3 className="audit-section-title mt-2">规则命中不直接成结论</h3>
-            <p className="audit-copy mt-2">
-              规则只生成疑点或审证问题；是否进入底稿、报告和整改，仍由人工复核门禁决定。
-            </p>
-          </aside>
         </section>
-      </section>
+      </div>
 
-      <aside className="min-w-0 space-y-4">
-        <section className="audit-panel-rail p-5">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <section className="audit-panel p-6">
           <h2 className="audit-section-title">发布门禁</h2>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 grid gap-3">
             {workbench.control_gates.map((gate) => (
               <RuleGateCard key={gate.id} gate={gate} />
             ))}
           </div>
         </section>
-
         <a className="audit-focus-ring audit-action-card p-5" href="/graph">
           <p className="audit-kicker">知识图谱</p>
           <h2 className="audit-section-title mt-2">查看规则证据链</h2>
-          <p className="audit-copy mt-2">规则和文档、疑点、复核、报告的关系已进入图谱只读链路。</p>
         </a>
-      </aside>
+      </div>
     </main>
   );
 }

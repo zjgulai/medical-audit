@@ -29,9 +29,6 @@ export default function GuidedCheckPage() {
             <div>
               <p className="audit-kicker">AI 引导自查</p>
               <h1 className="audit-page-title">AI 引导自查工作台</h1>
-              <p className="audit-copy mt-2 max-w-3xl">
-                按项目范围、数据、规则、审证对话、底稿报告串联自查路径；AI 只给出带引用的审证问题和复核建议，不直接生成正式结论。
-              </p>
             </div>
             <div className="flex flex-col items-end gap-2">
               <StatusPill tone="info">提示词型智能体</StatusPill>
@@ -62,7 +59,6 @@ export default function GuidedCheckPage() {
               <h2 id="guided-steps-title" className="audit-section-title">
                 自查路径
               </h2>
-              <p className="audit-copy mt-1">每一步只展示当前项目的真实去向，阻断项必须先补证。</p>
             </div>
             <a className="audit-focus-ring audit-btn audit-btn-neutral" href="/projects">
               查看项目
@@ -82,7 +78,6 @@ export default function GuidedCheckPage() {
               <h2 id="guided-questions-title" className="audit-section-title">
                 AI 提问模板
               </h2>
-              <p className="audit-copy mt-1">一个智能体对应一个提示词，自查页只组织问题和证据边界。</p>
             </div>
             <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/agents">
               管理智能体
