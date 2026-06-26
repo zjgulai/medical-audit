@@ -125,8 +125,7 @@ export default function ReportsPage() {
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">报告链路</h2>
-        <p className="audit-copy mt-2">复核、门禁、签发和整改保持同一条审计链。</p>
-        <ol className="mt-5 space-y-3">
+                <ol className="mt-5 space-y-3">
           {reportWorkflowSteps.map((step, index) => (
             <li key={step.title}>
               <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={step.href}>
@@ -146,9 +145,6 @@ export default function ReportsPage() {
           <div>
             <p className="audit-kicker">审计底稿/报告</p>
             <h1 className="audit-page-title">底稿生成与报告记录</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              把复核结论、底稿、附件、负责人确认和整改事项组织成可追溯的报告首页。
-            </p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>
@@ -171,8 +167,7 @@ export default function ReportsPage() {
               <h2 id="workpaper-template-title" className="audit-section-title">
                 提示词模板生成
               </h2>
-              <p className="audit-copy mt-1">按三张医保费用模板绑定证据字段，生成底稿草稿、问题清单或复核摘要。</p>
-            </div>
+                          </div>
             <StatusPill tone="warning">仅草稿</StatusPill>
           </div>
           <div className="mt-4 grid gap-3 2xl:grid-cols-3">
@@ -243,8 +238,7 @@ export default function ReportsPage() {
         <a className="audit-focus-ring audit-action-card p-5" href="/graph">
           <p className="audit-kicker">知识图谱</p>
           <h2 className="audit-section-title mt-2">查看报告证据链</h2>
-          <p className="audit-copy mt-2">报告、复核、疑点和整改之间的关系已在图谱页只读展示。</p>
-        </a>
+                  </a>
       </aside>
     </main>
   );

@@ -85,7 +85,6 @@ export default function ChatPortalPage() {
     <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
       <aside className="audit-panel-rail min-w-0 p-5">
         <h2 className="audit-section-title">问题构建</h2>
-        <p className="audit-copy mt-2">把审计问题先限定在专题、智能体和知识来源内，再进入审证深页。</p>
         <ol className="mt-5 space-y-3">
           {questionBuilderSteps.map((step, index) => (
             <li key={step.label} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
@@ -119,9 +118,6 @@ export default function ChatPortalPage() {
           <div>
             <p className="audit-kicker">AI 对话</p>
             <h1 className="audit-page-title">AI 审证对话工作台</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              面向医保基金审计的问题入口。页面负责选择智能体、限定知识来源和组织问题，引用生成和原文预览仍由后端审证深页执行。
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <StatusPill tone="success">引用优先</StatusPill>
@@ -252,12 +248,6 @@ export default function ChatPortalPage() {
               </li>
             ))}
           </ul>
-        </section>
-
-        <section className="audit-callout p-5">
-          <p className="audit-kicker">输出去向</p>
-          <h2 className="audit-section-title mt-2">回答先进入草稿态</h2>
-          <p className="audit-copy mt-2">只有引用、原文和人工复核结论都齐备后，才进入底稿生成和报告链路。</p>
         </section>
       </aside>
     </main>
