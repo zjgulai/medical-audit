@@ -489,8 +489,8 @@ personal_stats AS (
     'ready_not_indexed_uploads', (
       SELECT count(*)
       FROM document_upload_records
-      WHERE COALESCE(extra_metadata->'index_readiness'->>'status', '') = 'ready'
-        AND COALESCE(extra_metadata->>'index_status', 'not-indexed') = 'not-indexed'
+      WHERE COALESCE(metadata->'index_readiness'->>'status', '') = 'ready'
+        AND COALESCE(metadata->>'index_status', 'not-indexed') = 'not-indexed'
     )
   ) AS payload
 )
