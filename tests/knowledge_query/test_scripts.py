@@ -1488,3 +1488,145 @@ def test_audit_production_personal_material_indexing_readiness_passes_completed_
     assert report["summary"]["personal_material_chunks"] == 2
     assert report["summary"]["personal_material_active_chunks"] == 0
     assert report["boundaries"]["active_retrieval_activated"] is False
+
+
+def test_audit_production_personal_material_active_gate_script_is_readonly() -> None:
+    script_path = Path("scripts/audit-production-personal-material-active-gate.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "COS_SECRET" not in script_text
+    assert "active gate" in script_text
+    assert "production_write" in script_text
+    assert "db_write" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "medical-audit-kb index-activate" not in script_text
+    assert "activate_index_version(" not in script_text
+    assert '"POST"' not in script_text
+    assert "method='POST'" not in script_text
+    assert 'method="POST"' not in script_text
+    assert "UPDATE index_versions" not in script_text
+
+
+def test_audit_production_personal_material_active_gate_blocks_inactive_live_retrieval() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["live-retrieval-not-activated"]
+    assert report["summary"]["target_index_version_key"] == (
+        "personal-materials-cos-staging-pr152-20260619"
+    )
+    assert report["summary"]["target_status"] == "candidate"
+    assert report["summary"]["target_live_retrieval_activated"] is False
+    assert report["summary"]["runtime_activation_guard_enforced"] is True
+    assert report["summary"]["safe_to_execute_index_activate"] is False
+    assert report["boundaries"]["production_read_only"] is True
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["db_write"] is False
+    assert report["boundaries"]["index_activate_executed"] is False
+    assert report["boundaries"]["search_backend_reload_executed"] is False
+
+
+def test_audit_production_personal_material_active_gate_passes_explicit_live_activation() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": True,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["target_live_retrieval_activated"] is True
+    assert report["summary"]["safe_to_execute_index_activate"] is True
+    assert "单独授权执行 index-activate" in report["recommended_next_step"]
+
+
+def _personal_material_active_gate_remote_report(
+    *,
+    metadata: dict[str, object],
+    runtime_guard: bool,
+) -> dict[str, object]:
+    return {
+        "deploy_sha": "0984aad93505cb8eedb36aa8379031c4396b1939",
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+        "document_upload_indexing_env": {
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "true",
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": (
+                "personal-materials-cos-staging-pr152-20260619"
+            ),
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": (
+                "personal-materials-cos-staging-pr152-20260619"
+            ),
+        },
+        "env_ok": True,
+        "runtime_checks": {
+            "activation_guard_blocks_inactive_live_retrieval": runtime_guard,
+            "personal_material_explicit_query_allowed_roles": [],
+            "error": "",
+        },
+        "runtime_ok": True,
+        "db_state": {
+            "target_index_version_key": "personal-materials-cos-staging-pr152-20260619",
+            "target_version": {
+                "version_key": "personal-materials-cos-staging-pr152-20260619",
+                "status": "candidate",
+                "source_package_version_key": "personal-materials-cos-staging-pr152-20260619",
+                "vector_provider": "fake",
+                "vector_model": "deterministic-token-hashing",
+                "document_count": 2,
+                "chunk_count": 2,
+                "metadata": metadata,
+            },
+            "personal_material_stats": {
+                "candidate_versions": 1,
+                "active_versions": 0,
+                "documents": 2,
+                "chunks": 2,
+                "active_chunks": 0,
+            },
+        },
+        "db_ok": True,
+    }

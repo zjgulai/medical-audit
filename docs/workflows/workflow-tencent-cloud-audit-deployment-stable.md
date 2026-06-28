@@ -47,7 +47,10 @@ source: human+ai
 - 生产综合 E2E `tmp/outputs/production-e2e-smoke-after-frontend-2-main-20260628T1142.json` 为 `status=pass`；TLS、health、PostgreSQL search backend、Jinja pages、审计日志权限、query citations、preview、dossier export 和边缘域名回归均通过。
 - 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-frontend-2-main-rerun-20260628T1204.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`；`/audit/logs` 与 `/audit/logs/export` 均满足无租户头 `401`、管理员 `200`。
 - 生产只读权限观测 `tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json` 为 `status=observed`，`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`。
+- 个人材料索引 readiness 只读复核 `tmp/outputs/production-personal-material-indexing-readiness-20260628T1421.json` 为 `status=pass`：生产入索引 env 已打开，目标版本为 `personal-materials-cos-staging-pr152-20260619`，当前 `personal_material_candidate_versions=1`、`personal_material_chunks=2`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；同时仍有 `ready_not_indexed_uploads=2` 且本地隔离文件可用，后续如要继续 staging 需单独授权写入型入索引操作。
+- 个人材料 active gate 只读复核 `tmp/outputs/production-personal-material-active-gate-20260628T1510.json` 为 `status=blocked`，唯一 blocker 为 `live-retrieval-not-activated`；目标版本仍是 `candidate`，metadata 中 `live_retrieval_activated=false`，运行时 activation guard 已确认会阻断该状态，`safe_to_execute_index_activate=false`。
 - 边界：本轮存在授权生产 app/static 部署、共享 Nginx 配置/compose 挂载修复和容器重建；未执行 `--apply-schema`，没有调用生成模型或外部 AI provider，没有执行新的写入型业务 E2E。query smoke 返回 `fallback_used=true`，不能解释为 no-fallback 生成模型能力已上线。
+- 个人材料边界：2026-06-28 两个个人材料脚本均为 `L3-production-read-only`；`production_write=false`、`api_write=false`、`db_write=false`、`audit_log_write_expected=false`、`external_provider_call=false`、`index_activate_executed=false`、`search_backend_reload_executed=false`、`active_retrieval_activated=false`。不得把 candidate staging 解释为 active personal-material retrieval 已上线。
 
 ### 2026-06-19 COS-only 个人材料候选入索引本地切片
 
@@ -78,6 +81,18 @@ uv run python scripts/audit-production-personal-material-indexing-readiness.py \
   --json-output tmp/outputs/production-personal-material-indexing-readiness-YYYYMMDD.json \
   --markdown-output tmp/outputs/production-personal-material-indexing-readiness-YYYYMMDD.md
 ```
+
+推荐 active gate 只读审计命令：
+
+```bash
+uv run python scripts/audit-production-personal-material-active-gate.py \
+  --ssh-key ai_video.pem \
+  --expected-deploy-sha 0984aad93505cb8eedb36aa8379031c4396b1939 \
+  --json-output tmp/outputs/production-personal-material-active-gate-YYYYMMDD.json \
+  --markdown-output tmp/outputs/production-personal-material-active-gate-YYYYMMDD.md
+```
+
+active gate 返回 `safe_to_execute_index_activate=false` 时，不得执行 `medical-audit-kb index-activate`、不得 reload PostgreSQL search backend，也不得把个人材料纳入默认检索结果。
 
 ### 2026-06-19 PR #149 `ruleset-v1` DLP 生产 gate、env 激活与 `/documents` 写入 E2E
 
