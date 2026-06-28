@@ -441,7 +441,7 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
     assert report["summary"]["latest_local_smoke_status"] == "pass"
 
 
-def test_audit_tencent_cloud_deployment_state_accepts_proxy_frontdoor_without_mount() -> None:
+def test_audit_tencent_cloud_deployment_state_rejects_proxy_frontdoor_without_mount() -> None:
     module = _load_script_module(
         "audit_tencent_cloud_deployment_state_proxy_frontdoor",
         Path("scripts/audit-tencent-cloud-deployment-state.py"),
@@ -454,6 +454,7 @@ def test_audit_tencent_cloud_deployment_state_accepts_proxy_frontdoor_without_mo
     remote_report["public_frontdoor"] = {
         "health": {"ok": True, "status_code": 200},
         "documents": {"ok": True, "status_code": 200},
+        "next_static": {"ok": False, "status_code": 404},
     }
 
     report = module._build_report(
@@ -464,10 +465,14 @@ def test_audit_tencent_cloud_deployment_state_accepts_proxy_frontdoor_without_mo
         expected_embeddings=48985,
     )
 
-    assert report["status"] == "pass"
-    assert report["issues"] == []
+    assert report["status"] == "fail"
+    assert report["issues"] == [
+        "audit-static-bind-mount-missing",
+        "audit-next-static-not-ready",
+    ]
     assert report["summary"]["audit_mount_present"] is False
     assert report["summary"]["audit_frontdoor_healthy"] is True
+    assert report["summary"]["audit_next_static_healthy"] is False
 
 
 def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor() -> None:
@@ -1208,6 +1213,11 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
                     "details": {"matching_embedding_count": 48985},
                 },
             }
+        },
+        "public_frontdoor": {
+            "health": {"ok": True, "status_code": 200},
+            "documents": {"ok": True, "status_code": 200},
+            "next_static": {"ok": True, "status_code": 200},
         },
         "backups": {
             "app": [{"path": f"/opt/medical-audit/backups/app/pre-deploy-{stamp}.tar.gz"}],
