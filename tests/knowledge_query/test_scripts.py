@@ -1546,6 +1546,7 @@ def test_audit_production_personal_material_active_gate_blocks_inactive_live_ret
     assert report["summary"]["target_status"] == "candidate"
     assert report["summary"]["target_live_retrieval_activated"] is False
     assert report["summary"]["runtime_activation_guard_enforced"] is True
+    assert report["summary"]["personal_material_default_query_isolated"] is True
     assert report["summary"]["safe_to_execute_index_activate"] is False
     assert report["boundaries"]["production_read_only"] is True
     assert report["boundaries"]["production_write"] is False
@@ -1577,8 +1578,133 @@ def test_audit_production_personal_material_active_gate_passes_explicit_live_act
     assert report["status"] == "pass"
     assert report["issues"] == []
     assert report["summary"]["target_live_retrieval_activated"] is True
+    assert report["summary"]["personal_material_default_query_isolated"] is True
     assert report["summary"]["safe_to_execute_index_activate"] is True
     assert "单独授权执行 index-activate" in report["recommended_next_step"]
+
+
+def test_audit_production_personal_material_active_gate_blocks_default_query_leak() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": True,
+        },
+        runtime_guard=True,
+    )
+    remote_report["runtime_checks"] = {
+        **remote_report["runtime_checks"],
+        "personal_material_default_query_excludes_personal_materials": False,
+        "personal_material_default_query_allowed_roles": ["auditor"],
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["personal-material-default-query-not-isolated"]
+    assert report["summary"]["personal_material_default_query_isolated"] is False
+    assert report["summary"]["safe_to_execute_index_activate"] is False
+
+
+def test_run_production_personal_material_live_retrieval_gate_has_write_gate() -> None:
+    script_path = Path("scripts/run-production-personal-material-live-retrieval-gate.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "--confirm-production-write" in script_text
+    assert "--execute" in script_text
+    assert "audit.lute-tlz-dddd.top" in script_text
+    assert "UPDATE index_versions" in script_text
+    assert "live_retrieval_activated" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "medical-audit-kb index-activate" not in script_text
+    assert "activate_index_version(" not in script_text
+
+
+def test_run_production_personal_material_live_retrieval_gate_requires_confirmation() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+
+    with pytest.raises(module.LiveRetrievalGateError, match="confirm-production-write"):
+        module._require_production_write_confirmation("")
+    module._require_production_write_confirmation("audit.lute-tlz-dddd.top")
+
+
+def test_run_production_personal_material_live_retrieval_gate_reports_ready_for_write() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        execute=False,
+        actor="tester",
+        run_id="run-1",
+    )
+
+    assert report["status"] == "ready_for_write"
+    assert report["issues"] == []
+    assert report["summary"]["target_live_retrieval_activated"] is False
+    assert report["summary"]["personal_material_default_query_isolated"] is True
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["index_activate_executed"] is False
+
+
+def test_run_production_personal_material_live_retrieval_gate_blocks_default_query_leak() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+    remote_report["runtime_checks"] = {
+        **remote_report["runtime_checks"],
+        "personal_material_default_query_excludes_personal_materials": False,
+        "personal_material_default_query_allowed_roles": ["auditor"],
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        execute=False,
+        actor="tester",
+        run_id="run-1",
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["personal-material-default-query-not-isolated"]
 
 
 def _personal_material_active_gate_remote_report(
@@ -1605,6 +1731,8 @@ def _personal_material_active_gate_remote_report(
         "runtime_checks": {
             "activation_guard_blocks_inactive_live_retrieval": runtime_guard,
             "personal_material_explicit_query_allowed_roles": [],
+            "personal_material_default_query_allowed_roles": [],
+            "personal_material_default_query_excludes_personal_materials": True,
             "error": "",
         },
         "runtime_ok": True,

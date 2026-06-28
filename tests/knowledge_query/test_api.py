@@ -1869,6 +1869,45 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert logs_response.json()["items"][0]["filters"]["top_k"] == 2
 
 
+def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.search_engine = _search_engine_with_personal_materials(
+        system_chunk_id=uuid4(),
+        personal_chunk_id=uuid4(),
+        source_path="全量法律/law.md",
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据 院内个人材料提示", "top_k": 5},
+    )
+    explicit_personal_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 5,
+            "source_collections": ["personal-materials"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["citations"]
+    assert {
+        item["source_collection"] for item in body["citations"]
+    } == {"medical-insurance-laws"}
+    assert state.query_logs[-1]["filters"]["source_collections"] == []
+    assert "personal-materials" not in state.query_logs[-1]["filters"][
+        "effective_source_collections"
+    ]
+    assert explicit_personal_response.status_code == 403
+
+
 def test_query_endpoint_records_selected_agent_invocation(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.agent_store = SqlAlchemyAgentStore(
@@ -2771,6 +2810,73 @@ def _search_engine(chunk_id: UUID, source_path: str) -> HybridSearchEngine:
                 text=chunk.text,
                 metadata=chunk.metadata,
             )
+        ]
+    )
+    return HybridSearchEngine(
+        embedding_provider=provider,
+        vector_index=vector_index,
+        bm25_index=bm25_index,
+        rerank_provider=FakeRerankProvider(),
+    )
+
+
+def _search_engine_with_personal_materials(
+    *,
+    system_chunk_id: UUID,
+    personal_chunk_id: UUID,
+    source_path: str,
+) -> HybridSearchEngine:
+    provider = DeterministicFakeEmbeddingProvider(dimension=32)
+    chunks = [
+        ChunkEmbeddingInput(
+            chunk_id=system_chunk_id,
+            text="第一条 医疗机构应当保留医保基金审核依据。",
+            metadata={
+                "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                "locator": {
+                    "type": "law-article",
+                    "source_path": source_path,
+                    "line_start": 1,
+                    "line_end": 1,
+                    "article_number": "第一条",
+                },
+                "index_version_key": "index-v1",
+                "source_package_version_key": "package-v1",
+                "title": "医保基金审核依据",
+                "source_path": source_path,
+                "title_path": ["医保基金审核依据"],
+            },
+        ),
+        ChunkEmbeddingInput(
+            chunk_id=personal_chunk_id,
+            text="院内个人材料提示：医保基金审核依据需要结合内部台账。",
+            metadata={
+                "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
+                "locator": {
+                    "type": "personal-material",
+                    "upload_key": "document-upload-private",
+                    "source_path": "personal-materials/document-upload-private/note.txt",
+                },
+                "index_version_key": "personal-materials-test-active",
+                "source_package_version_key": "personal-materials-test-active",
+                "title": "院内个人材料提示",
+                "source_path": "personal-materials/document-upload-private/note.txt",
+                "created_by": "auditor-1",
+                "visibility": "private",
+            },
+        ),
+    ]
+    vector_index = InMemoryVectorIndex(dimension=provider.dimension)
+    vector_index.upsert(build_chunk_embedding_records(chunks, provider=provider))
+    bm25_index = InMemoryBM25Index()
+    bm25_index.upsert(
+        [
+            BM25Document(
+                chunk_id=chunk.chunk_id,
+                text=chunk.text,
+                metadata=chunk.metadata,
+            )
+            for chunk in chunks
         ]
     )
     return HybridSearchEngine(
