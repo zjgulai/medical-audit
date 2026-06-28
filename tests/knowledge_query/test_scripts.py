@@ -1630,3 +1630,82 @@ def _personal_material_active_gate_remote_report(
         },
         "db_ok": True,
     }
+
+
+def test_run_production_personal_material_index_staging_script_has_write_gate() -> None:
+    script_path = Path("scripts/run-production-personal-material-index-staging-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "--confirm-production-write" in script_text
+    assert "audit.lute-tlz-dddd.top" in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
+    assert "/index-ingestion" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "active_retrieval_activated" in script_text
+
+
+def test_run_production_personal_material_index_staging_requires_confirmation() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_index_staging_e2e",
+        Path("scripts/run-production-personal-material-index-staging-e2e.py"),
+    )
+
+    with pytest.raises(module.StagingE2EError, match="confirm-production-write"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+
+
+def test_run_production_personal_material_index_staging_selects_readiness_samples(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_production_personal_material_index_staging_e2e",
+        Path("scripts/run-production-personal-material-index-staging-e2e.py"),
+    )
+    readiness_report = tmp_path / "readiness.json"
+    readiness_report.write_text(
+        json.dumps(
+            {
+                "remote": {
+                    "document_upload_indexing": {
+                        "db": {
+                            "ready_not_indexed_samples": [
+                                {"upload_key": "document-upload-one"},
+                                {"upload_key": "document-upload-two"},
+                            ]
+                        }
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert module._selected_upload_ids(
+        readiness_report=readiness_report,
+        explicit_upload_ids=(),
+        max_uploads=1,
+    ) == ["document-upload-one"]
+    assert module._selected_upload_ids(
+        readiness_report=readiness_report,
+        explicit_upload_ids=("document-upload-explicit",),
+        max_uploads=10,
+    ) == ["document-upload-explicit"]

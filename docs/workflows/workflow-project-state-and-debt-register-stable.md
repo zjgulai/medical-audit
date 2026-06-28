@@ -462,8 +462,10 @@ source: human+ai
 - 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-frontend-2-main-20260628T1142.json`，状态 `pass`，`issues=[]`，`audit_next_static_healthy=true`。
 - 最新生产综合 E2E 报告：`tmp/outputs/production-e2e-smoke-after-frontend-2-main-20260628T1142.json`，状态 `pass`。
 - 最新生产只读权限观测报告：`tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json`，`status=observed`、`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`。
-- 最新个人材料索引 readiness 只读报告：`tmp/outputs/production-personal-material-indexing-readiness-20260628T1421.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，`personal_material_candidate_versions=1`、`personal_material_chunks=2`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；仍有 `ready_not_indexed_uploads=2` 且本地隔离文件可用，后续 staging 需要单独授权写入。
+- 最新个人材料索引 readiness 只读报告：`tmp/outputs/production-personal-material-indexing-readiness-20260628T1625.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，`total_uploads=21`、`ready_not_indexed_uploads=2`、`staged_uploads=2`、`personal_material_candidate_versions=1`、`personal_material_chunks=2`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；两个 ready/not-indexed 样本均有本地隔离文件，后续 staging 需要单独授权写入。
 - 最新个人材料 active gate 只读报告：`tmp/outputs/production-personal-material-active-gate-20260628T1510.json`，状态 `blocked`，唯一 blocker 为 `live-retrieval-not-activated`；目标版本为 `candidate`，`target_live_retrieval_activated=false`，运行时 activation guard 已确认生效，`safe_to_execute_index_activate=false`。
+- 最新 F2 answer provider gate：生产只读报告 `tmp/outputs/answer-provider-gate-readiness-production-only-20260628T1610.json` 为 `blocked`，blocker 为 `no-provider-api-key-env-set`；本地 Anthropic smoke `tmp/outputs/answer-provider-smoke-anthropic-20260628T1615.json` 返回 `401 invalid x-api-key`。本轮没有写生产 env、没有生产 provider call，不能进入 no-fallback 生产 E2E。
+- 最新个人材料 staging API 状态：生产运行代码仍缺少 `/documents/uploads/{upload_id}/index-ingestion` 路由和 `document_upload_indexer` state wiring；旧 `/documents/uploads/{upload_id}/index` 只更新上传记录索引状态，不写 pgvector candidate staging。本地候选 PR 已补齐 API、权限门禁、候选入库验证和显式生产写入脚本；合并部署前生产仍为 `production unchanged`。
 - 最新 AI 数据分析留存历史本地联调截图：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`。
 - 项目成员写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`，`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
 - 项目成员生产写入结果：`CATALOG-LIMIT-202606` 新增 `member-custom-e152673f93f9`，成员数从 `4` 增至 `5`，数据库 `audit_project_members` 当前自定义记录数为 `1`。
@@ -1175,7 +1177,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 下一阶段计划：
 
 1. 真实生成模型 no-fallback 门禁：按 answer-provider production gate 跑 provider 预检、真实问题评测和 `--require-generated-answer` E2E，未通过前保持 fallback 边界。
-2. 个人材料索引闭环：当前已有 candidate staging 和 active gate 只读证据；下一步先对 `ready_not_indexed_uploads=2` 的本地隔离文件做单独授权写入型 staging，再补 user-level retrieval isolation，active gate 通过后才可单独授权 `index-activate` 与 search backend reload。
+2. 个人材料索引闭环：当前已有 candidate staging 和 active gate 只读证据，但生产 API 缺少 pgvector ingestion 路由；下一步先合并并部署 `/index-ingestion` 修复，再对 `ready_not_indexed_uploads=2` 的本地隔离文件执行单独授权写入型 staging，随后重跑 readiness/active gate。active gate 通过前不得执行 `index-activate` 或 search backend reload。
 3. 真实认证和租户边界：从 header transition layer 推进到医院 SSO/session claims、正式租户身份来源和生产权限复验。
 4. 前端 2.0 API 化：优先把疑点工作台、知识图谱、规则、整改、归档从静态/只读状态推进到受控 API 首切片，保持 `production:frontend-acceptance` 与 local fullstack E2E 双门禁。
 5. UAT 包与运维硬化：沉淀 UAT case matrix、回滚演练、共享 Nginx 回归、备份恢复和告警配置证据。
