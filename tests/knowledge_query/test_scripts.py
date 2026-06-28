@@ -120,6 +120,67 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "edge-regression" in script_text
 
 
+def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
+    script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "--confirm-production-write" in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
+    assert "external_governance_provider_call" in script_text
+    assert "indexing_triggered" in script_text
+
+
+def test_run_production_documents_governance_actor_headers_include_scope() -> None:
+    module = _load_script_module(
+        "run_production_documents_governance_actor_headers_include_scope",
+        Path("scripts/run-production-documents-governance-result-e2e.py"),
+    )
+
+    assert module._actor_headers(
+        user_id="owner-a",
+        role="auditor",
+        tenant_id="tenant-a",
+        project_key="project-a",
+    ) == {
+        "X-User-Id": "owner-a",
+        "X-Role": "auditor",
+        "X-Project-Key": "project-a",
+        "X-Tenant-Id": "tenant-a",
+    }
+
+
+def test_run_production_documents_governance_confirmation_blocks_production() -> None:
+    module = _load_script_module(
+        "run_production_documents_governance_confirmation_blocks_production",
+        Path("scripts/run-production-documents-governance-result-e2e.py"),
+    )
+
+    with pytest.raises(module.E2EError, match="confirm-production-write"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+    module._require_production_write_confirmation(
+        base_url="http://127.0.0.1:8000",
+        confirm_production_write="",
+    )
+
+
 def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readonly() -> None:
     script_path = Path("scripts/run-controlled-api-readonly-permission-smoke.py")
 
@@ -380,6 +441,45 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
     assert report["summary"]["latest_local_smoke_status"] == "pass"
 
 
+def test_audit_tencent_cloud_deployment_state_accepts_proxy_frontdoor_without_mount() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_proxy_frontdoor",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    remote_report["nginx"] = {
+        "config_test": {"passed": True},
+        "mounts": {"audit_mount": None, "mount_count": 18},
+    }
+    remote_report["public_frontdoor"] = {
+        "health": {"ok": True, "status_code": 200},
+        "documents": {"ok": True, "status_code": 200},
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["audit_mount_present"] is False
+    assert report["summary"]["audit_frontdoor_healthy"] is True
+
+
+def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor() -> None:
+    script_text = Path("scripts/audit-tencent-cloud-deployment-state.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "def http_status(url, expected_texts=None, headers=None):" in script_text
+    assert "request_headers.update(headers)" in script_text
+    assert "headers=AUDIT_HEADERS" in script_text
+
+
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
     module = _load_script_module(
         "audit_tencent_cloud_deployment_state_missing_backup",
@@ -429,7 +529,84 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     ).resolve()
 
 
-def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
+def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_preflight_proxy_topology",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+    )
+
+    module._run_remote_preflight(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "docker inspect medical_audit_app" in script
+    assert "curl -fsS http://127.0.0.1:18080/health" in script
+    assert "/var/www/audit -> /var/www/audit" not in script
+
+
+def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_post_checks_auth_documents",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(
+        remote_app_dir="/opt/medical-audit/app",
+        base_url="https://audit.example.test",
+    )
+
+    module._run_remote_post_checks(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "auth_headers=(" in script
+    assert "curl -fsS https://audit.example.test/api/v1/health >/dev/null" in script
+    assert (
+        'curl -fsS "${auth_headers[@]}" '
+        "https://audit.example.test/documents >/dev/null"
+    ) in script
+    assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
+
+
+def test_deploy_tencent_cloud_package_carries_static_export() -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_package_static_export",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    dockerfile_text = Path("configs/deploy/tencent-cloud/Dockerfile").read_text(
+        encoding="utf-8",
+    )
+    compose_text = Path("configs/deploy/tencent-cloud/docker-compose.prod.yaml").read_text(
+        encoding="utf-8",
+    )
+
+    assert "web/out/" not in module.APP_RSYNC_EXCLUDES
+    assert "COPY web/out ./web/out" in dockerfile_text
+    assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
+
+
+def test_deploy_tencent_cloud_cleans_only_regenerable_remote_sync_artifacts(
     monkeypatch: MonkeyPatch,
 ) -> None:
     module = _load_script_module(
@@ -448,6 +625,12 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
 
     assert len(captured_scripts) == 1
     script = captured_scripts[0]
+    assert "web_parent_dir=/opt/medical-audit/app/web" in script
+    assert "web_out_dir=/opt/medical-audit/app/web/out" in script
+    assert "rm -rf \"$web_out_dir\"" in script
+    assert "sudo -n rm -rf \"$web_out_dir\"" in script
+    assert "sudo -n install -d -o \"$(id -u)\" -g \"$(id -g)\" \"$web_out_dir\"" in script
+    assert "sudo -n chown -R \"$(id -u):$(id -g)\" \"$web_out_dir\"" in script
     assert "src_dir=/opt/medical-audit/app/src" in script
     assert "test -d \"$src_dir\"" in script
     assert "-name '*.pyc'" in script

@@ -379,12 +379,15 @@ def http_json(url, headers=None):
         return {{"ok": False, "error": str(exc)}}
 
 
-def http_status(url, expected_texts=None):
+def http_status(url, expected_texts=None, headers=None):
     expected_texts = expected_texts or []
     try:
+        request_headers = {{"User-Agent": "medical-audit-state-audit/1.0"}}
+        if headers:
+            request_headers.update(headers)
         request = urllib.request.Request(
             url,
-            headers={{"User-Agent": "medical-audit-state-audit/1.0"}},
+            headers=request_headers,
         )
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read()
@@ -463,6 +466,7 @@ report = {{
         "documents": http_status(
             BASE_URL + "/documents",
             ["AI智能审计管理系统", "材料与知识库统一检索", "个人材料"],
+            headers=AUDIT_HEADERS,
         ),
     }},
     "backups": backup_index(),
@@ -538,7 +542,7 @@ def _build_report(
         warnings.append("shared-nginx-config-test-failed-audit-route-healthy")
     elif not nginx_config_test_passed:
         issues.append("nginx-config-test-failed")
-    if not _audit_mount_valid(remote_report):
+    if not _audit_mount_valid(remote_report) and not audit_frontdoor_healthy:
         issues.append("audit-static-bind-mount-missing")
     if not _search_backend_ready(remote_report, matching_embedding_floor):
         issues.append("search-backend-not-ready")
@@ -640,7 +644,7 @@ def _shared_nginx_failure_is_non_blocking(
     return (
         _container_health(remote_report, "medical_audit_app") == "healthy"
         and _container_health(remote_report, "medical_audit_pg") == "healthy"
-        and _audit_mount_valid(remote_report)
+        and (_audit_mount_valid(remote_report) or _audit_frontdoor_healthy(remote_report))
         and _search_backend_ready(remote_report, min_matching_embeddings)
         and _audit_frontdoor_healthy(remote_report)
     )

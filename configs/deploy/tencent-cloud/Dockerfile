@@ -13,6 +13,7 @@ COPY configs ./configs
 COPY scripts ./scripts
 COPY sql ./sql
 COPY src ./src
+COPY web/out ./web/out
 
 RUN uv venv /app/.venv \
     && uv pip install --python /app/.venv/bin/python --index-url "${UV_INDEX_URL}" . \
