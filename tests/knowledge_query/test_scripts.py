@@ -1633,6 +1633,8 @@ def test_run_production_personal_material_live_retrieval_gate_has_write_gate() -
     assert "live_retrieval_activated" in script_text
     assert "index_activate_executed" in script_text
     assert "search_backend_reload_executed" in script_text
+    assert "metadata->'index_readiness'" in script_text
+    assert "extra_metadata->'index_readiness'" not in script_text
     assert "medical-audit-kb index-activate" not in script_text
     assert "activate_index_version(" not in script_text
 
