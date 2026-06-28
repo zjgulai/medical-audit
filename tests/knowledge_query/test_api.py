@@ -21,6 +21,7 @@ from medical_audit_kb.api.auth_user_store import (
     AUTH_USER_ID_PREFIX,
     SqlAlchemyAuthUserStore,
 )
+from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
     InMemoryDocumentUploadStore,
@@ -35,7 +36,11 @@ from medical_audit_kb.api.query_history_store import (
     SqlAlchemyQueryHistoryStore,
 )
 from medical_audit_kb.api.routes_documents import DocumentUploadItem
-from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
+from medical_audit_kb.core.config import (
+    DocumentUploadIndexingSettings,
+    KnowledgeQuerySettings,
+    ModelProviderSettings,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
@@ -1642,6 +1647,121 @@ def test_documents_index_readiness_governance_result_and_manual_approval(
     assert all(check["status"] == "passed" for check in ready["index_readiness"]["checks"])
     assert state.operation_logs[-1]["action"] == "document-upload-index-readiness-update"
     assert state.operation_logs[-1]["payload"]["index_status"] == "not-indexed"
+
+
+def test_personal_document_index_ingestion_requires_enabled_indexer(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "document-uploads",
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/documents/uploads/document-upload-missing/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "document upload indexing is not enabled"
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion-blocked"
+    assert state.operation_logs[-1]["payload"]["reason"] == "document-upload-indexing-disabled"
+
+
+def test_personal_document_index_ingestion_stages_candidate(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'document-index-ingestion.db'}"
+    upload_root = tmp_path / "document-uploads"
+    state = _api_state(tmp_path)
+    state.document_upload_store = SqlAlchemyDocumentUploadStore(
+        database_url=database_url,
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    state.document_upload_indexer = SqlAlchemyDocumentUploadIndexer(
+        database_url=database_url,
+        upload_root=upload_root,
+        settings=DocumentUploadIndexingSettings(
+            enabled=True,
+            embedding_dimension=1024,
+            source_package_version_key="personal-materials-test-package",
+            index_version_key="personal-materials-test-candidate",
+        ),
+    )
+    client = TestClient(create_app(state))
+    upload_response = client.post(
+        "/documents/uploads",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "personal-note.txt",
+                "医保基金审核个人补充材料，需核对院内台账。",
+                "text/plain",
+            )
+        },
+    )
+    assert upload_response.status_code == 200
+    upload_id = upload_response.json()["item"]["id"]
+    for check_type, provider in (
+        ("virus-scan", "clamav-sidecar"),
+        ("dlp-review", "ruleset-v1"),
+    ):
+        result_response = client.post(
+            f"/documents/uploads/{upload_id}/index-readiness/governance-result",
+            headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+            json={
+                "check_type": check_type,
+                "provider": provider,
+                "status": "passed",
+                "detail": f"{check_type} passed in controlled test",
+                "result_code": "clean" if check_type == "virus-scan" else "no-sensitive-marker",
+            },
+        )
+        assert result_response.status_code == 200
+    manual_response = client.post(
+        f"/documents/uploads/{upload_id}/index-readiness/manual-approval",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+        json={"decision": "approved", "note": "approved for candidate staging"},
+    )
+    assert manual_response.status_code == 200
+    assert manual_response.json()["item"]["index_readiness"]["status"] == "ready"
+
+    denied_response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+    )
+    assert denied_response.status_code == 403
+    assert denied_response.json()["detail"] == (
+        "document upload index ingestion requires governance role"
+    )
+
+    index_response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+
+    assert index_response.status_code == 200
+    body = index_response.json()
+    item = body["item"]
+    ingestion = body["ingestion"]
+    assert item["index_status"] == "staged-for-index"
+    assert ingestion["status"] == "staged-for-index"
+    assert ingestion["upload_key"] == upload_id
+    assert ingestion["source_collection"] == "personal-materials"
+    assert ingestion["source_package_version_key"] == "personal-materials-test-package"
+    assert ingestion["index_version_key"] == "personal-materials-test-candidate"
+    assert ingestion["index_version_status"] == "candidate"
+    assert ingestion["chunk_count"] == 1
+    assert ingestion["embedding_count"] == 1
+    assert ingestion["embedding_dimension"] == 1024
+    assert ingestion["external_provider_call_performed"] is False
+    assert ingestion["live_retrieval_activated"] is False
+    assert state.operation_logs[-1]["action"] == "document-upload-index-ingestion"
+
+    already_response = client.post(
+        f"/documents/uploads/{upload_id}/index-ingestion",
+        headers={"X-User-Id": "head-1", "X-Role": "department-head"},
+    )
+    assert already_response.status_code == 200
+    assert already_response.json()["ingestion"]["status"] == "already-staged"
 
 
 def test_personal_document_index_is_governed_and_query_scoped(tmp_path: Path) -> None:

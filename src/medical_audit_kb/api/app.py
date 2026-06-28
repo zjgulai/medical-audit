@@ -24,9 +24,16 @@ from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
 from medical_audit_kb.api.auth import normalize_tenant_id, resolve_authenticated_user
 from medical_audit_kb.api.auth_user_store import AuthUserStore, SqlAlchemyAuthUserStore
+from medical_audit_kb.api.document_upload_ingestion import (
+    SqlAlchemyDocumentUploadIndexer,
+    document_upload_indexer_from_settings,
+)
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
+    document_object_storage_from_settings,
+    document_storage_objects_schema_ready,
+    tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
@@ -76,12 +83,24 @@ class ApiState:
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
     document_upload_store: DocumentUploadStore | None = None
+    document_upload_indexer: SqlAlchemyDocumentUploadIndexer | None = None
     query_history_store: QueryHistoryStore | None = None
     auth_user_store: AuthUserStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
+        document_upload_root = settings.document_upload_root or (
+            settings.index_root / "document-uploads"
+        )
+        tencent_cos_client = tencent_cos_put_object_client_from_settings(
+            settings.document_storage
+        )
+        document_object_storage = document_object_storage_from_settings(
+            settings.document_storage,
+            upload_root=document_upload_root,
+            tencent_cos_client=tencent_cos_client,
+        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -98,8 +117,17 @@ class ApiState:
             ),
             document_upload_store=SqlAlchemyDocumentUploadStore(
                 settings.database_url,
-                upload_root=settings.document_upload_root
-                or settings.index_root / "document-uploads",
+                upload_root=document_upload_root,
+                object_storage=document_object_storage,
+                record_storage_objects=document_storage_objects_schema_ready(
+                    settings.database_url
+                ),
+            ),
+            document_upload_indexer=document_upload_indexer_from_settings(
+                database_url=settings.database_url,
+                upload_root=document_upload_root,
+                settings=settings.document_upload_indexing,
+                object_storage=document_object_storage,
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             auth_user_store=SqlAlchemyAuthUserStore(settings.database_url),
