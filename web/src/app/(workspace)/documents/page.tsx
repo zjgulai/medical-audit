@@ -145,7 +145,8 @@ export default function DocumentsPage() {
         question: normalizedQuery,
         top_k: 8,
         source_collections: selectedCollections,
-        title_only: titleOnly
+        title_only: titleOnly,
+        topic: "medical-insurance-fund"
       });
       setSearchState({ status: "success", result });
       await refreshHistory();
@@ -234,8 +235,7 @@ export default function DocumentsPage() {
             {permissionStatus === "ready" ? "权限已连接" : permissionStatus === "loading" ? "读取中" : "权限不可用"}
           </StatusPill>
         </div>
-        <p className="audit-copy mt-2">按审计材料来源限定后端检索范围，文档数用于判断检索覆盖。</p>
-        <div className="mt-5 space-y-3">
+                <div className="mt-5 space-y-3">
           {documentCategoryStats.map((category) => (
             <DocumentSourceCard
               category={category}
@@ -252,9 +252,7 @@ export default function DocumentsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">文档检索</p>
-            <h1 className="audit-page-title">材料与知识库统一检索</h1>
-            <p className="audit-copy mt-2 max-w-3xl">围绕当前审计项目检索对话文档、知识库文档和可引用材料。</p>
-          </div>
+            <h1 className="audit-page-title">材料与知识库统一检索</h1>          </div>
           <div className="flex flex-wrap gap-2">
             <StatusPill tone={searchState.status === "success" ? "success" : "info"}>引用优先</StatusPill>
             <StatusPill tone="neutral">无引用不下结论</StatusPill>
@@ -371,14 +369,12 @@ export default function DocumentsPage() {
         <a className="audit-focus-ring audit-action-card p-5" href="/knowledge-base">
           <p className="audit-kicker">知识库</p>
           <h2 className="audit-section-title mt-2">查看索引覆盖</h2>
-          <p className="audit-copy mt-2">确认个人、系统、公开知识库的文档数、字符数和应用绑定。</p>
-        </a>
+                  </a>
 
         <a className="audit-focus-ring audit-callout block p-5" href="/chat">
           <p className="audit-kicker">AI 对话</p>
           <h2 className="audit-section-title mt-2">带着材料进入审证</h2>
-          <p className="audit-copy mt-2">检索不到充分引用时，转入 AI 对话继续限定来源、补充问题和形成复核清单。</p>
-        </a>
+                  </a>
       </aside>
     </main>
   );
@@ -591,8 +587,7 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
     return (
       <section className="audit-panel-muted p-5">
         <h2 className="audit-section-title">等待检索</h2>
-        <p className="audit-copy mt-2">提交后会展示后端返回的引用片段、原文入口和证据分组。</p>
-      </section>
+              </section>
     );
   }
 

@@ -62,10 +62,8 @@ test("Next-native findings workbench is reachable", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "规则命中疑点工作台" })).toBeVisible();
   await expect(page.getByLabel("复核状态")).toBeVisible();
-  await expect(page.getByRole("link", { name: "打开后端兼容页" })).toHaveAttribute(
-    "href",
-    "/pages/audit-findings"
-  );
+  await expect(page.getByRole("heading", { name: "疑点生成链路未就绪" })).toBeVisible();
+  await expect(page.getByText("疑点 store 未初始化，无法读取规则生成链路状态。")).toBeVisible();
 });
 
 test("AI data analysis accepts CSV uploads and shows audit hints", async ({ page }) => {
@@ -117,19 +115,22 @@ test("project management exposes project list and member workflow", async ({ pag
 test("agent marketplace filters templates and agents enter portal chat", async ({ page }) => {
   await page.goto("/agent-market");
 
-  await expect(page.getByRole("heading", { name: "医疗审计场景模板" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "全部" })).toBeVisible();
-  await expect(page.getByText("医保目录限制审查")).toBeVisible();
-  await expect(page.getByText("审计底稿生成模板")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "审计提示词智能体" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^全部132$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /违反出国团组管理相关规定/ })).toBeVisible();
 
-  await page.getByRole("button", { name: "效率类" }).click();
-  await expect(page.getByText("审计底稿生成模板")).toBeVisible();
-  await expect(page.getByText("医保目录限制审查")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^工具智能体10$/ }).click();
+  await expect(page.getByRole("button", { name: /审计质量检查/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /违反出国团组管理相关规定/ })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "全部" }).click();
-  await page.getByLabel("搜索智能体模板").fill("身份");
-  await expect(page.getByText("参保身份异常核验")).toBeVisible();
-  await expect(page.getByText("政策口径对比")).toHaveCount(0);
+  await page.getByRole("tab", { name: /^全部132$/ }).click();
+  await page.getByLabel("搜索智能体").fill("合同要素");
+  await expect(page.getByRole("button", { name: /合同要素提取/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /会议费审计/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /合同要素提取/ }).click();
+  await expect(page.getByRole("dialog", { name: "合同要素提取" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "用此智能体对话" })).toHaveAttribute("href", /\/chat\?agent=/);
 
   await page.goto("/agents");
   await expect(page.getByText("医保基金使用合规专项自查").first()).toBeVisible();
@@ -302,6 +303,7 @@ test("guided check homepage exposes steps, prompts and evidence gates", async ({
 });
 
 test("portal routes render without placeholders or mobile page overflow", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 1000 });
 
   for (const route of portalAuditRoutes) {

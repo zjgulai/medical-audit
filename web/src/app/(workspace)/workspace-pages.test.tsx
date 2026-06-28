@@ -1729,23 +1729,19 @@ describe("workspace foundation pages", () => {
   it("filters agent marketplace templates and keeps agent chat handoff in the portal", async () => {
     render(<AgentMarketPage />);
 
-    expect(screen.getByRole("heading", { name: "医疗审计场景模板" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "智能体分类筛选" })).toBeInTheDocument();
-    expect(screen.getByText("医保目录限制审查")).toBeInTheDocument();
-    expect(screen.getByText("审计底稿生成模板")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "套用并新增智能体" })[0]).toHaveAttribute(
-      "href",
-      "/agents?template=template-catalog-limit#new-agent"
-    );
+    expect(screen.getByRole("heading", { name: "审计提示词智能体" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "智能体分类" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "效率类" }));
-    expect(screen.getByText("审计底稿生成模板")).toBeInTheDocument();
-    expect(screen.queryByText("医保目录限制审查")).not.toBeInTheDocument();
+    const fundCategory = screen.getByRole("tab", { name: /财务收支/ });
+    fireEvent.click(fundCategory);
+    expect(fundCategory).toHaveAttribute("aria-selected", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "全部" }));
-    fireEvent.change(screen.getByLabelText("搜索智能体模板"), { target: { value: "身份" } });
-    expect(screen.getByText("参保身份异常核验")).toBeInTheDocument();
-    expect(screen.queryByText("政策口径对比")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /全部/ }));
+    fireEvent.change(screen.getByLabelText("搜索智能体"), {
+      target: { value: "绝不匹配的关键词zzz" }
+    });
+    expect(screen.getByText("没有匹配的智能体，换个关键词或分类试试。")).toBeInTheDocument();
 
     render(<AgentsPage />);
     await waitFor(() => {
@@ -2071,7 +2067,8 @@ describe("workspace foundation pages", () => {
         question: "医保基金审核依据",
         top_k: 8,
         source_collections: ["supervision-rules-knowledge"],
-        title_only: false
+        title_only: false,
+        topic: "medical-insurance-fund"
       });
     });
     await waitFor(() => {
