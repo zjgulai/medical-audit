@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-28
+updated: 2026-06-29
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,20 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-06-29 PR #170/#171 个人材料 live retrieval metadata gate 与 active gate 通过
+
+- PR #170 `codex/personal-material-live-retrieval-gate-20260628` 已合入 `main`，merge commit 为 `dd7b6f7937de372e20aa1401e525a84ca77fb963`；本轮新增 `/query` 默认来源集合隔离、active gate 默认查询泄漏检查，以及只更新 metadata 的 live retrieval gate 脚本。
+- PR #171 `codex/personal-material-live-gate-sql-fix-20260628` 已合入 `main`，merge commit 为 `30df45269ba38e3d3d56e0599162950b6389f3eb`；该修复将 live gate 脚本读取 `document_upload_records.metadata`，避免误读不存在的 `extra_metadata` 列。
+- `main@30df45269ba38e3d3d56e0599162950b6389f3eb` 已使用部署戳 `personal-material-live-gate-sql-fix-main-20260628T160140Z` 发布到生产；本次部署未执行 `--apply-schema`，重建并重启 `medical_audit_app`，不调用生成模型或外部 AI provider。
+- 部署前备份已生成：app `/opt/medical-audit/backups/app/pre-deploy-personal-material-live-gate-sql-fix-main-20260628T160140Z.tar.gz`，DB `/opt/medical-audit/backups/db/pre-deploy-personal-material-live-gate-sql-fix-main-20260628T160140Z.sql.gz`，Nginx `/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-personal-material-live-gate-sql-fix-main-20260628T160140Z`，Web `/opt/medical-audit/backups/web/audit-web-pre-deploy-personal-material-live-gate-sql-fix-main-20260628T160140Z.tar.gz`。
+- 生产综合 smoke `tmp/outputs/production-e2e-smoke-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json` 为 `status=pass`，覆盖 `9` 个步骤；`query-api-with-citations` 仍返回 `fallback_used=true`，不能解释为真实 no-fallback 生成模型能力上线。
+- 生产部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json` 为 `status=pass`，`issues=[]`，`warnings=[]`；确认远端 `.deploy-sha=30df45269ba38e3d3d56e0599162950b6389f3eb`、app/postgres/clamav healthy、`audit_next_static_healthy=true`、`audit_mount_present=true`、`matching_embedding_count=49051`。
+- 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
+- live gate dry-run `tmp/outputs/production-personal-material-live-retrieval-gate-dry-run-20260628T160140Z.json` 返回 `status=ready_for_write`，`issues=[]`，`target_live_retrieval_activated=false`，`personal_material_default_query_isolated=true`，`production_write=false`，`db_write=false`。
+- live gate 正式执行 `tmp/outputs/production-personal-material-live-retrieval-gate-execute-20260628T160140Z.json` 返回 `status=pass`，`target_live_retrieval_activated=true`，`personal_material_default_query_isolated=true`，`production_write=true`，`db_write=true`，`index_activate_executed=false`，`search_backend_reload_executed=false`。
+- live gate 后 active gate 只读复核 `tmp/outputs/production-personal-material-active-gate-after-live-gate-20260628T160140Z.json` 为 `status=pass`，`issues=[]`，`target_status=candidate`，`target_live_retrieval_activated=true`，`safe_to_execute_index_activate=true`，证据等级为 `L3-production-read-only`。
+- 边界：本轮包含授权生产部署和授权生产 DB metadata write；不包含 schema migration、生成模型 provider call、外部 embedding provider call、`medical-audit-kb index-activate`、PostgreSQL search backend reload 或个人材料 active retrieval 上线。`safe_to_execute_index_activate=true` 只表示下一步可以单独授权执行 active index 激活，不代表已经激活。
 
 ### 2026-06-28 PR #168 个人材料 pgvector 候选入库 API 部署与 staging E2E
 
