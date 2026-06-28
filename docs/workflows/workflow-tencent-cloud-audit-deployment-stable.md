@@ -33,7 +33,20 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
-### 2026-06-29 PR #170/#171 个人材料 live retrieval metadata gate 与 active gate 通过
+### 2026-06-29 personal-material active retrieval 激活与 reload
+
+- 授权边界：本轮只执行个人材料目标版本 `index-activate`、PostgreSQL search backend reload 和激活后只读验收；不执行代码部署、不执行 schema migration、不调用生成模型 provider 或外部 embedding provider，不修改 `/Users/pray/project/medical_audit` 原前端 WIP 工作区。
+- 生产代码边界：远端 `.deploy-sha` 仍为 `30df45269ba38e3d3d56e0599162950b6389f3eb`；`main@7da92d99bc4deed730bc0554cab87213fc25b2a3` 为 docs-only 状态同步，未部署到生产。生产代码未因本轮 runtime 激活动作改变。
+- 激活前 DB 备份：`/opt/medical-audit/backups/db/pre-index-activate-personal-material-index-activate-20260628T165539Z.sql.gz`，`gzip -t` 通过，大小 `4832935545` bytes；本地记录 `tmp/outputs/production-pre-index-activate-db-backup-personal-material-index-activate-20260628T165539Z.json`。
+- `medical-audit-kb index-activate` 已在生产 app container 内执行，报告 `tmp/outputs/production-personal-material-index-activate-personal-material-index-activate-20260628T165539Z.json` 返回 `success=true`、`index_version_key=personal-materials-cos-staging-pr152-20260619`、`previous_status=candidate`、`vector_provider=fake`、`vector_model=deterministic-token-hashing`、`deactivated_index_version_keys=[]`。
+- 首次 search backend reload 请求缺少 `X-Tenant-Id`，返回 `{"detail":"X-Tenant-Id header is required"}`；该请求未完成 reload。带 `X-Tenant-Id=hospital-demo` 与 `X-Project-Key=SELF-CHECK-FUND-20260607` 后，`tmp/outputs/production-personal-material-search-backend-reload-personal-material-index-activate-20260628T165539Z-with-tenant.json` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=49051`。
+- 激活后 DB 只读验收 `tmp/outputs/production-personal-material-post-activation-db-readonly-personal-material-index-activate-20260628T165539Z-retry1.json` 确认目标版本为 `status=active`，metadata `source_collection=personal-materials` 且 `live_retrieval_activated=true`；`personal_material_active_versions=1`、`personal_material_active_chunks=4`。主知识库 active 版本 `incremental-20260615-national-regulation-stable-20260615103344` 仍存在，`openai/kimi-for-coding`、`chunk_count=49051`。
+- 运行时隔离只读验收 `tmp/outputs/production-personal-material-runtime-isolation-readonly-personal-material-index-activate-20260628T165539Z.json` 确认 `auditor`、`department-head`、`it-admin`、`technician` 默认查询集合均不包含 `personal-materials`，`personal_material_default_query_isolated=true`，`personal_material_explicit_query_allowed_roles=[]`。
+- 生产健康巡检 `tmp/outputs/tencent-cloud-deployment-state-after-personal-material-index-activate-health-20260628T165539Z.json` 为 `status=pass`、`issues=[]`、`warnings=[]`；确认 app/postgres/clamav healthy、`audit_frontdoor_healthy=true`、`audit_next_static_healthy=true`、`audit_mount_present=true`、`search_backend_ready=true`、`matching_embedding_count=49051`。一次带 `--required-backup-stamp` 的巡检因该参数按部署语义要求 app/env/nginx/web 全套备份而失败，健康项本身未失败；本轮只有 DB 激活前备份，不是全量代码部署。
+- 公网 API 只读验收：`tmp/outputs/production-personal-material-permissions-api-readonly-personal-material-index-activate-20260628T165539Z.json` 返回的 auditor 可读来源不包含 `personal-materials`；`tmp/outputs/production-personal-material-public-search-backend-readonly-personal-material-index-activate-20260628T165539Z.json` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=49051`。
+- 证据等级：`index-activate` 与 reload 属于 `L4-authorized-live`；激活后 DB/API/部署状态复核属于 `L3-production-read-only`。本轮未运行完整 `run-production-e2e-smoke.py`，因为该脚本包含 query/chat export 步骤，可能触发检索/回答 provider 行为；no provider call 边界保持不变。
+
+### 2026-06-29 PR #170/#171 个人材料 live retrieval metadata gate 与 active gate 通过（激活前历史记录）
 
 - PR #170 `codex/personal-material-live-retrieval-gate-20260628` 已合入 `main`，merge commit 为 `dd7b6f7937de372e20aa1401e525a84ca77fb963`；本轮新增 `/query` 默认来源集合隔离、active gate 默认查询泄漏检查，以及只更新 metadata 的 live retrieval gate 脚本。
 - PR #171 `codex/personal-material-live-gate-sql-fix-20260628` 已合入 `main`，merge commit 为 `30df45269ba38e3d3d56e0599162950b6389f3eb`；该修复将 live gate 脚本读取 `document_upload_records.metadata`，避免误读不存在的 `extra_metadata` 列。
@@ -45,7 +58,7 @@ source: human+ai
 - live gate dry-run `tmp/outputs/production-personal-material-live-retrieval-gate-dry-run-20260628T160140Z.json` 返回 `status=ready_for_write`，`issues=[]`，`target_live_retrieval_activated=false`，`personal_material_default_query_isolated=true`，`production_write=false`，`db_write=false`。
 - live gate 正式执行 `tmp/outputs/production-personal-material-live-retrieval-gate-execute-20260628T160140Z.json` 返回 `status=pass`，`target_live_retrieval_activated=true`，`personal_material_default_query_isolated=true`，`production_write=true`，`db_write=true`，`index_activate_executed=false`，`search_backend_reload_executed=false`。
 - live gate 后 active gate 只读复核 `tmp/outputs/production-personal-material-active-gate-after-live-gate-20260628T160140Z.json` 为 `status=pass`，`issues=[]`，`target_status=candidate`，`target_live_retrieval_activated=true`，`safe_to_execute_index_activate=true`，证据等级为 `L3-production-read-only`。
-- 边界：本轮包含授权生产部署和授权生产 DB metadata write；不包含 schema migration、生成模型 provider call、外部 embedding provider call、`medical-audit-kb index-activate`、PostgreSQL search backend reload 或个人材料 active retrieval 上线。`safe_to_execute_index_activate=true` 只表示下一步可以单独授权执行 active index 激活，不代表已经激活。
+- 边界：该 PR #170/#171 部署轮包含授权生产部署和授权生产 DB metadata write；不包含 schema migration、生成模型 provider call、外部 embedding provider call、`medical-audit-kb index-activate`、PostgreSQL search backend reload 或个人材料 active retrieval 上线。该历史记录中的 `safe_to_execute_index_activate=true` 只表示当时下一步可以单独授权执行 active index 激活；当前 active retrieval 状态以上一节 2026-06-29 `index-activate` 与 reload 记录为准。
 
 ### 2026-06-28 PR #168 个人材料 pgvector 候选入库 API 部署与 staging E2E
 
@@ -57,7 +70,7 @@ source: human+ai
 - 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-personal-material-index-ingestion-main-20260628T072621Z.json` 为 `status=pass`，`p0_count=0`、`p1_count=0`。
 - 个人材料写入型 staging E2E `tmp/outputs/production-personal-material-index-staging-e2e-20260628T072621Z.json` 为 `status=pass`；本轮写入 `document-upload-b15035ddbb79` 和 `document-upload-5fe687e5a5d0`，两者均返回 `index_status=staged-for-index`、`source_collection=personal-materials`、`index_version_status=candidate`、`chunk_count=1`、`embedding_count=1`、`embedding_dimension=1024`、`external_provider_call_performed=false`、`live_retrieval_activated=false`。
 - staging 后 readiness 只读复核 `tmp/outputs/production-personal-material-indexing-readiness-after-staging-20260628T072621Z.json` 为 `status=pass`：`total_uploads=21`、`ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_candidate_versions=1`、`personal_material_chunks=4`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`、`active_retrieval_activated=false`。
-- staging 后 active gate `tmp/outputs/production-personal-material-active-gate-after-staging-20260628T072621Z.json` 返回 `status=blocked`，唯一 blocker 为 `live-retrieval-not-activated`，`safe_to_execute_index_activate=false`；本轮没有执行 `index-activate`，没有 reload search backend，个人材料仍未进入 active retrieval。
+- staging 后 active gate `tmp/outputs/production-personal-material-active-gate-after-staging-20260628T072621Z.json` 返回 `status=blocked`，唯一 blocker 为 `live-retrieval-not-activated`，`safe_to_execute_index_activate=false`；PR #168 当轮没有执行 `index-activate`，没有 reload search backend，当时个人材料仍停留在 candidate staging 状态。
 - 边界：本轮包含授权生产部署和授权生产 candidate staging 写入；不包含 schema migration、生成模型 provider call、外部 embedding provider call、active index 激活、search backend reload 或个人材料 active retrieval 上线。
 
 ### 2026-06-28 runtime/source reconciliation、共享 Nginx 静态路由与 Frontend 2.0 生产部署
