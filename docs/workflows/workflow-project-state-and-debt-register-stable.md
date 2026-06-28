@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-06-23
+updated: 2026-06-28
 owner: self
 source: human+ai
 ---
@@ -913,7 +913,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-15 只读复核：生产仅 `KIMI_API_KEY=SET`，全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；历史 Kimi chat 403/401、Anthropic 401、fallback rate 100% | 不能宣称 AI 生成审计结论能力 | 按 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 先验证 provider 候选、密钥边界、smoke、真实答案评测，再决定是否写入生产 env；未通过前保持引用 fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；已支持软禁用/恢复用户、撤销/恢复角色授权和项目级 role scope；受控 API 鉴权中间件本地强制模式已通过，未带角色头、未带 `X-Tenant-Id` 或停用用户会被拒绝并写 `authorization-denied`；生产只读权限 smoke 已执行且 `status=fail`，当前生产 `/auth/*` 为 404，部分既有读接口未拒绝缺租户头请求；当前仍依赖 `X-Role`、`X-User-Id`、`X-Project-Key`、本地 `X-Tenant-Id` 过渡层和 Nginx 注入 `X-API-Key` | 仍无法满足生产级审计系统完整权限边界 | 在现有本地权限底座上继续补真实会话认证、医院 SSO claims、正式租户身份来源、网关注入策略、生产部署和生产权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；生产只读权限 smoke 通过；真实会话 smoke 通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和外部杀毒服务未完成 | 当前仅 HMAC 归档签名、本地附件归档和个人材料 `local-policy` 策略标记 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、外部扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-23 生产只读部署巡检确认生产实际 SHA 为 `550a445012267ba1211f5881b1d441264f3a3056` 且状态 `pass`；当前本地 `HEAD=b298c6c8b416b4863c948ff5c7d0cbfc5881ebab`、分支远端 `[gone]`、工作树包含大量 tracked/untracked 变更，不能直接作为生产发布候选 | 后续部署可能混入非目标状态或漏带 untracked 关键文件 | 下一批先从生产匹配基线或当前主线创建干净 release 分支/worktree，按 manifest 精确移植待发布能力，再跑完整本地质量闸和 deploy preflight | `git status` 清晰；发布 manifest、PR、部署 SHA、文档一致；生产只读复验通过 |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已从 `origin/main@cd8e2849fd4cdd4196a5a4055293a094d18cdfa6` 创建干净候选分支 `codex/runtime-reconcile-20260628`，按生产运行态 `3dd20fe63c5d32c3dd665392a6892dd0b9304aa9` 精确移植 runtime/source 差异并完成本地全量质量闸；同日生产只读部署巡检确认 `deploy_sha=3dd20fe63c5d32c3dd665392a6892dd0b9304aa9`、app/postgres/clamav healthy、`matching_embedding_count=49051`、`status=pass` | 后续部署若继续从陈旧或混杂工作区取源，仍可能混入非目标状态或漏带运行态关键文件 | 以 `codex/runtime-reconcile-20260628` 作为 P0-06 发布候选，走 PR/merge 审核；生产部署需另行执行备份、preflight、deploy 和生产 smoke，不由本地候选自动代表 | `git status` 清晰；候选 commit/PR、部署 SHA、文档一致；生产只读复验通过；merge 后再执行正式部署门禁 |
 
 ## 5. P1 债务台账
 
@@ -1092,3 +1092,44 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 并行未闭：E3/E4（`785a2bc0`）仍待部署生产（缺口 `c10b3d3b..d3ca0a1a`，纯前端 + 文档，部署不带 `--apply-schema`；详见 E3/E4 生产落地 handoff）。
 
 冻结日期：`2026-06-24`
+
+### 2.0.13 2026-06-28 P0-06 runtime/source reconciliation 本地候选状态
+
+状态口径：本节同步 P0-06 状态源债务的本地候选分支处理结果。候选分支从 `origin/main@cd8e2849fd4cdd4196a5a4055293a094d18cdfa6` 创建，精确移植当前生产运行态 `3dd20fe63c5d32c3dd665392a6892dd0b9304aa9` 中与 runtime/source 相关的代码和脚本差异；未执行生产部署、生产写入、生产 provider 调用或生产权限变更。主工作区 `codex/frontend-2.0` 的前端 WIP 保持隔离，未混入本候选。
+
+本地候选变更：
+
+- 部署镜像和 Compose 已显式携带 `web/out`，并通过 `MEDICAL_AUDIT_WEB_STATIC_ROOT=/app/web/out` 让 FastAPI 运行态可服务 Next static export。
+- 腾讯云部署脚本已停止排除 `web/out`，部署前只清理可再生成的远端 `web/out`，部署后补查 `/api/v1/health` 和受控 `/documents`。
+- FastAPI app 已补齐 `/api/v1`、`/api/backend` 兼容挂载、受控 API 鉴权路径规范化、门户 static export fallback 和 API 404 边界。
+- RBAC 兼容保留 `system-admin` alias；文档治理接口补齐 `governance-result`、`manual-approval` 和 `index_readiness` 更新路径。
+- 生产部署状态审计脚本已接受 app-proxy topology，在前门健康且 app 可服务静态页时，不再要求 Nginx 静态 bind mount。
+- 生产文档治理 E2E 脚本保留 `--confirm-production-write` 显式门禁，并带租户、项目和角色请求头。
+- `tests/knowledge_query/test_api.py` 手工合并保留 `origin/main` 上的 F2 topic/query 测试和 index candidate 断言，同时新增 runtime/source reconciliation 覆盖用例。
+
+本地验收证据：
+
+- `git diff --check`：通过。
+- `uv run ruff check configs/deploy/tencent-cloud scripts/audit-tencent-cloud-deployment-state.py scripts/deploy-tencent-cloud-production.py scripts/run-production-documents-governance-result-e2e.py src/medical_audit_kb/api/app.py src/medical_audit_kb/api/auth.py src/medical_audit_kb/api/routes_auth.py src/medical_audit_kb/api/document_upload_store.py src/medical_audit_kb/api/routes_documents.py tests/knowledge_query/test_api.py tests/knowledge_query/test_scripts.py`：通过。
+- `uv run pytest tests/knowledge_query/test_api.py -k "versioned_api_prefix or static_export_serves_portal or auth_api_lists_roles or documents_index_readiness_governance_result"`：通过，`4 passed`、`49 deselected`。
+- `uv run pytest tests/knowledge_query/test_scripts.py -k "production_documents_governance or deployment_state_accepts_proxy_frontdoor or deployment_state_authenticates_documents_frontdoor or deploy_tencent_cloud_preflight_uses_app_proxy_topology or deploy_tencent_cloud_post_checks_auth_protected_documents or deploy_tencent_cloud_package_carries_static_export or cleans_only_regenerable"`：通过，`9 passed`、`30 deselected`。
+- `uv run mypy src`：通过，`96` 个 source files。
+- `uv run pytest tests/knowledge_query`：通过，`372 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- `pnpm web:lint`：通过。
+- `pnpm web:typecheck`：通过。
+- `pnpm web:test`：通过，`11` 个 test files、`91` 个 tests。
+- `pnpm web:build`：通过，静态页面 `21/21`。
+- `pnpm local:fullstack:e2e`：通过，`16 passed`，使用临时 in-memory FastAPI backend 和 fake provider。
+- `uv run python scripts/run-controlled-api-readonly-permission-smoke.py --json-output tmp/outputs/local-permission-readonly-smoke-runtime-reconcile-20260628T0035Z.json`：通过，`35` 个只读 GET probe，`issue_count=0`。
+- `uv run python scripts/audit-tencent-cloud-deployment-state.py --ssh-key /Users/pray/project/medical_audit/ai_video.pem --expected-deploy-sha 3dd20fe63c5d32c3dd665392a6892dd0b9304aa9 --required-backup-stamp 20260627T2318-manual-approval-endpoints --min-matching-embeddings 49000 --require-clamav-sidecar --json-output tmp/outputs/tencent-cloud-deployment-state-runtime-reconcile-20260628T0035Z.json --markdown-output tmp/outputs/tencent-cloud-deployment-state-runtime-reconcile-20260628T0035Z.md`：生产只读巡检通过，`status=pass`、`issues=[]`、`warnings=[]`、`deploy_sha=3dd20fe63c5d32c3dd665392a6892dd0b9304aa9`、`matching_embedding_count=49051`、app/postgres/clamav healthy。
+
+当前边界：
+
+- `production_readonly_only`：本轮只做生产只读部署状态审计；没有生产部署、生产写入或生产配置变更。
+- `no provider call`：本轮没有调用生成模型或外部 AI provider；本地 fullstack E2E 使用 fake provider。
+- `local_candidate_not_release`：`codex/runtime-reconcile-20260628` 是 P0-06 源码对齐候选；合入、部署和生产写入型验收仍需后续独立门禁。
+- `e2e_execution_order`：Next build 和 Playwright/Next dev 需要串行执行或先清理生成目录；并发运行会争用 `.next` 生成物，不能作为验收证据。
+- `permission_smoke_prerequisite`：`local:permission:readonly` 依赖本地 backend 已监听 `127.0.0.1:8021`；直接在无服务时运行只会得到连接拒绝，不能作为产品权限结论。
+- `answer_provider_status=blocked`：真实线上答案生成 provider 仍未通过 no-fallback 评测，本轮未推进该边界。
+
+冻结日期：`2026-06-28`

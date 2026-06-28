@@ -35,7 +35,6 @@ APP_RSYNC_EXCLUDES = (
     "__pycache__/",
     "node_modules/",
     "web/.next/",
-    "web/out/",
     "web/node_modules/",
     "web/test-results/",
     "web/playwright-report/",
@@ -246,7 +245,6 @@ def _validate_local_state(config: DeployConfig) -> None:
 
 
 def _run_remote_preflight(config: DeployConfig) -> None:
-    mount_format = '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
     script = f"""
 set -euo pipefail
 test -d {shlex.quote(config.remote_app_dir)}
@@ -255,8 +253,6 @@ test -d {shlex.quote(config.remote_web_dir)}
 docker inspect medical_audit_app >/dev/null
 docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
-docker inspect ai_video_nginx --format {shlex.quote(mount_format)} \
-  | grep -F '{config.remote_web_dir} -> /var/www/audit' >/dev/null
 if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
   echo "WARNING shared-nginx-test-failed"
   sed -n '1,20p' /tmp/medical-audit-nginx-test.log
@@ -359,6 +355,20 @@ set -euo pipefail
 git_file={shlex.quote(config.remote_app_dir)}/.git
 if [ -f "$git_file" ]; then
   rm -f "$git_file"
+fi
+web_parent_dir={shlex.quote(config.remote_app_dir)}/web
+web_out_dir={shlex.quote(config.remote_app_dir)}/web/out
+test -d "$web_parent_dir"
+if [ -e "$web_out_dir" ] || [ -L "$web_out_dir" ]; then
+  if ! rm -rf "$web_out_dir"; then
+    sudo -n rm -rf "$web_out_dir"
+  fi
+fi
+if ! mkdir -p "$web_out_dir"; then
+  sudo -n install -d -o "$(id -u)" -g "$(id -g)" "$web_out_dir"
+fi
+if [ ! -w "$web_out_dir" ]; then
+  sudo -n chown -R "$(id -u):$(id -g)" "$web_out_dir"
 fi
 src_dir={shlex.quote(config.remote_app_dir)}/src
 test -d "$src_dir"
@@ -488,6 +498,8 @@ auth_headers=(
 curl -fsS "${{auth_headers[@]}}" http://127.0.0.1:18080/index/search-backend >/dev/null
 curl -fsS "${{auth_headers[@]}}" \
   {shlex.quote(config.base_url)}/api/v1/index/search-backend >/dev/null
+curl -fsS {shlex.quote(config.base_url)}/api/v1/health >/dev/null
+curl -fsS "${{auth_headers[@]}}" {shlex.quote(config.base_url)}/documents >/dev/null
 """
     _ssh(config, script)
 

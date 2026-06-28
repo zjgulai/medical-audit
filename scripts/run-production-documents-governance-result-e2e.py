@@ -9,13 +9,16 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
 DEFAULT_API_PREFIX = "/api/v1"
 DEFAULT_REPORT = "tmp/outputs/production-documents-governance-result-e2e-latest.json"
+DEFAULT_TENANT_ID = "hospital-demo"
+DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
+PRODUCTION_HOST = "audit.lute-tlz-dddd.top"
 
 
 class E2EError(RuntimeError):
@@ -25,6 +28,10 @@ class E2EError(RuntimeError):
 def main() -> int:
     args = _parse_args()
     base_url = str(args.base_url).rstrip("/")
+    _require_production_write_confirmation(
+        base_url=base_url,
+        confirm_production_write=str(args.confirm_production_write),
+    )
     api_prefix = "/" + str(args.api_prefix).strip("/")
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,18 +49,26 @@ def main() -> int:
     )
     fixture_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
     actor_suffix = run_id.replace(":", "").replace("+", "").replace(".", "")
-    auditor_headers = {
-        "X-User-Id": f"documents-governance-owner-{actor_suffix}",
-        "X-Role": "auditor",
-    }
-    head_headers = {
-        "X-User-Id": f"documents-governance-head-{actor_suffix}",
-        "X-Role": "department-head",
-    }
-    admin_headers = {
-        "X-User-Id": f"documents-governance-admin-{actor_suffix}",
-        "X-Role": "system-admin",
-    }
+    tenant_id = str(args.tenant_id)
+    project_key = str(args.project_key)
+    auditor_headers = _actor_headers(
+        user_id=f"documents-governance-owner-{actor_suffix}",
+        role="auditor",
+        tenant_id=tenant_id,
+        project_key=project_key,
+    )
+    head_headers = _actor_headers(
+        user_id=f"documents-governance-head-{actor_suffix}",
+        role="department-head",
+        tenant_id=tenant_id,
+        project_key=project_key,
+    )
+    admin_headers = _actor_headers(
+        user_id=f"documents-governance-admin-{actor_suffix}",
+        role="system-admin",
+        tenant_id=tenant_id,
+        project_key=project_key,
+    )
 
     def run_step(name: str, callback: Callable[[], dict[str, object]]) -> dict[str, object]:
         step_started = time.time()
@@ -348,6 +363,10 @@ def main() -> int:
         "run_id": run_id,
         "upload_id": upload_id,
         "fixture": {"file_name": fixture_name, "sha256": fixture_sha256},
+        "auth_context": {
+            "tenant_id": tenant_id,
+            "project_key": project_key,
+        },
         "boundaries": {
             "production_write": True,
             "object_storage_write": True,
@@ -383,6 +402,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--api-prefix", default=DEFAULT_API_PREFIX)
     parser.add_argument("--report", default=DEFAULT_REPORT)
     parser.add_argument("--run-id", default="")
+    parser.add_argument(
+        "--confirm-production-write",
+        default="",
+        help=f"Required as {PRODUCTION_HOST} when --base-url targets production.",
+    )
+    parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
+    parser.add_argument("--project-key", default=DEFAULT_PROJECT_KEY)
     parser.add_argument("--timeout-seconds", type=float, default=90.0)
     parser.add_argument(
         "--skip-audit-log-check",
@@ -390,6 +416,37 @@ def _parse_args() -> argparse.Namespace:
         help="Skip persisted audit-log verification.",
     )
     return parser.parse_args()
+
+
+def _actor_headers(
+    *,
+    user_id: str,
+    role: str,
+    tenant_id: str,
+    project_key: str,
+) -> dict[str, str]:
+    return {
+        "X-User-Id": user_id,
+        "X-Role": role,
+        "X-Project-Key": project_key,
+        "X-Tenant-Id": tenant_id,
+    }
+
+
+def _require_production_write_confirmation(
+    *,
+    base_url: str,
+    confirm_production_write: str,
+) -> None:
+    if _is_production_base_url(base_url) and confirm_production_write != PRODUCTION_HOST:
+        raise E2EError(
+            "production /documents governance-result write requires "
+            f"--confirm-production-write {PRODUCTION_HOST}"
+        )
+
+
+def _is_production_base_url(base_url: str) -> bool:
+    return (urlparse(base_url).hostname or "").lower() == PRODUCTION_HOST
 
 
 def _utc_stamp() -> str:
