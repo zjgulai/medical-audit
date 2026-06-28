@@ -436,7 +436,7 @@ source: human+ai
 
 ### 2.1 生产状态
 
-> 2026-06-28 更新：本节保留生产状态入口，最新生产基线以 `2.0.14` 为准；2026-06-23 以前的报告仅作为历史证据，不再代表最新生产部署 SHA。
+> 2026-06-29 更新：本节保留生产状态入口，最新生产代码部署 SHA 仍以 PR #171 为准；2026-06-29 个人材料 active retrieval 为授权 runtime DB 状态变更和 search backend reload，不是代码部署。2026-06-23 以前的报告仅作为历史证据，不再代表最新生产部署 SHA。
 
 - 生产域名：`https://audit.lute-tlz-dddd.top`
 - 服务器：`101.34.52.232`
@@ -450,7 +450,7 @@ source: human+ai
 - PostgreSQL 检索后端：`backend=postgres`，`ready=true`。
 - Kimi embedding：`embedding_model=kimi-for-coding`，`embedding_dimension=1024`。
 - 当前匹配 embeddings：`49051`。
-- 当前 active index：`incremental-20260615-national-regulation-stable-20260615103344`，覆盖 `503` 个 source documents、`49051` 个 chunks 和 `49051` 条 embeddings。
+- 当前 active index：主知识库仍为 `incremental-20260615-national-regulation-stable-20260615103344`，覆盖 `503` 个 source documents、`49051` 个 chunks 和 `49051` 条 embeddings；个人材料 active 版本为 `personal-materials-cos-staging-pr152-20260619`，覆盖 `4` 个 personal-material documents/chunks，使用 `fake/deterministic-token-hashing` staging embedding，不增加当前 `openai/kimi-for-coding` `matching_embedding_count=49051`。
 - 最新项目成员生产写入 smoke 报告：`tmp/outputs/production-project-member-write-smoke-20260614.json`，状态 `pass`。
 - 最新智能体生产写入 smoke 报告：`tmp/outputs/production-agent-write-smoke-20260614.json`，状态 `pass`。
 - 最新 AI 数据分析生产上传解析 smoke 报告：`tmp/outputs/production-analytics-upload-smoke-20260614.json`，状态 `pass`。
@@ -459,12 +459,13 @@ source: human+ai
 - 最新文档检索生产查询 smoke 报告：`tmp/outputs/production-documents-query-smoke-20260614.json`，状态 `pass`。
 - 最新文档检索边界能力生产写入型 E2E 报告：`tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json`，状态 `pass`。
 - 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`。
-- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json`，状态 `pass`，`issues=[]`，`audit_next_static_healthy=true`，`matching_embedding_count=49051`。
+- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-personal-material-index-activate-health-20260628T165539Z.json`，状态 `pass`，`issues=[]`，`warnings=[]`，`audit_frontdoor_healthy=true`，`audit_next_static_healthy=true`，`audit_mount_present=true`，app/postgres/clamav healthy，`search_backend_ready=true`，`matching_embedding_count=49051`。
 - 最新生产综合 E2E 报告：`tmp/outputs/production-e2e-smoke-after-personal-material-live-gate-sql-fix-main-20260628T160140Z.json`，状态 `pass`。
 - 最新生产只读权限观测报告：`tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json`，`status=observed`、`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`。
-- 最新个人材料索引 readiness 只读报告：`tmp/outputs/production-personal-material-indexing-readiness-after-staging-20260628T072621Z.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，`total_uploads=21`、`ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_candidate_versions=1`、`personal_material_chunks=4`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；ready/not-indexed 队列已清零。
-- 最新个人材料 live retrieval metadata gate：dry-run 报告 `tmp/outputs/production-personal-material-live-retrieval-gate-dry-run-20260628T160140Z.json` 为 `ready_for_write`；正式执行报告 `tmp/outputs/production-personal-material-live-retrieval-gate-execute-20260628T160140Z.json` 为 `pass`，`production_write=true`、`db_write=true`，已将目标 candidate metadata 标记为 `live_retrieval_activated=true`，但 `index_activate_executed=false`、`search_backend_reload_executed=false`。
-- 最新个人材料 active gate 只读报告：`tmp/outputs/production-personal-material-active-gate-after-live-gate-20260628T160140Z.json`，状态 `pass`，`issues=[]`；目标版本仍为 `candidate`，`target_live_retrieval_activated=true`，运行时 activation guard 和默认查询隔离均已确认，`safe_to_execute_index_activate=true`。
+- 最新个人材料索引 readiness 历史只读报告：`tmp/outputs/production-personal-material-indexing-readiness-after-staging-20260628T072621Z.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，当时 `ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_candidate_versions=1`、`personal_material_chunks=4`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；ready/not-indexed 队列已清零。
+- 最新个人材料 live retrieval metadata gate 历史记录：dry-run 报告 `tmp/outputs/production-personal-material-live-retrieval-gate-dry-run-20260628T160140Z.json` 为 `ready_for_write`；正式执行报告 `tmp/outputs/production-personal-material-live-retrieval-gate-execute-20260628T160140Z.json` 为 `pass`，`production_write=true`、`db_write=true`，已将目标 candidate metadata 标记为 `live_retrieval_activated=true`。该记录为 2026-06-29 `index-activate` 的前置条件，不再代表当前目标版本状态。
+- 最新个人材料 active retrieval 激活记录：激活前 DB 备份 `tmp/outputs/production-pre-index-activate-db-backup-personal-material-index-activate-20260628T165539Z.json` 对应远端 `/opt/medical-audit/backups/db/pre-index-activate-personal-material-index-activate-20260628T165539Z.sql.gz`，大小 `4832935545` bytes；`tmp/outputs/production-personal-material-index-activate-personal-material-index-activate-20260628T165539Z.json` 返回 `success=true`、`previous_status=candidate`、`deactivated_index_version_keys=[]`；reload 报告 `tmp/outputs/production-personal-material-search-backend-reload-personal-material-index-activate-20260628T165539Z-with-tenant.json` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=49051`。
+- 最新个人材料激活后只读验收：`tmp/outputs/production-personal-material-post-activation-db-readonly-personal-material-index-activate-20260628T165539Z-retry1.json` 确认目标版本 `status=active`、`personal_material_active_versions=1`、`personal_material_active_chunks=4`，主 `openai/kimi-for-coding` active 版本仍存在；`tmp/outputs/production-personal-material-runtime-isolation-readonly-personal-material-index-activate-20260628T165539Z.json` 确认默认查询不包含 `personal-materials` 且 `personal_material_explicit_query_allowed_roles=[]`；公网权限 API 和 search-backend 状态分别见 `tmp/outputs/production-personal-material-permissions-api-readonly-personal-material-index-activate-20260628T165539Z.json`、`tmp/outputs/production-personal-material-public-search-backend-readonly-personal-material-index-activate-20260628T165539Z.json`。
 - 最新 F2 answer provider gate：生产只读报告 `tmp/outputs/answer-provider-gate-readiness-production-only-20260628T1610.json` 为 `blocked`，blocker 为 `no-provider-api-key-env-set`；本地 Anthropic smoke `tmp/outputs/answer-provider-smoke-anthropic-20260628T1615.json` 返回 `401 invalid x-api-key`。本轮没有写生产 env、没有生产 provider call，不能进入 no-fallback 生产 E2E。
 - 最新个人材料 staging API 状态：PR #168 已将 `/documents/uploads/{upload_id}/index-ingestion` 路由、`document_upload_indexer` state wiring、权限门禁和显式生产写入脚本部署到生产；写入型 staging E2E `tmp/outputs/production-personal-material-index-staging-e2e-20260628T072621Z.json` 为 `pass`，已将 `document-upload-b15035ddbb79` 与 `document-upload-5fe687e5a5d0` 写入 candidate staging。旧 `/documents/uploads/{upload_id}/index` 仍不得被解释为 pgvector candidate staging。
 - 最新 AI 数据分析留存历史本地联调截图：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`。
@@ -477,7 +478,7 @@ source: human+ai
 - 文档检索生产查询结果：全库重复收费、法规政策过滤和医保目录过滤 `POST /api/v1/query` 均返回 `200`，每个用例返回 `3` 条引用、证据分组和 `query_log_index`；首个引用 `chunk_id` 对应 `/pages/preview/{chunk_id}` 均返回 `200`。
 - 文档检索边界能力生产结果：生产已应用 `document_upload_records` 表和索引；个人上传记录 `document-upload-1ba9d6e00cb7` 的 DB 行、宿主机文件 `/opt/medical-audit/document-uploads/2026/06/15/document-upload-1ba9d6e00cb7.txt` 和 `sha256=88fe90530c937d6ea6b534dafff636d5b7dec15b7c1131d786e5f00b007b466e` 均校验通过；普通审计员只能读取本人上传，其他普通审计员不可见，管理员可读全部个人上传；`/api/v1/query` 已验证 `source_collection=medical-insurance-laws` 在 citation 和 basis item 中直接回显。
 
-生产结论：当前生产 runtime/source、Next static 门户 2.0、共享 Nginx 静态路由、检索、引用、预览、审计日志权限、文档检索查询、文档来源回显、个人材料留存/下载治理、个人材料 candidate staging、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型 no-fallback、真实登录会话/医院 SSO、外部企业级 DLP/脱敏改写、个人材料 active retrieval、证书级签章归档或案件级合规闭环已完成。
+生产结论：当前生产 runtime/source、Next static 门户 2.0、共享 Nginx 静态路由、检索、引用、预览、审计日志权限、文档检索查询、文档来源回显、个人材料留存/下载治理、个人材料 candidate staging、个人材料 active retrieval 激活与默认查询隔离、任务级复核写入链路、项目成员持久化写入链路、提示词型智能体持久化写入链路、AI 数据分析上传解析链路和 AI 数据分析上传留存/历史记录链路可用；不能据此宣称真实医院审计、真实生成模型 no-fallback、真实登录会话/医院 SSO、外部企业级 DLP/脱敏改写、个人材料对普通查询默认可见、证书级签章归档或案件级合规闭环已完成。
 
 ### 2.2 本地仓库状态
 
@@ -526,14 +527,14 @@ source: human+ai
 - AI 数据分析上传留存和历史记录已完成生产部署与写入型 E2E；上传后写入 `analytics_upload_records`，原始文件按 `sha256` 可追溯留存在受控目录，前端 `/analytics` 可展示最近上传历史。
 - 文档检索页已完成生产查询 E2E；`/api/v1/query` 可按来源过滤返回引用、证据分组和原文入口，`/pages/preview/{chunk_id}` 生产预览可打开。
 - 文档检索搜索历史持久化已完成本地实现和联调；`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 读取历史，`/documents` 可展示、刷新和回填历史。
-- 文档检索剩余边界已完成生产部署和写入型 E2E；`/api/v1/query` 的 `citations` 与 `basis_groups.items` 直接回显 `source_collection`，`/api/v1/documents/permissions` 返回来源集合读权限，`/api/v1/documents/uploads` 支持个人材料留存、刷新后读取和普通审计员/管理员角色隔离，`/documents` 页面可展示权限状态和 `not-indexed` 上传历史；个人材料已有生产 candidate staging 和 live metadata 标记证据，active gate 已通过，但 active retrieval 仍需单独授权执行 `index-activate`、reload 和激活后只读验收。
+- 文档检索剩余边界已完成生产部署和写入型 E2E；`/api/v1/query` 的 `citations` 与 `basis_groups.items` 直接回显 `source_collection`，`/api/v1/documents/permissions` 返回来源集合读权限，`/api/v1/documents/uploads` 支持个人材料留存、刷新后读取和普通审计员/管理员角色隔离，`/documents` 页面可展示权限状态和 `not-indexed` 上传历史；个人材料已有生产 candidate staging、live metadata 标记、active retrieval 激活和 search backend reload 证据，默认查询仍隔离 `personal-materials`。
 
 未完成：
 
 - 智能体提示词版本治理、版本对比 UI、逐行 diff、审核状态记录、审批通过才激活、上下架/停用、软归档、角色可见范围、调用记录和效果反馈已完成本地首切片；生产部署验收、正式租户 scope 和完整权限闭环仍未完成。
 - 项目成员真实权限、邀请审批、成员禁用/移除和权限生效仍未完成；本轮只验证成员新增持久化。
 - AI 数据分析病毒扫描、脱敏改写、对象存储、下载权限隔离、正式工作簿治理和长期存储生命周期策略仍未完成。
-- 文档检索个人材料当前完成留存、角色读取隔离、本地策略扫描/DLP 标记、本地治理状态机、受控下载、生产 candidate staging 和 live metadata gate；真实认证、外部杀毒/DLP 服务、脱敏改写、对象存储治理、active retrieval 单独授权激活和生产搜索历史列表/回填专项验收仍未完成。
+- 文档检索个人材料当前完成留存、角色读取隔离、本地策略扫描/DLP 标记、本地治理状态机、受控下载、生产 candidate staging、live metadata gate、active retrieval 激活和默认查询隔离；真实认证、外部杀毒/DLP 服务、脱敏改写、对象存储治理、个人材料显式查询授权策略和生产搜索历史列表/回填专项验收仍未完成。
 - 多数门户模块仍由 `web/src/lib/portal-data.ts` 静态数据驱动。
 - 生产数据仍以受控脱敏 fixture 为主要业务写入验收样本。
 - Kimi 当前只验证为 embedding provider；线上答案生成模型未验证通过。
@@ -918,12 +919,12 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 | 编号 | 类型 | 债务 | 当前证据 | 影响 | 处置计划 | 完成门禁 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询、来源集合回显、文档权限接口和个人材料留存写入型验收；个人材料 candidate staging 已有 2026-06-28 生产写入证据，live retrieval metadata gate 已执行，active gate 已返回 `safe_to_execute_index_activate=true`，但尚未执行 `index-activate` 或 search backend reload；本地已补 `title_only`、材料治理状态机、本地策略扫描/DLP 标记和受控下载；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补外部杀毒/DLP 服务、脱敏改写、对象存储治理、真实认证权限、单独授权 active retrieval 激活、知识库/图谱/报告/整改页面 API | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过；active retrieval 必须完成单独授权的 `index-activate`、search backend reload 和激活后只读验收 |
+| P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询、来源集合回显、文档权限接口和个人材料留存写入型验收；个人材料 candidate staging、live retrieval metadata gate、`index-activate`、search backend reload 和激活后只读/API 验收均已完成，且默认查询仍隔离 `personal-materials`；本地已补 `title_only`、材料治理状态机、本地策略扫描/DLP 标记和受控下载；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补外部杀毒/DLP 服务、脱敏改写、对象存储治理、真实认证权限、知识库/图谱/报告/整改页面 API，并补个人材料 active retrieval 的授权角色/显式查询产品策略 | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过；active retrieval 已完成 runtime 激活和默认隔离验收，后续需补授权角色、显式查询、DLP/脱敏和审计策略验收 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-28 只读 readiness：生产仅 `KIMI_API_KEY=SET`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 与全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 返回 `401 invalid x-api-key`；生产 query smoke 仍为 fallback | 不能宣称 no-fallback AI 生成审计结论能力 | 先用 `scripts/audit-answer-provider-gate-readiness.py` 做脱敏只读条件检查；拿到有效 provider key 后跑 `answer-provider-smoke` 和真实答案评测；二者通过前不得写生产 env，未通过前保持 generate-or-safe-fallback / citation fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；已支持软禁用/恢复用户、撤销/恢复角色授权和项目级 role scope；受控 API 鉴权中间件本地强制模式已通过，未带角色头、未带 `X-Tenant-Id` 或停用用户会被拒绝并写 `authorization-denied`；生产只读权限 smoke 已执行且 `status=fail`，当前生产 `/auth/*` 为 404，部分既有读接口未拒绝缺租户头请求；当前仍依赖 `X-Role`、`X-User-Id`、`X-Project-Key`、本地 `X-Tenant-Id` 过渡层和 Nginx 注入 `X-API-Key` | 仍无法满足生产级审计系统完整权限边界 | 在现有本地权限底座上继续补真实会话认证、医院 SSO claims、正式租户身份来源、网关注入策略、生产部署和生产权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；生产只读权限 smoke 通过；真实会话 smoke 通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和外部杀毒服务未完成 | 当前仅 HMAC 归档签名、本地附件归档和个人材料 `local-policy` 策略标记 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、外部扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产；PR #170/#171 已将默认查询隔离、live retrieval metadata gate 和 SQL 修复部署到生产，最新生产 `.deploy-sha=30df45269ba38e3d3d56e0599162950b6389f3eb`，状态审计 `status=pass`、`audit_next_static_healthy=true`、app/postgres/clamav healthy、`matching_embedding_count=49051`。后续 docs-only/test-only merge 领先生产 `.deploy-sha` 时，均不代表线上业务运行态已改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged` | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收和权限只读观测均通过；文档记录 `main/prod SHA` 边界；后续部署继续执行 static asset gate |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产；PR #170/#171 已将默认查询隔离、live retrieval metadata gate 和 SQL 修复部署到生产，最新生产 `.deploy-sha=30df45269ba38e3d3d56e0599162950b6389f3eb`。2026-06-29 已授权执行 runtime DB `index-activate` 和 search backend reload，生产健康审计 `status=pass`、`audit_next_static_healthy=true`、app/postgres/clamav healthy、`matching_embedding_count=49051`。后续 docs-only/test-only merge 领先生产 `.deploy-sha` 时，均不代表线上代码部署已改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged`，runtime DB 状态变更也必须单独记录 | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置、runtime DB 状态和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收、权限只读观测和 runtime DB 状态复核均通过；文档记录 `main/prod SHA` 与 runtime 状态边界；后续部署继续执行 static asset gate |
 
 ## 5. P1 债务台账
 
@@ -1169,9 +1170,10 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 当前边界：
 
 - `production_live_side_effect=app_static_nginx_deploy`：本轮存在授权生产部署和共享 Nginx 配置/挂载修复；已备份、`nginx -t`、重建 `ai_video_nginx` 并做边缘域名回归。
-- `personal_material_live_gate_metadata_write=executed`：本轮已授权执行 production DB metadata write，将目标 candidate 标记为 `live_retrieval_activated=true`；该动作不等同于 `index-activate`，也不等同于 personal-material active retrieval 上线。
+- `personal_material_live_gate_metadata_write=executed`：已授权执行 production DB metadata write，将目标 candidate 标记为 `live_retrieval_activated=true`；该动作是后续 `index-activate` 前置条件。
+- `personal_material_index_activate_and_reload=executed`：2026-06-29 已授权执行 production DB `index-activate` 和 search backend reload；目标版本 `personal-materials-cos-staging-pr152-20260619` 当前为 `active`，`personal_material_active_chunks=4`，默认查询仍隔离 `personal-materials`。
 - `schema_migration=not_applied`：本轮 SQL diff 为空，生产部署未执行 `--apply-schema`。
-- `no_provider_call`：本轮没有调用生成模型或外部 AI provider；query smoke 返回 `fallback_used=true`，仍只是引用式兜底链路可用。
+- `no_provider_call`：本轮没有调用生成模型或外部 AI provider；完整 production smoke 因可能触发 query/chat provider 行为未运行，no-fallback 生成能力仍未验收。
 - `no_dedicated_production_write_e2e`：本轮未执行新的写入型业务 E2E；生产 smoke 和权限观测不等价于真实医院写入验收。
 - `main_prod_sha_boundary=documented`：PR #170/#171 已单独部署并更新生产 `.deploy-sha=30df45269ba38e3d3d56e0599162950b6389f3eb`；后续 docs-only/test-only 合并仍不得自动声称生产已同步。
 - `original_frontend_wip_preserved`：`/Users/pray/project/medical_audit` 的 `codex/frontend-2.0` 工作区仍保留原 7 个 dirty WIP 文件；本轮通过干净 release worktree 移植并发布，不回滚用户工作区。
@@ -1179,7 +1181,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 下一阶段计划：
 
 1. 真实生成模型 no-fallback 门禁：按 answer-provider production gate 跑 provider 预检、真实问题评测和 `--require-generated-answer` E2E，未通过前保持 fallback 边界。
-2. 个人材料索引闭环：`ready_not_indexed_uploads=0`、candidate `personal_material_chunks=4` 已通过生产写入型 staging 和只读复核；live retrieval metadata gate 已执行并通过，active gate 已返回 `safe_to_execute_index_activate=true`。下一步只能在单独授权后执行 `index-activate` 和 search backend reload，并在执行后重跑 active retrieval 只读验收；未授权前个人材料仍不得宣称已进入 active retrieval。
+2. 个人材料 active retrieval 后续产品化：`ready_not_indexed_uploads=0`、candidate staging、live retrieval metadata gate、`index-activate`、search backend reload 和激活后只读验收均已完成；下一步不再是激活，而是补授权角色/显式查询策略、DLP/脱敏改写、外部杀毒/对象存储治理、查询历史/审计事件验收，以及移动端/前端状态呈现。
 3. 真实认证和租户边界：从 header transition layer 推进到医院 SSO/session claims、正式租户身份来源和生产权限复验。
 4. 前端 2.0 API 化：优先把疑点工作台、知识图谱、规则、整改、归档从静态/只读状态推进到受控 API 首切片，保持 `production:frontend-acceptance` 与 local fullstack E2E 双门禁。
 5. UAT 包与运维硬化：沉淀 UAT case matrix、回滚演练、共享 Nginx 回归、备份恢复和告警配置证据。
