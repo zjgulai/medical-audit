@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-19
+updated: 2026-06-28
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,22 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-06-28 runtime/source reconciliation、共享 Nginx 静态路由与 Frontend 2.0 生产部署
+
+- PR #161 `runtime-reconcile` 已合入 `main` 并使用部署戳 `runtime-reconcile-main-20260628T1045` 发布到生产；该部署未执行 schema migration，生产综合 smoke 通过，检索后端保持 `matching_embedding_count=49051`。
+- 生产前端静态验收一度暴露 Next static chunk 404：`/archive` 页面 chunk 在 `/var/www/audit` 存在，但共享 `ai_video_nginx` 未挂载 `/var/www/audit` 且 audit server block 全量反代到 app。该问题已通过共享 Nginx 配置修复，不属于 FastAPI 或 Next build 缺失。
+- medical-audit PR #162 已把 `scripts/audit-tencent-cloud-deployment-state.py` 收紧为检查 `audit_next_static_healthy` 与 `/var/www/audit` bind mount；无静态挂载或 chunk 404 会阻断状态审计。
+- AI_vedio PR #56 已同步共享入口源配置：`deploy/lighthouse/nginx.conf` 中 audit server block 使用 `/var/www/audit` 服务 Next static export，并保留 API/Jinja 路由反代；`deploy/lighthouse/docker-compose.prod.yml` 增加 `/var/www/audit:/var/www/audit:ro`。
+- 生产共享 Nginx 热修已备份原配置和 compose，执行 `nginx -t` 后仅重建 `ai_video_nginx`，静态 chunk HEAD 返回 `200`；`kg`、`video`、`voc` 和主域名回归均返回 `200`。
+- PR #163 Frontend 2.0 release candidate 已合入 `main`，并使用部署戳 `frontend-2-main-20260628T1142` 发布到生产；当前生产 `.deploy-sha=0984aad93505cb8eedb36aa8379031c4396b1939`。
+- PR #164 `test(frontend): align production acceptance copy with portal 2.0` 合入点为 `de648cccd855336d850c837fcaf0b5750ba0ede3`，只同步生产前端验收脚本文案；生产 `.deploy-sha` 仍为 PR #163 的 `0984aad93505cb8eedb36aa8379031c4396b1939`，后续 docs-only/test-only merge 继续领先生产时也必须按 `production unchanged` 记录。
+- Frontend 2.0 部署前后备份戳为 `frontend-2-main-20260628T1142`；已生成 app/env/db/nginx/web 备份，DB 备份路径为 `/opt/medical-audit/backups/db/pre-deploy-frontend-2-main-20260628T1142.sql.gz`。
+- 部署状态审计 `tmp/outputs/tencent-cloud-deployment-state-after-frontend-2-main-20260628T1142.json` 为 `status=pass`、`issues=[]`、`warnings=[]`，确认 app/postgres/clamav healthy、`nginx_config_test=true`、`audit_frontdoor_healthy=true`、`audit_next_static_healthy=true`、`audit_mount_present=true`、`search_backend_ready=true`。
+- 生产综合 E2E `tmp/outputs/production-e2e-smoke-after-frontend-2-main-20260628T1142.json` 为 `status=pass`；TLS、health、PostgreSQL search backend、Jinja pages、审计日志权限、query citations、preview、dossier export 和边缘域名回归均通过。
+- 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-after-frontend-2-main-rerun-20260628T1204.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`；`/audit/logs` 与 `/audit/logs/export` 均满足无租户头 `401`、管理员 `200`。
+- 生产只读权限观测 `tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json` 为 `status=observed`，`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`。
+- 边界：本轮存在授权生产 app/static 部署、共享 Nginx 配置/compose 挂载修复和容器重建；未执行 `--apply-schema`，没有调用生成模型或外部 AI provider，没有执行新的写入型业务 E2E。query smoke 返回 `fallback_used=true`，不能解释为 no-fallback 生成模型能力已上线。
 
 ### 2026-06-19 COS-only 个人材料候选入索引本地切片
 
@@ -1432,8 +1448,8 @@ pnpm production:frontend-acceptance -- \
 
 该脚本新增以下 API 鉴权闭环：
 
-- `/audit/logs` 和 `/audit/logs/export`：无 `X-Role` 期望 `403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
-- 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=403`、`allowed_status=200`。
+- `/audit/logs` 和 `/audit/logs/export`：无授权/缺少租户上下文期望 `401/403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
+- 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=401/403`、`allowed_status=200`。
 - 无需提交业务数据；脚本只读。
 
 ### 7.7 增量更新 dry-run 演练
@@ -1644,7 +1660,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
-- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=403` 且 `allowed_status=200`。
+- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=401/403` 且 `allowed_status=200`。
 - `/documents` 个人上传链路必须证明 DB 行、宿主机留存文件 `sha256`、本人可读、其他普通审计员不可读和管理员可读全部上传同时成立；个人上传未入索引时必须明确显示 `index_status=not-indexed`。
 - 索引管理写接口拒绝审计必须证明普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，且持久化审计日志中可按 `action=index-admin-access-denied` 与 `user_identifier` 查到对应事件。
 - 固定 smoke question 返回至少 1 条引用。
