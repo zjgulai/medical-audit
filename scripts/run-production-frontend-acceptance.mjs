@@ -25,13 +25,13 @@ const viewports = [
 
 const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
-  { route: "/chat", requiredText: [/常用审证入口/, /门诊超量开药依据核验|重复收费疑点复核|目录限制交叉审核/] },
+  { route: "/chat", requiredText: [/AI 审证对话工作台/, /问题构建|知识来源|推荐问题/, /进入审证对话/] },
   {
     route: "/agents",
     requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
     requiredControlText: [/如：目录限制核验助手/, /新增智能体/],
   },
-  { route: "/agent-market", requiredText: [/医疗审计场景模板/, /医保目录限制审查|参保身份异常核验/] },
+  { route: "/agent-market", requiredText: [/审计提示词智能体/, /智能体广场/, /搜索助手|财务收支|采购招标/] },
   {
     route: "/analytics",
     requiredText: [/上传表格分析/, /审计数据|规则命中疑点|知识库运行态/, /上传|表格|CSV|Excel/i],
