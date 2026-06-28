@@ -120,6 +120,78 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "edge-regression" in script_text
 
 
+def test_audit_answer_provider_gate_readiness_script_is_valid_and_sanitized() -> None:
+    script_path = Path("scripts/audit-answer-provider-gate-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "secret_values_reported" in script_text
+    assert "provider_call_status" in script_text
+    assert "production_side_effect" in script_text
+    assert "fail-when-not-ready" in script_text
+
+
+def test_audit_answer_provider_gate_readiness_never_reports_secret_values() -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_secret_values",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_ANSWER_PROVIDER": "openai",
+            "MEDICAL_AUDIT_KB_ANSWER_API_KEY_ENV": "DEEPSEEK_API_KEY",
+            "MEDICAL_AUDIT_KB_ANSWER_MODEL": "deepseek-chat",
+            "MEDICAL_AUDIT_KB_ANSWER_BASE_URL": "https://api.deepseek.com/v1",
+            "DEEPSEEK_API_KEY": "do-not-print-this-secret",
+            "KIMI_API_KEY": "also-secret",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    report = module._build_report([scope])
+    serialized = json.dumps(report, ensure_ascii=False)
+
+    assert report["status"] == "ready_for_smoke"
+    assert scope["answer_runtime"]["status"] == "configured_with_key"
+    assert scope["answer_runtime"]["api_key_status"] == "SET"
+    assert scope["ready_provider_candidates"] == ["deepseek"]
+    assert "do-not-print-this-secret" not in serialized
+    assert "also-secret" not in serialized
+    assert report["boundaries"]["secret_values_reported"] is False
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+
+
+def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_blocks",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_ANSWER_PROVIDER": "fallback",
+            "KIMI_EMBEDDING_PROVIDER": "openai",
+            "KIMI_EMBEDDING_MODEL": "kimi-for-coding",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    report = module._build_report([scope])
+
+    assert report["status"] == "blocked"
+    assert report["blockers"] == ["no-provider-api-key-env-set"]
+    assert scope["answer_runtime"]["status"] == "fallback_or_unset"
+    assert scope["ready_provider_candidates"] == []
+    assert report["boundaries"]["production_env_write"] is False
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 
