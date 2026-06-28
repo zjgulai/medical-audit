@@ -443,7 +443,7 @@ source: human+ai
 - 主机名：`VM-0-16-ubuntu`
 - 用户：`ubuntu`
 - SSH key：`ai_video.pem`，必须保留在本项目本地，不能删除。
-- 当前生产部署 SHA：`0984aad93505cb8eedb36aa8379031c4396b1939`
+- 当前生产部署 SHA：`b625fe79e9fa76e19b27cf671859973222ef2e7c`
 - `medical_audit_app`：running，healthy。
 - `medical_audit_pg`：running，healthy。
 - `ai_video_nginx`：running，作为共享公网入口。
@@ -458,14 +458,14 @@ source: human+ai
 - 最新 AI 数据分析上传留存 UI 联调报告：`tmp/outputs/production-analytics-ui-upload-retention-e2e-20260615.json`，状态 `pass`。
 - 最新文档检索生产查询 smoke 报告：`tmp/outputs/production-documents-query-smoke-20260614.json`，状态 `pass`。
 - 最新文档检索边界能力生产写入型 E2E 报告：`tmp/outputs/production-documents-write-e2e-20260615T122620+0800-verified.json`，状态 `pass`。
-- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-frontend-2-main-rerun-20260628T1204.json`，状态 `pass`，`route_count=21`、`check_count=42`、`p0=[]`、`p1=[]`。
-- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-frontend-2-main-20260628T1142.json`，状态 `pass`，`issues=[]`，`audit_next_static_healthy=true`。
-- 最新生产综合 E2E 报告：`tmp/outputs/production-e2e-smoke-after-frontend-2-main-20260628T1142.json`，状态 `pass`。
+- 最新生产前端语义验收报告：`tmp/outputs/production-frontend-acceptance-after-personal-material-index-ingestion-main-20260628T072621Z.json`，状态 `pass`，`p0_count=0`、`p1_count=0`。
+- 最新生产部署状态审计报告：`tmp/outputs/tencent-cloud-deployment-state-after-personal-material-index-staging-20260628T072621Z.json`，状态 `pass`，`issues=[]`，`audit_next_static_healthy=true`，`matching_embedding_count=49051`。
+- 最新生产综合 E2E 报告：`tmp/outputs/production-e2e-smoke-after-personal-material-index-ingestion-main-20260628T072621Z.json`，状态 `pass`。
 - 最新生产只读权限观测报告：`tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json`，`status=observed`、`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`。
-- 最新个人材料索引 readiness 只读报告：`tmp/outputs/production-personal-material-indexing-readiness-20260628T1625.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，`total_uploads=21`、`ready_not_indexed_uploads=2`、`staged_uploads=2`、`personal_material_candidate_versions=1`、`personal_material_chunks=2`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；两个 ready/not-indexed 样本均有本地隔离文件，后续 staging 需要单独授权写入。
-- 最新个人材料 active gate 只读报告：`tmp/outputs/production-personal-material-active-gate-20260628T1510.json`，状态 `blocked`，唯一 blocker 为 `live-retrieval-not-activated`；目标版本为 `candidate`，`target_live_retrieval_activated=false`，运行时 activation guard 已确认生效，`safe_to_execute_index_activate=false`。
+- 最新个人材料索引 readiness 只读报告：`tmp/outputs/production-personal-material-indexing-readiness-after-staging-20260628T072621Z.json`，状态 `pass`，目标版本 `personal-materials-cos-staging-pr152-20260619`，`total_uploads=21`、`ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_candidate_versions=1`、`personal_material_chunks=4`、`personal_material_active_versions=0`、`personal_material_active_chunks=0`；ready/not-indexed 队列已清零，但 active retrieval 仍未激活。
+- 最新个人材料 active gate 只读报告：`tmp/outputs/production-personal-material-active-gate-after-staging-20260628T072621Z.json`，状态 `blocked`，唯一 blocker 为 `live-retrieval-not-activated`；目标版本为 `candidate`，`target_live_retrieval_activated=false`，运行时 activation guard 已确认生效，`safe_to_execute_index_activate=false`。
 - 最新 F2 answer provider gate：生产只读报告 `tmp/outputs/answer-provider-gate-readiness-production-only-20260628T1610.json` 为 `blocked`，blocker 为 `no-provider-api-key-env-set`；本地 Anthropic smoke `tmp/outputs/answer-provider-smoke-anthropic-20260628T1615.json` 返回 `401 invalid x-api-key`。本轮没有写生产 env、没有生产 provider call，不能进入 no-fallback 生产 E2E。
-- 最新个人材料 staging API 状态：生产运行代码仍缺少 `/documents/uploads/{upload_id}/index-ingestion` 路由和 `document_upload_indexer` state wiring；旧 `/documents/uploads/{upload_id}/index` 只更新上传记录索引状态，不写 pgvector candidate staging。本地候选 PR 已补齐 API、权限门禁、候选入库验证和显式生产写入脚本；合并部署前生产仍为 `production unchanged`。
+- 最新个人材料 staging API 状态：PR #168 已将 `/documents/uploads/{upload_id}/index-ingestion` 路由、`document_upload_indexer` state wiring、权限门禁和显式生产写入脚本部署到生产；写入型 staging E2E `tmp/outputs/production-personal-material-index-staging-e2e-20260628T072621Z.json` 为 `pass`，已将 `document-upload-b15035ddbb79` 与 `document-upload-5fe687e5a5d0` 写入 candidate staging。旧 `/documents/uploads/{upload_id}/index` 仍不得被解释为 pgvector candidate staging。
 - 最新 AI 数据分析留存历史本地联调截图：`tmp/screenshots/tmp-screenshot-analytics-retention-history-20260615.png`。
 - 项目成员写入前 DB 备份：`/opt/medical-audit/backups/db/pre-project-member-write-smoke-20260614T212850+0800.sql.gz`，`gzip -t` 通过，权限 `600`，大小 `512950686` bytes，`sha256=2f0c119410ad58690934f555cf6d807a91c70cf6588a8189dcc4d058f0c4b8a0`。
 - 项目成员生产写入结果：`CATALOG-LIMIT-202606` 新增 `member-custom-e152673f93f9`，成员数从 `4` 增至 `5`，数据库 `audit_project_members` 当前自定义记录数为 `1`。
@@ -922,7 +922,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-28 只读 readiness：生产仅 `KIMI_API_KEY=SET`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 与全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；本地 Anthropic smoke 返回 `401 invalid x-api-key`；生产 query smoke 仍为 fallback | 不能宣称 no-fallback AI 生成审计结论能力 | 先用 `scripts/audit-answer-provider-gate-readiness.py` 做脱敏只读条件检查；拿到有效 provider key 后跑 `answer-provider-smoke` 和真实答案评测；二者通过前不得写生产 env，未通过前保持 generate-or-safe-fallback / citation fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；已支持软禁用/恢复用户、撤销/恢复角色授权和项目级 role scope；受控 API 鉴权中间件本地强制模式已通过，未带角色头、未带 `X-Tenant-Id` 或停用用户会被拒绝并写 `authorization-denied`；生产只读权限 smoke 已执行且 `status=fail`，当前生产 `/auth/*` 为 404，部分既有读接口未拒绝缺租户头请求；当前仍依赖 `X-Role`、`X-User-Id`、`X-Project-Key`、本地 `X-Tenant-Id` 过渡层和 Nginx 注入 `X-API-Key` | 仍无法满足生产级审计系统完整权限边界 | 在现有本地权限底座上继续补真实会话认证、医院 SSO claims、正式租户身份来源、网关注入策略、生产部署和生产权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；生产只读权限 smoke 通过；真实会话 smoke 通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和外部杀毒服务未完成 | 当前仅 HMAC 归档签名、本地附件归档和个人材料 `local-policy` 策略标记 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、外部扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
-| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。最新生产 `.deploy-sha=0984aad93505cb8eedb36aa8379031c4396b1939`，状态审计 `status=pass`、`audit_next_static_healthy=true`、app/postgres/clamav healthy、`matching_embedding_count=49051`。PR #164 合入点 `de648ccc` 仅同步生产前端验收脚本文案；PR #164 及后续 docs-only/test-only merge 领先生产 `.deploy-sha` 时，均不代表线上业务运行态已改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged` | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收和权限只读观测均通过；文档记录 `main/prod SHA` 边界；后续部署继续执行 static asset gate |
+| P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产，最新生产 `.deploy-sha=b625fe79e9fa76e19b27cf671859973222ef2e7c`，状态审计 `status=pass`、`audit_next_static_healthy=true`、app/postgres/clamav healthy、`matching_embedding_count=49051`。后续 docs-only/test-only merge 领先生产 `.deploy-sha` 时，均不代表线上业务运行态已改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged` | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收和权限只读观测均通过；文档记录 `main/prod SHA` 边界；后续部署继续执行 static asset gate |
 
 ## 5. P1 债务台账
 
@@ -1145,7 +1145,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 ### 2.0.14 2026-06-28 runtime/source reconciliation 与 Frontend 2.0 生产基线
 
-状态口径：本节同步 2026-06-28 已合并、已部署、已验收的生产基线。生产部署对象为 `main@0984aad93505cb8eedb36aa8379031c4396b1939`；PR #164 合入点 `de648cccd855336d850c837fcaf0b5750ba0ede3` 额外包含验收脚本文案同步。PR #164 和后续 docs-only/test-only merge 未单独执行生产部署，因此 `origin/main` 与生产 `.deploy-sha` 可能存在文档或测试脚本差异，属于已记录边界。
+状态口径：本节同步 2026-06-28 PR #163 Frontend 2.0 已合并、已部署、已验收的生产基线。该轮生产部署对象为 `main@0984aad93505cb8eedb36aa8379031c4396b1939`；PR #164 合入点 `de648cccd855336d850c837fcaf0b5750ba0ede3` 额外包含验收脚本文案同步。后续 PR #168 已更新生产 `.deploy-sha`，最新生产状态见 `2.1`。
 
 已完成：
 
@@ -1160,7 +1160,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - Frontend 2.0 release worktree：`pnpm --filter medical-audit-web lint`、`typecheck`、`test`、`build` 均通过；前端单测 `11` 个 test files、`91` 个 tests；静态页面 `21/21`；`uv run python scripts/run-local-fullstack-e2e.py` 通过，`16 passed`。
 - 生产部署戳：`frontend-2-main-20260628T1142`；部署前 preflight 通过，部署执行使用 `--execute --confirm-production audit.lute-tlz-dddd.top`，未带 `--apply-schema`。
 - 生产综合 E2E：`tmp/outputs/production-e2e-smoke-after-frontend-2-main-20260628T1142.json`，`status=pass`；TLS、health、PostgreSQL search backend、Jinja pages、审计日志权限、query API citations、citation preview、chat dossier export 和边缘域名回归均通过。
-- 生产部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-after-frontend-2-main-20260628T1142.json`，`status=pass`、`issues=[]`、`warnings=[]`、`deploy_sha=0984aad93505cb8eedb36aa8379031c4396b1939`、`audit_frontdoor_healthy=true`、`audit_next_static_healthy=true`、`audit_mount_present=true`、app/postgres/clamav healthy。
+- 该轮生产部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-after-frontend-2-main-20260628T1142.json`，`status=pass`、`issues=[]`、`warnings=[]`、`deploy_sha=0984aad93505cb8eedb36aa8379031c4396b1939`、`audit_frontdoor_healthy=true`、`audit_next_static_healthy=true`、`audit_mount_present=true`、app/postgres/clamav healthy。
 - 生产前端语义验收：`tmp/outputs/production-frontend-acceptance-after-frontend-2-main-rerun-20260628T1204.json`，`status=pass`、`route_count=21`、`check_count=42`、`p0=[]`、`p1=[]`；`/audit/logs` 与 `/audit/logs/export` 均满足无租户头 `401`、管理员 `200`。
 - 生产只读权限观测：`tmp/outputs/production-permission-readonly-smoke-after-frontend-2-main-20260628T1142.json`，`status=observed`、`probe_count=35`、`issue_count=0`、`production_side_effect=none`、`provider_call_status=not_called`、`http_methods=["GET"]`。
 - 远端备份：`pre-deploy-frontend-2-main-20260628T1142` 已生成 app/env/db/nginx/web 备份；DB 备份路径为 `/opt/medical-audit/backups/db/pre-deploy-frontend-2-main-20260628T1142.sql.gz`。
@@ -1171,13 +1171,13 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - `schema_migration=not_applied`：本轮 SQL diff 为空，生产部署未执行 `--apply-schema`。
 - `no_provider_call`：本轮没有调用生成模型或外部 AI provider；query smoke 返回 `fallback_used=true`，仍只是引用式兜底链路可用。
 - `no_dedicated_production_write_e2e`：本轮未执行新的写入型业务 E2E；生产 smoke 和权限观测不等价于真实医院写入验收。
-- `main_prod_sha_boundary=documented`：PR #164 合入点 `de648ccc` 领先生产 `.deploy-sha=0984aad9` 的部分为验收脚本文案同步；后续 docs-only/test-only merge 也不得说成生产业务部署。
+- `main_prod_sha_boundary=documented`：PR #164 合入点 `de648ccc` 领先当时生产 `.deploy-sha=0984aad9` 的部分为验收脚本文案同步；后续 PR #168 已单独部署并更新生产 `.deploy-sha`。
 - `original_frontend_wip_preserved`：`/Users/pray/project/medical_audit` 的 `codex/frontend-2.0` 工作区仍保留原 7 个 dirty WIP 文件；本轮通过干净 release worktree 移植并发布，不回滚用户工作区。
 
 下一阶段计划：
 
 1. 真实生成模型 no-fallback 门禁：按 answer-provider production gate 跑 provider 预检、真实问题评测和 `--require-generated-answer` E2E，未通过前保持 fallback 边界。
-2. 个人材料索引闭环：当前已有 candidate staging 和 active gate 只读证据，但生产 API 缺少 pgvector ingestion 路由；下一步先合并并部署 `/index-ingestion` 修复，再对 `ready_not_indexed_uploads=2` 的本地隔离文件执行单独授权写入型 staging，随后重跑 readiness/active gate。active gate 通过前不得执行 `index-activate` 或 search backend reload。
+2. 个人材料索引闭环：`ready_not_indexed_uploads=0`、candidate `personal_material_chunks=4` 已通过生产写入型 staging 和只读复核；下一步只能先解决 `live-retrieval-not-activated` 的产品/运行时激活边界并重跑 active gate。active gate 通过前不得执行 `index-activate` 或 search backend reload。
 3. 真实认证和租户边界：从 header transition layer 推进到医院 SSO/session claims、正式租户身份来源和生产权限复验。
 4. 前端 2.0 API 化：优先把疑点工作台、知识图谱、规则、整改、归档从静态/只读状态推进到受控 API 首切片，保持 `production:frontend-acceptance` 与 local fullstack E2E 双门禁。
 5. UAT 包与运维硬化：沉淀 UAT case matrix、回滚演练、共享 Nginx 回归、备份恢复和告警配置证据。
