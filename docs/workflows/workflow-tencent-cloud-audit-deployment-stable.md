@@ -36,7 +36,7 @@ source: human+ai
 ### 2026-06-29 personal-material active retrieval 激活与 reload
 
 - 授权边界：本轮只执行个人材料目标版本 `index-activate`、PostgreSQL search backend reload 和激活后只读验收；不执行代码部署、不执行 schema migration、不调用生成模型 provider 或外部 embedding provider，不修改 `/Users/pray/project/medical_audit` 原前端 WIP 工作区。
-- 生产代码边界：远端 `.deploy-sha` 仍为 `30df45269ba38e3d3d56e0599162950b6389f3eb`；`main@7da92d99bc4deed730bc0554cab87213fc25b2a3` 为 docs-only 状态同步，未部署到生产。生产代码未因本轮 runtime 激活动作改变。
+- 生产代码边界：远端 `.deploy-sha` 仍为 `30df45269ba38e3d3d56e0599162950b6389f3eb`；`main@7da92d99bc4deed730bc0554cab87213fc25b2a3` 与 PR #173 merge commit `84296b99f86fe54e7b86ced4ab90a60b072d259c` 均为 docs-only 状态同步，未部署到生产。生产代码未因本轮 runtime 激活动作或 docs-only merge 改变。
 - 激活前 DB 备份：`/opt/medical-audit/backups/db/pre-index-activate-personal-material-index-activate-20260628T165539Z.sql.gz`，`gzip -t` 通过，大小 `4832935545` bytes；本地记录 `tmp/outputs/production-pre-index-activate-db-backup-personal-material-index-activate-20260628T165539Z.json`。
 - `medical-audit-kb index-activate` 已在生产 app container 内执行，报告 `tmp/outputs/production-personal-material-index-activate-personal-material-index-activate-20260628T165539Z.json` 返回 `success=true`、`index_version_key=personal-materials-cos-staging-pr152-20260619`、`previous_status=candidate`、`vector_provider=fake`、`vector_model=deterministic-token-hashing`、`deactivated_index_version_keys=[]`。
 - 首次 search backend reload 请求缺少 `X-Tenant-Id`，返回 `{"detail":"X-Tenant-Id header is required"}`；该请求未完成 reload。带 `X-Tenant-Id=hospital-demo` 与 `X-Project-Key=SELF-CHECK-FUND-20260607` 后，`tmp/outputs/production-personal-material-search-backend-reload-personal-material-index-activate-20260628T165539Z-with-tenant.json` 返回 `backend=postgres`、`ready=true`、`matching_embedding_count=49051`。
