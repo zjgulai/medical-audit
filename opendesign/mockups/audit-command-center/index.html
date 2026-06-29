@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AuditScope Command Center Mockup</title>
+    <link rel="stylesheet" href="../../design-systems/product-audit/tokens/colors_and_type.css">
+    <style>
+      body {
+        margin: 0;
+        color: var(--audit-ink);
+        font-family: var(--audit-font-sans);
+        background:
+          linear-gradient(90deg, rgba(16, 24, 40, 0.035) 1px, transparent 1px),
+          linear-gradient(rgba(16, 24, 40, 0.035) 1px, transparent 1px),
+          linear-gradient(180deg, #f6f8fa, #e8edf2);
+        background-size: 32px 32px, 32px 32px, auto;
+      }
+
+      main {
+        width: min(1280px, calc(100% - 36px));
+        margin: 0 auto;
+        padding: 26px 0 60px;
+      }
+
+      .nav,
+      .hero,
+      .panel,
+      .rail,
+      .composer,
+      .dossier {
+        border: 1px solid var(--audit-line);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--audit-shadow-md);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 60px;
+        padding: 0 14px;
+        border-radius: var(--audit-radius-lg);
+        backdrop-filter: blur(22px);
+      }
+
+      .brand {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-weight: 760;
+      }
+
+      .mark {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 12px;
+        color: #ffffff;
+        background: linear-gradient(180deg, var(--audit-focus), #173c9a);
+        font-family: var(--audit-font-display);
+      }
+
+      .nav span {
+        color: var(--audit-muted);
+        font-size: var(--audit-text-sm);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 22px;
+        margin-top: 18px;
+        padding: 30px;
+        border-radius: var(--audit-radius-xl);
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--audit-muted);
+        font-size: var(--audit-text-xs);
+        font-weight: 760;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        font-family: var(--audit-font-display);
+        letter-spacing: -0.035em;
+      }
+
+      h1 {
+        max-width: 760px;
+        font-size: var(--audit-text-hero);
+        line-height: 1.08;
+      }
+
+      .lede {
+        max-width: 700px;
+        color: var(--audit-muted);
+        font-size: var(--audit-text-lg);
+        line-height: 1.62;
+      }
+
+      .score {
+        display: grid;
+        gap: 10px;
+      }
+
+      .score div,
+      .citation,
+      .summary div {
+        border: 1px solid var(--audit-line);
+        border-radius: var(--audit-radius-md);
+        background: var(--audit-bg-raised);
+        box-shadow: var(--audit-shadow-sm);
+      }
+
+      .score div {
+        padding: 14px;
+      }
+
+      .score span,
+      .summary dt {
+        color: var(--audit-muted);
+        font-size: var(--audit-text-xs);
+        font-weight: 760;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .score strong,
+      .summary dd {
+        display: block;
+        margin-top: 6px;
+        font-family: var(--audit-font-mono);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1.4fr) 330px;
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      .rail,
+      .panel,
+      .composer,
+      .dossier {
+        border-radius: var(--audit-radius-lg);
+        padding: 20px;
+      }
+
+      .stages,
+      .citations {
+        display: grid;
+        gap: 10px;
+        padding: 0;
+        margin: 16px 0 0;
+        list-style: none;
+      }
+
+      .stages li {
+        border: 1px solid var(--audit-line);
+        border-radius: var(--audit-radius-md);
+        padding: 12px;
+        background: var(--audit-bg-raised);
+      }
+
+      .stages li.active {
+        border-color: rgba(15, 118, 110, 0.22);
+        background: var(--audit-evidence-soft);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 18px 0;
+      }
+
+      .summary div {
+        padding: 12px;
+      }
+
+      .summary dd {
+        margin-left: 0;
+        color: var(--audit-ink);
+      }
+
+      .answer {
+        border-left: 4px solid var(--audit-evidence);
+        padding-left: 16px;
+        line-height: 1.72;
+      }
+
+      .composer {
+        margin-top: 16px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        border: 1px solid var(--audit-line);
+        border-radius: var(--audit-radius-md);
+        padding: 14px;
+        font: inherit;
+      }
+
+      button {
+        min-height: 42px;
+        margin-top: 12px;
+        border: 1px solid rgba(29, 78, 216, 0.22);
+        border-radius: 999px;
+        padding: 0 16px;
+        color: #ffffff;
+        background: linear-gradient(180deg, var(--audit-focus), #173c9a);
+        font: inherit;
+        font-weight: 720;
+      }
+
+      .citation {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      code {
+        font-family: var(--audit-font-mono);
+        color: var(--audit-ink-soft);
+        font-size: var(--audit-text-xs);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="nav">
+        <div class="brand"><span class="mark">AS</span>AuditScope</div>
+        <span>检索已就绪 · active index</span>
+      </nav>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">医保审计证据控制台</p>
+          <h1>原文依据约束审计回答。</h1>
+          <p class="lede">每一次回答都被拆成结论性质、引用链、原文入口和人工复核门禁。没有引用依据时，不生成审核结论。</p>
+        </div>
+        <aside class="score">
+          <div><span>retrieval</span><strong>Ready</strong></div>
+          <div><span>citations</span><strong>4</strong></div>
+          <div><span>review gate</span><strong>Human required</strong></div>
+        </aside>
+      </section>
+      <section class="layout">
+        <aside class="rail">
+          <p class="eyebrow">Case Review</p>
+          <h2>审证流程</h2>
+          <ol class="stages">
+            <li>01 提出审核问题</li>
+            <li class="active">02 检索可引用依据</li>
+            <li>03 核验结论与原文</li>
+          </ol>
+        </aside>
+        <section>
+          <article class="panel">
+            <p class="eyebrow">可追溯回答</p>
+            <h2>审计线索，不替代人工结论</h2>
+            <dl class="summary">
+              <div><dt>性质</dt><dd>线索</dd></div>
+              <div><dt>证据组</dt><dd>2</dd></div>
+              <div><dt>模式</dt><dd>模型生成</dd></div>
+              <div><dt>下一步</dt><dd>核验原文</dd></div>
+            </dl>
+            <p class="answer">当前资料支持进入人工复核。进入底稿或报告前，必须确认引用片段是否覆盖行为、对象、规则版本和适用时间。</p>
+            <button>创建复核任务</button>
+          </article>
+          <article class="composer">
+            <p class="eyebrow">审计问题输入</p>
+            <textarea>门诊超量开药应该核对哪些医保审核依据？</textarea>
+            <button>生成可追溯回答</button>
+          </article>
+        </section>
+        <aside class="dossier">
+          <p class="eyebrow">Evidence Dossier</p>
+          <h2>引用依据</h2>
+          <ul class="citations">
+            <li class="citation"><strong>[1]</strong><span>医保基金审核依据片段<br><code>chunk LAW-001 · index-v1</code></span></li>
+            <li class="citation"><strong>[2]</strong><span>目录限制条件片段<br><code>chunk RULE-014 · package-v1</code></span></li>
+          </ul>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

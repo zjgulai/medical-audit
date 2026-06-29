@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AuditScope UI Kit</title>
+    <link rel="stylesheet" href="../tokens/colors_and_type.css">
+    <style>
+      body {
+        margin: 0;
+        color: var(--audit-ink);
+        font-family: var(--audit-font-sans);
+        background:
+          linear-gradient(90deg, rgba(16, 24, 40, 0.035) 1px, transparent 1px),
+          linear-gradient(rgba(16, 24, 40, 0.035) 1px, transparent 1px),
+          linear-gradient(180deg, var(--audit-bg), #e9eef3);
+        background-size: 32px 32px, 32px 32px, auto;
+      }
+
+      main {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 34px 0 64px;
+      }
+
+      .surface {
+        border: 1px solid var(--audit-line);
+        border-radius: var(--audit-radius-xl);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--audit-shadow-lg);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 24px;
+        padding: 34px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--audit-muted);
+        font-size: var(--audit-text-xs);
+        font-weight: 760;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 760px;
+        font-family: var(--audit-font-display);
+        font-size: var(--audit-text-hero);
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+      }
+
+      .lede {
+        max-width: 680px;
+        color: var(--audit-muted);
+        font-size: var(--audit-text-lg);
+        line-height: 1.65;
+      }
+
+      .metrics {
+        display: grid;
+        gap: 10px;
+      }
+
+      .metric,
+      .citation {
+        border: 1px solid var(--audit-line);
+        border-radius: var(--audit-radius-md);
+        background: var(--audit-bg-raised);
+        box-shadow: var(--audit-shadow-sm);
+      }
+
+      .metric {
+        padding: 16px;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--audit-muted);
+        font-size: var(--audit-text-xs);
+        font-weight: 760;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-family: var(--audit-font-mono);
+        font-size: var(--audit-text-xl);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.75fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .answer {
+        border-left: 4px solid var(--audit-evidence);
+      }
+
+      .gate {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        padding: 0 12px;
+        border: 1px solid rgba(15, 118, 110, 0.2);
+        border-radius: 999px;
+        color: var(--audit-evidence);
+        background: var(--audit-evidence-soft);
+        font-weight: 720;
+      }
+
+      .citation-list {
+        display: grid;
+        gap: 12px;
+        padding: 0;
+        margin: 18px 0 0;
+        list-style: none;
+      }
+
+      .citation {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 10px 12px;
+        padding: 14px;
+      }
+
+      code {
+        font-family: var(--audit-font-mono);
+        color: var(--audit-ink-soft);
+      }
+
+      button {
+        min-height: 42px;
+        border: 1px solid rgba(29, 78, 216, 0.24);
+        border-radius: 999px;
+        padding: 0 15px;
+        color: #ffffff;
+        background: linear-gradient(180deg, #1d4ed8, #173c9a);
+        font: inherit;
+        font-weight: 720;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero surface">
+        <div>
+          <p class="eyebrow">AuditScope · Evidence Command Center</p>
+          <h1>先核验证据，再形成审计线索。</h1>
+          <p class="lede">界面把问题、引用、原文入口和人工复核门禁放在同一审证链路中，避免把模型回答误读为最终审计结论。</p>
+          <span class="gate">可进入人工复核</span>
+        </div>
+        <aside class="metrics">
+          <div class="metric"><span>retrieval</span><strong>Ready</strong></div>
+          <div class="metric"><span>citations</span><strong>3</strong></div>
+          <div class="metric"><span>gate</span><strong>Review</strong></div>
+        </aside>
+      </section>
+      <section class="grid">
+        <article class="panel surface answer">
+          <p class="eyebrow">可追溯回答</p>
+          <h2>审计线索，不替代人工结论</h2>
+          <p>当前依据支持将该问题进入人工复核。进入底稿前必须打开原文确认条款上下文、适用时间和本地规则版本。</p>
+          <button>创建复核任务</button>
+        </article>
+        <aside class="panel surface">
+          <p class="eyebrow">Evidence Dossier</p>
+          <h2>引用依据</h2>
+          <ul class="citation-list">
+            <li class="citation"><strong>[1]</strong><span>医保基金审核依据片段。<br><code>chunk LAW-001 · index active</code></span></li>
+            <li class="citation"><strong>[2]</strong><span>目录限制与监管规则片段。<br><code>chunk RULE-014 · package v1</code></span></li>
+          </ul>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

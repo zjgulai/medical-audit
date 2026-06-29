@@ -1,5 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
+
+import { BrandLogo } from "@/components/shell/brand-logo";
 
 const roleEntries = [
   { label: "管理员", description: "账号、权限、日志" },
@@ -16,7 +17,7 @@ export default function LoginPage() {
           <div>
             <div className="inline-flex items-center gap-3 rounded-[var(--audit-radius-lg)] border border-white/20 bg-white/12 px-3 py-2">
               <span className="grid size-10 place-items-center rounded-[var(--audit-radius-md)] bg-white">
-                <Image src="/brand/auditscope-logo.png" alt="" width={28} height={28} priority />
+                <BrandLogo priority />
               </span>
               <span>
                 <span className="block text-sm font-semibold">AI智能审计管理系统</span>

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const portalAuditRoutes = [
   "/",
@@ -20,13 +20,35 @@ const portalAuditRoutes = [
   "/findings"
 ] as const;
 
+async function expectNoBrokenImages(page: Page) {
+  const brokenImages = await page.locator("img").evaluateAll((images) =>
+    images
+      .filter((image) => image.naturalWidth === 0 || image.naturalHeight === 0)
+      .map((image) => image.getAttribute("src") ?? "")
+  );
+
+  expect(brokenImages).toEqual([]);
+}
+
 test("AI audit portal foundation renders navigation and core modules", async ({ page }) => {
   await page.goto("/documents");
 
   const primaryNavigation = page.getByRole("navigation", { name: "主导航" });
   const chatLink = primaryNavigation.getByRole("link", { name: /AI 对话/ });
+  const topicLink = page.getByRole("link", { name: /打开当前审计专题/ });
 
   await expect(page.getByText("AI智能审计管理系统")).toBeVisible();
+  await expect(page.getByTestId("auditscope-brand-logo")).toBeVisible();
+  await expect(topicLink).toHaveAttribute("href", "/workspace");
+  const topicBox = await topicLink.boundingBox();
+  const navigationBox = await primaryNavigation.boundingBox();
+
+  expect(topicBox).not.toBeNull();
+  expect(navigationBox).not.toBeNull();
+  if (topicBox && navigationBox) {
+    expect(navigationBox.y - (topicBox.y + topicBox.height)).toBeLessThanOrEqual(32);
+  }
+
   await expect(page.getByRole("heading", { name: "材料与知识库统一检索" })).toBeVisible();
   await expect(chatLink).toBeVisible();
   await expect(chatLink).toHaveAttribute("href", "/chat");
@@ -38,6 +60,7 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await expect(primaryNavigation.getByRole("link", { name: /知识图谱/ })).toHaveAttribute("href", "/graph");
   await expect(primaryNavigation.getByRole("link", { name: "审计底稿生成" })).toHaveAttribute("href", "/reports");
   await expect(primaryNavigation.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
+  await expectNoBrokenImages(page);
 });
 
 test("Next-native AI chat portal is reachable", async ({ page }) => {
