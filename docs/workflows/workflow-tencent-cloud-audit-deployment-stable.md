@@ -33,6 +33,19 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-29 Batch 1 个人材料 active retrieval 显式查询生产验收
+
+- 当前生产提交：`a78bf8e5a1303178df26d03c6a687bd68f4512c2`，即最新 UI/UX 合并基线；本批未重复部署代码或静态资产。
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-batch1-personal-material-20260629T220732.json` 返回 `status=pass`、`issues=[]`、`warnings=[]`，app/postgres/clamav healthy，`audit_next_static_healthy=true`，`search_backend_ready=true`，`matching_embedding_count=49051`。
+- 个人材料 indexing readiness：`tmp/outputs/production-personal-material-indexing-readiness-batch1-20260629T220732.json` 返回 `status=blocked`，唯一 issue 为 `no-ready-upload-for-indexing`；当前 `ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_active_versions=1`、`personal_material_active_chunks=4`、`active_retrieval_activated=true`。
+- 个人材料 active gate：`tmp/outputs/production-personal-material-active-gate-batch1-20260629T220732.json` 返回 `status=blocked`，唯一 issue 为 `target-index-version-not-candidate`；目标版本 `personal-materials-cos-staging-pr152-20260619` 已是 `active` 且 `target_live_retrieval_activated=true`，因此 `safe_to_execute_index_activate=false`。
+- 生产 API 显式查询验收：`tmp/outputs/production-personal-material-explicit-query-scope-batch1-20260629T220732.json` 返回 `status=pass`。
+- 默认查询隔离：owner 使用问题 `医保基金监管审计补充证据` 不传 `source_collections` 调用 `/api/v1/query` 返回 `200`，引用来源为 `medical-insurance-catalog` 与 `supervision-rules-knowledge`，未包含 `personal-materials`。
+- owner 显式查询：`cos-index-owner-20260619T071401Z` 传入 `source_collections=["personal-materials"]` 返回 `200`，`citation_count=1`，引用来源为 `personal-materials`，`first_index_version_key=personal-materials-cos-staging-pr152-20260619`。
+- 非 owner 隔离：其他普通 `auditor` 显式查询返回 `404`，符合 owner 隔离预期。
+- read-all 查询：`it-admin` 显式查询返回 `200`，`citation_count=1`，引用来源为 `personal-materials`。
+- 证据边界：本批没有执行个人材料 staging 写入、`index-activate`、search backend reload、schema migration、生产 env 写入或外部 provider 调用。生产 `/api/v1/query` 会写查询历史，因此本批生产 API 验收属于授权的轻量 `L4-authorized-live` side effect，而不是纯 read-only。
+
 ### 2026-06-29 PR #175 合入后部署前只读复核
 
 - PR #175 `codex/personal-material-query-scope-20260629` 已合入 `main`，merge commit 为 `bc1179194d99607f7aaab492bea202586d13e3f6`；该 PR 允许 `personal-materials` 作为显式查询来源，并按 owner/read-all 过滤个人材料检索。

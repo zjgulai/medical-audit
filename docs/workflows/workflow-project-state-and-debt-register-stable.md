@@ -1177,6 +1177,36 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 冻结日期：`2026-06-29`
 
+### 2.0.17 2026-06-29 Batch 1 个人材料 active retrieval 与显式查询生产验收
+
+状态口径：本节同步 2026-06-29 Batch 1 的执行结果。用户已同意继续下一批；本批先按 read-only 门禁判断是否仍需个人材料入索引写入或 `index-activate`，发现生产目标版本已是 active，因此没有重复执行 staging 写入、`index-activate` 或 search backend reload，转为验证当前 active personal-material 显式查询与默认隔离。
+
+只读门禁：
+
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-batch1-personal-material-20260629T220732.json` 返回 `status=pass`、`issues=[]`、`warnings=[]`，远端 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`audit_next_static_healthy=true`，`search_backend_ready=true`，`matching_embedding_count=49051`。
+- 个人材料 indexing readiness：`tmp/outputs/production-personal-material-indexing-readiness-batch1-20260629T220732.json` 返回 `status=blocked`，唯一 issue 为 `no-ready-upload-for-indexing`；摘要为 `ready_not_indexed_uploads=0`、`staged_uploads=4`、`personal_material_active_versions=1`、`personal_material_active_chunks=4`、`active_retrieval_activated=true`。
+- 个人材料 active gate：`tmp/outputs/production-personal-material-active-gate-batch1-20260629T220732.json` 返回 `status=blocked`，唯一 issue 为 `target-index-version-not-candidate`；只读确认目标版本 `personal-materials-cos-staging-pr152-20260619` 已是 `active` 且 `target_live_retrieval_activated=true`，`safe_to_execute_index_activate=false`。
+- 只读样本抽取确认 active personal-material chunk 存在，示例 owner 为 `cos-index-owner-20260619T071401Z`，目标 chunk 来自 `document-upload-d95888cd28ae`。
+
+生产 API 验收：
+
+- 显式查询验收报告：`tmp/outputs/production-personal-material-explicit-query-scope-batch1-20260629T220732.json` 返回 `status=pass`。
+- `permissions-owner`：`GET /api/v1/documents/permissions` 返回 `200`，`source_collection_count=5`，包含 `personal-materials`。
+- `default-query-excludes-personal-materials`：默认 `POST /api/v1/query` 返回 `200`，引用来源为 `medical-insurance-catalog` 与 `supervision-rules-knowledge`，不包含 `personal-materials`。
+- `owner-explicit-personal-materials-query`：owner 显式传入 `source_collections=["personal-materials"]` 返回 `200`，`citation_count=1`，引用来源为 `personal-materials`，`first_index_version_key=personal-materials-cos-staging-pr152-20260619`。
+- `non-owner-explicit-personal-materials-query-denied`：非 owner 普通审计员显式查询返回 `404`，符合 owner 隔离预期。
+- `admin-explicit-personal-materials-query`：`it-admin` 显式查询返回 `200`，`citation_count=1`，引用来源为 `personal-materials`。
+
+当前边界：
+
+- `production_index_write=false`：本批没有执行个人材料 staging 写入、`index-activate` 或 search backend reload。
+- `production_api_live_side_effect=query_history_write`：生产 query API 验收会写查询历史，属于本批已授权的轻量 L4 live side effect。
+- `provider_call_status=not_called`：响应均为 `fallback_used=true`，本批没有调用外部 answer provider，也没有写生产 `MEDICAL_AUDIT_KB_ANSWER_*`。
+- `personal_material_default_query_isolated=true`：默认查询仍不包含 `personal-materials`。
+- `personal_material_explicit_query_status=pass`：owner/read-all 显式查询链路已在生产验证。
+
+冻结日期：`2026-06-29`
+
 ### 2.0.16 2026-06-29 Batch 0 最新 UI/UX 生产基线与顺序合并复核
 
 状态口径：本节同步 2026-06-29 按推荐执行顺序完成的 Batch 0 复核。目标是确认最新网站 UI/UX 是否已经按顺序合并并部署到生产，同时避免把历史 UI 实验分支误合回当前主线。本节为状态同步，不包含业务代码修改、schema migration、生产 env 改写或 provider 调用。
