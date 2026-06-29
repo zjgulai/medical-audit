@@ -5,7 +5,7 @@ module: fullstack
 topic: completeness-audit-and-batch-execution
 status: stable
 created: 2026-06-21
-updated: 2026-06-23
+updated: 2026-06-30
 owner: self
 source: human+ai
 ---
@@ -742,7 +742,7 @@ Batch 7.9 验收结果：
 
 状态：`in_progress`
 
-当前切片：`production_readonly_permission_smoke_failed`
+当前切片：`production_readonly_permission_smoke_observed_after_latest_ui`
 
 目标：
 
@@ -750,7 +750,7 @@ Batch 7.9 验收结果：
 
 开发项：
 
-- 生产只读 smoke 更新。进度：已新增只读权限 smoke 脚本和 `production:permission-readonly` 入口；生产真实观测已执行但未通过。
+- 生产只读 smoke 更新。进度：已新增只读权限 smoke 脚本和 `production:permission-readonly` 入口；历史生产真实观测曾失败，最新 UI/UX 生产基线后已重新执行并在只读 GET 探测范围内通过观察。
 - 授权写入 smoke 分角色执行。
 - 生产前 DB 备份和回滚方案。
 - 医院角色用户验收清单。
@@ -786,9 +786,18 @@ Batch 8.3 验收结果：
 - 未满足：尚未形成发布 manifest、干净 release 分支、部署 dry-run preflight 或生产权限复验通过证据。
 - 边界：本批未部署生产、未写生产库、未执行授权写入 smoke。
 
+Batch 8.4 验收结果：
+
+- 已满足：最新 UI/UX 生产基线部署状态只读复核完成，`tmp/outputs/tencent-cloud-deployment-state-auth-permission-20260630T041340+0800.json` 返回 `status=pass`，生产实际 SHA 为 `a78bf8e5a1303178df26d03c6a687bd68f4512c2`。
+- 已满足：生产 app/postgres/clamav 均 healthy，`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=ruleset-v1`，`audit_frontdoor_healthy=true`，`audit_next_static_healthy=true`，`search_backend_ready=true`，`matching_embedding_count=49051`。
+- 已满足：生产只读权限 smoke 已重新执行，`tmp/outputs/production-permission-readonly-smoke-auth-permission-20260630T041340+0800.json` 返回 `status=observed`、`probe_count=35`、`issue_count=0`、`observation_count=0`，全程只发 `GET`。
+- 已满足：本批探测的 `/auth/session`、查询历史、疑点、图谱、规则、整改、归档和报告 workbench 只读路径对匿名或缺 `X-Tenant-Id` 返回 `401`，带管理员角色、项目和租户头返回 `200`。
+- 未满足：真实医院 SSO、正式登录会话签发、正式租户身份来源、网关/Nginx claims 注入策略和生产写入型权限验收仍未完成。
+- 边界：本批未部署生产、未写生产库、未调用 provider、未执行授权写入 smoke；只证明被探测 GET 路径的 L3 生产只读权限行为。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.3 生产部署差异只读复核和发布风险定位。原因：
+当前已推进到 Batch 8.4 最新 UI/UX 基线后的生产只读认证/权限复核。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -796,17 +805,17 @@ Batch 8.3 验收结果：
 - Batch 6 已完成图谱、规则、整改和归档四个只读 workbench 的 API-first 切片。
 - Batch 7 已完成智能体版本、生命周期、调用反馈、真实对话挂接、项目范围校验、逐行 diff、审核状态记录、审批通过才激活门禁、`admin/director` 激活角色门禁、项目级角色 scope、受控 API 鉴权中间件和本地租户头契约的本地切片。
 - Batch 8.1 已把生产权限只读 smoke 的执行入口准备好。
-- Batch 8.2 已执行生产只读观测，确认当前生产未包含本地 `/auth/*`、受控 API 鉴权中间件、租户头门禁和 API-first workbench 切片。
-- Batch 8.3 已执行生产部署状态只读复核，确认生产当前健康但本地工作树不是可直接发布的 release candidate。
+- Batch 8.2 曾执行生产只读观测，确认当时生产未包含本地 `/auth/*`、受控 API 鉴权中间件、租户头门禁和 API-first workbench 切片。
+- Batch 8.3 完成旧生产部署差异只读复核并指出需要干净 release 路径。
+- Batch 8.4 在最新 UI/UX 已部署基线后重新执行部署状态审计和生产权限只读 smoke，确认本批探测的受控 GET 路径已按租户头和角色头门禁工作。
 
-下一批优先执行的发布准备计划：
+下一批优先执行的收口计划：
 
-1. 从生产匹配基线 `550a445012267ba1211f5881b1d441264f3a3056` 或已确认包含该提交的当前主线创建干净 release 分支/worktree。
-2. 建立发布 manifest，只纳入 Batch 7.9、Batch 8.1 及其直接依赖文件；重点覆盖 `/auth/*`、受控 API 鉴权中间件、`X-Tenant-Id` 契约、workbench API、Next API client 头部、权限 smoke 脚本和必要测试。
-3. 将当前 tracked/untracked 待发布文件按 manifest 精确移植到干净 release 工作区，保持 `git status` 可解释，不携带 `.codex/`、`.kiro/`、`.playwright-mcp/`、`ref/`、`opendesign/` 等非发布材料。
-4. 在干净 release 工作区执行本地质量闸：`uv run ruff check .`、`uv run mypy src`、`uv run pytest tests/knowledge_query`、前端 lint/typecheck/unit/build、`pnpm local:fullstack:e2e` 和 `pnpm local:permission:readonly`。
-5. 在所有本地质量闸通过后，只执行部署 dry-run/preflight，核验 schema、备份、回滚和目标 SHA；未经再次授权不执行 `--execute`。
-6. 生产部署如获授权，发布后必须先跑生产只读权限 smoke，再跑生产 smoke/E2E；若只读权限 smoke 仍失败，不进入授权写入验收。
+1. P0-04 真实认证：定义医院 SSO/session claims、正式租户身份来源、网关/Nginx claims 注入策略和用户禁用/移除治理的可验收合同。
+2. P0-04 生产复验常态化：把本批 `production:permission-readonly` 作为每次部署后必跑门禁，并按公开路径、匿名受控路径、缺租户头路径和管理员路径分层记录。
+3. 授权写入型权限 E2E：只有在备份、回滚路径和明确授权齐备后执行；执行前先复跑生产只读权限 smoke，执行后按 `authorized_live_side_effect` 单独留证。
+4. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收替代生成模型门禁。
+5. 文档治理安全：继续推进对象存储、外部杀毒/DLP、脱敏改写和审计事件专项验收，保持生产只读、授权写入和 provider call 边界分离。
 
 Batch 1 的完成项：
 

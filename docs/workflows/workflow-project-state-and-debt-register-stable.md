@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-06-29
+updated: 2026-06-30
 owner: self
 source: human+ai
 ---
@@ -1208,6 +1208,33 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 - `personal_material_explicit_query_status=pass`：owner/read-all 显式查询链路已在生产验证。
 
 冻结日期：`2026-06-29`
+
+### 2.0.18 2026-06-30 Batch 2 最新 UI/UX 基线后的认证/权限生产只读复核
+
+状态口径：本节同步用户继续下一批后的生产只读复核。复核对象是当前生产最新 UI/UX 基线 `main@a78bf8e5a1303178df26d03c6a687bd68f4512c2`，目标是确认 docs-only 后续提交未被误判为已部署，并验证当前生产的 header transition layer、`X-Tenant-Id` 和受控 API 只读权限门禁。本批没有生产部署、没有生产写入、没有 provider call、没有授权写入型 E2E。
+
+生产只读证据：
+
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-auth-permission-20260630T041340+0800.json` 返回 `status=pass`、`issues=[]`、`warnings=[]`，远端 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`；app/postgres/clamav 均 healthy，`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=ruleset-v1`，`audit_frontdoor_healthy=true`，`audit_next_static_healthy=true`，`audit_mount_present=true`，`search_backend_ready=true`，`matching_embedding_count=49051`。
+- 权限只读 smoke：`tmp/outputs/production-permission-readonly-smoke-auth-permission-20260630T041340+0800.json` 返回 `status=observed`、`probe_count=35`、`issue_count=0`、`observation_count=0`，全程 `http_methods=["GET"]`，`production_side_effect=none`，`provider_call_status=not_called`。
+- 公开路径：`/api/v1/health` 与 `/api/v1/auth/roles` 返回 `200`。
+- 受控路径：`/api/v1/auth/session`、`/api/v1/query/logs?limit=1`、`/api/v1/audit-findings`、`/api/v1/graph/workbench`、`/api/v1/rules/workbench`、`/api/v1/remediation/workbench`、`/api/v1/archive/workbench`、`/api/v1/reports/workbench` 等路径在匿名或缺 `X-Tenant-Id` 时返回 `401`，在带 `X-User-Id`、`X-Role=admin`、`X-Project-Key` 和 `X-Tenant-Id=hospital-demo` 时返回 `200`。
+
+当前边界：
+
+- `production_deploy_status=unchanged_after_docs_only_main`：当前生产仍运行 `a78bf8e5`；`origin/main` 后续 docs-only 提交不等于生产代码/静态资产已再次部署。
+- `auth_permission_readonly_status=observed_pass_on_probed_gets`：生产已在本批探测的只读 GET 受控路径上执行租户头和角色头门禁。
+- `real_sso_status=not_implemented_or_not_verified`：本批不证明真实医院 SSO、正式登录会话签发、正式租户身份来源或网关 claims 注入策略已完成。
+- `authorized_write_e2e_status=not_run`：本批不进入生产写入型权限验收；后续必须先有备份、显式授权和回滚路径。
+- `provider_call_status=not_called`：本批没有调用外部 answer provider，也没有写生产 `MEDICAL_AUDIT_KB_ANSWER_*`。
+
+下一步执行建议：
+
+1. P0-04 继续从 header transition layer 推进到医院 SSO/session claims 合同、网关注入策略和正式租户身份来源；先做方案和只读验证，不直接写生产配置。
+2. 写入型权限 E2E 仅在明确授权、备份和回滚路径齐备后执行；执行前复跑 `production:permission-readonly`。
+3. F2 no-fallback 真实生成仍受 `no-provider-api-key-env-set` 阻塞；除非单独授权 provider smoke，否则继续保持 fallback 边界。
+
+冻结日期：`2026-06-30`
 
 ### 2.0.16 2026-06-29 Batch 0 最新 UI/UX 生产基线与顺序合并复核
 
