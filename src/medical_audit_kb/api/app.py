@@ -9,7 +9,7 @@ from typing import cast
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response as StarletteResponse
@@ -24,9 +24,16 @@ from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import AuditLogStore, SqlAlchemyAuditLogStore
 from medical_audit_kb.api.auth import normalize_tenant_id, resolve_authenticated_user
 from medical_audit_kb.api.auth_user_store import AuthUserStore, SqlAlchemyAuthUserStore
+from medical_audit_kb.api.document_upload_ingestion import (
+    SqlAlchemyDocumentUploadIndexer,
+    document_upload_indexer_from_settings,
+)
 from medical_audit_kb.api.document_upload_store import (
     DocumentUploadStore,
     SqlAlchemyDocumentUploadStore,
+    document_object_storage_from_settings,
+    document_storage_objects_schema_ready,
+    tencent_cos_put_object_client_from_settings,
 )
 from medical_audit_kb.api.project_member_store import (
     ProjectMemberStore,
@@ -76,12 +83,24 @@ class ApiState:
     project_member_store: ProjectMemberStore | None = None
     analytics_upload_store: AnalyticsUploadStore | None = None
     document_upload_store: DocumentUploadStore | None = None
+    document_upload_indexer: SqlAlchemyDocumentUploadIndexer | None = None
     query_history_store: QueryHistoryStore | None = None
     auth_user_store: AuthUserStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
+        document_upload_root = settings.document_upload_root or (
+            settings.index_root / "document-uploads"
+        )
+        tencent_cos_client = tencent_cos_put_object_client_from_settings(
+            settings.document_storage
+        )
+        document_object_storage = document_object_storage_from_settings(
+            settings.document_storage,
+            upload_root=document_upload_root,
+            tencent_cos_client=tencent_cos_client,
+        )
         return cls(
             settings=settings,
             index_pipeline=KnowledgeIndexPipeline(),
@@ -98,8 +117,17 @@ class ApiState:
             ),
             document_upload_store=SqlAlchemyDocumentUploadStore(
                 settings.database_url,
-                upload_root=settings.document_upload_root
-                or settings.index_root / "document-uploads",
+                upload_root=document_upload_root,
+                object_storage=document_object_storage,
+                record_storage_objects=document_storage_objects_schema_ready(
+                    settings.database_url
+                ),
+            ),
+            document_upload_indexer=document_upload_indexer_from_settings(
+                database_url=settings.database_url,
+                upload_root=document_upload_root,
+                settings=settings.document_upload_indexing,
+                object_storage=document_object_storage,
             ),
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             auth_user_store=SqlAlchemyAuthUserStore(settings.database_url),
@@ -121,6 +149,9 @@ class HealthResponse(BaseModel):
 
 CONTROLLED_API_AUTH_ENV = "MEDICAL_AUDIT_CONTROLLED_API_AUTH"
 CONTROLLED_API_TENANT_HEADER = "X-Tenant-Id"
+WEB_STATIC_ROOT_ENV = "MEDICAL_AUDIT_WEB_STATIC_ROOT"
+API_V1_PREFIX = "/api/v1"
+API_BACKEND_PREFIX = "/api/backend"
 CONTROLLED_API_AUTH_VALUES = frozenset({"1", "true", "yes", "enforce", "required"})
 CONTROLLED_API_PUBLIC_EXACT_PATHS = frozenset(
     {
@@ -159,6 +190,55 @@ CONTROLLED_API_PROTECTED_PREFIXES = (
     "/reports/",
     "/review-tasks/",
     "/rules/",
+)
+STATIC_FALLBACK_RESERVED_PREFIXES = (
+    "api/",
+    "agents",
+    "agents/",
+    "analytics",
+    "analytics/",
+    "archive/",
+    "audit/",
+    "audit-findings",
+    "audit-findings/",
+    "auth",
+    "auth/",
+    "documents/permissions",
+    "documents/uploads",
+    "graph/",
+    "index",
+    "index/",
+    "operation/",
+    "pages/",
+    "preview/",
+    "projects",
+    "projects/",
+    "query",
+    "query/",
+    "remediation/",
+    "reports/",
+    "review-tasks/",
+    "rules/",
+    "static/",
+)
+STATIC_EXPORT_PORTAL_PATHS = (
+    "agent-market",
+    "agents",
+    "analytics",
+    "archive",
+    "chat",
+    "documents",
+    "findings",
+    "graph",
+    "guided-check",
+    "knowledge-base",
+    "knowledge-query",
+    "login",
+    "projects",
+    "remediation",
+    "reports",
+    "rules",
+    "workspace",
 )
 
 
@@ -250,6 +330,14 @@ def create_app(
             data_root=str(state.source_root),
         )
 
+    @app.get(f"{API_V1_PREFIX}/health", response_model=HealthResponse)
+    def versioned_health() -> HealthResponse:
+        return health()
+
+    @app.get(f"{API_BACKEND_PREFIX}/health", response_model=HealthResponse)
+    def backend_proxy_health() -> HealthResponse:
+        return health()
+
     @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
     def favicon() -> Response:
         svg = (
@@ -273,16 +361,32 @@ def create_app(
     from medical_audit_kb.api.routes_query import router as query_router
     from medical_audit_kb.api.routes_workbench import router as workbench_router
 
-    app.include_router(pages_router)
-    app.include_router(query_router)
-    app.include_router(workbench_router)
-    app.include_router(auth_router)
-    app.include_router(agents_router)
-    app.include_router(analytics_router)
-    app.include_router(documents_router)
-    app.include_router(projects_router)
-    app.include_router(index_router)
-    app.include_router(preview_router)
+    web_static_root = _web_static_export_root()
+    if web_static_root is not None:
+        _register_static_export_root(app, web_static_root)
+        _register_static_export_portal_routes(app, web_static_root)
+
+    routers = (
+        pages_router,
+        query_router,
+        workbench_router,
+        auth_router,
+        agents_router,
+        analytics_router,
+        documents_router,
+        projects_router,
+        index_router,
+        preview_router,
+    )
+    for router in routers:
+        app.include_router(router)
+    for router in routers:
+        app.include_router(router, prefix=API_V1_PREFIX)
+    for router in routers:
+        app.include_router(router, prefix=API_BACKEND_PREFIX)
+
+    if web_static_root is not None:
+        _register_static_export_fallback(app, web_static_root)
     return app
 
 
@@ -295,23 +399,132 @@ def _controlled_api_auth_enabled(enforce_controlled_api_auth: bool | None) -> bo
 def _should_authenticate_controlled_api_path(path: str, method: str) -> bool:
     if method.upper() == "OPTIONS":
         return False
-    if path in CONTROLLED_API_PUBLIC_EXACT_PATHS:
+    normalized_path = _controlled_api_match_path(path)
+    if normalized_path in CONTROLLED_API_PUBLIC_EXACT_PATHS:
         return False
-    if any(path.startswith(prefix) for prefix in CONTROLLED_API_PUBLIC_PREFIXES):
+    if any(normalized_path.startswith(prefix) for prefix in CONTROLLED_API_PUBLIC_PREFIXES):
         return False
-    if path in CONTROLLED_API_PROTECTED_EXACT_PATHS:
+    if normalized_path in CONTROLLED_API_PROTECTED_EXACT_PATHS:
         return True
-    return any(path.startswith(prefix) for prefix in CONTROLLED_API_PROTECTED_PREFIXES)
+    return any(normalized_path.startswith(prefix) for prefix in CONTROLLED_API_PROTECTED_PREFIXES)
 
 
 def _project_key_for_auth_middleware(request: Request) -> str | None:
     project_key = request.headers.get("X-Project-Key")
     if project_key:
         return project_key
-    parts = [part for part in request.url.path.split("/") if part]
+    parts = [part for part in _controlled_api_match_path(request.url.path).split("/") if part]
     if len(parts) >= 2 and parts[0] == "projects":
         return urllib.parse.unquote(parts[1])
     return None
+
+
+def _controlled_api_match_path(path: str) -> str:
+    if path == API_V1_PREFIX:
+        return "/"
+    if path.startswith(f"{API_V1_PREFIX}/"):
+        return path[len(API_V1_PREFIX) :]
+    if path == API_BACKEND_PREFIX:
+        return "/"
+    if path.startswith(f"{API_BACKEND_PREFIX}/"):
+        return path[len(API_BACKEND_PREFIX) :]
+    return path
+
+
+def _web_static_export_root() -> Path | None:
+    raw_root = os.getenv(WEB_STATIC_ROOT_ENV, "").strip()
+    if not raw_root:
+        return None
+    return Path(raw_root).expanduser().resolve()
+
+
+def _register_static_export_root(app: FastAPI, static_root: Path) -> None:
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+    def static_export_root() -> FileResponse:
+        return _static_export_response(static_root, "")
+
+
+def _register_static_export_portal_routes(app: FastAPI, static_root: Path) -> None:
+    for asset_path in STATIC_EXPORT_PORTAL_PATHS:
+
+        def static_export_portal_route(asset_path: str = asset_path) -> FileResponse:
+            return _static_export_response(static_root, asset_path)
+
+        app.add_api_route(
+            f"/{asset_path}",
+            static_export_portal_route,
+            methods=["GET", "HEAD"],
+            include_in_schema=False,
+            name=f"static_export_portal_{asset_path.replace('-', '_')}",
+        )
+
+
+def _register_static_export_fallback(app: FastAPI, static_root: Path) -> None:
+    @app.api_route("/{asset_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    def static_export_fallback(asset_path: str) -> FileResponse:
+        if _is_backend_reserved_static_fallback_path(asset_path):
+            raise HTTPException(status_code=404, detail="backend route not found")
+        return _static_export_response(static_root, asset_path)
+
+
+def _is_backend_reserved_static_fallback_path(asset_path: str) -> bool:
+    normalized = asset_path.strip("/")
+    if normalized == "":
+        return False
+    return any(
+        _matches_backend_reserved_static_fallback_prefix(normalized, prefix)
+        for prefix in STATIC_FALLBACK_RESERVED_PREFIXES
+    )
+
+
+def _matches_backend_reserved_static_fallback_prefix(normalized_path: str, prefix: str) -> bool:
+    normalized_prefix = prefix.strip("/")
+    if not normalized_prefix:
+        return False
+    if prefix.endswith("/"):
+        return normalized_path.startswith(prefix)
+    return normalized_path == normalized_prefix or normalized_path.startswith(
+        f"{normalized_prefix}/",
+    )
+
+
+def _static_export_response(static_root: Path, asset_path: str) -> FileResponse:
+    if not static_root.is_dir():
+        raise HTTPException(status_code=404, detail="web static root not found")
+    normalized_path = asset_path.strip("/")
+    if normalized_path == "":
+        return _static_file_response(static_root, static_root / "index.html")
+    candidate = _resolve_static_candidate(static_root, normalized_path)
+    if candidate.is_dir():
+        return _static_file_response(static_root, candidate / "index.html")
+    if candidate.is_file():
+        return _static_file_response(static_root, candidate)
+    index_candidate = candidate / "index.html"
+    if index_candidate.is_file():
+        return _static_file_response(static_root, index_candidate)
+    html_candidate = candidate.with_suffix(".html")
+    if html_candidate.is_file():
+        return _static_file_response(static_root, html_candidate)
+    if Path(normalized_path).suffix:
+        raise HTTPException(status_code=404, detail="static asset not found")
+    return _static_file_response(static_root, static_root / "index.html")
+
+
+def _resolve_static_candidate(static_root: Path, normalized_path: str) -> Path:
+    root = static_root.resolve()
+    candidate = (root / normalized_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="static asset not found") from exc
+    return candidate
+
+
+def _static_file_response(static_root: Path, path: Path) -> FileResponse:
+    candidate = _resolve_static_candidate(static_root, str(path.relative_to(static_root)))
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="static asset not found")
+    return FileResponse(candidate)
 
 
 def answer_generation_provider_from_settings(

@@ -29,6 +29,7 @@ from medical_audit_kb.api.auth import (
     resolve_authenticated_user,
 )
 from medical_audit_kb.api.document_permissions import (
+    allowed_source_collections,
     can_read_all_personal_uploads,
     enforce_source_collection_access,
 )
@@ -82,9 +83,14 @@ def query(
         default_role=HospitalRole.MEMBER,
     )
     role = user.legacy_api_role
+    requested_source_collections = tuple(payload.source_collections)
     enforce_source_collection_access(
         role=role,
-        source_collections=tuple(payload.source_collections),
+        source_collections=requested_source_collections,
+    )
+    effective_source_collections = _effective_source_collections(
+        role=role,
+        requested_source_collections=requested_source_collections,
     )
     agent_key = _normalize_agent_key(payload.agent)
     if agent_key is not None:
@@ -102,7 +108,7 @@ def query(
         raise HTTPException(status_code=400, detail=f"unknown topic: {payload.topic}")
 
     filters = RetrievalFilters(
-        source_collections=tuple(payload.source_collections),
+        source_collections=effective_source_collections,
         domains=topic.domains if topic else (),
         domain_fallback_collections=topic.fallback_collections if topic else (),
         years=tuple(payload.years),
@@ -111,6 +117,15 @@ def query(
         business_topics=tuple(payload.business_topics),
         title_only=payload.title_only,
         title_query=payload.question if payload.title_only else "",
+        personal_material_created_by=(
+            user.user_identifier
+            if SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            else ""
+        ),
+        personal_material_include_all=(
+            SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            and can_read_all_personal_uploads(role)
+        ),
     )
     results = state.search_engine.search(payload.question, filters=filters, top_k=payload.top_k)
     try:
@@ -134,7 +149,11 @@ def query(
         limit=5,
     )
 
-    filter_payload = _query_filter_payload(payload)
+    filter_payload = _query_filter_payload(
+        payload,
+        effective_source_collections=effective_source_collections,
+        role=role,
+    )
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     agent_invocation_id: str | None = None
     log_entry: dict[str, object] = {
@@ -268,10 +287,36 @@ def query_logs(
     }
 
 
-def _query_filter_payload(payload: QueryRequest) -> dict[str, object]:
+def _effective_source_collections(
+    *,
+    role: str,
+    requested_source_collections: tuple[SourceCollection, ...],
+) -> tuple[SourceCollection, ...]:
+    if requested_source_collections:
+        return requested_source_collections
+    return tuple(sorted(allowed_source_collections(role), key=lambda item: item.value))
+
+
+def _query_filter_payload(
+    payload: QueryRequest,
+    *,
+    role: str,
+    effective_source_collections: tuple[SourceCollection, ...],
+) -> dict[str, object]:
+    personal_material_requested = (
+        SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+    )
     return {
         "top_k": payload.top_k,
         "source_collections": [item.value for item in payload.source_collections],
+        "effective_source_collections": [item.value for item in effective_source_collections],
+        "personal_material_scope": (
+            "all"
+            if personal_material_requested and can_read_all_personal_uploads(role)
+            else "self"
+            if personal_material_requested
+            else "none"
+        ),
         "years": list(payload.years),
         "regions": list(payload.regions),
         "document_types": list(payload.document_types),

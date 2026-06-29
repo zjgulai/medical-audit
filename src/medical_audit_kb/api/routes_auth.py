@@ -96,6 +96,7 @@ def list_auth_roles() -> dict[str, object]:
         "compatibility": {
             "auditor": "member",
             "it-admin": "admin",
+            "system-admin": "admin",
             "department-head": "director",
         },
         "mode": "header_transition_layer",

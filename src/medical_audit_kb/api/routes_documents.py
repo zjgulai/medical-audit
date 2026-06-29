@@ -18,6 +18,13 @@ from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     document_permissions_for_role,
 )
+from medical_audit_kb.api.document_upload_governance import (
+    apply_governance_check_result,
+    apply_manual_index_decision,
+)
+from medical_audit_kb.api.document_upload_ingestion import (
+    DocumentUploadIngestionError,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 
 router = APIRouter(prefix="/documents")
@@ -37,7 +44,7 @@ class DocumentSourcePermissionItem(BaseModel):
     source_collection: SourceCollection
     label: str
     scope: str
-    access: Literal["read"]
+    access: Literal["read", "explicit-owner-read", "explicit-read-all"]
 
 
 class DocumentUploadPermissions(BaseModel):
@@ -143,11 +150,59 @@ class DocumentUploadResponse(BaseModel):
     permissions: DocumentUploadPermissions
 
 
+class DocumentUploadIndexIngestionDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["staged-for-index", "already-staged"]
+    upload_key: str
+    source_collection: str
+    source_package_version_key: str
+    index_version_key: str
+    index_version_status: str
+    source_document_id: str
+    chunk_count: int
+    embedding_count: int
+    embedding_provider: str
+    embedding_model: str
+    embedding_dimension: int
+    external_provider_call_performed: bool
+    live_retrieval_activated: bool
+
+
+class DocumentUploadIndexIngestionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: DocumentUploadItem
+    ingestion: DocumentUploadIndexIngestionDetails
+    store: dict[str, object]
+    permissions: DocumentUploadPermissions
+
+
 class DocumentUploadGovernanceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     governance_status: DocumentGovernanceStatus
     note: str = Field(default="", max_length=500)
+
+
+class DocumentGovernanceResultRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_type: Literal["virus-scan", "dlp-review"]
+    provider: str = Field(min_length=1, max_length=100)
+    status: Literal["passed", "blocked"]
+    detail: str = Field(min_length=1, max_length=1000)
+    external_job_id: str | None = Field(default=None, max_length=200)
+    risk_level: str | None = Field(default=None, max_length=100)
+    result_code: str | None = Field(default=None, max_length=100)
+    finished_at: str | None = Field(default=None, max_length=100)
+
+
+class DocumentManualApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    note: str = Field(min_length=1, max_length=1000)
 
 
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
@@ -450,6 +505,292 @@ def update_document_upload_governance(
     )
 
 
+@router.post(
+    "/uploads/{upload_id}/index-readiness/governance-result",
+    response_model=DocumentUploadResponse,
+)
+def update_document_upload_governance_result(
+    upload_id: str,
+    payload: DocumentGovernanceResultRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentUploadResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    permissions = _upload_permissions(role)
+    if not _can_update_index_readiness(role):
+        record_operation(
+            state,
+            "document-upload-governance-result-access-denied",
+            {
+                "upload_id": upload_id,
+                "check_type": payload.check_type,
+                "provider": payload.provider,
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "status_code": 403,
+                "reason": (
+                    "document upload governance result update requires "
+                    "department-head or system-admin role"
+                ),
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "document upload governance result update requires "
+                "department-head or system-admin role"
+            ),
+        )
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+
+    current_payload = state.document_upload_store.get_upload(upload_id=upload_id)
+    if current_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    current_item = DocumentUploadItem.model_validate(current_payload)
+    readiness = apply_governance_check_result(
+        current_item.index_readiness.model_dump(mode="json"),
+        check_type=payload.check_type,
+        provider=payload.provider,
+        status=payload.status,
+        detail=payload.detail,
+        external_job_id=payload.external_job_id,
+        risk_level=payload.risk_level,
+        result_code=payload.result_code,
+        finished_at=payload.finished_at,
+    )
+    updated_payload = state.document_upload_store.update_index_readiness(
+        upload_id=upload_id,
+        index_readiness=readiness,
+    )
+    if updated_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(updated_payload)
+    record_operation(
+        state,
+        "document-upload-governance-result-update",
+        {
+            "upload_id": item.id,
+            "check_type": payload.check_type,
+            "provider": payload.provider,
+            "status": payload.status,
+            "result_code": payload.result_code,
+            "external_job_id": payload.external_job_id,
+            "readiness_status": item.index_readiness.status,
+            "blockers": item.index_readiness.blockers,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+        },
+    )
+    return DocumentUploadResponse(
+        item=item,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/index-readiness/manual-approval",
+    response_model=DocumentUploadResponse,
+)
+def update_document_upload_manual_approval(
+    upload_id: str,
+    payload: DocumentManualApprovalRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentUploadResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    permissions = _upload_permissions(role)
+    if not _can_update_index_readiness(role):
+        record_operation(
+            state,
+            "document-upload-index-approval-access-denied",
+            {
+                "upload_id": upload_id,
+                "decision": payload.decision,
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "status_code": 403,
+                "reason": (
+                    "document upload manual approval requires "
+                    "department-head or system-admin role"
+                ),
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="document upload manual approval requires department-head or system-admin role",
+        )
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+
+    current_payload = state.document_upload_store.get_upload(upload_id=upload_id)
+    if current_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    current_item = DocumentUploadItem.model_validate(current_payload)
+    readiness = apply_manual_index_decision(
+        current_item.index_readiness.model_dump(mode="json"),
+        decision=payload.decision,
+        actor=user.user_identifier,
+        note=payload.note.strip(),
+    )
+    updated_payload = state.document_upload_store.update_index_readiness(
+        upload_id=upload_id,
+        index_readiness=readiness,
+    )
+    if updated_payload is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+
+    item = DocumentUploadItem.model_validate(updated_payload)
+    record_operation(
+        state,
+        "document-upload-index-readiness-update",
+        {
+            "upload_id": item.id,
+            "decision": payload.decision,
+            "readiness_status": item.index_readiness.status,
+            "next_action": item.index_readiness.next_action,
+            "blockers": item.index_readiness.blockers,
+            "index_status": item.index_status,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+        },
+    )
+    return DocumentUploadResponse(
+        item=item,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/index-ingestion",
+    response_model=DocumentUploadIndexIngestionResponse,
+)
+def ingest_document_upload_index(
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentUploadIndexIngestionResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    permissions = _upload_permissions(role)
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    if not permissions.can_govern_personal_uploads:
+        record_operation(
+            state,
+            "authorization-denied",
+            {
+                "attempted_action": "document-upload-index-ingestion",
+                "permission": "govern_personal_uploads",
+                "upload_id": upload_id,
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "profile_status": user.profile_status,
+                "status_code": 403,
+                "reason": "document upload index ingestion requires governance role",
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="document upload index ingestion requires governance role",
+        )
+    if state.document_upload_indexer is None:
+        record_operation(
+            state,
+            "document-upload-index-ingestion-blocked",
+            {
+                "upload_id": upload_id,
+                "user_identifier": user.user_identifier,
+                "role": role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "status_code": 409,
+                "reason": "document-upload-indexing-disabled",
+            },
+        )
+        raise HTTPException(status_code=409, detail="document upload indexing is not enabled")
+
+    try:
+        result = state.document_upload_indexer.ingest_upload(
+            upload_id,
+            actor=user.user_identifier,
+        )
+    except DocumentUploadIngestionError as exc:
+        record_operation(
+            state,
+            "document-upload-index-ingestion-blocked",
+            {
+                "upload_id": upload_id,
+                "user_identifier": user.user_identifier,
+                "role": role,
+                "effective_role": user.role.value,
+                "auth_source": user.auth_source,
+                "status_code": exc.status_code,
+                "reason": exc.reason,
+                **exc.payload,
+            },
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    updated = state.document_upload_store.get_upload(upload_id=upload_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="document upload not found")
+    item = DocumentUploadItem.model_validate(updated)
+    ingestion = DocumentUploadIndexIngestionDetails.model_validate(result.to_dict())
+    record_operation(
+        state,
+        "document-upload-index-ingestion",
+        {
+            "upload_id": item.id,
+            "index_status": item.index_status,
+            "user_identifier": user.user_identifier,
+            "role": role,
+            "effective_role": user.role.value,
+            "auth_source": user.auth_source,
+            **ingestion.model_dump(),
+        },
+    )
+    return DocumentUploadIndexIngestionResponse(
+        item=item,
+        ingestion=ingestion,
+        store={"ready": True, "backend": state.document_upload_store.__class__.__name__},
+        permissions=permissions,
+    )
+
+
 @router.post("/uploads/{upload_id}/index", response_model=DocumentUploadResponse)
 def index_document_upload(
     upload_id: str,
@@ -570,6 +911,14 @@ def _can_govern_personal_uploads(role: str) -> bool:
     except HTTPException:
         return False
     return normalized in {HospitalRole.ADMIN, HospitalRole.TECHNICIAN, HospitalRole.DIRECTOR}
+
+
+def _can_update_index_readiness(role: str) -> bool:
+    try:
+        normalized = normalize_hospital_role(role, default=HospitalRole.MEMBER)
+    except HTTPException:
+        return False
+    return normalized in {HospitalRole.ADMIN, HospitalRole.DIRECTOR}
 
 
 def _index_status_for_governance(status: DocumentGovernanceStatus) -> DocumentIndexStatus:

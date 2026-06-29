@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +15,8 @@ from typing import Any
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
 DEFAULT_REPORT = "tmp/outputs/production-documents-readonly-latest.json"
 DEFAULT_USER_ID = "production-documents-readonly-probe"
+DEFAULT_TENANT_ID = "hospital-demo"
+DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 EXPECTED_DOCUMENTS_TEXT = (
     "AI智能审计管理系统",
     "材料与知识库统一检索",
@@ -46,6 +49,9 @@ def main() -> int:
         timeout_seconds=float(args.timeout_seconds),
         user_id=str(args.user_id),
         role=str(args.role),
+        tenant_id=str(args.tenant_id),
+        project_key=str(args.project_key),
+        api_key_env=_optional_env_name(args.api_key_env),
         min_matching_embeddings=int(args.min_matching_embeddings),
     )
     report_path.write_text(
@@ -67,6 +73,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--user-id", default=DEFAULT_USER_ID)
     parser.add_argument("--role", default="auditor")
+    parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
+    parser.add_argument("--project-key", default=DEFAULT_PROJECT_KEY)
+    parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help=(
+            "Optional environment variable containing the production API secret. "
+            "The secret value is never written to the report."
+        ),
+    )
     parser.add_argument(
         "--min-matching-embeddings",
         type=int,
@@ -83,14 +99,34 @@ def _run_probe(
     timeout_seconds: float,
     user_id: str,
     role: str,
+    tenant_id: str,
+    project_key: str,
+    api_key_env: str | None = None,
     min_matching_embeddings: int,
     http_get: Callable[[str, dict[str, str], float], HttpResponse] | None = None,
 ) -> dict[str, Any]:
     selected_http_get = http_get or _http_get
     normalized_base_url = base_url.rstrip("/")
+    api_key = _secret_from_env(api_key_env)
+    auth_headers = _auth_headers(
+        user_id=user_id,
+        role=role,
+        tenant_id=tenant_id,
+        project_key=project_key,
+        api_key=api_key,
+    )
     started_at = _now_iso()
     steps: list[dict[str, Any]] = []
-    summary: dict[str, Any] = {}
+    summary: dict[str, Any] = {
+        "auth_context": {
+            "user_id": user_id,
+            "role": role,
+            "tenant_id": tenant_id,
+            "project_key": project_key,
+            "api_key_env": api_key_env,
+            "api_key_configured": api_key is not None,
+        },
+    }
 
     _run_step(
         steps,
@@ -107,17 +143,18 @@ def _run_probe(
         lambda: _check_documents_permissions(
             normalized_base_url,
             timeout_seconds=timeout_seconds,
-            user_id=user_id,
             role=role,
+            auth_headers=auth_headers,
             http_get=selected_http_get,
         ),
     )
-    summary["documents_role"] = permissions_details["role"]
-    summary["source_collection_count"] = permissions_details["source_collection_count"]
-    summary["can_upload_personal"] = permissions_details["can_upload_personal"]
-    summary["can_read_all_personal_uploads"] = permissions_details[
-        "can_read_all_personal_uploads"
-    ]
+    if "error" not in permissions_details:
+        summary["documents_role"] = permissions_details["role"]
+        summary["source_collection_count"] = permissions_details["source_collection_count"]
+        summary["can_upload_personal"] = permissions_details["can_upload_personal"]
+        summary["can_read_all_personal_uploads"] = permissions_details[
+            "can_read_all_personal_uploads"
+        ]
 
     health_details = _run_step(
         steps,
@@ -128,7 +165,8 @@ def _run_probe(
             http_get=selected_http_get,
         ),
     )
-    summary["backend_health"] = health_details["status"]
+    if "error" not in health_details:
+        summary["backend_health"] = health_details["status"]
     search_details = _run_step(
         steps,
         "backend-search-backend",
@@ -136,11 +174,13 @@ def _run_probe(
             normalized_base_url,
             timeout_seconds=timeout_seconds,
             min_matching_embeddings=min_matching_embeddings,
+            auth_headers=auth_headers,
             http_get=selected_http_get,
         ),
     )
-    summary["search_backend_ready"] = search_details["ready"]
-    summary["matching_embedding_count"] = search_details["matching_embedding_count"]
+    if "error" not in search_details:
+        summary["search_backend_ready"] = search_details["ready"]
+        summary["matching_embedding_count"] = search_details["matching_embedding_count"]
 
     return {
         "status": "pass" if all(step["passed"] for step in steps) else "fail",
@@ -155,6 +195,8 @@ def _run_probe(
             "audit_log_write_expected": False,
             "provider_call": False,
             "browser_js_executed": False,
+            "api_key_env": api_key_env,
+            "api_key_configured": api_key is not None,
             "skipped_audit_log_writing_endpoints": list(SKIPPED_AUDIT_LOG_WRITING_ENDPOINTS),
         },
         "summary": summary,
@@ -222,17 +264,13 @@ def _check_documents_permissions(
     base_url: str,
     *,
     timeout_seconds: float,
-    user_id: str,
     role: str,
+    auth_headers: dict[str, str],
     http_get: Callable[[str, dict[str, str], float], HttpResponse],
 ) -> dict[str, Any]:
     payload = _request_json(
         f"{base_url}/api/v1/documents/permissions",
-        {
-            "Accept": "application/json",
-            "X-Role": role,
-            "X-User-Id": user_id,
-        },
+        {"Accept": "application/json", **auth_headers},
         timeout_seconds,
         http_get=http_get,
     )
@@ -279,11 +317,12 @@ def _check_search_backend(
     *,
     timeout_seconds: float,
     min_matching_embeddings: int,
+    auth_headers: dict[str, str],
     http_get: Callable[[str, dict[str, str], float], HttpResponse],
 ) -> dict[str, Any]:
     payload = _request_json(
         f"{base_url}/api/backend/index/search-backend",
-        {"Accept": "application/json"},
+        {"Accept": "application/json", **auth_headers},
         timeout_seconds,
         http_get=http_get,
     )
@@ -322,6 +361,41 @@ def _request_json(
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReadOnlyProbeError(f"{url} did not return valid JSON: {exc}") from exc
     return _dict(payload, "JSON response")
+
+
+def _auth_headers(
+    *,
+    user_id: str,
+    role: str,
+    tenant_id: str,
+    project_key: str,
+    api_key: str | None,
+) -> dict[str, str]:
+    headers = {
+        "X-User-Id": user_id,
+        "X-Role": role,
+        "X-Project-Key": project_key,
+        "X-Tenant-Id": tenant_id,
+    }
+    if api_key is not None:
+        headers["X-API-Key"] = api_key
+    return headers
+
+
+def _optional_env_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _secret_from_env(env_name: str | None) -> str | None:
+    if env_name is None:
+        return None
+    value = os.getenv(env_name, "").strip()
+    if not value:
+        raise ReadOnlyProbeError(f"environment variable {env_name} is empty or unset")
+    return value
 
 
 def _http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> HttpResponse:

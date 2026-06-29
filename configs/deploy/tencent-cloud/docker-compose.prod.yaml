@@ -63,6 +63,7 @@ services:
       MEDICAL_AUDIT_KB_CONFIG: /app/configs/knowledge-query-engine-dev.yaml
       MEDICAL_AUDIT_KB_DATA_ROOT: /app/data/医保审核前期资料
       MEDICAL_AUDIT_KB_INDEX_ROOT: /app/tmp/knowledge-query-indexes
+      MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out
       MEDICAL_AUDIT_ANALYTICS_UPLOAD_ROOT: /app/analytics-uploads
       MEDICAL_AUDIT_DOCUMENT_UPLOAD_ROOT: /app/document-uploads
       MEDICAL_AUDIT_KB_LOG_LEVEL: warning

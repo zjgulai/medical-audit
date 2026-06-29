@@ -227,6 +227,7 @@ import json
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -379,12 +380,15 @@ def http_json(url, headers=None):
         return {{"ok": False, "error": str(exc)}}
 
 
-def http_status(url, expected_texts=None):
+def http_status(url, expected_texts=None, headers=None):
     expected_texts = expected_texts or []
     try:
+        request_headers = {{"User-Agent": "medical-audit-state-audit/1.0"}}
+        if headers:
+            request_headers.update(headers)
         request = urllib.request.Request(
             url,
-            headers={{"User-Agent": "medical-audit-state-audit/1.0"}},
+            headers=request_headers,
         )
         with urllib.request.urlopen(request, timeout=20) as response:
             body = response.read()
@@ -404,6 +408,28 @@ def http_status(url, expected_texts=None):
         return {{"ok": False, "status_code": exc.code, "error": str(exc)}}
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {{"ok": False, "error": str(exc)}}
+
+
+def next_static_asset_status():
+    static_root = Path(WEB_DIR) / "_next" / "static"
+    if not static_root.exists():
+        return {{"ok": False, "error": "next-static-root-missing"}}
+    candidates = sorted(static_root.rglob("*.js"))
+    if not candidates:
+        return {{"ok": False, "error": "next-static-js-missing"}}
+    selected = next(
+        (
+            path
+            for path in candidates
+            if "/chunks/app/(workspace)/archive/" in path.as_posix()
+        ),
+        next((path for path in candidates if "/chunks/app/" in path.as_posix()), candidates[0]),
+    )
+    relative = selected.relative_to(Path(WEB_DIR)).as_posix()
+    url_path = "/" + urllib.parse.quote(relative, safe="/-._~")
+    status = http_status(BASE_URL + url_path)
+    status["path"] = url_path
+    return status
 
 
 def backup_entries(category):
@@ -463,7 +489,9 @@ report = {{
         "documents": http_status(
             BASE_URL + "/documents",
             ["AI智能审计管理系统", "材料与知识库统一检索", "个人材料"],
+            headers=AUDIT_HEADERS,
         ),
+        "next_static": next_static_asset_status(),
     }},
     "backups": backup_index(),
 }}
@@ -540,6 +568,8 @@ def _build_report(
         issues.append("nginx-config-test-failed")
     if not _audit_mount_valid(remote_report):
         issues.append("audit-static-bind-mount-missing")
+    if not _audit_next_static_healthy(remote_report):
+        issues.append("audit-next-static-not-ready")
     if not _search_backend_ready(remote_report, matching_embedding_floor):
         issues.append("search-backend-not-ready")
     if required_backup_stamp:
@@ -582,6 +612,7 @@ def _build_report(
             "dlp_review_provider": dlp_review_provider,
             "nginx_config_test": _nginx_test_passed(remote_report),
             "audit_frontdoor_healthy": audit_frontdoor_healthy,
+            "audit_next_static_healthy": _audit_next_static_healthy(remote_report),
             "audit_mount_present": _audit_mount_valid(remote_report),
             "search_backend_ready": _search_backend_ready(
                 remote_report,
@@ -641,6 +672,7 @@ def _shared_nginx_failure_is_non_blocking(
         _container_health(remote_report, "medical_audit_app") == "healthy"
         and _container_health(remote_report, "medical_audit_pg") == "healthy"
         and _audit_mount_valid(remote_report)
+        and _audit_next_static_healthy(remote_report)
         and _search_backend_ready(remote_report, min_matching_embeddings)
         and _audit_frontdoor_healthy(remote_report)
     )
@@ -656,6 +688,12 @@ def _audit_frontdoor_healthy(remote_report: dict[str, Any]) -> bool:
         and documents.get("ok") is True
         and documents.get("status_code") == 200
     )
+
+
+def _audit_next_static_healthy(remote_report: dict[str, Any]) -> bool:
+    frontdoor = _nested_dict(remote_report, "public_frontdoor")
+    next_static = _nested_dict(frontdoor, "next_static")
+    return next_static.get("ok") is True and next_static.get("status_code") == 200
 
 
 def _audit_mount_valid(remote_report: dict[str, Any]) -> bool:
@@ -778,6 +816,7 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `dlp_review_provider`: `{summary.get('dlp_review_provider')}`",
             f"- `nginx_config_test`: `{summary.get('nginx_config_test')}`",
             f"- `audit_frontdoor_healthy`: `{summary.get('audit_frontdoor_healthy')}`",
+            f"- `audit_next_static_healthy`: `{summary.get('audit_next_static_healthy')}`",
             f"- `audit_mount_present`: `{summary.get('audit_mount_present')}`",
             f"- `search_backend_ready`: `{summary.get('search_backend_ready')}`",
             f"- `latest_local_smoke_status`: `{summary.get('latest_local_smoke_status')}`",

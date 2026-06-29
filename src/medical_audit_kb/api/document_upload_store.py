@@ -296,6 +296,14 @@ class DocumentUploadStore(Protocol):
     ) -> dict[str, object] | None:
         pass
 
+    def update_index_readiness(
+        self,
+        *,
+        upload_id: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        pass
+
     def index_upload(
         self,
         *,
@@ -548,6 +556,28 @@ class SqlAlchemyDocumentUploadStore:
             session.flush()
             return _record_to_payload(record)
 
+    def update_index_readiness(
+        self,
+        *,
+        upload_id: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        readiness = _copy_index_readiness(index_readiness)
+        with self._session_factory.begin() as session:
+            record = session.scalar(
+                select(DocumentUploadRecord).where(DocumentUploadRecord.upload_key == upload_id)
+            )
+            if record is None:
+                return None
+            record.extra_metadata = {
+                **DEFAULT_DOCUMENT_UPLOAD_METADATA,
+                **dict(record.extra_metadata or {}),
+                "index_readiness": readiness,
+            }
+            session.add(record)
+            session.flush()
+            return _record_to_payload(record)
+
 
 @dataclass(slots=True)
 class InMemoryDocumentUploadStore:
@@ -673,6 +703,25 @@ class InMemoryDocumentUploadStore:
                 "governed_by": governed_by,
                 "governance_note": governance_note,
                 "governed_at": _datetime_to_iso(utc_now()),
+            }
+            self.records[index] = copy.deepcopy(updated)
+            return copy.deepcopy(updated)
+        return None
+
+    def update_index_readiness(
+        self,
+        *,
+        upload_id: str,
+        index_readiness: dict[str, object],
+    ) -> dict[str, object] | None:
+        readiness = _copy_index_readiness(index_readiness)
+        for index, record in enumerate(self.records):
+            if record.get("id") != upload_id:
+                continue
+            updated = {
+                **DEFAULT_DOCUMENT_UPLOAD_METADATA,
+                **record,
+                "index_readiness": readiness,
             }
             self.records[index] = copy.deepcopy(updated)
             return copy.deepcopy(updated)

@@ -120,6 +120,307 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "edge-regression" in script_text
 
 
+def test_audit_answer_provider_gate_readiness_script_is_valid_and_sanitized() -> None:
+    script_path = Path("scripts/audit-answer-provider-gate-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "secret_values_reported" in script_text
+    assert "provider_call_status" in script_text
+    assert "production_side_effect" in script_text
+    assert "fail-when-not-ready" in script_text
+
+
+def test_audit_answer_provider_gate_readiness_never_reports_secret_values() -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_secret_values",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_ANSWER_PROVIDER": "openai",
+            "MEDICAL_AUDIT_KB_ANSWER_API_KEY_ENV": "DEEPSEEK_API_KEY",
+            "MEDICAL_AUDIT_KB_ANSWER_MODEL": "deepseek-chat",
+            "MEDICAL_AUDIT_KB_ANSWER_BASE_URL": "https://api.deepseek.com/v1",
+            "DEEPSEEK_API_KEY": "do-not-print-this-secret",
+            "KIMI_API_KEY": "also-secret",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    report = module._build_report([scope])
+    serialized = json.dumps(report, ensure_ascii=False)
+
+    assert report["status"] == "ready_for_smoke"
+    assert scope["answer_runtime"]["status"] == "configured_with_key"
+    assert scope["answer_runtime"]["api_key_status"] == "SET"
+    assert scope["ready_provider_candidates"] == ["deepseek"]
+    assert "do-not-print-this-secret" not in serialized
+    assert "also-secret" not in serialized
+    assert report["boundaries"]["secret_values_reported"] is False
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+
+
+def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_blocks",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_ANSWER_PROVIDER": "fallback",
+            "KIMI_EMBEDDING_PROVIDER": "openai",
+            "KIMI_EMBEDDING_MODEL": "kimi-for-coding",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    report = module._build_report([scope])
+
+    assert report["status"] == "blocked"
+    assert report["blockers"] == ["no-provider-api-key-env-set"]
+    assert scope["answer_runtime"]["status"] == "fallback_or_unset"
+    assert scope["ready_provider_candidates"] == []
+    assert report["boundaries"]["production_env_write"] is False
+
+
+def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
+    script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "--confirm-production-write" in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
+    assert "external_governance_provider_call" in script_text
+    assert "indexing_triggered" in script_text
+
+
+def test_run_production_documents_governance_actor_headers_include_scope() -> None:
+    module = _load_script_module(
+        "run_production_documents_governance_actor_headers_include_scope",
+        Path("scripts/run-production-documents-governance-result-e2e.py"),
+    )
+
+    assert module._actor_headers(
+        user_id="owner-a",
+        role="auditor",
+        tenant_id="tenant-a",
+        project_key="project-a",
+    ) == {
+        "X-User-Id": "owner-a",
+        "X-Role": "auditor",
+        "X-Project-Key": "project-a",
+        "X-Tenant-Id": "tenant-a",
+    }
+
+
+def test_run_production_documents_governance_confirmation_blocks_production() -> None:
+    module = _load_script_module(
+        "run_production_documents_governance_confirmation_blocks_production",
+        Path("scripts/run-production-documents-governance-result-e2e.py"),
+    )
+
+    with pytest.raises(module.E2EError, match="confirm-production-write"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+    module._require_production_write_confirmation(
+        base_url="http://127.0.0.1:8000",
+        confirm_production_write="",
+    )
+
+
+def test_run_production_documents_readonly_probe_reports_permission_shape_failure() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_shape_failure",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+        del headers, timeout_seconds
+        if url.endswith("/documents"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                headers={"content-type": "text/html"},
+            )
+        if url.endswith("/api/v1/documents/permissions"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "source_collections": [{"source_collection": "medical-insurance-laws"}],
+                        "upload_permissions": {
+                            "can_upload_personal": True,
+                            "can_read_all_personal_uploads": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/health"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"status":"ok","version":"0.1.0"}',
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/index/search-backend"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"backend":"postgres","ready":true,"details":{"matching_embedding_count":49051,"embedding_provider":"openai"}}',
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key_env=None,
+        min_matching_embeddings=49000,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "fail"
+    assert report["summary"]["backend_health"] == "ok"
+    assert "documents_role" not in report["summary"]
+    permission_step = next(
+        step for step in report["steps"] if step["name"] == "documents-permissions"
+    )
+    assert permission_step["passed"] is False
+    assert permission_step["details"]["error"] == "role mismatch: None"
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["document_upload_list_api_called"] is False
+
+
+def test_run_production_documents_readonly_probe_reports_search_backend_failure() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_search_failure",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+        del headers, timeout_seconds
+        if url.endswith("/documents"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                headers={"content-type": "text/html"},
+            )
+        if url.endswith("/api/v1/documents/permissions"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "role": "auditor",
+                        "source_collections": [{"source_collection": "medical-insurance-laws"}],
+                        "upload_permissions": {
+                            "can_upload_personal": True,
+                            "can_read_all_personal_uploads": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/health"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"status":"ok","version":"0.1.0"}',
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/index/search-backend"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"backend":"postgres","ready":false,"details":{"matching_embedding_count":0,"embedding_provider":"openai"}}',
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key_env=None,
+        min_matching_embeddings=49000,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "fail"
+    assert report["summary"]["backend_health"] == "ok"
+    assert "search_backend_ready" not in report["summary"]
+    search_step = next(
+        step for step in report["steps"] if step["name"] == "backend-search-backend"
+    )
+    assert search_step["passed"] is False
+    assert search_step["details"]["error"] == "search backend should be ready"
+
+
+def test_run_production_documents_readonly_probe_auth_headers_include_context() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_auth_headers",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    assert module._auth_headers(
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key=None,
+    ) == {
+        "X-User-Id": "readonly-probe",
+        "X-Role": "auditor",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        "X-Tenant-Id": "hospital-demo",
+    }
+    assert module._auth_headers(
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key="secret-value",
+    )["X-API-Key"] == "secret-value"
+
+
 def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readonly() -> None:
     script_path = Path("scripts/run-controlled-api-readonly-permission-smoke.py")
 
@@ -380,6 +681,50 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
     assert report["summary"]["latest_local_smoke_status"] == "pass"
 
 
+def test_audit_tencent_cloud_deployment_state_rejects_proxy_frontdoor_without_mount() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_proxy_frontdoor",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    remote_report["nginx"] = {
+        "config_test": {"passed": True},
+        "mounts": {"audit_mount": None, "mount_count": 18},
+    }
+    remote_report["public_frontdoor"] = {
+        "health": {"ok": True, "status_code": 200},
+        "documents": {"ok": True, "status_code": 200},
+        "next_static": {"ok": False, "status_code": 404},
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert report["issues"] == [
+        "audit-static-bind-mount-missing",
+        "audit-next-static-not-ready",
+    ]
+    assert report["summary"]["audit_mount_present"] is False
+    assert report["summary"]["audit_frontdoor_healthy"] is True
+    assert report["summary"]["audit_next_static_healthy"] is False
+
+
+def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor() -> None:
+    script_text = Path("scripts/audit-tencent-cloud-deployment-state.py").read_text(
+        encoding="utf-8",
+    )
+
+    assert "def http_status(url, expected_texts=None, headers=None):" in script_text
+    assert "request_headers.update(headers)" in script_text
+    assert "headers=AUDIT_HEADERS" in script_text
+
+
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
     module = _load_script_module(
         "audit_tencent_cloud_deployment_state_missing_backup",
@@ -429,7 +774,84 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     ).resolve()
 
 
-def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
+def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_preflight_proxy_topology",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+    )
+
+    module._run_remote_preflight(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "docker inspect medical_audit_app" in script
+    assert "curl -fsS http://127.0.0.1:18080/health" in script
+    assert "/var/www/audit -> /var/www/audit" not in script
+
+
+def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_post_checks_auth_documents",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    config = types.SimpleNamespace(
+        remote_app_dir="/opt/medical-audit/app",
+        base_url="https://audit.example.test",
+    )
+
+    module._run_remote_post_checks(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "auth_headers=(" in script
+    assert "curl -fsS https://audit.example.test/api/v1/health >/dev/null" in script
+    assert (
+        'curl -fsS "${auth_headers[@]}" '
+        "https://audit.example.test/documents >/dev/null"
+    ) in script
+    assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
+
+
+def test_deploy_tencent_cloud_package_carries_static_export() -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_package_static_export",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    dockerfile_text = Path("configs/deploy/tencent-cloud/Dockerfile").read_text(
+        encoding="utf-8",
+    )
+    compose_text = Path("configs/deploy/tencent-cloud/docker-compose.prod.yaml").read_text(
+        encoding="utf-8",
+    )
+
+    assert "web/out/" not in module.APP_RSYNC_EXCLUDES
+    assert "COPY web/out ./web/out" in dockerfile_text
+    assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
+
+
+def test_deploy_tencent_cloud_cleans_only_regenerable_remote_sync_artifacts(
     monkeypatch: MonkeyPatch,
 ) -> None:
     module = _load_script_module(
@@ -448,6 +870,12 @@ def test_deploy_tencent_cloud_cleans_only_remote_source_sync_artifacts(
 
     assert len(captured_scripts) == 1
     script = captured_scripts[0]
+    assert "web_parent_dir=/opt/medical-audit/app/web" in script
+    assert "web_out_dir=/opt/medical-audit/app/web/out" in script
+    assert "rm -rf \"$web_out_dir\"" in script
+    assert "sudo -n rm -rf \"$web_out_dir\"" in script
+    assert "sudo -n install -d -o \"$(id -u)\" -g \"$(id -g)\" \"$web_out_dir\"" in script
+    assert "sudo -n chown -R \"$(id -u):$(id -g)\" \"$web_out_dir\"" in script
     assert "src_dir=/opt/medical-audit/app/src" in script
     assert "test -d \"$src_dir\"" in script
     assert "-name '*.pyc'" in script
@@ -1026,6 +1454,11 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
                 },
             }
         },
+        "public_frontdoor": {
+            "health": {"ok": True, "status_code": 200},
+            "documents": {"ok": True, "status_code": 200},
+            "next_static": {"ok": True, "status_code": 200},
+        },
         "backups": {
             "app": [{"path": f"/opt/medical-audit/backups/app/pre-deploy-{stamp}.tar.gz"}],
             "env": [
@@ -1223,3 +1656,354 @@ def test_audit_production_personal_material_indexing_readiness_passes_completed_
     assert report["summary"]["personal_material_chunks"] == 2
     assert report["summary"]["personal_material_active_chunks"] == 0
     assert report["boundaries"]["active_retrieval_activated"] is False
+
+
+def test_audit_production_personal_material_active_gate_script_is_readonly() -> None:
+    script_path = Path("scripts/audit-production-personal-material-active-gate.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "COS_SECRET" not in script_text
+    assert "active gate" in script_text
+    assert "production_write" in script_text
+    assert "db_write" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "medical-audit-kb index-activate" not in script_text
+    assert "activate_index_version(" not in script_text
+    assert '"POST"' not in script_text
+    assert "method='POST'" not in script_text
+    assert 'method="POST"' not in script_text
+    assert "UPDATE index_versions" not in script_text
+
+
+def test_audit_production_personal_material_active_gate_blocks_inactive_live_retrieval() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["live-retrieval-not-activated"]
+    assert report["summary"]["target_index_version_key"] == (
+        "personal-materials-cos-staging-pr152-20260619"
+    )
+    assert report["summary"]["target_status"] == "candidate"
+    assert report["summary"]["target_live_retrieval_activated"] is False
+    assert report["summary"]["runtime_activation_guard_enforced"] is True
+    assert report["summary"]["personal_material_default_query_isolated"] is True
+    assert report["summary"]["safe_to_execute_index_activate"] is False
+    assert report["boundaries"]["production_read_only"] is True
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["db_write"] is False
+    assert report["boundaries"]["index_activate_executed"] is False
+    assert report["boundaries"]["search_backend_reload_executed"] is False
+
+
+def test_audit_production_personal_material_active_gate_passes_explicit_live_activation() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": True,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "pass"
+    assert report["issues"] == []
+    assert report["summary"]["target_live_retrieval_activated"] is True
+    assert report["summary"]["personal_material_default_query_isolated"] is True
+    assert report["summary"]["safe_to_execute_index_activate"] is True
+    assert "单独授权执行 index-activate" in report["recommended_next_step"]
+
+
+def test_audit_production_personal_material_active_gate_blocks_default_query_leak() -> None:
+    module = _load_script_module(
+        "audit_production_personal_material_active_gate",
+        Path("scripts/audit-production-personal-material-active-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": True,
+        },
+        runtime_guard=True,
+    )
+    remote_report["runtime_checks"] = {
+        **remote_report["runtime_checks"],
+        "personal_material_default_query_excludes_personal_materials": False,
+        "personal_material_default_query_allowed_roles": ["auditor"],
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        require_live_retrieval_activated=True,
+        require_runtime_activation_guard=True,
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["personal-material-default-query-not-isolated"]
+    assert report["summary"]["personal_material_default_query_isolated"] is False
+    assert report["summary"]["safe_to_execute_index_activate"] is False
+
+
+def test_run_production_personal_material_live_retrieval_gate_has_write_gate() -> None:
+    script_path = Path("scripts/run-production-personal-material-live-retrieval-gate.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "--confirm-production-write" in script_text
+    assert "--execute" in script_text
+    assert "audit.lute-tlz-dddd.top" in script_text
+    assert "UPDATE index_versions" in script_text
+    assert "live_retrieval_activated" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "metadata->'index_readiness'" in script_text
+    assert "extra_metadata->'index_readiness'" not in script_text
+    assert "medical-audit-kb index-activate" not in script_text
+    assert "activate_index_version(" not in script_text
+
+
+def test_run_production_personal_material_live_retrieval_gate_requires_confirmation() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+
+    with pytest.raises(module.LiveRetrievalGateError, match="confirm-production-write"):
+        module._require_production_write_confirmation("")
+    module._require_production_write_confirmation("audit.lute-tlz-dddd.top")
+
+
+def test_run_production_personal_material_live_retrieval_gate_reports_ready_for_write() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        execute=False,
+        actor="tester",
+        run_id="run-1",
+    )
+
+    assert report["status"] == "ready_for_write"
+    assert report["issues"] == []
+    assert report["summary"]["target_live_retrieval_activated"] is False
+    assert report["summary"]["personal_material_default_query_isolated"] is True
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["index_activate_executed"] is False
+
+
+def test_run_production_personal_material_live_retrieval_gate_blocks_default_query_leak() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_live_retrieval_gate",
+        Path("scripts/run-production-personal-material-live-retrieval-gate.py"),
+    )
+    remote_report = _personal_material_active_gate_remote_report(
+        metadata={
+            "source_collection": "personal-materials",
+            "live_retrieval_activated": False,
+        },
+        runtime_guard=True,
+    )
+    remote_report["runtime_checks"] = {
+        **remote_report["runtime_checks"],
+        "personal_material_default_query_excludes_personal_materials": False,
+        "personal_material_default_query_allowed_roles": ["auditor"],
+    }
+
+    report = module._build_report(
+        remote_report=remote_report,
+        expected_deploy_sha="0984aad93505cb8eedb36aa8379031c4396b1939",
+        execute=False,
+        actor="tester",
+        run_id="run-1",
+    )
+
+    assert report["status"] == "blocked"
+    assert report["issues"] == ["personal-material-default-query-not-isolated"]
+
+
+def _personal_material_active_gate_remote_report(
+    *,
+    metadata: dict[str, object],
+    runtime_guard: bool,
+) -> dict[str, object]:
+    return {
+        "deploy_sha": "0984aad93505cb8eedb36aa8379031c4396b1939",
+        "containers": {
+            "medical_audit_app": {"health": "healthy"},
+            "medical_audit_pg": {"health": "healthy"},
+        },
+        "document_upload_indexing_env": {
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_ENABLED": "true",
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY": (
+                "personal-materials-cos-staging-pr152-20260619"
+            ),
+            "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY": (
+                "personal-materials-cos-staging-pr152-20260619"
+            ),
+        },
+        "env_ok": True,
+        "runtime_checks": {
+            "activation_guard_blocks_inactive_live_retrieval": runtime_guard,
+            "personal_material_explicit_query_allowed_roles": [],
+            "personal_material_default_query_allowed_roles": [],
+            "personal_material_default_query_excludes_personal_materials": True,
+            "error": "",
+        },
+        "runtime_ok": True,
+        "db_state": {
+            "target_index_version_key": "personal-materials-cos-staging-pr152-20260619",
+            "target_version": {
+                "version_key": "personal-materials-cos-staging-pr152-20260619",
+                "status": "candidate",
+                "source_package_version_key": "personal-materials-cos-staging-pr152-20260619",
+                "vector_provider": "fake",
+                "vector_model": "deterministic-token-hashing",
+                "document_count": 2,
+                "chunk_count": 2,
+                "metadata": metadata,
+            },
+            "personal_material_stats": {
+                "candidate_versions": 1,
+                "active_versions": 0,
+                "documents": 2,
+                "chunks": 2,
+                "active_chunks": 0,
+            },
+        },
+        "db_ok": True,
+    }
+
+
+def test_run_production_personal_material_index_staging_script_has_write_gate() -> None:
+    script_path = Path("scripts/run-production-personal-material-index-staging-e2e.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "--confirm-production-write" in script_text
+    assert "audit.lute-tlz-dddd.top" in script_text
+    assert "X-Tenant-Id" in script_text
+    assert "X-Project-Key" in script_text
+    assert "/index-ingestion" in script_text
+    assert "external_provider_call" in script_text
+    assert "index_activate_executed" in script_text
+    assert "search_backend_reload_executed" in script_text
+    assert "active_retrieval_activated" in script_text
+
+
+def test_run_production_personal_material_index_staging_requires_confirmation() -> None:
+    module = _load_script_module(
+        "run_production_personal_material_index_staging_e2e",
+        Path("scripts/run-production-personal-material-index-staging-e2e.py"),
+    )
+
+    with pytest.raises(module.StagingE2EError, match="confirm-production-write"):
+        module._require_production_write_confirmation(
+            base_url="https://audit.lute-tlz-dddd.top",
+            confirm_production_write="",
+        )
+    module._require_production_write_confirmation(
+        base_url="https://audit.lute-tlz-dddd.top",
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+
+
+def test_run_production_personal_material_index_staging_selects_readiness_samples(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_production_personal_material_index_staging_e2e",
+        Path("scripts/run-production-personal-material-index-staging-e2e.py"),
+    )
+    readiness_report = tmp_path / "readiness.json"
+    readiness_report.write_text(
+        json.dumps(
+            {
+                "remote": {
+                    "document_upload_indexing": {
+                        "db": {
+                            "ready_not_indexed_samples": [
+                                {"upload_key": "document-upload-one"},
+                                {"upload_key": "document-upload-two"},
+                            ]
+                        }
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert module._selected_upload_ids(
+        readiness_report=readiness_report,
+        explicit_upload_ids=(),
+        max_uploads=1,
+    ) == ["document-upload-one"]
+    assert module._selected_upload_ids(
+        readiness_report=readiness_report,
+        explicit_upload_ids=("document-upload-explicit",),
+        max_uploads=10,
+    ) == ["document-upload-explicit"]

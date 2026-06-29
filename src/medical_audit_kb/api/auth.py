@@ -49,6 +49,7 @@ ROLE_ALIASES: dict[str, HospitalRole] = {
     "admin": HospitalRole.ADMIN,
     "hospital-admin": HospitalRole.ADMIN,
     "it-admin": HospitalRole.ADMIN,
+    "system-admin": HospitalRole.ADMIN,
     "administrator": HospitalRole.ADMIN,
     "管理员": HospitalRole.ADMIN,
     "technician": HospitalRole.TECHNICIAN,

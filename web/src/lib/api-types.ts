@@ -397,13 +397,14 @@ export type SourceCollection =
   | "medical-insurance-laws"
   | "supervision-rules-knowledge"
   | "medical-insurance-catalog"
-  | "risk-negative-list";
+  | "risk-negative-list"
+  | "personal-materials";
 
 export type DocumentSourcePermissionItem = {
   readonly source_collection: SourceCollection;
   readonly label: string;
   readonly scope: string;
-  readonly access: "read";
+  readonly access: "read" | "explicit-owner-read" | "explicit-read-all";
 };
 
 export type DocumentUploadPermissions = {
