@@ -253,6 +253,174 @@ def test_run_production_documents_governance_confirmation_blocks_production() ->
     )
 
 
+def test_run_production_documents_readonly_probe_reports_permission_shape_failure() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_shape_failure",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+        del headers, timeout_seconds
+        if url.endswith("/documents"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                headers={"content-type": "text/html"},
+            )
+        if url.endswith("/api/v1/documents/permissions"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "source_collections": [{"source_collection": "medical-insurance-laws"}],
+                        "upload_permissions": {
+                            "can_upload_personal": True,
+                            "can_read_all_personal_uploads": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/health"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"status":"ok","version":"0.1.0"}',
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/index/search-backend"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"backend":"postgres","ready":true,"details":{"matching_embedding_count":49051,"embedding_provider":"openai"}}',
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key_env=None,
+        min_matching_embeddings=49000,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "fail"
+    assert report["summary"]["backend_health"] == "ok"
+    assert "documents_role" not in report["summary"]
+    permission_step = next(
+        step for step in report["steps"] if step["name"] == "documents-permissions"
+    )
+    assert permission_step["passed"] is False
+    assert permission_step["details"]["error"] == "role mismatch: None"
+    assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["document_upload_list_api_called"] is False
+
+
+def test_run_production_documents_readonly_probe_reports_search_backend_failure() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_search_failure",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+        del headers, timeout_seconds
+        if url.endswith("/documents"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                headers={"content-type": "text/html"},
+            )
+        if url.endswith("/api/v1/documents/permissions"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "role": "auditor",
+                        "source_collections": [{"source_collection": "medical-insurance-laws"}],
+                        "upload_permissions": {
+                            "can_upload_personal": True,
+                            "can_read_all_personal_uploads": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/health"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"status":"ok","version":"0.1.0"}',
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/backend/index/search-backend"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=b'{"backend":"postgres","ready":false,"details":{"matching_embedding_count":0,"embedding_provider":"openai"}}',
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key_env=None,
+        min_matching_embeddings=49000,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "fail"
+    assert report["summary"]["backend_health"] == "ok"
+    assert "search_backend_ready" not in report["summary"]
+    search_step = next(
+        step for step in report["steps"] if step["name"] == "backend-search-backend"
+    )
+    assert search_step["passed"] is False
+    assert search_step["details"]["error"] == "search backend should be ready"
+
+
+def test_run_production_documents_readonly_probe_auth_headers_include_context() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_auth_headers",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+
+    assert module._auth_headers(
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key=None,
+    ) == {
+        "X-User-Id": "readonly-probe",
+        "X-Role": "auditor",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        "X-Tenant-Id": "hospital-demo",
+    }
+    assert module._auth_headers(
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        api_key="secret-value",
+    )["X-API-Key"] == "secret-value"
+
+
 def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readonly() -> None:
     script_path = Path("scripts/run-controlled-api-readonly-permission-smoke.py")
 

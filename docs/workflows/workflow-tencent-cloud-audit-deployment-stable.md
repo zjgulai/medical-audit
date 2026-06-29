@@ -33,6 +33,18 @@ source: human+ai
 
 ## 2. 当前服务器事实
 
+### 2026-06-29 PR #175 合入后部署前只读复核
+
+- PR #175 `codex/personal-material-query-scope-20260629` 已合入 `main`，merge commit 为 `bc1179194d99607f7aaab492bea202586d13e3f6`；该 PR 允许 `personal-materials` 作为显式查询来源，并按 owner/read-all 过滤个人材料检索。
+- 本轮未执行生产部署、未执行 schema migration、未写生产 env、未调用生成模型 provider，也未执行写入型业务 E2E；生产仍运行 `.deploy-sha=30df45269ba38e3d3d56e0599162950b6389f3eb`。
+- 部署脚本默认 read-only preflight 通过：`deploy-tencent-cloud-production.py --stamp preflight-pr175-...` 返回 `Preflight passed. Add --execute --confirm-production to deploy.`；该命令没有传 `--execute`，因此没有远端备份、同步、重启或 smoke 写入结果。
+- 当前生产状态只读审计 `tmp/outputs/tencent-cloud-deployment-state-readonly-before-pr175-deploy-20260629T034238Z.json` 为 `status=pass`、`issues=[]`、`warnings=[]`，确认 app/postgres/clamav healthy、共享 Nginx 配置通过、`audit_next_static_healthy=true`、`audit_mount_present=true`、`search_backend_ready=true`、`matching_embedding_count=49051`。
+- 以 PR #175 merge commit 作为期望 SHA 的只读审计 `tmp/outputs/tencent-cloud-deployment-state-target-pr175-readonly-20260629T034239Z.json` 为 `status=fail`，唯一 issue 为 `deploy-sha-mismatch`；这是预期的部署前差异证据，不能解释为生产故障。
+- 生产前端语义验收 `tmp/outputs/production-frontend-acceptance-before-pr175-deploy-rerun-20260629T034850Z.json` 为 `status=pass`，覆盖 `21` 个路由、`42` 个检查，`p0_count=0`、`p1_count=0`，且 `/audit/logs` 与 `/audit/logs/export` 均满足无上下文 `401`、管理员上下文 `200`。
+- `/documents` 只读 probe `tmp/outputs/production-documents-readonly-probe-before-pr175-deploy-context-20260629T035230Z.json` 为 `status=pass`；脚本仅调用 GET，跳过会写审计日志的 `/api/v1/documents/uploads` 与 `/api/v1/documents/uploads/{upload_id}/download`，返回 `documents_role=auditor`、`source_collection_count=4`、`search_backend_ready=true`、`matching_embedding_count=49051`。
+- F2 answer provider 生产-only readiness `tmp/outputs/answer-provider-gate-readiness-production-only-next-batch-20260629T034239Z.json` 仍为 `blocked`，blocker 为 `no-provider-api-key-env-set`；该报告为 `L3-production-read-only`，`provider_call_status=not_called`、`production_env_write=false`。
+- 证据等级：preflight 为只读部署预检，生产状态/前端/documents/provider gate 均为 `L3-production-read-only`。下一步如需让 PR #175 生效，必须单独授权 `--execute --confirm-production audit.lute-tlz-dddd.top` 的生产部署；部署后再跑部署状态审计、生产前端验收和 `/documents`/personal-material 显式查询只读验收。
+
 ### 2026-06-29 personal-material active retrieval 激活与 reload
 
 - 授权边界：本轮只执行个人材料目标版本 `index-activate`、PostgreSQL search backend reload 和激活后只读验收；不执行代码部署、不执行 schema migration、不调用生成模型 provider 或外部 embedding provider，不修改 `/Users/pray/project/medical_audit` 原前端 WIP 工作区。
