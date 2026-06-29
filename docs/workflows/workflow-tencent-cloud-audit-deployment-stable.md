@@ -1809,6 +1809,26 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-ssh-stdin-fix-deploy-20260616.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，`p0=[]`、`p1=[]`。
 - 证据边界：本轮是部署工具链脆弱点修复，不等于新增产品功能、权限模型、生成模型、schema 或生产配置能力。
 
+### 2026-06-29 main@66b22d45 UI/UX 生产部署
+
+- 部署提交：`66b22d4549724a5065f396b94d6e1db15471983b`。
+- 部署戳：`deploy-main-66b22d45-20260629T075824Z`。
+- 部署对象：干净 `main`；`/Users/pray/project/medical_audit` 的 dirty frontend WIP 未纳入部署包。
+- 变更范围：把已合入 main 的当前 UI/UX、知识库查询/个人材料查询边界和文档状态同步部署到 `https://audit.lute-tlz-dddd.top`；执行 app rebuild/restart、Next static 同步和共享 Nginx 静态资产更新。
+- 本地门禁：`uv run ruff check .`、`uv run pytest tests/knowledge_query`、`pnpm --filter medical-audit-web lint`、`pnpm --filter medical-audit-web typecheck`、`pnpm --filter medical-audit-web test`、`pnpm --filter medical-audit-web build` 均通过；部署 preflight 通过。
+- 同步前已创建应用、env、数据库、Nginx 和 Web 静态资产备份。远端 DB 备份耗时超过本地 SSH 等待窗口，部署脚本在发现远端 completion marker 后继续执行。
+- 应用备份：`/opt/medical-audit/backups/app/pre-deploy-deploy-main-66b22d45-20260629T075824Z.tar.gz`，大小 `185150321` bytes。
+- DB 备份：`/opt/medical-audit/backups/db/pre-deploy-deploy-main-66b22d45-20260629T075824Z.sql.gz`，大小 `4832943186` bytes。
+- Nginx 备份：`/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-deploy-main-66b22d45-20260629T075824Z`，大小 `28714` bytes。
+- Web 静态资产备份：`/opt/medical-audit/backups/web/audit-web-pre-deploy-deploy-main-66b22d45-20260629T075824Z.tar.gz`，大小 `631765` bytes。
+- 部署后基础 smoke：`tmp/outputs/production-e2e-smoke-after-deploy-main-66b22d45-20260629T075824Z.json`，状态 `pass`；TLS、health、PostgreSQL 检索、页面渲染、审计日志权限、查询引用、原文预览、底稿导出和边缘域名回归均通过。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-after-deploy-main-66b22d45-20260629T075824Z.json`，状态 `pass`，`issues=[]`、`warnings=[]`；远端 `.deploy-sha=66b22d4549724a5065f396b94d6e1db15471983b`，`medical_audit_app`、`medical_audit_pg` 和 ClamAV sidecar healthy，`ai_video_nginx` 前门与 Next static 均 healthy，active search backend 为 `matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-after-deploy-main-66b22d45-20260629T075824Z.json`，状态 `pass`，覆盖 `21` 个路由、`42` 个检查，desktop/mobile 均通过，`p0=[]`、`p1=[]`。
+- `/documents` 只读 probe：`tmp/outputs/production-documents-readonly-probe-after-deploy-main-66b22d45-20260629T075824Z.json`，状态 `pass`，`production_write=false`、`provider_call=false`。
+- 生产 answer provider readiness：`tmp/outputs/answer-provider-gate-readiness-production-only-after-deploy-main-66b22d45-20260629T075824Z.json` 为 `blocked`，blocker 为 `no-provider-api-key-env-set`；本次部署没有 provider call、没有生产 env 写入，不能宣称 no-fallback 生成能力已启用。
+- 个人材料 active gate：`tmp/outputs/production-personal-material-active-gate-after-deploy-main-66b22d45-20260629T075824Z.json` 为 `blocked`，issue 为 `target-index-version-not-candidate`；只读确认目标版本已是 `active`，不得重复执行 `index-activate` 或 search backend reload。
+- 证据边界：本轮是授权生产代码/静态资产部署，不包含 schema migration、生产 env 改写、外部 answer provider 调用、no-fallback 生产 E2E、真实医院 SSO 或新的写入型业务 E2E。
+
 ## 10. 回滚方案
 
 回滚前置门禁：
