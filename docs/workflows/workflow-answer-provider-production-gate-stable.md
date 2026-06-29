@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: answer-provider-production-gate
 status: stable
 created: 2026-06-15
-updated: 2026-06-28
+updated: 2026-06-29
 owner: self
 source: human+ai
 ---
@@ -15,7 +15,24 @@ source: human+ai
 > 本文件由 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 定稿。
 > 工具链就绪：`audit-answer-provider-gate-readiness.py`、`answer-provider-smoke`、`evaluate-answers`、答案预检与生产 `--require-generated-answer` E2E 闸均已实现。
 
-## 0. 2026-06-28 Batch 1 执行结论（最新）
+## 0. 2026-06-29 Batch 2 只读复核结论（最新）
+
+本批先重跑 §4.1 只读 readiness，并把本地与生产 scope 分开判读。结论：
+
+**F2 生产仍阻塞，不能写生产 `MEDICAL_AUDIT_KB_ANSWER_*`，也不能执行生产 no-fallback E2E。**
+
+本批证据：
+
+- 综合只读 readiness：`tmp/outputs/answer-provider-gate-readiness-local-and-production-20260629T024617Z.json` 返回 `status=ready_for_smoke`，但 `ready_scopes=["local-shell"]`，只说明本地 shell 有 `ANTHROPIC_API_KEY=SET`，不代表生产具备生成 provider 条件。
+- 生产-only 只读 readiness：`tmp/outputs/answer-provider-gate-readiness-production-only-20260629T024658Z.json` 返回 `status=blocked`、`blockers=["no-provider-api-key-env-set"]`；生产 `answer_runtime.status=fallback_or_unset`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 均为 `UNSET`，Kimi embedding 仍为 `SET` 且仅用于检索向量。
+
+边界：
+
+- 本批没有 provider call、没有生产 env 写入、没有 schema migration、没有生产部署。
+- 生产-only readiness 是当前生产判定依据；综合 readiness 只能作为本地 smoke 前置条件观察，不能覆盖生产 blocker。
+- 如需继续 §4.2 provider smoke，必须明确授权一次外部 provider 调用；通过 smoke 前不得进入真实答案评测、生产 env 写入或 `--require-generated-answer` 生产 E2E。
+
+## 0.1 2026-06-28 Batch 1 执行结论
 
 本批先执行 F2 的低风险门禁面：§4.1 脱敏只读条件检查 + 一次本地 Anthropic provider smoke。结论：
 
@@ -38,7 +55,7 @@ source: human+ai
 - 生产只读 readiness 是 `L3-production-read-only`；Anthropic smoke 是本地 provider preflight，不构成生产能力证明。
 - 当前产品表达仍应保持 generate-or-safe-fallback / citation fallback 边界，不能宣称 no-fallback 真实生成已上线。
 
-## 0.1 2026-06-24 验证结论（历史基线）
+## 0.2 2026-06-24 验证结论（历史基线）
 
 本轮用 **DeepSeek（`openai` 兼容，`deepseek-chat`）** 完整跑通了门禁的 §4.2/§4.3 并做了生产路径深挖，结论如下：
 

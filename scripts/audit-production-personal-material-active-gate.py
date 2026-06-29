@@ -351,7 +351,7 @@ payload = {{
     "error": "",
 }}
 try:
-    from medical_audit_kb.api.document_permissions import allowed_source_collections
+    from medical_audit_kb.api.document_permissions import allowed_explicit_source_collections
     from medical_audit_kb.api.routes_query import _effective_source_collections
     from medical_audit_kb.domain.constants import SourceCollection
     from medical_audit_kb.indexing.index_activation import (
@@ -372,7 +372,7 @@ try:
 
     personal_value = SourceCollection.PERSONAL_MATERIALS
     for role in ("auditor", "department-head", "it-admin", "technician"):
-        if personal_value in allowed_source_collections(role):
+        if personal_value in allowed_explicit_source_collections(role):
             payload["personal_material_explicit_query_allowed_roles"].append(role)
         if personal_value in _effective_source_collections(
             role=role,

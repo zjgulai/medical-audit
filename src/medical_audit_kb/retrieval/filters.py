@@ -18,6 +18,8 @@ class RetrievalFilters:
     business_topics: tuple[str, ...] = ()
     title_only: bool = False
     title_query: str = ""
+    personal_material_created_by: str = ""
+    personal_material_include_all: bool = False
 
     def matches(self, metadata: Mapping[str, object]) -> bool:
         checks = (
@@ -32,6 +34,11 @@ class RetrievalFilters:
             _matches_any(metadata, "document_type", self.document_types),
             _matches_any(metadata, "business_topic", self.business_topics),
             _matches_title(metadata, self.title_query) if self.title_only else True,
+            _matches_personal_material_scope(
+                metadata,
+                created_by=self.personal_material_created_by,
+                include_all=self.personal_material_include_all,
+            ),
         )
         return all(checks)
 
@@ -46,6 +53,8 @@ class RetrievalFilters:
                 self.document_types,
                 self.business_topics,
                 self.title_only,
+                self.personal_material_created_by,
+                self.personal_material_include_all,
             )
         )
 
@@ -87,6 +96,19 @@ def _matches_any(
     if isinstance(value, list | tuple | set | frozenset):
         return bool(set(value).intersection(accepted))
     return value in accepted
+
+
+def _matches_personal_material_scope(
+    metadata: Mapping[str, object],
+    *,
+    created_by: str,
+    include_all: bool,
+) -> bool:
+    if metadata.get("source_collection") != SourceCollection.PERSONAL_MATERIALS.value:
+        return True
+    if include_all:
+        return True
+    return bool(created_by) and metadata.get("created_by") == created_by
 
 
 def _matches_title(metadata: Mapping[str, object], query: str) -> bool:

@@ -18,6 +18,7 @@ DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
     SourceCollection.MEDICAL_INSURANCE_CATALOG: ("医保目录", "系统知识库"),
     SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
 }
+PERSONAL_MATERIAL_PERMISSION_LABEL = ("个人材料", "个人上传材料")
 
 @dataclass(frozen=True, slots=True)
 class DocumentPermission:
@@ -52,9 +53,14 @@ def can_read_all_personal_uploads(role: str) -> bool:
     return has_permission(normalized, Permission.READ_ALL_PERSONAL_UPLOADS)
 
 
+def can_query_personal_materials(role: str) -> bool:
+    normalized = normalize_hospital_role(role, default=HospitalRole.MEMBER)
+    return has_permission(normalized, Permission.QUERY_KNOWLEDGE)
+
+
 def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
     # Current system collections are readable by all authenticated audit roles.
-    return tuple(
+    permissions = tuple(
         DocumentPermission(
             source_collection=collection,
             label=label,
@@ -63,9 +69,28 @@ def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
         )
         for collection, (label, scope) in DOCUMENT_SOURCE_COLLECTION_LABELS.items()
     )
+    if not can_query_personal_materials(role):
+        return permissions
+    personal_label, personal_scope = PERSONAL_MATERIAL_PERMISSION_LABEL
+    personal_access = (
+        "explicit-read-all" if can_read_all_personal_uploads(role) else "explicit-owner-read"
+    )
+    return (
+        *permissions,
+        DocumentPermission(
+            source_collection=SourceCollection.PERSONAL_MATERIALS,
+            label=personal_label,
+            scope=personal_scope,
+            access=personal_access,
+        ),
+    )
 
 
 def allowed_source_collections(role: str) -> frozenset[SourceCollection]:
+    return frozenset(DOCUMENT_SOURCE_COLLECTION_LABELS)
+
+
+def allowed_explicit_source_collections(role: str) -> frozenset[SourceCollection]:
     return frozenset(item.source_collection for item in document_permissions_for_role(role))
 
 
@@ -77,7 +102,7 @@ def enforce_source_collection_access(
     denied = sorted(
         collection.value
         for collection in source_collections
-        if collection not in allowed_source_collections(role)
+        if collection not in allowed_explicit_source_collections(role)
     )
     if denied:
         raise HTTPException(

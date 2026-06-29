@@ -44,7 +44,7 @@ class DocumentSourcePermissionItem(BaseModel):
     source_collection: SourceCollection
     label: str
     scope: str
-    access: Literal["read"]
+    access: Literal["read", "explicit-owner-read", "explicit-read-all"]
 
 
 class DocumentUploadPermissions(BaseModel):
