@@ -5,7 +5,7 @@ module: security
 topic: auth-rbac
 status: stable
 created: 2026-06-15
-updated: 2026-06-15
+updated: 2026-06-30
 owner: self
 source: human+ai
 ---
@@ -32,13 +32,58 @@ source: human+ai
 - 索引管理写接口已限制 `it-admin`，非授权访问记录 `index-admin-access-denied`。
 - 门户配置写接口已对未知角色记录 `agent-access-denied` 和 `project-member-access-denied`。
 - 文档上传列表已按 `X-User-Id` 做个人材料读取隔离，`it-admin` 和 `department-head` 可读全部个人上传。
+- 当前生产已部署 `/auth/roles`、`/auth/session`、受控 API 鉴权中间件和 `X-Tenant-Id` 只读门禁；2026-06-30 生产只读权限 smoke 在 35 个 GET probe 上返回 `status=observed`、`issue_count=0`。
+- 本地与生产均已有 header transition layer：`X-User-Id`、`X-Role`、`X-Project-Key`、`X-Tenant-Id` 可驱动过渡期用户、角色、项目和租户上下文。
+- 本地已存在 `auth_departments`、`auth_users`、`auth_user_role_assignments` 与项目级 role scope，且 disabled/pending profile 会被拒绝。
 
 当前不能声明为真实权限系统：
 
-- 前端 `web/src/lib/api-client.ts` 仍硬编码 `X-Role: auditor` 和 `X-User-Id: next-knowledge-query`。
-- 后端仍允许客户端直接传入 `X-Role` 与 `X-User-Id`。
-- 没有用户、部门、角色、角色绑定、权限项、会话、登录失效、账号禁用和密码或外部身份源校验。
-- 权限校验散落在 `role_policy.py`、`document_permissions.py`、`routes_index.py`、`routes_query.py` 等局部模块中。
+- 前端仍会通过本地审计角色上下文发送 `X-Role`、`X-User-Id`、`X-Project-Key` 和 `X-Tenant-Id`，这只是过渡兼容层，不是可信身份来源。
+- 后端仍允许 header transition layer 参与授权解析；生产尚未关闭浏览器可构造的 legacy header 授权。
+- 没有完成服务端登录会话、可信认证代理签名校验、正式医院 SSO claims、真实租户身份来源、会话撤销和 CSRF/同源写接口门禁。
+- `scripts/audit-auth-sso-contract-readiness.py` 已固化真实 SSO/session readiness 合同，但当前报告仍为 `blocked`，不能升级为真实 SSO 完成。
+
+## 2.1 2026-06-30 P0-04 SSO/session 合同门禁
+
+本轮新增 fail-closed 合同审计脚本：
+
+```bash
+pnpm auth:sso-contract-readiness
+```
+
+脚本只读取本地环境变量名称和 `SET/UNSET` 状态，不访问网络、不写生产 env、不调用 provider、不执行生产写入。默认目标为 `trusted-sso-proxy`，用于把真实医院 SSO 或认证代理接入前的合同条件机器化。
+
+当前报告：
+
+- `tmp/outputs/auth-sso-contract-readiness-p0-04-20260630T042500+0800.json`
+- `status=blocked`
+- `evidence_grade=L2-fixture-or-dry-run`
+- `production_side_effect=none`
+- `provider_call_status=not_called`
+- `secret_values_reported=false`
+
+当前阻塞项：
+
+- `auth-mode-not-trusted-sso-proxy`
+- `trusted-proxy-not-enabled`
+- `trusted-proxy-signature-key-env-missing`
+- `trusted-proxy-allowed-source-cidrs-missing`
+- `legacy-header-auth-still-enabled`
+
+可信代理目标 claims 合同：
+
+| claim | trusted header | legacy header | required |
+| --- | --- | --- | --- |
+| `user_id` | `X-Medical-Audit-User-Id` | `X-User-Id` | yes |
+| `role_keys` | `X-Medical-Audit-Role-Keys` | `X-Role` | yes |
+| `tenant_id` | `X-Medical-Audit-Tenant-Id` | `X-Tenant-Id` | yes |
+| `project_keys` | `X-Medical-Audit-Project-Keys` | `X-Project-Key` | yes |
+| `external_subject` | `X-Medical-Audit-External-Subject` | none | yes |
+| `department_key` | `X-Medical-Audit-Department-Key` | none | yes |
+| `claims_issued_at` | `X-Medical-Audit-Claims-Issued-At` | none | yes |
+| `claims_signature` | `X-Medical-Audit-Claims-Signature` | none | yes |
+
+服务端会话目标合同保留为第二路径：HttpOnly/Secure/SameSite cookie、server-side session store、退出/禁用即撤销、写接口 CSRF 或可信同源保护。两条路径只能在明确配置和验证后进入生产写入型权限 E2E。
 
 ## 3. 角色模型
 

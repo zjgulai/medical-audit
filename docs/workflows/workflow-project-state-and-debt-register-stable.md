@@ -927,7 +927,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-01 | 产品集成债务 | 门户核心模块仍以静态数据和本地 state 为主 | `/agents` 和 `/projects` 已完成生产写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收；`/documents` 已完成生产查询、来源集合回显、文档权限接口和个人材料留存写入型验收；个人材料 candidate staging、live retrieval metadata gate、`index-activate`、search backend reload、激活后只读/API 验收和显式查询 owner/read-all 生产验收均已完成，且默认查询仍隔离 `personal-materials`；本地已补 `title_only`、材料治理状态机、本地策略扫描/DLP 标记和受控下载；其余模块仍多依赖 `portal-data` | 页面存在但业务闭环不完整，容易误判为功能已完成 | 下一步补外部杀毒/DLP 服务、脱敏改写、对象存储治理、真实认证权限、知识库/图谱/报告/整改页面 API、生产搜索历史专项验收和审计策略验收 | 新增/查询/刷新后数据仍存在；上传文件可追溯留存并通过治理门禁；前端测试、API 测试和生产写入验收通过；active retrieval 已完成 runtime 激活、默认隔离和显式查询 owner/read-all 生产验收，后续需补 DLP/脱敏、外部扫描、对象治理和审计策略验收 |
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-29 生产-only readiness：生产仅 `KIMI_API_KEY=SET`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 与全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；综合 readiness 仅说明本地 shell 有 Anthropic smoke 前置条件；生产 query smoke 仍为 fallback | 不能宣称 no-fallback AI 生成审计结论能力 | 先取得明确授权的一次 provider smoke；provider smoke 和真实答案评测通过前不得写生产 env，未通过前保持 generate-or-safe-fallback / citation fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
-| P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；已支持软禁用/恢复用户、撤销/恢复角色授权和项目级 role scope；受控 API 鉴权中间件本地强制模式已通过，未带角色头、未带 `X-Tenant-Id` 或停用用户会被拒绝并写 `authorization-denied`；生产只读权限 smoke 已执行且 `status=fail`，当前生产 `/auth/*` 为 404，部分既有读接口未拒绝缺租户头请求；当前仍依赖 `X-Role`、`X-User-Id`、`X-Project-Key`、本地 `X-Tenant-Id` 过渡层和 Nginx 注入 `X-API-Key` | 仍无法满足生产级审计系统完整权限边界 | 在现有本地权限底座上继续补真实会话认证、医院 SSO claims、正式租户身份来源、网关注入策略、生产部署和生产权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；生产只读权限 smoke 通过；真实会话 smoke 通过 |
+| P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和写入型生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；受控 API 鉴权中间件要求 `X-Tenant-Id` 并写 `authorization-denied`；2026-06-30 生产只读权限 smoke 已在最新 UI/UX 基线上返回 `status=observed`、`probe_count=35`、`issue_count=0`；新增 `scripts/audit-auth-sso-contract-readiness.py` 与 `pnpm auth:sso-contract-readiness`，当前 P0-04 合同 readiness 报告 `status=blocked`，阻塞项为可信代理/签名密钥/CIDR/关闭 legacy header 均未配置 | 仍无法满足生产级审计系统完整权限边界；只读 GET 权限通过不等于真实 SSO 或写入型验收完成 | 在现有本地权限底座上继续补真实会话认证或可信 SSO 代理、正式租户身份来源、网关注入策略和生产写入型权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；`production:permission-readonly` 持续通过；`auth:sso-contract-readiness` 不再 blocked；真实会话/SSO smoke 通过；授权写入型权限 E2E 通过 |
 | P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储和外部杀毒服务未完成 | 当前仅 HMAC 归档签名、本地附件归档和个人材料 `local-policy` 策略标记 | 报告与归档不能作为完整合规交付 | 设计签章、对象存储、外部扫描、留存介质方案 | 归档包、签章、验签和恢复演练通过 |
 | P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产；PR #170/#171 已将默认查询隔离、live retrieval metadata gate 和 SQL 修复部署到生产；2026-06-29 已授权执行 runtime DB `index-activate` 和 search backend reload。2026-06-30 只读复核确认最新生产 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`audit_next_static_healthy=true`，`matching_embedding_count=49051`；后续 docs-only 远端主线领先生产 `.deploy-sha` 时，不代表生产代码部署改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged`，runtime DB 状态变更也必须单独记录 | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置、runtime DB 状态和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收、权限只读观测和 runtime DB 状态复核均通过；文档记录 `main/prod SHA` 与 runtime 状态边界；后续部署继续执行 static asset gate |
 
@@ -1233,6 +1233,41 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 1. P0-04 继续从 header transition layer 推进到医院 SSO/session claims 合同、网关注入策略和正式租户身份来源；先做方案和只读验证，不直接写生产配置。
 2. 写入型权限 E2E 仅在明确授权、备份和回滚路径齐备后执行；执行前复跑 `production:permission-readonly`。
 3. F2 no-fallback 真实生成仍受 `no-provider-api-key-env-set` 阻塞；除非单独授权 provider smoke，否则继续保持 fallback 边界。
+
+冻结日期：`2026-06-30`
+
+### 2.0.19 2026-06-30 Batch 3 P0-04 SSO/session 合同 readiness 固化
+
+状态口径：本节同步 P0-04 真实认证与租户边界的下一批本地收口。目标是把医院 SSO/session claims、可信代理、正式租户身份来源和 legacy header 关闭要求从计划文字固化为可执行 readiness 门禁。本批没有生产部署、没有生产配置写入、没有生产写入型 E2E、没有 provider call。
+
+本地变更：
+
+- 新增 `scripts/audit-auth-sso-contract-readiness.py`，默认目标为 `trusted-sso-proxy`，只读取本地环境变量名称和 `SET/UNSET` 状态，输出 SSO/session 合同 readiness JSON/Markdown。
+- 新增 `pnpm auth:sso-contract-readiness`，作为 P0-04 合同门禁入口。
+- 新增脚本测试，覆盖默认 fail-closed、可信代理配置齐备时进入 `ready_for_readonly_gateway_probe`、签名密钥值不泄露。
+- 同步 `docs/architecture/architecture-auth-rbac-stable.md`，补充 2026-06-30 生产只读权限事实、可信代理 claims 合同和当前阻塞项。
+
+验收证据：
+
+- `python3 -m py_compile scripts/audit-auth-sso-contract-readiness.py`：通过。
+- `uv run pytest tests/knowledge_query/test_scripts.py -k "audit_auth_sso_contract_readiness"`：通过，`3 passed`。
+- `uv run ruff check scripts/audit-auth-sso-contract-readiness.py tests/knowledge_query/test_scripts.py`：通过。
+- `uv run python scripts/audit-auth-sso-contract-readiness.py --json-output tmp/outputs/auth-sso-contract-readiness-p0-04-20260630T042500+0800.json --markdown-output tmp/outputs/auth-sso-contract-readiness-p0-04-20260630T042500+0800.md`：返回 `status=blocked`、`evidence_grade=L2-fixture-or-dry-run`、`production_side_effect=none`、`provider_call_status=not_called`、`secret_values_reported=false`。
+
+当前阻塞项：
+
+- `auth-mode-not-trusted-sso-proxy`
+- `trusted-proxy-not-enabled`
+- `trusted-proxy-signature-key-env-missing`
+- `trusted-proxy-allowed-source-cidrs-missing`
+- `legacy-header-auth-still-enabled`
+
+当前边界：
+
+- `sso_contract_readiness_status=blocked`：真实 SSO/可信代理或 server-session 尚未配置，不能宣称真实会话完成。
+- `legacy_header_auth_status=still_enabled`：浏览器可构造的过渡 header 仍参与授权解析，生产写入型权限验收不得开始。
+- `production_side_effect=none`：本批只做本地脚本、测试和文档同步。
+- `next_evidence_required`：选择可信代理或 server-session 路径，配置签名/会话/legacy header 关闭策略后，先跑 readiness，再跑生产只读权限 smoke，最后才申请授权写入型权限 E2E。
 
 冻结日期：`2026-06-30`
 

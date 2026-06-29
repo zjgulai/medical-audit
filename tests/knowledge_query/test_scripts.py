@@ -192,6 +192,85 @@ def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> 
     assert report["boundaries"]["production_env_write"] is False
 
 
+def test_audit_auth_sso_contract_readiness_script_is_valid_and_sanitized() -> None:
+    script_path = Path("scripts/audit-auth-sso-contract-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_side_effect" in script_text
+    assert "provider_call_status" in script_text
+    assert "secret_values_reported" in script_text
+    assert "X-Medical-Audit-Claims-Signature" in script_text
+    assert "X-Tenant-Id" in script_text
+
+
+def test_audit_auth_sso_contract_readiness_blocks_default_transition_layer() -> None:
+    module = _load_script_module(
+        "audit_auth_sso_contract_readiness_blocks_default",
+        Path("scripts/audit-auth-sso-contract-readiness.py"),
+    )
+    report = module.build_readiness_report(
+        module.ReadinessConfig(
+            target_mode="trusted-sso-proxy",
+            json_output=None,
+            markdown_output=None,
+            fail_when_blocked=False,
+        ),
+        {},
+    )
+
+    assert report["status"] == "blocked"
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert "auth-mode-not-trusted-sso-proxy" in report["blockers"]
+    assert "trusted-proxy-signature-key-env-missing" in report["blockers"]
+    assert "legacy-header-auth-still-enabled" in report["blockers"]
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+    assert report["boundaries"]["secret_values_reported"] is False
+
+
+def test_audit_auth_sso_contract_readiness_accepts_trusted_proxy_config() -> None:
+    module = _load_script_module(
+        "audit_auth_sso_contract_readiness_ready_proxy",
+        Path("scripts/audit-auth-sso-contract-readiness.py"),
+    )
+    env = {
+        "MEDICAL_AUDIT_AUTH_MODE": "trusted-sso-proxy",
+        "MEDICAL_AUDIT_TRUSTED_PROXY_ENABLED": "true",
+        "MEDICAL_AUDIT_TRUSTED_PROXY_SIGNATURE_KEY_ENV": "SSO_PROXY_SIGNATURE_KEY",
+        "MEDICAL_AUDIT_TRUSTED_PROXY_ALLOWED_SOURCE_CIDRS": "10.0.0.0/8",
+        "MEDICAL_AUDIT_DISABLE_LEGACY_HEADER_AUTH": "true",
+        "SSO_PROXY_SIGNATURE_KEY": "redacted-sentinel-value",
+    }
+
+    report = module.build_readiness_report(
+        module.ReadinessConfig(
+            target_mode="trusted-sso-proxy",
+            json_output=None,
+            markdown_output=None,
+            fail_when_blocked=False,
+        ),
+        env,
+    )
+    serialized = json.dumps(report, ensure_ascii=False)
+
+    assert report["status"] == "ready_for_readonly_gateway_probe"
+    assert report["blockers"] == []
+    assert "redacted-sentinel-value" not in serialized
+    assert report["safe_env"]["referenced_secret_status"] == {
+        "SSO_PROXY_SIGNATURE_KEY": "SET"
+    }
+    assert report["mode_readiness"]["status"] == "ready"
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 

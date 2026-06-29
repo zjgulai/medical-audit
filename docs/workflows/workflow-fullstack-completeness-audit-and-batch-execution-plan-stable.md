@@ -742,7 +742,7 @@ Batch 7.9 验收结果：
 
 状态：`in_progress`
 
-当前切片：`production_readonly_permission_smoke_observed_after_latest_ui`
+当前切片：`auth_sso_contract_readiness_blocked`
 
 目标：
 
@@ -795,9 +795,18 @@ Batch 8.4 验收结果：
 - 未满足：真实医院 SSO、正式登录会话签发、正式租户身份来源、网关/Nginx claims 注入策略和生产写入型权限验收仍未完成。
 - 边界：本批未部署生产、未写生产库、未调用 provider、未执行授权写入 smoke；只证明被探测 GET 路径的 L3 生产只读权限行为。
 
+Batch 8.5 验收结果：
+
+- 已满足：新增 `scripts/audit-auth-sso-contract-readiness.py` 与 `pnpm auth:sso-contract-readiness`，把 P0-04 真实 SSO/session 合同转为可执行 readiness 门禁。
+- 已满足：脚本默认目标为 `trusted-sso-proxy`，只检查本地 env 名称和 `SET/UNSET` 状态，不访问网络、不写生产 env、不调用 provider、不执行生产写入。
+- 已满足：目标测试通过，`uv run pytest tests/knowledge_query/test_scripts.py -k "audit_auth_sso_contract_readiness"` 返回 `3 passed`；`ruff` 和 `py_compile` 通过。
+- 已满足：本批 readiness 报告 `tmp/outputs/auth-sso-contract-readiness-p0-04-20260630T042500+0800.json` 返回 `status=blocked`、`evidence_grade=L2-fixture-or-dry-run`，并明确 `secret_values_reported=false`。
+- 未满足：可信代理、签名密钥 env、允许来源 CIDR、关闭 legacy header auth 仍未配置；server-session 路径也未选择或配置。
+- 边界：本批是合同/门禁固化，不证明真实医院 SSO、正式登录会话、生产配置或写入型权限验收完成。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.4 最新 UI/UX 基线后的生产只读认证/权限复核。原因：
+当前已推进到 Batch 8.5 P0-04 SSO/session 合同 readiness 固化。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -808,12 +817,13 @@ Batch 8.4 验收结果：
 - Batch 8.2 曾执行生产只读观测，确认当时生产未包含本地 `/auth/*`、受控 API 鉴权中间件、租户头门禁和 API-first workbench 切片。
 - Batch 8.3 完成旧生产部署差异只读复核并指出需要干净 release 路径。
 - Batch 8.4 在最新 UI/UX 已部署基线后重新执行部署状态审计和生产权限只读 smoke，确认本批探测的受控 GET 路径已按租户头和角色头门禁工作。
+- Batch 8.5 已把真实 SSO/session claims、可信代理签名、正式租户身份来源和关闭 legacy header 授权的条件固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
 
 下一批优先执行的收口计划：
 
-1. P0-04 真实认证：定义医院 SSO/session claims、正式租户身份来源、网关/Nginx claims 注入策略和用户禁用/移除治理的可验收合同。
-2. P0-04 生产复验常态化：把本批 `production:permission-readonly` 作为每次部署后必跑门禁，并按公开路径、匿名受控路径、缺租户头路径和管理员路径分层记录。
-3. 授权写入型权限 E2E：只有在备份、回滚路径和明确授权齐备后执行；执行前先复跑生产只读权限 smoke，执行后按 `authorized_live_side_effect` 单独留证。
+1. P0-04 路径选择：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
+2. P0-04 配置实现：为选定路径补签名校验/会话存储/legacy header 关闭策略，并让 `auth:sso-contract-readiness` 从 `blocked` 进入 `ready_for_readonly_gateway_probe`。
+3. P0-04 生产复验：配置变更如获授权，先跑 `production:permission-readonly`；通过后才可申请授权写入型权限 E2E。
 4. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收替代生成模型门禁。
 5. 文档治理安全：继续推进对象存储、外部杀毒/DLP、脱敏改写和审计事件专项验收，保持生产只读、授权写入和 provider call 边界分离。
 
