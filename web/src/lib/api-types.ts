@@ -477,6 +477,7 @@ export type QueryRequest = {
   readonly source_collections?: readonly SourceCollection[];
   readonly title_only?: boolean;
   readonly agent?: string | null;
+  readonly topic?: string;
 };
 
 export type QueryBasisItem = {

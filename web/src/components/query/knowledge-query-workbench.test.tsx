@@ -71,7 +71,8 @@ describe("KnowledgeQueryWorkbench", () => {
     expect(runKnowledgeQueryMock).toHaveBeenCalledWith({
       question: "医保基金审核依据",
       top_k: 5,
-      source_collections: ["medical-insurance-laws"]
+      source_collections: ["medical-insurance-laws"],
+      topic: "medical-insurance-fund"
     });
     expect(screen.getByText("应核验诊疗记录、收费明细和政策依据。")).toBeInTheDocument();
     expect(screen.getByText("来源: medical-insurance-laws")).toBeInTheDocument();

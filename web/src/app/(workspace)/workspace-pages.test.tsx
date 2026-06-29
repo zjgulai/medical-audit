@@ -2067,7 +2067,8 @@ describe("workspace foundation pages", () => {
         question: "医保基金审核依据",
         top_k: 8,
         source_collections: ["supervision-rules-knowledge"],
-        title_only: false
+        title_only: false,
+        topic: "medical-insurance-fund"
       });
     });
     await waitFor(() => {

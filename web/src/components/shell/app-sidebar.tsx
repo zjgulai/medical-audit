@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -10,6 +9,9 @@ import {
   systemNavigation,
   type NavigationItem
 } from "@/lib/navigation";
+import { currentSelfCheckProject } from "@/lib/projects";
+
+import { BrandLogo } from "./brand-logo";
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -72,6 +74,7 @@ function NavigationLink({
 
 export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean }) {
   const pathname = usePathname();
+  const currentTopic = currentSelfCheckProject.auditTopic;
 
   return (
     <aside
@@ -82,13 +85,32 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       <Link href="/workspace" className="audit-focus-ring rounded-[var(--audit-radius-lg)]" aria-label="打开门户首页">
         <div className={`flex items-center gap-3 ${collapsed ? "md:justify-center md:gap-0" : ""}`}>
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white shadow-[0_8px_18px_rgb(35_45_84/0.08)]">
-            <Image src="/brand/auditscope-logo.png" alt="" width={28} height={28} priority />
+            <BrandLogo priority />
           </div>
           <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
             <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">AI智能审计管理系统</p>
             <p className="audit-meta">医保基金审计专题</p>
           </div>
         </div>
+      </Link>
+
+      <Link
+        href="/workspace"
+        aria-label={`打开当前审计专题：${currentTopic}`}
+        className={`audit-focus-ring mt-3 items-center gap-2.5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-3 py-2.5 text-left transition hover:border-[var(--audit-primary)] hover:bg-white ${
+          collapsed ? "hidden" : "hidden md:flex"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className="grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] bg-white text-[11px] font-semibold text-[var(--audit-primary)]"
+        >
+          专
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-[var(--audit-ink)]">{currentTopic}</span>
+          <span className="audit-meta block">打开当前专题</span>
+        </span>
       </Link>
 
       <nav
@@ -106,21 +128,6 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
             <NavigationLink key={item.id} item={item} pathname={pathname} collapsed={false} />
           ))}
         </nav>
-      </div>
-
-      <div className={`mt-auto pt-4 ${collapsed ? "hidden" : "hidden md:block"}`}>
-        <div className="flex items-center gap-2.5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-3 py-2.5">
-          <span
-            aria-hidden="true"
-            className="grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] bg-white text-[11px] font-semibold text-[var(--audit-primary)]"
-          >
-            专
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-xs font-semibold text-[var(--audit-ink)]">医保基金使用合规</p>
-            <p className="audit-meta">当前审计专题</p>
-          </div>
-        </div>
       </div>
     </aside>
   );

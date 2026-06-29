@@ -39,6 +39,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText(/医保基金使用合规专项自查/)).toBeInTheDocument();
     expect(screen.getByText(/单院医保内审试运行/)).toBeInTheDocument();
     expect(screen.getAllByText("医保基金使用合规").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("auditscope-brand-logo")).toBeInTheDocument();
     expect(screen.getByText("管理员视图")).toBeInTheDocument();
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
       expect(screen.getByRole("button", { name: new RegExp(role) })).toBeInTheDocument();
@@ -50,6 +51,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /AI 对话/ })).toHaveAttribute("href", "/chat");
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
     expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
+    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/workspace");
     expect(screen.getByRole("link", { name: /AI 对话/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });

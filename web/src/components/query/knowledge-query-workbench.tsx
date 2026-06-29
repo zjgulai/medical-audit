@@ -71,7 +71,8 @@ export function KnowledgeQueryWorkbench() {
       const result = await runKnowledgeQuery({
         question: normalizedQuestion,
         top_k: 5,
-        source_collections: selectedCollections
+        source_collections: selectedCollections,
+        topic: "medical-insurance-fund"
       });
       setQueryState({ status: "success", result });
     } catch {

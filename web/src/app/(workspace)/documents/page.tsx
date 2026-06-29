@@ -145,7 +145,8 @@ export default function DocumentsPage() {
         question: normalizedQuery,
         top_k: 8,
         source_collections: selectedCollections,
-        title_only: titleOnly
+        title_only: titleOnly,
+        topic: "medical-insurance-fund"
       });
       setSearchState({ status: "success", result });
       await refreshHistory();
