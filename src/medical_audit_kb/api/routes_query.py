@@ -117,6 +117,15 @@ def query(
         business_topics=tuple(payload.business_topics),
         title_only=payload.title_only,
         title_query=payload.question if payload.title_only else "",
+        personal_material_created_by=(
+            user.user_identifier
+            if SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            else ""
+        ),
+        personal_material_include_all=(
+            SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            and can_read_all_personal_uploads(role)
+        ),
     )
     results = state.search_engine.search(payload.question, filters=filters, top_k=payload.top_k)
     try:
@@ -143,6 +152,7 @@ def query(
     filter_payload = _query_filter_payload(
         payload,
         effective_source_collections=effective_source_collections,
+        role=role,
     )
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     agent_invocation_id: str | None = None
@@ -290,12 +300,23 @@ def _effective_source_collections(
 def _query_filter_payload(
     payload: QueryRequest,
     *,
+    role: str,
     effective_source_collections: tuple[SourceCollection, ...],
 ) -> dict[str, object]:
+    personal_material_requested = (
+        SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+    )
     return {
         "top_k": payload.top_k,
         "source_collections": [item.value for item in payload.source_collections],
         "effective_source_collections": [item.value for item in effective_source_collections],
+        "personal_material_scope": (
+            "all"
+            if personal_material_requested and can_read_all_personal_uploads(role)
+            else "self"
+            if personal_material_requested
+            else "none"
+        ),
         "years": list(payload.years),
         "regions": list(payload.regions),
         "document_types": list(payload.document_types),

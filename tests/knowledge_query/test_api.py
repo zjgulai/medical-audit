@@ -1323,7 +1323,9 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
         "supervision-rules-knowledge",
         "medical-insurance-catalog",
         "risk-negative-list",
+        "personal-materials",
     ]
+    assert permissions_body["source_collections"][-1]["access"] == "explicit-owner-read"
     assert permissions_body["upload_permissions"] == {
         "can_upload_personal": True,
         "can_read_all_personal_uploads": False,
@@ -1405,6 +1407,14 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     assert admin_body["permissions"]["can_read_all_personal_uploads"] is True
     assert admin_body["permissions"]["can_govern_personal_uploads"] is True
     assert admin_body["items"][0]["id"] == uploaded["id"]
+    admin_permissions_response = client.get(
+        "/documents/permissions",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+    )
+    assert admin_permissions_response.status_code == 200
+    assert admin_permissions_response.json()["source_collections"][-1]["access"] == (
+        "explicit-read-all"
+    )
 
     admin_download_response = client.get(
         f"/documents/uploads/{uploaded['id']}/download",
@@ -1885,15 +1895,6 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
         headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
         json={"question": "医保基金审核依据 院内个人材料提示", "top_k": 5},
     )
-    explicit_personal_response = client.post(
-        "/query",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        json={
-            "question": "医保基金审核依据",
-            "top_k": 5,
-            "source_collections": ["personal-materials"],
-        },
-    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1905,7 +1906,53 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
     assert "personal-materials" not in state.query_logs[-1]["filters"][
         "effective_source_collections"
     ]
-    assert explicit_personal_response.status_code == 403
+    assert state.query_logs[-1]["filters"]["personal_material_scope"] == "none"
+
+    explicit_personal_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 5,
+            "source_collections": ["personal-materials"],
+        },
+    )
+    assert explicit_personal_response.status_code == 200
+    explicit_body = explicit_personal_response.json()
+    assert {
+        item["source_collection"] for item in explicit_body["citations"]
+    } == {"personal-materials"}
+    assert state.query_logs[-1]["filters"]["source_collections"] == ["personal-materials"]
+    assert state.query_logs[-1]["filters"]["effective_source_collections"] == [
+        "personal-materials"
+    ]
+    assert state.query_logs[-1]["filters"]["personal_material_scope"] == "self"
+
+    other_auditor_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-2", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 5,
+            "source_collections": ["personal-materials"],
+        },
+    )
+    assert other_auditor_response.status_code == 404
+
+    admin_personal_response = client.post(
+        "/query",
+        headers={"X-User-Id": "admin-1", "X-Role": "it-admin"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 5,
+            "source_collections": ["personal-materials"],
+        },
+    )
+    assert admin_personal_response.status_code == 200
+    assert {
+        item["source_collection"] for item in admin_personal_response.json()["citations"]
+    } == {"personal-materials"}
+    assert state.query_logs[-1]["filters"]["personal_material_scope"] == "all"
 
 
 def test_query_endpoint_records_selected_agent_invocation(tmp_path: Path) -> None:

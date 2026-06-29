@@ -699,7 +699,8 @@ Query 参数：
 
 ### `GET /documents/permissions`
 
-返回当前角色可读取的文档来源集合和个人材料上传权限。
+返回当前角色可读取的文档来源集合和个人材料上传权限。`personal-materials` 只允许显式选择，
+不会进入默认查询来源集合；普通成员为本人材料显式查询，主任/管理员可按权限读取全部个人材料。
 
 请求头：
 
@@ -717,6 +718,12 @@ Query 参数：
       "label": "法规政策",
       "scope": "公开知识库",
       "access": "read"
+    },
+    {
+      "source_collection": "personal-materials",
+      "label": "个人材料",
+      "scope": "个人上传材料",
+      "access": "explicit-owner-read"
     }
   ],
   "upload_permissions": {
