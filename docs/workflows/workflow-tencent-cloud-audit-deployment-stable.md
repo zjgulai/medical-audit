@@ -1829,6 +1829,20 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 个人材料 active gate：`tmp/outputs/production-personal-material-active-gate-after-deploy-main-66b22d45-20260629T075824Z.json` 为 `blocked`，issue 为 `target-index-version-not-candidate`；只读确认目标版本已是 `active`，不得重复执行 `index-activate` 或 search backend reload。
 - 证据边界：本轮是授权生产代码/静态资产部署，不包含 schema migration、生产 env 改写、外部 answer provider 调用、no-fallback 生产 E2E、真实医院 SSO 或新的写入型业务 E2E。
 
+### 2026-06-29 main@a78bf8e5 最新 UI/UX 生产基线复核
+
+- 当前生产提交：`a78bf8e5a1303178df26d03c6a687bd68f4512c2`。
+- 合并顺序：`560758ea` 品牌与专题入口稳定化 -> `20bec8d2` 将 main 合入 `frontend-2` 最新设计分支 -> `85330508` 移动端专题入口可见性修复 -> `a78bf8e5` 合并 `frontend-2` 最新网站设计到 `main`。
+- 生产部署戳：`20260629T183500-latest-ui`；该部署已生成 app/env/db/nginx/web 备份，DB 备份为 `/opt/medical-audit/backups/db/pre-deploy-20260629T183500-latest-ui.sql.gz`，大小 `4832947053` bytes。
+- 本轮 Batch 0 复核未再次执行部署；原因是生产 `.deploy-sha` 已等于 `a78bf8e5a1303178df26d03c6a687bd68f4512c2`。
+- 本地质量闸：`eslint`、`tsc --noEmit`、`vitest run`、`MEDICAL_AUDIT_NEXT_EXPORT=1 next build`、`uv run ruff check .`、`uv run pytest tests/knowledge_query` 和 `git diff --check` 均通过。
+- 部署状态巡检：`tmp/outputs/tencent-cloud-deployment-state-batch0-latest-ui-20260629T2151.json`，`status=pass`，`issues=[]`，`warnings=[]`；远端 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`audit_frontdoor_healthy=true`，`audit_next_static_healthy=true`，`audit_mount_present=true`，`matching_embedding_count=49051`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-batch0-latest-ui-20260629T2151.json`，`status=pass`，覆盖 `21` 个路由、`42` 个检查，desktop/mobile 均通过，`p0=[]`、`p1=[]`。
+- `/documents` 只读 probe：`tmp/outputs/production-documents-readonly-probe-batch0-latest-ui-20260629T2151.json`，`status=pass`，`production_write=false`、`provider_call=false`。
+- 浏览器 DOM 检查：`tmp/outputs/playwright/batch0-latest-ui-20260629T2151/summary.json`，`failedCount=0`；desktop/mobile 均确认 Logo 使用 `/brand/auditscope-logo.png`，无 broken image，`医保基金使用合规` 入口可见且指向 `/workspace`，入口到导航间距为 `20px`，无横向溢出。
+- 历史 UI 实验分支处理：`codex/frontend-2.0`、`codex/frontend-2-release-20260628` 已合入当前 main；`codex/frontend-plan-02-projects-dashboard`、`codex/frontend-visual-system-polish`、`codex/opendesign-ui-polish` 等旧分支会删除当前主线已落地的大量 API、脚本和状态文档，未纳入本批合并。
+- 证据边界：当前生产 UI/UX 与 `main@a78bf8e5` 对齐；本轮复核未写 schema、未写生产 env、未调用外部 answer provider、未执行新的写入型业务 E2E。
+
 ## 10. 回滚方案
 
 回滚前置门禁：

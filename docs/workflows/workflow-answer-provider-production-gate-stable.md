@@ -15,7 +15,25 @@ source: human+ai
 > 本文件由 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 定稿。
 > 工具链就绪：`audit-answer-provider-gate-readiness.py`、`answer-provider-smoke`、`evaluate-answers`、答案预检与生产 `--require-generated-answer` E2E 闸均已实现。
 
-## 0. 2026-06-29 main@66b22d45 部署后只读复核结论（最新）
+## 0. 2026-06-29 main@a78bf8e5 最新 UI/UX 生产基线后只读复核结论（最新）
+
+本轮 Batch 0 已确认生产站点运行 `main@a78bf8e5a1303178df26d03c6a687bd68f4512c2` 的最新 UI/UX 基线；该复核没有写生产 `MEDICAL_AUDIT_KB_ANSWER_*`，也没有调用外部 answer provider。生产-only readiness 结论不变：
+
+**F2 生产仍阻塞，不能写生产 `MEDICAL_AUDIT_KB_ANSWER_*`，也不能执行生产 no-fallback E2E。**
+
+本轮证据：
+
+- 生产部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-batch0-latest-ui-20260629T2151.json` 返回 `status=pass`，远端 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`matching_embedding_count=49051`。
+- 生产-only 只读 readiness：`tmp/outputs/answer-provider-gate-readiness-production-only-batch0-latest-ui-20260629T2151.json` 返回 `status=blocked`、`blockers=["no-provider-api-key-env-set"]`，`provider_call_status=not_called`，`production_env_write=false`。
+- 生产前端验收：`tmp/outputs/production-frontend-acceptance-batch0-latest-ui-20260629T2151.json` 返回 `status=pass`、`route_count=21`、`check_count=42`、`p0=[]`、`p1=[]`。
+
+边界：
+
+- 当前生产 UI/UX 与 `main@a78bf8e5` 对齐；本轮没有重复执行部署。
+- 生产-only readiness 是当前生产判定依据；普通前端验收或部署状态审计不能覆盖 `no-provider-api-key-env-set`。
+- 如需继续 §4.2 provider smoke，必须明确授权一次外部 provider 调用；通过 smoke 前不得进入真实答案评测、生产 env 写入或 `--require-generated-answer` 生产 E2E。
+
+## 0.1 2026-06-29 main@66b22d45 部署后只读复核结论
 
 本轮已完成 `main@66b22d4549724a5065f396b94d6e1db15471983b` 的生产 UI/UX 部署，但该部署没有写生产 `MEDICAL_AUDIT_KB_ANSWER_*`，也没有调用外部 answer provider。部署后重跑生产-only readiness，结论不变：
 
@@ -32,7 +50,7 @@ source: human+ai
 - 生产-only readiness 是当前生产判定依据；综合 readiness 或普通 E2E smoke 不能覆盖 `no-provider-api-key-env-set`。
 - 如需继续 §4.2 provider smoke，必须明确授权一次外部 provider 调用；通过 smoke 前不得进入真实答案评测、生产 env 写入或 `--require-generated-answer` 生产 E2E。
 
-## 0.1 2026-06-29 Batch 2 部署前只读复核结论
+## 0.2 2026-06-29 Batch 2 部署前只读复核结论
 
 本批先重跑 §4.1 只读 readiness，并把本地与生产 scope 分开判读。结论：
 
@@ -49,7 +67,7 @@ source: human+ai
 - 生产-only readiness 是当前生产判定依据；综合 readiness 只能作为本地 smoke 前置条件观察，不能覆盖生产 blocker。
 - 如需继续 §4.2 provider smoke，必须明确授权一次外部 provider 调用；通过 smoke 前不得进入真实答案评测、生产 env 写入或 `--require-generated-answer` 生产 E2E。
 
-## 0.2 2026-06-28 Batch 1 执行结论
+## 0.3 2026-06-28 Batch 1 执行结论
 
 本批先执行 F2 的低风险门禁面：§4.1 脱敏只读条件检查 + 一次本地 Anthropic provider smoke。结论：
 
@@ -72,7 +90,7 @@ source: human+ai
 - 生产只读 readiness 是 `L3-production-read-only`；Anthropic smoke 是本地 provider preflight，不构成生产能力证明。
 - 当前产品表达仍应保持 generate-or-safe-fallback / citation fallback 边界，不能宣称 no-fallback 真实生成已上线。
 
-## 0.3 2026-06-24 验证结论（历史基线）
+## 0.4 2026-06-24 验证结论（历史基线）
 
 本轮用 **DeepSeek（`openai` 兼容，`deepseek-chat`）** 完整跑通了门禁的 §4.2/§4.3 并做了生产路径深挖，结论如下：
 

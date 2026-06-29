@@ -1177,6 +1177,45 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 
 冻结日期：`2026-06-29`
 
+### 2.0.16 2026-06-29 Batch 0 最新 UI/UX 生产基线与顺序合并复核
+
+状态口径：本节同步 2026-06-29 按推荐执行顺序完成的 Batch 0 复核。目标是确认最新网站 UI/UX 是否已经按顺序合并并部署到生产，同时避免把历史 UI 实验分支误合回当前主线。本节为状态同步，不包含业务代码修改、schema migration、生产 env 改写或 provider 调用。
+
+分支合并结论：
+
+- 当前生产主线：`/Users/pray/project/medical_audit_minimal_pr` 的 `main@a78bf8e5a1303178df26d03c6a687bd68f4512c2`，且 `main...origin/main` 干净。
+- 最新 UI/UX 合并顺序已在 `main` 历史中闭合：`560758ea fix(ui): stabilize sidebar brand and topic entry` -> `20bec8d2 merge main into frontend 2 latest design` -> `85330508 fix(ui): keep topic entry visible on mobile` -> `a78bf8e5 merge frontend 2 latest website design`。
+- `codex/frontend-2.0` 和 `codex/frontend-2-release-20260628` 均已是 `main` 的祖先；不需要再次合并。
+- `codex/frontend-plan-02-projects-dashboard`、`codex/frontend-visual-system-polish`、`codex/opendesign-ui-polish` 等历史分支未纳入本批合并；对比 `main` 的 diff 会删除当前已落地的大量 API、脚本、状态文档和前端数据契约，属于被后续 `frontend-2.0` 主线取代的旧实验分支，不是最新 UI/UX 待合并分支。
+- `/Users/pray/project/medical_audit` 仍保留 `codex/frontend-2.0` 本地 evidence 产物 `output/`，该工作树状态不等同于生产 `main` 真相。
+
+本地质量闸：
+
+- `web`: `./node_modules/.bin/eslint .` 通过。
+- `web`: `./node_modules/.bin/tsc --noEmit` 通过。
+- `web`: `./node_modules/.bin/vitest run` 通过，`11` 个 test files、`91` 个 tests。
+- `web`: `MEDICAL_AUDIT_NEXT_EXPORT=1 ./node_modules/.bin/next build` 通过，静态页面 `21/21`。
+- repo: `uv run ruff check .` 通过。
+- repo: `uv run pytest tests/knowledge_query` 通过，`392 passed`，`1` 个既有 `StarletteDeprecationWarning`。
+- repo: `git diff --check` 通过。
+
+生产复核证据：
+
+- 部署状态审计：`tmp/outputs/tencent-cloud-deployment-state-batch0-latest-ui-20260629T2151.json`，`status=pass`、`issues=[]`、`warnings=[]`、`deploy_sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`、app/postgres/clamav healthy、`audit_frontdoor_healthy=true`、`audit_next_static_healthy=true`、`matching_embedding_count=49051`。
+- 生产前端语义验收：`tmp/outputs/production-frontend-acceptance-batch0-latest-ui-20260629T2151.json`，`status=pass`、`route_count=21`、`check_count=42`、desktop/mobile 均通过，`p0=[]`、`p1=[]`。
+- `/documents` 只读 probe：`tmp/outputs/production-documents-readonly-probe-batch0-latest-ui-20260629T2151.json`，`status=pass`、`production_write=false`、`provider_call=false`、`source_collection_count=5`、`matching_embedding_count=49051`。
+- 浏览器 DOM 检查：`tmp/outputs/playwright/batch0-latest-ui-20260629T2151/summary.json`，`failedCount=0`；desktop/mobile 均确认 Logo `src` 为 `/brand/auditscope-logo.png`、无 broken image、`医保基金使用合规` 入口可见并指向 `/workspace`、专题入口到导航间距 `20px`、无横向溢出。
+- Answer provider 只读门禁：`tmp/outputs/answer-provider-gate-readiness-production-only-batch0-latest-ui-20260629T2151.json`，`status=blocked`、`blockers=["no-provider-api-key-env-set"]`、`provider_call_status=not_called`、`production_env_write=false`。
+
+当前边界：
+
+- `current_ui_deploy_status=aligned`：当前生产站点已经运行最新合并的 UI/UX 版本 `a78bf8e5`。
+- `deployment_execute_status=not_needed_for_batch0`：本批复核发现生产 SHA 已对齐，因此没有重复执行生产部署。
+- `stale_ui_branches=not_merged_by_design`：历史 UI 实验分支未合入，是为了保护当前生产主线能力。
+- `next_batch_requires_authorization`：Batch 1 若进入个人材料真实入向量索引或生产写入型 E2E，需要单独确认生产写入边界。
+
+冻结日期：`2026-06-29`
+
 ### 2.0.14 2026-06-28 runtime/source reconciliation 与 Frontend 2.0 生产基线
 
 状态口径：本节同步 2026-06-28 PR #163 Frontend 2.0 已合并、已部署、已验收的生产基线。该轮生产部署对象为 `main@0984aad93505cb8eedb36aa8379031c4396b1939`；PR #164 合入点 `de648cccd855336d850c837fcaf0b5750ba0ede3` 额外包含验收脚本文案同步。后续 PR #168 已更新生产 `.deploy-sha`，最新生产状态见 `2.1`。
