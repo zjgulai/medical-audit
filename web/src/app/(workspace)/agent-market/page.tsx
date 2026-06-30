@@ -51,8 +51,17 @@ function tagList(tags: string): readonly string[] {
     .slice(0, 3);
 }
 
-function avatarUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(seed)}&radius=14&backgroundColor=eef2f5,e1f5ee,faeeda,fcebeb`;
+function agentInitials(title: string): string {
+  const compact = Array.from(title.replace(/[^\p{L}\p{N}]/gu, ""));
+  return compact.slice(0, 2).join("") || "审计";
+}
+
+function agentHue(seed: string): number {
+  let hash = 0;
+  for (const char of seed) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  }
+  return hash;
 }
 
 export default function AgentMarketPage() {
@@ -125,15 +134,7 @@ export default function AgentMarketPage() {
             className="audit-focus-ring audit-panel flex flex-col gap-3 p-4 text-left transition hover:border-[var(--audit-primary-line)]"
           >
             <div className="flex items-start gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={avatarUrl(agent.title)}
-                alt=""
-                width={40}
-                height={40}
-                loading="lazy"
-                className="size-10 shrink-0 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-subtle)]"
-              />
+              <AgentAvatar agent={agent} size="compact" />
               <h2 className="audit-card-title min-w-0 flex-1 leading-snug">{agent.title}</h2>
             </div>
             <p className="line-clamp-2 audit-copy text-[var(--audit-ink-muted)]">{firstLine(agent.intro)}</p>
@@ -209,14 +210,7 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; re
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={avatarUrl(agent.title)}
-              alt=""
-              width={44}
-              height={44}
-              className="size-11 shrink-0 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-subtle)]"
-            />
+            <AgentAvatar agent={agent} size="detail" />
             <div>
               <p className="audit-kicker">{agent.category.replace("审计", "")}</p>
               <h2 className="mt-1 audit-section-title">{agent.title}</h2>
@@ -263,5 +257,28 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; re
         </div>
       </div>
     </div>
+  );
+}
+
+function AgentAvatar({
+  agent,
+  size
+}: {
+  readonly agent: AgentPrompt;
+  readonly size: "compact" | "detail";
+}) {
+  const hue = agentHue(`${agent.category}-${agent.title}`);
+  const sizeClass = size === "detail" ? "size-11 text-sm" : "size-10 text-xs";
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid shrink-0 place-items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] font-semibold shadow-[0_8px_18px_rgb(35_45_84/0.06)] ${sizeClass}`}
+      style={{
+        background: `linear-gradient(135deg, hsl(${hue} 76% 95%), hsl(${(hue + 28) % 360} 68% 88%))`,
+        color: `hsl(${hue} 70% 30%)`
+      }}
+    >
+      {agentInitials(agent.title)}
+    </span>
   );
 }
