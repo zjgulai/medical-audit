@@ -271,6 +271,112 @@ def test_audit_auth_sso_contract_readiness_accepts_trusted_proxy_config() -> Non
     assert report["mode_readiness"]["status"] == "ready"
 
 
+def test_audit_document_governance_contract_readiness_script_is_valid_and_sanitized() -> None:
+    script_path = Path("scripts/audit-document-governance-contract-readiness.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_side_effect" in script_text
+    assert "external_governance_provider_call" in script_text
+    assert "object_storage_write" in script_text
+    assert "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED" in script_text
+    assert "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED" in script_text
+
+
+def test_audit_document_governance_contract_readiness_blocks_default_config() -> None:
+    module = _load_script_module(
+        "audit_document_governance_contract_readiness_blocks_default",
+        Path("scripts/audit-document-governance-contract-readiness.py"),
+    )
+    report = module.build_readiness_report_from_settings(
+        module.ReadinessConfig(
+            config_path=None,
+            qcloud_cos_available=False,
+            require_external_dlp_provider=False,
+            json_output=None,
+            markdown_output=None,
+            fail_when_blocked=False,
+        ),
+        document_storage=module.DocumentStorageSettings(),
+        document_governance=module.DocumentUploadGovernanceSettings(),
+        environ={},
+    )
+
+    assert report["status"] == "blocked"
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert "cos:document-storage-provider-not-tencent-cos" in report["blockers"]
+    assert "enterprise-virus-scan-provider-not-configured" in report["blockers"]
+    assert "enterprise-dlp-provider-not-configured" in report["blockers"]
+    assert "redaction-rewrite-not-enabled" in report["blockers"]
+    assert "document-governance-audit-event-contract-missing" in report["blockers"]
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["external_governance_provider_call"] == "not_called"
+    assert report["boundaries"]["object_storage_write"] is False
+
+
+def test_audit_document_governance_contract_readiness_accepts_enterprise_config() -> None:
+    module = _load_script_module(
+        "audit_document_governance_contract_readiness_ready",
+        Path("scripts/audit-document-governance-contract-readiness.py"),
+    )
+    env = {
+        "COS_SECRET_ID": "sentinel-cos-id-value",
+        "COS_SECRET_KEY": "sentinel-cos-key-value",
+        "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED": "true",
+        "MEDICAL_AUDIT_DOCUMENT_REDACTION_POLICY_VERSION": "redaction-v1",
+        "MEDICAL_AUDIT_DOCUMENT_REDACTION_REVIEW_REQUIRED": "true",
+        "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED": "true",
+    }
+
+    report = module.build_readiness_report_from_settings(
+        module.ReadinessConfig(
+            config_path=None,
+            qcloud_cos_available=True,
+            require_external_dlp_provider=False,
+            json_output=None,
+            markdown_output=None,
+            fail_when_blocked=False,
+        ),
+        document_storage=module.DocumentStorageSettings(
+            provider="tencent-cos",
+            cos_bucket="medical-audit-documents",
+            cos_region="ap-guangzhou",
+            cos_prefix="personal-materials/prod",
+            cos_secret_id_env="COS_SECRET_ID",
+            cos_secret_key_env="COS_SECRET_KEY",
+            cos_sdk_bootstrap_enabled=True,
+            signed_url_ttl_seconds=120,
+            local_quarantine_retention_days=7,
+            object_retention_days=365,
+            record_storage_objects=True,
+        ),
+        document_governance=module.DocumentUploadGovernanceSettings(
+            virus_scan_provider="clamav-sidecar",
+            dlp_review_provider="ruleset-v1",
+        ),
+        environ=env,
+    )
+    serialized = json.dumps(report, ensure_ascii=False)
+
+    assert report["status"] == "ready_for_readonly_governance_probe"
+    assert report["blockers"] == []
+    assert "sentinel-cos-id-value" not in serialized
+    assert "sentinel-cos-key-value" not in serialized
+    assert "redaction-v1" not in serialized
+    assert report["safe_env"]["referenced_secret_status"] == {
+        "COS_SECRET_ID": "SET",
+        "COS_SECRET_KEY": "SET",
+    }
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 

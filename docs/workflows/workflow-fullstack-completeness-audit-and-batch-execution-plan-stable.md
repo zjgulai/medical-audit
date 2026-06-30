@@ -742,7 +742,7 @@ Batch 7.9 验收结果：
 
 状态：`in_progress`
 
-当前切片：`auth_sso_contract_readiness_blocked`
+当前切片：`document_governance_contract_readiness_blocked`
 
 目标：
 
@@ -804,9 +804,18 @@ Batch 8.5 验收结果：
 - 未满足：可信代理、签名密钥 env、允许来源 CIDR、关闭 legacy header auth 仍未配置；server-session 路径也未选择或配置。
 - 边界：本批是合同/门禁固化，不证明真实医院 SSO、正式登录会话、生产配置或写入型权限验收完成。
 
+Batch 8.6 验收结果：
+
+- 已满足：新增 `scripts/audit-document-governance-contract-readiness.py` 与 `pnpm document:governance-contract-readiness`，把 P0-05 文档治理安全闭环转为可执行 readiness 门禁。
+- 已满足：脚本复用文档上传治理 provider preflight 和 Tencent COS bootstrap preflight，只读取本地配置/env 名称与 `SET/UNSET` 状态，不访问网络、不写对象存储、不写生产 env、不调用外部治理 provider、不执行生产写入。
+- 已满足：目标测试通过，`uv run pytest tests/knowledge_query/test_scripts.py -k "audit_document_governance_contract_readiness"` 返回 `3 passed`；`ruff`、`py_compile` 和 package JSON 解析通过。
+- 已满足：本批 readiness 报告 `tmp/outputs/document-governance-contract-readiness-latest.json` 返回 `status=blocked`、`evidence_grade=L2-fixture-or-dry-run`，并明确 `secret_values_reported=false`。
+- 未满足：Tencent COS/provider、对象记录、企业级病毒/DLP provider、脱敏改写、策略版本、人工复核和审计事件合同仍未配置；授权写入型治理 E2E、归档签章和恢复演练尚未执行。
+- 边界：本批是本地合同/门禁固化，不证明生产对象存储、外部 DLP、脱敏改写、证书级签章或长期留存闭环完成。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.5 P0-04 SSO/session 合同 readiness 固化。原因：
+当前已推进到 Batch 8.6 P0-05 文档治理合同 readiness 固化。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -818,14 +827,15 @@ Batch 8.5 验收结果：
 - Batch 8.3 完成旧生产部署差异只读复核并指出需要干净 release 路径。
 - Batch 8.4 在最新 UI/UX 已部署基线后重新执行部署状态审计和生产权限只读 smoke，确认本批探测的受控 GET 路径已按租户头和角色头门禁工作。
 - Batch 8.5 已把真实 SSO/session claims、可信代理签名、正式租户身份来源和关闭 legacy header 授权的条件固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
+- Batch 8.6 已把文档对象存储、外部治理 provider、脱敏改写、留存和审计事件合同固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
 
 下一批优先执行的收口计划：
 
-1. P0-04 路径选择：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
-2. P0-04 配置实现：为选定路径补签名校验/会话存储/legacy header 关闭策略，并让 `auth:sso-contract-readiness` 从 `blocked` 进入 `ready_for_readonly_gateway_probe`。
-3. P0-04 生产复验：配置变更如获授权，先跑 `production:permission-readonly`；通过后才可申请授权写入型权限 E2E。
-4. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收替代生成模型门禁。
-5. 文档治理安全：继续推进对象存储、外部杀毒/DLP、脱敏改写和审计事件专项验收，保持生产只读、授权写入和 provider call 边界分离。
+1. P0-05 对象存储合同实现：补 Tencent COS provider、bucket/region、secret env name、SDK bootstrap、对象记录、签名 URL TTL、对象 retention 和本地隔离 retention；未授权前不写生产 env、不执行对象存储写入。
+2. P0-05 脱敏与审计合同实现：补 `MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED`、脱敏策略版本、人工复核要求和治理审计事件合同；外部 DLP provider 仍需单独授权 smoke。
+3. P0-05 验收顺序：先让 `document:governance-contract-readiness` 从 `blocked` 进入 `ready_for_readonly_governance_probe`，再执行生产只读复核；只有备份、显式授权和回滚路径齐备后才申请写入型文档治理 E2E。
+4. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
+5. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
 
 Batch 1 的完成项：
 
