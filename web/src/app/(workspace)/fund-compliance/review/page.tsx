@@ -154,11 +154,11 @@ export default function FundComplianceReviewPage() {
               <p className="audit-kicker">费用表单</p>
               <h2 id="template-preview-title" className="audit-section-title">三份模板与自建表单</h2>
             </div>
-            <details>
+            <details className="relative">
               <summary className="audit-focus-ring cursor-pointer list-none rounded-full border border-[var(--audit-line)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--audit-primary)] [&::-webkit-details-marker]:hidden">
                 新建表单
               </summary>
-              <form className="absolute z-10 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-4 shadow-[0_16px_36px_rgb(23_62_105/0.16)]" onSubmit={createCustomForm}>
+              <form className="absolute right-0 z-10 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-4 shadow-[0_16px_36px_rgb(23_62_105/0.16)]" onSubmit={createCustomForm}>
                 <label className="block">
                   <span className="audit-label">表单名称</span>
                   <input className="audit-focus-ring audit-input mt-2 px-3 py-2" value={customName} onChange={(event) => setCustomName(event.target.value)} />
