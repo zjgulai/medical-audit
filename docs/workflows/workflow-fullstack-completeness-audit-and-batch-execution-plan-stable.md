@@ -742,7 +742,7 @@ Batch 7.9 验收结果：
 
 状态：`in_progress`
 
-当前切片：`document_governance_settings_contract_blocked`
+当前切片：`document_governance_ready_profile_verified`
 
 目标：
 
@@ -822,9 +822,18 @@ Batch 8.7 验收结果：
 - 未满足：生产没有写入新 env；Tencent COS/object recording、企业级治理 provider、真实脱敏改写、生产只读复核和授权写入型治理 E2E 仍未执行。
 - 边界：本批只是本地 typed config contract，不证明生产配置、对象存储写入、外部 provider 调用或证书级合规闭环完成。
 
+Batch 8.8 验收结果：
+
+- 已满足：新增非生产配置 `configs/knowledge-query-engine-document-governance-ready-profile.yaml`，覆盖 Tencent COS provider、bucket/region、secret env name、SDK bootstrap、对象记录、签名 URL TTL、retention、ClamAV sidecar、ruleset DLP、脱敏策略、人工复核和审计事件合同。
+- 已满足：新增 `pnpm document:governance-ready-profile` 与 `scripts/run-document-governance-ready-profile.py`；wrapper 内部注入非生产 sentinel env value，package 命令回显不暴露 sentinel 值。
+- 已满足：目标测试通过，`uv run pytest tests/knowledge_query/test_scripts.py -k "audit_document_governance or run_document_governance_ready_profile"` 返回 `5 passed`；`ruff`、`py_compile` 和 package JSON 解析通过。
+- 已满足：`pnpm document:governance-ready-profile` 返回 `status=ready_for_readonly_governance_probe`、`blockers=[]`、`evidence_grade=L2-fixture-or-dry-run`，并记录 `production_side_effect=none`、`object_storage_write=false`、`external_governance_provider_call=not_called`、`secret_values_reported=false`。
+- 未满足：本批没有生产只读复核、没有生产 env 写入、没有对象存储写入、没有外部 DLP/virus provider 调用、没有授权写入型治理 E2E。
+- 边界：ready-profile 只证明本地合同可达，不证明生产 COS、真实脱敏改写、外部治理 provider 或证书级合规闭环完成。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.7 P0-05 脱敏与审计合同 typed settings 固化。原因：
+当前已推进到 Batch 8.8 P0-05 非生产 ready-profile 验证。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -838,12 +847,13 @@ Batch 8.7 验收结果：
 - Batch 8.5 已把真实 SSO/session claims、可信代理签名、正式租户身份来源和关闭 legacy header 授权的条件固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
 - Batch 8.6 已把文档对象存储、外部治理 provider、脱敏改写、留存和审计事件合同固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
 - Batch 8.7 已把脱敏改写、策略版本、人工复核和治理审计事件合同从脚本裸 env 检查提升到正式 settings/env override 层；本批未验证或变更生产配置，默认 readiness 继续 fail-closed。
+- Batch 8.8 已用非生产 ready-profile 证明 P0-05 合同可以进入 `ready_for_readonly_governance_probe`，同时保持无生产副作用和 secret value 不输出。
 
 下一批优先执行的收口计划：
 
-1. P0-05 对象存储合同实现：补 Tencent COS provider、bucket/region、secret env name、SDK bootstrap、对象记录、签名 URL TTL、对象 retention 和本地隔离 retention；未授权前不写生产 env、不执行对象存储写入。
-2. P0-05 本地 ready-profile 验证：用非生产配置文件和测试 env value 证明 `document:governance-contract-readiness` 可从 `blocked` 进入 `ready_for_readonly_governance_probe`，但报告不得写入 secret value。
-3. P0-05 生产验收顺序：生产配置变更需另行授权；授权后先执行生产只读复核，只有备份、显式授权和回滚路径齐备后才申请写入型文档治理 E2E。
+1. P0-05 生产只读准备：在不写生产 env 的前提下，设计只读复核脚本输入和报告字段，区分生产当前配置观测、ready-profile dry-run 和授权写入型 E2E。
+2. P0-05 生产配置授权包：整理需要人工确认的 env 名称、目标 bucket/region、对象记录开关、脱敏策略版本、ClamAV/DLP 路径和回滚点；未获授权前不执行生产 env 写入。
+3. P0-05 写入型治理 E2E：只有备份、显式授权和回滚路径齐备后才执行对象存储写入、治理结果写入、归档签章或恢复演练。
 4. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
 5. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
 

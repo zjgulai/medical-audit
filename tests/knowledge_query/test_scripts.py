@@ -377,6 +377,86 @@ def test_audit_document_governance_contract_readiness_accepts_enterprise_config(
     }
 
 
+def test_audit_document_governance_ready_profile_outputs_ready_without_secret_leak(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "document-governance-ready-profile.json"
+    markdown_path = tmp_path / "document-governance-ready-profile.md"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/audit-document-governance-contract-readiness.py",
+            "--config",
+            "configs/knowledge-query-engine-document-governance-ready-profile.yaml",
+            "--qcloud-cos-availability",
+            "available",
+            "--json-output",
+            str(report_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "MEDICAL_AUDIT_DOCUMENT_READY_PROFILE_COS_SECRET_ID": (
+                "ready-profile-cos-id-sentinel"
+            ),
+            "MEDICAL_AUDIT_DOCUMENT_READY_PROFILE_COS_SECRET_KEY": (
+                "ready-profile-cos-key-sentinel"
+            ),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    serialized_file = report_path.read_text(encoding="utf-8")
+    markdown = markdown_path.read_text(encoding="utf-8")
+
+    assert report["status"] == "ready_for_readonly_governance_probe"
+    assert report["blockers"] == []
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["object_storage_write"] is False
+    assert report["boundaries"]["external_governance_provider_call"] == "not_called"
+    assert report["safe_env"]["referenced_secret_status"] == {
+        "MEDICAL_AUDIT_DOCUMENT_READY_PROFILE_COS_SECRET_ID": "SET",
+        "MEDICAL_AUDIT_DOCUMENT_READY_PROFILE_COS_SECRET_KEY": "SET",
+    }
+    for output in (completed.stdout, serialized_file, markdown):
+        assert "ready-profile-cos-id-sentinel" not in output
+        assert "ready-profile-cos-key-sentinel" not in output
+        assert "local-ready-profile-v1" not in output
+
+
+def test_run_document_governance_ready_profile_outputs_ready_without_secret_leak() -> None:
+    script_path = Path("scripts/run-document-governance-ready-profile.py")
+    compile_result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert compile_result.returncode == 0, compile_result.stderr
+
+    completed = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=Path(__file__).resolve().parents[2],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert report["status"] == "ready_for_readonly_governance_probe"
+    assert report["blockers"] == []
+    assert "ready-profile-cos-id-sentinel" not in completed.stdout
+    assert "ready-profile-cos-key-sentinel" not in completed.stdout
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 
