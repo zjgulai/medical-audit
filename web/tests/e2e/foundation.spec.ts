@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const portalAuditRoutes = [
   "/",
   "/workspace",
+  "/fund-compliance",
   "/chat",
   "/agents",
   "/agent-market",
@@ -39,7 +40,7 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
 
   await expect(page.getByText("AI智能审计管理系统")).toBeVisible();
   await expect(page.getByTestId("auditscope-brand-logo")).toBeVisible();
-  await expect(topicLink).toHaveAttribute("href", "/workspace");
+  await expect(topicLink).toHaveAttribute("href", "/fund-compliance");
   const topicBox = await topicLink.boundingBox();
   const navigationBox = await primaryNavigation.boundingBox();
 
@@ -140,11 +141,11 @@ test("agent marketplace filters templates and agents enter portal chat", async (
 
   await expect(page.getByRole("heading", { name: "审计提示词智能体" })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^全部132$/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /违反出国团组管理相关规定/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /出国团组助手/ })).toBeVisible();
 
   await page.getByRole("tab", { name: /^工具智能体10$/ }).click();
-  await expect(page.getByRole("button", { name: /审计质量检查/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /违反出国团组管理相关规定/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /质量检查助手/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /出国团组助手/ })).toHaveCount(0);
 
   await page.getByRole("tab", { name: /^全部132$/ }).click();
   await page.getByLabel("搜索智能体").fill("合同要素");
@@ -245,7 +246,7 @@ test("report homepage exposes gates, evidence and remediation", async ({ page })
   await expect(page.getByText("纳入疑点").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "历史生成记录" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "报告门禁预检" }).first()).toBeVisible();
-  await expect(page.getByText("表1_医保费用汇总表-模版.xlsx")).toBeVisible();
+  await expect(page.getByText("表1_医保费用汇总表（空白）.xlsx")).toBeVisible();
   await expect(page.getByText("模板字段已注册").first()).toBeVisible();
   await expect(page.getByText("底稿与负责人确认")).toBeVisible();
   await expect(page.getByText("附件登记与报告草稿")).toBeVisible();

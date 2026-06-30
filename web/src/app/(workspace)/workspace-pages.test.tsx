@@ -27,7 +27,12 @@ import {
 } from "@/lib/api-client";
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 import { AUDIT_ROLE_STORAGE_KEY } from "@/lib/audit-user";
-import { primaryNavigation, secondaryNavigation, workspaceHomeNavigation } from "@/lib/navigation";
+import {
+  fundComplianceNavigation,
+  primaryNavigation,
+  secondaryNavigation,
+  workspaceHomeNavigation
+} from "@/lib/navigation";
 
 import AgentMarketPage from "./agent-market/page";
 import AgentsPage from "./agents/page";
@@ -36,6 +41,7 @@ import ArchivePage from "./archive/page";
 import ChatPortalPage from "./chat/page";
 import DocumentsPage from "./documents/page";
 import FindingsPage from "./findings/page";
+import FundCompliancePage from "./fund-compliance/page";
 import GraphPage from "./graph/page";
 import GuidedCheckPage from "./guided-check/page";
 import KnowledgeBasePage from "./knowledge-base/page";
@@ -727,7 +733,7 @@ vi.mock("@/lib/api-client", () => ({
         name: "费用汇总风险底稿",
         source_template_id: "medical-expense-summary",
         source_table: "表1 医保费用汇总表",
-        source_file_name: "表1_医保费用汇总表-模版.xlsx",
+        source_file_name: "表1_医保费用汇总表（空白）.xlsx",
         sheet_name: "汇总表",
         output_type: "底稿草稿",
         registry_status: "active",
@@ -742,7 +748,7 @@ vi.mock("@/lib/api-client", () => ({
         name: "分类费用复核清单",
         source_template_id: "medical-expense-category-summary",
         source_table: "表2 医保费用分类汇总表",
-        source_file_name: "表2_医保费用分类汇总表-模版.xlsx",
+        source_file_name: "表2_医保费用分类汇总表（空白）.xlsx",
         sheet_name: "汇总表",
         output_type: "问题清单",
         registry_status: "active",
@@ -757,7 +763,7 @@ vi.mock("@/lib/api-client", () => ({
         name: "就诊明细疑点摘要",
         source_template_id: "visit-expense-detail",
         source_table: "表3 就诊费用明细表",
-        source_file_name: "表3_就诊费用明细表-模版.xlsx",
+        source_file_name: "表3_就诊费用明细表（空白）.xlsx",
         sheet_name: "明细表",
         output_type: "复核摘要",
         registry_status: "active",
@@ -1509,6 +1515,7 @@ const routePages = [
 
 const allWorkspaceRoutePages = [
   [workspaceHomeNavigation.href, WorkspacePage],
+  [fundComplianceNavigation.href, FundCompliancePage],
   ...routePages,
   ["/guided-check", GuidedCheckPage],
   ["/rules", RulesPage],
@@ -1534,6 +1541,7 @@ describe("workspace foundation pages", () => {
   it("covers every workspace navigation target with an implemented page", () => {
     const configuredWorkspaceRoutes = [
       workspaceHomeNavigation,
+      fundComplianceNavigation,
       ...primaryNavigation,
       ...secondaryNavigation
     ].map((item) => item.href);
@@ -1568,6 +1576,21 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
     });
+  });
+
+  it("renders the fund compliance topic as a separate workbench with three form templates", () => {
+    render(<FundCompliancePage />);
+
+    expect(screen.getByRole("heading", { name: "专题审计工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "专题规则" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待处理清单" })).toBeInTheDocument();
+    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /表2 · 汇总表/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /表3 · 明细表/ }));
+    expect(screen.getByText("医疗费用总额")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "新建表单" }));
+    expect(screen.getAllByText("门诊慢病费用复核表").length).toBeGreaterThan(0);
   });
 
   it("keeps legacy real routes outside the primary portal navigation", async () => {
@@ -1637,9 +1660,9 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("button", { name: /表2 · 医保费用分类汇总表/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /表3 · 就诊费用明细表/ })).toBeInTheDocument();
     expect(screen.getByText("当前模板：表1")).toBeInTheDocument();
-    expect(screen.getByText("表1_医保费用汇总表-模版.xlsx / 汇总表")).toBeInTheDocument();
+    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "模板字段" })).toBeInTheDocument();
-    expect(screen.getByText("统筹支付")).toBeInTheDocument();
+    expect(screen.getAllByText("统筹支付").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /表3 · 就诊费用明细表/ }));
     expect(screen.getByText("当前模板：表3")).toBeInTheDocument();
@@ -2144,7 +2167,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("费用汇总风险底稿")).toBeInTheDocument();
     expect(screen.getByText("分类费用复核清单")).toBeInTheDocument();
     expect(screen.getByText("就诊明细疑点摘要")).toBeInTheDocument();
-    expect(screen.getByText("表1_医保费用汇总表-模版.xlsx")).toBeInTheDocument();
+    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx")).toBeInTheDocument();
     expect(screen.getAllByText("模板字段已注册").length).toBeGreaterThan(0);
     expect(screen.getByText("隐私字段处理记录")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "套用模板" })[0]).toHaveAttribute("href", expect.stringContaining("/chat?agent="));

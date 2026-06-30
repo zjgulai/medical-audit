@@ -14,6 +14,11 @@ type AgentPrompt = {
   readonly source: string;
 };
 
+type PromptSection = {
+  readonly title: string;
+  readonly lines: readonly string[];
+};
+
 const auditAgents: readonly AgentPrompt[] = (() => {
   const seen = new Set<string>();
   return (promptsData as readonly AgentPrompt[]).filter((agent) => {
@@ -35,8 +40,27 @@ const CATEGORY_ORDER = [
   "工具智能体"
 ] as const;
 
+function normalizeVisibleText(text: string): string {
+  return text
+    .replace(/\\n/g, "\n")
+    .replace(/\r/g, "")
+    .replace(/```(?:json)?/g, "")
+    .replace(/\*\*/g, "")
+    .trim();
+}
+
+function cleanLine(text: string): string {
+  return normalizeVisibleText(text)
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^[-*]\s*/, "")
+    .replace(/^【(.+)】$/, "$1")
+    .replace(/^\[(.+)]$/, "$1")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
+}
+
 function firstLine(text: string): string {
-  const line = text
+  const line = normalizeVisibleText(text)
     .split(/\n|，|。/)
     .map((part) => part.trim())
     .find((part) => part.length > 0);
@@ -44,11 +68,29 @@ function firstLine(text: string): string {
 }
 
 function tagList(tags: string): readonly string[] {
-  return tags
+  return normalizeVisibleText(tags)
     .split(/[、,，\s]+/)
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0)
     .slice(0, 3);
+}
+
+function compactAgentTitle(agent: AgentPrompt): string {
+  const normalized = cleanLine(agent.title)
+    .replace(/违反/g, "")
+    .replace(/相关规定/g, "")
+    .replace(/符合性/g, "合规")
+    .replace(/管理制度/g, "制度")
+    .replace(/管理/g, "")
+    .replace(/审计/g, "")
+    .replace(/\s+/g, "");
+  const source = normalized || cleanLine(agent.title) || agent.category.replace("审计", "");
+  const chars = Array.from(source);
+  let title = chars.slice(0, 10).join("");
+  while (Array.from(title).length < 5) {
+    title += Array.from(title).length <= 3 ? "核验" : "助手";
+  }
+  return Array.from(title).slice(0, 10).join("");
 }
 
 function agentInitials(title: string): string {
@@ -62,6 +104,40 @@ function agentHue(seed: string): number {
     hash = (hash * 31 + char.charCodeAt(0)) % 360;
   }
   return hash;
+}
+
+function promptSections(prompt: string): readonly PromptSection[] {
+  const sections: PromptSection[] = [];
+  let current: { title: string; lines: string[] } = { title: "使用说明", lines: [] };
+
+  for (const rawLine of normalizeVisibleText(prompt).split("\n")) {
+    const line = cleanLine(rawLine);
+    if (!line) {
+      continue;
+    }
+    const heading = rawLine.match(/^#{1,6}\s*(.+)$/);
+    const bracketHeading = line.match(/^【(.+)】$/) ?? line.match(/^\[(.+)]$/);
+    if (heading || bracketHeading) {
+      if (current.lines.length > 0 || sections.length === 0) {
+        sections.push(current);
+      }
+      current = { title: cleanLine(heading?.[1] ?? bracketHeading?.[1] ?? line), lines: [] };
+      continue;
+    }
+    current.lines.push(line);
+  }
+
+  if (current.lines.length > 0) {
+    sections.push(current);
+  }
+
+  return sections
+    .map((section) => ({
+      title: section.title,
+      lines: section.lines.slice(0, 7)
+    }))
+    .filter((section) => section.lines.length > 0)
+    .slice(0, 5);
 }
 
 export default function AgentMarketPage() {
@@ -135,7 +211,7 @@ export default function AgentMarketPage() {
           >
             <div className="flex items-start gap-3">
               <AgentAvatar agent={agent} size="compact" />
-              <h2 className="audit-card-title min-w-0 flex-1 leading-snug">{agent.title}</h2>
+              <h2 className="audit-card-title min-w-0 flex-1 leading-snug">{compactAgentTitle(agent)}</h2>
             </div>
             <p className="line-clamp-2 audit-copy text-[var(--audit-ink-muted)]">{firstLine(agent.intro)}</p>
             <div className="mt-auto flex items-center justify-between gap-2 pt-1">
@@ -196,12 +272,15 @@ function CategoryChip({
 
 function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; readonly onClose: () => void }) {
   const chatHref = `/chat?agent=${encodeURIComponent(agent.title)}`;
+  const displayTitle = compactAgentTitle(agent);
+  const sections = promptSections(agent.prompt);
+  const normalizedPrompt = normalizeVisibleText(agent.prompt);
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-[rgb(16_24_40/0.45)] p-0 sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label={agent.title}
+      aria-label={displayTitle}
       onClick={onClose}
     >
       <div
@@ -213,7 +292,8 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; re
             <AgentAvatar agent={agent} size="detail" />
             <div>
               <p className="audit-kicker">{agent.category.replace("审计", "")}</p>
-              <h2 className="mt-1 audit-section-title">{agent.title}</h2>
+              <h2 className="mt-1 audit-section-title">{displayTitle}</h2>
+              <p className="audit-meta mt-1">原始名称：{cleanLine(agent.title)}</p>
             </div>
           </div>
           <button
@@ -232,13 +312,27 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; re
           </p>
         ) : null}
 
-        <p className="mt-3 whitespace-pre-line audit-copy">{agent.intro}</p>
+        <p className="mt-3 audit-copy">{firstLine(agent.intro)}</p>
 
         <div className="mt-4">
-          <h3 className="audit-card-title">提示词</h3>
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--audit-radius-md)] bg-[var(--audit-surface-muted)] p-3 font-mono text-xs leading-5 text-[var(--audit-ink-muted)]">
-            {agent.prompt}
-          </pre>
+          <h3 className="audit-card-title">提示词结构</h3>
+          <div className="mt-2 grid max-h-80 gap-3 overflow-auto pr-1">
+            {sections.map((section) => (
+              <section
+                key={section.title}
+                className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-3"
+              >
+                <h4 className="audit-compact-title">{section.title}</h4>
+                <ul className="mt-2 space-y-1.5">
+                  {section.lines.map((line) => (
+                    <li key={line} className="audit-copy text-sm">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
@@ -249,7 +343,7 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentPrompt; re
             type="button"
             className="audit-focus-ring audit-btn audit-btn-neutral"
             onClick={() => {
-              void navigator.clipboard?.writeText(agent.prompt);
+              void navigator.clipboard?.writeText(normalizedPrompt);
             }}
           >
             复制提示词
@@ -267,6 +361,7 @@ function AgentAvatar({
   readonly agent: AgentPrompt;
   readonly size: "compact" | "detail";
 }) {
+  const displayTitle = compactAgentTitle(agent);
   const hue = agentHue(`${agent.category}-${agent.title}`);
   const sizeClass = size === "detail" ? "size-11 text-sm" : "size-10 text-xs";
   return (
@@ -278,7 +373,7 @@ function AgentAvatar({
         color: `hsl(${hue} 70% 30%)`
       }}
     >
-      {agentInitials(agent.title)}
+      {agentInitials(displayTitle)}
     </span>
   );
 }

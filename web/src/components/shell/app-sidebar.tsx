@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
+  fundComplianceNavigation,
   primaryNavigation,
   secondaryNavigation,
   systemNavigation,
@@ -51,7 +52,7 @@ function NavigationLink({
             isActive ? "bg-white/20 text-white" : "bg-white text-[var(--audit-ink-subtle)]"
           }`}
         >
-          深页
+          管理页
         </span>
       )}
     </>
@@ -95,7 +96,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       </Link>
 
       <Link
-        href="/workspace"
+        href={fundComplianceNavigation.href}
         aria-label={`打开当前审计专题：${currentTopic}`}
         className={`audit-focus-ring mt-3 items-center gap-2.5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-3 py-2.5 text-left transition hover:border-[var(--audit-primary)] hover:bg-white ${
           collapsed ? "hidden" : "flex"

@@ -44,14 +44,14 @@ describe("WorkspaceShell", () => {
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
       expect(screen.getByRole("button", { name: new RegExp(role) })).toBeInTheDocument();
     }
-    expect(screen.getByText("后端待检测")).toBeInTheDocument();
+    expect(screen.getByText("连接检测中")).toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /AI 对话/ })).toHaveAttribute("href", "/chat");
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
     expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
-    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/fund-compliance");
     expect(screen.getByRole("link", { name: /AI 对话/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });

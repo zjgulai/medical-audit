@@ -115,7 +115,7 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
             <div className="flex flex-wrap items-center gap-2">
               <p className="audit-meta font-semibold">当前模块</p>
               <StatusPill tone="info">{project.auditTopic}</StatusPill>
-              <StatusPill tone="neutral">后端待检测</StatusPill>
+              <StatusPill tone="neutral">连接检测中</StatusPill>
             </div>
             <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
               <div className="audit-section-title">{pageTitle}</div>
