@@ -192,6 +192,48 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "--require-generated-answer" in script_text
     assert "Default is read-only production smoke" in script_text
     assert "edge-regression" in script_text
+    assert "--include-shared-edge-regression" in script_text
+    assert "shared-edge-regression-is-opt-in" in script_text
+
+
+def test_run_production_e2e_smoke_excludes_shared_edge_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_no_shared_edge",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    monkeypatch.setattr(sys, "argv", ["run-production-e2e-smoke.py"])
+
+    args = module._parse_args()
+
+    assert module._selected_regression_urls(args) == ()
+
+
+def test_run_production_e2e_smoke_shared_edge_is_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_shared_edge",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run-production-e2e-smoke.py",
+            "--include-shared-edge-regression",
+            "--regression-url",
+            "https://status.example.test/",
+        ],
+    )
+
+    args = module._parse_args()
+
+    assert module._selected_regression_urls(args) == (
+        *module.SHARED_EDGE_REGRESSION_URLS,
+        "https://status.example.test/",
+    )
 
 
 def test_audit_answer_provider_gate_readiness_script_is_valid_and_sanitized() -> None:

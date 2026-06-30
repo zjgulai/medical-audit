@@ -1493,7 +1493,7 @@ uv run python scripts/run-production-e2e-smoke.py \
 - 公网 `/api/v1/query` 引用型回答，由 Nginx 转发到后端 `/query`。
 - `/pages/preview/{chunk_id}` 原文预览。
 - `/pages/chat/export` 底稿导出。
-- 现有 `kg`、`video`、`voc`、主域名回归。
+- 默认不检查无关共享业务域名；共享 `kg`、`video`、`voc`、主域名回归需显式加 `--include-shared-edge-regression`，并作为共享入口巡检单独解释。
 
 默认生产巡检保持只读，不创建复核任务。只有在明确需要验证 PostgreSQL 复核写入流时，才使用：
 
@@ -1503,6 +1503,17 @@ uv run python scripts/run-production-e2e-smoke.py \
   --include-review-write \
   --report tmp/outputs/production-e2e-smoke-with-review-write-latest.json
 ```
+
+如需额外检查共享入口域名，单独执行：
+
+```bash
+uv run python scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --include-shared-edge-regression \
+  --report tmp/outputs/production-e2e-smoke-shared-edge-latest.json
+```
+
+该检查覆盖 `kg`、`video`、`voc` 和主域名，但不作为 medical_audit 默认发布 smoke 的阻断条件；失败时按共享入口回归处理，不得直接写成 medical_audit 主站部署失败。
 
 ### 7.6.1 生产前端语义验收
 
@@ -1748,7 +1759,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 固定 smoke question 返回至少 1 条引用。
 - 原文预览可打开。
 - 底稿导出和复核任务导出可用。
-- 现有域名 `kg`、`video`、`voc`、`person`、`mkt` 不出现回归。
+- medical_audit 默认发布验收不再要求无关共享业务域名随本项目 smoke 通过；`kg`、`video`、`voc`、`person`、`mkt` 需以单独共享入口巡检确认，失败时不得污染 medical_audit 主站部署结论。
 - `docker ps` 中原有容器持续 healthy 或保持部署前状态。
 
 ## 9. 待补强事项

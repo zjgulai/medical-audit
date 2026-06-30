@@ -17,7 +17,8 @@ from pathlib import Path
 
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
 DEFAULT_QUESTION = "医保基金审核发现异常收费时应优先核验证据链的哪些要点？"
-DEFAULT_REGRESSION_URLS = (
+DEFAULT_REGRESSION_URLS: tuple[str, ...] = ()
+SHARED_EDGE_REGRESSION_URLS = (
     "https://kg.lute-tlz-dddd.top/",
     "https://video.lute-tlz-dddd.top/",
     "https://voc.lute-tlz-dddd.top/",
@@ -186,14 +187,28 @@ def main() -> int:
                     timeout_seconds=float(args.timeout_seconds),
                 ),
             )
-        _run_step(
-            steps,
-            "edge-regression",
-            lambda: _check_regression_urls(
-                tuple(str(url) for url in args.regression_url),
-                timeout_seconds=float(args.timeout_seconds),
-            ),
-        )
+        regression_urls = _selected_regression_urls(args)
+        if regression_urls:
+            _run_step(
+                steps,
+                "edge-regression",
+                lambda: _check_regression_urls(
+                    regression_urls,
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+        else:
+            steps.append(
+                {
+                    "name": "edge-regression",
+                    "passed": True,
+                    "details": {
+                        "status": "not_run",
+                        "reason": "shared-edge-regression-is-opt-in",
+                        "urls": {},
+                    },
+                }
+            )
     except SmokeError:
         report = _report(
             status="fail",
@@ -262,8 +277,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--regression-url",
         action="append",
-        default=list(DEFAULT_REGRESSION_URLS),
-        help="Existing public URL to regression-check. Can be supplied multiple times.",
+        default=None,
+        help=(
+            "Optional extra public URL to regression-check. No URLs are checked by default; "
+            "can be supplied multiple times."
+        ),
+    )
+    parser.add_argument(
+        "--include-shared-edge-regression",
+        action="store_true",
+        help=(
+            "Opt in to legacy shared-domain checks for kg/video/voc/root. "
+            "These are outside the default medical_audit release smoke."
+        ),
     )
     parser.add_argument(
         "--include-review-write",
@@ -287,6 +313,15 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.set_defaults(include_review_write=False)
     return parser.parse_args()
+
+
+def _selected_regression_urls(args: argparse.Namespace) -> tuple[str, ...]:
+    urls: list[str] = []
+    if bool(args.include_shared_edge_regression):
+        urls.extend(SHARED_EDGE_REGRESSION_URLS)
+    explicit_urls = args.regression_url or []
+    urls.extend(str(url) for url in explicit_urls)
+    return tuple(dict.fromkeys(urls))
 
 
 def _auth_from_args(args: argparse.Namespace) -> SmokeAuth:

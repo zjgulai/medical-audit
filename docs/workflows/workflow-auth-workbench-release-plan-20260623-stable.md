@@ -110,7 +110,7 @@ Schema 规则：
 
 回归与边界：
 
-- 回归检查共享域名：`kg.lute-tlz-dddd.top`、`video.lute-tlz-dddd.top`、`voc.lute-tlz-dddd.top`、`lute-tlz-dddd.top`。
+- 共享域名回归不属于 medical_audit 默认发布 smoke；如需单独排查共享入口，再显式使用 `--include-shared-edge-regression` 覆盖 `kg.lute-tlz-dddd.top`、`video.lute-tlz-dddd.top`、`voc.lute-tlz-dddd.top`、`lute-tlz-dddd.top`。
 - 页面不得出现 404、500、横向溢出、关键文案缺失或占位词。
 - provider 生成答案、真实 SSO、对象存储、外部杀毒/DLP、电子签章和真实医院数据 UAT 不在本批完成口径内。
 
