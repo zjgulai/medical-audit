@@ -27,9 +27,18 @@ const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
   {
     route: "/fund-compliance",
-    requiredText: [/专题审计工作台/, /待处理清单|专题规则/, /三份模板与自建表单|创建表单/],
+    requiredText: [/医保基金使用合规专项自查/, /进入专题工作台/, /规则导航|审计口径|专题规则/],
   },
-  { route: "/chat", requiredText: [/AI 审证对话工作台/, /问题构建|知识来源|推荐问题/, /进入审证对话/] },
+  {
+    route: "/fund-compliance/review",
+    interactions: [
+      { role: "tab", name: "费用表单" },
+      { text: "新建表单" },
+    ],
+    requiredText: [/专题审计工作台/, /三份模板与自建表单/, /表单名称/, /字段列表/],
+    requiredControlText: [/创建/],
+  },
+  { route: "/chat", requiredText: [/AI 审证对话/, /知识来源/, /进入对话/] },
   {
     route: "/agents",
     requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
@@ -204,6 +213,22 @@ async function snapshot(page) {
   throw new Error("snapshot failed");
 }
 
+async function applyInteractions(page, interactions = []) {
+  for (const action of interactions) {
+    const timeout = action.timeoutMs ?? 5_000;
+    if (action.role) {
+      await page.getByRole(action.role, { name: action.name, exact: action.exact ?? true }).click({ timeout });
+    } else if (action.text) {
+      await page.getByText(action.text, { exact: action.exact ?? true }).first().click({ timeout });
+    } else if (action.selector) {
+      await page.locator(action.selector).first().click({ timeout });
+    } else {
+      throw new Error(`Unsupported interaction: ${JSON.stringify(action)}`);
+    }
+    await page.waitForTimeout(action.waitMs ?? 500);
+  }
+}
+
 function issue(severity, type, message) {
   return { severity, type, message };
 }
@@ -225,6 +250,9 @@ function classify(check, routeCheck, data) {
       .map((failed) => `${failed.status ?? failed.error} ${failed.url}`)
       .join(" | ");
     issues.push(issue("P1", "failed-request", sample));
+  }
+  if (check.interactionErrors.length > 0) {
+    issues.push(issue("P1", "interaction-error", check.interactionErrors.slice(0, 3).join(" | ")));
   }
   if (data.horizontalOverflow) {
     issues.push(issue("P1", "horizontal-overflow", `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}`));
@@ -369,6 +397,7 @@ async function run() {
         const page = await context.newPage();
         const consoleErrors = [];
         const failedRequests = [];
+        const interactionErrors = [];
         page.on("console", (message) => {
           if (message.type() === "error") {
             consoleErrors.push(message.text());
@@ -391,8 +420,14 @@ async function run() {
           const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
           status = response?.status() ?? null;
           await page.waitForTimeout(1_200);
+          await applyInteractions(page, routeCheck.interactions);
         } catch (caught) {
-          error = caught instanceof Error ? caught.message : String(caught);
+          const message = caught instanceof Error ? caught.message : String(caught);
+          if (status === null) {
+            error = message;
+          } else {
+            interactionErrors.push(message);
+          }
         }
         const data = await snapshot(page);
         const check = {
@@ -411,7 +446,8 @@ async function run() {
           horizontalOverflow: data.horizontalOverflow,
           consoleErrors,
           failedRequests,
-          issues: classify({ status, error, consoleErrors, failedRequests }, routeCheck, data),
+          interactionErrors,
+          issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
         };
         if (captureScreenshots && check.issues.length > 0) {
           const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
