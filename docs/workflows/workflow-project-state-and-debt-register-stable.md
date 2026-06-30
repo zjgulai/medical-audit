@@ -928,7 +928,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-29 生产-only readiness：生产仅 `KIMI_API_KEY=SET`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 与全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；综合 readiness 仅说明本地 shell 有 Anthropic smoke 前置条件；生产 query smoke 仍为 fallback | 不能宣称 no-fallback AI 生成审计结论能力 | 先取得明确授权的一次 provider smoke；provider smoke 和真实答案评测通过前不得写生产 env，未通过前保持 generate-or-safe-fallback / citation fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和写入型生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；受控 API 鉴权中间件要求 `X-Tenant-Id` 并写 `authorization-denied`；2026-06-30 生产只读权限 smoke 已在最新 UI/UX 基线上返回 `status=observed`、`probe_count=35`、`issue_count=0`；新增 `scripts/audit-auth-sso-contract-readiness.py` 与 `pnpm auth:sso-contract-readiness`，当前 P0-04 合同 readiness 报告 `status=blocked`，阻塞项为可信代理/签名密钥/CIDR/关闭 legacy header 均未配置 | 仍无法满足生产级审计系统完整权限边界；只读 GET 权限通过不等于真实 SSO 或写入型验收完成 | 在现有本地权限底座上继续补真实会话认证或可信 SSO 代理、正式租户身份来源、网关注入策略和生产写入型权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；`production:permission-readonly` 持续通过；`auth:sso-contract-readiness` 不再 blocked；真实会话/SSO smoke 通过；授权写入型权限 E2E 通过 |
-| P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储、脱敏改写和外部治理服务未形成可验收闭环 | 当前生产只读曾观测到 `virus_scan_provider=clamav-sidecar`、`dlp_review_provider=ruleset-v1`；新增 `scripts/audit-document-governance-contract-readiness.py` 与 `pnpm document:governance-contract-readiness`，本地报告 `tmp/outputs/document-governance-contract-readiness-latest.json` 当前 `status=blocked`，阻塞项覆盖 Tencent COS、对象记录、企业级病毒/DLP provider、脱敏改写、策略版本、人工复核和审计事件合同 | 报告、归档和个人材料治理不能作为完整合规交付；只读生产探测和本地 readiness 不能替代授权写入型治理 E2E | 先补对象存储/COS、对象记录、签名 URL/retention、脱敏改写策略和审计事件合同；再复跑 readiness、生产只读和授权写入型治理 E2E | `document:governance-contract-readiness` 不再 blocked；生产只读复核通过；有备份/授权/回滚路径的写入型治理 E2E、归档包、签章、验签和恢复演练通过 |
+| P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储、脱敏改写和外部治理服务未形成可验收闭环 | 当前生产只读曾观测到 `virus_scan_provider=clamav-sidecar`、`dlp_review_provider=ruleset-v1`；新增 `scripts/audit-document-governance-contract-readiness.py` 与 `pnpm document:governance-contract-readiness`，脱敏改写、策略版本、人工复核和治理审计事件合同已进入 `DocumentUploadGovernanceSettings`；本地报告 `tmp/outputs/document-governance-contract-readiness-latest.json` 当前 `status=blocked`，阻塞项覆盖 Tencent COS、对象记录、企业级病毒/DLP provider、脱敏改写、策略版本、人工复核和审计事件合同 | 报告、归档和个人材料治理不能作为完整合规交付；只读生产探测和本地 readiness 不能替代授权写入型治理 E2E | 先补对象存储/COS、对象记录、签名 URL/retention、脱敏改写策略和审计事件合同；再用本地 ready-profile 证明 readiness 可进入只读探测状态；生产 env 变更、外部 provider smoke 和写入型 E2E 必须单独授权 | `document:governance-contract-readiness` 不再 blocked；生产只读复核通过；有备份/授权/回滚路径的写入型治理 E2E、归档包、签章、验签和恢复演练通过 |
 | P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产；PR #170/#171 已将默认查询隔离、live retrieval metadata gate 和 SQL 修复部署到生产；2026-06-29 已授权执行 runtime DB `index-activate` 和 search backend reload。2026-06-30 只读复核确认最新生产 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`audit_next_static_healthy=true`，`matching_embedding_count=49051`；后续 docs-only 远端主线领先生产 `.deploy-sha` 时，不代表生产代码部署改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged`，runtime DB 状态变更也必须单独记录 | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置、runtime DB 状态和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收、权限只读观测和 runtime DB 状态复核均通过；文档记录 `main/prod SHA` 与 runtime 状态边界；后续部署继续执行 static asset gate |
 
 ## 5. P1 债务台账
@@ -1233,6 +1233,33 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 1. P0-04 继续从 header transition layer 推进到医院 SSO/session claims 合同、网关注入策略和正式租户身份来源；先做方案和只读验证，不直接写生产配置。
 2. 写入型权限 E2E 仅在明确授权、备份和回滚路径齐备后执行；执行前复跑 `production:permission-readonly`。
 3. F2 no-fallback 真实生成仍受 `no-provider-api-key-env-set` 阻塞；除非单独授权 provider smoke，否则继续保持 fallback 边界。
+
+冻结日期：`2026-06-30`
+
+### 2.0.21 2026-06-30 Batch 5 P0-05 脱敏与审计合同 settings 固化
+
+状态口径：本节同步 P0-05 文档治理合同的下一批本地配置收口。目标是把脱敏改写、策略版本、人工复核要求和治理审计事件要求从 readiness 脚本内的裸 env 检查提升到正式 `DocumentUploadGovernanceSettings` 与 env override 层。本批没有生产部署、没有生产 env 写入、没有对象存储写入、没有外部治理 provider 调用、没有授权写入型 E2E。
+
+本地变更：
+
+- `DocumentUploadGovernanceSettings` 新增 `redaction_rewrite_enabled`、`redaction_policy_version`、`redaction_manual_review_required` 和 `governance_audit_event_required`。
+- 新增 env override：`MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED`、`MEDICAL_AUDIT_DOCUMENT_REDACTION_POLICY_VERSION`、`MEDICAL_AUDIT_DOCUMENT_REDACTION_REVIEW_REQUIRED`、`MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED`。
+- `scripts/audit-document-governance-contract-readiness.py` 改为读取 typed settings 判定脱敏/审计合同，不再在脚本内部直接读取这些 env 值；报告仍只输出合同状态和 COS secret env 的 `SET/UNSET`。
+- 新增配置测试，覆盖默认 fail-closed、env override 生效和非法布尔值 fail-closed。
+
+验收证据：
+
+- `python3 -m py_compile src/medical_audit_kb/core/config.py scripts/audit-document-governance-contract-readiness.py`：通过。
+- `uv run ruff check src/medical_audit_kb/core/config.py scripts/audit-document-governance-contract-readiness.py tests/knowledge_query/test_config.py tests/knowledge_query/test_scripts.py`：通过。
+- `uv run pytest tests/knowledge_query/test_config.py tests/knowledge_query/test_scripts.py -k "document_governance or document_upload_governance or audit_document_governance"`：通过，`6 passed`。
+- `pnpm document:governance-contract-readiness`：仍按预期返回 `status=blocked`，报告只包含 `production_side_effect=none`、`production_env_write=false`、`object_storage_write=false`、`external_governance_provider_call=not_called` 和 `secret_values_reported=false`。
+
+当前边界：
+
+- `document_governance_settings_contract_status=local_typed_settings_ready`：合同已进入本地配置模型，但默认配置仍不足以支撑生产级文档治理闭环。
+- `document_governance_contract_readiness_status=blocked`：默认运行仍缺 COS/object recording、企业级病毒/DLP provider、脱敏启用、策略版本、人工复核和审计事件要求。
+- `production_current_state=unchanged`：本批未部署生产，也未写生产 env。
+- `next_evidence_required`：下一批应先补非生产 ready-profile 或等价配置验证，证明 readiness 可进入 `ready_for_readonly_governance_probe`；生产配置与写入型治理 E2E 仍需单独授权。
 
 冻结日期：`2026-06-30`
 

@@ -287,8 +287,8 @@ def test_audit_document_governance_contract_readiness_script_is_valid_and_saniti
     assert "production_side_effect" in script_text
     assert "external_governance_provider_call" in script_text
     assert "object_storage_write" in script_text
-    assert "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED" in script_text
-    assert "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED" in script_text
+    assert "DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV" in script_text
+    assert "DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV" in script_text
 
 
 def test_audit_document_governance_contract_readiness_blocks_default_config() -> None:
@@ -330,10 +330,6 @@ def test_audit_document_governance_contract_readiness_accepts_enterprise_config(
     env = {
         "COS_SECRET_ID": "sentinel-cos-id-value",
         "COS_SECRET_KEY": "sentinel-cos-key-value",
-        "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED": "true",
-        "MEDICAL_AUDIT_DOCUMENT_REDACTION_POLICY_VERSION": "redaction-v1",
-        "MEDICAL_AUDIT_DOCUMENT_REDACTION_REVIEW_REQUIRED": "true",
-        "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED": "true",
     }
 
     report = module.build_readiness_report_from_settings(
@@ -361,6 +357,10 @@ def test_audit_document_governance_contract_readiness_accepts_enterprise_config(
         document_governance=module.DocumentUploadGovernanceSettings(
             virus_scan_provider="clamav-sidecar",
             dlp_review_provider="ruleset-v1",
+            redaction_rewrite_enabled=True,
+            redaction_policy_version="redaction-v1",
+            redaction_manual_review_required=True,
+            governance_audit_event_required=True,
         ),
         environ=env,
     )

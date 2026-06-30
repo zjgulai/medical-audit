@@ -20,6 +20,10 @@ from medical_audit_kb.api.document_upload_store import (  # noqa: E402
     tencent_cos_bootstrap_preflight_from_settings,
 )
 from medical_audit_kb.core.config import (  # noqa: E402
+    DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV,
     DocumentStorageSettings,
     DocumentUploadGovernanceSettings,
     load_settings,
@@ -29,14 +33,6 @@ JsonObject = dict[str, object]
 
 DEFAULT_JSON_OUTPUT = "tmp/outputs/document-governance-contract-readiness-latest.json"
 DEFAULT_MARKDOWN_OUTPUT = "tmp/outputs/document-governance-contract-readiness-latest.md"
-
-REDACTION_REWRITE_ENABLED_ENV = "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED"
-REDACTION_POLICY_VERSION_ENV = "MEDICAL_AUDIT_DOCUMENT_REDACTION_POLICY_VERSION"
-REDACTION_REVIEW_REQUIRED_ENV = "MEDICAL_AUDIT_DOCUMENT_REDACTION_REVIEW_REQUIRED"
-GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV = (
-    "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED"
-)
-
 
 @dataclass(frozen=True, slots=True)
 class ReadinessConfig:
@@ -89,12 +85,12 @@ def build_readiness_report_from_settings(
         document_governance,
         require_external_provider=False,
     )
-    safe_env = _safe_contract_env(environ, document_storage)
+    safe_env = _safe_contract_env(environ, document_storage, document_governance)
     blockers = _build_blockers(
         document_storage=document_storage,
+        document_governance=document_governance,
         cos_report=cos_report,
         governance_report=governance_report,
-        environ=environ,
         require_external_dlp_provider=config.require_external_dlp_provider,
     )
     return {
@@ -159,9 +155,9 @@ def build_readiness_report_from_settings(
 def _build_blockers(
     *,
     document_storage: DocumentStorageSettings,
+    document_governance: DocumentUploadGovernanceSettings,
     cos_report: JsonObject,
     governance_report: JsonObject,
-    environ: Mapping[str, str],
     require_external_dlp_provider: bool,
 ) -> list[str]:
     blockers: list[str] = []
@@ -192,13 +188,13 @@ def _build_blockers(
     if not bool(governance_report.get("manual_index_approval_required")):
         blockers.append("manual-index-approval-not-required")
 
-    if not _truthy(_contract_env_value(environ, REDACTION_REWRITE_ENABLED_ENV)):
+    if not document_governance.redaction_rewrite_enabled:
         blockers.append("redaction-rewrite-not-enabled")
-    if not _contract_env_value(environ, REDACTION_POLICY_VERSION_ENV):
+    if not document_governance.redaction_policy_version:
         blockers.append("redaction-policy-version-missing")
-    if not _truthy(_contract_env_value(environ, REDACTION_REVIEW_REQUIRED_ENV)):
+    if not document_governance.redaction_manual_review_required:
         blockers.append("redaction-manual-review-not-required")
-    if not _truthy(_contract_env_value(environ, GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV)):
+    if not document_governance.governance_audit_event_required:
         blockers.append("document-governance-audit-event-contract-missing")
     return blockers
 
@@ -206,15 +202,27 @@ def _build_blockers(
 def _safe_contract_env(
     environ: Mapping[str, str],
     document_storage: DocumentStorageSettings,
+    document_governance: DocumentUploadGovernanceSettings,
 ) -> JsonObject:
-    env_names = (
-        REDACTION_REWRITE_ENABLED_ENV,
-        REDACTION_POLICY_VERSION_ENV,
-        REDACTION_REVIEW_REQUIRED_ENV,
-        GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV,
-    )
     safe: JsonObject = {
-        name: _safe_env_item(environ, name) for name in env_names
+        DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV: {
+            "status": "SET" if document_governance.redaction_rewrite_enabled else "UNSET",
+        },
+        DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV: {
+            "status": (
+                "SET" if document_governance.redaction_policy_version else "UNSET"
+            ),
+        },
+        DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV: {
+            "status": (
+                "SET" if document_governance.redaction_manual_review_required else "UNSET"
+            ),
+        },
+        DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV: {
+            "status": (
+                "SET" if document_governance.governance_audit_event_required else "UNSET"
+            ),
+        },
     }
     referenced_secret_status: dict[str, str] = {}
     for name in (
@@ -225,17 +233,6 @@ def _safe_contract_env(
             referenced_secret_status[name] = "SET" if environ.get(name, "").strip() else "UNSET"
     safe["referenced_secret_status"] = referenced_secret_status
     return safe
-
-
-def _safe_env_item(environ: Mapping[str, str], name: str) -> JsonObject:
-    value = environ.get(name, "").strip()
-    return {
-        "status": "SET" if value else "UNSET",
-    }
-
-
-def _contract_env_value(environ: Mapping[str, str], name: str) -> str:
-    return environ.get(name, "").strip()
 
 
 def _provider_stage(check: JsonObject) -> str:
@@ -259,10 +256,6 @@ def _list_of_strings(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
-
-
-def _truthy(value: object) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _write_json(report: JsonObject, path: Path | None) -> None:

@@ -45,6 +45,18 @@ DOCUMENT_UPLOAD_DLP_REVIEW_JOB_ENDPOINT_NAME_ENV: Final = (
 DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_ENV"
 )
+DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED"
+)
+DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_REDACTION_POLICY_VERSION"
+)
+DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_REDACTION_REVIEW_REQUIRED"
+)
+DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV: Final = (
+    "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED"
+)
 DOCUMENT_STORAGE_PROVIDER_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_PROVIDER"
 DOCUMENT_STORAGE_COS_BUCKET_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_BUCKET"
 DOCUMENT_STORAGE_COS_REGION_ENV: Final = "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_REGION"
@@ -123,6 +135,10 @@ class DocumentUploadGovernanceSettings(BaseModel):
     virus_scan_job_secret_env: str | None = None
     dlp_review_job_endpoint_env: str | None = None
     dlp_review_job_secret_env: str | None = None
+    redaction_rewrite_enabled: bool = False
+    redaction_policy_version: str | None = None
+    redaction_manual_review_required: bool = False
+    governance_audit_event_required: bool = False
 
 
 class DocumentStorageSettings(BaseModel):
@@ -295,6 +311,31 @@ def _document_upload_governance_env_overrides(
         changed = True
     if secret_env := os.getenv(DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV):
         governance["dlp_review_job_secret_env"] = secret_env
+        changed = True
+    if redaction_rewrite_enabled := os.getenv(
+        DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV
+    ):
+        governance["redaction_rewrite_enabled"] = _parse_bool_env(
+            redaction_rewrite_enabled,
+            DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV,
+        )
+        changed = True
+    if redaction_policy_version := os.getenv(DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV):
+        governance["redaction_policy_version"] = redaction_policy_version
+        changed = True
+    if redaction_review_required := os.getenv(
+        DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV
+    ):
+        governance["redaction_manual_review_required"] = _parse_bool_env(
+            redaction_review_required,
+            DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV,
+        )
+        changed = True
+    if audit_event_required := os.getenv(DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV):
+        governance["governance_audit_event_required"] = _parse_bool_env(
+            audit_event_required,
+            DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV,
+        )
         changed = True
     if not changed:
         return None

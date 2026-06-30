@@ -742,7 +742,7 @@ Batch 7.9 验收结果：
 
 状态：`in_progress`
 
-当前切片：`document_governance_contract_readiness_blocked`
+当前切片：`document_governance_settings_contract_blocked`
 
 目标：
 
@@ -813,9 +813,18 @@ Batch 8.6 验收结果：
 - 未满足：Tencent COS/provider、对象记录、企业级病毒/DLP provider、脱敏改写、策略版本、人工复核和审计事件合同仍未配置；授权写入型治理 E2E、归档签章和恢复演练尚未执行。
 - 边界：本批是本地合同/门禁固化，不证明生产对象存储、外部 DLP、脱敏改写、证书级签章或长期留存闭环完成。
 
+Batch 8.7 验收结果：
+
+- 已满足：P0-05 的脱敏改写、策略版本、人工复核和治理审计事件合同已进入 `DocumentUploadGovernanceSettings`，并支持 `MEDICAL_AUDIT_DOCUMENT_REDACTION_*` 与 `MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED` env override。
+- 已满足：`document:governance-contract-readiness` 改为读取 typed settings，而不是在脚本内裸读脱敏/审计 env 值；报告仍只输出合同状态和 COS secret env 的 `SET/UNSET`。
+- 已满足：目标测试通过，`uv run pytest tests/knowledge_query/test_config.py tests/knowledge_query/test_scripts.py -k "document_governance or document_upload_governance or audit_document_governance"` 返回 `6 passed`；`ruff` 与 `py_compile` 通过。
+- 已满足：本批 readiness 报告仍按预期 `status=blocked`，阻塞项继续覆盖 COS、对象记录、企业级病毒/DLP provider、脱敏改写和审计事件合同。
+- 未满足：生产没有写入新 env；Tencent COS/object recording、企业级治理 provider、真实脱敏改写、生产只读复核和授权写入型治理 E2E 仍未执行。
+- 边界：本批只是本地 typed config contract，不证明生产配置、对象存储写入、外部 provider 调用或证书级合规闭环完成。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.6 P0-05 文档治理合同 readiness 固化。原因：
+当前已推进到 Batch 8.7 P0-05 脱敏与审计合同 typed settings 固化。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -828,12 +837,13 @@ Batch 8.6 验收结果：
 - Batch 8.4 在最新 UI/UX 已部署基线后重新执行部署状态审计和生产权限只读 smoke，确认本批探测的受控 GET 路径已按租户头和角色头门禁工作。
 - Batch 8.5 已把真实 SSO/session claims、可信代理签名、正式租户身份来源和关闭 legacy header 授权的条件固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
 - Batch 8.6 已把文档对象存储、外部治理 provider、脱敏改写、留存和审计事件合同固化为本地 readiness 门禁，当前按预期 fail-closed 为 `blocked`。
+- Batch 8.7 已把脱敏改写、策略版本、人工复核和治理审计事件合同从脚本裸 env 检查提升到正式 settings/env override 层；本批未验证或变更生产配置，默认 readiness 继续 fail-closed。
 
 下一批优先执行的收口计划：
 
 1. P0-05 对象存储合同实现：补 Tencent COS provider、bucket/region、secret env name、SDK bootstrap、对象记录、签名 URL TTL、对象 retention 和本地隔离 retention；未授权前不写生产 env、不执行对象存储写入。
-2. P0-05 脱敏与审计合同实现：补 `MEDICAL_AUDIT_DOCUMENT_REDACTION_REWRITE_ENABLED`、脱敏策略版本、人工复核要求和治理审计事件合同；外部 DLP provider 仍需单独授权 smoke。
-3. P0-05 验收顺序：先让 `document:governance-contract-readiness` 从 `blocked` 进入 `ready_for_readonly_governance_probe`，再执行生产只读复核；只有备份、显式授权和回滚路径齐备后才申请写入型文档治理 E2E。
+2. P0-05 本地 ready-profile 验证：用非生产配置文件和测试 env value 证明 `document:governance-contract-readiness` 可从 `blocked` 进入 `ready_for_readonly_governance_probe`，但报告不得写入 secret value。
+3. P0-05 生产验收顺序：生产配置变更需另行授权；授权后先执行生产只读复核，只有备份、显式授权和回滚路径齐备后才申请写入型文档治理 E2E。
 4. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
 5. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
 

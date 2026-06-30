@@ -5,6 +5,10 @@ import pytest
 from medical_audit_kb.core.config import (
     DATABASE_URL_ENV,
     DOCUMENT_DOWNLOAD_SIGNED_URL_TTL_SECONDS_ENV,
+    DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV,
+    DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV,
     DOCUMENT_OBJECT_RETENTION_DAYS_ENV,
     DOCUMENT_STORAGE_COS_BUCKET_ENV,
     DOCUMENT_STORAGE_COS_ENCRYPTION_ENV,
@@ -59,6 +63,10 @@ def test_default_config_loads() -> None:
     assert settings.document_upload_governance.virus_scan_job_secret_env is None
     assert settings.document_upload_governance.dlp_review_job_endpoint_env is None
     assert settings.document_upload_governance.dlp_review_job_secret_env is None
+    assert settings.document_upload_governance.redaction_rewrite_enabled is False
+    assert settings.document_upload_governance.redaction_policy_version is None
+    assert settings.document_upload_governance.redaction_manual_review_required is False
+    assert settings.document_upload_governance.governance_audit_event_required is False
     assert settings.document_storage.provider == "local"
     assert settings.document_storage.cos_bucket is None
     assert settings.document_storage.cos_prefix == "personal-materials/prod"
@@ -148,6 +156,10 @@ def test_environment_overrides_document_upload_governance(
         "DLP_REVIEW_JOB_ENDPOINT",
     )
     monkeypatch.setenv(DOCUMENT_UPLOAD_DLP_REVIEW_JOB_SECRET_NAME_ENV, "DLP_REVIEW_JOB_SECRET")
+    monkeypatch.setenv(DOCUMENT_GOVERNANCE_REDACTION_REWRITE_ENABLED_ENV, "true")
+    monkeypatch.setenv(DOCUMENT_GOVERNANCE_REDACTION_POLICY_VERSION_ENV, "redaction-v1")
+    monkeypatch.setenv(DOCUMENT_GOVERNANCE_REDACTION_REVIEW_REQUIRED_ENV, "true")
+    monkeypatch.setenv(DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV, "true")
 
     settings = load_settings()
 
@@ -174,6 +186,10 @@ def test_environment_overrides_document_upload_governance(
     assert settings.document_upload_governance.dlp_review_job_secret_env == (
         "DLP_REVIEW_JOB_SECRET"
     )
+    assert settings.document_upload_governance.redaction_rewrite_enabled is True
+    assert settings.document_upload_governance.redaction_policy_version == "redaction-v1"
+    assert settings.document_upload_governance.redaction_manual_review_required is True
+    assert settings.document_upload_governance.governance_audit_event_required is True
 
 
 def test_environment_overrides_document_storage(
@@ -234,6 +250,15 @@ def test_environment_rejects_invalid_document_storage_boolean(
     monkeypatch.setenv(DOCUMENT_STORAGE_RECORD_OBJECTS_ENV, "maybe")
 
     with pytest.raises(ValueError, match="MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS"):
+        load_settings()
+
+
+def test_environment_rejects_invalid_document_governance_boolean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED_ENV, "maybe")
+
+    with pytest.raises(ValueError, match="MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED"):
         load_settings()
 
 
