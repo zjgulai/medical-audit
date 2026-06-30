@@ -34,24 +34,24 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("AI 数据分析")).toBeInTheDocument();
     expect(screen.getByText("项目管理")).toBeInTheDocument();
     expect(screen.getByText("审计底稿生成")).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "已打开模块" })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "已打开模块" })).not.toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "全局搜索" })).toHaveAttribute("placeholder", "搜索");
     expect(screen.getByLabelText("角色权限视图")).toBeInTheDocument();
     expect(screen.getByText(/医保基金使用合规专项自查/)).toBeInTheDocument();
-    expect(screen.getByText(/单院医保内审试运行/)).toBeInTheDocument();
     expect(screen.getAllByText("医保基金使用合规").length).toBeGreaterThan(0);
     expect(screen.getByTestId("auditscope-brand-logo")).toBeInTheDocument();
     expect(screen.getByText("管理员视图")).toBeInTheDocument();
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
       expect(screen.getByRole("button", { name: new RegExp(role) })).toBeInTheDocument();
     }
-    expect(screen.getByText("后端待检测")).toBeInTheDocument();
+    expect(screen.queryByText("连接检测中")).not.toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: /AI 对话/ })).toHaveAttribute("href", "/chat");
     expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
     expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
-    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/fund-compliance");
     expect(screen.getByRole("link", { name: /AI 对话/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
@@ -93,7 +93,7 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps secondary workspace routes reachable from the sidebar and active tabs", () => {
+  it("keeps secondary workspace routes reachable from the sidebar", () => {
     usePathnameMock.mockReturnValue("/rules");
 
     render(
@@ -104,6 +104,6 @@ describe("WorkspaceShell", () => {
 
     expect(screen.getAllByText("专题规则库").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /专题规则库/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("tab", { name: /专题规则库/ })).toHaveAttribute("href", "/rules");
+    expect(screen.queryByRole("tablist", { name: "已打开模块" })).not.toBeInTheDocument();
   });
 });

@@ -27,6 +27,16 @@ export const workspaceHomeNavigation: NavigationItem = {
   target: "workspace"
 };
 
+export const fundComplianceNavigation: NavigationItem = {
+  id: "fund-compliance",
+  label: "基金合规专题",
+  href: "/fund-compliance",
+  symbol: "专",
+  description: "打开医保基金使用合规专题工作台，查看规则、表单和待复核单据。",
+  emphasis: "primary",
+  target: "workspace"
+};
+
 export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "ai-chat",
@@ -173,6 +183,7 @@ export const systemNavigation: readonly NavigationItem[] = [
 
 const workspaceNavigation = [
   workspaceHomeNavigation,
+  fundComplianceNavigation,
   ...primaryNavigation,
   ...secondaryNavigation,
   ...systemNavigation
@@ -202,6 +213,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
     id: "agents",
     label: "专题审计",
     items: [
+      requireNavigationItemById("fund-compliance"),
       requireNavigationItemById("workspace"),
       requireNavigationItemById("guided-check"),
       requireNavigationItemById("projects"),

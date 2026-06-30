@@ -411,7 +411,7 @@ def test_report_workpaper_template_registry_returns_docx_metadata(tmp_path: Path
         "就诊明细疑点摘要",
     }
     visit_detail = next(item for item in body["items"] if item["id"] == "workpaper-visit-detail")
-    assert visit_detail["source_file_name"] == "表3_就诊费用明细表-模版.xlsx"
+    assert visit_detail["source_file_name"] == "表3_就诊费用明细表（空白）.xlsx"
     assert "身份证号码" in visit_detail["expected_columns"]
     assert "隐私字段处理记录" in visit_detail["evidence_bindings"]
     assert state.operation_logs[-1]["action"] == "report-workpaper-template-registry-view"

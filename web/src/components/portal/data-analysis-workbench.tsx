@@ -178,7 +178,7 @@ export function DataAnalysisWorkbench() {
           </p>
           {selectedTemplate && (
             <div className="mt-5 grid gap-4 text-left lg:grid-cols-2">
-              <AnalysisList title="模板字段" items={selectedTemplate.expectedColumns.slice(0, 8)} />
+              <AnalysisList title="模板字段" items={selectedTemplate.expectedColumns.slice(0, 12)} />
               <AnalysisList title="核验重点" items={selectedTemplate.keyChecks} />
             </div>
           )}
@@ -456,7 +456,7 @@ map_audit_signals()`}</pre>
               <StatusPill tone="info">模板引导</StatusPill>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {selectedTemplate.expectedColumns.slice(0, 6).map((column) => (
+              {selectedTemplate.expectedColumns.slice(0, 10).map((column) => (
                 <span key={column} className="audit-chip bg-white">
                   {column}
                 </span>

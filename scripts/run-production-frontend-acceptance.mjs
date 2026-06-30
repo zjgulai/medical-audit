@@ -25,6 +25,10 @@ const viewports = [
 
 const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
+  {
+    route: "/fund-compliance",
+    requiredText: [/专题审计工作台/, /待处理清单|专题规则/, /三份模板与自建表单|创建表单/],
+  },
   { route: "/chat", requiredText: [/AI 审证对话工作台/, /问题构建|知识来源|推荐问题/, /进入审证对话/] },
   {
     route: "/agents",

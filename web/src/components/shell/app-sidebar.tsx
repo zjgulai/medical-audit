@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
+  fundComplianceNavigation,
   primaryNavigation,
   secondaryNavigation,
   systemNavigation,
@@ -27,7 +28,7 @@ function NavigationLink({
   readonly collapsed: boolean;
 }) {
   const isActive = isActivePath(pathname, item.href);
-  const className = `audit-focus-ring audit-sidebar-link flex min-w-36 items-center gap-2.5 rounded-[var(--audit-radius-md)] px-2.5 py-2 text-sm transition md:min-w-0 ${
+  const className = `audit-focus-ring audit-sidebar-link flex min-w-[5.25rem] items-center gap-2 rounded-[var(--audit-radius-md)] px-2 py-1.5 text-sm transition sm:min-w-28 md:min-w-0 md:gap-2.5 md:px-2.5 md:py-2 ${
     collapsed ? "md:justify-center md:px-0" : ""
   } ${
     isActive
@@ -44,14 +45,14 @@ function NavigationLink({
       >
         {item.symbol}
       </span>
-      <span className={`min-w-0 flex-1 truncate font-medium ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
+      <span className={`min-w-0 flex-1 truncate text-xs font-medium sm:text-sm ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
       {item.target === "backend" && (
         <span
           className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${collapsed ? "md:hidden" : ""} ${
             isActive ? "bg-white/20 text-white" : "bg-white text-[var(--audit-ink-subtle)]"
           }`}
         >
-          深页
+          管理页
         </span>
       )}
     </>
@@ -78,7 +79,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
 
   return (
     <aside
-      className={`audit-sidebar-shell flex w-full flex-col border-b border-[var(--audit-line)] px-3 py-4 shadow-[0_10px_24px_rgb(23_62_105/0.05)] transition-[width] sm:px-4 md:min-h-screen md:border-r md:border-b-0 md:py-5 md:shadow-[8px_0_24px_rgb(23_62_105/0.05)] ${
+      className={`audit-sidebar-shell flex w-full flex-col border-b border-[var(--audit-line)] px-3 py-2 shadow-[0_10px_24px_rgb(23_62_105/0.05)] transition-[width] sm:px-4 md:min-h-screen md:border-r md:border-b-0 md:py-5 md:shadow-[8px_0_24px_rgb(23_62_105/0.05)] ${
         collapsed ? "md:w-[4.75rem] md:px-2" : "md:w-[16rem] xl:w-[17rem]"
       }`}
     >
@@ -95,10 +96,10 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       </Link>
 
       <Link
-        href="/workspace"
+        href={fundComplianceNavigation.href}
         aria-label={`打开当前审计专题：${currentTopic}`}
         className={`audit-focus-ring mt-3 items-center gap-2.5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-3 py-2.5 text-left transition hover:border-[var(--audit-primary)] hover:bg-white ${
-          collapsed ? "hidden" : "flex"
+          collapsed ? "hidden" : "hidden md:flex"
         }`}
       >
         <span
@@ -114,7 +115,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       </Link>
 
       <nav
-        className="mt-5 flex gap-2 overflow-x-auto pb-1 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
+        className="mt-2 flex gap-2 overflow-x-auto pb-1 md:mt-5 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
         aria-label="主导航"
       >
         {primaryNavigation.map((item) => (
