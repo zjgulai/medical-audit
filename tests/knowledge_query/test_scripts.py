@@ -457,6 +457,99 @@ def test_run_document_governance_ready_profile_outputs_ready_without_secret_leak
     assert "ready-profile-cos-key-sentinel" not in completed.stdout
 
 
+def test_prepare_document_governance_production_readonly_plan_script_is_scoped() -> None:
+    script_path = Path("scripts/prepare-document-governance-production-readonly-plan.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_side_effect" in script_text
+    assert "production_readonly_probe" in script_text
+    assert "production_env_write" in script_text
+    assert "object_storage_write" in script_text
+    assert "network_call_status" in script_text
+    assert "not_called" in script_text
+
+
+def test_prepare_document_governance_production_readonly_plan_reports_layers(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "document-governance-production-readonly-plan.json"
+    markdown_path = tmp_path / "document-governance-production-readonly-plan.md"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare-document-governance-production-readonly-plan.py",
+            "--json-output",
+            str(report_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "COS_SECRET_ID": "do-not-print-cos-id",
+            "COS_SECRET_KEY": "do-not-print-cos-key",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    serialized_file = report_path.read_text(encoding="utf-8")
+    markdown = markdown_path.read_text(encoding="utf-8")
+    layer_names = {layer["name"] for layer in report["evidence_layers"]}
+    readonly_fields = set(
+        report["production_readonly_observation_spec"]["required_report_fields"]
+    )
+    authorization_envs = {
+        item["env_name"]
+        for item in report["production_configuration_authorization_package"][
+            "required_manual_inputs"
+        ]
+    }
+
+    assert report["status"] == "ready_for_production_readonly_plan_review"
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert layer_names == {
+        "local-ready-profile-dry-run",
+        "production-readonly-observation",
+        "authorized-write-governance-e2e",
+    }
+    assert report["evidence_layers"][1]["current_status"] == "not_run"
+    assert report["evidence_layers"][2]["current_status"] == "not_authorized"
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["production_readonly_probe"] == "not_run"
+    assert report["boundaries"]["production_env_write"] is False
+    assert report["boundaries"]["object_storage_write"] is False
+    assert report["boundaries"]["network_call_status"] == "not_called"
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+    assert report["boundaries"]["external_governance_provider_call"] == "not_called"
+    assert report["boundaries"]["authorized_write_e2e"] == "not_run"
+    assert report["boundaries"]["secret_values_reported"] is False
+    assert "production-readonly-not-run" in report["blockers"]
+    assert "production-env-write-not-authorized" in report["blockers"]
+    assert "authorized-write-e2e-not-authorized" in report["blockers"]
+    assert "document_storage_provider" in readonly_fields
+    assert "redaction_policy_version_status" in readonly_fields
+    assert "audit_log_readonly_status" in readonly_fields
+    assert "MEDICAL_AUDIT_DOCUMENT_STORAGE_COS_BUCKET" in authorization_envs
+    assert "MEDICAL_AUDIT_DOCUMENT_STORAGE_RECORD_OBJECTS" in authorization_envs
+    assert "MEDICAL_AUDIT_DOCUMENT_GOVERNANCE_AUDIT_EVENT_REQUIRED" in authorization_envs
+    for output in (completed.stdout, serialized_file, markdown):
+        assert "do-not-print-cos-id" not in output
+        assert "do-not-print-cos-key" not in output
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 

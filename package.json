@@ -25,6 +25,7 @@
     "auth:sso-contract-readiness": "uv run python scripts/audit-auth-sso-contract-readiness.py",
     "document:governance-contract-readiness": "uv run python scripts/audit-document-governance-contract-readiness.py",
     "document:governance-ready-profile": "uv run python scripts/run-document-governance-ready-profile.py",
+    "document:governance-production-readonly-plan": "uv run python scripts/prepare-document-governance-production-readonly-plan.py",
     "production:permission-readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py --base-url https://audit.lute-tlz-dddd.top --api-prefix /api/v1 --mode observe --json-output tmp/outputs/production-permission-readonly-smoke-latest.json",
     "production:frontend-acceptance": "node scripts/run-production-frontend-acceptance-gate.mjs"
   }
