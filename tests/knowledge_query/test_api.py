@@ -37,6 +37,8 @@ from medical_audit_kb.api.query_history_store import (
 )
 from medical_audit_kb.api.routes_documents import DocumentUploadItem
 from medical_audit_kb.core.config import (
+    DocumentStorageSettings,
+    DocumentUploadGovernanceSettings,
     DocumentUploadIndexingSettings,
     KnowledgeQuerySettings,
     ModelProviderSettings,
@@ -1300,6 +1302,117 @@ def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) ->
 
     assert response.status_code == 422
     assert response.json()["detail"] == "unsupported table file extension"
+
+
+def test_documents_governance_status_is_redacted_get_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={
+            "document_storage": DocumentStorageSettings(
+                provider="tencent-cos",
+                cos_bucket="medical-audit-prod",
+                cos_region="ap-guangzhou",
+                cos_prefix="personal-materials/prod",
+                cos_secret_id_env="COS_SECRET_ID",
+                cos_secret_key_env="COS_SECRET_KEY",
+                cos_sdk_bootstrap_enabled=True,
+                signed_url_ttl_seconds=180,
+                object_retention_days=365,
+                local_quarantine_retention_days=14,
+                record_storage_objects=True,
+            ),
+            "document_upload_governance": DocumentUploadGovernanceSettings(
+                virus_scan_provider="tencent-ci-virus",
+                virus_scan_job_endpoint_env="VIRUS_SCAN_ENDPOINT",
+                virus_scan_job_secret_env="VIRUS_SCAN_SECRET",
+                dlp_review_provider="external-dlp",
+                dlp_review_job_endpoint_env="DLP_REVIEW_ENDPOINT",
+                dlp_review_job_secret_env="DLP_REVIEW_SECRET",
+                redaction_rewrite_enabled=True,
+                redaction_policy_version="redaction-v2026",
+                redaction_manual_review_required=True,
+                governance_audit_event_required=True,
+            ),
+        }
+    )
+
+    def fake_schema_ready(database_url: str) -> bool:
+        assert database_url == state.settings.database_url
+        return True
+
+    monkeypatch.setenv("COS_SECRET_ID", "cos-id-secret-sentinel")
+    monkeypatch.setenv("COS_SECRET_KEY", "cos-key-secret-sentinel")
+    monkeypatch.setenv("VIRUS_SCAN_SECRET", "virus-secret-sentinel")
+    monkeypatch.setenv("DLP_REVIEW_SECRET", "dlp-secret-sentinel")
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_documents.document_storage_objects_schema_ready",
+        fake_schema_ready,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get("/documents/governance/status")
+    prefixed_response = client.get("/api/v1/documents/governance/status")
+
+    assert response.status_code == 200
+    assert prefixed_response.status_code == 200
+    body = response.json()
+    serialized = json.dumps(body, ensure_ascii=False)
+    fields = body["required_report_fields"]
+
+    assert body["status"] == "readonly_status_available"
+    assert body["evidence_grade"] == "L1-public-or-runtime"
+    assert body["storage"]["provider"] == "tencent-cos"
+    assert body["storage"]["cos_bucket_status"] == "set"
+    assert body["storage"]["cos_region_status"] == "set"
+    assert body["storage"]["cos_prefix_status"] == "set"
+    assert body["storage"]["cos_secret_id"] == {
+        "env_name_status": "set",
+        "referenced_secret_status": "set",
+    }
+    assert body["governance"]["virus_scan"]["provider"] == "tencent-ci-virus"
+    assert body["governance"]["dlp_review"]["provider"] == "external-dlp"
+    assert fields["document_storage_provider"] == "tencent-cos"
+    assert fields["document_storage_objects_schema_ready"] is True
+    assert fields["document_upload_list_readonly_status"] == (
+        "blocked_by_audit_log_side_effect"
+    )
+    assert fields["download_metadata_readonly_status"] == (
+        "blocked_by_audit_log_side_effect"
+    )
+    assert fields["audit_log_readonly_status"] == "available_no_event_written"
+    assert body["boundaries"] == {
+        "production_write": False,
+        "document_upload_write": False,
+        "document_upload_list_api_called": False,
+        "download_metadata_api_called": False,
+        "audit_log_write_expected": False,
+        "provider_call": False,
+        "object_storage_write": False,
+        "secret_values_reported": False,
+        "allowed_http_methods": ["GET"],
+        "non_get_http_methods_allowed": False,
+    }
+    assert state.operation_logs == []
+    for hidden in (
+        "medical-audit-prod",
+        "ap-guangzhou",
+        "personal-materials/prod",
+        "COS_SECRET_ID",
+        "COS_SECRET_KEY",
+        "VIRUS_SCAN_ENDPOINT",
+        "VIRUS_SCAN_SECRET",
+        "DLP_REVIEW_ENDPOINT",
+        "DLP_REVIEW_SECRET",
+        "redaction-v2026",
+        "cos-id-secret-sentinel",
+        "cos-key-secret-sentinel",
+        "virus-secret-sentinel",
+        "dlp-secret-sentinel",
+    ):
+        assert hidden not in serialized
 
 
 def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:

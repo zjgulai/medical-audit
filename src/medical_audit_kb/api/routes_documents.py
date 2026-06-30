@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Annotated, Literal
 from urllib.parse import quote
 
@@ -25,6 +26,7 @@ from medical_audit_kb.api.document_upload_governance import (
 from medical_audit_kb.api.document_upload_ingestion import (
     DocumentUploadIngestionError,
 )
+from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
 from medical_audit_kb.domain.constants import SourceCollection
 
 router = APIRouter(prefix="/documents")
@@ -36,6 +38,14 @@ DocumentGovernanceStatus = Literal["pending-review", "approved-for-index", "bloc
 DocumentSecurityScanStatus = Literal["local-policy-passed", "local-policy-review"]
 DocumentDlpStatus = Literal["clear", "needs-review"]
 PersonalDocumentIndexStatus = Literal["not-indexed", "indexed", "failed"]
+RedactedConfigStatus = Literal["set", "missing", "not_required"]
+ReadonlyFeatureStatus = Literal["enabled", "disabled", "not_required"]
+ReadonlyEndpointStatus = Literal[
+    "available",
+    "available_no_event_written",
+    "blocked_by_audit_log_side_effect",
+]
+RequiredReportFieldValue = str | bool | int
 
 
 class DocumentSourcePermissionItem(BaseModel):
@@ -205,6 +215,88 @@ class DocumentManualApprovalRequest(BaseModel):
     note: str = Field(min_length=1, max_length=1000)
 
 
+class DocumentGovernanceSecretStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    env_name_status: RedactedConfigStatus
+    referenced_secret_status: RedactedConfigStatus
+
+
+class DocumentGovernanceStorageReadonlyStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    cos_bucket_status: RedactedConfigStatus
+    cos_region_status: RedactedConfigStatus
+    cos_prefix_status: RedactedConfigStatus
+    cos_secret_id: DocumentGovernanceSecretStatus
+    cos_secret_key: DocumentGovernanceSecretStatus
+    cos_sdk_bootstrap_status: ReadonlyFeatureStatus
+    record_storage_objects: bool
+    signed_url_ttl_seconds: int
+    object_retention_days: int
+    local_quarantine_retention_days: int
+
+
+class DocumentGovernanceProviderReadonlyStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    job_endpoint_env_status: RedactedConfigStatus
+    job_secret: DocumentGovernanceSecretStatus
+
+
+class DocumentGovernancePolicyReadonlyStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    virus_scan: DocumentGovernanceProviderReadonlyStatus
+    dlp_review: DocumentGovernanceProviderReadonlyStatus
+    redaction_rewrite_enabled: bool
+    redaction_policy_version_status: RedactedConfigStatus
+    redaction_manual_review_required: bool
+    governance_audit_event_required: bool
+
+
+class DocumentGovernanceEndpointReadonlyStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    governance_readonly_endpoint_status: ReadonlyEndpointStatus
+    document_storage_objects_schema_ready: bool
+    document_upload_list_readonly_status: ReadonlyEndpointStatus
+    download_metadata_readonly_status: ReadonlyEndpointStatus
+    audit_log_readonly_status: ReadonlyEndpointStatus
+    audit_log_store_configured: bool
+
+
+class DocumentGovernanceReadonlyBoundaries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production_write: bool
+    document_upload_write: bool
+    document_upload_list_api_called: bool
+    download_metadata_api_called: bool
+    audit_log_write_expected: bool
+    provider_call: bool
+    object_storage_write: bool
+    secret_values_reported: bool
+    allowed_http_methods: list[Literal["GET"]]
+    non_get_http_methods_allowed: bool
+
+
+class DocumentGovernanceReadonlyStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["readonly_status_available"]
+    evidence_grade: Literal["L1-public-or-runtime"]
+    storage: DocumentGovernanceStorageReadonlyStatus
+    governance: DocumentGovernancePolicyReadonlyStatus
+    endpoints: DocumentGovernanceEndpointReadonlyStatus
+    required_report_fields: dict[str, RequiredReportFieldValue]
+    boundaries: DocumentGovernanceReadonlyBoundaries
+    supported_claims: list[str]
+    forbidden_claims: list[str]
+
+
 @router.get("/permissions", response_model=DocumentPermissionsResponse)
 def document_permissions(
     state: Annotated[ApiState, Depends(get_api_state)],
@@ -219,6 +311,117 @@ def document_permissions(
     )
     role = user.legacy_api_role
     return _permissions_response(role)
+
+
+@router.get("/governance/status", response_model=DocumentGovernanceReadonlyStatusResponse)
+def document_governance_status(
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> DocumentGovernanceReadonlyStatusResponse:
+    storage = state.settings.document_storage
+    governance = state.settings.document_upload_governance
+    cos_required = storage.provider == "tencent-cos"
+    virus_job_required = governance.virus_scan_provider == "tencent-ci-virus"
+    dlp_job_required = governance.dlp_review_provider == "external-dlp"
+
+    storage_status = DocumentGovernanceStorageReadonlyStatus(
+        provider=storage.provider,
+        cos_bucket_status=_redacted_status(storage.cos_bucket, required=cos_required),
+        cos_region_status=_redacted_status(storage.cos_region, required=cos_required),
+        cos_prefix_status=_redacted_status(storage.cos_prefix, required=cos_required),
+        cos_secret_id=_secret_env_status(storage.cos_secret_id_env, required=cos_required),
+        cos_secret_key=_secret_env_status(storage.cos_secret_key_env, required=cos_required),
+        cos_sdk_bootstrap_status=_feature_status(
+            storage.cos_sdk_bootstrap_enabled,
+            required=cos_required,
+        ),
+        record_storage_objects=storage.record_storage_objects,
+        signed_url_ttl_seconds=storage.signed_url_ttl_seconds,
+        object_retention_days=storage.object_retention_days,
+        local_quarantine_retention_days=storage.local_quarantine_retention_days,
+    )
+    governance_status = DocumentGovernancePolicyReadonlyStatus(
+        virus_scan=DocumentGovernanceProviderReadonlyStatus(
+            provider=governance.virus_scan_provider,
+            job_endpoint_env_status=_redacted_status(
+                governance.virus_scan_job_endpoint_env,
+                required=virus_job_required,
+            ),
+            job_secret=_secret_env_status(
+                governance.virus_scan_job_secret_env,
+                required=virus_job_required,
+            ),
+        ),
+        dlp_review=DocumentGovernanceProviderReadonlyStatus(
+            provider=governance.dlp_review_provider,
+            job_endpoint_env_status=_redacted_status(
+                governance.dlp_review_job_endpoint_env,
+                required=dlp_job_required,
+            ),
+            job_secret=_secret_env_status(
+                governance.dlp_review_job_secret_env,
+                required=dlp_job_required,
+            ),
+        ),
+        redaction_rewrite_enabled=governance.redaction_rewrite_enabled,
+        redaction_policy_version_status=_redacted_status(
+            governance.redaction_policy_version,
+            required=governance.redaction_rewrite_enabled,
+        ),
+        redaction_manual_review_required=governance.redaction_manual_review_required,
+        governance_audit_event_required=governance.governance_audit_event_required,
+    )
+    endpoints = DocumentGovernanceEndpointReadonlyStatus(
+        governance_readonly_endpoint_status="available",
+        document_storage_objects_schema_ready=document_storage_objects_schema_ready(
+            state.settings.database_url
+        ),
+        document_upload_list_readonly_status="blocked_by_audit_log_side_effect",
+        download_metadata_readonly_status="blocked_by_audit_log_side_effect",
+        audit_log_readonly_status="available_no_event_written",
+        audit_log_store_configured=state.audit_log_store is not None,
+    )
+    return DocumentGovernanceReadonlyStatusResponse(
+        status="readonly_status_available",
+        evidence_grade="L1-public-or-runtime",
+        storage=storage_status,
+        governance=governance_status,
+        endpoints=endpoints,
+        required_report_fields=_document_governance_required_report_fields(
+            storage=storage_status,
+            governance=governance_status,
+            endpoints=endpoints,
+        ),
+        boundaries=DocumentGovernanceReadonlyBoundaries(
+            production_write=False,
+            document_upload_write=False,
+            document_upload_list_api_called=False,
+            download_metadata_api_called=False,
+            audit_log_write_expected=False,
+            provider_call=False,
+            object_storage_write=False,
+            secret_values_reported=False,
+            allowed_http_methods=["GET"],
+            non_get_http_methods_allowed=False,
+        ),
+        supported_claims=[
+            "This endpoint exposes document-governance readiness fields as redacted statuses.",
+            (
+                "This endpoint does not list uploads, download metadata, write audit logs, "
+                "call providers, or write object storage."
+            ),
+        ],
+        forbidden_claims=[
+            (
+                "This response proves production was observed unless the endpoint was "
+                "called on production."
+            ),
+            (
+                "This response contains COS bucket, region, prefix, policy version, env names, "
+                "or secret values."
+            ),
+            "Upload list and download endpoints are harmless read-only endpoints.",
+        ],
+    )
 
 
 @router.get("/uploads", response_model=DocumentUploadListResponse)
@@ -897,6 +1100,72 @@ def _upload_permissions(role: str) -> DocumentUploadPermissions:
         can_read_all_personal_uploads=can_read_all_personal_uploads(role),
         can_govern_personal_uploads=_can_govern_personal_uploads(role),
     )
+
+
+def _redacted_status(value: str | None, *, required: bool) -> RedactedConfigStatus:
+    if not required:
+        return "not_required"
+    if value is None:
+        return "missing"
+    return "set" if value.strip() else "missing"
+
+
+def _secret_env_status(
+    env_name: str | None,
+    *,
+    required: bool,
+) -> DocumentGovernanceSecretStatus:
+    env_name_status = _redacted_status(env_name, required=required)
+    if env_name_status != "set":
+        referenced_secret_status: RedactedConfigStatus = env_name_status
+    else:
+        referenced_secret_status = "set" if os.getenv(env_name or "", "").strip() else "missing"
+    return DocumentGovernanceSecretStatus(
+        env_name_status=env_name_status,
+        referenced_secret_status=referenced_secret_status,
+    )
+
+
+def _feature_status(value: bool, *, required: bool) -> ReadonlyFeatureStatus:
+    if not required:
+        return "not_required"
+    return "enabled" if value else "disabled"
+
+
+def _document_governance_required_report_fields(
+    *,
+    storage: DocumentGovernanceStorageReadonlyStatus,
+    governance: DocumentGovernancePolicyReadonlyStatus,
+    endpoints: DocumentGovernanceEndpointReadonlyStatus,
+) -> dict[str, RequiredReportFieldValue]:
+    return {
+        "document_storage_provider": storage.provider,
+        "cos_bucket_status": storage.cos_bucket_status,
+        "cos_region_status": storage.cos_region_status,
+        "cos_prefix_status": storage.cos_prefix_status,
+        "cos_secret_id_env_name_status": storage.cos_secret_id.env_name_status,
+        "cos_secret_key_env_name_status": storage.cos_secret_key.env_name_status,
+        "cos_sdk_bootstrap_status": storage.cos_sdk_bootstrap_status,
+        "record_storage_objects": storage.record_storage_objects,
+        "signed_url_ttl_seconds": storage.signed_url_ttl_seconds,
+        "object_retention_days": storage.object_retention_days,
+        "local_quarantine_retention_days": storage.local_quarantine_retention_days,
+        "virus_scan_provider": governance.virus_scan.provider,
+        "virus_scan_job_endpoint_env_status": governance.virus_scan.job_endpoint_env_status,
+        "virus_scan_job_secret_env_status": governance.virus_scan.job_secret.env_name_status,
+        "dlp_review_provider": governance.dlp_review.provider,
+        "dlp_review_job_endpoint_env_status": governance.dlp_review.job_endpoint_env_status,
+        "dlp_review_job_secret_env_status": governance.dlp_review.job_secret.env_name_status,
+        "redaction_rewrite_enabled": governance.redaction_rewrite_enabled,
+        "redaction_policy_version_status": governance.redaction_policy_version_status,
+        "redaction_manual_review_required": governance.redaction_manual_review_required,
+        "governance_audit_event_required": governance.governance_audit_event_required,
+        "document_storage_objects_schema_ready": endpoints.document_storage_objects_schema_ready,
+        "document_upload_list_readonly_status": endpoints.document_upload_list_readonly_status,
+        "governance_readonly_endpoint_status": endpoints.governance_readonly_endpoint_status,
+        "download_metadata_readonly_status": endpoints.download_metadata_readonly_status,
+        "audit_log_readonly_status": endpoints.audit_log_readonly_status,
+    }
 
 
 def _file_extension(file_name: str) -> str:

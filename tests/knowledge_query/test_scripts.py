@@ -13,6 +13,54 @@ import pytest
 from pytest import MonkeyPatch
 
 
+def _documents_governance_status_payload() -> dict[str, object]:
+    fields: dict[str, object] = {
+        "document_storage_provider": "tencent-cos",
+        "cos_bucket_status": "set",
+        "cos_region_status": "set",
+        "cos_prefix_status": "set",
+        "cos_secret_id_env_name_status": "set",
+        "cos_secret_key_env_name_status": "set",
+        "cos_sdk_bootstrap_status": "enabled",
+        "record_storage_objects": True,
+        "signed_url_ttl_seconds": 180,
+        "object_retention_days": 365,
+        "local_quarantine_retention_days": 14,
+        "virus_scan_provider": "clamav-sidecar",
+        "virus_scan_job_endpoint_env_status": "not_required",
+        "virus_scan_job_secret_env_status": "not_required",
+        "dlp_review_provider": "ruleset-v1",
+        "dlp_review_job_endpoint_env_status": "not_required",
+        "dlp_review_job_secret_env_status": "not_required",
+        "redaction_rewrite_enabled": True,
+        "redaction_policy_version_status": "set",
+        "redaction_manual_review_required": True,
+        "governance_audit_event_required": True,
+        "document_storage_objects_schema_ready": True,
+        "document_upload_list_readonly_status": "blocked_by_audit_log_side_effect",
+        "governance_readonly_endpoint_status": "available",
+        "download_metadata_readonly_status": "blocked_by_audit_log_side_effect",
+        "audit_log_readonly_status": "available_no_event_written",
+    }
+    return {
+        "status": "readonly_status_available",
+        "evidence_grade": "L1-public-or-runtime",
+        "required_report_fields": fields,
+        "boundaries": {
+            "production_write": False,
+            "document_upload_write": False,
+            "document_upload_list_api_called": False,
+            "download_metadata_api_called": False,
+            "audit_log_write_expected": False,
+            "provider_call": False,
+            "object_storage_write": False,
+            "secret_values_reported": False,
+            "allowed_http_methods": ["GET"],
+            "non_get_http_methods_allowed": False,
+        },
+    }
+
+
 def test_serve_chat_workbench_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/serve-chat-workbench.sh")
 
@@ -667,7 +715,8 @@ def test_prepare_document_governance_production_readonly_coverage_script_is_scop
     script_text = script_path.read_text(encoding="utf-8")
     assert "sk-" not in script_text
     assert "production_readonly_probe" in script_text
-    assert "not_observable_without_new_readonly_endpoint" in script_text
+    assert "observable_by_new_governance_status_endpoint" in script_text
+    assert "not_observable_without_deploy_metadata_endpoint" in script_text
     assert "blocked_by_audit_log_side_effect" in script_text
     assert "non_get_http_methods_allowed" in script_text
     assert "secret_values_reported" in script_text
@@ -703,22 +752,29 @@ def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
     }
     write_methods = {item["method"] for item in report["write_endpoints_out_of_scope"]}
 
-    assert report["status"] == "blocked_missing_governance_readonly_surface"
+    assert report["status"] == (
+        "ready_for_governance_config_readonly_probe_with_deploy_metadata_gap"
+    )
     assert report["evidence_grade"] == "L2-fixture-or-dry-run"
     assert report["coverage_summary"]["total"] == 30
     assert report["coverage_summary"]["observable_by_existing_probe"] == 1
+    assert report["coverage_summary"]["observable_by_new_governance_status_endpoint"] == 26
+    assert report["coverage_summary"]["not_observable_without_deploy_metadata_endpoint"] == 1
     assert report["coverage_summary"]["observable_by_boundary"] == 2
+    assert fields["expected_deploy_sha"]["status"] == (
+        "not_observable_without_deploy_metadata_endpoint"
+    )
     assert fields["document_storage_provider"]["status"] == (
-        "not_observable_without_new_readonly_endpoint"
+        "observable_by_new_governance_status_endpoint"
     )
     assert fields["redaction_policy_version_status"]["status"] == (
-        "not_observable_without_new_readonly_endpoint"
+        "observable_by_new_governance_status_endpoint"
     )
     assert fields["document_upload_list_readonly_status"]["status"] == (
-        "blocked_by_audit_log_side_effect"
+        "observable_by_new_governance_status_endpoint"
     )
     assert fields["download_metadata_readonly_status"]["status"] == (
-        "blocked_by_audit_log_side_effect"
+        "observable_by_new_governance_status_endpoint"
     )
     assert "/api/v1/documents/uploads" in blocked_paths
     assert "/api/v1/documents/uploads/{upload_id}/download" in blocked_paths
@@ -733,7 +789,8 @@ def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
     assert report["boundaries"]["authorized_write_e2e"] == "not_run"
     assert report["boundaries"]["allowed_http_methods_for_future_probe"] == ["GET"]
     assert report["boundaries"]["non_get_http_methods_allowed"] is False
-    assert "governance-config-readonly-endpoint-missing" in report["blockers"]
+    assert "governance-config-readonly-endpoint-missing" not in report["blockers"]
+    assert "deploy-metadata-readonly-endpoint-missing" in report["blockers"]
     for output in (completed.stdout, serialized_file, markdown):
         assert "ready-profile-cos-id-sentinel" not in output
         assert "ready-profile-cos-key-sentinel" not in output
@@ -831,6 +888,13 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
                 ).encode(),
                 headers={"content-type": "application/json"},
             )
+        if url.endswith("/api/v1/documents/governance/status"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_documents_governance_status_payload()).encode(),
+                headers={"content-type": "application/json"},
+            )
         if url.endswith("/api/backend/health"):
             return module.HttpResponse(
                 status=200,
@@ -869,6 +933,7 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
     assert permission_step["details"]["error"] == "role mismatch: None"
     assert report["boundaries"]["production_write"] is False
     assert report["boundaries"]["document_upload_list_api_called"] is False
+    assert report["boundaries"]["document_governance_status_api_called"] is True
 
 
 def test_run_production_documents_readonly_probe_reports_search_backend_failure() -> None:
@@ -901,6 +966,13 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
                     },
                     ensure_ascii=False,
                 ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/v1/documents/governance/status"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_documents_governance_status_payload()).encode(),
                 headers={"content-type": "application/json"},
             )
         if url.endswith("/api/backend/health"):

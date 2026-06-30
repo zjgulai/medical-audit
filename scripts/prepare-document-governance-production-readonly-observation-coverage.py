@@ -13,6 +13,7 @@ DEFAULT_JSON_OUTPUT = (
 DEFAULT_MARKDOWN_OUTPUT = (
     "tmp/outputs/document-governance-production-readonly-observation-coverage-latest.md"
 )
+GOVERNANCE_STATUS_ENDPOINT = "/api/v1/documents/governance/status"
 
 REQUIRED_REPORT_FIELDS = [
     "production_base_url",
@@ -46,6 +47,17 @@ REQUIRED_REPORT_FIELDS = [
     "production_write",
     "provider_call",
 ]
+GOVERNANCE_STATUS_FIELDS = tuple(
+    field
+    for field in REQUIRED_REPORT_FIELDS
+    if field
+    not in {
+        "production_base_url",
+        "expected_deploy_sha",
+        "production_write",
+        "provider_call",
+    }
+)
 
 EXISTING_SAFE_GET_ENDPOINTS = [
     {
@@ -79,6 +91,14 @@ EXISTING_SAFE_GET_ENDPOINTS = [
         "used_by_existing_probe": True,
         "side_effect": "none_expected",
         "covers_fields": [],
+    },
+    {
+        "name": "documents-governance-status",
+        "method": "GET",
+        "path": GOVERNANCE_STATUS_ENDPOINT,
+        "used_by_existing_probe": False,
+        "side_effect": "none_expected",
+        "covers_fields": list(GOVERNANCE_STATUS_FIELDS),
     },
 ]
 
@@ -121,7 +141,7 @@ FIELD_COVERAGE: dict[str, tuple[str, str, str | None]] = {
         "/documents",
     ),
     "expected_deploy_sha": (
-        "not_observable_without_new_readonly_endpoint",
+        "not_observable_without_deploy_metadata_endpoint",
         "documents probe does not read deployment metadata or static manifest",
         None,
     ),
@@ -274,7 +294,7 @@ def main() -> int:
     _write_json(report, Path(args.json_output) if args.json_output else None)
     _write_markdown(report, Path(args.markdown_output) if args.markdown_output else None)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    if args.fail_when_blocked and report["status"] == "blocked_missing_governance_readonly_surface":
+    if args.fail_when_blocked and report["blockers"]:
         return 2
     return 0
 
@@ -285,7 +305,7 @@ def build_coverage_report() -> dict[str, Any]:
     blockers = _build_blockers(fields)
     return {
         "task": "document-governance-production-readonly-observation-coverage",
-        "status": "blocked_missing_governance_readonly_surface" if blockers else "ready",
+        "status": _report_status(blockers),
         "created_at": _now_iso(),
         "evidence_grade": "L2-fixture-or-dry-run",
         "coverage_summary": summary,
@@ -297,18 +317,18 @@ def build_coverage_report() -> dict[str, Any]:
             "not_observable_without_new_readonly_endpoint",
             "not_observable_without_schema_readonly_probe",
             "not_observable_without_audit_log_readonly_probe",
+            "not_observable_without_deploy_metadata_endpoint",
             "blocked_by_audit_log_side_effect",
         ],
         "blockers": blockers,
         "next_contract_todo": [
             (
-                "Add or identify a GET-only governance config/status endpoint that returns "
-                "redacted statuses for storage, governance providers, redaction and audit "
-                "event contract fields."
+                "Add or identify a GET-only deployment metadata endpoint or static manifest "
+                "that can report the expected deploy SHA without exposing secrets."
             ),
             (
-                "Replace upload-list and download routes with safe metadata/status probes "
-                "that do not record audit-log side effects."
+                "Update the production read-only probe authorization package to include "
+                "GET /api/v1/documents/governance/status after deployment."
             ),
             (
                 "Keep write-type governance result, upload, object storage and provider "
@@ -330,17 +350,30 @@ def build_coverage_report() -> dict[str, Any]:
         },
         "supported_claims": [
             "The current documents read-only probe coverage has been mapped field by field.",
-            "The existing probe is insufficient for full P0-05 governance configuration L3.",
+            "The governance configuration fields now have a GET-only redacted status contract.",
+            "Full P0-05 production read-only coverage still needs deploy metadata observation.",
         ],
         "forbidden_claims": [
             "production document governance configuration has been observed",
             "the existing documents smoke fully satisfies the P0-05 required fields",
+            "expected deployment SHA has been observed",
             "upload list or download metadata may be called as harmless read-only endpoints",
         ],
     }
 
 
 def _field_coverage(field: str) -> dict[str, str | None]:
+    if field in GOVERNANCE_STATUS_FIELDS:
+        return {
+            "field": field,
+            "status": "observable_by_new_governance_status_endpoint",
+            "rationale": (
+                "GET /api/v1/documents/governance/status reports this field as a "
+                "redacted status without listing uploads, downloading files, writing "
+                "audit logs, calling providers, or writing object storage"
+            ),
+            "current_endpoint": GOVERNANCE_STATUS_ENDPOINT,
+        }
     status, rationale, endpoint = FIELD_COVERAGE[field]
     return {
         "field": field,
@@ -359,16 +392,25 @@ def _coverage_summary(fields: list[dict[str, str | None]]) -> dict[str, int]:
 
 
 def _build_blockers(fields: list[dict[str, str | None]]) -> list[str]:
-    blockers = [
-        "governance-config-readonly-endpoint-missing",
-        "document-upload-list-get-writes-audit-log",
-        "download-metadata-get-writes-audit-log",
-    ]
+    blockers: list[str] = []
     for item in fields:
         status = str(item["status"])
         if status.startswith("not_observable") or status == "blocked_by_audit_log_side_effect":
+            if item["field"] == "expected_deploy_sha":
+                blockers.append("deploy-metadata-readonly-endpoint-missing")
             blockers.append(f"required-field-not-observable:{item['field']}")
     return blockers
+
+
+def _report_status(blockers: list[str]) -> str:
+    if not blockers:
+        return "ready"
+    if blockers == [
+        "deploy-metadata-readonly-endpoint-missing",
+        "required-field-not-observable:expected_deploy_sha",
+    ]:
+        return "ready_for_governance_config_readonly_probe_with_deploy_metadata_gap"
+    return "blocked_missing_readonly_surface"
 
 
 def _write_json(report: dict[str, Any], path: Path | None) -> None:

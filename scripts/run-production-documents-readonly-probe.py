@@ -26,6 +26,34 @@ SKIPPED_AUDIT_LOG_WRITING_ENDPOINTS = (
     "/api/v1/documents/uploads",
     "/api/v1/documents/uploads/{upload_id}/download",
 )
+GOVERNANCE_STATUS_REQUIRED_FIELDS = (
+    "document_storage_provider",
+    "cos_bucket_status",
+    "cos_region_status",
+    "cos_prefix_status",
+    "cos_secret_id_env_name_status",
+    "cos_secret_key_env_name_status",
+    "cos_sdk_bootstrap_status",
+    "record_storage_objects",
+    "signed_url_ttl_seconds",
+    "object_retention_days",
+    "local_quarantine_retention_days",
+    "virus_scan_provider",
+    "virus_scan_job_endpoint_env_status",
+    "virus_scan_job_secret_env_status",
+    "dlp_review_provider",
+    "dlp_review_job_endpoint_env_status",
+    "dlp_review_job_secret_env_status",
+    "redaction_rewrite_enabled",
+    "redaction_policy_version_status",
+    "redaction_manual_review_required",
+    "governance_audit_event_required",
+    "document_storage_objects_schema_ready",
+    "document_upload_list_readonly_status",
+    "governance_readonly_endpoint_status",
+    "download_metadata_readonly_status",
+    "audit_log_readonly_status",
+)
 
 
 class ReadOnlyProbeError(RuntimeError):
@@ -156,6 +184,23 @@ def _run_probe(
             "can_read_all_personal_uploads"
         ]
 
+    governance_status_details = _run_step(
+        steps,
+        "documents-governance-status",
+        lambda: _check_document_governance_status(
+            normalized_base_url,
+            timeout_seconds=timeout_seconds,
+            auth_headers=auth_headers,
+            http_get=selected_http_get,
+        ),
+    )
+    if "error" not in governance_status_details:
+        summary["document_governance_status"] = governance_status_details["status"]
+        summary["document_governance_field_count"] = governance_status_details["field_count"]
+        summary["document_storage_provider"] = governance_status_details[
+            "document_storage_provider"
+        ]
+
     health_details = _run_step(
         steps,
         "backend-health",
@@ -191,6 +236,7 @@ def _run_probe(
             "production_write": False,
             "document_upload_write": False,
             "document_upload_list_api_called": False,
+            "document_governance_status_api_called": True,
             "download_metadata_api_called": False,
             "audit_log_write_expected": False,
             "provider_call": False,
@@ -293,6 +339,76 @@ def _check_documents_permissions(
         "can_read_all_personal_uploads": upload_permissions.get(
             "can_read_all_personal_uploads"
         ),
+    }
+
+
+def _check_document_governance_status(
+    base_url: str,
+    *,
+    timeout_seconds: float,
+    auth_headers: dict[str, str],
+    http_get: Callable[[str, dict[str, str], float], HttpResponse],
+) -> dict[str, Any]:
+    payload = _request_json(
+        f"{base_url}/api/v1/documents/governance/status",
+        {"Accept": "application/json", **auth_headers},
+        timeout_seconds,
+        http_get=http_get,
+    )
+    fields = _dict(payload.get("required_report_fields"), "required_report_fields")
+    boundaries = _dict(payload.get("boundaries"), "governance status boundaries")
+    missing_fields = [
+        field for field in GOVERNANCE_STATUS_REQUIRED_FIELDS if field not in fields
+    ]
+    _require(payload.get("status") == "readonly_status_available", "governance status unavailable")
+    _require(not missing_fields, f"governance status missing fields: {missing_fields}")
+    _require(boundaries.get("production_write") is False, "governance status writes production")
+    _require(
+        boundaries.get("document_upload_write") is False,
+        "governance status uploads documents",
+    )
+    _require(
+        boundaries.get("document_upload_list_api_called") is False,
+        "governance status calls upload list",
+    )
+    _require(
+        boundaries.get("download_metadata_api_called") is False,
+        "governance status calls download metadata",
+    )
+    _require(
+        boundaries.get("audit_log_write_expected") is False,
+        "governance status writes audit log",
+    )
+    _require(boundaries.get("provider_call") is False, "governance status calls provider")
+    _require(
+        boundaries.get("object_storage_write") is False,
+        "governance status writes object storage",
+    )
+    _require(boundaries.get("secret_values_reported") is False, "governance status reports secrets")
+    _require(
+        boundaries.get("non_get_http_methods_allowed") is False,
+        "governance status allows non-GET methods",
+    )
+    _require(
+        fields.get("document_upload_list_readonly_status")
+        == "blocked_by_audit_log_side_effect",
+        "upload list side-effect status must remain blocked",
+    )
+    _require(
+        fields.get("download_metadata_readonly_status")
+        == "blocked_by_audit_log_side_effect",
+        "download metadata side-effect status must remain blocked",
+    )
+    return {
+        "status": payload.get("status"),
+        "evidence_grade": payload.get("evidence_grade"),
+        "field_count": len(fields),
+        "document_storage_provider": fields.get("document_storage_provider"),
+        "document_upload_list_readonly_status": fields.get(
+            "document_upload_list_readonly_status"
+        ),
+        "download_metadata_readonly_status": fields.get("download_metadata_readonly_status"),
+        "audit_log_readonly_status": fields.get("audit_log_readonly_status"),
     }
 
 
