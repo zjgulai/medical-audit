@@ -849,9 +849,18 @@ Batch 8.10 验收结果：
 - 未满足：本批仍没有执行生产只读 probe，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型治理 E2E。
 - 边界：本批最高证据仍是 `L2-fixture-or-dry-run`；下一步仅可申请并执行显式批准的 GET-only 生产只读 probe，不能把 precheck 解释为生产配置已观测。
 
+Batch 8.11A 验收结果：
+
+- 已满足：新增 `scripts/prepare-document-governance-production-readonly-observation-coverage.py` 与 `pnpm document:governance-production-readonly-coverage`，把 P0-05 生产只读 required fields 逐项映射到当前 GET-only documents probe 覆盖面。
+- 已满足：coverage 报告输出 `tmp/outputs/document-governance-production-readonly-observation-coverage-latest.json` 与 `.md`，当前返回 `status=blocked_missing_governance_readonly_surface`、`evidence_grade=L2-fixture-or-dry-run`。
+- 已满足：报告确认当前 `run-production-documents-readonly-probe.py` 只覆盖 `production_base_url` 以及 `production_write=false`、`provider_call=false` 两个边界字段，不能证明 COS bucket/region、对象记录、retention、脱敏策略版本、治理审计事件等生产治理配置状态。
+- 已满足：报告明确 `/api/v1/documents/uploads` 和 `/api/v1/documents/uploads/{upload_id}/download` 虽是 GET，但会写审计日志，因此不能作为无副作用生产只读观测端点；写入型 upload/governance-result 继续保持 out of scope。
+- 未满足：本批没有执行生产只读 probe，没有新增生产可观测端点，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型治理 E2E。
+- 边界：本批结论是“当前观测面不足以进入完整 P0-05 L3”，不是生产治理配置失败；下一批应先补安全治理配置/status 只读端点或等价 L2 契约，再申请 L3。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.10 P0-05 生产只读执行前检查。原因：
+当前已推进到 Batch 8.11A P0-05 生产只读观测覆盖缺口门禁。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -868,13 +877,14 @@ Batch 8.10 验收结果：
 - Batch 8.8 已用非生产 ready-profile 证明 P0-05 合同可以进入 `ready_for_readonly_governance_probe`，同时保持无生产副作用和 secret value 不输出。
 - Batch 8.9 已把生产只读复核字段、生产配置授权输入、rollback 要求和写入型 E2E 授权边界固化为本地准备包；当前仍未执行生产只读或任何生产写入。
 - Batch 8.10 已把 ready-profile refresh、生产只读准备包 refresh、授权字段检查和人工 todo 汇总为本地 precheck；当前仍未执行生产只读或任何生产写入。
+- Batch 8.11A 已证明现有 documents GET-only probe 覆盖不足，不能把普通 `/documents` 只读 smoke 等同于 P0-05 治理配置 L3 观测。
 
 下一批优先执行的收口计划：
 
-1. P0-05 显式生产只读授权：基于 `pnpm document:governance-production-readonly-precheck` 的 todo 清单，由人工确认是否允许执行 GET-only 生产只读 probe；未确认前不访问生产。
-2. P0-05 生产只读复核：只有获得只读授权后才执行生产 GET-only probe，并把生产当前配置观测、ready-profile dry-run 和授权写入型 E2E 继续分开记录。
-3. P0-05 生产配置授权包人工复核：如果生产只读暴露配置缺口，再单独准备 env write request；未获授权前不执行生产 env 写入。
-4. P0-05 写入型治理 E2E：只有备份、显式授权和回滚路径齐备后才执行对象存储写入、治理结果写入、归档签章或恢复演练。
+1. P0-05 安全治理配置只读面：新增或识别 GET-only governance config/status 端点，返回 storage、governance provider、redaction、audit event contract 等字段的 redacted status，不输出 secret values。
+2. P0-05 无副作用 metadata/status 观测：替代会写审计日志的 upload-list/download 路径，提供不产生 audit-log side effect 的只读状态或明确标记 `not_observable`。
+3. P0-05 生产只读复核：只有 L2 覆盖门禁不再 blocked 且获得只读授权后，才执行生产 GET-only probe，并把生产当前配置观测、ready-profile dry-run 和授权写入型 E2E 继续分开记录。
+4. P0-05 生产配置授权包人工复核：如果生产只读暴露配置缺口，再单独准备 env write request；未获授权前不执行生产 env 写入。
 5. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
 6. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
 

@@ -651,6 +651,94 @@ def test_run_document_governance_production_readonly_precheck_reports_manual_rev
         assert "ready-profile-cos-key-sentinel" not in output
 
 
+def test_prepare_document_governance_production_readonly_coverage_script_is_scoped() -> None:
+    script_path = Path(
+        "scripts/prepare-document-governance-production-readonly-observation-coverage.py"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_readonly_probe" in script_text
+    assert "not_observable_without_new_readonly_endpoint" in script_text
+    assert "blocked_by_audit_log_side_effect" in script_text
+    assert "non_get_http_methods_allowed" in script_text
+    assert "secret_values_reported" in script_text
+
+
+def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "document-governance-production-readonly-coverage.json"
+    markdown_path = tmp_path / "document-governance-production-readonly-coverage.md"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare-document-governance-production-readonly-observation-coverage.py",
+            "--json-output",
+            str(report_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    serialized_file = report_path.read_text(encoding="utf-8")
+    markdown = markdown_path.read_text(encoding="utf-8")
+    fields = {item["field"]: item for item in report["required_fields"]}
+    blocked_paths = {
+        item["path"] for item in report["side_effect_blocked_endpoints"]
+    }
+    write_methods = {item["method"] for item in report["write_endpoints_out_of_scope"]}
+
+    assert report["status"] == "blocked_missing_governance_readonly_surface"
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert report["coverage_summary"]["total"] == 30
+    assert report["coverage_summary"]["observable_by_existing_probe"] == 1
+    assert report["coverage_summary"]["observable_by_boundary"] == 2
+    assert fields["document_storage_provider"]["status"] == (
+        "not_observable_without_new_readonly_endpoint"
+    )
+    assert fields["redaction_policy_version_status"]["status"] == (
+        "not_observable_without_new_readonly_endpoint"
+    )
+    assert fields["document_upload_list_readonly_status"]["status"] == (
+        "blocked_by_audit_log_side_effect"
+    )
+    assert fields["download_metadata_readonly_status"]["status"] == (
+        "blocked_by_audit_log_side_effect"
+    )
+    assert "/api/v1/documents/uploads" in blocked_paths
+    assert "/api/v1/documents/uploads/{upload_id}/download" in blocked_paths
+    assert "POST" in write_methods
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["production_readonly_probe"] == "not_run"
+    assert report["boundaries"]["production_env_write"] is False
+    assert report["boundaries"]["object_storage_write"] is False
+    assert report["boundaries"]["network_call_status"] == "not_called"
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+    assert report["boundaries"]["external_governance_provider_call"] == "not_called"
+    assert report["boundaries"]["authorized_write_e2e"] == "not_run"
+    assert report["boundaries"]["allowed_http_methods_for_future_probe"] == ["GET"]
+    assert report["boundaries"]["non_get_http_methods_allowed"] is False
+    assert "governance-config-readonly-endpoint-missing" in report["blockers"]
+    for output in (completed.stdout, serialized_file, markdown):
+        assert "ready-profile-cos-id-sentinel" not in output
+        assert "ready-profile-cos-key-sentinel" not in output
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 

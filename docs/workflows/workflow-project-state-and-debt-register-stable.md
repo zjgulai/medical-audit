@@ -928,7 +928,7 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 | P0-02 | 真实数据债务 | 生产验收主要基于受控脱敏 fixture | 生产文档明确 fixture 只证明链路 | 不能进入真实医院 UAT | 获取院方 DDL、字段字典、脱敏样本，执行 staging 验收 | `his-staging-acceptance` 对真实样本 PASS |
 | P0-03 | AI 生成债务 | 线上答案生成 provider 未验证通过 | 2026-06-29 生产-only readiness：生产仅 `KIMI_API_KEY=SET`，`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`MOONSHOT_API_KEY` 与全部 `MEDICAL_AUDIT_KB_ANSWER_*` 均为 `UNSET`；综合 readiness 仅说明本地 shell 有 Anthropic smoke 前置条件；生产 query smoke 仍为 fallback | 不能宣称 no-fallback AI 生成审计结论能力 | 先取得明确授权的一次 provider smoke；provider smoke 和真实答案评测通过前不得写生产 env，未通过前保持 generate-or-safe-fallback / citation fallback 为产品边界 | `answer-provider-smoke`、真实生成评测和生产 `--require-generated-answer` E2E 全部 PASS |
 | P0-04 | 权限安全债务 | 真实 SSO、登录会话签发和写入型生产权限验收未完成 | 已新增本地 `auth_departments`、`auth_users`、`auth_user_role_assignments` 和 `/auth/*` 过渡层 API；`require_permission` 已优先使用持久化 `active/global/project` 角色并拒绝 `disabled/pending` profile；受控 API 鉴权中间件要求 `X-Tenant-Id` 并写 `authorization-denied`；2026-06-30 生产只读权限 smoke 已在最新 UI/UX 基线上返回 `status=observed`、`probe_count=35`、`issue_count=0`；新增 `scripts/audit-auth-sso-contract-readiness.py` 与 `pnpm auth:sso-contract-readiness`，当前 P0-04 合同 readiness 报告 `status=blocked`，阻塞项为可信代理/签名密钥/CIDR/关闭 legacy header 均未配置 | 仍无法满足生产级审计系统完整权限边界；只读 GET 权限通过不等于真实 SSO 或写入型验收完成 | 在现有本地权限底座上继续补真实会话认证或可信 SSO 代理、正式租户身份来源、网关注入策略和生产写入型权限复验 | 未授权路径 401/403；审计日志记录访问拒绝；禁用用户无法继续访问受控入口；`production:permission-readonly` 持续通过；`auth:sso-contract-readiness` 不再 blocked；真实会话/SSO smoke 通过；授权写入型权限 E2E 通过 |
-| P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储、脱敏改写和外部治理服务未形成可验收闭环 | 当前生产只读曾观测到 `virus_scan_provider=clamav-sidecar`、`dlp_review_provider=ruleset-v1`；新增 `scripts/audit-document-governance-contract-readiness.py`、`pnpm document:governance-contract-readiness`、非生产 `configs/knowledge-query-engine-document-governance-ready-profile.yaml`、`pnpm document:governance-ready-profile`、`scripts/prepare-document-governance-production-readonly-plan.py`、`pnpm document:governance-production-readonly-plan`、`scripts/run-document-governance-production-readonly-precheck.py` 和 `pnpm document:governance-production-readonly-precheck`；ready-profile 已返回 `status=ready_for_readonly_governance_probe`，生产只读准备包已返回 `status=ready_for_production_readonly_plan_review`，precheck 已返回 `status=ready_for_manual_authorization_review`，默认本地报告仍 `status=blocked` | 报告、归档和个人材料治理不能作为完整合规交付；非生产 ready-profile、生产只读准备包和 precheck 只证明合同/计划/授权清单可达，不能替代生产只读、授权写入型治理 E2E 或证书级签章恢复演练 | 先基于 precheck todo 取得显式生产只读授权；生产 env 变更、外部 provider smoke、对象存储写入和写入型 E2E 必须单独授权 | 默认 `document:governance-contract-readiness` 不再 blocked；生产只读复核通过；有备份/授权/回滚路径的写入型治理 E2E、归档包、签章、验签和恢复演练通过 |
+| P0-05 | 合规闭环债务 | 证书级电子签章、长期留存介质、对象存储、脱敏改写和外部治理服务未形成可验收闭环 | 当前生产只读曾观测到 `virus_scan_provider=clamav-sidecar`、`dlp_review_provider=ruleset-v1`；新增 `scripts/audit-document-governance-contract-readiness.py`、`pnpm document:governance-contract-readiness`、非生产 `configs/knowledge-query-engine-document-governance-ready-profile.yaml`、`pnpm document:governance-ready-profile`、`scripts/prepare-document-governance-production-readonly-plan.py`、`pnpm document:governance-production-readonly-plan`、`scripts/run-document-governance-production-readonly-precheck.py`、`pnpm document:governance-production-readonly-precheck`、`scripts/prepare-document-governance-production-readonly-observation-coverage.py` 和 `pnpm document:governance-production-readonly-coverage`；coverage gate 返回 `status=blocked_missing_governance_readonly_surface`，证明当前 documents probe 覆盖不足 | 报告、归档和个人材料治理不能作为完整合规交付；非生产 ready-profile、生产只读准备包、precheck 和 coverage gate 只证明合同/计划/授权清单/覆盖缺口，不能替代生产只读、授权写入型治理 E2E 或证书级签章恢复演练 | 先补 GET-only governance config/status 只读面和无副作用 metadata/status 观测；生产 env 变更、外部 provider smoke、对象存储写入和写入型 E2E 必须单独授权 | 默认 `document:governance-contract-readiness` 不再 blocked；生产只读复核通过；有备份/授权/回滚路径的写入型治理 E2E、归档包、签章、验签和恢复演练通过 |
 | P0-06 | 状态源债务 | 本地分支、生产 SHA、远端主线、多个 worktree 容易产生认知漂移 | 2026-06-28 已将 runtime/source reconciliation 通过 PR #161 合入并部署到生产；随后补齐共享 Nginx 静态路由源配置和部署状态 gate（medical-audit PR #162、AI_vedio PR #56），再将 Frontend 2.0 通过 PR #163 部署到生产。PR #168 已将个人材料 pgvector 候选入库 API 部署到生产；PR #170/#171 已将默认查询隔离、live retrieval metadata gate 和 SQL 修复部署到生产；2026-06-29 已授权执行 runtime DB `index-activate` 和 search backend reload。2026-06-30 只读复核确认最新生产 `.deploy-sha=a78bf8e5a1303178df26d03c6a687bd68f4512c2`，app/postgres/clamav healthy，`audit_next_static_healthy=true`，`matching_embedding_count=49051`；后续 docs-only 远端主线领先生产 `.deploy-sha` 时，不代表生产代码部署改变。 | 后续若只看 `origin/main` 或旧 worktree，仍可能误判生产正在运行的代码 SHA；docs-only/test-only merge 仍需明确 `production unchanged`，runtime DB 状态变更也必须单独记录 | 将 P0-06 从发布阻断项降级为持续监控项：每次部署前先核对 `origin/main`、干净 release worktree、生产 `.deploy-sha`、共享 Nginx 源配置、runtime DB 状态和验收脚本口径；docs-only/test-only 合并不得自动声称生产已同步 | 生产状态审计、生产 smoke、生产前端验收、权限只读观测和 runtime DB 状态复核均通过；文档记录 `main/prod SHA` 与 runtime 状态边界；后续部署继续执行 static asset gate |
 
 ## 5. P1 债务台账
@@ -1233,6 +1233,36 @@ Phase 1 结论：工程基线、生产只读链路、门户语义验收和任务
 1. P0-04 继续从 header transition layer 推进到医院 SSO/session claims 合同、网关注入策略和正式租户身份来源；先做方案和只读验证，不直接写生产配置。
 2. 写入型权限 E2E 仅在明确授权、备份和回滚路径齐备后执行；执行前复跑 `production:permission-readonly`。
 3. F2 no-fallback 真实生成仍受 `no-provider-api-key-env-set` 阻塞；除非单独授权 provider smoke，否则继续保持 fallback 边界。
+
+冻结日期：`2026-06-30`
+
+### 2.0.25 2026-06-30 Batch 8.11A P0-05 生产只读观测覆盖缺口门禁
+
+状态口径：本节同步 P0-05 文档治理生产只读观测覆盖缺口门禁。目标是在不触达生产的前提下，逐项盘点现有 documents GET-only probe 是否覆盖生产只读 required fields，并明确普通 `/documents` smoke 不能替代治理配置只读验收。本批没有执行生产只读 probe，没有生产部署、没有生产 env 写入、没有对象存储写入、没有外部治理 provider 调用、没有授权写入型 E2E。
+
+本地变更：
+
+- 新增 `scripts/prepare-document-governance-production-readonly-observation-coverage.py`，输出 P0-05 production-readonly required fields 覆盖矩阵。
+- 新增 `pnpm document:governance-production-readonly-coverage`，默认输出 `tmp/outputs/document-governance-production-readonly-observation-coverage-latest.json` 与 `.md`。
+- coverage gate 明确现有 safe GET endpoints、side-effect blocked GET endpoints 和 out-of-scope write endpoints。
+- 新增测试，覆盖 `not_observable_without_new_readonly_endpoint`、`blocked_by_audit_log_side_effect`、禁止非 GET、secret value 不输出和本批无生产副作用边界。
+
+验收证据：
+
+- `python3 -m json.tool package.json`：通过。
+- `python3 -m py_compile scripts/prepare-document-governance-production-readonly-observation-coverage.py`：通过。
+- `uv run ruff check scripts/prepare-document-governance-production-readonly-observation-coverage.py tests/knowledge_query/test_scripts.py`：通过。
+- `uv run pytest tests/knowledge_query/test_scripts.py -k "production_readonly_coverage"`：通过。
+- `pnpm document:governance-production-readonly-coverage`：返回 `status=blocked_missing_governance_readonly_surface`、`evidence_grade=L2-fixture-or-dry-run`、`coverage_summary.total=30`、`observable_by_existing_probe=1`、`observable_by_boundary=2`、`not_observable_without_new_readonly_endpoint=23`、`blocked_by_audit_log_side_effect=2`。
+
+当前边界：
+
+- `production_readonly_coverage_status=blocked_missing_governance_readonly_surface`：只代表当前观测覆盖不足，不代表生产治理配置失败。
+- `production_readonly_probe=not_run`：本批没有执行生产 GET-only probe。
+- `production_current_state=unchanged`：本批未验证或变更生产配置。
+- `upload_list_get_status=blocked_by_audit_log_side_effect`：`GET /api/v1/documents/uploads` 会记录 `document-upload-list` 审计操作，不能当作无副作用只读端点。
+- `download_metadata_get_status=blocked_by_audit_log_side_effect`：`GET /api/v1/documents/uploads/{upload_id}/download` 会记录下载或拒绝审计操作，不能当作无副作用只读端点。
+- `next_evidence_required`：下一批先补 GET-only governance config/status 只读面和无副作用 metadata/status 观测；覆盖门禁不再 blocked 后，才申请 L3 production read-only probe。
 
 冻结日期：`2026-06-30`
 
