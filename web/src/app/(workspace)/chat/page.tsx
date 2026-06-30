@@ -82,66 +82,40 @@ export default function ChatPortalPage() {
   }, []);
 
   return (
-    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">问题构建</h2>
-        <ol className="mt-5 space-y-3">
-          {questionBuilderSteps.map((step, index) => (
-            <li key={step.label} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
-              <span className="grid size-7 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-xs font-semibold text-white">
-                {index + 1}
-              </span>
-              <h3 className="mt-3 text-sm font-semibold text-[var(--audit-ink)]">{step.label}</h3>
-              <p className="audit-copy mt-2">{step.detail}</p>
-            </li>
-          ))}
-        </ol>
-
-        <section className="mt-5" aria-labelledby="chat-source-title">
-          <h2 id="chat-source-title" className="audit-section-title">知识来源</h2>
-          <div className="mt-3 space-y-2">
-            {documentCategoryStats.map((source) => (
-              <div key={source.id} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-[var(--audit-ink)]">{source.name}</p>
-                  <span className="audit-meta">{source.documentCount} 份</span>
-                </div>
-                <p className="audit-meta mt-1">{source.sourceCollection}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </aside>
-
-      <section className="audit-panel min-w-0 p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+      <section className="audit-panel min-w-0 p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="audit-kicker">AI 对话</p>
-            <h1 className="audit-page-title">AI 审证对话工作台</h1>
+            <h1 className="audit-page-title">AI 审证对话</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <StatusPill tone="success">引用优先</StatusPill>
             <StatusPill tone={agentStatus === "ready" ? "success" : "neutral"}>
-              {agentStatus === "ready" ? "智能体已同步" : agentStatus === "loading" ? "智能体同步中" : "默认智能体"}
+              {agentStatus === "ready" ? "已同步" : agentStatus === "loading" ? "同步中" : "默认"}
             </StatusPill>
             <DataSourceBadge source="hybrid" />
           </div>
         </div>
 
-        <section className="mt-6 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[var(--audit-primary)]">当前智能体</p>
-              <h2 className="audit-card-title mt-1">{activeAgent.name}</h2>
-              <p className="audit-meta mt-1">{activeAgent.topic} / {activeAgent.knowledgeBase}</p>
+        <section className="mt-4 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[var(--audit-primary)]">当前智能体</p>
+              <h2 className="mt-1 truncate text-base font-semibold text-[var(--audit-ink)]">{activeAgent.name}</h2>
+              <p className="audit-meta mt-1 truncate">{activeAgent.topic}</p>
             </div>
-            <StatusPill tone="info">{activeAgent.category}</StatusPill>
+            <details className="shrink-0">
+              <summary className="audit-focus-ring cursor-pointer list-none rounded-full border border-[var(--audit-primary-line)] bg-white px-3 py-1 text-xs font-semibold text-[var(--audit-primary)] [&::-webkit-details-marker]:hidden">
+                查看提示词
+              </summary>
+              <p className="audit-copy mt-3 max-w-3xl">{activeAgent.prompt}</p>
+            </details>
           </div>
-          <p className="audit-copy mt-3">{activeAgent.prompt}</p>
         </section>
 
-        <form className="mt-5 grid gap-5" action="/pages/chat" method="get">
-          <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
+        <form className="mt-5 grid gap-4" action="/pages/chat" method="get">
+          <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
             <label className="block">
               <span className="audit-label">智能体</span>
               <select
@@ -163,7 +137,8 @@ export default function ChatPortalPage() {
               <input
                 className="audit-focus-ring audit-input mt-2 px-3 py-2.5"
                 name="question"
-                placeholder="例如：非医保目录自费项目发生基金支付，应核验哪些结算字段？"
+                autoComplete="off"
+                placeholder="输入要核验的问题…"
                 required
               />
             </label>
@@ -171,24 +146,22 @@ export default function ChatPortalPage() {
           </div>
 
           <fieldset>
-            <legend className="audit-label">限定知识来源</legend>
-            <div className="mt-3 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+            <legend className="audit-label">知识来源</legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {documentCategoryStats.map((source) => (
                 <label
                   key={source.id}
-                  className="flex items-start gap-3 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4 text-sm"
+                  className="flex items-center gap-2 rounded-[var(--audit-radius-sm)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2 text-sm"
                 >
                   <input
-                    className="mt-1 size-4"
+                    className="size-4"
                     type="checkbox"
                     name="source_collection"
                     value={source.sourceCollection}
                     defaultChecked={source.id === "doc-cat-laws" || source.id === "doc-cat-catalog"}
                   />
-                  <span>
-                    <span className="block audit-compact-title">{source.name}</span>
-                    <span className="mt-1 block audit-meta">{source.description}</span>
-                  </span>
+                  <span className="min-w-0 flex-1 truncate font-semibold text-[var(--audit-ink)]">{source.name}</span>
+                  <span className="audit-meta shrink-0">{source.documentCount}</span>
                 </label>
               ))}
             </div>
@@ -196,60 +169,65 @@ export default function ChatPortalPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button className="audit-focus-ring audit-btn audit-btn-primary" type="submit">
-              进入审证对话
+              进入对话
             </button>
-            <a className="audit-focus-ring audit-btn audit-btn-neutral" href="/pages/chat">
-              打开后端深页
-            </a>
-            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/documents">
+            <a className="audit-focus-ring audit-btn audit-btn-neutral" href="/documents">
               先检索文档
             </a>
           </div>
         </form>
 
-        <section className="mt-6" aria-labelledby="chat-agent-title">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="chat-agent-title" className="audit-section-title">可用智能体</h2>
-            <a className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href="/agent-market">
+        <section className="mt-5" aria-labelledby="quick-question-title">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="quick-question-title" className="audit-section-title">快速问题</h2>
+            <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-xs font-semibold text-[var(--audit-primary)] hover:bg-[var(--audit-primary-soft)]" href="/agent-market">
               查看广场
             </a>
           </div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {agents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
+          <div className="mt-3 grid gap-2 lg:grid-cols-3">
+            {guidedCheckQuestions.slice(0, 3).map((item) => (
+              <a key={item.id} className="audit-focus-ring audit-action-card min-w-0 overflow-hidden px-3 py-2" href={item.chatHref}>
+                <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{item.question}</span>
+              </a>
             ))}
           </div>
         </section>
       </section>
 
-      <aside className="min-w-0 space-y-4">
-        <section className="audit-panel-rail p-5">
-          <h2 className="audit-section-title">推荐问题</h2>
-          <div className="mt-4 space-y-2">
-            {guidedCheckQuestions.slice(0, 4).map((item) => (
-              <a
-                key={item.id}
-                className="audit-focus-ring audit-action-card px-3 py-2"
-                href={item.chatHref}
-              >
-                <span className="audit-meta font-semibold">{item.domain} / {item.agentName}</span>
-                <span className="mt-1 block text-sm font-semibold text-[var(--audit-ink)]">{item.question}</span>
-              </a>
+      <details className="audit-panel-rail p-4">
+        <summary className="audit-focus-ring cursor-pointer list-none text-sm font-semibold text-[var(--audit-ink)] [&::-webkit-details-marker]:hidden">
+          使用说明与证据边界
+        </summary>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <ol className="space-y-2">
+            {questionBuilderSteps.map((step, index) => (
+              <li key={step.label} className="rounded-[var(--audit-radius-sm)] border border-[var(--audit-line-soft)] bg-white p-3">
+                <span className="audit-meta">步骤 {index + 1}</span>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--audit-ink)]">{step.label}</h3>
+                <p className="audit-copy mt-1">{step.detail}</p>
+              </li>
             ))}
-          </div>
-        </section>
-
-        <section className="audit-panel-rail p-5">
-          <h2 className="audit-section-title">证据边界</h2>
-          <ul className="mt-4 space-y-3">
+          </ol>
+          <ul className="space-y-2">
             {evidenceRules.map((rule) => (
               <li key={rule} className="audit-panel-muted px-3 py-2 audit-copy">
                 {rule}
               </li>
             ))}
           </ul>
-        </section>
-      </aside>
+        </div>
+      </details>
+
+      <details className="audit-panel-rail p-4">
+        <summary className="audit-focus-ring cursor-pointer list-none text-sm font-semibold text-[var(--audit-ink)] [&::-webkit-details-marker]:hidden">
+          可用智能体
+        </summary>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {agents.slice(0, 6).map((agent) => (
+            <AgentCard key={agent.id} agent={agent} />
+          ))}
+        </div>
+      </details>
     </main>
   );
 }

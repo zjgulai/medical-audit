@@ -42,6 +42,7 @@ import ChatPortalPage from "./chat/page";
 import DocumentsPage from "./documents/page";
 import FindingsPage from "./findings/page";
 import FundCompliancePage from "./fund-compliance/page";
+import FundComplianceReviewPage from "./fund-compliance/review/page";
 import GraphPage from "./graph/page";
 import GuidedCheckPage from "./guided-check/page";
 import KnowledgeBasePage from "./knowledge-base/page";
@@ -1578,19 +1579,41 @@ describe("workspace foundation pages", () => {
     });
   });
 
-  it("renders the fund compliance topic as a separate workbench with three form templates", () => {
+  it("renders the fund compliance topic as a separate portal entry", () => {
     render(<FundCompliancePage />);
 
-    expect(screen.getByRole("heading", { name: "专题审计工作台" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "专题规则" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "待处理清单" })).toBeInTheDocument();
-    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /表2 · 汇总表/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /表3 · 明细表/ }));
-    expect(screen.getByText("医疗费用总额")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
+    expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
+    expect(screen.getByText("B2B")).toBeInTheDocument();
+    expect(screen.getByText("2025 年 Q4 住院部专项审计")).toBeInTheDocument();
+    expect(screen.getByText("规则导航")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "审计口径" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute("href", "/fund-compliance/review");
+    expect(screen.getByRole("link", { name: /单据审查/ })).toHaveAttribute("href", "/fund-compliance/review");
+    expect(screen.getByRole("heading", { name: "待复核疑点" })).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "新建表单" }));
-    expect(screen.getAllByText("门诊慢病费用复核表").length).toBeGreaterThan(0);
+  it("renders the fund compliance review workbench with three form templates", () => {
+    render(<FundComplianceReviewPage />);
+
+    expect(screen.getByRole("heading", { name: "专题审计工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "待处理清单" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "单据审查" })).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByRole("tab", { name: "规则复核" }));
+    expect(screen.getByRole("heading", { name: "规则分类" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "费用表单" }));
+    expect(screen.getByRole("heading", { name: "三份模板与自建表单" })).toBeInTheDocument();
+    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
+    expect(screen.getByText("表样预览")).toBeInTheDocument();
+    expect(screen.getByText("查看全部字段")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "表2" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "表3" }));
+    expect(screen.getAllByText("医疗费用总额").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText("新建表单"));
+    expect(screen.getByDisplayValue("门诊慢病费用复核表")).toBeInTheDocument();
   });
 
   it("keeps legacy real routes outside the primary portal navigation", async () => {
@@ -1607,26 +1630,24 @@ describe("workspace foundation pages", () => {
   it("renders the AI chat portal handoff to backend evidence chat", async () => {
     const { container } = render(<ChatPortalPage />);
 
-    expect(screen.getByRole("heading", { name: "AI 审证对话工作台" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "问题构建" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "知识来源" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 审证对话" })).toBeInTheDocument();
+    expect(screen.getByText("使用说明与证据边界")).toBeInTheDocument();
     expect(screen.getByText("当前智能体")).toBeInTheDocument();
     expect(screen.getAllByText("法规政策").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医保目录").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "进入审证对话" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "打开后端深页" })).toHaveAttribute("href", "/pages/chat");
+    expect(screen.getByRole("button", { name: "进入对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "打开后端深页" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "先检索文档" })).toHaveAttribute("href", "/documents");
     expect(container.querySelector('input[name="project_name"]')).toHaveAttribute(
       "value",
       "医保基金使用合规专项自查"
     );
-    expect(screen.getByRole("heading", { name: "可用智能体" })).toBeInTheDocument();
+    expect(screen.getByText("可用智能体")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("智能体已同步")).toBeInTheDocument();
+      expect(screen.getByText("已同步")).toBeInTheDocument();
     });
     expect(screen.queryByText("已下架测试智能体")).not.toBeInTheDocument();
     expect(screen.getByText("参保身份、就诊记录和结算记录不一致时，应先做哪三类交叉核验？")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "证据边界" })).toBeInTheDocument();
   });
 
   it("renders the guided self-check workbench with steps, prompts and gates", () => {
@@ -1755,6 +1776,26 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "审计提示词智能体" })).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "智能体分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
+    expect(screen.getByText("默认展示常用助手，可搜索完整模板库。")).toBeInTheDocument();
+    expect(screen.getByText(/已显示前 24 个/)).toBeInTheDocument();
+
+    const agentList = document.querySelector('[aria-label="智能体列表"]');
+    expect(agentList).not.toBeNull();
+    const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
+    expect(visibleNames.length).toBeGreaterThan(0);
+    expect(visibleNames.length).toBeLessThanOrEqual(24);
+    for (const name of visibleNames) {
+      expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
+      expect(Array.from(name).length).toBeLessThanOrEqual(10);
+    }
+
+    fireEvent.click(screen.getAllByRole("button", { name: /出国差旅核验/ })[0]);
+    expect(screen.getByRole("dialog", { name: "出国差旅核验" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "怎么使用" })).toBeInTheDocument();
+    expect(screen.getByText("关注问题")).toBeInTheDocument();
+    expect(screen.getByText("需要材料")).toBeInTheDocument();
+    expect(screen.queryByText(/```json|filename|tablename|\\n/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
     const fundCategory = screen.getByRole("tab", { name: /财务收支/ });
     fireEvent.click(fundCategory);
