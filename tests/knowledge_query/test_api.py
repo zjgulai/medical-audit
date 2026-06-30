@@ -78,6 +78,94 @@ def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
     assert body["data_root"] == str(tmp_path / "data")
 
 
+def test_deployment_metadata_reports_sha_without_runtime_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    deploy_sha = "5e603f85aa11bb22cc33dd44ee55ff6677889900"
+    monkeypatch.setenv("MEDICAL_AUDIT_DEPLOY_SHA", deploy_sha.upper())
+    client = TestClient(create_app(state))
+
+    response = client.get("/deployment/metadata")
+    versioned_response = client.get("/api/v1/deployment/metadata")
+    backend_response = client.get("/api/backend/deployment/metadata")
+
+    assert response.status_code == 200
+    assert versioned_response.status_code == 200
+    assert backend_response.status_code == 200
+    body = response.json()
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert body["status"] == "deployment_metadata_available"
+    assert body["evidence_grade"] == "L1-public-or-runtime"
+    assert body["deploy_sha_status"] == "set"
+    assert body["deploy_sha"] == deploy_sha
+    assert body["deploy_sha_source"] == "env"
+    assert body["required_report_fields"] == {
+        "expected_deploy_sha": deploy_sha,
+        "current_deploy_sha": deploy_sha,
+        "deploy_sha_status": "set",
+    }
+    assert body["boundaries"] == {
+        "production_write": False,
+        "production_env_write": False,
+        "provider_call": False,
+        "object_storage_write": False,
+        "secret_values_reported": False,
+        "allowed_http_methods": ["GET"],
+        "non_get_http_methods_allowed": False,
+    }
+    assert "MEDICAL_AUDIT_DEPLOY_SHA" not in serialized
+    assert state.operation_logs == []
+
+
+def test_deployment_metadata_reads_default_deploy_sha_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    deploy_sha = "abcdef0123456789abcdef0123456789abcdef01"
+    (tmp_path / ".deploy-sha").write_text(f"{deploy_sha}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MEDICAL_AUDIT_DEPLOY_SHA", raising=False)
+    monkeypatch.delenv("MEDICAL_AUDIT_DEPLOY_SHA_FILE", raising=False)
+    client = TestClient(create_app(state))
+
+    response = client.get("/deployment/metadata")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deploy_sha_status"] == "set"
+    assert body["deploy_sha"] == deploy_sha
+    assert body["deploy_sha_source"] == "default_file"
+
+
+def test_deployment_metadata_is_protected_by_controlled_api_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_DEPLOY_SHA",
+        "5e603f85aa11bb22cc33dd44ee55ff6677889900",
+    )
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+
+    anonymous_response = client.get("/api/v1/deployment/metadata")
+    authed_response = client.get(
+        "/api/v1/deployment/metadata",
+        headers={
+            "X-User-Id": "admin-1",
+            "X-Role": "admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
+
+    assert anonymous_response.status_code == 401
+    assert authed_response.status_code == 200
+    assert state.operation_logs[-1]["payload"]["path"] == "/api/v1/deployment/metadata"
+
+
 def test_versioned_api_prefix_serves_backend_routes_and_auth_middleware(
     tmp_path: Path,
 ) -> None:

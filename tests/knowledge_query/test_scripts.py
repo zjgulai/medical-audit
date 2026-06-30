@@ -61,6 +61,32 @@ def _documents_governance_status_payload() -> dict[str, object]:
     }
 
 
+def _deployment_metadata_payload() -> dict[str, object]:
+    deploy_sha = "5e603f85aa11bb22cc33dd44ee55ff6677889900"
+    return {
+        "status": "deployment_metadata_available",
+        "evidence_grade": "L1-public-or-runtime",
+        "version": "0.1.0",
+        "deploy_sha_status": "set",
+        "deploy_sha": deploy_sha,
+        "deploy_sha_source": "default_file",
+        "required_report_fields": {
+            "expected_deploy_sha": deploy_sha,
+            "current_deploy_sha": deploy_sha,
+            "deploy_sha_status": "set",
+        },
+        "boundaries": {
+            "production_write": False,
+            "production_env_write": False,
+            "provider_call": False,
+            "object_storage_write": False,
+            "secret_values_reported": False,
+            "allowed_http_methods": ["GET"],
+            "non_get_http_methods_allowed": False,
+        },
+    }
+
+
 def test_serve_chat_workbench_script_is_valid_and_does_not_store_secret() -> None:
     script_path = Path("scripts/serve-chat-workbench.sh")
 
@@ -716,7 +742,7 @@ def test_prepare_document_governance_production_readonly_coverage_script_is_scop
     assert "sk-" not in script_text
     assert "production_readonly_probe" in script_text
     assert "observable_by_new_governance_status_endpoint" in script_text
-    assert "not_observable_without_deploy_metadata_endpoint" in script_text
+    assert "observable_by_deployment_metadata_endpoint" in script_text
     assert "blocked_by_audit_log_side_effect" in script_text
     assert "non_get_http_methods_allowed" in script_text
     assert "secret_values_reported" in script_text
@@ -752,17 +778,18 @@ def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
     }
     write_methods = {item["method"] for item in report["write_endpoints_out_of_scope"]}
 
-    assert report["status"] == (
-        "ready_for_governance_config_readonly_probe_with_deploy_metadata_gap"
-    )
+    assert report["status"] == "ready"
     assert report["evidence_grade"] == "L2-fixture-or-dry-run"
     assert report["coverage_summary"]["total"] == 30
     assert report["coverage_summary"]["observable_by_existing_probe"] == 1
     assert report["coverage_summary"]["observable_by_new_governance_status_endpoint"] == 26
-    assert report["coverage_summary"]["not_observable_without_deploy_metadata_endpoint"] == 1
+    assert report["coverage_summary"]["observable_by_deployment_metadata_endpoint"] == 1
     assert report["coverage_summary"]["observable_by_boundary"] == 2
     assert fields["expected_deploy_sha"]["status"] == (
-        "not_observable_without_deploy_metadata_endpoint"
+        "observable_by_deployment_metadata_endpoint"
+    )
+    assert fields["expected_deploy_sha"]["current_endpoint"] == (
+        "/api/v1/deployment/metadata"
     )
     assert fields["document_storage_provider"]["status"] == (
         "observable_by_new_governance_status_endpoint"
@@ -790,7 +817,8 @@ def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
     assert report["boundaries"]["allowed_http_methods_for_future_probe"] == ["GET"]
     assert report["boundaries"]["non_get_http_methods_allowed"] is False
     assert "governance-config-readonly-endpoint-missing" not in report["blockers"]
-    assert "deploy-metadata-readonly-endpoint-missing" in report["blockers"]
+    assert "deploy-metadata-readonly-endpoint-missing" not in report["blockers"]
+    assert report["blockers"] == []
     for output in (completed.stdout, serialized_file, markdown):
         assert "ready-profile-cos-id-sentinel" not in output
         assert "ready-profile-cos-key-sentinel" not in output
@@ -865,6 +893,13 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
 
     def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
         del headers, timeout_seconds
+        if url.endswith("/api/v1/deployment/metadata"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_deployment_metadata_payload()).encode(),
+                headers={"content-type": "application/json"},
+            )
         if url.endswith("/documents"):
             return module.HttpResponse(
                 status=200,
@@ -924,6 +959,8 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
     )
 
     assert report["status"] == "fail"
+    assert report["summary"]["deploy_sha_status"] == "set"
+    assert report["summary"]["deploy_sha_matches_expected"] is None
     assert report["summary"]["backend_health"] == "ok"
     assert "documents_role" not in report["summary"]
     permission_step = next(
@@ -932,6 +969,7 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
     assert permission_step["passed"] is False
     assert permission_step["details"]["error"] == "role mismatch: None"
     assert report["boundaries"]["production_write"] is False
+    assert report["boundaries"]["deployment_metadata_api_called"] is True
     assert report["boundaries"]["document_upload_list_api_called"] is False
     assert report["boundaries"]["document_governance_status_api_called"] is True
 
@@ -944,6 +982,13 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
 
     def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
         del headers, timeout_seconds
+        if url.endswith("/api/v1/deployment/metadata"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_deployment_metadata_payload()).encode(),
+                headers={"content-type": "application/json"},
+            )
         if url.endswith("/documents"):
             return module.HttpResponse(
                 status=200,
@@ -1004,6 +1049,7 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
     )
 
     assert report["status"] == "fail"
+    assert report["summary"]["deploy_sha_status"] == "set"
     assert report["summary"]["backend_health"] == "ok"
     assert "search_backend_ready" not in report["summary"]
     search_step = next(
@@ -1038,6 +1084,43 @@ def test_run_production_documents_readonly_probe_auth_headers_include_context() 
         project_key="SELF-CHECK-FUND-20260607",
         api_key="secret-value",
     )["X-API-Key"] == "secret-value"
+
+
+def test_run_production_documents_readonly_probe_deployment_metadata_expected_sha() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_deploy_sha",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+    payload = _deployment_metadata_payload()
+    deploy_sha = str(payload["deploy_sha"])
+
+    def fake_http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> object:
+        del headers, timeout_seconds
+        assert url.endswith("/api/v1/deployment/metadata")
+        return module.HttpResponse(
+            status=200,
+            url=url,
+            content=json.dumps(payload).encode(),
+            headers={"content-type": "application/json"},
+        )
+
+    details = module._check_deployment_metadata(
+        "https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        auth_headers={},
+        expected_deploy_sha=deploy_sha.upper(),
+        http_get=fake_http_get,
+    )
+
+    assert details["deploy_sha_matches_expected"] is True
+    with pytest.raises(module.ReadOnlyProbeError, match="deploy_sha mismatch"):
+        module._check_deployment_metadata(
+            "https://audit.lute-tlz-dddd.top",
+            timeout_seconds=1,
+            auth_headers={},
+            expected_deploy_sha="deadbeef",
+            http_get=fake_http_get,
+        )
 
 
 def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readonly() -> None:

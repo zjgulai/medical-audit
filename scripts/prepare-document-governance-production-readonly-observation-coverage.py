@@ -14,6 +14,7 @@ DEFAULT_MARKDOWN_OUTPUT = (
     "tmp/outputs/document-governance-production-readonly-observation-coverage-latest.md"
 )
 GOVERNANCE_STATUS_ENDPOINT = "/api/v1/documents/governance/status"
+DEPLOYMENT_METADATA_ENDPOINT = "/api/v1/deployment/metadata"
 
 REQUIRED_REPORT_FIELDS = [
     "production_base_url",
@@ -96,9 +97,17 @@ EXISTING_SAFE_GET_ENDPOINTS = [
         "name": "documents-governance-status",
         "method": "GET",
         "path": GOVERNANCE_STATUS_ENDPOINT,
-        "used_by_existing_probe": False,
+        "used_by_existing_probe": True,
         "side_effect": "none_expected",
         "covers_fields": list(GOVERNANCE_STATUS_FIELDS),
+    },
+    {
+        "name": "deployment-metadata",
+        "method": "GET",
+        "path": DEPLOYMENT_METADATA_ENDPOINT,
+        "used_by_existing_probe": True,
+        "side_effect": "none_expected",
+        "covers_fields": ["expected_deploy_sha"],
     },
 ]
 
@@ -141,9 +150,12 @@ FIELD_COVERAGE: dict[str, tuple[str, str, str | None]] = {
         "/documents",
     ),
     "expected_deploy_sha": (
-        "not_observable_without_deploy_metadata_endpoint",
-        "documents probe does not read deployment metadata or static manifest",
-        None,
+        "observable_by_deployment_metadata_endpoint",
+        (
+            "GET /api/v1/deployment/metadata reports the current deploy SHA so the "
+            "probe can compare it with the expected deploy SHA without exposing secrets"
+        ),
+        DEPLOYMENT_METADATA_ENDPOINT,
     ),
     "document_storage_provider": (
         "not_observable_without_new_readonly_endpoint",
@@ -317,18 +329,17 @@ def build_coverage_report() -> dict[str, Any]:
             "not_observable_without_new_readonly_endpoint",
             "not_observable_without_schema_readonly_probe",
             "not_observable_without_audit_log_readonly_probe",
-            "not_observable_without_deploy_metadata_endpoint",
             "blocked_by_audit_log_side_effect",
         ],
         "blockers": blockers,
         "next_contract_todo": [
             (
-                "Add or identify a GET-only deployment metadata endpoint or static manifest "
-                "that can report the expected deploy SHA without exposing secrets."
+                "Deploy the mainline that contains GET-only deployment metadata and "
+                "document governance status endpoints through the approved release path."
             ),
             (
-                "Update the production read-only probe authorization package to include "
-                "GET /api/v1/documents/governance/status after deployment."
+                "After deployment and explicit read-only authorization, run the production "
+                "documents probe with --expected-deploy-sha set to the approved commit."
             ),
             (
                 "Keep write-type governance result, upload, object storage and provider "
@@ -351,12 +362,11 @@ def build_coverage_report() -> dict[str, Any]:
         "supported_claims": [
             "The current documents read-only probe coverage has been mapped field by field.",
             "The governance configuration fields now have a GET-only redacted status contract.",
-            "Full P0-05 production read-only coverage still needs deploy metadata observation.",
+            "The expected deploy SHA comparison now has a GET-only deployment metadata contract.",
         ],
         "forbidden_claims": [
             "production document governance configuration has been observed",
-            "the existing documents smoke fully satisfies the P0-05 required fields",
-            "expected deployment SHA has been observed",
+            "production expected deployment SHA has been observed",
             "upload list or download metadata may be called as harmless read-only endpoints",
         ],
     }
@@ -396,8 +406,6 @@ def _build_blockers(fields: list[dict[str, str | None]]) -> list[str]:
     for item in fields:
         status = str(item["status"])
         if status.startswith("not_observable") or status == "blocked_by_audit_log_side_effect":
-            if item["field"] == "expected_deploy_sha":
-                blockers.append("deploy-metadata-readonly-endpoint-missing")
             blockers.append(f"required-field-not-observable:{item['field']}")
     return blockers
 
@@ -405,11 +413,6 @@ def _build_blockers(fields: list[dict[str, str | None]]) -> list[str]:
 def _report_status(blockers: list[str]) -> str:
     if not blockers:
         return "ready"
-    if blockers == [
-        "deploy-metadata-readonly-endpoint-missing",
-        "required-field-not-observable:expected_deploy_sha",
-    ]:
-        return "ready_for_governance_config_readonly_probe_with_deploy_metadata_gap"
     return "blocked_missing_readonly_surface"
 
 

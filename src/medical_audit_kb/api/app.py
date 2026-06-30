@@ -5,7 +5,7 @@ import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -147,8 +147,42 @@ class HealthResponse(BaseModel):
     data_root: str
 
 
+DeploymentShaStatus = Literal["set", "missing", "invalid"]
+DeploymentShaSource = Literal["env", "env_file", "default_file", "unavailable"]
+
+
+class DeploymentMetadataBoundaries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production_write: bool
+    production_env_write: bool
+    provider_call: bool
+    object_storage_write: bool
+    secret_values_reported: bool
+    allowed_http_methods: list[Literal["GET"]]
+    non_get_http_methods_allowed: bool
+
+
+class DeploymentMetadataResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["deployment_metadata_available"]
+    evidence_grade: Literal["L1-public-or-runtime"]
+    version: str
+    deploy_sha_status: DeploymentShaStatus
+    deploy_sha: str | None
+    deploy_sha_source: DeploymentShaSource
+    required_report_fields: dict[str, str | bool | None]
+    boundaries: DeploymentMetadataBoundaries
+    supported_claims: list[str]
+    forbidden_claims: list[str]
+
+
 CONTROLLED_API_AUTH_ENV = "MEDICAL_AUDIT_CONTROLLED_API_AUTH"
 CONTROLLED_API_TENANT_HEADER = "X-Tenant-Id"
+DEPLOY_SHA_ENV = "MEDICAL_AUDIT_DEPLOY_SHA"
+DEPLOY_SHA_FILE_ENV = "MEDICAL_AUDIT_DEPLOY_SHA_FILE"
+DEPLOY_SHA_FILE_NAME = ".deploy-sha"
 WEB_STATIC_ROOT_ENV = "MEDICAL_AUDIT_WEB_STATIC_ROOT"
 API_V1_PREFIX = "/api/v1"
 API_BACKEND_PREFIX = "/api/backend"
@@ -166,6 +200,7 @@ CONTROLLED_API_PUBLIC_PREFIXES = ("/static/", "/preview/")
 CONTROLLED_API_PROTECTED_EXACT_PATHS = frozenset(
     {
         "/auth/session",
+        "/deployment/metadata",
         "/query",
         "/projects",
     }
@@ -338,6 +373,21 @@ def create_app(
     def backend_proxy_health() -> HealthResponse:
         return health()
 
+    @app.get("/deployment/metadata", response_model=DeploymentMetadataResponse)
+    def deployment_metadata() -> DeploymentMetadataResponse:
+        return _deployment_metadata_response()
+
+    @app.get(f"{API_V1_PREFIX}/deployment/metadata", response_model=DeploymentMetadataResponse)
+    def versioned_deployment_metadata() -> DeploymentMetadataResponse:
+        return deployment_metadata()
+
+    @app.get(
+        f"{API_BACKEND_PREFIX}/deployment/metadata",
+        response_model=DeploymentMetadataResponse,
+    )
+    def backend_proxy_deployment_metadata() -> DeploymentMetadataResponse:
+        return deployment_metadata()
+
     @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
     def favicon() -> Response:
         svg = (
@@ -436,6 +486,110 @@ def _web_static_export_root() -> Path | None:
     if not raw_root:
         return None
     return Path(raw_root).expanduser().resolve()
+
+
+def _deployment_metadata_response() -> DeploymentMetadataResponse:
+    deploy_sha_status, deploy_sha, deploy_sha_source = _resolve_deploy_sha()
+    return DeploymentMetadataResponse(
+        status="deployment_metadata_available",
+        evidence_grade="L1-public-or-runtime",
+        version=__version__,
+        deploy_sha_status=deploy_sha_status,
+        deploy_sha=deploy_sha,
+        deploy_sha_source=deploy_sha_source,
+        required_report_fields={
+            "expected_deploy_sha": deploy_sha,
+            "current_deploy_sha": deploy_sha,
+            "deploy_sha_status": deploy_sha_status,
+        },
+        boundaries=DeploymentMetadataBoundaries(
+            production_write=False,
+            production_env_write=False,
+            provider_call=False,
+            object_storage_write=False,
+            secret_values_reported=False,
+            allowed_http_methods=["GET"],
+            non_get_http_methods_allowed=False,
+        ),
+        supported_claims=[
+            "This endpoint exposes the running application deploy SHA when configured.",
+            "This endpoint does not read production env files or write runtime state.",
+        ],
+        forbidden_claims=[
+            (
+                "This response proves production was observed unless the endpoint was "
+                "called on production."
+            ),
+            (
+                "This endpoint performs deployment, schema migration, or production "
+                "configuration writes."
+            ),
+        ],
+    )
+
+
+def _resolve_deploy_sha() -> tuple[DeploymentShaStatus, str | None, DeploymentShaSource]:
+    env_sha = os.getenv(DEPLOY_SHA_ENV, "").strip()
+    if env_sha:
+        return _normalize_deploy_sha(env_sha, source="env")
+
+    env_file = os.getenv(DEPLOY_SHA_FILE_ENV, "").strip()
+    if env_file:
+        return _read_deploy_sha_file(Path(env_file).expanduser(), source="env_file")
+
+    for path in _default_deploy_sha_paths():
+        status, deploy_sha, source = _read_deploy_sha_file(path, source="default_file")
+        if status != "missing":
+            return status, deploy_sha, source
+    return "missing", None, "unavailable"
+
+
+def _default_deploy_sha_paths() -> list[Path]:
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates = [
+        Path.cwd() / DEPLOY_SHA_FILE_NAME,
+        repo_root / DEPLOY_SHA_FILE_NAME,
+    ]
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(resolved)
+    return unique
+
+
+def _read_deploy_sha_file(
+    path: Path,
+    *,
+    source: DeploymentShaSource,
+) -> tuple[DeploymentShaStatus, str | None, DeploymentShaSource]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "missing", None, "unavailable"
+    except OSError:
+        return "invalid", None, source
+    return _normalize_deploy_sha(raw, source=source)
+
+
+def _normalize_deploy_sha(
+    raw_value: str,
+    *,
+    source: DeploymentShaSource,
+) -> tuple[DeploymentShaStatus, str | None, DeploymentShaSource]:
+    first_line = raw_value.splitlines()[0].strip().lower() if raw_value.splitlines() else ""
+    if not first_line:
+        return "missing", None, "unavailable"
+    if not _looks_like_git_sha(first_line):
+        return "invalid", None, source
+    return "set", first_line, source
+
+
+def _looks_like_git_sha(value: str) -> bool:
+    return 7 <= len(value) <= 64 and all(char in "0123456789abcdef" for char in value)
 
 
 def _register_static_export_root(app: FastAPI, static_root: Path) -> None:

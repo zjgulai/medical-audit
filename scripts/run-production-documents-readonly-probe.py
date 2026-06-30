@@ -54,6 +54,7 @@ GOVERNANCE_STATUS_REQUIRED_FIELDS = (
     "download_metadata_readonly_status",
     "audit_log_readonly_status",
 )
+DEPLOYMENT_METADATA_ENDPOINT = "/api/v1/deployment/metadata"
 
 
 class ReadOnlyProbeError(RuntimeError):
@@ -81,6 +82,7 @@ def main() -> int:
         project_key=str(args.project_key),
         api_key_env=_optional_env_name(args.api_key_env),
         min_matching_embeddings=int(args.min_matching_embeddings),
+        expected_deploy_sha=_optional_env_name(args.expected_deploy_sha),
     )
     report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",
@@ -117,6 +119,14 @@ def _parse_args() -> argparse.Namespace:
         default=1,
         help="Minimum acceptable active PostgreSQL embedding count.",
     )
+    parser.add_argument(
+        "--expected-deploy-sha",
+        default="",
+        help=(
+            "Optional expected production deploy SHA. When set, the GET-only deployment "
+            "metadata check must match this SHA."
+        ),
+    )
     parser.add_argument("--report", default=DEFAULT_REPORT)
     return parser.parse_args()
 
@@ -131,6 +141,7 @@ def _run_probe(
     project_key: str,
     api_key_env: str | None = None,
     min_matching_embeddings: int,
+    expected_deploy_sha: str | None = None,
     http_get: Callable[[str, dict[str, str], float], HttpResponse] | None = None,
 ) -> dict[str, Any]:
     selected_http_get = http_get or _http_get
@@ -153,8 +164,27 @@ def _run_probe(
             "project_key": project_key,
             "api_key_env": api_key_env,
             "api_key_configured": api_key is not None,
+            "expected_deploy_sha": expected_deploy_sha,
         },
     }
+
+    deployment_details = _run_step(
+        steps,
+        "deployment-metadata",
+        lambda: _check_deployment_metadata(
+            normalized_base_url,
+            timeout_seconds=timeout_seconds,
+            auth_headers=auth_headers,
+            expected_deploy_sha=expected_deploy_sha,
+            http_get=selected_http_get,
+        ),
+    )
+    if "error" not in deployment_details:
+        summary["deploy_sha"] = deployment_details["deploy_sha"]
+        summary["deploy_sha_status"] = deployment_details["deploy_sha_status"]
+        summary["deploy_sha_matches_expected"] = deployment_details[
+            "deploy_sha_matches_expected"
+        ]
 
     _run_step(
         steps,
@@ -235,6 +265,7 @@ def _run_probe(
         "boundaries": {
             "production_write": False,
             "document_upload_write": False,
+            "deployment_metadata_api_called": True,
             "document_upload_list_api_called": False,
             "document_governance_status_api_called": True,
             "download_metadata_api_called": False,
@@ -278,6 +309,65 @@ def _run_step(
         }
     )
     return details
+
+
+def _check_deployment_metadata(
+    base_url: str,
+    *,
+    timeout_seconds: float,
+    auth_headers: dict[str, str],
+    expected_deploy_sha: str | None,
+    http_get: Callable[[str, dict[str, str], float], HttpResponse],
+) -> dict[str, Any]:
+    payload = _request_json(
+        f"{base_url}{DEPLOYMENT_METADATA_ENDPOINT}",
+        {"Accept": "application/json", **auth_headers},
+        timeout_seconds,
+        http_get=http_get,
+    )
+    boundaries = _dict(payload.get("boundaries"), "deployment metadata boundaries")
+    deploy_sha = payload.get("deploy_sha")
+    _require(
+        payload.get("status") == "deployment_metadata_available",
+        "deployment metadata unavailable",
+    )
+    _require(payload.get("deploy_sha_status") == "set", "deploy_sha_status should be set")
+    _require(isinstance(deploy_sha, str) and bool(deploy_sha), "deploy_sha should be present")
+    _require(boundaries.get("production_write") is False, "deployment metadata writes production")
+    _require(
+        boundaries.get("production_env_write") is False,
+        "deployment metadata writes production env",
+    )
+    _require(boundaries.get("provider_call") is False, "deployment metadata calls provider")
+    _require(
+        boundaries.get("object_storage_write") is False,
+        "deployment metadata writes object storage",
+    )
+    _require(
+        boundaries.get("secret_values_reported") is False,
+        "deployment metadata reports secrets",
+    )
+    _require(
+        boundaries.get("non_get_http_methods_allowed") is False,
+        "deployment metadata allows non-GET methods",
+    )
+    normalized_expected = expected_deploy_sha.strip().lower() if expected_deploy_sha else None
+    deploy_sha_matches_expected = (
+        None if normalized_expected is None else deploy_sha == normalized_expected
+    )
+    if normalized_expected is not None:
+        _require(
+            deploy_sha_matches_expected is True,
+            f"deploy_sha mismatch: {deploy_sha} != {normalized_expected}",
+        )
+    return {
+        "status": payload.get("status"),
+        "evidence_grade": payload.get("evidence_grade"),
+        "deploy_sha": deploy_sha,
+        "deploy_sha_status": payload.get("deploy_sha_status"),
+        "deploy_sha_source": payload.get("deploy_sha_source"),
+        "deploy_sha_matches_expected": deploy_sha_matches_expected,
+    }
 
 
 def _check_documents_page(

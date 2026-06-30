@@ -868,9 +868,21 @@ Batch 8.11B 验收结果：
 - 未满足：仍没有执行生产只读 probe，没有生产部署，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型 E2E；`expected_deploy_sha` 仍缺 GET-only deployment metadata endpoint 或静态 manifest 证据。
 - 边界：本批最高证据仍是 `L2-fixture-or-dry-run` 与本地 API 测试；可以说“治理配置只读契约已具备”，不能说“生产治理配置已观测”或“完整 P0-05 L3 已通过”。
 
+Batch 8.11C 验收结果：
+
+- 已满足：新增 GET-only `GET /deployment/metadata`，并暴露 `/api/v1/deployment/metadata` 与 `/api/backend/deployment/metadata`；端点只读取 deploy SHA 环境值、显式文件或默认 `.deploy-sha`，不输出 env name、secret value 或文件内容。
+- 已满足：deployment metadata endpoint 返回 `deploy_sha_status`、`deploy_sha_source`、`deploy_sha` 和 `required_report_fields.expected_deploy_sha/current_deploy_sha/deploy_sha_status`；无有效 SHA 时只返回 `missing|invalid` 状态。
+- 已满足：`scripts/run-production-documents-readonly-probe.py` 已加入未来 GET-only `deployment-metadata` 步骤和 `--expected-deploy-sha` 参数；probe 会在部署 SHA 不匹配时 fail-closed，本批测试使用 fake HTTP 覆盖该步骤，未访问生产。
+- 已满足：`pnpm document:governance-production-readonly-coverage` 当前目标状态更新为 `status=ready`、`evidence_grade=L2-fixture-or-dry-run`，覆盖摘要为 `total=30`、`observable_by_existing_probe=1`、`observable_by_deployment_metadata_endpoint=1`、`observable_by_new_governance_status_endpoint=26`、`observable_by_boundary=2`。
+- 已满足：目标验证通过：`python3 -m py_compile src/medical_audit_kb/api/app.py scripts/prepare-document-governance-production-readonly-observation-coverage.py scripts/run-production-documents-readonly-probe.py tests/knowledge_query/test_api.py tests/knowledge_query/test_scripts.py`；`uv run ruff check src/medical_audit_kb/api/app.py scripts/prepare-document-governance-production-readonly-observation-coverage.py scripts/run-production-documents-readonly-probe.py tests/knowledge_query/test_api.py tests/knowledge_query/test_scripts.py`；`uv run mypy src/medical_audit_kb/api/app.py`。
+- 已满足：目标测试通过：`uv run pytest tests/knowledge_query/test_api.py -k "deployment_metadata"` 返回 `3 passed`；`uv run pytest tests/knowledge_query/test_scripts.py -k "production_readonly_coverage or production_documents_readonly_probe"` 返回 `6 passed`；`uv run pytest tests/knowledge_query` 返回 `412 passed`。
+- 已满足：提交前检查通过：`git diff --check` 通过；diff 关键字扫描只命中文档和边界字段名，未发现真实 secret literal。
+- 未满足：仍没有执行生产只读 probe，没有生产部署，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型 E2E。
+- 边界：本批最高证据仍是 `L2-fixture-or-dry-run` 与本地 API/脚本测试；可以说“P0-05 L3 所需只读契约在本地齐备”，不能说“生产 deploy SHA 已观测”或“完整 P0-05 L3 已通过”。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.11B P0-05 governance status GET-only 契约。原因：
+当前已推进到 Batch 8.11C P0-05 deployment metadata GET-only 契约。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -888,16 +900,16 @@ Batch 8.11B 验收结果：
 - Batch 8.9 已把生产只读复核字段、生产配置授权输入、rollback 要求和写入型 E2E 授权边界固化为本地准备包；当前仍未执行生产只读或任何生产写入。
 - Batch 8.10 已把 ready-profile refresh、生产只读准备包 refresh、授权字段检查和人工 todo 汇总为本地 precheck；当前仍未执行生产只读或任何生产写入。
 - Batch 8.11A 已证明现有 documents GET-only probe 覆盖不足，不能把普通 `/documents` 只读 smoke 等同于 P0-05 治理配置 L3 观测。
-- Batch 8.11B 已补齐治理配置 GET-only redacted status 契约，并把生产只读 probe 扩展为可调用该 endpoint；当前仍未部署或观测生产，且 `expected_deploy_sha` 仍需要 deployment metadata 只读面。
+- Batch 8.11B 已补齐治理配置 GET-only redacted status 契约，并把生产只读 probe 扩展为可调用该 endpoint。
+- Batch 8.11C 已补齐 deployment metadata GET-only 契约，并把生产只读 probe 扩展为可用 `--expected-deploy-sha` 比对当前 deploy SHA；当前仍未部署或观测生产。
 
 下一批优先执行的收口计划：
 
-1. P0-05C deployment metadata 只读面：新增或识别 GET-only deploy metadata endpoint / static manifest，能报告 `expected_deploy_sha` 或当前 deploy SHA，不输出 secret values。
-2. P0-05D 部署后生产只读复核：只有新 endpoint 随主线部署且获得明确只读授权后，才执行更新后的 `run-production-documents-readonly-probe.py`，并把结果标记为 `L3-production-read-only`。
-3. P0-05E 生产配置授权包人工复核：如果生产只读暴露配置缺口，再单独准备 env write request；未获授权前不执行生产 env 写入。
-4. P0-05F 写入型治理 E2E：对象存储写入、governance-result writeback、provider smoke、归档签章和恢复演练继续保持单独备份、授权和回滚门禁。
-5. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
-6. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
+1. P0-05D 部署后生产只读复核：只有新 endpoint 随主线部署且获得明确只读授权后，才执行更新后的 `run-production-documents-readonly-probe.py --expected-deploy-sha ...`，并把结果标记为 `L3-production-read-only`。
+2. P0-05E 生产配置授权包人工复核：如果生产只读暴露配置缺口，再单独准备 env write request；未获授权前不执行生产 env 写入。
+3. P0-05F 写入型治理 E2E：对象存储写入、governance-result writeback、provider smoke、归档签章和恢复演练继续保持单独备份、授权和回滚门禁。
+4. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
+5. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
 
 Batch 1 的完成项：
 
