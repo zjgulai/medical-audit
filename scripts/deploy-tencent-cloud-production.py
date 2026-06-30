@@ -413,7 +413,7 @@ docker exec -i medical_audit_pg sh -lc {shlex.quote(psql_command)} \
 
 
 def _write_remote_deploy_sha(config: DeployConfig) -> None:
-    sha = _run_capture(["git", "rev-parse", "HEAD"], cwd=config.repo_root).strip()
+    sha = _current_deploy_sha(config)
     script = f"""
 set -euo pipefail
 printf '%s\\n' {shlex.quote(sha)} > {shlex.quote(config.remote_app_dir)}/.deploy-sha
@@ -425,9 +425,11 @@ def _rebuild_application(config: DeployConfig) -> None:
     if config.skip_app_rebuild:
         print("skip app rebuild", flush=True)
         return
+    sha = _current_deploy_sha(config)
     health_format = "{{.State.Health.Status}}"
     script = f"""
 set -euo pipefail
+export MEDICAL_AUDIT_DEPLOY_SHA={shlex.quote(sha)}
 cd {shlex.quote(config.remote_app_dir)}
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env build app
@@ -451,6 +453,10 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env up -d app
 """
     _ssh(config, script)
+
+
+def _current_deploy_sha(config: DeployConfig) -> str:
+    return _run_capture(["git", "rev-parse", "HEAD"], cwd=config.repo_root).strip()
 
 
 def _run_remote_post_checks(config: DeployConfig) -> None:
