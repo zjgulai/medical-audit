@@ -550,6 +550,107 @@ def test_prepare_document_governance_production_readonly_plan_reports_layers(
         assert "do-not-print-cos-key" not in output
 
 
+def test_run_document_governance_production_readonly_precheck_script_is_scoped() -> None:
+    script_path = Path("scripts/run-document-governance-production-readonly-precheck.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_readonly_probe" in script_text
+    assert "production_env_write" in script_text
+    assert "object_storage_write" in script_text
+    assert "network_call_status" in script_text
+    assert "authorized_write_e2e" in script_text
+    assert "not_called" in script_text
+
+
+def test_run_document_governance_production_readonly_precheck_reports_manual_review(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "document-governance-production-readonly-precheck.json"
+    markdown_path = tmp_path / "document-governance-production-readonly-precheck.md"
+    ready_json = tmp_path / "ready-profile.json"
+    ready_markdown = tmp_path / "ready-profile.md"
+    plan_json = tmp_path / "production-readonly-plan.json"
+    plan_markdown = tmp_path / "production-readonly-plan.md"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run-document-governance-production-readonly-precheck.py",
+            "--json-output",
+            str(report_path),
+            "--markdown-output",
+            str(markdown_path),
+            "--ready-profile-json-output",
+            str(ready_json),
+            "--ready-profile-markdown-output",
+            str(ready_markdown),
+            "--plan-json-output",
+            str(plan_json),
+            "--plan-markdown-output",
+            str(plan_markdown),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    serialized_file = report_path.read_text(encoding="utf-8")
+    markdown = markdown_path.read_text(encoding="utf-8")
+    ready_report = json.loads(ready_json.read_text(encoding="utf-8"))
+    plan_report = json.loads(plan_json.read_text(encoding="utf-8"))
+    check_names = {check["name"] for check in report["checks"]}
+
+    assert report["status"] == "ready_for_manual_authorization_review"
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert report["blockers"] == []
+    assert check_names == {
+        "ready-profile-dry-run",
+        "production-readonly-plan",
+        "manual-authorization-package",
+    }
+    assert ready_report["status"] == "ready_for_readonly_governance_probe"
+    assert plan_report["status"] == "ready_for_production_readonly_plan_review"
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["production_readonly_probe"] == "not_run"
+    assert report["boundaries"]["production_env_write"] is False
+    assert report["boundaries"]["object_storage_write"] is False
+    assert report["boundaries"]["network_call_status"] == "not_called"
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+    assert report["boundaries"]["external_governance_provider_call"] == "not_called"
+    assert report["boundaries"]["authorized_write_e2e"] == "not_run"
+    assert report["boundaries"]["secret_values_reported"] is False
+    assert report["next_allowed_step"]["step"] == (
+        "request explicit production read-only probe approval"
+    )
+    assert "production env write" in report["still_forbidden_without_separate_approval"]
+    assert any(
+        "redaction policy version" in item
+        for item in report["manual_authorization_todo"]
+    )
+    for output in (
+        completed.stdout,
+        serialized_file,
+        markdown,
+        ready_json.read_text(encoding="utf-8"),
+        ready_markdown.read_text(encoding="utf-8"),
+        plan_json.read_text(encoding="utf-8"),
+        plan_markdown.read_text(encoding="utf-8"),
+    ):
+        assert "ready-profile-cos-id-sentinel" not in output
+        assert "ready-profile-cos-key-sentinel" not in output
+
+
 def test_run_production_documents_governance_result_e2e_script_is_scoped() -> None:
     script_path = Path("scripts/run-production-documents-governance-result-e2e.py")
 

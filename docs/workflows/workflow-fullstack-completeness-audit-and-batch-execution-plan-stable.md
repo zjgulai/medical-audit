@@ -840,9 +840,18 @@ Batch 8.9 验收结果：
 - 未满足：本批没有执行生产只读 probe，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型治理 E2E。
 - 边界：本批只是 L2 本地准备包，不证明当前生产文档治理配置已观测；生产只读通过后才可升级到 `L3-production-read-only`，写入型治理 E2E 只有备份、显式授权和回滚点齐备后才可能升级到 `L4-authorized-live`。
 
+Batch 8.10 验收结果：
+
+- 已满足：新增 `scripts/run-document-governance-production-readonly-precheck.py` 与 `pnpm document:governance-production-readonly-precheck`，自动复跑非生产 ready-profile 和生产只读准备包，并生成合并 precheck 报告。
+- 已满足：precheck 报告输出 `tmp/outputs/document-governance-production-readonly-precheck-latest.json` 与 `.md`，子报告为 `tmp/outputs/document-governance-production-readonly-precheck-ready-profile-latest.json` 和 `tmp/outputs/document-governance-production-readonly-precheck-plan-latest.json`。
+- 已满足：本批 precheck 返回 `status=ready_for_manual_authorization_review`、`blockers=[]`，并确认 ready-profile 为 `ready_for_readonly_governance_probe`、生产只读准备包为 `ready_for_production_readonly_plan_review`。
+- 已满足：manual authorization todo 已机器生成，覆盖生产 env 名称复核、Tencent COS bucket/region/prefix、对象记录与 retention、脱敏策略版本、审计事件要求、部署 SHA/package checksum、redacted env snapshot 和 rollback 要求。
+- 未满足：本批仍没有执行生产只读 probe，没有写生产 env，没有对象存储写入，没有外部治理 provider 调用，也没有授权写入型治理 E2E。
+- 边界：本批最高证据仍是 `L2-fixture-or-dry-run`；下一步仅可申请并执行显式批准的 GET-only 生产只读 probe，不能把 precheck 解释为生产配置已观测。
+
 ## 6. 下一步执行顺序
 
-当前已推进到 Batch 8.9 P0-05 生产只读准备包。原因：
+当前已推进到 Batch 8.10 P0-05 生产只读执行前检查。原因：
 
 - Batch 1 已完成可重复本地全栈 smoke，后续每批功能都有同一条回归入口。
 - Batch 2 已把账号/角色底座、受控写入口、项目级角色 scope、核心查询/文档/审计日志路由、受控 API 鉴权中间件和本地租户头契约推进到本地可验收状态。
@@ -858,12 +867,13 @@ Batch 8.9 验收结果：
 - Batch 8.7 已把脱敏改写、策略版本、人工复核和治理审计事件合同从脚本裸 env 检查提升到正式 settings/env override 层；本批未验证或变更生产配置，默认 readiness 继续 fail-closed。
 - Batch 8.8 已用非生产 ready-profile 证明 P0-05 合同可以进入 `ready_for_readonly_governance_probe`，同时保持无生产副作用和 secret value 不输出。
 - Batch 8.9 已把生产只读复核字段、生产配置授权输入、rollback 要求和写入型 E2E 授权边界固化为本地准备包；当前仍未执行生产只读或任何生产写入。
+- Batch 8.10 已把 ready-profile refresh、生产只读准备包 refresh、授权字段检查和人工 todo 汇总为本地 precheck；当前仍未执行生产只读或任何生产写入。
 
 下一批优先执行的收口计划：
 
-1. P0-05 生产配置授权包人工复核：基于 `document:governance-production-readonly-plan` 生成的 env 名称、目标 bucket/region、对象记录开关、脱敏策略版本、ClamAV/DLP 路径和回滚点，形成人工确认清单；未获授权前不执行生产 env 写入。
-2. P0-05 生产只读执行前检查：复跑 `pnpm document:governance-ready-profile` 和 `pnpm document:governance-production-readonly-plan`，确认准备包仍无 secret value 输出，再单独申请生产只读 probe 授权。
-3. P0-05 生产只读复核：只有获得只读授权后才执行生产 GET-only probe，并把生产当前配置观测、ready-profile dry-run 和授权写入型 E2E 继续分开记录。
+1. P0-05 显式生产只读授权：基于 `pnpm document:governance-production-readonly-precheck` 的 todo 清单，由人工确认是否允许执行 GET-only 生产只读 probe；未确认前不访问生产。
+2. P0-05 生产只读复核：只有获得只读授权后才执行生产 GET-only probe，并把生产当前配置观测、ready-profile dry-run 和授权写入型 E2E 继续分开记录。
+3. P0-05 生产配置授权包人工复核：如果生产只读暴露配置缺口，再单独准备 env write request；未获授权前不执行生产 env 写入。
 4. P0-05 写入型治理 E2E：只有备份、显式授权和回滚路径齐备后才执行对象存储写入、治理结果写入、归档签章或恢复演练。
 5. P0-04 路径选择仍未关闭：在 `trusted-sso-proxy` 与 `server-session` 中选定一条生产路径；未选定前不写生产 env。
 6. F2 no-fallback 生成：生产仍缺 answer provider key；如需推进，必须先明确授权一次 provider smoke，不能用 UI/权限验收或文档治理 readiness 替代生成模型门禁。
