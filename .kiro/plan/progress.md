@@ -1,0 +1,460 @@
+---
+title: "medical_audit loop progress"
+project: "medical_audit"
+created_at: "2026-06-30T21:42:00+08:00"
+status: "active"
+---
+
+# Progress
+
+## 2026-06-30 Loop Start
+
+- Created persistent loop planning files under `.kiro/plan/`.
+- Set evidence-grade guardrails for local, fixture, production-read-only, and authorized-live work.
+- Completed Loop 0 baseline and Loop 1 local UI validation.
+- Completed Loop 2 local fullstack validation with a temporary in-memory FastAPI backend.
+- Completed Loop 3 release manifest draft.
+- Completed Loop 4 clean release worktree sync and local gates in `/Users/pray/project/medical_audit_minimal_pr`.
+- Completed Loop 5 production-read-only request preparation.
+- Completed Loop 6 local release-candidate commit in `/Users/pray/project/medical_audit_minimal_pr`.
+- Completed Loop 7 gated promotion: pushed `codex/uiux-topic-forms-agents-20260630` and opened Draft PR `#178`.
+- Completed Loop 8 deploy preflight: default `deploy-tencent-cloud-production.py` preflight passed without `--execute`.
+- Completed Loop 9 release decision: marked PR `#178` as ready for review.
+- Completed Loop 10 merge decision: merged PR `#178` into `origin/main` as `0cc4bfd287050fa5d9fe763409157d0e276f4ba0`.
+- Completed Loop 11 production deploy pre-execution gate: clean main worktree aligned to `0cc4bfd287050fa5d9fe763409157d0e276f4ba0`, local gates passed, and default deploy preflight passed without `--execute`.
+- Completed Loop 12 authorized production deploy execution for merge commit `0cc4bfd287050fa5d9fe763409157d0e276f4ba0`.
+- Completed Loop 13 frontend acceptance contract alignment: updated the production frontend acceptance expectations for the split `/fund-compliance` and `/fund-compliance/review` pages, added read-only tab/details interactions for the form flow, and found a real `/fund-compliance/review` new-form horizontal overflow on current production.
+- Completed Loop 13 local source fix: constrained the new-form popover to expand inside the viewport; local desktop/mobile browser checks show no horizontal overflow after opening `费用表单 -> 新建表单`.
+- Completed Loop 14 clean hotfix promotion and production deploy: synced only the two Loop 13 hotfix files into `/Users/pray/project/medical_audit_minimal_pr`, committed `b66bbeb5`, merged PR `#179` into `main` as `b7c1f4b622a8cb837972dc5b63ed09baa1121530`, deployed with stamp `loop13-frontend-hotfix-main-b7c1f4b-20260630`, and verified production frontend acceptance with `P0=0/P1=0`.
+- Completed Loop 15 demo rehearsal pass: production deployment-state audit still passed for `b7c1f4b622a8cb837972dc5b63ed09baa1121530`; screenshot rehearsal captured desktop/mobile evidence for `/workspace`, `/fund-compliance`, `/fund-compliance/review`, `/chat`, and `/agent-market`; full production frontend acceptance passed again with `23` routes, `46` checks, `P0=0`, `P1=0`.
+- Completed Loop 16 demo runbook: created `.kiro/plan/demo_runbook_loop16_20260701.md` with the verified route order, presenter script, screenshot fallback paths, evidence boundaries, and post-demo P2 polish options.
+- Completed Loop 17 last-minute spot check: production deployment-state audit still passed for deployed SHA `b7c1f4b622a8cb837972dc5b63ed09baa1121530`; full production frontend acceptance passed with `23` routes, `46` checks, `P0=0`, `P1=0`; quick browser spot check passed across `7` demo route states with no horizontal overflow.
+- Completed Loop 18 demo support pack: created `.kiro/plan/demo_support_pack_loop18_20260701.md` with the live route checklist, screenshot fallback paths, evidence chain, dense-UI answer, and provider-call boundary.
+- Completed Loop 19 local P2 UI polish: reduced mobile shell/top navigation text density, kept navigation accessible with `aria-label`, limited agent-market default cards to `12`, and reduced card tag noise to one visible tag; local browser screenshots show no horizontal overflow.
+- Completed Loop 20 clean promotion candidate: isolated the four-file Loop 19 UI/test delta into `/Users/pray/project/medical_audit_minimal_pr` on branch `codex/p2-ui-density-polish-20260701`, committed `862d357f`, and reran clean-worktree local gates including fullstack E2E.
+- Completed Loop 21 production promotion gate: pushed `codex/p2-ui-density-polish-20260701`, opened and merged PR `#180` into `main` as `b79a5e499cb99bded782e3ccd9ad4195dcab4e70`, and reran default deploy preflight with stamp `loop21-p2-ui-density-main-b79a5e4-preflight-20260701T003125Z` without `--execute`.
+- Completed Loop 22 authorized production deployment: deployed `main` commit `b79a5e499cb99bded782e3ccd9ad4195dcab4e70` with stamp `loop22-p2-ui-density-main-b79a5e4-20260701T003900Z`, manually completed the interrupted deploy script's post-check/write-sha/smoke tail, and verified production with deployment-state audit, frontend acceptance, permission readonly smoke, documents readonly probe, and UI density spot check.
+- Completed Loop 23 post-deploy observation: reran production read-only deployment-state audit, production smoke, permission readonly smoke, documents readonly probe, and browser UI density observation; production remains healthy at deployed SHA `b79a5e499cb99bded782e3ccd9ad4195dcab4e70`.
+- Completed Loop 24 user-visible product QA: inspected production workspace, fund review/forms, chat, agent market, and documents across mobile/desktop; found no P1, no horizontal overflow, no agent markdown artifacts, and `12` visible marketplace cards; remaining P2 is workspace copy still exposing internal language such as `后端与索引联通` / `postgres`.
+- Completed Loop 25 local workspace copy polish: isolated user-facing workspace service-status wording in `/Users/pray/project/medical_audit_minimal_pr` on `codex/p2-workspace-copy-polish-20260701`, committed `582312e9`, and verified local gates plus browser checks.
+- Completed Loop 26 promotion gate: pushed `codex/p2-workspace-copy-polish-20260701`, opened and merged PR `#181` into `main` as `b1c9a6c229a7880afcbfed35c1903d514914bb15`, reran post-merge local gates, and ran deploy preflight without production execute.
+- Completed Loop 27 authorized production deployment: deployed `main` commit `b1c9a6c229a7880afcbfed35c1903d514914bb15` with stamp `loop27-workspace-copy-main-b1c9a6c-20260701T024500Z`; deploy script completed execute mode, production smoke passed, deployment-state audit passed, frontend acceptance passed, permission readonly smoke observed `issue_count=0`, documents readonly probe passed, and targeted `/workspace` production browser copy check passed.
+- Completed Loop 28 post-deploy observation and demo evidence freeze: reran production deployment-state audit, frontend acceptance, permission readonly smoke, documents readonly probe, and targeted browser observation against `b1c9a6c229a7880afcbfed35c1903d514914bb15`; all final Loop28 reports are `status=pass` or readonly `status=observed` with `issue_count=0`.
+- Completed Loop 29 no-change demo handoff: created a presenter route script, evidence map, safe-claim boundary, and contingency checklist from Loop 28 evidence without running new production probes or deployment.
+- Completed Loop 30 post-demo backlog triage: created a no-change backlog matrix from Loop 28/29 evidence, separated no-current P0/P1 findings from P2 authorized validation lanes and P3 product polish candidates, and kept real demo feedback marked as not yet collected.
+- Completed Loop 31 feedback intake and P2 lane gate: created a structured feedback form, evidence requirements, lane decision table, authorization matrix, and stop rules without selecting an implementation lane.
+- Completed Loop 32 P2-D tab-state acceptance hardening: added local component and browser E2E coverage for `费用表单`, `表1`, `表2`, `表3`, and custom form visibility/selection without touching production or write paths; targeted component and browser E2E checks passed locally.
+- Completed Loop 33 targeted local verification: lint, typecheck, targeted component test, and full local foundation browser E2E passed under `corepack pnpm@9.15.0`; no production or backend write path was exercised.
+- Completed Loop 34 atomic staging plan: inventoried the dirty worktree, split current changes into docs, Loop32/33 test acceptance, topic review product surface, broader frontend polish, tooling, and generated artifact groups; no staging or commit was executed.
+- Completed Loop 35 docs-only staging rehearsal: selected Group E, listed the exact docs candidate set, rehearsed the future staging command, scanned `.kiro` docs for sensitive marker shapes, and kept cached diff empty.
+- Current active phase: Loop 35 docs-only rehearsal is complete. Next loop should only execute real staging after explicit target-group approval.
+
+## Next Actions
+
+1. Keep `.kiro/plan/demo_runbook_loop16_20260701.md` and `.kiro/plan/demo_support_pack_loop18_20260701.md` available until the demo is complete.
+2. Keep the production evidence chain separate: authorized deploy, deploy smoke, deployment-state audit, frontend acceptance, permission readonly, documents readonly, and UI density spot check are different layers.
+3. Do not execute provider call, env write, object storage write, schema migration, or write-path smoke without explicit authorization.
+4. If continuing loops, the next narrow gate is Loop 36: execute approved docs-only staging, rehearse Group A patch staging, run local fullstack verification, or select one new P2 lane; do not start production probes, deployment, provider calls, schema changes, or write-path smoke without explicit authorization.
+
+## 2026-07-01 Loop 25 Local Workspace Copy Polish
+
+Decision:
+
+- Treat Loop 24's remaining `/workspace` internal-language issue as a narrow local copy fix.
+- Keep the change in the clean release worktree instead of the dirty main worktree.
+- Do not merge, push, deploy, touch production Docker, call providers, write env, write object storage, run schema migrations, or run write-path smoke.
+
+Scope:
+
+- Clean worktree: `/Users/pray/project/medical_audit_minimal_pr`.
+- Branch: `codex/p2-workspace-copy-polish-20260701`.
+- Commit: `582312e9` (`ui: polish workspace service status copy`).
+- Files changed:
+  - `web/src/components/dashboard/backend-status-card.tsx`
+  - `web/src/components/dashboard/backend-status-card.test.tsx`
+  - `web/src/components/dashboard/project-dashboard.test.tsx`
+  - `web/src/app/(workspace)/workspace-pages.test.tsx`
+  - `web/src/lib/projects.ts`
+
+Product Outcome:
+
+- Replaced `后端与索引联通`, `FastAPI 正常`, `postgres 已就绪`, `48985 vectors`, and `系统健康` with user-facing status copy such as `知识库连接正常`, `工作台可用`, `材料可检索`, and `48,985 条`.
+- Removed residual workspace summary copy such as `索引联通`, `前端联通检测`, `Markdown / JSON 双形态`, and `索引变更`; the user-facing wording now says `资料可检索`, `规则与底稿草案`, and `资料检索状态待确认`.
+
+Verification:
+
+- `rg` scoped old-copy scan: no matches for `后端与索引联通|FastAPI 正常|postgres 已就绪|48985 vectors|vectors|系统健康|索引联通|前端联通|索引健康|联通检测|只读健康检查刷新|索引变更|Markdown / JSON` under `web/src`.
+- `git diff --check`: passed.
+- `corepack pnpm --filter medical-audit-web lint`: passed.
+- `corepack pnpm --filter medical-audit-web typecheck`: passed.
+- `corepack pnpm --filter medical-audit-web test`: passed (`11` files / `93` tests).
+- `corepack pnpm --filter medical-audit-web build`: passed (`23/23` static pages).
+- Foundation Playwright on local `127.0.0.1:3211`: `17/17` passed.
+- Local browser report: `output/playwright/loop25-workspace-copy-polish-local-20260701T021500Z/report.json`, `status=pass`; mobile and desktop workspace checks had no forbidden old-copy matches, no missing required user-facing copy, and horizontal overflow `0`.
+- Local browser screenshots:
+  - `output/playwright/loop25-workspace-copy-polish-local-20260701T021500Z/mobile-workspace-ready.png`
+  - `output/playwright/loop25-workspace-copy-polish-local-20260701T021500Z/desktop-workspace-ready.png`
+
+Boundary:
+
+- Loop 25 is a local clean-worktree candidate only.
+- The earlier default fullstack E2E path could not be rerun in this environment because project e2e defaults to port `3030`, which was occupied by an unrelated Nuxt service under `/Users/pray/project/data_achieve/wechat_post_scrapy/wechat-article-exporter`; that process was not stopped or modified.
+- No production deploy, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke was executed.
+
+## 2026-07-01 Loop 26 Promotion Gate
+
+Decision:
+
+- Promote the Loop 25 local candidate through the remote GitHub review/merge path.
+- Keep production deployment execution outside this loop.
+
+Remote Promotion:
+
+- Pushed branch: `codex/p2-workspace-copy-polish-20260701`.
+- PR: `#181`, `https://github.com/zjgulai/medical-audit/pull/181`.
+- PR state before merge: ready PR, `MERGEABLE`, `CLEAN`, commit `582312e97bf2dbde80d57b06e86a1e195ae78fda`.
+- Merge result: PR `#181` merged into `main` at `2026-07-01T02:29:59Z`.
+- Merge commit: `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+- Clean worktree after merge: `/Users/pray/project/medical_audit_minimal_pr` on `main`, equal to `origin/main`.
+
+Post-Merge Verification:
+
+- `corepack pnpm --filter medical-audit-web lint`: passed.
+- `corepack pnpm --filter medical-audit-web typecheck`: passed.
+- `corepack pnpm --filter medical-audit-web test`: passed (`11` files / `93` tests).
+- `corepack pnpm --filter medical-audit-web build`: passed (`23/23` static pages).
+- Foundation Playwright using a temporary `3212` config: passed (`17/17` tests). The temporary config was removed after the run.
+
+Deploy Preflight:
+
+- Command: `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" uv run python scripts/deploy-tencent-cloud-production.py --stamp loop26-workspace-copy-main-b1c9a6c-preflight-20260701T023500Z --report tmp/outputs/production-e2e-smoke-after-deploy-loop26-workspace-copy-main-b1c9a6c-preflight-20260701T023500Z.json`.
+- Result: `mode: preflight`; target `ubuntu@101.34.52.232`; `remote_app_dir=/opt/medical-audit/app`; `remote_web_dir=/var/www/audit`; `base_url=https://audit.lute-tlz-dddd.top`; `Preflight passed. Add --execute --confirm-production to deploy.`
+- Report note: the preflight mode printed success and did not create a post-deploy smoke JSON because deployment was not executed.
+
+Boundary:
+
+- Evidence layer: merged main plus local/post-merge gates plus deploy preflight.
+- Production execution: pending explicit authorization.
+- Live side effects executed in Loop 26: GitHub branch push, PR creation, PR merge.
+- Live side effects not executed in Loop 26: production deploy, provider call, env write, object storage write, schema migration, Docker change, write-path review smoke.
+
+## 2026-07-01 Loop 27 Authorized Production Deployment
+
+Decision:
+
+- Execute the previously authorized production deployment for `main@b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+- Keep post-deploy verification separated into deploy smoke, deployment-state audit, frontend acceptance, permission readonly, documents readonly, and targeted browser copy check.
+
+Production Deployment:
+
+- Clean worktree: `/Users/pray/project/medical_audit_minimal_pr` on `main`, equal to `origin/main`.
+- Target commit: `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+- Deploy stamp: `loop27-workspace-copy-main-b1c9a6c-20260701T024500Z`.
+- Command: `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" uv run python scripts/deploy-tencent-cloud-production.py --execute --confirm-production audit.lute-tlz-dddd.top --stamp loop27-workspace-copy-main-b1c9a6c-20260701T024500Z --report tmp/outputs/production-e2e-smoke-after-deploy-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`.
+- Result: execute mode completed; local static export generated `23/23` pages; code/static sync, Docker build, app recreate, post-check, `.deploy-sha` write, and smoke completed.
+- Target: `ubuntu@101.34.52.232`, `remote_app_dir=/opt/medical-audit/app`, `remote_web_dir=/var/www/audit`, `base_url=https://audit.lute-tlz-dddd.top`.
+- Backup proof includes DB backup `/opt/medical-audit/backups/db/pre-deploy-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.sql.gz`, size `4833384900`, mtime `2026-07-01T11:17:20+0800`.
+
+Verification:
+
+- Deploy smoke: `tmp/outputs/production-e2e-smoke-after-deploy-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`, `status=pass`, `9` steps.
+- Deployment-state audit: `tmp/outputs/tencent-cloud-deployment-state-after-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`, `status=pass`, `issues=0`, `warnings=0`, deployed SHA matched `b1c9a6c229a7880afcbfed35c1903d514914bb15`, app/postgres/clamav `healthy`, nginx config test true, public frontdoor healthy, search backend ready with `matching_embedding_count=49051`.
+- Frontend acceptance: `tmp/outputs/production-frontend-acceptance-after-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`, `status=pass`, `23` routes, `46` checks, `P0=0`, `P1=0`; audit logs denied/allowed checks returned `401/200` and export denied/allowed checks returned `401/200`.
+- Permission readonly smoke: `tmp/outputs/production-permission-readonly-smoke-after-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`, `status=observed`, `35` GET probes, `issue_count=0`, `production_side_effect=none`, `provider_call_status=not_called`.
+- Documents readonly probe: `tmp/outputs/production-documents-readonly-probe-after-loop27-workspace-copy-main-b1c9a6c-20260701T024500Z.json`, `status=pass`, deploy SHA matched, search backend ready, `matching_embedding_count=49051`, document storage provider `tencent-cos`; upload-list and download-metadata endpoints remained skipped because they write audit logs.
+- Targeted `/workspace` browser copy check: `output/playwright/loop27-workspace-copy-production-20260701T032300Z/report.json`, `status=pass`, mobile/desktop forbidden old-copy matches `[]`, required user-facing copy present, horizontal overflow `0`.
+- Targeted screenshots:
+  - `output/playwright/loop27-workspace-copy-production-20260701T032300Z/mobile-workspace-production.png`
+  - `output/playwright/loop27-workspace-copy-production-20260701T032300Z/desktop-workspace-production.png`
+
+Product Outcome:
+
+- Production `/workspace` now shows user-facing service copy such as `知识库连接正常`, `材料可检索`, `可引用资料`, and `49,051 条`.
+- The targeted browser check found no production matches for the old internal terms: `后端与索引联通`, `FastAPI 正常`, `postgres 已就绪`, `48985 vectors`, `vectors`, `系统健康`, `索引联通`, `前端联通`, `索引健康`, `联通检测`, `只读健康检查刷新`, `索引变更`, `Markdown / JSON`.
+
+Boundary:
+
+- Authorized live side effects: production app/static deployment, remote backups, Docker image build, and app container recreate.
+- Read-only verification: deployment-state audit, frontend acceptance, permission smoke, documents probe, and browser copy check.
+- Not executed: provider call, env write, object storage write, schema migration, and write-path review smoke.
+
+## 2026-07-01 Loop 28 Post-Deploy Observation And Demo Evidence Freeze
+
+Decision:
+
+- Keep production unchanged after Loop 27.
+- Refresh L3 production read-only evidence for demo readiness and freeze the exact report paths.
+- Avoid production deployment, provider call, env write, object storage write, schema migration, and write-path review smoke.
+
+Observation Target:
+
+- Production URL: `https://audit.lute-tlz-dddd.top`.
+- Expected deployed SHA: `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+- Required backup stamp from prior deploy: `loop27-workspace-copy-main-b1c9a6c-20260701T024500Z`.
+- Observation stamp: `loop28-postdeploy-observe-20260701T114051+0800`.
+
+Verification:
+
+- Deployment-state audit: `/Users/pray/project/medical_audit_minimal_pr/tmp/outputs/tencent-cloud-deployment-state-loop28-postdeploy-observe-20260701T114051+0800.json`, `status=pass`, deployed SHA matched, app/postgres/clamav `healthy`, search backend ready, `matching_embedding_count=49051`, latest smoke status `pass`.
+- Frontend acceptance: `/Users/pray/project/medical_audit_minimal_pr/tmp/outputs/production-frontend-acceptance-loop28-postdeploy-observe-20260701T114051+0800.json`, `status=pass`, `23` routes, `46` checks, `P0=0`, `P1=0`.
+- Permission readonly smoke: `/Users/pray/project/medical_audit_minimal_pr/tmp/outputs/production-permission-readonly-smoke-loop28-postdeploy-observe-20260701T114051+0800.json`, `status=observed`, `35` GET probes, `issue_count=0`, `production_side_effect=none`, `provider_call_status=not_called`.
+- Documents readonly probe: `/Users/pray/project/medical_audit_minimal_pr/tmp/outputs/production-documents-readonly-probe-loop28-postdeploy-observe-20260701T114051+0800.json`, `status=pass`, deploy SHA matched, search backend ready, `matching_embedding_count=49051`.
+- Browser observation: `/Users/pray/project/medical_audit/output/playwright/loop28-postdeploy-observe-20260701T114051+0800-browser/report.json`, `status=pass`, `issueCount=0`.
+- Evidence freeze doc: `.kiro/plan/demo_evidence_freeze_loop28_20260701.md`.
+
+Browser Scope:
+
+- Checked production `/workspace` in mobile and desktop.
+- Checked production `/fund-compliance/review` after switching to `费用表单`.
+- Checked production `/chat`.
+- Checked production `/agent-market`.
+- Final browser evidence has horizontal overflow `0` for all sampled states, required user-facing copy present, and targeted old internal-copy matches empty.
+
+Boundary:
+
+- Loop 28 is L3 production-read-only plus browser observation only.
+- No deployment, code change, merge, provider call, env write, object storage write, schema migration, or write-path review smoke was executed.
+
+## 2026-07-01 Loop 29 No-Change Demo Handoff
+
+Decision:
+
+- Convert Loop 28 evidence into a presenter-ready handoff.
+- Keep the evidence grade at `L3-production-read-only`; do not run new production probes or live side effects.
+
+Created:
+
+- `.kiro/plan/demo_handoff_loop29_20260701.md`
+
+Handoff Contents:
+
+- 6-minute route order: `/workspace`, `/fund-compliance/review`, `/chat`, `/agent-market`, `/documents`.
+- Presenter talk track that stays inside verified product claims.
+- Evidence map to Loop 28 state, frontend, permission, documents, and browser reports.
+- Safe claims and blocked claims for demo Q&A.
+- Screenshot fallback list from `/Users/pray/project/medical_audit/output/playwright/loop28-postdeploy-observe-20260701T114051+0800-browser/`.
+
+Boundary:
+
+- Loop 29 is docs-only handoff based on existing Loop 28 evidence.
+- No production probe, deployment, code change, merge, provider call, env write, object storage write, schema migration, or write-path review smoke was executed.
+
+## 2026-07-01 Loop 30 Post-Demo Backlog Triage
+
+Decision:
+
+- Convert Loop 28/29 evidence into an actionable backlog without assuming real demo feedback.
+- Keep this loop docs-only and planning-only.
+
+Created:
+
+- `.kiro/plan/post_demo_backlog_loop30_20260701.md`
+
+Backlog Summary:
+
+- Current P0/P1 from Loop 28/29 evidence: none open.
+- P2 authorized validation lanes:
+  - real auth/SSO/session path selection;
+  - write-path acceptance for review tasks, document upload governance, and audit logs;
+  - answer-provider readiness/smoke with explicit provider authorization.
+- P2/P3 product lanes:
+  - product copy and density refinements only after real demo notes;
+  - acceptance script hardening for tabbed states such as `费用表单`;
+  - evidence artifact consolidation.
+
+Boundary:
+
+- Loop 30 did not run production probes, code changes, deploys, provider calls, env writes, object storage writes, schema migrations, or write-path review smoke.
+- Demo feedback has not been collected in this thread; any post-demo product issue should enter through Loop 31 with a screenshot, route, and expected user outcome.
+
+## 2026-07-01 Loop 31 Feedback Intake And P2 Lane Gate
+
+Decision:
+
+- Convert the Loop 30 backlog into an intake/gating template.
+- Do not select or execute an implementation lane without concrete feedback or explicit lane authorization.
+
+Created:
+
+- `.kiro/plan/feedback_intake_loop31_20260701.md`
+
+Gate Result:
+
+- Current allowed action: collect feedback or choose one lane for planning.
+- Current blocked actions: production probe, provider call, env write, object storage write, schema migration, write-path smoke, deployment, and business-code edits.
+- Low-risk candidate if authorized later: P2-D tab-state acceptance hardening, because it can start as local/test-only work around `费用表单` tab checks.
+- Higher-risk candidates requiring explicit authorization: P2-B write-path acceptance and P2-C answer-provider smoke.
+
+Boundary:
+
+- Loop 31 changed only planning/gate docs.
+- No production probe, code change, provider call, env write, object storage write, schema migration, write-path review smoke, merge, or deployment was executed.
+
+## 2026-07-01 Loop 32 P2-D Tab-State Acceptance Hardening
+
+Decision:
+
+- Select P2-D from Loop 31 because it can be executed as local/test-only work.
+- Target the user-visible `医保基金使用合规` review workbench, especially `费用表单` and the three Excel-derived templates.
+
+Changed files:
+
+- `.kiro/plan/tab_state_acceptance_loop32_20260701.md`
+- `web/src/app/(workspace)/workspace-pages.test.tsx`
+- `web/tests/e2e/foundation.spec.ts`
+
+Acceptance added:
+
+- Component test verifies workflow tab selection, `表1` / `表2` / `表3` selected states, exact filename/sheet labels, representative table columns, and custom form creation with selected `自建` state.
+- Browser E2E verifies the separate `/fund-compliance/review` workbench path and the three form-template tab transitions.
+
+Verification:
+
+- `CI=true corepack pnpm@9.15.0 --filter medical-audit-web test -- 'src/app/(workspace)/workspace-pages.test.tsx'`: pass, 30 tests.
+- `PLAYWRIGHT_REUSE_SERVER=1 CI=true corepack pnpm@9.15.0 exec playwright test tests/e2e/foundation.spec.ts --grep 'fund compliance topic opens a separate review workbench'`: pass, 1 test.
+
+Boundary:
+
+- Local/test acceptance only.
+- No production probe, provider call, env write, object storage write, schema migration, write-path smoke, merge, or deployment was executed.
+
+## 2026-07-01 Loop 33 Targeted Local Verification
+
+Decision:
+
+- Do not pick a new business lane.
+- Verify Loop 32 under wider local frontend gates.
+
+Created:
+
+- `.kiro/plan/targeted_verification_loop33_20260701.md`
+
+Verification:
+
+- `CI=true corepack pnpm@9.15.0 --filter medical-audit-web lint`: pass.
+- `CI=true corepack pnpm@9.15.0 --filter medical-audit-web typecheck`: pass.
+- `CI=true corepack pnpm@9.15.0 --filter medical-audit-web test -- 'src/app/(workspace)/workspace-pages.test.tsx'`: pass, 30 tests.
+- `PLAYWRIGHT_REUSE_SERVER=1 CI=true corepack pnpm@9.15.0 exec playwright test tests/e2e/foundation.spec.ts`: pass, 17 tests.
+
+Boundary:
+
+- Local frontend/runtime verification only.
+- Local backend service was not started; backend-dependent surfaces relied on fixture/mocked behavior and app fallbacks where applicable.
+- No production probe, provider call, env write, object storage write, schema migration, write-path smoke, merge, or deployment was executed.
+
+## 2026-07-01 Loop 34 Atomic Staging Plan
+
+Decision:
+
+- Prepare an atomic staging plan only.
+- Do not run `git add`, commit, push, merge, deploy, provider calls, env writes, object storage writes, schema migrations, production probes, or write-path smoke.
+
+Created:
+
+- `.kiro/plan/atomic_staging_loop34_20260701.md`
+
+Inventory:
+
+- Tracked modified files: 9.
+- Untracked `.kiro/`: 14 files, about 180 KB.
+- Untracked `output/`: 142 files, about 22 MB.
+- Untracked review workbench route: `web/src/app/(workspace)/fund-compliance/review/page.tsx`.
+
+Plan:
+
+- Group A: Loop32/33 test acceptance, patch-stage required for mixed test files.
+- Group B: topic review product surface.
+- Group C: broader frontend-2.0 polish.
+- Group D: production acceptance script tooling.
+- Group E: planning and evidence docs.
+- Group F: generated browser artifacts, excluded from normal code commits unless explicitly selected.
+
+Boundary:
+
+- Plan-only loop.
+- No staging, commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, or write-path smoke was executed.
+
+## 2026-07-01 Loop 35 Docs-Only Staging Rehearsal
+
+Decision:
+
+- Select Group E from Loop 34.
+- Rehearse a docs-only staging unit without running `git add`.
+
+Created:
+
+- `.kiro/plan/docs_staging_rehearsal_loop35_20260701.md`
+
+Candidate set:
+
+- `.kiro/plan/*.md`
+- `.kiro/steering/planning-context.md`
+
+Evidence:
+
+- `.kiro/plan`: 14 files before creating the Loop35 doc, about 184 KB.
+- `.kiro/steering`: 1 planning context file.
+- Sensitive marker scan over `.kiro/plan` and `.kiro/steering`: no hits.
+- Cached diff remained empty during rehearsal.
+
+Boundary:
+
+- Rehearsal only.
+- No staging, commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, or write-path smoke was executed.
+
+## 2026-07-01 Loop 36 Docs-Only Staging Execution
+
+Decision:
+
+- Execute the Loop35 docs-only staging unit.
+- Limit the git index to `.kiro/plan/*.md` and `.kiro/steering/planning-context.md`.
+
+Created:
+
+- `.kiro/plan/docs_staging_execution_loop36_20260701.md`
+
+Staged scope:
+
+- `.kiro/plan/*.md`
+- `.kiro/steering/planning-context.md`
+
+Required verification:
+
+- cached diff name/status and stat contain docs/planning files only: pass, 17 staged files.
+- cached diff check: pass.
+- sensitive marker scan over `.kiro/plan` and `.kiro/steering`: no hits.
+- out-of-scope staged path check: empty output.
+- business code, generated browser output, deployment scripts, env, schema, provider, and production paths remain outside the staged unit.
+
+Boundary:
+
+- Git index staging only.
+- No commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 37 Docs-Only Local Commit
+
+Decision:
+
+- Convert the Loop36 docs-only staged unit into one local atomic commit.
+- Keep business code, generated browser output, tooling, and review route work unstaged.
+
+Created:
+
+- `.kiro/plan/docs_commit_loop37_20260701.md`
+
+Commit message:
+
+- `docs: preserve loop governance evidence`
+
+Required verification:
+
+- cached diff contains `.kiro/plan/*.md` and `.kiro/steering/planning-context.md` only;
+- cached diff check passes;
+- sensitive-marker scan over `.kiro/plan` and `.kiro/steering` has no hits;
+- post-commit cached diff is empty;
+- remaining dirty worktree is explicitly listed.
+
+Boundary:
+
+- Local commit only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
