@@ -1564,7 +1564,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "需要人工处理" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目审计链动态" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
     });
   });
 
@@ -1575,7 +1575,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("待处理疑点")).toBeInTheDocument();
     expect(screen.getByText("待补证据")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
     });
   });
 

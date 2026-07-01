@@ -53,13 +53,13 @@ export function BackendStatusCard() {
 
   return (
     <section
-      aria-label="系统健康"
+      aria-label="知识库状态"
       className="audit-panel p-5"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="audit-kicker">系统健康</p>
-          <h2 className="mt-2 audit-section-title">后端与索引联通</h2>
+          <p className="audit-kicker">服务状态</p>
+          <h2 className="mt-2 audit-section-title">知识库连接正常</h2>
         </div>
         {state.status === "ready" && (
           <StatusPill tone={state.searchReady ? "success" : "warning"}>
@@ -71,31 +71,31 @@ export function BackendStatusCard() {
       </div>
 
       {state.status === "loading" && (
-        <p className="mt-5 audit-copy">正在通过 Next.js 代理检查 FastAPI 和搜索后端。</p>
+        <p className="mt-5 audit-copy">正在检查知识库和检索服务。</p>
       )}
       {state.status === "error" && (
         <div className="mt-5 space-y-1 audit-copy">
-          <p>后端状态无法确认</p>
+          <p>服务状态暂不可用</p>
           <p>当前页面不会生成疑点或正式底稿。</p>
         </div>
       )}
       {state.status === "ready" && (
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <div className="audit-panel-muted p-4">
-            <p className="audit-meta">API</p>
-            <p className="mt-1 audit-compact-title">FastAPI 正常</p>
-            <p className="mt-1 audit-meta">v{state.backendVersion}</p>
+            <p className="audit-meta">工作台</p>
+            <p className="mt-1 audit-compact-title">工作台可用</p>
+            <p className="mt-1 audit-meta">版本 {state.backendVersion}</p>
           </div>
           <div className="audit-panel-muted p-4">
-            <p className="audit-meta">Search</p>
+            <p className="audit-meta">检索服务</p>
             <p className="mt-1 audit-compact-title">
-              {state.searchBackend} {state.searchReady ? "已就绪" : "未就绪"}
+              {state.searchReady ? "材料可检索" : "等待初始化"}
             </p>
           </div>
           <div className="audit-panel-muted p-4">
-            <p className="audit-meta">Embeddings</p>
+            <p className="audit-meta">可引用资料</p>
             <p className="mt-1 audit-compact-title">
-              {state.matchingEmbeddingCount ?? 0} vectors
+              {(state.matchingEmbeddingCount ?? 0).toLocaleString("zh-CN")} 条
             </p>
           </div>
         </div>
