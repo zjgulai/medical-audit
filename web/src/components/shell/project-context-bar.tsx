@@ -48,9 +48,9 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
   const pageTitle = activeItem?.label ?? "今日工作台";
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--audit-line)] bg-white/94 px-4 py-2 backdrop-blur-xl sm:px-6 md:px-8">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+    <header className="sticky top-0 z-20 border-b border-[var(--audit-line)] bg-white/94 px-3 py-2 backdrop-blur-xl sm:px-5 md:px-8">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           {onToggleSidebar ? (
             <button
               type="button"
@@ -64,8 +64,8 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
           ) : null}
           <div className="min-w-0 leading-tight">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="truncate text-base font-semibold text-[var(--audit-ink)] sm:text-lg">{pageTitle}</div>
-              <span className="hidden max-w-44 truncate rounded-full border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--audit-primary)] sm:inline">
+              <div className="truncate text-sm font-semibold text-[var(--audit-ink)] sm:text-base md:text-lg">{pageTitle}</div>
+              <span className="hidden max-w-44 truncate rounded-full border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--audit-primary)] lg:inline">
                 {project.auditTopic}
               </span>
             </div>
@@ -74,8 +74,8 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
             </p>
           </div>
         </div>
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-          <label className="relative min-w-0 flex-1 sm:w-64 sm:flex-none" aria-label="全局搜索">
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
+          <label className="relative hidden min-w-0 md:block md:w-56 lg:w-64" aria-label="全局搜索">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[var(--audit-primary)]">
               搜
             </span>
@@ -88,18 +88,18 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
             />
           </label>
           {activeItem?.id !== "workspace" && (
-            <Link className="audit-focus-ring audit-btn audit-btn-neutral hidden min-h-8 px-3 py-1.5 text-xs sm:inline-flex" href="/workspace">
+            <Link className="audit-focus-ring audit-btn audit-btn-neutral hidden min-h-8 px-3 py-1.5 text-xs lg:inline-flex" href="/workspace">
               工作台
             </Link>
           )}
           <details className="relative shrink-0">
-            <summary className="audit-focus-ring flex h-9 cursor-pointer list-none items-center gap-2 rounded-full border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-2 text-xs font-semibold text-[var(--audit-ink-muted)] hover:bg-white [&::-webkit-details-marker]:hidden">
+            <summary className="audit-focus-ring flex h-9 cursor-pointer list-none items-center gap-2 rounded-full border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-1.5 text-xs font-semibold text-[var(--audit-ink-muted)] hover:bg-white sm:px-2 [&::-webkit-details-marker]:hidden">
               <span className="grid size-6 place-items-center rounded-full bg-[var(--audit-ink)] text-xs font-semibold text-white" aria-hidden="true">
                 {auditClientRoleLabel(auditUser.role).slice(0, 1)}
               </span>
-              <span className="hidden sm:inline">{auditClientRoleLabel(auditUser.role)}</span>
+              <span className="hidden lg:inline">{auditClientRoleLabel(auditUser.role)}</span>
             </summary>
-            <div className="absolute right-0 mt-2 w-[18rem] rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-3 shadow-[0_16px_36px_rgb(23_62_105/0.16)]">
+            <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-3 shadow-[0_16px_36px_rgb(23_62_105/0.16)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-[var(--audit-ink)]">{auditClientRoleLabel(auditUser.role)}视图</p>

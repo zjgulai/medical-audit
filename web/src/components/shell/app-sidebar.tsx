@@ -28,7 +28,7 @@ function NavigationLink({
   readonly collapsed: boolean;
 }) {
   const isActive = isActivePath(pathname, item.href);
-  const className = `audit-focus-ring audit-sidebar-link flex min-w-[5.25rem] items-center gap-2 rounded-[var(--audit-radius-md)] px-2 py-1.5 text-sm transition sm:min-w-28 md:min-w-0 md:gap-2.5 md:px-2.5 md:py-2 ${
+  const className = `audit-focus-ring audit-sidebar-link flex min-w-11 items-center justify-center gap-0 rounded-[var(--audit-radius-md)] px-1.5 py-1.5 text-sm transition sm:min-w-28 sm:justify-start sm:gap-2 sm:px-2 md:min-w-0 md:gap-2.5 md:px-2.5 md:py-2 ${
     collapsed ? "md:justify-center md:px-0" : ""
   } ${
     isActive
@@ -45,10 +45,10 @@ function NavigationLink({
       >
         {item.symbol}
       </span>
-      <span className={`min-w-0 flex-1 truncate text-xs font-medium sm:text-sm ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
+      <span className={`hidden min-w-0 flex-1 truncate text-xs font-medium sm:inline sm:text-sm ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
       {item.target === "backend" && (
         <span
-          className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${collapsed ? "md:hidden" : ""} ${
+          className={`hidden rounded-full px-1.5 py-0.5 text-[10px] font-semibold sm:inline ${collapsed ? "md:hidden" : ""} ${
             isActive ? "bg-white/20 text-white" : "bg-white text-[var(--audit-ink-subtle)]"
           }`}
         >
@@ -60,14 +60,26 @@ function NavigationLink({
 
   if (item.target === "backend") {
     return (
-      <a href={item.href} title={item.description} aria-current={isActive ? "page" : undefined} className={className}>
+      <a
+        href={item.href}
+        title={item.description}
+        aria-label={item.label}
+        aria-current={isActive ? "page" : undefined}
+        className={className}
+      >
         {content}
       </a>
     );
   }
 
   return (
-    <Link href={item.href} title={item.description} aria-current={isActive ? "page" : undefined} className={className}>
+    <Link
+      href={item.href}
+      title={item.description}
+      aria-label={item.label}
+      aria-current={isActive ? "page" : undefined}
+      className={className}
+    >
       {content}
     </Link>
   );
@@ -115,7 +127,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       </Link>
 
       <nav
-        className="mt-2 flex gap-2 overflow-x-auto pb-1 md:mt-5 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
+        className="mt-2 flex gap-1.5 overflow-x-auto pb-1 md:mt-5 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
         aria-label="主导航"
       >
         {primaryNavigation.map((item) => (
