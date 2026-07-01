@@ -1777,13 +1777,13 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("tablist", { name: "智能体分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
     expect(screen.getByText("默认展示常用助手，可搜索完整模板库。")).toBeInTheDocument();
-    expect(screen.getByText(/已显示前 24 个/)).toBeInTheDocument();
+    expect(screen.getByText(/已显示前 12 个/)).toBeInTheDocument();
 
     const agentList = document.querySelector('[aria-label="智能体列表"]');
     expect(agentList).not.toBeNull();
     const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
     expect(visibleNames.length).toBeGreaterThan(0);
-    expect(visibleNames.length).toBeLessThanOrEqual(24);
+    expect(visibleNames.length).toBeLessThanOrEqual(12);
     for (const name of visibleNames) {
       expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
       expect(Array.from(name).length).toBeLessThanOrEqual(10);

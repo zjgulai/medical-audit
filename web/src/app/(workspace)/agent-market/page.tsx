@@ -76,6 +76,7 @@ const SECTION_LABELS = {
   material: "需要材料",
   method: "核验步骤"
 } as const;
+const DEFAULT_AGENT_LIMIT = 12;
 
 function normalizeVisibleText(text: string): string {
   return text
@@ -267,19 +268,19 @@ export default function AgentMarketPage() {
     });
   }, [agentCards, category, query]);
 
-  const visibleAgents = filtered.slice(0, 24);
+  const visibleAgents = filtered.slice(0, DEFAULT_AGENT_LIMIT);
 
   return (
-    <main className="space-y-5">
-      <section className="audit-panel p-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+    <main className="space-y-4 sm:space-y-5">
+      <section className="audit-panel p-4 sm:p-6">
+        <div className="grid gap-3 sm:grid-cols-[1fr_minmax(16rem,20rem)] sm:items-end">
           <div>
             <p className="audit-kicker">智能体广场</p>
             <h1 className="audit-page-title">审计提示词智能体</h1>
-            <p className="mt-2 audit-copy">默认展示常用助手，可搜索完整模板库。</p>
+            <p className="mt-1 audit-copy">默认展示常用助手，可搜索完整模板库。</p>
           </div>
           <input
-            className="audit-focus-ring audit-input w-full max-w-xs px-3 py-2.5"
+            className="audit-focus-ring audit-input w-full px-3 py-2.5"
             placeholder="搜索助手 / 场景 / 标签"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -287,7 +288,7 @@ export default function AgentMarketPage() {
           />
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="智能体分类">
+        <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:mt-4 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0" role="tablist" aria-label="智能体分类">
           <CategoryChip
             label="全部"
             count={auditAgents.length}
@@ -312,7 +313,7 @@ export default function AgentMarketPage() {
             key={`${agent.source.category}-${agent.source.title}`}
             type="button"
             onClick={() => setSelected(agent)}
-            className="audit-focus-ring audit-panel flex flex-col gap-3 p-4 text-left transition hover:border-[var(--audit-primary-line)]"
+            className="audit-focus-ring audit-panel flex flex-col gap-2.5 p-4 text-left transition hover:border-[var(--audit-primary-line)]"
           >
             <div className="flex items-start gap-3">
               <AgentAvatar agent={agent} size="compact" />
@@ -320,16 +321,9 @@ export default function AgentMarketPage() {
             </div>
             <p className="line-clamp-2 audit-copy text-[var(--audit-ink-muted)]">{agent.summary}</p>
             <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-              <div className="flex min-w-0 flex-wrap gap-1.5">
-                {agent.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-[var(--audit-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--audit-primary)]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
+              <span className="min-w-0 truncate rounded-full bg-[var(--audit-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--audit-primary)]">
+                {agent.tags[0] ?? agent.source.category.replace("审计", "")}
+              </span>
               <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">打开</span>
             </div>
           </button>
@@ -368,7 +362,7 @@ function CategoryChip({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`audit-focus-ring rounded-full px-3 py-1.5 text-sm transition ${
+      className={`audit-focus-ring shrink-0 rounded-full px-2.5 py-1.5 text-xs transition sm:px-3 sm:text-sm ${
         active
           ? "bg-[var(--audit-primary)] font-semibold text-white"
           : "border border-[var(--audit-line)] text-[var(--audit-ink-muted)] hover:bg-[var(--audit-surface-muted)]"
