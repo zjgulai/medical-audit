@@ -31,7 +31,7 @@ describe("ProjectDashboard", () => {
     expect(screen.getByText("形成判断")).toBeInTheDocument();
     expect(screen.getByText("规则卡映射已激活")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("FastAPI 正常")).toBeInTheDocument();
+      expect(screen.getByText("工作台可用")).toBeInTheDocument();
     });
   });
 });

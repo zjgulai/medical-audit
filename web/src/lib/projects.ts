@@ -89,14 +89,14 @@ export const currentSelfCheckProject: SelfCheckProject = {
       key: "rule_cards",
       label: "专题规则卡",
       value: "18",
-      helper: "Markdown / JSON 双形态",
+      helper: "规则与底稿草案",
       tone: "info"
     },
     {
       key: "backend_status",
-      label: "索引联通",
-      value: "待检测",
-      helper: "由前端只读健康检查刷新",
+      label: "资料可检索",
+      value: "待确认",
+      helper: "自动检查材料检索状态",
       tone: "neutral"
     }
   ],
@@ -149,8 +149,8 @@ export const currentSelfCheckProject: SelfCheckProject = {
     },
     {
       id: "ACT-003",
-      title: "索引健康等待前端联通检测",
-      description: "第二阶段只做只读健康展示，不执行索引变更。",
+      title: "资料检索状态待确认",
+      description: "仅展示当前连接状态，不变更资料库。",
       timeLabel: "昨天 18:10"
     }
   ]

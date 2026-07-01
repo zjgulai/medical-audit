@@ -31,10 +31,10 @@ describe("BackendStatusCard", () => {
     render(<BackendStatusCard />);
 
     await waitFor(() => {
-      expect(screen.getByText("FastAPI 正常")).toBeInTheDocument();
+      expect(screen.getByText("工作台可用")).toBeInTheDocument();
     });
-    expect(screen.getByText("postgres 已就绪")).toBeInTheDocument();
-    expect(screen.getByText("48985 vectors")).toBeInTheDocument();
+    expect(screen.getByText("材料可检索")).toBeInTheDocument();
+    expect(screen.getByText("48,985 条")).toBeInTheDocument();
   });
 
   it("shows a conservative failure state", async () => {
@@ -43,7 +43,7 @@ describe("BackendStatusCard", () => {
     render(<BackendStatusCard />);
 
     await waitFor(() => {
-      expect(screen.getByText("后端状态无法确认")).toBeInTheDocument();
+      expect(screen.getByText("服务状态暂不可用")).toBeInTheDocument();
     });
   });
 });
