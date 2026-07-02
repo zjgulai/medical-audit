@@ -39,6 +39,28 @@ const staticRemediationWorkbench: RemediationWorkbenchResponse = {
   store: { ready: false, backend: "portal-data-static-fallback" }
 };
 
+function safePortalHref(href: string | null | undefined, fallback = "/reports"): string {
+  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+
+  return href;
+}
+
+function normalizeRemediationWorkbench(response: RemediationWorkbenchResponse): RemediationWorkbenchResponse {
+  return {
+    ...response,
+    remediation_cases: response.remediation_cases.map((item) => ({
+      ...item,
+      href: safePortalHref(item.href)
+    })),
+    evidence_requests: response.evidence_requests.map((item) => ({
+      ...item,
+      href: safePortalHref(item.href)
+    }))
+  };
+}
+
 export default function RemediationPage() {
   const [workbench, setWorkbench] = useState<RemediationWorkbenchResponse>(staticRemediationWorkbench);
   const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
@@ -51,7 +73,7 @@ export default function RemediationPage() {
         if (!active) {
           return;
         }
-        setWorkbench(response);
+        setWorkbench(normalizeRemediationWorkbench(response));
         setBackendStatus("ready");
       })
       .catch(() => {

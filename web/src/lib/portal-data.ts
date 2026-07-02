@@ -1223,7 +1223,7 @@ export const graphNodes: readonly GraphNode[] = [
     status: "门禁中",
     description: "沉淀负责人确认、附件和人工判断，决定是否进入报告。",
     metric: "负责人确认",
-    href: "/pages/review-tasks",
+    href: "/reports",
     x: 600,
     y: 370
   },
@@ -1346,7 +1346,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 4,
     gateSummary: "正式报告已签发，正文 sha256 已冻结。",
     updatedAt: "2026-06-11",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "report-policy-evidence",
@@ -1359,7 +1359,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 1,
     gateSummary: "缺少负责人确认，不得进入正式报告。",
     updatedAt: "2026-06-11",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "report-catalog-limit",
@@ -1372,7 +1372,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 2,
     gateSummary: "已形成底稿草稿，待补附件清单和负责人确认。",
     updatedAt: "2026-06-10",
-    href: "/pages/review-tasks"
+    href: "/reports"
   }
 ];
 
@@ -1429,7 +1429,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "底稿",
     reference: "底稿已核对引用、原文和 HIS 凭证位置。",
     status: "已纳入",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "report-source-attachment",
@@ -1437,7 +1437,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "附件",
     reference: "附件清单已登记，归档文件仍需校验。",
     status: "待补证",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "report-source-owner",
@@ -1445,7 +1445,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "负责人确认",
     reference: "报告正文、附件和负责人确认需一起核验。",
     status: "只读",
-    href: "/pages/review-tasks"
+    href: "/reports"
   }
 ];
 
@@ -1481,7 +1481,7 @@ export const remediationCases: readonly RemediationCase[] = [
     progress: 62,
     evidenceStatus: "已提交",
     nextAction: "核验退费凭证和流程复核记录。",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "remediation-catalog-limit",
@@ -1509,7 +1509,7 @@ export const remediationCases: readonly RemediationCase[] = [
     progress: 82,
     evidenceStatus: "需退回",
     nextAction: "重新上传带校验值的归档文件。",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "remediation-dose-review",
@@ -1537,7 +1537,7 @@ export const remediationEvidenceRequests: readonly RemediationEvidenceRequest[] 
     owner: "医保办",
     dueDate: "2026-06-18",
     detail: "退费流水、患者确认和财务复核记录已提交，等待审计验收。",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "evidence-catalog-field",
@@ -1559,7 +1559,7 @@ export const remediationEvidenceRequests: readonly RemediationEvidenceRequest[] 
     owner: "信息科",
     dueDate: "2026-06-18",
     detail: "附件名称已登记，但缺少文件 hash 和归档位置校验。",
-    href: "/pages/review-tasks"
+    href: "/reports"
   },
   {
     id: "evidence-owner-confirm",

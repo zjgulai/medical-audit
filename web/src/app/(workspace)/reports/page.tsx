@@ -34,14 +34,33 @@ const reportWorkflowSteps = [
   {
     title: "报告门禁预检",
     description: "核对附件、负责人确认、报告正文和整改请求，不通过时阻断签发。",
-    href: "/pages/review-tasks"
+    href: "#report-gate-title"
   },
   {
     title: "正式报告与整改",
     description: "签发后冻结正文 hash，并把整改事项纳入任务结案门禁。",
-    href: "/pages/review-tasks"
+    href: "/remediation"
   }
 ] as const;
+
+const reviewWorkbenchHref = "/fund-compliance/review";
+const reportsHref = "/reports";
+
+function safePortalHref(href: string | null | undefined, fallback = reportsHref): string {
+  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+
+  return href;
+}
+
+function safeDownloadHref(href: string | null | undefined): string | undefined {
+  if (!href || href.startsWith("/review-tasks/")) {
+    return undefined;
+  }
+
+  return href;
+}
 
 type ReportPageDashboardData = {
   readonly workpaperPromptTemplates: readonly WorkpaperPromptTemplate[];
@@ -188,7 +207,7 @@ export default function ReportsPage() {
             <h2 id="report-records-title" className="audit-section-title">
               报告记录
             </h2>
-            <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/review-tasks">
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href={reviewWorkbenchHref}>
               打开复核任务台
             </a>
           </div>
@@ -281,11 +300,11 @@ function mapWorkbenchEntries(items: readonly ReportWorkbenchEntry[]): readonly R
     appendixCount: entry.appendix_count,
     gateSummary: entry.gate_summary,
     updatedAt: formatDate(entry.updated_at),
-    href: entry.href,
-    taskDocxHref: entry.download_links.task_docx,
-    reportDocxHref: entry.download_links.report_docx,
-    reportMarkdownHref: entry.download_links.report_markdown,
-    reportJsonHref: entry.download_links.report_json
+    href: safePortalHref(entry.href),
+    taskDocxHref: safeDownloadHref(entry.download_links.task_docx),
+    reportDocxHref: safeDownloadHref(entry.download_links.report_docx),
+    reportMarkdownHref: safeDownloadHref(entry.download_links.report_markdown),
+    reportJsonHref: safeDownloadHref(entry.download_links.report_json)
   }));
 }
 
@@ -298,7 +317,7 @@ function mapWorkbenchEvidenceSources(
     kind: mapEvidenceKind(source.kind),
     reference: source.reference,
     status: mapEvidenceStatus(source.status),
-    href: source.href
+    href: safePortalHref(source.href)
   }));
 }
 
@@ -365,7 +384,7 @@ function WorkpaperPromptCard({ template }: { readonly template: WorkpaperPromptT
         <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-8 px-3 py-1.5 text-xs" href={template.href}>
           套用模板
         </a>
-        <a className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href="/pages/review-tasks">
+        <a className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href={reviewWorkbenchHref}>
           绑定复核任务
         </a>
       </div>

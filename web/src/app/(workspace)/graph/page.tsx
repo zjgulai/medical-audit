@@ -29,6 +29,24 @@ const staticGraphWorkbench: GraphWorkbenchResponse = {
   store: { ready: false, backend: "portal-data-static-fallback" }
 };
 
+function safePortalHref(href: string | null | undefined, fallback = "/reports"): string {
+  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+
+  return href;
+}
+
+function normalizeGraphWorkbench(response: GraphWorkbenchResponse): GraphWorkbenchResponse {
+  return {
+    ...response,
+    nodes: response.nodes.map((node) => ({
+      ...node,
+      href: safePortalHref(node.href)
+    }))
+  };
+}
+
 export default function GraphPage() {
   const [workbench, setWorkbench] = useState<GraphWorkbenchResponse>(staticGraphWorkbench);
   const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
@@ -41,7 +59,7 @@ export default function GraphPage() {
         if (!active) {
           return;
         }
-        setWorkbench(response);
+        setWorkbench(normalizeGraphWorkbench(response));
         setBackendStatus("ready");
       })
       .catch(() => {

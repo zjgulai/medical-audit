@@ -2244,15 +2244,10 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "整改跟踪" })).toBeInTheDocument();
     expect(screen.getByText("重复收费退费与流程复核")).toBeInTheDocument();
     expect(screen.getByText("signed-report-abc123")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/pages/review-tasks");
-    expect(screen.getByRole("link", { name: "任务 Word" })).toHaveAttribute(
-      "href",
-      "/review-tasks/review-task-0001/export?format=docx"
-    );
-    expect(screen.getByRole("link", { name: "报告 Word" })).toHaveAttribute(
-      "href",
-      "/review-tasks/review-task-0001/signed-report?format=docx"
-    );
+    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/reports");
+    expect(screen.queryByRole("link", { name: "任务 Word" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "报告 Word" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("报告 Word 需过门禁").length).toBeGreaterThan(0);
   });
 
   it("renders the remediation homepage with evidence requests and closure gates", async () => {
@@ -2272,7 +2267,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "整改动态" })).toBeInTheDocument();
     expect(screen.getByText("附件归档校验阻断")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看报告来源" })).toHaveAttribute("href", "/reports");
-    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/pages/review-tasks");
+    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/reports");
     await waitFor(() => {
       expect(fetchRemediationWorkbench).toHaveBeenCalledTimes(1);
     });
