@@ -39,8 +39,12 @@ const staticRemediationWorkbench: RemediationWorkbenchResponse = {
   store: { ready: false, backend: "portal-data-static-fallback" }
 };
 
-function safePortalHref(href: string | null | undefined, fallback = "/reports"): string {
-  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+const remediationEvidenceChainHref = "/graph#graph-node-remediation";
+const documentsHref = "/documents";
+const reportsHref = "/reports";
+
+function safePortalHref(href: string | null | undefined, fallback: string): string {
+  if (!href || href === reportsHref || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
     return fallback;
   }
 
@@ -52,11 +56,11 @@ function normalizeRemediationWorkbench(response: RemediationWorkbenchResponse): 
     ...response,
     remediation_cases: response.remediation_cases.map((item) => ({
       ...item,
-      href: safePortalHref(item.href)
+      href: safePortalHref(item.href, remediationEvidenceChainHref)
     })),
     evidence_requests: response.evidence_requests.map((item) => ({
       ...item,
-      href: safePortalHref(item.href)
+      href: safePortalHref(item.href, documentsHref)
     }))
   };
 }
@@ -192,7 +196,7 @@ function RemediationMetric({ label, value }: { readonly label: string; readonly 
 
 function RemediationCard({ item }: { readonly item: RemediationCaseApiItem }) {
   return (
-    <article className="audit-panel-muted p-4">
+    <article id={item.id} className="audit-panel-muted scroll-mt-24 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="audit-compact-title">{item.title}</h3>
@@ -223,7 +227,7 @@ function RemediationCard({ item }: { readonly item: RemediationCaseApiItem }) {
         <ProgressBar value={item.progress} />
       </div>
       <a className="audit-focus-ring audit-btn audit-btn-primary mt-4 w-full" href={item.href}>
-        查看详情
+        查看证据链
       </a>
     </article>
   );
@@ -231,7 +235,7 @@ function RemediationCard({ item }: { readonly item: RemediationCaseApiItem }) {
 
 function EvidenceRequestCard({ request }: { readonly request: RemediationEvidenceRequestApiItem }) {
   return (
-    <article className="audit-panel-muted p-4">
+    <article id={request.id} className="audit-panel-muted scroll-mt-24 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="audit-card-title">{request.title}</h3>

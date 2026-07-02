@@ -92,7 +92,7 @@ export default function ChatPortalPage() {
           </div>
         </section>
 
-        <form className="mt-5 grid gap-4" action="/pages/chat" method="get">
+        <form className="mt-5 grid gap-4" action="/chat" method="get">
           <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
             <label className="block">
               <span className="audit-label">审计助手</span>
@@ -235,7 +235,7 @@ function AgentCard({ agent }: { readonly agent: AuditAgent }) {
       </div>
       <a
         className="audit-focus-ring audit-btn audit-btn-secondary mt-3 min-h-8 px-3 py-1.5 text-xs"
-        href={`/pages/chat?agent=${encodeURIComponent(agent.id)}&project_name=${encodeURIComponent(agent.projectName)}`}
+        href={`/chat?agent=${encodeURIComponent(agent.id)}&project_name=${encodeURIComponent(agent.projectName)}`}
       >
         提问
       </a>

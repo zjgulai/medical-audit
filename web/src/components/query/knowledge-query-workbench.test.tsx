@@ -82,7 +82,7 @@ describe("KnowledgeQueryWorkbench", () => {
     );
     expect(screen.getByRole("link", { name: "转入对话审证" })).toHaveAttribute(
       "href",
-      "/pages/chat?question=%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E5%AE%A1%E6%A0%B8%E4%BE%9D%E6%8D%AE&source_collection=medical-insurance-laws"
+      "/chat?question=%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E5%AE%A1%E6%A0%B8%E4%BE%9D%E6%8D%AE&source_collection=medical-insurance-laws"
     );
   });
 

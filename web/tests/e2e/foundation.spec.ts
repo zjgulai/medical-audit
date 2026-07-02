@@ -347,7 +347,7 @@ test("Next-native query workbench is reachable", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "引用优先的知识查询" })).toBeVisible();
   await expect(page.getByLabel("审计问题")).toBeVisible();
   await expect(page.getByRole("button", { name: "执行查询" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "打开后端兼容页" })).toHaveAttribute("href", "/pages/query");
+  await expect(page.getByRole("link", { name: "回到文档依据" })).toHaveAttribute("href", "/documents");
 });
 
 test("Next-native findings workbench is reachable", async ({ page }) => {
@@ -505,7 +505,7 @@ test("rules homepage exposes sources, runs and release gates", async ({ page }) 
   await expect(page.getByText("监管两库").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "发布门禁" })).toBeVisible();
   await expect(page.getByText("字段可运行")).toBeVisible();
-  await expect(page.getByRole("link", { name: "打开索引管理" })).toHaveAttribute("href", "/pages/index-admin");
+  await expect(page.getByRole("link", { name: "查看依据库" })).toHaveAttribute("href", "/knowledge-base");
   await expect(
     page.locator("article").filter({ hasText: "CHARGE-RULE-001" }).getByRole("link", { name: "查看", exact: true })
   ).toHaveAttribute("href", "/findings?rule=CHARGE-RULE-001");
@@ -529,7 +529,7 @@ test("report homepage exposes gates, evidence and remediation", async ({ page })
   await expect(page.getByRole("heading", { name: "整改跟踪" })).toBeVisible();
   await expect(page.getByText("重复收费退费与流程复核")).toBeVisible();
   await expect(page.getByText("AUDIT-REPORT-20260611-001").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看详情" }).first()).toHaveAttribute("href", "/pages/review-tasks");
+  await expect(page.getByRole("link", { name: "查看证据链" }).first()).toHaveAttribute("href", "/graph#graph-node-report");
 });
 
 test("remediation homepage exposes evidence requests and closure gates", async ({ page }) => {
@@ -549,7 +549,7 @@ test("remediation homepage exposes evidence requests and closure gates", async (
   await expect(page.getByRole("heading", { name: "整改动态" })).toBeVisible();
   await expect(page.getByText("附件归档校验阻断")).toBeVisible();
   await expect(page.getByRole("link", { name: "查看报告来源" })).toHaveAttribute("href", "/reports");
-  await expect(page.getByRole("link", { name: "查看详情" }).first()).toHaveAttribute("href", "/pages/review-tasks");
+  await expect(page.getByRole("link", { name: "查看证据链" }).first()).toHaveAttribute("href", "/graph#graph-node-remediation");
 });
 
 test("archive homepage exposes packages, audit runs and signature chain", async ({ page }) => {
@@ -574,11 +574,11 @@ test("archive homepage exposes packages, audit runs and signature chain", async 
   await expect(page.getByText("retention-batch-0001.jsonl")).toBeVisible();
   await expect(page.getByRole("heading", { name: "入档动态" })).toBeVisible();
   await expect(page.getByText("附件 hash 阻断归档")).toBeVisible();
-  await expect(page.getByRole("link", { name: "打开审计日志台" })).toHaveAttribute("href", "/pages/audit-logs");
+  await expect(page.getByRole("link", { name: "查看归档策略" })).toHaveAttribute("href", "#archive-policy-title");
   await expect(page.getByRole("link", { name: "查看档案" }).first()).toHaveAttribute("href", "/reports");
-  await expect(page.getByRole("link", { name: "查看日志" }).first()).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "查看留痕" }).first()).toHaveAttribute(
     "href",
-    "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0001"
+    "#archive-policy-title"
   );
 });
 

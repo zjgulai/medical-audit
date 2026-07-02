@@ -772,7 +772,7 @@ export const guidedCheckSteps: readonly GuidedCheckStep[] = [
     status: "未开始",
     owner: "项目负责人",
     detail: "仅已确认疑点可进入底稿、报告、整改和项目归档链路。",
-    href: "/reports"
+    href: "/graph#graph-node-remediation"
   }
 ];
 
@@ -846,7 +846,7 @@ export const guidedCheckEvidenceItems: readonly GuidedCheckEvidenceItem[] = [
     source: "底稿报告",
     status: "需复核",
     blocker: "报告入档前必须记录人工确认结论。",
-    href: "/reports"
+    href: "/documents"
   }
 ];
 
@@ -873,7 +873,7 @@ export const guidedCheckRiskSignals: readonly GuidedCheckRiskSignal[] = [
     value: "1 项",
     status: "已收敛",
     detail: "已确认疑点可进入报告草稿，但整改验收仍未关闭。",
-    href: "/reports"
+    href: "/documents"
   }
 ];
 
@@ -1223,7 +1223,7 @@ export const graphNodes: readonly GraphNode[] = [
     status: "门禁中",
     description: "沉淀负责人确认、附件和人工判断，决定是否进入报告。",
     metric: "负责人确认",
-    href: "/reports",
+    href: "/fund-compliance/review",
     x: 600,
     y: 370
   },
@@ -1234,7 +1234,7 @@ export const graphNodes: readonly GraphNode[] = [
     status: "门禁中",
     description: "从已复核疑点和引用材料生成的底稿与报告记录。",
     metric: "1 份草稿",
-    href: "/reports",
+    href: "/reports#report-records-title",
     x: 430,
     y: 370
   },
@@ -1245,7 +1245,7 @@ export const graphNodes: readonly GraphNode[] = [
     status: "跟踪中",
     description: "报告签发后进入整改责任、状态跟踪和后续归档链路。",
     metric: "1 项跟踪",
-    href: "/remediation",
+    href: "/remediation#remediation-ledger-title",
     x: 260,
     y: 370
   }
@@ -1346,7 +1346,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 4,
     gateSummary: "正式报告已签发，正文 sha256 已冻结。",
     updatedAt: "2026-06-11",
-    href: "/reports"
+    href: "/graph#graph-node-report"
   },
   {
     id: "report-policy-evidence",
@@ -1359,7 +1359,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 1,
     gateSummary: "缺少负责人确认，不得进入正式报告。",
     updatedAt: "2026-06-11",
-    href: "/reports"
+    href: "/graph#graph-node-report"
   },
   {
     id: "report-catalog-limit",
@@ -1372,7 +1372,7 @@ export const reportEntries: readonly ReportEntry[] = [
     appendixCount: 2,
     gateSummary: "已形成底稿草稿，待补附件清单和负责人确认。",
     updatedAt: "2026-06-10",
-    href: "/reports"
+    href: "/graph#graph-node-report"
   }
 ];
 
@@ -1429,7 +1429,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "底稿",
     reference: "底稿已核对引用、原文和 HIS 凭证位置。",
     status: "已纳入",
-    href: "/reports"
+    href: "/reports#workpaper-template-title"
   },
   {
     id: "report-source-attachment",
@@ -1437,7 +1437,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "附件",
     reference: "附件清单已登记，归档文件仍需校验。",
     status: "待补证",
-    href: "/reports"
+    href: "/documents"
   },
   {
     id: "report-source-owner",
@@ -1445,7 +1445,7 @@ export const reportEvidenceSources: readonly ReportEvidenceSource[] = [
     kind: "负责人确认",
     reference: "报告正文、附件和负责人确认需一起核验。",
     status: "只读",
-    href: "/reports"
+    href: "/reports#report-gate-title"
   }
 ];
 
@@ -1481,7 +1481,7 @@ export const remediationCases: readonly RemediationCase[] = [
     progress: 62,
     evidenceStatus: "已提交",
     nextAction: "核验退费凭证和流程复核记录。",
-    href: "/reports"
+    href: "/graph#graph-node-remediation"
   },
   {
     id: "remediation-catalog-limit",
@@ -1509,7 +1509,7 @@ export const remediationCases: readonly RemediationCase[] = [
     progress: 82,
     evidenceStatus: "需退回",
     nextAction: "重新上传带校验值的归档文件。",
-    href: "/reports"
+    href: "/remediation#remediation-ledger-title"
   },
   {
     id: "remediation-dose-review",
@@ -1537,7 +1537,7 @@ export const remediationEvidenceRequests: readonly RemediationEvidenceRequest[] 
     owner: "医保办",
     dueDate: "2026-06-18",
     detail: "退费流水、患者确认和财务复核记录已提交，等待审计验收。",
-    href: "/reports"
+    href: "/documents"
   },
   {
     id: "evidence-catalog-field",
@@ -1559,7 +1559,7 @@ export const remediationEvidenceRequests: readonly RemediationEvidenceRequest[] 
     owner: "信息科",
     dueDate: "2026-06-18",
     detail: "附件名称已登记，但缺少文件 hash 和归档位置校验。",
-    href: "/reports"
+    href: "/documents"
   },
   {
     id: "evidence-owner-confirm",
@@ -1570,7 +1570,7 @@ export const remediationEvidenceRequests: readonly RemediationEvidenceRequest[] 
     owner: "项目负责人",
     dueDate: "2026-06-20",
     detail: "报告签发后的整改责任确认需与验收意见一起留痕。",
-    href: "/reports"
+    href: "/remediation#remediation-ledger-title"
   }
 ];
 
@@ -1649,7 +1649,7 @@ export const archivePackages: readonly ArchivePackage[] = [
     signedAt: "2026-06-11",
     retainedUntil: "2026-12-09",
     href: "/reports",
-    logHref: "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0001"
+    logHref: "/archive#archive-policy-title"
   },
   {
     id: "archive-package-kb-governance",
@@ -1663,7 +1663,7 @@ export const archivePackages: readonly ArchivePackage[] = [
     signedAt: "2026-06-10",
     retainedUntil: "2026-12-07",
     href: "/projects",
-    logHref: "/pages/audit-logs?entity_type=project&entity_id=KB-GOVERNANCE-202606"
+    logHref: "/archive#archive-policy-title"
   },
   {
     id: "archive-package-dose-review",
@@ -1677,7 +1677,7 @@ export const archivePackages: readonly ArchivePackage[] = [
     signedAt: "未签发",
     retainedUntil: "待签发后计算",
     href: "/reports",
-    logHref: "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0007"
+    logHref: "/archive#archive-policy-title"
   },
   {
     id: "archive-package-catalog-limit",
@@ -1691,7 +1691,7 @@ export const archivePackages: readonly ArchivePackage[] = [
     signedAt: "未签发",
     retainedUntil: "待补证后计算",
     href: "/remediation",
-    logHref: "/pages/audit-logs?entity_type=rule&entity_id=CATALOG-RULE-014"
+    logHref: "/archive#archive-policy-title"
   }
 ];
 

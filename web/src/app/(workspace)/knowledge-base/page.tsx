@@ -161,9 +161,9 @@ export default function KnowledgeBasePage() {
           <p className="audit-kicker">文档检索</p>
           <h2 className="audit-section-title mt-2">统一检索首页</h2>
         </a>
-        <a className="audit-focus-ring audit-action-card p-5" href="/pages/index-admin">
-          <p className="audit-kicker">索引管理</p>
-          <h2 className="audit-section-title mt-2">运维控制台</h2>
+        <a className="audit-focus-ring audit-action-card p-5" href="/knowledge-query">
+          <p className="audit-kicker">引用查询</p>
+          <h2 className="audit-section-title mt-2">进入知识查询</h2>
         </a>
       </section>
     </main>

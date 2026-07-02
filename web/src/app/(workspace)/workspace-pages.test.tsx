@@ -2244,7 +2244,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "整改跟踪" })).toBeInTheDocument();
     expect(screen.getByText("重复收费退费与流程复核")).toBeInTheDocument();
     expect(screen.getByText("signed-report-abc123")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/reports");
+    expect(screen.getAllByRole("link", { name: "查看证据链" })[0]).toHaveAttribute("href", "/graph#graph-node-report");
     expect(screen.queryByRole("link", { name: "任务 Word" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "报告 Word" })).not.toBeInTheDocument();
     expect(screen.getAllByText("报告 Word 需过门禁").length).toBeGreaterThan(0);
@@ -2267,7 +2267,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "整改动态" })).toBeInTheDocument();
     expect(screen.getByText("附件归档校验阻断")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看报告来源" })).toHaveAttribute("href", "/reports");
-    expect(screen.getAllByRole("link", { name: "查看详情" })[0]).toHaveAttribute("href", "/reports");
+    expect(screen.getAllByRole("link", { name: "查看证据链" })[0]).toHaveAttribute("href", "/graph#graph-node-remediation");
     await waitFor(() => {
       expect(fetchRemediationWorkbench).toHaveBeenCalledTimes(1);
     });
@@ -2303,11 +2303,11 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("retention-batch-0001.jsonl")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "入档动态" })).toBeInTheDocument();
     expect(screen.getByText("附件 hash 阻断归档")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "打开审计日志台" })).toHaveAttribute("href", "/pages/audit-logs");
+    expect(screen.getByRole("link", { name: "查看归档策略" })).toHaveAttribute("href", "#archive-policy-title");
     expect(screen.getAllByRole("link", { name: "查看档案" })[0]).toHaveAttribute("href", "/reports");
-    expect(screen.getAllByRole("link", { name: "查看日志" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "查看留痕" })[0]).toHaveAttribute(
       "href",
-      "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0001"
+      "#archive-policy-title"
     );
     await waitFor(() => {
       expect(fetchArchiveWorkbench).toHaveBeenCalledTimes(1);
@@ -2356,7 +2356,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("监管两库").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "发布门禁" })).toBeInTheDocument();
     expect(screen.getByText("字段可运行")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "打开索引管理" })).toHaveAttribute("href", "/pages/index-admin");
+    expect(screen.getByRole("link", { name: "查看依据库" })).toHaveAttribute("href", "/knowledge-base");
     expect(screen.getAllByRole("link", { name: "查看" })[0]).toHaveAttribute("href", "/findings?rule=CHARGE-RULE-001");
     expect(screen.getAllByRole("link", { name: "审证" })[0]).toHaveAttribute("href", expect.stringContaining("/chat?question="));
     await waitFor(() => {

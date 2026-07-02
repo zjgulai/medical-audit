@@ -29,8 +29,29 @@ const staticGraphWorkbench: GraphWorkbenchResponse = {
   store: { ready: false, backend: "portal-data-static-fallback" }
 };
 
-function safePortalHref(href: string | null | undefined, fallback = "/reports"): string {
+function fallbackHrefForNode(node: GraphWorkbenchNode): string {
+  if (node.kind === "复核") {
+    return "/fund-compliance/review";
+  }
+  if (node.kind === "报告") {
+    return "/reports#report-records-title";
+  }
+  if (node.kind === "整改") {
+    return "/remediation#remediation-ledger-title";
+  }
+  return "/workspace";
+}
+
+function safePortalHref(node: GraphWorkbenchNode): string {
+  const href = node.href;
+  const fallback = fallbackHrefForNode(node);
   if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+  if ((node.kind === "复核" || node.kind === "报告") && href === "/reports") {
+    return fallback;
+  }
+  if (node.kind === "整改" && href === "/remediation") {
     return fallback;
   }
 
@@ -42,7 +63,7 @@ function normalizeGraphWorkbench(response: GraphWorkbenchResponse): GraphWorkben
     ...response,
     nodes: response.nodes.map((node) => ({
       ...node,
-      href: safePortalHref(node.href)
+      href: safePortalHref(node)
     }))
   };
 }
@@ -182,7 +203,7 @@ export default function GraphPage() {
           <h2 className="audit-section-title">节点证据</h2>
           <div className="mt-4 grid gap-3">
             {nodes.map((node) => (
-              <a key={node.id} className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
+              <a id={node.id} key={node.id} className="audit-focus-ring block scroll-mt-24 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="audit-compact-title">{node.label}</p>

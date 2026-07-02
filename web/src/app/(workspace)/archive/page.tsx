@@ -21,6 +21,9 @@ import {
   archiveTimeline
 } from "@/lib/portal-data";
 
+const archivePolicyHref = "#archive-policy-title";
+const backendAuditLogsPath = "/pages/audit-logs";
+
 const staticArchiveWorkbench: ArchiveWorkbenchResponse = {
   format: "archive-workbench-v1",
   generated_at: "static-fallback",
@@ -56,7 +59,7 @@ export default function ArchivePage() {
         if (!active) {
           return;
         }
-        setWorkbench(response);
+        setWorkbench(normalizeArchiveWorkbench(response));
         setBackendStatus("ready");
       })
       .catch(() => {
@@ -101,7 +104,7 @@ export default function ArchivePage() {
       <section className="audit-panel p-6" aria-labelledby="archive-package-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="archive-package-title" className="audit-section-title">项目档案包</h2>
-          <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/audit-logs">打开审计日志台</a>
+          <a className="audit-focus-ring audit-btn audit-btn-secondary" href={archivePolicyHref}>查看归档策略</a>
         </div>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {workbench.archive_packages.map((item) => (
@@ -192,12 +195,29 @@ function ArchivePackageCard({ item }: { readonly item: ArchivePackageApiItem }) 
         <a className="audit-focus-ring audit-btn audit-btn-primary" href={item.href}>
           查看档案
         </a>
-        <a className="audit-focus-ring audit-btn audit-btn-secondary" href={item.logHref}>
-          查看日志
+        <a className="audit-focus-ring audit-btn audit-btn-secondary" href={safeArchiveLogHref(item.logHref)}>
+          查看留痕
         </a>
       </div>
     </article>
   );
+}
+
+function normalizeArchiveWorkbench(response: ArchiveWorkbenchResponse): ArchiveWorkbenchResponse {
+  return {
+    ...response,
+    archive_packages: response.archive_packages.map((item) => ({
+      ...item,
+      logHref: safeArchiveLogHref(item.logHref)
+    }))
+  };
+}
+
+function safeArchiveLogHref(href: string | null | undefined): string {
+  if (!href || href === `/archive${archivePolicyHref}` || href.startsWith(backendAuditLogsPath)) {
+    return archivePolicyHref;
+  }
+  return href;
 }
 
 function ArchivePolicyCard({ item }: { readonly item: ArchivePolicyItemApiItem }) {

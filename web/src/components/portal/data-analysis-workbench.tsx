@@ -499,10 +499,10 @@ map_audit_signals()`}</pre>
           <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
           <p className="audit-copy mt-2">进入已上线的疑点清单、源记录定位和计算过程。</p>
         </a>
-        <a className="audit-focus-ring audit-action-card p-5" href="/pages/index-admin">
-          <p className="audit-kicker">索引状态</p>
-          <h2 className="audit-section-title mt-2">查看知识库运行态</h2>
-          <p className="audit-copy mt-2">运维发布、回滚和验收仍保留在索引管理后台。</p>
+        <a className="audit-focus-ring audit-action-card p-5" href="/knowledge-base">
+          <p className="audit-kicker">依据状态</p>
+          <h2 className="audit-section-title mt-2">查看知识库覆盖</h2>
+          <p className="audit-copy mt-2">核对当前项目可引用的法规、目录、规则和风险清单。</p>
         </a>
       </section>
     </main>

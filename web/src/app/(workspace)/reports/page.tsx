@@ -45,9 +45,10 @@ const reportWorkflowSteps = [
 
 const reviewWorkbenchHref = "/fund-compliance/review";
 const reportsHref = "/reports";
+const reportEvidenceChainHref = "/graph#graph-node-report";
 
-function safePortalHref(href: string | null | undefined, fallback = reportsHref): string {
-  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+function safePortalHref(href: string | null | undefined, fallback = reportEvidenceChainHref): string {
+  if (!href || href === reportsHref || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
     return fallback;
   }
 
@@ -403,7 +404,7 @@ function ReportMetric({ label, value }: { readonly label: string; readonly value
 
 function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
   return (
-    <article className="audit-panel-muted p-4">
+    <article id={entry.id} className="audit-panel-muted scroll-mt-24 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="audit-compact-title">{entry.title}</h3>
@@ -443,7 +444,7 @@ function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
 
       <div className="mt-4 flex flex-wrap gap-2">
         <a className="audit-focus-ring audit-btn audit-btn-primary min-h-9 flex-1 px-3 py-2 text-sm" href={entry.href}>
-          查看详情
+          查看证据链
         </a>
         {entry.taskDocxHref ? (
           <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-2 text-sm" href={entry.taskDocxHref}>
@@ -481,7 +482,7 @@ function GateCard({ item }: { readonly item: ReportGateItem }) {
 
 function EvidenceSourceCard({ source }: { readonly source: ReportEvidenceSource }) {
   return (
-    <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={source.href}>
+    <a id={source.id} className="audit-focus-ring block scroll-mt-24 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={source.href}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="audit-compact-title">{source.title}</p>

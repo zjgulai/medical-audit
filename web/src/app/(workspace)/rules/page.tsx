@@ -92,8 +92,8 @@ export default function RulesPage() {
       <section className="audit-panel p-6" aria-labelledby="rule-library-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="rule-library-title" className="audit-section-title">规则清单</h2>
-          <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/index-admin">
-            打开索引管理
+          <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/knowledge-base">
+            查看依据库
           </a>
         </div>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">

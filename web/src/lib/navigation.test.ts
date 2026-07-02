@@ -90,7 +90,10 @@ describe("primaryNavigation", () => {
       "/archive"
     ]);
     expect(sidebarUtilityNavigation.map((item) => item.href)).toEqual(
-      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/rules", "/pages/index-admin"])
+      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/rules", "/remediation", "/graph"])
+    );
+    expect(sidebarUtilityNavigation.map((item) => item.href)).not.toEqual(
+      expect.arrayContaining(systemNavigation.map((item) => item.href))
     );
   });
 

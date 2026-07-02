@@ -54,7 +54,7 @@ export function KnowledgeQueryWorkbench() {
     for (const collection of selectedCollections) {
       params.append("source_collection", collection);
     }
-    return `/pages/chat?${params.toString()}`;
+    return `/chat?${params.toString()}`;
   }, [question, selectedCollections]);
 
   async function submitQuery(event: FormEvent<HTMLFormElement>) {
@@ -153,9 +153,9 @@ export function KnowledgeQueryWorkbench() {
             </button>
             <a
               className="audit-focus-ring audit-btn audit-btn-neutral"
-              href="/pages/query"
+              href="/documents"
             >
-              打开后端兼容页
+              回到文档依据
             </a>
           </div>
         </form>

@@ -215,8 +215,7 @@ export const sidebarUtilityNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("guided-check"),
   requireNavigationItemById("rules"),
   requireNavigationItemById("remediation"),
-  requireNavigationItemById("graph"),
-  ...systemNavigation
+  requireNavigationItemById("graph")
 ];
 
 export const navigationGroups: readonly NavigationGroup[] = [
