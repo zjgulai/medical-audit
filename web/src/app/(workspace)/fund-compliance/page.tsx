@@ -75,9 +75,10 @@ const auditCases: readonly AuditCase[] = [
 ];
 
 const topicMetrics = [
-  { label: "待复核疑点", value: "207", tone: "text-red-600", detail: "高风险 89 条" },
-  { label: "涉及金额", value: "¥128,450", tone: "text-blue-600", detail: "药品类占比最高" },
-  { label: "待补材料", value: "34", tone: "text-amber-600", detail: "需科室补证" }
+  { label: "本月疑点总数", value: "207", tone: "text-red-600", detail: "高风险 89 | 中风险 68" },
+  { label: "涉及金额", value: "¥128,450", tone: "text-blue-600", detail: "药品类 ¥68,200" },
+  { label: "DIP 分值异常", value: "34", tone: "text-amber-600", detail: "高套嫌疑 12" },
+  { label: "整改率", value: "13.5%", tone: "text-emerald-600", detail: "待复核 34" }
 ] as const;
 
 const topicModules = [
@@ -98,6 +99,12 @@ const topicModules = [
     description: "核对药品、DIP/DRG、价格和身份待遇规则。",
     href: "/fund-compliance/review",
     action: "复核规则"
+  },
+  {
+    title: "底稿输出",
+    description: "把已确认疑点整理为待签发底稿草稿。",
+    href: "/fund-compliance/review",
+    action: "生成底稿"
   }
 ] as const;
 
@@ -123,51 +130,42 @@ export default function FundCompliancePage() {
 
   return (
     <main className="space-y-5">
-      <section className="audit-panel p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <p className="audit-kicker">医保基金审计专题</p>
-            <h1 className="audit-page-title">医保基金使用合规专项自查</h1>
-            <p className="audit-copy mt-2 max-w-2xl">用于查看住院部专项审计的疑点、表单和规则复核进度。</p>
-            <p className="audit-meta mt-3">2025 年 Q4 住院部专项审计 · HIS、医保结算、病案材料</p>
-          </div>
-          <Link className="audit-focus-ring audit-btn audit-btn-primary" href="/fund-compliance/review">
-            进入审查
-          </Link>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          {topicMetrics.map((metric) => (
-            <div key={metric.label} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
-              <p className="audit-meta">{metric.label}</p>
-              <p className={`mt-1 audit-metric-value ${metric.tone}`}>{metric.value}</p>
-              <p className="audit-meta mt-1">{metric.detail}</p>
+      <section className="audit-panel overflow-hidden p-0">
+        <div className="flex flex-col border-b border-[var(--audit-line)] bg-white lg:flex-row">
+          <div className="border-b border-[var(--audit-line-soft)] p-5 lg:w-72 lg:border-b-0 lg:border-r">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-[var(--audit-primary)] px-2 py-1 text-xs font-bold text-white">B2B</span>
+              <span className="audit-kicker">医保智能审计平台</span>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="audit-panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="audit-kicker">工作入口</p>
-            <h2 className="audit-section-title mt-1">从审查开始</h2>
+            <h1 className="audit-page-title mt-3">医保基金使用合规专项自查</h1>
+            <p className="audit-copy mt-2">医院审计科用于统筹规则、表单、疑点和底稿的专题入口。</p>
+            <div className="mt-4 rounded-[var(--audit-radius-md)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-3">
+              <p className="audit-meta">当前任务</p>
+              <p className="mt-1 font-semibold text-[var(--audit-ink)]">2025 年 Q4 住院部专项审计</p>
+              <p className="audit-meta mt-2">数据源：HIS + 医保结算 + 病案</p>
+            </div>
           </div>
-          <Link className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-1.5" href="/fund-compliance/review">
-            查看全部疑点
-          </Link>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {topicModules.map((module) => (
-            <Link
-              key={module.title}
-              href={module.href}
-              className="audit-focus-ring rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4 transition hover:border-[var(--audit-primary-line)]"
-            >
-              <h3 className="audit-card-title">{module.title}</h3>
-              <p className="audit-copy mt-2">{module.description}</p>
-              <span className="mt-3 inline-flex text-sm font-semibold text-[var(--audit-primary)]">{module.action}</span>
-            </Link>
-          ))}
+
+          <div className="min-w-0 flex-1 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="audit-kicker">智能审计</p>
+                <h2 className="audit-section-title mt-1">专题总览</h2>
+              </div>
+              <Link className="audit-focus-ring audit-btn audit-btn-primary" href="/fund-compliance/review">
+                进入专题工作台
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {topicMetrics.map((metric) => (
+                <div key={metric.label} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
+                  <p className="audit-meta">{metric.label}</p>
+                  <p className={`mt-1 text-2xl font-bold ${metric.tone}`}>{metric.value}</p>
+                  <p className="audit-meta mt-1">{metric.detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -175,7 +173,7 @@ export default function FundCompliancePage() {
         <aside className="audit-panel p-4">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="audit-kicker">规则分类</p>
+              <p className="audit-kicker">规则导航</p>
               <h2 className="audit-card-title mt-1">审计口径</h2>
             </div>
             <StatusPill tone="info">146 条</StatusPill>
@@ -200,6 +198,22 @@ export default function FundCompliancePage() {
         </aside>
 
         <section className="min-w-0 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {topicModules.map((module) => (
+              <Link
+                key={module.title}
+                href={module.href}
+                className="audit-focus-ring audit-panel flex min-h-36 flex-col justify-between p-4 transition hover:border-[var(--audit-primary-line)]"
+              >
+                <div>
+                  <h3 className="audit-card-title">{module.title}</h3>
+                  <p className="audit-copy mt-2 text-sm">{module.description}</p>
+                </div>
+                <span className="mt-4 text-sm font-semibold text-[var(--audit-primary)]">{module.action}</span>
+              </Link>
+            ))}
+          </div>
+
           <section className="audit-panel min-w-0 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

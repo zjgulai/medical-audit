@@ -1564,7 +1564,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "需要人工处理" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目审计链动态" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
     });
   });
 
@@ -1575,7 +1575,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("待处理疑点")).toBeInTheDocument();
     expect(screen.getByText("待补证据")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("FastAPI 正常").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
     });
   });
 
@@ -1583,11 +1583,12 @@ describe("workspace foundation pages", () => {
     render(<FundCompliancePage />);
 
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
-    expect(screen.getByText("医保基金审计专题")).toBeInTheDocument();
-    expect(screen.getByText(/2025 年 Q4 住院部专项审计/)).toBeInTheDocument();
-    expect(screen.getByText("规则分类")).toBeInTheDocument();
+    expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
+    expect(screen.getByText("B2B")).toBeInTheDocument();
+    expect(screen.getByText("2025 年 Q4 住院部专项审计")).toBeInTheDocument();
+    expect(screen.getByText("规则导航")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "审计口径" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入审查" })).toHaveAttribute("href", "/fund-compliance/review");
+    expect(screen.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute("href", "/fund-compliance/review");
     expect(screen.getByRole("link", { name: /单据审查/ })).toHaveAttribute("href", "/fund-compliance/review");
     expect(screen.getByRole("heading", { name: "待复核疑点" })).toBeInTheDocument();
   });

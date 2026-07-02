@@ -84,7 +84,7 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
           </label>
           {activeItem?.id !== "workspace" && (
             <Link className="audit-focus-ring audit-btn audit-btn-neutral hidden min-h-8 px-3 py-1.5 text-xs lg:inline-flex" href="/workspace">
-              返回
+              工作台
             </Link>
           )}
           <details className="relative shrink-0">

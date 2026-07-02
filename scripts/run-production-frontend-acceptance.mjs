@@ -27,7 +27,7 @@ const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
   {
     route: "/fund-compliance",
-    requiredText: [/医保基金使用合规专项自查/, /进入审查/, /规则分类|审计口径|专题规则/],
+    requiredText: [/医保基金使用合规专项自查/, /进入专题工作台/, /规则导航|审计口径|专题规则/],
   },
   {
     route: "/fund-compliance/review",

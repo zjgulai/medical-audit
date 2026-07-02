@@ -296,6 +296,7 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await expect(page.getByRole("link", { name: /助手库/ })).toHaveAttribute("href", "/agent-market");
   await expect(page.getByRole("link", { name: /依据库/ })).toHaveAttribute("href", "/knowledge-base");
   await expect(page.getByRole("link", { name: /数据分析/ })).toHaveAttribute("href", "/analytics");
+  await page.getByText("全部功能").click();
   await expect(page.getByRole("link", { name: /关系图谱/ })).toHaveAttribute("href", "/graph");
   await expect(page.getByRole("link", { name: "底稿生成" })).toHaveAttribute("href", "/reports");
   await expect(page.getByRole("link", { name: /项目空间/ })).toHaveAttribute("href", "/projects");
@@ -306,15 +307,15 @@ test("fund compliance topic opens a separate review workbench", async ({ page })
   await page.goto("/fund-compliance");
 
   await expect(page.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeVisible();
-  await expect(page.getByText("医保基金审计专题")).toBeVisible();
-  await expect(page.getByText(/2025 年 Q4 住院部专项审计/)).toBeVisible();
+  await expect(page.getByRole("main").getByText("医保智能审计平台")).toBeVisible();
+  await expect(page.getByText("2025 年 Q4 住院部专项审计")).toBeVisible();
   await expect(page.getByRole("heading", { name: "审计口径" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入审查" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute(
     "href",
     "/fund-compliance/review"
   );
 
-  await page.getByRole("link", { name: "进入审查" }).click();
+  await page.getByRole("link", { name: "进入专题工作台" }).click();
   await expect(page).toHaveURL(/\/fund-compliance\/review$/);
   await expect(page.getByRole("heading", { name: "专题审计工作台" })).toBeVisible();
   await page.getByRole("tab", { name: "费用表单" }).click();
@@ -477,18 +478,15 @@ test("knowledge graph exposes read-only relationship coverage", async ({ page })
   await expect(page.getByText("医保基金使用合规专项图谱")).toBeVisible();
   await expect(page.getByText("节点覆盖")).toBeVisible();
   await expect(page.getByText("节点证据")).toBeVisible();
-  await expect(page.getByText("项目").first()).toBeVisible();
-  await expect(page.getByText("知识库").first()).toBeVisible();
-  await expect(page.getByText("文档").first()).toBeVisible();
-  await expect(page.getByText("规则").first()).toBeVisible();
-  await expect(page.getByText("疑点").first()).toBeVisible();
-  await expect(
-    page
-      .locator("section", { has: page.getByRole("heading", { name: "节点覆盖" }) })
-      .getByText("复核", { exact: true })
-  ).toBeVisible();
-  await expect(page.getByText("报告").first()).toBeVisible();
-  await expect(page.getByText("整改").first()).toBeVisible();
+  const nodeCoverage = page.locator("section", { has: page.getByRole("heading", { name: "节点覆盖" }) });
+  await expect(nodeCoverage.getByText("项目", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("知识库", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("文档", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("规则", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("疑点", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("复核", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("报告", { exact: true })).toBeVisible();
+  await expect(nodeCoverage.getByText("整改", { exact: true })).toBeVisible();
   await expect(page.getByText("FINDING-F044EBD309B659DC").first()).toBeVisible();
   await expect(page.getByText("review-task-0007").first()).toBeVisible();
 });
