@@ -946,7 +946,7 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
             return module.HttpResponse(
                 status=200,
                 url=url,
-                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                content="文档依据检索 审计问题或文档关键词 个人材料".encode(),
                 headers={"content-type": "text/html"},
             )
         if url.endswith("/api/v1/documents/permissions"):
@@ -1035,7 +1035,7 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
             return module.HttpResponse(
                 status=200,
                 url=url,
-                content="AI智能审计管理系统 材料与知识库统一检索 个人材料".encode(),
+                content="文档依据检索 审计问题或文档关键词 个人材料".encode(),
                 headers={"content-type": "text/html"},
             )
         if url.endswith("/api/v1/documents/permissions"):

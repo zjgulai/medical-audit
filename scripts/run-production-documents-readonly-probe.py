@@ -18,8 +18,8 @@ DEFAULT_USER_ID = "production-documents-readonly-probe"
 DEFAULT_TENANT_ID = "hospital-demo"
 DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 EXPECTED_DOCUMENTS_TEXT = (
-    "AI智能审计管理系统",
     "文档依据检索",
+    "审计问题或文档关键词",
     "个人材料",
 )
 SKIPPED_AUDIT_LOG_WRITING_ENDPOINTS = (
