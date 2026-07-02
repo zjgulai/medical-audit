@@ -2,22 +2,22 @@
 
 :root {
   color-scheme: light;
-  --audit-bg: #eef6ff;
+  --audit-bg: #f3f7fb;
   --audit-surface: #ffffff;
   --audit-surface-raised: #ffffff;
-  --audit-surface-muted: #f5f9ff;
-  --audit-surface-subtle: #e8f2fd;
-  --audit-ink: #17233c;
-  --audit-ink-muted: #465772;
-  --audit-ink-subtle: #6d7f99;
-  --audit-line: #cfe0f2;
-  --audit-line-soft: #e4eef8;
-  --audit-primary: #1d75c9;
-  --audit-primary-hover: #145ea8;
-  --audit-primary-soft: #eaf5ff;
-  --audit-primary-line: #acd3f6;
+  --audit-surface-muted: #f7fafc;
+  --audit-surface-subtle: #edf3f8;
+  --audit-ink: #17233b;
+  --audit-ink-muted: #4d5d72;
+  --audit-ink-subtle: #728094;
+  --audit-line: #d5e0eb;
+  --audit-line-soft: #e7edf4;
+  --audit-primary: #155fa8;
+  --audit-primary-hover: #0f4f8c;
+  --audit-primary-soft: #eaf3fb;
+  --audit-primary-line: #bad4ed;
   --audit-blue: var(--audit-primary);
-  --audit-blue-deep: #232d54;
+  --audit-blue-deep: #173b62;
   --audit-cyan: #0d9488;
   --audit-amber: #b54708;
   --audit-red: #b42318;
@@ -25,9 +25,9 @@
   --audit-radius-lg: 10px;
   --audit-radius-md: 8px;
   --audit-radius-sm: 6px;
-  --audit-shadow-card: 0 14px 32px rgb(23 62 105 / 0.07);
-  --audit-shadow-rail: 0 8px 24px rgb(23 62 105 / 0.055);
-  --audit-font-sans: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --audit-shadow-card: 0 8px 20px rgb(23 62 105 / 0.055);
+  --audit-shadow-rail: 0 6px 16px rgb(23 62 105 / 0.045);
+  --audit-font-sans: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", "SF Pro Text", system-ui, sans-serif;
   --audit-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
 }
 
@@ -43,11 +43,11 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background:
-    linear-gradient(180deg, #f8fbff 0%, var(--audit-bg) 24rem),
-    radial-gradient(circle at 18% 0%, rgb(213 234 255 / 0.48), transparent 26rem);
+  background: linear-gradient(180deg, #f8fbfd 0%, var(--audit-bg) 22rem);
   color: var(--audit-ink);
   font-family: var(--audit-font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -115,26 +115,28 @@ select {
 .audit-page-title {
   margin-top: 0.5rem;
   color: var(--audit-ink);
-  font-size: 1.875rem;
+  font-size: 1.5rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 2.25rem;
+  line-height: 2rem;
+  text-wrap: balance;
 }
 
 .audit-section-title {
   color: var(--audit-ink);
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   font-weight: 650;
   letter-spacing: 0;
   line-height: 1.75rem;
+  text-wrap: balance;
 }
 
 .audit-card-title {
   color: var(--audit-ink);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 1.5rem;
+  line-height: 1.375rem;
 }
 
 .audit-compact-title {
@@ -166,18 +168,20 @@ select {
 
 .audit-metric-value {
   color: var(--audit-ink);
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 650;
   letter-spacing: 0;
   line-height: 2rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .audit-metric-value-sm {
   color: var(--audit-ink);
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   font-weight: 650;
   letter-spacing: 0;
   line-height: 1.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .audit-input {
@@ -263,7 +267,8 @@ select {
 .audit-table {
   width: 100%;
   text-align: left;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .audit-table thead {
@@ -333,15 +338,11 @@ select {
 }
 
 .audit-shell-grid {
-  background:
-    linear-gradient(90deg, rgb(29 117 201 / 0.045) 1px, transparent 1px),
-    linear-gradient(180deg, rgb(29 117 201 / 0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background: var(--audit-bg);
 }
 
 .audit-sidebar-shell {
-  background:
-    linear-gradient(180deg, #fbfdff 0%, #f3f9ff 100%);
+  background: #ffffff;
 }
 
 .audit-sidebar-link {
@@ -350,7 +351,7 @@ select {
 
 .audit-topbar-input {
   border: 1px solid var(--audit-line);
-  border-radius: 999px;
+  border-radius: var(--audit-radius-md);
   background: #ffffff;
   color: var(--audit-ink);
 }
@@ -371,12 +372,12 @@ select {
 
 @media (max-width: 640px) {
   .audit-page-title {
-    font-size: 1.625rem;
-    line-height: 2rem;
+    font-size: 1.375rem;
+    line-height: 1.875rem;
   }
 
   .audit-section-title {
-    font-size: 1.125rem;
-    line-height: 1.625rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
   }
 }

@@ -45,10 +45,10 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
     };
   }, [auditUser.role]);
 
-  const pageTitle = activeItem?.label ?? "今日工作台";
+  const pageTitle = activeItem?.label ?? "工作台";
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--audit-line)] bg-white/94 px-3 py-2 backdrop-blur-xl sm:px-5 md:px-8">
+    <header className="sticky top-0 z-20 min-h-14 border-b border-[var(--audit-line)] bg-white px-3 py-2 sm:px-5 md:px-8">
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           {onToggleSidebar ? (
@@ -63,12 +63,7 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
             </button>
           ) : null}
           <div className="min-w-0 leading-tight">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="truncate text-sm font-semibold text-[var(--audit-ink)] sm:text-base md:text-lg">{pageTitle}</div>
-              <span className="hidden max-w-44 truncate rounded-full border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--audit-primary)] lg:inline">
-                {project.auditTopic}
-              </span>
-            </div>
+            <div className="truncate text-sm font-semibold text-[var(--audit-ink)] sm:text-base">{pageTitle}</div>
             <p className="hidden truncate text-xs text-[var(--audit-ink-muted)] md:block">
               {project.organizationName}
             </p>
@@ -93,8 +88,8 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
             </Link>
           )}
           <details className="relative shrink-0">
-            <summary className="audit-focus-ring flex h-9 cursor-pointer list-none items-center gap-2 rounded-full border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-1.5 text-xs font-semibold text-[var(--audit-ink-muted)] hover:bg-white sm:px-2 [&::-webkit-details-marker]:hidden">
-              <span className="grid size-6 place-items-center rounded-full bg-[var(--audit-ink)] text-xs font-semibold text-white" aria-hidden="true">
+            <summary className="audit-focus-ring flex h-9 cursor-pointer list-none items-center gap-2 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-1.5 text-xs font-semibold text-[var(--audit-ink-muted)] hover:bg-white sm:px-2 [&::-webkit-details-marker]:hidden">
+              <span className="grid size-6 place-items-center rounded-[var(--audit-radius-sm)] bg-[var(--audit-blue-deep)] text-xs font-semibold text-white" aria-hidden="true">
                 {auditClientRoleLabel(auditUser.role).slice(0, 1)}
               </span>
               <span className="hidden lg:inline">{auditClientRoleLabel(auditUser.role)}</span>

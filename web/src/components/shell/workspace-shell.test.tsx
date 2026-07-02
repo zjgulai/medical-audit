@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceShell } from "./workspace-shell";
@@ -25,34 +25,36 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("navigation", { name: "主导航" })).toHaveClass("overflow-x-auto");
-    expect(screen.getByText("AI智能审计管理系统")).toBeInTheDocument();
-    expect(screen.getByText("AI 对话")).toBeInTheDocument();
-    expect(screen.getByText("我的智能体")).toBeInTheDocument();
-    expect(screen.getByText("智能体广场")).toBeInTheDocument();
-    expect(screen.getByText("知识库")).toBeInTheDocument();
-    expect(screen.getByText("AI 数据分析")).toBeInTheDocument();
-    expect(screen.getByText("项目管理")).toBeInTheDocument();
-    expect(screen.getByText("审计底稿生成")).toBeInTheDocument();
+    const mainNavigation = screen.getByRole("navigation", { name: "主导航" });
+
+    expect(mainNavigation).toHaveClass("overflow-x-auto");
+    expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
+    for (const label of ["工作台", "基金合规", "审计助手", "文档依据", "项目归档"]) {
+      expect(within(mainNavigation).getByText(label)).toBeInTheDocument();
+    }
+    for (const label of ["我的助手", "助手库", "依据库", "数据分析", "项目空间", "底稿生成"]) {
+      expect(within(mainNavigation).queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.getByText("更多功能")).toBeInTheDocument();
     expect(screen.queryByRole("tablist", { name: "已打开模块" })).not.toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "全局搜索" })).toHaveAttribute("placeholder", "搜索");
     expect(screen.getByLabelText("角色权限视图")).toBeInTheDocument();
     expect(screen.getByText(/医保基金使用合规专项自查/)).toBeInTheDocument();
-    expect(screen.getAllByText("医保基金使用合规").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("基金合规").length).toBeGreaterThan(0);
     expect(screen.getByTestId("auditscope-brand-logo")).toBeInTheDocument();
     expect(screen.getByText("管理员视图")).toBeInTheDocument();
+    const roleMenu = screen.getByLabelText("角色权限视图");
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
-      expect(screen.getByRole("button", { name: new RegExp(role) })).toBeInTheDocument();
+      expect(within(roleMenu).getByText(role)).toBeInTheDocument();
     }
     expect(screen.queryByText("连接检测中")).not.toBeInTheDocument();
     expect(screen.getByText("页面内容")).toBeInTheDocument();
 
-    expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /AI 对话/ })).toHaveAttribute("href", "/chat");
-    expect(screen.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
-    expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
-    expect(screen.getByRole("link", { name: /打开当前审计专题/ })).toHaveAttribute("href", "/fund-compliance");
-    expect(screen.getByRole("link", { name: /AI 对话/ })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /文档依据/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /审计助手/ })).toHaveAttribute("href", "/chat");
+    expect(screen.getByRole("link", { name: /文档依据/ })).toHaveAttribute("href", "/documents");
+    expect(screen.getByRole("link", { name: /基金合规/ })).toHaveAttribute("href", "/fund-compliance");
+    expect(screen.getByRole("link", { name: /审计助手/ })).not.toHaveAttribute("aria-current");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
@@ -61,12 +63,12 @@ describe("WorkspaceShell", () => {
 
     render(
       <WorkspaceShell>
-        <main>AI 对话内容</main>
+        <main>审计助手内容</main>
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("link", { name: /AI 对话/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: /文档检索/ })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /审计助手/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /文档依据/ })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the Next-native data analysis route active", () => {
@@ -78,7 +80,7 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("link", { name: /AI 数据分析/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /数据分析/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("marks the Next-native project management route active", () => {
@@ -86,11 +88,11 @@ describe("WorkspaceShell", () => {
 
     render(
       <WorkspaceShell>
-        <main>项目管理内容</main>
+        <main>项目空间内容</main>
       </WorkspaceShell>
     );
 
-    expect(screen.getByRole("link", { name: /项目管理/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /项目空间/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("keeps secondary workspace routes reachable from the sidebar", () => {
@@ -102,8 +104,8 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>
     );
 
-    expect(screen.getAllByText("专题规则库").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /专题规则库/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByText("规则库").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /规则库/ })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("tablist", { name: "已打开模块" })).not.toBeInTheDocument();
   });
 });

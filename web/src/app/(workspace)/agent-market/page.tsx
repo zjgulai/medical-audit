@@ -76,7 +76,7 @@ const SECTION_LABELS = {
   material: "需要材料",
   method: "核验步骤"
 } as const;
-const DEFAULT_AGENT_LIMIT = 12;
+const DEFAULT_AGENT_LIMIT = 8;
 
 function normalizeVisibleText(text: string): string {
   return text
@@ -91,7 +91,7 @@ function cleanLine(text: string): string {
   return normalizeVisibleText(text)
     .replace(/^#{1,6}\s*/, "")
     .replace(/^[-*]\s*/, "")
-    .replace(/^[\d一二三四五六七八九十]+[、.．]\s*/, "")
+            .replace(/^[\d一二三四五六七八九十]+[、.．]\s*/, "")
     .replace(/^[{[\]},]+|[{[\]},]+$/g, "")
     .replace(/^"?(filename|tablename|name|title)"?\s*[:：]\s*/i, "")
     .replace(/^"?(files|tables|num)"?\s*[:：]?\s*/i, "")
@@ -275,20 +275,20 @@ export default function AgentMarketPage() {
       <section className="audit-panel p-4 sm:p-6">
         <div className="grid gap-3 sm:grid-cols-[1fr_minmax(16rem,20rem)] sm:items-end">
           <div>
-            <p className="audit-kicker">智能体广场</p>
-            <h1 className="audit-page-title">审计提示词智能体</h1>
-            <p className="mt-1 audit-copy">默认展示常用助手，可搜索完整模板库。</p>
+            <p className="audit-kicker">审计助手库</p>
+            <h1 className="audit-page-title">审计助手库</h1>
+            <p className="mt-1 audit-copy">默认展示常用核验助手，可搜索完整方法库。</p>
           </div>
           <input
             className="audit-focus-ring audit-input w-full px-3 py-2.5"
             placeholder="搜索助手 / 场景 / 标签"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            aria-label="搜索智能体"
+            aria-label="搜索审计助手"
           />
         </div>
 
-        <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:mt-4 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0" role="tablist" aria-label="智能体分类">
+        <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:mx-0 sm:mt-4 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0" role="tablist" aria-label="审计助手分类">
           <CategoryChip
             label="全部"
             count={auditAgents.length}
@@ -307,35 +307,32 @@ export default function AgentMarketPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="智能体列表">
+      <section className="grid gap-2.5 md:grid-cols-2" aria-label="审计助手列表">
         {visibleAgents.map((agent) => (
           <button
             key={`${agent.source.category}-${agent.source.title}`}
             type="button"
             onClick={() => setSelected(agent)}
-            className="audit-focus-ring audit-panel flex flex-col gap-2.5 p-4 text-left transition hover:border-[var(--audit-primary-line)]"
+            className="audit-focus-ring audit-panel grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition hover:border-[var(--audit-primary-line)]"
           >
-            <div className="flex items-start gap-3">
-              <AgentAvatar agent={agent} size="compact" />
-              <h2 className="audit-card-title min-w-0 flex-1 leading-snug">{agent.displayName}</h2>
-            </div>
-            <p className="line-clamp-2 audit-copy text-[var(--audit-ink-muted)]">{agent.summary}</p>
-            <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-              <span className="min-w-0 truncate rounded-full bg-[var(--audit-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--audit-primary)]">
-                {agent.tags[0] ?? agent.source.category.replace("审计", "")}
+            <AgentAvatar agent={agent} size="compact" />
+            <div className="min-w-0">
+              <h2 className="audit-card-title truncate leading-snug">{agent.displayName}</h2>
+              <span className="mt-1 inline-flex max-w-full rounded-[var(--audit-radius-sm)] bg-[var(--audit-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--audit-primary)]">
+                <span className="truncate">{agent.tags[0] ?? agent.source.category.replace("审计", "")}</span>
               </span>
-              <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">打开</span>
             </div>
+            <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">打开</span>
           </button>
         ))}
         {filtered.length > visibleAgents.length ? (
-          <p className="audit-panel-muted p-4 audit-copy sm:col-span-2 xl:col-span-3">
+          <p className="audit-panel-muted p-4 audit-copy md:col-span-2">
             已显示前 {visibleAgents.length} 个。输入关键词可继续缩小范围。
           </p>
         ) : null}
         {filtered.length === 0 ? (
-          <p className="audit-panel-muted p-6 audit-copy sm:col-span-2 xl:col-span-3">
-            没有匹配的智能体，换个关键词或分类试试。
+          <p className="audit-panel-muted p-6 audit-copy md:col-span-2">
+            没有匹配的审计助手，换个关键词或分类试试。
           </p>
         ) : null}
       </section>
@@ -439,7 +436,7 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentCard; read
 
         <div className="mt-5 flex flex-wrap gap-3">
           <a className="audit-focus-ring audit-btn audit-btn-primary" href={chatHref}>
-            用此智能体对话
+            用此助手提问
           </a>
           <button
             type="button"
@@ -448,7 +445,7 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentCard; read
               void navigator.clipboard?.writeText(normalizedPrompt);
             }}
           >
-            复制原始提示词
+            复制核验方法
           </button>
         </div>
       </div>

@@ -1604,16 +1604,34 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "规则分类" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "费用表单" }));
+    expect(screen.getByRole("tab", { name: "费用表单" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "三份模板与自建表单" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "表1" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
     expect(screen.getByText("表样预览")).toBeInTheDocument();
     expect(screen.getByText("查看全部字段")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "表2" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "表2" }));
+    expect(screen.getByRole("tab", { name: "表2" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("表2_医保费用分类汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
+    expect(screen.getAllByText("平均费用").length).toBeGreaterThan(0);
+
     fireEvent.click(screen.getByRole("tab", { name: "表3" }));
+    expect(screen.getByRole("tab", { name: "表3" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("表3_就诊费用明细表（空白）.xlsx / 明细表")).toBeInTheDocument();
     expect(screen.getAllByText("医疗费用总额").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("自费金额").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByText("新建表单"));
     expect(screen.getByDisplayValue("门诊慢病费用复核表")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("表单名称"), { target: { value: "高值耗材费用复核表" } });
+    fireEvent.change(screen.getByLabelText("字段列表"), {
+      target: { value: "耗材名称\n规格\n数量\n单价\n统筹支付\n疑点说明" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    expect(screen.getByRole("tab", { name: "自建" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("高值耗材费用复核表")).toBeInTheDocument();
+    expect(screen.getAllByText("耗材名称").length).toBeGreaterThan(0);
   });
 
   it("keeps legacy real routes outside the primary portal navigation", async () => {
@@ -1630,9 +1648,9 @@ describe("workspace foundation pages", () => {
   it("renders the AI chat portal handoff to backend evidence chat", async () => {
     const { container } = render(<ChatPortalPage />);
 
-    expect(screen.getByRole("heading", { name: "AI 审证对话" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "审计问答" })).toBeInTheDocument();
     expect(screen.getByText("使用说明与证据边界")).toBeInTheDocument();
-    expect(screen.getByText("当前智能体")).toBeInTheDocument();
+    expect(screen.getByText("当前助手")).toBeInTheDocument();
     expect(screen.getAllByText("法规政策").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医保目录").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "进入对话" })).toBeInTheDocument();
@@ -1642,7 +1660,7 @@ describe("workspace foundation pages", () => {
       "value",
       "医保基金使用合规专项自查"
     );
-    expect(screen.getByText("可用智能体")).toBeInTheDocument();
+    expect(screen.getByText("可用助手")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText("已同步")).toBeInTheDocument();
     });
@@ -1677,15 +1695,15 @@ describe("workspace foundation pages", () => {
     render(<AnalyticsPage />);
 
     expect(screen.getByRole("heading", { name: "常用表模板" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /表1 · 医保费用汇总表/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /表2 · 医保费用分类汇总表/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /表3 · 就诊费用明细表/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /表1 医保费用汇总表/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /表2 医保费用分类汇总表/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /表3 就诊费用明细表/ })).toBeInTheDocument();
     expect(screen.getByText("当前模板：表1")).toBeInTheDocument();
     expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "模板字段" })).toBeInTheDocument();
     expect(screen.getAllByText("统筹支付").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /表3 · 就诊费用明细表/ }));
+    fireEvent.click(screen.getByRole("button", { name: /表3 就诊费用明细表/ }));
     expect(screen.getByText("当前模板：表3")).toBeInTheDocument();
     expect(screen.getByDisplayValue(/按就诊记录号、诊断、医疗费用/)).toBeInTheDocument();
 
@@ -1726,20 +1744,20 @@ describe("workspace foundation pages", () => {
   it("renders project list and creates project members through the backend API", async () => {
     render(<ProjectsPage />);
 
-    expect(screen.getByRole("heading", { name: "审计项目管理" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "项目与成员" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("项目后端已连接")).toBeInTheDocument();
+      expect(screen.getByText("项目已同步")).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(screen.getByText("成员后端已连接")).toBeInTheDocument();
+      expect(screen.getAllByText("成员已同步").length).toBeGreaterThan(0);
     });
     expect(screen.getByRole("heading", { name: "项目列表" })).toBeInTheDocument();
     expect(screen.getByText("项目名称")).toBeInTheDocument();
     expect(screen.getByText("成员数")).toBeInTheDocument();
     expect(screen.getByText("创建人")).toBeInTheDocument();
     expect(screen.getByText("创建时间")).toBeInTheDocument();
-    expect(screen.getByText("医保目录限制条件核验")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "医院权限角色矩阵" })).toBeInTheDocument();
+    expect(screen.getAllByText("医保目录限制条件核验").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "权限角色" })).toBeInTheDocument();
     expect(screen.getAllByText("管理员").length).toBeGreaterThan(0);
     expect(screen.getAllByText("技术人员").length).toBeGreaterThan(0);
     expect(screen.getAllByText("主任").length).toBeGreaterThan(0);
@@ -1748,7 +1766,7 @@ describe("workspace foundation pages", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "查看成员" }));
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "医保目录限制条件核验" })).toBeInTheDocument();
+      expect(screen.getAllByRole("heading", { name: "医保目录限制条件核验" }).length).toBeGreaterThan(0);
     });
 
     fireEvent.change(screen.getByLabelText("权限角色视图"), { target: { value: "hospital-technician" } });
@@ -1765,7 +1783,7 @@ describe("workspace foundation pages", () => {
         department: "信息科"
       });
     });
-    expect(screen.getByText("赵审计")).toBeInTheDocument();
+    expect(screen.getAllByText("赵审计").length).toBeGreaterThan(0);
     expect(screen.getAllByText("信息科").length).toBeGreaterThan(0);
     expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
   });
@@ -1773,13 +1791,13 @@ describe("workspace foundation pages", () => {
   it("filters agent marketplace templates and keeps agent chat handoff in the portal", async () => {
     render(<AgentMarketPage />);
 
-    expect(screen.getByRole("heading", { name: "审计提示词智能体" })).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "智能体分类" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "审计助手库" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "审计助手分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
-    expect(screen.getByText("默认展示常用助手，可搜索完整模板库。")).toBeInTheDocument();
-    expect(screen.getByText(/已显示前 12 个/)).toBeInTheDocument();
+    expect(screen.getByText("默认展示常用核验助手，可搜索完整方法库。")).toBeInTheDocument();
+    expect(screen.getByText(/已显示前 8 个/)).toBeInTheDocument();
 
-    const agentList = document.querySelector('[aria-label="智能体列表"]');
+    const agentList = document.querySelector('[aria-label="审计助手列表"]');
     expect(agentList).not.toBeNull();
     const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
     expect(visibleNames.length).toBeGreaterThan(0);
@@ -1802,10 +1820,10 @@ describe("workspace foundation pages", () => {
     expect(fundCategory).toHaveAttribute("aria-selected", "true");
 
     fireEvent.click(screen.getByRole("tab", { name: /全部/ }));
-    fireEvent.change(screen.getByLabelText("搜索智能体"), {
+    fireEvent.change(screen.getByLabelText("搜索审计助手"), {
       target: { value: "绝不匹配的关键词zzz" }
     });
-    expect(screen.getByText("没有匹配的智能体，换个关键词或分类试试。")).toBeInTheDocument();
+    expect(screen.getByText("没有匹配的审计助手，换个关键词或分类试试。")).toBeInTheDocument();
 
     render(<AgentsPage />);
     await waitFor(() => {
@@ -2043,13 +2061,13 @@ describe("workspace foundation pages", () => {
   it("renders read-only knowledge base asset metrics", async () => {
     render(<KnowledgeBasePage />);
 
-    expect(screen.getByRole("heading", { name: "个人、系统、公开知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识库总览" })).toBeInTheDocument();
     expect(screen.getAllByText("个人知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("系统知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("公开知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("文档数").length).toBeGreaterThan(0);
     expect(screen.getAllByText("字符数").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("关联应用数").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("应用数").length).toBeGreaterThan(0);
     expect(screen.getAllByText("系统医保审计知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("法规政策、医保目录、监管规则和风险负面清单组成的系统检索底座。").length).toBeGreaterThan(0);
     await waitFor(() => {
@@ -2065,17 +2083,17 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
     });
-    expect(screen.getByRole("heading", { name: "个人、系统、公开知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识库总览" })).toBeInTheDocument();
   });
 
   it("runs document search through the backend query API and renders citations", async () => {
     render(<DocumentsPage />);
 
-    expect(screen.getByRole("heading", { name: "材料与知识库统一检索" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "知识库分类统计" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "文档依据检索" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "选择检索来源" })).toBeInTheDocument();
     expect(screen.getByLabelText("审计问题或文档关键词")).toBeInTheDocument();
     expect(screen.getByLabelText("仅标题")).toBeInTheDocument();
-    expect(screen.getByText("无引用不下结论")).toBeInTheDocument();
+    expect(screen.getByText("需人工复核")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索历史" })).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
@@ -2086,7 +2104,7 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(fetchDocumentUploads).toHaveBeenCalled();
     });
-    expect(screen.getByText("权限已连接")).toBeInTheDocument();
+    expect(screen.getByText("可用")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "个人材料" })).toBeInTheDocument();
     expect(screen.getByText("policy-retained.pdf")).toBeInTheDocument();
     expect(screen.getByText("待治理")).toBeInTheDocument();
@@ -2098,7 +2116,7 @@ describe("workspace foundation pages", () => {
     );
     expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
     expect(screen.getByText("监管两库")).toBeInTheDocument();
-    expect(screen.getByText("risk-negative-list")).toBeInTheDocument();
+    expect(screen.getByText("风险清单")).toBeInTheDocument();
     expect(screen.getByText("等待检索")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("仅标题"));
@@ -2107,7 +2125,7 @@ describe("workspace foundation pages", () => {
     });
     expect(screen.getByText("医保目录限制条件资料包")).toBeInTheDocument();
     expect(screen.getByText("当前关键词没有匹配的标题文档，可切换为全文模式或直接执行后端检索。")).toBeInTheDocument();
-    expect(screen.getByText("仅标题模式会同步传入后端 title_only=true，并只在标题和路径元数据上匹配引用。")).toBeInTheDocument();
+    expect(screen.getByText("只按标题找材料。")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("仅标题"));
 
     const documentFile = new File(["policy"], "policy.pdf", { type: "application/pdf" });
@@ -2143,13 +2161,13 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "个人材料命中" })).toBeInTheDocument();
     expect(screen.getByText("个人材料提示：医保基金审核依据需核对院内报销清单。")).toBeInTheDocument();
     expect(screen.getByText("医疗机构应当保留医保基金审核依据。")).toBeInTheDocument();
-    expect(screen.getByText("来源: medical-insurance-laws")).toBeInTheDocument();
+    expect(screen.getByText("来源：法规政策")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "核验原文" })).toHaveAttribute("href", "/pages/preview/chunk-doc-001");
     expect(screen.getByRole("heading", { name: "对话文档" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "知识库文档" })).toBeInTheDocument();
     expect(screen.getByText("重复收费疑点复核对话")).toBeInTheDocument();
     expect(screen.getByText("医保目录限制条件资料包")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "转入 AI 对话" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "转入对话" })[0]).toHaveAttribute(
       "href",
       expect.stringContaining("/chat?question=")
     );
@@ -2197,14 +2215,14 @@ describe("workspace foundation pages", () => {
   it("renders the report homepage with API-first templates, downloads and gates", async () => {
     render(<ReportsPage />);
 
-    expect(screen.getByRole("heading", { name: "底稿生成与报告记录" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "底稿与报告" })).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchReportWorkbench).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText("已签发报告")).toBeInTheDocument();
     expect(screen.getAllByText("门禁阻断").length).toBeGreaterThan(0);
     expect(screen.getAllByText("纳入疑点").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "提示词模板生成" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "底稿模板" })).toBeInTheDocument();
     expect(screen.getByText("费用汇总风险底稿")).toBeInTheDocument();
     expect(screen.getByText("分类费用复核清单")).toBeInTheDocument();
     expect(screen.getByText("就诊明细疑点摘要")).toBeInTheDocument();
@@ -2212,7 +2230,7 @@ describe("workspace foundation pages", () => {
     expect(screen.getAllByText("模板字段已注册").length).toBeGreaterThan(0);
     expect(screen.getByText("隐私字段处理记录")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "套用模板" })[0]).toHaveAttribute("href", expect.stringContaining("/chat?agent="));
-    expect(screen.getByRole("heading", { name: "历史生成记录" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "报告记录" })).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "报告门禁预检" }).length).toBeGreaterThan(0);
     expect(screen.getByText("底稿与负责人确认")).toBeInTheDocument();
     expect(screen.getByText("附件登记与报告草稿")).toBeInTheDocument();

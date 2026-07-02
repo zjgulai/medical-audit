@@ -20,7 +20,7 @@ export default function LoginPage() {
                 <BrandLogo priority />
               </span>
               <span>
-                <span className="block text-sm font-semibold">AI智能审计管理系统</span>
+                <span className="block text-sm font-semibold">医保智能审计平台</span>
                 <span className="block text-xs text-white/72">AuditScope Medical</span>
               </span>
             </div>
@@ -28,10 +28,10 @@ export default function LoginPage() {
             <div className="mt-14 max-w-2xl">
               <p className="text-sm font-semibold text-sky-100">医保基金审计专题</p>
               <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-[0] sm:text-5xl">
-                面向医院内审的 AI 审证工作台
+                面向医院内审的医保审计工作台
               </h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-sky-50/84">
-                围绕知识库问答、智能体模板、文档检索、表格分析和审计底稿生成组织日常审计工作，AI 输出保持人工复核边界。
+                围绕依据检索、审计助手、表格分析和底稿生成组织日常工作，系统建议保持人工复核边界。
               </p>
             </div>
           </div>

@@ -22,9 +22,9 @@ export function AiChatFab() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="打开 AI 对话"
-        className="audit-focus-ring fixed bottom-6 right-6 z-30 grid size-14 place-items-center rounded-full bg-[var(--audit-primary)] text-white shadow-[0_14px_32px_rgb(29_117_201/0.42)] transition hover:scale-105"
+        className="audit-focus-ring fixed bottom-4 right-4 z-30 grid size-11 place-items-center rounded-full bg-[var(--audit-primary)] text-white shadow-[0_14px_32px_rgb(29_117_201/0.42)] transition hover:scale-105 sm:bottom-6 sm:right-6 sm:size-14"
       >
-        <span aria-hidden="true" className="text-base font-bold tracking-tight">
+        <span aria-hidden="true" className="text-sm font-bold tracking-tight sm:text-base">
           AI
         </span>
       </button>

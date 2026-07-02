@@ -81,11 +81,12 @@ export default function FundComplianceReviewPage() {
     <main className="space-y-5">
       <section className="audit-panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="max-w-2xl">
             <p className="audit-kicker">医保基金使用合规</p>
             <h1 className="audit-page-title">专题审计工作台</h1>
+            <p className="audit-copy mt-2">先处理疑点单据，再进入表单、规则和底稿环节。</p>
           </div>
-          <div className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-full border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-1" role="tablist" aria-label="专题流程">
+          <div className="flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-1" role="tablist" aria-label="专题流程">
             {workflowTabs.map((tab) => (
               <button
                 key={tab}
@@ -93,7 +94,7 @@ export default function FundComplianceReviewPage() {
                 role="tab"
                 aria-selected={activeWorkflow === tab}
                 onClick={() => setActiveWorkflow(tab)}
-                className={`audit-focus-ring shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold ${
+                className={`audit-focus-ring shrink-0 rounded-[var(--audit-radius-sm)] px-3 py-1.5 text-sm font-semibold ${
                   activeWorkflow === tab ? "bg-[var(--audit-primary)] text-white" : "text-[var(--audit-ink-muted)] hover:bg-white"
                 }`}
               >

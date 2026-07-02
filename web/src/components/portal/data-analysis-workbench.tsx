@@ -44,11 +44,11 @@ type AnalysisTab = "code" | "terminal" | "chart" | "data" | "report";
 type HistoryStatus = "loading" | "ready" | "unavailable";
 
 const analysisTabs: readonly { readonly id: AnalysisTab; readonly label: string }[] = [
-  { id: "code", label: "代码" },
-  { id: "terminal", label: "终端" },
+  { id: "code", label: "步骤" },
+  { id: "terminal", label: "日志" },
   { id: "chart", label: "图表" },
-  { id: "data", label: "数据" },
-  { id: "report", label: "分析报告" }
+  { id: "data", label: "字段" },
+  { id: "report", label: "报告" }
 ];
 
 function fileExtension(fileName: string) {
@@ -352,13 +352,20 @@ map_audit_signals()`}</pre>
   }
 
   return (
-    <main className="grid min-w-0 gap-4 xl:grid-cols-[18rem_minmax(0,1fr)_17rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">数据分析助手</h2>
-        <p className="audit-copy mt-2">按医保费用模板组织上传、预检、产物和报告。首期不执行生产级自动审计。</p>
+    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+      <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="audit-kicker">费用表单</p>
+            <h2 className="audit-section-title mt-1">选择表单模板</h2>
+          </div>
+          <StatusPill tone={isUploading ? "info" : profile?.status === "parsed" ? "success" : profile?.status === "error" ? "danger" : "neutral"}>
+            {isUploading ? "分析中" : profile?.status === "parsed" ? "已分析" : profile?.status === "error" ? "需重试" : "待上传"}
+          </StatusPill>
+        </div>
         <section className="mt-5" aria-labelledby="table-template-title">
           <h3 id="table-template-title" className="audit-compact-title">常用表模板</h3>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
             {auditTableTemplates.map((template) => {
               const isSelected = selectedTemplateId === template.id;
               return (
@@ -374,59 +381,38 @@ map_audit_signals()`}</pre>
                   onClick={() => selectTemplate(template)}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-[var(--audit-ink)]">{template.shortName} · {template.name}</span>
+                    <span className="text-sm font-semibold text-[var(--audit-ink)]">{template.shortName} {template.name}</span>
                     <span className="audit-meta">{template.sheetName}</span>
                   </span>
-                  <span className="mt-2 block audit-meta">{template.auditUse}</span>
+                  <span className="mt-2 block line-clamp-1 audit-meta">{template.auditUse}</span>
                 </button>
               );
             })}
           </div>
         </section>
-        <div className="mt-5 space-y-3">
-          {[
-            ["da_list_files", isUploading ? "处理中" : profile ? "完成" : "等待"],
-            [
-              "da_preview_data",
-              isUploading ? "处理中" : profile?.status === "parsed" ? "完成" : profile ? "失败" : "等待"
-            ],
-            [
-              "da_profile_columns",
-              isUploading ? "处理中" : profile?.columns.length ? "完成" : profile ? "失败" : "等待"
-            ],
-            ["da_write_report", isUploading ? "处理中" : profile?.status === "parsed" ? "草稿" : profile ? "失败" : "等待"]
-          ].map(([tool, status]) => (
-            <div key={tool} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3">
-              <p className="font-mono text-xs font-semibold text-[var(--audit-primary)]">{tool}</p>
-              <p className="audit-meta mt-1">状态：{status}</p>
-            </div>
-          ))}
-        </div>
-        <label className="mt-5 block">
+        <label className="mt-4 block">
           <span className="audit-label">分析要求</span>
           <textarea
-            className="audit-focus-ring audit-input mt-2 min-h-28 resize-y px-3 py-2"
+            className="audit-focus-ring audit-input mt-2 min-h-20 resize-y px-3 py-2"
             value={analysisRequirement}
             onChange={(event) => setAnalysisRequirement(event.target.value)}
           />
         </label>
-      </aside>
+      </section>
 
-      <section className="audit-panel min-w-0 p-6">
+      <section className="audit-panel min-w-0 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="audit-kicker">AI 数据分析</p>
-            <h1 className="audit-page-title">上传表格分析工作台</h1>
-            <p className="audit-copy mt-2 max-w-3xl">
-              左侧选择医保费用模板，中间展示代码、终端、图表、数据和报告，右侧管理上传文件。
-            </p>
+            <p className="audit-kicker">数据分析</p>
+            <h1 className="audit-page-title">费用表单分析</h1>
+            <p className="audit-copy mt-2 max-w-2xl">上传费用表，先查看字段、空值和重复行，再生成审计线索。</p>
           </div>
           <StatusPill tone={isUploading ? "info" : profile?.status === "parsed" ? "success" : profile?.status === "error" ? "danger" : "warning"}>
             {isUploading ? "分析中" : profile?.status === "parsed" ? "已分析" : profile?.status === "error" ? "失败" : "分析线索"}
           </StatusPill>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2 border-b border-[var(--audit-line)] pb-3" role="tablist" aria-label="分析产物">
+        <div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--audit-line)] pb-3" role="tablist" aria-label="分析产物">
           {analysisTabs.map((tab) => (
             <button
               key={tab.id}
@@ -449,14 +435,14 @@ map_audit_signals()`}</pre>
           <section className="mt-5 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-[var(--audit-primary)]">当前模板：{selectedTemplate.shortName}</p>
-                <h2 className="audit-card-title mt-1">{selectedTemplate.name}</h2>
-                <p className="audit-meta mt-1">{selectedTemplate.fileName} / {selectedTemplate.sheetName}</p>
+              <p className="text-sm font-semibold text-[var(--audit-primary)]">当前模板：{selectedTemplate.shortName}</p>
+              <h2 className="audit-card-title mt-1">{selectedTemplate.name}</h2>
+              <p className="audit-meta mt-1">{selectedTemplate.fileName} / {selectedTemplate.sheetName}</p>
               </div>
               <StatusPill tone="info">模板引导</StatusPill>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {selectedTemplate.expectedColumns.slice(0, 10).map((column) => (
+              {selectedTemplate.expectedColumns.slice(0, 6).map((column) => (
                 <span key={column} className="audit-chip bg-white">
                   {column}
                 </span>
@@ -468,11 +454,11 @@ map_audit_signals()`}</pre>
         <div className="mt-5">{renderTabContent()}</div>
       </section>
 
-      <aside className="min-w-0 space-y-4">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2">
         <label className="audit-focus-ring audit-upload-drop p-5">
           <span className="audit-card-title block">上传{selectedTemplate?.shortName ?? ""}填报文件</span>
           <span className="audit-copy mt-2 block">
-            支持 `.csv`、`.xlsx`、`.xlsm`；表格会交由后端解析，生成字段、行数、空值、重复行和审计线索概览。
+            支持 CSV、XLSX、XLSM；上传后生成字段、行数、空值、重复行和审计线索。
           </span>
           <input
             aria-label="上传审计表格"
@@ -509,16 +495,16 @@ map_audit_signals()`}</pre>
           </div>
         </section>
         <a className="audit-focus-ring audit-action-card p-5" href="/findings">
-          <p className="audit-kicker">审计数据分析入口</p>
+          <p className="audit-kicker">疑点清单</p>
           <h2 className="audit-section-title mt-2">查看规则命中疑点</h2>
           <p className="audit-copy mt-2">进入已上线的疑点清单、源记录定位和计算过程。</p>
         </a>
         <a className="audit-focus-ring audit-action-card p-5" href="/pages/index-admin">
-          <p className="audit-kicker">索引与数据状态</p>
+          <p className="audit-kicker">索引状态</p>
           <h2 className="audit-section-title mt-2">查看知识库运行态</h2>
           <p className="audit-copy mt-2">运维发布、回滚和验收仍保留在索引管理后台。</p>
         </a>
-      </aside>
+      </section>
     </main>
   );
 }

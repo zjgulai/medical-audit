@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchAgents } from "@/lib/api-client";
 import type { AuditAgentApiItem } from "@/lib/api-types";
@@ -15,11 +14,11 @@ import {
 
 const questionBuilderSteps = [
   {
-    label: "选择智能体",
-    detail: "按医保基金、收费明细、目录限制或底稿生成选择提示词模板。"
+    label: "选择助手",
+    detail: "按医保基金、收费明细、目录限制或底稿生成选择核验方法。"
   },
   {
-    label: "限定知识来源",
+    label: "限定依据范围",
     detail: "只在法规政策、监管两库、医保目录和风险清单内组织引用。"
   },
   {
@@ -86,28 +85,28 @@ export default function ChatPortalPage() {
       <section className="audit-panel min-w-0 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="audit-kicker">AI 对话</p>
-            <h1 className="audit-page-title">AI 审证对话</h1>
+            <p className="audit-kicker">审计助手</p>
+            <h1 className="audit-page-title">审计问答</h1>
+            <p className="audit-copy mt-2 max-w-2xl">围绕医保基金审计问题发起核验，回答进入底稿前仍需人工复核。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <StatusPill tone="success">引用优先</StatusPill>
+            <StatusPill tone="success">依据优先</StatusPill>
             <StatusPill tone={agentStatus === "ready" ? "success" : "neutral"}>
               {agentStatus === "ready" ? "已同步" : agentStatus === "loading" ? "同步中" : "默认"}
             </StatusPill>
-            <DataSourceBadge source="hybrid" />
           </div>
         </div>
 
         <section className="mt-4 rounded-[var(--audit-radius-md)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-[var(--audit-primary)]">当前智能体</p>
+              <p className="text-xs font-semibold text-[var(--audit-primary)]">当前助手</p>
               <h2 className="mt-1 truncate text-base font-semibold text-[var(--audit-ink)]">{activeAgent.name}</h2>
               <p className="audit-meta mt-1 truncate">{activeAgent.topic}</p>
             </div>
             <details className="shrink-0">
               <summary className="audit-focus-ring cursor-pointer list-none rounded-full border border-[var(--audit-primary-line)] bg-white px-3 py-1 text-xs font-semibold text-[var(--audit-primary)] [&::-webkit-details-marker]:hidden">
-                查看提示词
+                查看核验方法
               </summary>
               <p className="audit-copy mt-3 max-w-3xl">{activeAgent.prompt}</p>
             </details>
@@ -117,7 +116,7 @@ export default function ChatPortalPage() {
         <form className="mt-5 grid gap-4" action="/pages/chat" method="get">
           <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
             <label className="block">
-              <span className="audit-label">智能体</span>
+              <span className="audit-label">审计助手</span>
               <select
                 className="audit-focus-ring audit-input mt-2 px-3 py-2.5"
                 name="agent"
@@ -146,7 +145,7 @@ export default function ChatPortalPage() {
           </div>
 
           <fieldset>
-            <legend className="audit-label">知识来源</legend>
+            <legend className="audit-label">依据范围</legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {documentCategoryStats.map((source) => (
                 <label
@@ -181,7 +180,7 @@ export default function ChatPortalPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 id="quick-question-title" className="audit-section-title">快速问题</h2>
             <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-xs font-semibold text-[var(--audit-primary)] hover:bg-[var(--audit-primary-soft)]" href="/agent-market">
-              查看广场
+              查看助手库
             </a>
           </div>
           <div className="mt-3 grid gap-2 lg:grid-cols-3">
@@ -220,7 +219,7 @@ export default function ChatPortalPage() {
 
       <details className="audit-panel-rail p-4">
         <summary className="audit-focus-ring cursor-pointer list-none text-sm font-semibold text-[var(--audit-ink)] [&::-webkit-details-marker]:hidden">
-          可用智能体
+          可用助手
         </summary>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
           {agents.slice(0, 6).map((agent) => (
@@ -272,7 +271,7 @@ function AgentCard({ agent }: { readonly agent: AuditAgent }) {
         className="audit-focus-ring audit-btn audit-btn-secondary mt-4 min-h-8 px-3 py-1.5 text-xs"
         href={`/pages/chat?agent=${encodeURIComponent(agent.id)}&project_name=${encodeURIComponent(agent.projectName)}`}
       >
-        用此智能体提问
+        用此助手提问
       </a>
     </article>
   );
