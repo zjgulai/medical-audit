@@ -339,3 +339,12 @@ This manifest does not prove production has been updated. Production readiness c
   - Post-merge main worktree: `/Users/pray/project/medical_audit_minimal_pr` on `main@e2cdb9d1`.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: PR merge only; no production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke.
+- Loop 49 post-merge local gates and deploy preflight:
+  - Worktree: `/Users/pray/project/medical_audit_minimal_pr`.
+  - Branch: `main`.
+  - Head and `origin/main`: `4d54922dd5cc0ad2399e1a6b4494d2beeef59df2`.
+  - Verification: `git diff --check`, typecheck, lint, unit tests (`11` files / `94` tests), build (`23/23` static pages), and Foundation Playwright (`17/17`) passed.
+  - Deploy preflight stamp: `loop49-pr182-main-4d54922-preflight-20260702T022100Z`.
+  - Deploy preflight result: `mode=preflight`, target `ubuntu@101.34.52.232`, remote app dir `/opt/medical-audit/app`, remote web dir `/var/www/audit`, base URL `https://audit.lute-tlz-dddd.top`, and `Preflight passed. Add --execute --confirm-production to deploy.`
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local validation plus deploy preflight only; no production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke.

@@ -859,3 +859,38 @@ Boundary:
 
 - Loop 48 changed GitHub `main` by merging PR `#182`.
 - No production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 49 Post-Merge Local Gates And Deploy Preflight
+
+Decision:
+
+- Execute the authorized post-merge validation and deploy-preflight gate for `main@4d54922dd5cc0ad2399e1a6b4494d2beeef59df2`.
+- Keep this loop at local validation plus deploy preflight only.
+- Stop before production `--execute`, production probe, provider call, Docker change, or write-path smoke.
+
+Execution:
+
+- Worktree: `/Users/pray/project/medical_audit_minimal_pr`.
+- Branch: `main`.
+- Head and `origin/main`: `4d54922dd5cc0ad2399e1a6b4494d2beeef59df2`.
+- Node: `v22.22.0`.
+- pnpm: `9.15.0` through Corepack.
+- Deploy preflight stamp: `loop49-pr182-main-4d54922-preflight-20260702T022100Z`.
+
+Verification:
+
+- `git diff --check`: passed.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web typecheck`: passed.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web lint`: passed.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web test`: passed (`11` files / `94` tests).
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web build`: passed (`23/23` static pages).
+- `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web exec playwright test tests/e2e/foundation.spec.ts`: passed (`17/17`).
+- Deploy preflight command: `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" uv run python scripts/deploy-tencent-cloud-production.py --stamp loop49-pr182-main-4d54922-preflight-20260702T022100Z --report tmp/outputs/production-e2e-smoke-after-deploy-loop49-pr182-main-4d54922-preflight-20260702T022100Z.json`.
+- Deploy preflight output: `mode=preflight`, target `ubuntu@101.34.52.232`, remote app dir `/opt/medical-audit/app`, remote web dir `/var/www/audit`, base URL `https://audit.lute-tlz-dddd.top`, and `Preflight passed. Add --execute --confirm-production to deploy.`
+- Report file check: no post-deploy smoke JSON was generated for the preflight stamp, which is expected because deployment was not executed.
+
+Boundary:
+
+- Loop 49 is local validation plus deploy preflight only.
+- Local Foundation Playwright logs included expected proxy messages for `127.0.0.1:8021` because the backend target was not started; they are not backend acceptance evidence.
+- No production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
