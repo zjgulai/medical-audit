@@ -1357,6 +1357,34 @@ Boundary:
 - Local Git gate only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
 
+## 2026-07-02 Loop 44 Government UI Draft PR Publish Gate
+
+Finding Status:
+
+- Local commit `99f5b3f5` was ready for review publishing after Loop43.
+- The GitHub connector did not have sufficient permission to create the PR, so the authenticated `gh` fallback was required.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_pr_publish_loop44_20260702.md`
+
+Supported Claim:
+
+- Branch `codex/frontend-2.0` was pushed to `origin`.
+- Draft PR `#182` was opened against `main`: `https://github.com/zjgulai/medical-audit/pull/182`.
+- GitHub connector PR creation failed with `403 Resource not accessible by integration`; `gh pr create --draft` succeeded.
+- `gh pr view` reported `mergeable=CONFLICTING` and empty status check rollup after creation.
+
+Unsupported Claim:
+
+- This loop does not establish ready-for-review state, merge state, production UI status, production deploy completion, backend integration coverage, provider proof, or write-path proof.
+- This loop does not resolve PR conflicts.
+
+Boundary:
+
+- Draft PR publish gate only.
+- No ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
 ## 2026-07-01 Loop 41 Government-Style Remaining Workspace Pages Batch 3
 
 Finding Status:

@@ -292,3 +292,10 @@ This manifest does not prove production has been updated. Production readiness c
   - Verification: staged count `33`; staged artifact count `0`; `git diff --cached --check`, typecheck, lint, full unit tests `94`, and build `23` static pages passed before commit.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: local Git gate; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 44 government-style draft PR publish gate:
+  - Gate doc: `.kiro/plan/gov_ui_pr_publish_loop44_20260702.md`.
+  - Evidence source: GitHub CLI auth/repo checks, remote push output, connector PR creation denial, and `gh pr create` success output.
+  - Result: pushed `codex/frontend-2.0` to origin and opened Draft PR `#182`: `https://github.com/zjgulai/medical-audit/pull/182`.
+  - Verification: `gh --version`, `gh auth status`, `gh pr list --head codex/frontend-2.0`, and `git push -u origin codex/frontend-2.0` completed; connector PR creation returned `403`, then CLI fallback created the draft PR; `gh pr view` reported `mergeable=CONFLICTING` and empty status check rollup.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: draft PR publish gate; no conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
