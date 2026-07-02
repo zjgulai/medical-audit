@@ -246,3 +246,49 @@ This manifest does not prove production has been updated. Production readiness c
   - Commit message: `docs: preserve loop governance evidence`.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: local commit only; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 38 government-style UI and typography batch plan:
+  - Gate doc: `.kiro/plan/gov_ui_typography_batch_plan_loop38_20260701.md`.
+  - Evidence source: current repo UI structure, external government-style reference principles, and Web Interface Guidelines typography/accessibility constraints.
+  - Result: typography/font-size optimization is merged into the full-site UI/UX batch plan, with Batch 1 scoped to global tokens, type scale, and shell/nav simplification.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: docs-only plan; no business-code edit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 39 government-style shell batch 1:
+  - Gate doc: `.kiro/plan/gov_ui_shell_batch_loop39_20260701.md`.
+  - Evidence source: local source diff, targeted shell/navigation tests, typecheck, and local browser responsive checks.
+  - Result: shared tokens, type scale, visible sidebar entries, folded utility navigation, top-bar density, site metadata, and login brand wording were updated locally; `git diff --check`, targeted tests `18`, full unit tests `94`, typecheck, lint, and browser overflow checks passed for `/workspace`, `/chat`, and `/fund-compliance/review`.
+  - Browser artifacts: `output/playwright/loop39-gov-shell-20260701T183200+0800/`.
+  - Local-dev note: `favicon.ico` 404 and backend-proxy 500 responses were observed because this check did not start the backend target; these are not backend acceptance evidence.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local UI/test loop; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 40 government-style core pages batch 2:
+  - Gate doc: `.kiro/plan/gov_ui_core_pages_batch_loop40_20260701.md`.
+  - Evidence source: local source diff, full frontend unit tests, typecheck, lint, diff whitespace check, and local browser responsive checks.
+  - Result: `/fund-compliance`, `/fund-compliance/review`, `/chat`, and `/agent-market` were simplified locally for first-viewport density and user-facing wording; assistant library cards were reduced to compact entry cards; sidebar utility label changed to `助手库`; mobile AI floating entry was reduced to `44px`.
+  - Verification: `git diff --check`, full unit tests `94`, typecheck, lint, and browser overflow checks passed for 7 desktop/mobile route viewports. Assistant library first-viewport text density measured `521` desktop and `293` mobile after the compact-card pass.
+  - Browser artifacts: `output/playwright/loop40-gov-core-pages-20260701T184500+0800/`.
+  - Local-dev note: backend-proxy messages for `/auth/session` were observed because this loop did not start the backend target; these are not backend acceptance evidence.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local UI/test loop; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 41 government-style remaining workspace pages batch 3:
+  - Gate doc: `.kiro/plan/gov_ui_remaining_pages_batch_loop41_20260701.md`.
+  - Evidence source: local source diff, focused workspace page tests, full frontend unit tests, typecheck, lint, build, diff whitespace check, and local browser responsive checks.
+  - Result: `/documents`, `/knowledge-base`, `/analytics`, `/reports`, and `/projects` were simplified locally for first-viewport density and user-facing wording; project and member mobile tables were replaced with mobile cards while desktop tables remain.
+  - Verification: `git diff --check`, focused workspace tests `30`, full unit tests `94`, typecheck, lint, build `23` static pages, and browser overflow checks passed for 10 desktop/mobile route viewports.
+  - Browser artifacts: `tmp/outputs/loop41-ui-density/`.
+  - Local-dev note: backend proxy messages were observed because this loop did not start the backend target on `127.0.0.1:8021`; these are not backend acceptance evidence.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local UI/test loop; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 42 government-style clean promotion plan:
+  - Gate doc: `.kiro/plan/gov_ui_clean_promotion_plan_loop42_20260702.md`.
+  - Evidence source: git candidate-set inventory, empty index check, local frontend typecheck, lint, full unit tests, build, and diff whitespace check.
+  - Result: Loop39-41 UI work has a clean promotion candidate set of `31` paths; `output/` and `tmp/outputs/` remain excluded local evidence artifacts.
+  - Verification: `git diff --check`, `git diff --cached --name-only` empty output, typecheck, lint, full unit tests `94`, and build `23` static pages passed.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local promotion-plan loop; no staging, commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 43 government-style local commit gate:
+  - Gate doc: `.kiro/plan/gov_ui_local_commit_loop43_20260702.md`.
+  - Evidence source: staged diff inventory, cached diff check, local frontend typecheck, lint, full unit tests, build, and local commit metadata.
+  - Result: created one local commit containing the intended UI, script, test, and planning files; `output/` and `tmp/outputs/` stayed excluded.
+  - Verification: staged count `33`; staged artifact count `0`; `git diff --cached --check`, typecheck, lint, full unit tests `94`, and build `23` static pages passed before commit.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local Git gate; no push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.

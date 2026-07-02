@@ -19,7 +19,7 @@ export type NavigationGroup = {
 
 export const workspaceHomeNavigation: NavigationItem = {
   id: "workspace",
-  label: "今日工作台",
+  label: "工作台",
   href: "/workspace",
   symbol: "台",
   description: "查看当前项目、待办事项、风险线索和工作进展。",
@@ -29,7 +29,7 @@ export const workspaceHomeNavigation: NavigationItem = {
 
 export const fundComplianceNavigation: NavigationItem = {
   id: "fund-compliance",
-  label: "基金合规专题",
+  label: "基金合规",
   href: "/fund-compliance",
   symbol: "专",
   description: "打开医保基金使用合规专题工作台，查看规则、表单和待复核单据。",
@@ -40,16 +40,16 @@ export const fundComplianceNavigation: NavigationItem = {
 export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "ai-chat",
-    label: "AI 对话",
+    label: "审计助手",
     href: "/chat",
-    symbol: "AI",
-    description: "选择提示词型智能体，生成带引用依据的审计回答。",
+    symbol: "问",
+    description: "选择审计助手，生成带引用依据的审计回答。",
     emphasis: "primary",
     target: "workspace"
   },
   {
     id: "my-agents",
-    label: "我的智能体",
+    label: "我的助手",
     href: "/agents",
     symbol: "智",
     description: "管理个人常用审计提示词和场景助手。",
@@ -58,16 +58,16 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "agent-market",
-    label: "智能体广场",
+    label: "助手库",
     href: "/agent-market",
-    symbol: "广",
+    symbol: "库",
     description: "查看医疗和医保审计场景模板。",
     emphasis: "standard",
     target: "workspace"
   },
   {
     id: "knowledge-base",
-    label: "知识库",
+    label: "依据库",
     href: "/knowledge-base",
     symbol: "库",
     description: "查看个人、系统、公开知识库和索引状态。",
@@ -76,7 +76,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "documents",
-    label: "文档检索",
+    label: "文档依据",
     href: "/documents",
     symbol: "检",
     description: "检索材料、知识库文档、引用片段和原文入口。",
@@ -85,7 +85,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "analytics",
-    label: "AI 数据分析",
+    label: "数据分析",
     href: "/analytics",
     symbol: "数",
     description: "上传表格并查看审计数据分析线索。",
@@ -94,7 +94,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "graph",
-    label: "知识图谱",
+    label: "关系图谱",
     href: "/graph",
     symbol: "图",
     description: "查看项目、文档、规则、疑点和复核关系。",
@@ -103,7 +103,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "reports",
-    label: "审计底稿生成",
+    label: "底稿生成",
     href: "/reports",
     symbol: "稿",
     description: "按提示词模板生成底稿草稿，并衔接报告签发和整改导出。",
@@ -112,7 +112,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "projects",
-    label: "项目管理",
+    label: "项目空间",
     href: "/projects",
     symbol: "项",
     description: "管理审计项目、成员、角色和项目空间。",
@@ -124,7 +124,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
 export const secondaryNavigation: readonly NavigationItem[] = [
   {
     id: "guided-check",
-    label: "AI 引导自查",
+    label: "引导自查",
     href: "/guided-check",
     symbol: "查",
     description: "从自查问题进入 AI 审证对话。",
@@ -133,7 +133,7 @@ export const secondaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "rules",
-    label: "专题规则库",
+    label: "规则库",
     href: "/rules",
     symbol: "规",
     description: "查看规则来源、运行状态、疑点去向和发布门禁。",
@@ -151,7 +151,7 @@ export const secondaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "archive",
-    label: "项目档案",
+    label: "项目归档",
     href: "/archive",
     symbol: "档",
     description: "查看审计日志、归档线索和导出记录。",
@@ -197,38 +197,54 @@ function requireNavigationItemById(id: string): NavigationItem {
   return item;
 }
 
+export const visiblePrimaryNavigation: readonly NavigationItem[] = [
+  requireNavigationItemById("workspace"),
+  requireNavigationItemById("fund-compliance"),
+  requireNavigationItemById("ai-chat"),
+  requireNavigationItemById("documents"),
+  requireNavigationItemById("archive")
+];
+
+export const sidebarUtilityNavigation: readonly NavigationItem[] = [
+  requireNavigationItemById("agent-market"),
+  requireNavigationItemById("my-agents"),
+  requireNavigationItemById("knowledge-base"),
+  requireNavigationItemById("analytics"),
+  requireNavigationItemById("reports"),
+  requireNavigationItemById("projects"),
+  requireNavigationItemById("guided-check"),
+  requireNavigationItemById("rules"),
+  requireNavigationItemById("remediation"),
+  requireNavigationItemById("graph"),
+  ...systemNavigation
+];
+
 export const navigationGroups: readonly NavigationGroup[] = [
   {
-    id: "audit-task",
-    label: "核心功能",
-    items: [
-      requireNavigationItemById("ai-chat"),
-      requireNavigationItemById("agent-market"),
-      requireNavigationItemById("documents"),
-      requireNavigationItemById("analytics"),
-      requireNavigationItemById("reports")
-    ]
+    id: "primary",
+    label: "常用入口",
+    items: visiblePrimaryNavigation
   },
   {
-    id: "agents",
-    label: "专题审计",
+    id: "audit-tools",
+    label: "审计工具",
     items: [
-      requireNavigationItemById("fund-compliance"),
-      requireNavigationItemById("workspace"),
-      requireNavigationItemById("guided-check"),
+      requireNavigationItemById("agent-market"),
+      requireNavigationItemById("my-agents"),
+      requireNavigationItemById("analytics"),
+      requireNavigationItemById("reports"),
       requireNavigationItemById("projects"),
+      requireNavigationItemById("guided-check"),
       requireNavigationItemById("remediation")
     ]
   },
   {
-    id: "tools",
-    label: "知识底座",
+    id: "evidence",
+    label: "依据与规则",
     items: [
-      requireNavigationItemById("my-agents"),
       requireNavigationItemById("knowledge-base"),
       requireNavigationItemById("graph"),
-      requireNavigationItemById("rules"),
-      requireNavigationItemById("archive")
+      requireNavigationItemById("rules")
     ]
   },
   {

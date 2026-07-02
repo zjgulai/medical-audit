@@ -7,7 +7,7 @@ describe("LoginPage", () => {
   it("renders the hospital audit login surface with role entry points", () => {
     render(<LoginPage />);
 
-    expect(screen.getByRole("heading", { name: "面向医院内审的 AI 审证工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "面向医院内审的医保审计工作台" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
     expect(screen.getByLabelText("账号 / 工号")).toBeRequired();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");

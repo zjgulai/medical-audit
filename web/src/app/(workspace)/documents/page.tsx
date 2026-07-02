@@ -2,7 +2,6 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { DataSourceBadge } from "@/components/ui/data-source-badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   fetchDocumentPermissions,
@@ -227,15 +226,18 @@ export default function DocumentsPage() {
   }
 
   return (
-    <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
+    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+      <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="audit-section-title">知识库分类统计</h2>
+          <div>
+            <p className="audit-kicker">依据范围</p>
+            <h2 className="audit-section-title mt-1">选择检索来源</h2>
+          </div>
           <StatusPill tone={permissionStatus === "ready" ? "success" : permissionStatus === "loading" ? "info" : "warning"}>
-            {permissionStatus === "ready" ? "权限已连接" : permissionStatus === "loading" ? "读取中" : "权限不可用"}
+            {permissionStatus === "ready" ? "可用" : permissionStatus === "loading" ? "读取中" : "需登录"}
           </StatusPill>
         </div>
-                <div className="mt-5 space-y-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {documentCategoryStats.map((category) => (
             <DocumentSourceCard
               category={category}
@@ -246,25 +248,26 @@ export default function DocumentsPage() {
             />
           ))}
         </div>
-      </aside>
+      </section>
 
-      <section className="audit-panel min-w-0 p-6">
+      <section className="audit-panel min-w-0 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="audit-kicker">文档检索</p>
-            <h1 className="audit-page-title">材料与知识库统一检索</h1>          </div>
+          <div className="min-w-0">
+            <p className="audit-kicker">文档依据</p>
+            <h1 className="audit-page-title">文档依据检索</h1>
+            <p className="audit-copy mt-2 max-w-2xl">输入审计问题，先找可引用材料，再进入对话或底稿环节。</p>
+          </div>
           <div className="flex flex-wrap gap-2">
-            <StatusPill tone={searchState.status === "success" ? "success" : "info"}>引用优先</StatusPill>
-            <StatusPill tone="neutral">无引用不下结论</StatusPill>
-            <DataSourceBadge source="hybrid" />
+            <StatusPill tone={searchState.status === "success" ? "success" : "info"}>依据优先</StatusPill>
+            <StatusPill tone="neutral">需人工复核</StatusPill>
           </div>
         </div>
 
-        <form className="audit-panel-muted mt-6 p-5" onSubmit={submitSearch}>
+        <form className="audit-panel-muted mt-5 p-4 sm:p-5" onSubmit={submitSearch}>
           <label className="block" htmlFor="document-query">
             <span className="audit-label">审计问题或文档关键词</span>
             <textarea
-              className="audit-focus-ring audit-input mt-2 min-h-24 resize-y px-3 py-2.5 leading-6"
+              className="audit-focus-ring audit-input mt-2 min-h-20 resize-y px-3 py-2.5 leading-6"
               id="document-query"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="例如：重复收费、目录限制、超量开药"
@@ -282,24 +285,20 @@ export default function DocumentsPage() {
               仅标题
             </label>
             <p className="audit-meta">
-              {titleOnly ? "仅标题模式会同步传入后端 title_only=true，并只在标题和路径元数据上匹配引用。" : "全文模式会展示标题、摘要和知识库文档推荐。"}
+              {titleOnly ? "只按标题找材料。" : "按标题、摘要和正文线索找材料。"}
             </p>
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="audit-meta">检索范围：{selectedScopeText}</div>
             <div className="flex flex-wrap gap-3">
-              <button
-                className="audit-focus-ring audit-btn audit-btn-primary"
-                disabled={searchState.status === "loading"}
-                type="submit"
-              >
+              <button className="audit-focus-ring audit-btn audit-btn-primary" disabled={searchState.status === "loading"} type="submit">
                 {searchState.status === "loading" ? "检索中" : "执行检索"}
               </button>
               <a
                 className="audit-focus-ring audit-btn audit-btn-secondary"
                 href={`/chat${query.trim() ? `?question=${encodeURIComponent(query.trim())}` : ""}`}
               >
-                转入 AI 对话
+                转入对话
               </a>
             </div>
           </div>
@@ -324,7 +323,7 @@ export default function DocumentsPage() {
         </div>
       </section>
 
-      <aside className="min-w-0 space-y-4">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2">
         <DocumentUploadPanel
           canUpload={canUploadPersonal}
           canGovern={canGovernPersonalUploads}
@@ -369,13 +368,13 @@ export default function DocumentsPage() {
         <a className="audit-focus-ring audit-action-card p-5" href="/knowledge-base">
           <p className="audit-kicker">知识库</p>
           <h2 className="audit-section-title mt-2">查看索引覆盖</h2>
-                  </a>
+        </a>
 
         <a className="audit-focus-ring audit-callout block p-5" href="/chat">
-          <p className="audit-kicker">AI 对话</p>
+          <p className="audit-kicker">审计问答</p>
           <h2 className="audit-section-title mt-2">带着材料进入审证</h2>
-                  </a>
-      </aside>
+        </a>
+      </section>
     </main>
   );
 }
@@ -402,17 +401,13 @@ function DocumentSourceCard({
       onClick={onToggle}
       type="button"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{category.name}</h3>
-          <p className="audit-meta mt-1 truncate">{category.sourceCollection}</p>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--audit-ink)]">{category.name}</h3>
         <StatusPill tone={!readable ? "warning" : selected ? "info" : category.scope === "公开知识库" ? "neutral" : "info"}>
           {readable ? category.scope : "无权限"}
         </StatusPill>
       </div>
-      <p className="audit-metric-value-sm mt-3">{category.documentCount.toLocaleString()}</p>
-      <p className="audit-copy mt-2">{category.description}</p>
+      <p className="audit-metric-value-sm mt-2">{category.documentCount.toLocaleString()}</p>
     </button>
   );
 }
@@ -634,9 +629,9 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
         </div>
       ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
-        <span className="audit-chip">confidence: {result.confidence}</span>
-        <span className="audit-chip">fallback: {result.fallback_used ? "yes" : "no"}</span>
-        <span className="audit-chip">query_log_index: {result.query_log_index}</span>
+        <span className="audit-chip">可信度：{result.confidence}</span>
+        <span className="audit-chip">补证模式：{result.fallback_used ? "已启用" : "未启用"}</span>
+        <span className="audit-chip">检索记录：{result.query_log_index}</span>
         <span className="audit-chip">个人材料: {personalMatches.length}</span>
       </div>
       <div className="mt-5 space-y-4">
@@ -662,7 +657,7 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="audit-compact-title">引用分组：{group.label}</h3>
-                  <p className="audit-meta mt-1">{group.sourceCollection}</p>
+                  <p className="audit-meta mt-1">按来源归并引用。</p>
                 </div>
                 <StatusPill tone="neutral">{group.citations.length} 条引用</StatusPill>
               </div>
@@ -687,7 +682,7 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
             ))}
           </div>
           <a className="audit-focus-ring audit-btn audit-btn-primary mt-5" href={chatHref}>
-            转入对话审证
+            转入对话
           </a>
         </aside>
       </div>
@@ -702,7 +697,7 @@ function DocumentPersonalMatchCard({ match }: { readonly match: PersonalUploadMa
         <div className="min-w-0">
           <p className="audit-compact-title">{match.name}</p>
           <p className="audit-meta mt-1">
-            {match.extension.toUpperCase()} / chunk {match.chunk_index + 1} / score {match.score}
+            {match.extension.toUpperCase()} / 片段 {match.chunk_index + 1} / 匹配度 {match.score}
           </p>
           <p className="audit-meta mt-1 break-words">{locatorSummary(match.locator)}</p>
         </div>
@@ -721,7 +716,7 @@ function DocumentCitationCard({ citation }: { readonly citation: QueryCitation }
           <p className="audit-compact-title">
             {citation.marker} / {citation.evidence_type}
           </p>
-          <p className="audit-meta mt-1">来源: {citation.source_collection}</p>
+          <p className="audit-meta mt-1">来源：{friendlySourceCollectionLabel(citation.source_collection)}</p>
           <p className="audit-meta mt-1 break-words">{locatorSummary(citation.locator)}</p>
         </div>
         <a
@@ -732,7 +727,7 @@ function DocumentCitationCard({ citation }: { readonly citation: QueryCitation }
         </a>
       </div>
       <p className="audit-copy mt-3">{citation.snippet}</p>
-      <p className="mt-3 break-all font-mono text-xs leading-5 text-[var(--audit-ink-subtle)]">chunk: {citation.chunk_id}</p>
+      <p className="mt-3 break-all text-xs leading-5 text-[var(--audit-ink-subtle)]">材料片段：{citation.chunk_id}</p>
     </article>
   );
 }
@@ -768,7 +763,7 @@ function DocumentList({ title, documents }: { readonly title: string; readonly d
                   className="audit-focus-ring audit-btn audit-btn-secondary"
                   href={document.chatHref}
                 >
-                  转入 AI 对话
+                  转入对话
                 </a>
               </div>
             </article>
@@ -935,6 +930,10 @@ function locatorSummary(locator: Record<string, unknown>): string {
     return `${source} / lines ${lineStart}${lineEnd !== undefined ? `-${lineEnd}` : ""}`;
   }
   return source;
+}
+
+function friendlySourceCollectionLabel(sourceCollection: SourceCollection): string {
+  return documentCategoryStats.find((category) => category.sourceCollection === sourceCollection)?.name ?? sourceCollection;
 }
 
 function stringValue(value: unknown): string | undefined {

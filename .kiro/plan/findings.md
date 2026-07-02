@@ -1254,3 +1254,161 @@ Boundary:
 
 - Local commit only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 38 Government-Style UI And Typography Batch Plan
+
+Finding Status:
+
+- The user's typography/font-size concern changes the redesign from page polish to design-system work.
+- A credible government-style medical-audit UI requires type scale, line-height, numeric alignment, and long-text containment to be planned together with navigation and color.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_typography_batch_plan_loop38_20260701.md`
+
+Supported Claim:
+
+- The next implementation loop has a concrete Batch 1 target: global tokens, type scale, shell/nav simplification, and responsive visual verification.
+
+Unsupported Claim:
+
+- This loop does not implement the visual redesign, produce browser screenshots, push commits, merge branches, deploy production, or validate production UI.
+
+Boundary:
+
+- Docs-only planning.
+- No business-code edit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 39 Government-Style Shell Batch 1
+
+Finding Status:
+
+- The most visible density issue is the shell layer: too many modules, status pills, role controls, topic tags, and tabs compete for the first horizontal band.
+- The first implementation batch should simplify the shared shell before page-specific copy and component redesign.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_shell_batch_loop39_20260701.md`
+
+Supported Claim:
+
+- Batch 1 reduced shell density locally while preserving route inventory: the main sidebar now has five common entries, utility modules are folded, top-bar status/tabs are removed, and shared typography/token changes passed local checks.
+- Local verification passed: `git diff --check`, targeted shell/navigation tests `18`, full unit tests `94`, typecheck, lint, and browser overflow checks for `/workspace`, `/chat`, and `/fund-compliance/review`.
+
+Unsupported Claim:
+
+- This loop does not establish production UI status, production deploy completion, backend integration coverage, provider proof, or write-path proof.
+- Local browser console includes expected local-dev proxy responses when the backend target is not started; do not reuse this loop as backend acceptance evidence.
+
+Boundary:
+
+- Local UI/test loop only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 42 Government UI Clean Promotion Plan
+
+Finding Status:
+
+- The Loop39-41 UI work is locally validated, but the current worktree also contains many untracked screenshot and browser-output artifacts.
+- Promotion needs a clean candidate set before any staging or commit, otherwise local evidence output can be mixed into the release path.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_clean_promotion_plan_loop42_20260702.md`
+
+Supported Claim:
+
+- The intended promotion set is `31` paths across `.kiro/plan`, `scripts`, `web/src`, and `web/tests`.
+- `output/` and `tmp/outputs/` are excluded as local evidence artifacts.
+- Local verification passed: `git diff --check`, typecheck, lint, full frontend unit tests `94`, and build `23` static pages.
+
+Unsupported Claim:
+
+- This loop does not establish production UI status, production deploy completion, backend integration coverage, provider proof, write-path proof, or PR/merge state.
+- This loop did not stage or commit the candidate set.
+
+Boundary:
+
+- Local promotion-plan loop only.
+- No staging, commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 43 Government UI Local Commit Gate
+
+Finding Status:
+
+- Loop42 identified a clean promotion set, but the work was not yet staged or committed.
+- The current risk is accidental staging of local screenshot and browser-output artifacts.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_local_commit_loop43_20260702.md`
+
+Supported Claim:
+
+- The local Git gate is ready to stage only intended UI, script, test, and planning files.
+- `output/` and `tmp/outputs/` remain excluded from the planned staged set.
+
+Unsupported Claim:
+
+- This loop does not establish production UI status, production deploy completion, backend integration coverage, provider proof, write-path proof, PR state, merge state, or remote branch state.
+
+Boundary:
+
+- Local Git gate only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 41 Government-Style Remaining Workspace Pages Batch 3
+
+Finding Status:
+
+- After Batch 1 and Batch 2, the remaining visible density was concentrated in documents, knowledge-base, analytics, reports, and projects pages.
+- The main UI risks were wide table patterns on mobile, raw backend identifiers in document evidence UI, prompt/template terminology in reports, and dense side rails.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_remaining_pages_batch_loop41_20260701.md`
+- `tmp/outputs/loop41-ui-density/density-report.json`
+
+Supported Claim:
+
+- Batch 3 reduced the remaining workspace-page density locally while preserving routes and business flows.
+- Local verification passed: `git diff --check`, focused workspace tests `30`, full unit tests `94`, typecheck, lint, build `23` static pages, and browser overflow checks for 10 desktop/mobile route viewports.
+- Browser pass reported horizontal overflow `0` for every checked viewport.
+
+Unsupported Claim:
+
+- This loop does not establish production UI status, production deploy completion, backend integration coverage, provider proof, or write-path proof.
+- Local browser console includes expected local-dev proxy messages when the backend target is not started; do not reuse this loop as backend acceptance evidence.
+
+Boundary:
+
+- Local UI/test loop only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 40 Government-Style Core Pages Batch 2
+
+Finding Status:
+
+- After the shell cleanup, the next visible density issue was in the core business pages: topic landing metrics, review header copy, chat prompt terminology, and the assistant library card grid.
+- The assistant library still read like a prompt catalog until card descriptions were moved into the dialog and the grid was reduced to compact entry cards.
+
+Evidence Added:
+
+- `.kiro/plan/gov_ui_core_pages_batch_loop40_20260701.md`
+- `output/playwright/loop40-gov-core-pages-20260701T184500+0800/loop40-browser-metrics.json`
+
+Supported Claim:
+
+- Batch 2 reduced core-page first-viewport density locally while preserving routes and business flows.
+- Local verification passed: `git diff --check`, full unit tests `94`, typecheck, lint, and browser overflow checks for 7 desktop/mobile route viewports.
+- Browser pass found no checked legacy visible terms in page body and reported horizontal overflow `0` for every checked viewport.
+
+Unsupported Claim:
+
+- This loop does not establish production UI status, production deploy completion, backend integration coverage, provider proof, or write-path proof.
+- Local browser console includes expected local-dev proxy messages when the backend target is not started; do not reuse this loop as backend acceptance evidence.
+
+Boundary:
+
+- Local UI/test loop only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.

@@ -122,65 +122,71 @@ export default function ReportsPage() {
   }, [loadState]);
 
   return (
-    <main className="grid min-w-0 items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">报告链路</h2>
-                <ol className="mt-5 space-y-3">
+    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+      <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="audit-kicker">报告流程</p>
+            <h2 className="audit-section-title mt-1">从复核到签发</h2>
+          </div>
+          <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>{dataSourceTag}</StatusPill>
+        </div>
+        <ol className="mt-4 grid gap-2 md:grid-cols-3">
           {reportWorkflowSteps.map((step, index) => (
             <li key={step.title}>
-              <a className="audit-focus-ring block rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={step.href}>
-                <span className="grid size-7 place-items-center rounded-[var(--audit-radius-md)] bg-[var(--audit-primary)] text-xs font-semibold text-white">
+              <a className="audit-focus-ring grid h-full grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={step.href}>
+                <span className="grid size-7 place-items-center rounded-[var(--audit-radius-sm)] bg-[var(--audit-primary)] text-xs font-semibold text-white">
                   {index + 1}
                 </span>
-                <h3 className="mt-3 text-sm font-semibold text-[var(--audit-ink)]">{step.title}</h3>
-                <p className="audit-copy mt-2">{step.description}</p>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{step.title}</span>
+                  <span className="mt-1 block line-clamp-1 audit-meta">{step.description}</span>
+                </span>
               </a>
             </li>
           ))}
         </ol>
-      </aside>
+      </section>
 
-      <section className="audit-panel min-w-0 p-6">
+      <section className="audit-panel min-w-0 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="audit-kicker">审计底稿/报告</p>
-            <h1 className="audit-page-title">底稿生成与报告记录</h1>
+            <h1 className="audit-page-title">底稿与报告</h1>
+            <p className="audit-copy mt-2 max-w-2xl">汇总已复核疑点、底稿草稿、报告门禁和整改跟踪。</p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>
-              {dataSourceTag}
-            </StatusPill>
             <DataSourceBadge source="hybrid" />
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ReportMetric label="已签发报告" value={`${signedReportCount} 份`} />
           <ReportMetric label="门禁阻断" value={`${blockedReportCount} 份`} />
           <ReportMetric label="纳入疑点" value={`${includedFindingCount} 条`} />
           <ReportMetric label="待整改" value={`${openRectificationCount} 项`} />
         </div>
 
-        <section className="mt-6" aria-labelledby="workpaper-template-title">
+        <section className="mt-5" aria-labelledby="workpaper-template-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="workpaper-template-title" className="audit-section-title">
-                提示词模板生成
+                底稿模板
               </h2>
                           </div>
             <StatusPill tone="warning">仅草稿</StatusPill>
           </div>
-          <div className="mt-4 grid gap-3 2xl:grid-cols-3">
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {dashboardData.workpaperPromptTemplates.map((template) => (
               <WorkpaperPromptCard key={template.id} template={template} />
             ))}
           </div>
         </section>
 
-        <section className="mt-6" aria-labelledby="report-records-title">
+        <section className="mt-5" aria-labelledby="report-records-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="report-records-title" className="audit-section-title">
-              历史生成记录
+              报告记录
             </h2>
             <a className="audit-focus-ring audit-btn audit-btn-secondary" href="/pages/review-tasks">
               打开复核任务台
@@ -194,7 +200,7 @@ export default function ReportsPage() {
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5" aria-labelledby="report-gate-title">
+        <section className="mt-5 grid gap-5" aria-labelledby="report-gate-title">
           <div>
             <h2 id="report-gate-title" className="audit-section-title">
               报告门禁预检
@@ -216,7 +222,7 @@ export default function ReportsPage() {
         </section>
       </section>
 
-      <aside className="min-w-0 space-y-4">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">底稿证据来源</h2>
           <div className="mt-4 space-y-3">
@@ -238,8 +244,8 @@ export default function ReportsPage() {
         <a className="audit-focus-ring audit-action-card p-5" href="/graph">
           <p className="audit-kicker">知识图谱</p>
           <h2 className="audit-section-title mt-2">查看报告证据链</h2>
-                  </a>
-      </aside>
+        </a>
+      </section>
     </main>
   );
 }
@@ -341,13 +347,16 @@ function WorkpaperPromptCard({ template }: { readonly template: WorkpaperPromptT
         </div>
         <StatusPill tone="info">{template.outputType}</StatusPill>
       </div>
-      <p className="audit-copy mt-3">{template.prompt}</p>
+      <p className="line-clamp-2 audit-copy mt-3">{template.prompt}</p>
       <div className="mt-4 flex flex-wrap gap-2">
-        {template.evidenceBindings.map((binding) => (
+        {template.evidenceBindings.slice(0, 2).map((binding) => (
           <span key={binding} className="audit-chip bg-white">
             {binding}
           </span>
         ))}
+        {template.evidenceBindings.length > 2 ? (
+          <span className="audit-chip bg-white">另 {template.evidenceBindings.length - 2} 项</span>
+        ) : null}
         {template.templateStatus ? (
           <span className="audit-chip bg-white">{template.templateStatus}</span>
         ) : null}

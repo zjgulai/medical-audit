@@ -27,30 +27,39 @@ const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
   {
     route: "/fund-compliance",
-    requiredText: [/专题审计工作台/, /待处理清单|专题规则/, /三份模板与自建表单|创建表单/],
+    requiredText: [/医保基金使用合规专项自查/, /进入审查/, /规则分类|审计口径|专题规则/],
   },
-  { route: "/chat", requiredText: [/AI 审证对话工作台/, /问题构建|知识来源|推荐问题/, /进入审证对话/] },
+  {
+    route: "/fund-compliance/review",
+    interactions: [
+      { role: "tab", name: "费用表单" },
+      { text: "新建表单" },
+    ],
+    requiredText: [/专题审计工作台/, /三份模板与自建表单/, /表单名称/, /字段列表/],
+    requiredControlText: [/创建/],
+  },
+  { route: "/chat", requiredText: [/审计问答/, /依据范围/, /进入对话/] },
   {
     route: "/agents",
     requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
     requiredControlText: [/如：目录限制核验助手/, /新增智能体/],
   },
-  { route: "/agent-market", requiredText: [/审计提示词智能体/, /智能体广场/, /搜索助手|财务收支|采购招标/] },
+  { route: "/agent-market", requiredText: [/审计助手库/, /搜索助手|财务收支|采购招标/] },
   {
     route: "/analytics",
-    requiredText: [/上传表格分析/, /审计数据|规则命中疑点|知识库运行态/, /上传|表格|CSV|Excel/i],
+    requiredText: [/费用表单分析/, /疑点清单|索引状态|上传/, /上传|表格|CSV|XLSX/i],
     requiredFileInputCount: 1,
   },
   {
     route: "/projects",
-    requiredText: [/审计项目管理/, /新增成员|添加成员/, /成员|member/i],
+    requiredText: [/项目与成员/, /新增成员|添加成员/, /成员|member/i],
     requiredControlText: [/成员姓名/, /审计员业务专家信息科只读观察员/, /添加成员/],
   },
-  { route: "/documents", requiredText: [/材料与知识库统一检索/, /法规政策|监管两库|医保目录|风险清单/, /检索|过滤|筛选/] },
-  { route: "/knowledge-base", requiredText: [/个人、系统、公开知识库/, /个人审计材料库|系统医保审计知识库|公开法规政策库/] },
+  { route: "/documents", requiredText: [/文档依据检索/, /法规政策|监管两库|医保目录|风险清单/, /检索|过滤|筛选/] },
+  { route: "/knowledge-base", requiredText: [/知识库总览/, /个人审计材料库|系统医保审计知识库|公开法规政策库/] },
   { route: "/graph", requiredText: [/知识图谱入口/, /医保基金使用合规专项图谱|证据链关系/] },
   { route: "/rules", requiredText: [/审计规则与依据总览/, /CHARGE-RULE-001|规则清单|发布门禁/] },
-  { route: "/reports", requiredText: [/底稿生成与报告记录/, /报告门禁预检|正式报告与整改/] },
+  { route: "/reports", requiredText: [/底稿与报告/, /报告门禁预检|报告记录/] },
   { route: "/remediation", requiredText: [/整改事项与补证闭环/, /整改台账|补证请求/] },
   { route: "/archive", requiredText: [/项目档案与审计日志归档/, /项目档案包|审计日志治理策略/] },
   { route: "/guided-check", requiredText: [/AI 引导自查工作台/, /自查路径|AI 提问模板/] },
@@ -204,6 +213,22 @@ async function snapshot(page) {
   throw new Error("snapshot failed");
 }
 
+async function applyInteractions(page, interactions = []) {
+  for (const action of interactions) {
+    const timeout = action.timeoutMs ?? 5_000;
+    if (action.role) {
+      await page.getByRole(action.role, { name: action.name, exact: action.exact ?? true }).click({ timeout });
+    } else if (action.text) {
+      await page.getByText(action.text, { exact: action.exact ?? true }).first().click({ timeout });
+    } else if (action.selector) {
+      await page.locator(action.selector).first().click({ timeout });
+    } else {
+      throw new Error(`Unsupported interaction: ${JSON.stringify(action)}`);
+    }
+    await page.waitForTimeout(action.waitMs ?? 500);
+  }
+}
+
 function issue(severity, type, message) {
   return { severity, type, message };
 }
@@ -225,6 +250,9 @@ function classify(check, routeCheck, data) {
       .map((failed) => `${failed.status ?? failed.error} ${failed.url}`)
       .join(" | ");
     issues.push(issue("P1", "failed-request", sample));
+  }
+  if (check.interactionErrors.length > 0) {
+    issues.push(issue("P1", "interaction-error", check.interactionErrors.slice(0, 3).join(" | ")));
   }
   if (data.horizontalOverflow) {
     issues.push(issue("P1", "horizontal-overflow", `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}`));
@@ -369,6 +397,7 @@ async function run() {
         const page = await context.newPage();
         const consoleErrors = [];
         const failedRequests = [];
+        const interactionErrors = [];
         page.on("console", (message) => {
           if (message.type() === "error") {
             consoleErrors.push(message.text());
@@ -391,8 +420,14 @@ async function run() {
           const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
           status = response?.status() ?? null;
           await page.waitForTimeout(1_200);
+          await applyInteractions(page, routeCheck.interactions);
         } catch (caught) {
-          error = caught instanceof Error ? caught.message : String(caught);
+          const message = caught instanceof Error ? caught.message : String(caught);
+          if (status === null) {
+            error = message;
+          } else {
+            interactionErrors.push(message);
+          }
         }
         const data = await snapshot(page);
         const check = {
@@ -411,7 +446,8 @@ async function run() {
           horizontalOverflow: data.horizontalOverflow,
           consoleErrors,
           failedRequests,
-          issues: classify({ status, error, consoleErrors, failedRequests }, routeCheck, data),
+          interactionErrors,
+          issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
         };
         if (captureScreenshots && check.issues.length > 0) {
           const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";

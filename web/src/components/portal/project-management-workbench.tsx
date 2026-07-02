@@ -158,16 +158,23 @@ export function ProjectManagementWorkbench() {
   }
 
   return (
-    <main className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_18rem]">
-      <aside className="audit-panel-rail min-w-0 p-5">
-        <h2 className="audit-section-title">项目空间</h2>
-        <p className="audit-copy mt-2">按审计专题切换项目，成员表随当前项目上下文展示。</p>
-        <div className="mt-5 grid grid-cols-2 gap-2">
+    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+      <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="audit-kicker">项目空间</p>
+            <h2 className="audit-section-title mt-1">切换审计项目</h2>
+          </div>
+          <StatusPill tone={projectStoreStatus === "ready" ? "success" : "neutral"}>
+            {projectStoreStatusLabel(projectStoreStatus)}
+          </StatusPill>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
           <SidebarMetric label="进行中" value={String(activeProjectCount)} />
           <SidebarMetric label="待启动" value={String(pendingProjectCount)} />
         </div>
-        <div className="mt-5 space-y-3">
-          {portalProjectSummaries.map((item) => (
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
+          {portalProjectSummaries.slice(0, 3).map((item) => (
             <ProjectNavigatorItem
               key={item.id}
               item={item}
@@ -176,25 +183,25 @@ export function ProjectManagementWorkbench() {
             />
           ))}
         </div>
-      </aside>
+      </section>
 
-      <section className="min-w-0 space-y-5">
-        <div className="audit-panel min-w-0 p-6">
+      <section className="min-w-0 space-y-4">
+        <div className="audit-panel min-w-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="audit-kicker">项目管理</p>
-              <h1 className="audit-page-title">审计项目管理</h1>
-              <p className="audit-meta mt-2">{project.organizationName} / {project.dateRange}</p>
+              <h1 className="audit-page-title">项目与成员</h1>
+              <p className="audit-copy mt-2 max-w-2xl">{project.organizationName}，{project.dateRange}。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatusPill tone="success">项目进行中</StatusPill>
-              <StatusPill tone={projectStoreStatus === "ready" ? "success" : "neutral"}>
-                {projectStoreStatusLabel(projectStoreStatus)}
+              <StatusPill tone="success">进行中</StatusPill>
+              <StatusPill tone={memberStoreStatus === "ready" ? "success" : "neutral"}>
+                {memberStoreStatusLabel(memberStoreStatus)}
               </StatusPill>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
             <h2 className="audit-section-title">项目列表</h2>
             <label className="block w-full min-w-0 sm:min-w-64 sm:max-w-80">
               <span className="sr-only">搜索项目</span>
@@ -208,7 +215,19 @@ export function ProjectManagementWorkbench() {
             </label>
           </div>
 
-          <div className="audit-table-shell mt-4 max-w-full overflow-x-auto">
+          <div className="mt-4 grid gap-3 md:hidden">
+            {filteredProjects.map((item) => (
+              <ProjectMobileCard
+                item={item}
+                key={item.id}
+                memberCount={item.id === selectedProject.id ? members.length : item.memberCount}
+                onSelect={() => setSelectedProjectId(item.id)}
+                selected={item.id === selectedProject.id}
+              />
+            ))}
+          </div>
+
+          <div className="audit-table-shell mt-4 hidden max-w-full overflow-x-auto md:block">
             <table className="audit-table min-w-[58rem]">
               <thead>
                 <tr>
@@ -254,12 +273,12 @@ export function ProjectManagementWorkbench() {
           </div>
         </div>
 
-        <div className="audit-panel min-w-0 p-6">
+        <div className="audit-panel min-w-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="audit-kicker">项目成员</p>
               <h2 className="audit-section-title mt-2">{selectedProject.name}</h2>
-              <p className="audit-copy mt-2">角色展示和新增入口已接入当前医院角色权限。</p>
+              <p className="audit-copy mt-2">查看成员职责，按需要补充项目成员。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusPill tone={projectStatusTone[selectedProject.status]}>{selectedProject.status}</StatusPill>
@@ -269,7 +288,13 @@ export function ProjectManagementWorkbench() {
             </div>
           </div>
 
-          <div className="audit-table-shell mt-6 max-w-full overflow-x-auto">
+          <div className="mt-5 grid gap-3 md:hidden">
+            {members.map((member) => (
+              <MemberMobileCard key={member.id} member={member} />
+            ))}
+          </div>
+
+          <div className="audit-table-shell mt-6 hidden max-w-full overflow-x-auto md:block">
             <table className="audit-table min-w-[42rem]">
               <thead>
                 <tr>
@@ -295,12 +320,12 @@ export function ProjectManagementWorkbench() {
           </div>
         </div>
 
-        <div className="audit-panel min-w-0 p-6">
+        <div className="audit-panel min-w-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="audit-kicker">权限角色</p>
-              <h2 className="audit-section-title mt-2">医院权限角色矩阵</h2>
-              <p className="audit-copy mt-2">按用户提出的四类角色组织操作边界；后端项目成员角色暂不变。</p>
+              <h2 className="audit-section-title mt-2">权限角色</h2>
+              <p className="audit-copy mt-2">按管理员、技术人员、主任和普通成员分配可见范围。</p>
             </div>
             <StatusPill tone="success">权限已接入</StatusPill>
           </div>
@@ -317,7 +342,7 @@ export function ProjectManagementWorkbench() {
         </div>
       </section>
 
-      <aside className="min-w-0 space-y-4">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2">
         <section className="audit-panel-rail p-5">
           <h2 className="audit-section-title">当前项目</h2>
           <p className="audit-card-title mt-4">{selectedProject.name}</p>
@@ -398,7 +423,7 @@ export function ProjectManagementWorkbench() {
             ) : null}
           </form>
         </section>
-      </aside>
+      </section>
     </main>
   );
 }
@@ -436,25 +461,25 @@ function defaultMembersForProject(projectId: string): readonly PortalProjectMemb
 
 function projectStoreStatusLabel(status: StoreStatus): string {
   if (status === "ready") {
-    return "项目后端已连接";
+    return "项目已同步";
   }
   if (status === "loading") {
-    return "项目连接中";
+    return "项目同步中";
   }
-  return "项目默认内容";
+  return "默认项目";
 }
 
 function memberStoreStatusLabel(status: StoreStatus): string {
   if (status === "ready") {
-    return "成员后端已连接";
+    return "成员已同步";
   }
   if (status === "saving") {
     return "成员保存中";
   }
   if (status === "loading") {
-    return "成员连接中";
+    return "成员同步中";
   }
-  return "成员默认内容";
+  return "默认成员";
 }
 
 function SidebarMetric({ label, value }: { readonly label: string; readonly value: string }) {
@@ -487,11 +512,73 @@ function ProjectNavigatorItem({
       onClick={onSelect}
     >
       <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{item.auditTopic}</span>
-      <span className="audit-meta mt-1 block truncate">{item.creator} / {item.createdAt}</span>
+      <span className="audit-meta mt-1 block truncate">{item.creator}，{item.createdAt}</span>
       <span className="mt-2 inline-flex">
         <StatusPill tone={projectStatusTone[item.status]}>{item.status}</StatusPill>
       </span>
     </button>
+  );
+}
+
+function ProjectMobileCard({
+  item,
+  memberCount,
+  selected,
+  onSelect
+}: {
+  readonly item: PortalProjectSummary;
+  readonly memberCount: number;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <article
+      className={`rounded-[var(--audit-radius-md)] border p-4 ${
+        selected ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)]" : "border-[var(--audit-line)] bg-white"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{item.name}</h3>
+          <p className="audit-meta mt-1 truncate">{item.auditTopic}</p>
+        </div>
+        <StatusPill tone={projectStatusTone[item.status]}>{item.status}</StatusPill>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <dt className="audit-meta">成员</dt>
+          <dd className="mt-1 font-semibold text-[var(--audit-ink)]">{memberCount}</dd>
+        </div>
+        <div>
+          <dt className="audit-meta">创建</dt>
+          <dd className="mt-1 font-semibold text-[var(--audit-ink)]">{item.createdAt}</dd>
+        </div>
+      </dl>
+      <button
+        aria-label={`查看${item.name}成员`}
+        aria-pressed={selected}
+        className="audit-focus-ring audit-btn audit-btn-secondary mt-3 w-full justify-center"
+        onClick={onSelect}
+        type="button"
+      >
+        查看
+      </button>
+    </article>
+  );
+}
+
+function MemberMobileCard({ member }: { readonly member: PortalProjectMember }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-[var(--audit-ink)]">{member.name}</h3>
+          <p className="audit-meta mt-1 truncate">{member.role}</p>
+        </div>
+        <StatusPill tone={member.status === "在项目中" ? "success" : "warning"}>{member.status}</StatusPill>
+      </div>
+      <p className="audit-meta mt-3">部门：{member.department}</p>
+    </article>
   );
 }
 
@@ -524,13 +611,16 @@ function PermissionRoleCard({
       </span>
       <span className="audit-copy mt-3 block">{permissionRole.responsibility}</span>
       <span className="mt-3 flex flex-wrap gap-2">
-        {permissionRole.allowedActions.map((action) => (
+        {permissionRole.allowedActions.slice(0, 2).map((action) => (
           <span className="audit-chip" key={action}>
             {action}
           </span>
         ))}
+        {permissionRole.allowedActions.length > 2 ? (
+          <span className="audit-chip">另 {permissionRole.allowedActions.length - 2} 项</span>
+        ) : null}
       </span>
-      <span className="audit-meta mt-3 block">{permissionRole.boundary}</span>
+      <span className="audit-meta mt-3 line-clamp-2 block">{permissionRole.boundary}</span>
     </button>
   );
 }

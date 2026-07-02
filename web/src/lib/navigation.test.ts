@@ -5,8 +5,10 @@ import {
   findNavigationItemForPath,
   navigationGroups,
   primaryNavigation,
+  sidebarUtilityNavigation,
   secondaryNavigation,
-  systemNavigation
+  systemNavigation,
+  visiblePrimaryNavigation
 } from "./navigation";
 import { workflowStages } from "./workflow";
 
@@ -33,7 +35,7 @@ describe("primaryNavigation", () => {
     const documents = primaryNavigation.find((item) => item.id === "documents");
 
     expect(documents).toMatchObject({
-      label: "文档检索",
+      label: "文档依据",
       href: "/documents",
       target: "workspace"
     });
@@ -44,12 +46,12 @@ describe("primaryNavigation", () => {
     const projects = primaryNavigation.find((item) => item.id === "projects");
 
     expect(analytics).toMatchObject({
-      label: "AI 数据分析",
+      label: "数据分析",
       href: "/analytics",
       target: "workspace"
     });
     expect(projects).toMatchObject({
-      label: "项目管理",
+      label: "项目空间",
       href: "/projects",
       target: "workspace"
     });
@@ -59,7 +61,7 @@ describe("primaryNavigation", () => {
     const chat = primaryNavigation.find((item) => item.href === "/chat");
 
     expect(chat).toMatchObject({
-      label: "AI 对话",
+      label: "审计助手",
       emphasis: "primary",
       target: "workspace"
     });
@@ -74,31 +76,44 @@ describe("primaryNavigation", () => {
   it("keeps secondary workspace routes addressable outside the primary sidebar", () => {
     expect(secondaryNavigation.map((item) => item.href)).toEqual(["/guided-check", "/rules", "/remediation", "/archive"]);
     expect(findNavigationItemForPath("/rules")).toMatchObject({
-      label: "专题规则库",
+      label: "规则库",
       target: "workspace"
     });
   });
 
+  it("keeps the sidebar visible layer to five common entries", () => {
+    expect(visiblePrimaryNavigation.map((item) => item.href)).toEqual([
+      "/workspace",
+      "/fund-compliance",
+      "/chat",
+      "/documents",
+      "/archive"
+    ]);
+    expect(sidebarUtilityNavigation.map((item) => item.href)).toEqual(
+      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/rules", "/pages/index-admin"])
+    );
+  });
+
   it("groups the sidebar around audit workbench concepts", () => {
     expect(navigationGroups.map((group) => group.label)).toEqual([
-      "核心功能",
-      "专题审计",
-      "知识底座",
+      "常用入口",
+      "审计工具",
+      "依据与规则",
       "系统管理"
     ]);
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
+      "/workspace",
+      "/fund-compliance",
       "/chat",
-      "/agent-market",
       "/documents",
-      "/analytics",
-      "/reports"
+      "/archive"
     ]);
     expect(navigationGroups[3].items).toEqual(systemNavigation);
   });
 
   it("keeps workbench home and backend system routes addressable for tabs", () => {
     expect(findNavigationItemForPath("/workspace")).toMatchObject({
-      label: "今日工作台",
+      label: "工作台",
       target: "workspace"
     });
     expect(findNavigationItemForPath("/pages/index-admin")).toMatchObject({

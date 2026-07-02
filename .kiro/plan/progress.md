@@ -458,3 +458,237 @@ Boundary:
 
 - Local commit only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 38 Government-Style UI And Typography Batch Plan
+
+Decision:
+
+- Merge typography and font-size optimization into the full-site government-style UI/UX plan.
+- Treat typography as a design-system contract, not a later visual polish item.
+
+Created:
+
+- `.kiro/plan/gov_ui_typography_batch_plan_loop38_20260701.md`
+
+Plan scope:
+
+- information architecture;
+- shell and navigation hierarchy;
+- page density;
+- color and surface tokens;
+- font family, type scale, line-height, tabular numbers, responsive text behavior;
+- copy simplification and backend-language removal;
+- browser evidence and overflow acceptance.
+
+Next loop:
+
+- Loop39 should implement Batch 1 only: global tokens, typography scale, shell/nav simplification, and local responsive/browser verification.
+
+Boundary:
+
+- Docs-only planning.
+- No business-code edit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 39 Government-Style Shell Batch 1
+
+Decision:
+
+- Execute Batch 1 from Loop38 with a narrow scope: shared design tokens, typography scale, shell navigation hierarchy, top-bar simplification, and local validation.
+- Keep route inventory and backend capability intact; only reduce what is visible in the main shell.
+
+Created:
+
+- `.kiro/plan/gov_ui_shell_batch_loop39_20260701.md`
+
+Implementation scope:
+
+- `web/src/app/globals.css`
+- `web/src/lib/navigation.ts`
+- `web/src/components/shell/app-sidebar.tsx`
+- `web/src/components/shell/project-context-bar.tsx`
+- `web/src/app/layout.tsx`
+- `web/src/app/login/page.tsx`
+- `web/src/components/shell/workspace-shell.test.tsx`
+- `web/src/lib/navigation.test.ts`
+
+Verification:
+
+- `git diff --check`: pass.
+- targeted shell/navigation tests: pass, 2 files, 18 tests.
+- frontend typecheck: pass.
+- frontend lint: pass.
+- full frontend unit test: pass, 11 files, 94 tests.
+- local browser checks: `/workspace` desktop/mobile, `/chat` desktop, and `/fund-compliance/review` desktop all report horizontal overflow `0`; screenshots saved under `output/playwright/loop39-gov-shell-20260701T183200+0800/`.
+
+Known local-dev note:
+
+- Local browser console includes `favicon.ico` 404 and backend-proxy 500 responses because the browser check did not start the backend target. This is not used as backend acceptance evidence.
+
+Boundary:
+
+- Local UI and tests only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 40 Government-Style Core Pages Batch 2
+
+Decision:
+
+- Execute Batch 2 after Loop39 shell verification.
+- Keep this loop focused on first-viewport density and visible wording for `/fund-compliance`, `/fund-compliance/review`, `/chat`, and `/agent-market`.
+- Preserve routes, data structures, review table behavior, form-template creation, and backend contracts.
+
+Created:
+
+- `.kiro/plan/gov_ui_core_pages_batch_loop40_20260701.md`
+
+Implementation scope:
+
+- `web/src/app/(workspace)/fund-compliance/page.tsx`
+- `web/src/app/(workspace)/fund-compliance/review/page.tsx`
+- `web/src/app/(workspace)/chat/page.tsx`
+- `web/src/app/(workspace)/agent-market/page.tsx`
+- `web/src/app/(workspace)/workspace-pages.test.tsx`
+- `web/tests/e2e/foundation.spec.ts`
+- `scripts/run-production-frontend-acceptance.mjs`
+
+Verification:
+
+- `git diff --check`: pass.
+- focused workspace/navigation/shell tests: pass, 3 files, 48 tests.
+- full frontend unit tests: pass, 11 files, 94 tests.
+- frontend typecheck: pass.
+- frontend lint: pass.
+- local browser density checks: `/fund-compliance`, `/fund-compliance/review`, `/chat`, and `/agent-market` desktop; `/fund-compliance`, `/chat`, and `/agent-market` mobile all report horizontal overflow `0`.
+- screenshot and metric artifacts saved under `output/playwright/loop40-gov-core-pages-20260701T184500+0800/`.
+
+Result:
+
+- Topic landing, review workbench, chat portal, assistant library, sidebar utility naming, and mobile AI floating entry were simplified locally.
+- Assistant library desktop first-viewport text density was reduced from `1276` measured chars to `521`; mobile from `441` to `293`.
+
+Known local-dev note:
+
+- Local browser console includes backend-proxy messages for `/auth/session` because this check did not start the backend target on `127.0.0.1:8021`; this is not backend acceptance evidence.
+
+Boundary:
+
+- Local UI/test loop only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-01 Loop 41 Government-Style Remaining Workspace Pages Batch 3
+
+Decision:
+
+- Execute Batch 3 after Loop39 shell cleanup and Loop40 core-page cleanup.
+- Keep this loop focused on remaining dense workspace pages: `/documents`, `/knowledge-base`, `/analytics`, `/reports`, and `/projects`.
+- Preserve routes, API contracts, table-template behavior, desktop tables, report records, project/member workflow, and acceptance boundary.
+
+Created:
+
+- `.kiro/plan/gov_ui_remaining_pages_batch_loop41_20260701.md`
+
+Implementation scope:
+
+- `web/src/app/(workspace)/documents/page.tsx`
+- `web/src/app/(workspace)/knowledge-base/page.tsx`
+- `web/src/components/portal/data-analysis-workbench.tsx`
+- `web/src/app/(workspace)/reports/page.tsx`
+- `web/src/components/portal/project-management-workbench.tsx`
+- `web/src/app/(workspace)/workspace-pages.test.tsx`
+- `web/tests/e2e/foundation.spec.ts`
+- `scripts/run-production-frontend-acceptance.mjs`
+- `scripts/run-production-documents-readonly-probe.py`
+
+Verification:
+
+- `git diff --check`: pass.
+- focused workspace page tests: pass, 30 tests.
+- full frontend unit tests: pass, 11 files, 94 tests.
+- frontend typecheck: pass.
+- frontend lint: pass.
+- frontend build: pass, 23 static pages.
+- local browser density checks: `/documents`, `/knowledge-base`, `/analytics`, `/reports`, and `/projects` desktop and mobile all report horizontal overflow `0`.
+- screenshot and metric artifacts saved under `tmp/outputs/loop41-ui-density/`.
+
+Result:
+
+- Documents, knowledge base, analytics, reports, and projects pages were simplified locally with shorter headings, less backend-style copy, fewer visible chips, and narrower first-viewport content.
+- Project and member lists now use mobile cards while preserving desktop tables.
+
+Known local-dev note:
+
+- Local browser console includes backend-proxy messages because this check did not start the backend target on `127.0.0.1:8021`; this is not backend acceptance evidence.
+
+Boundary:
+
+- Local UI/test loop only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 42 Government UI Clean Promotion Plan
+
+Decision:
+
+- Execute a promotion planning loop after Loop39, Loop40, and Loop41 local UI validation.
+- Keep this loop to candidate-set isolation and fresh local gates.
+- Do not stage, commit, push, merge, deploy, probe production, call providers, touch Docker, or run write-path smoke.
+
+Created:
+
+- `.kiro/plan/gov_ui_clean_promotion_plan_loop42_20260702.md`
+
+Promotion candidate set:
+
+- `31` paths across `.kiro/plan`, `scripts`, `web/src`, and `web/tests`.
+- `output/` and `tmp/outputs/` are excluded as local evidence artifacts.
+
+Verification:
+
+- `git diff --check`: pass.
+- `git diff --cached --name-only`: empty output, no staged paths.
+- frontend typecheck: pass.
+- frontend lint: pass.
+- full frontend unit tests: pass, 11 files, 94 tests.
+- frontend build: pass, 23 static pages.
+
+Result:
+
+- Loop39-41 UI work now has a concrete clean promotion manifest and a recommended Loop43 staging gate.
+- Current production status remains unchanged from the latest recorded production evidence; this loop did not perform any production observation.
+
+Boundary:
+
+- Local promotion-plan loop only.
+- No staging, commit, push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 43 Government UI Local Commit Gate
+
+Decision:
+
+- Execute the local Git gate after Loop42 isolated the promotion candidate set.
+- Stage only intended UI, script, test, and planning files.
+- Exclude `output/` and `tmp/outputs/` local evidence artifacts.
+- Stop before push, merge, deployment, production probe, provider call, Docker change, or write-path smoke.
+
+Created:
+
+- `.kiro/plan/gov_ui_local_commit_loop43_20260702.md`
+
+Verification target:
+
+- `git diff --check`
+- `git diff --cached --check`
+- frontend typecheck
+- frontend lint
+- full frontend unit tests
+- frontend build
+
+Result:
+
+- Staged `33` intended paths across `.kiro/plan`, `scripts`, `web/src`, and `web/tests`.
+- Confirmed `output/` and `tmp/outputs/` staged artifact count was `0`.
+- Created one local commit with message `feat: simplify government audit UI`.
+
+Boundary:
+
+- Local Git gate only.
+- No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
