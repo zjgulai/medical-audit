@@ -17,6 +17,9 @@ import type {
 
 const completedStepCount = guidedCheckSteps.filter((step) => step.status === "已完成").length;
 const pendingEvidenceCount = guidedCheckEvidenceItems.filter((item) => item.status !== "已就绪").length;
+const readyEvidenceCount = guidedCheckEvidenceItems.length - pendingEvidenceCount;
+const evidenceCompletenessPercent = Math.round((readyEvidenceCount / guidedCheckEvidenceItems.length) * 100);
+const priorityEvidenceItem = guidedCheckEvidenceItems.find((item) => item.status === "待补证") ?? guidedCheckEvidenceItems.find((item) => item.status !== "已就绪");
 const readyQuestionCount = guidedCheckQuestions.filter((question) => question.status === "可提问").length;
 const highRiskCount = guidedCheckRiskSignals.filter((signal) => signal.status === "高风险").length;
 
@@ -42,6 +45,14 @@ export default function GuidedCheckPage() {
             <GuidedMetric label="证据待处理" value={`${pendingEvidenceCount} 项`} />
             <GuidedMetric label="高风险线索" value={`${highRiskCount} 条`} />
           </div>
+
+          <EvidenceReadinessPanel
+            completenessPercent={evidenceCompletenessPercent}
+            gapCount={pendingEvidenceCount}
+            priorityEvidenceTitle={priorityEvidenceItem?.title}
+            readyCount={readyEvidenceCount}
+            totalCount={guidedCheckEvidenceItems.length}
+          />
 
           <div className="mt-6 flex flex-wrap gap-3">
             <a className="audit-focus-ring audit-btn audit-btn-primary" href="/chat">
@@ -174,6 +185,57 @@ function GuidedMetric({ label, value }: { readonly label: string; readonly value
   );
 }
 
+function EvidenceReadinessPanel({
+  completenessPercent,
+  gapCount,
+  priorityEvidenceTitle,
+  readyCount,
+  totalCount
+}: {
+  readonly completenessPercent: number;
+  readonly gapCount: number;
+  readonly priorityEvidenceTitle?: string;
+  readonly readyCount: number;
+  readonly totalCount: number;
+}) {
+  const statusLabel = gapCount === 0 ? "可继续" : "待补证";
+  const statusTone = gapCount === 0 ? "success" : "warning";
+  const summary =
+    gapCount === 0
+      ? "关键材料已就绪，可进入审证对话和报告复核。"
+      : `优先处理 ${priorityEvidenceTitle ?? "待补材料"}，补齐后再进入报告复核。`;
+
+  return (
+    <section className="mt-5 rounded-[var(--audit-radius-lg)] border border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] p-4" aria-labelledby="guided-evidence-status-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="guided-evidence-status-title" className="audit-compact-title">
+            证据状态
+          </h2>
+          <p className="audit-copy mt-1">{summary}</p>
+        </div>
+        <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+      </div>
+      <dl className="mt-4 grid gap-4 border-t border-[var(--audit-primary-line)] pt-4 sm:grid-cols-3">
+        <div>
+          <dt className="audit-meta font-semibold">完整率</dt>
+          <dd className="audit-metric-value-sm mt-1">{completenessPercent}%</dd>
+        </div>
+        <div>
+          <dt className="audit-meta font-semibold">已就绪</dt>
+          <dd className="audit-metric-value-sm mt-1">
+            {readyCount}/{totalCount}
+          </dd>
+        </div>
+        <div>
+          <dt className="audit-meta font-semibold">待处理</dt>
+          <dd className="audit-metric-value-sm mt-1">{gapCount} 项</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function GuidedStepRow({ step }: { readonly step: GuidedCheckStep }) {
   return (
     <li className="grid gap-3 rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4 sm:grid-cols-[3.5rem_minmax(0,1fr)_7rem] sm:items-center">
@@ -206,8 +268,8 @@ function QuestionRow({ question }: { readonly question: GuidedCheckQuestion }) {
         <StatusPill tone={getQuestionTone(question.status)}>{question.status}</StatusPill>
       </td>
       <td>
-        <a className="audit-focus-ring audit-btn audit-btn-primary whitespace-nowrap" href={question.chatHref}>
-          进入对话
+        <a aria-label="进入对话" className="audit-focus-ring audit-btn audit-btn-primary whitespace-nowrap" href={question.chatHref}>
+          对话
         </a>
       </td>
     </tr>
@@ -225,8 +287,8 @@ function QuestionCard({ question }: { readonly question: GuidedCheckQuestion }) 
       <p className="audit-meta mt-2">
         {question.agentName} · {question.knowledgeScope}
       </p>
-      <a className="audit-focus-ring audit-btn audit-btn-primary mt-4" href={question.chatHref}>
-        进入对话
+      <a aria-label="进入对话" className="audit-focus-ring audit-btn audit-btn-primary mt-4" href={question.chatHref}>
+        对话
       </a>
     </article>
   );

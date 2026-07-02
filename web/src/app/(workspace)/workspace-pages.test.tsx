@@ -1672,8 +1672,13 @@ describe("workspace foundation pages", () => {
     render(<GuidedCheckPage />);
 
     expect(screen.getByRole("heading", { name: "AI 引导自查工作台" })).toBeInTheDocument();
+    expect(screen.getByText("数据来源：演示样例")).toBeInTheDocument();
     expect(screen.getByText("已完成步骤")).toBeInTheDocument();
     expect(screen.getByText("可提问模板")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "证据状态" })).toBeInTheDocument();
+    expect(screen.getByText("完整率")).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getByText("优先处理 目录限制 HIS 字段截图，补齐后再进入报告复核。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "自查路径" })).toBeInTheDocument();
     expect(screen.getByText("锁定自查范围")).toBeInTheDocument();
     expect(screen.getByText("上传并识别数据")).toBeInTheDocument();
