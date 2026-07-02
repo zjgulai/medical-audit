@@ -307,3 +307,14 @@ This manifest does not prove production has been updated. Production readiness c
   - Recommended next action: Loop46 local conflict resolution using a hybrid strategy that preserves PR density cleanup/non-AI wording and preserves `main`'s B2B fund-compliance workbench semantics/workspace-copy polish where needed.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: PR conflict triage and strategy only; no business-code edit, conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 46 PR 182 conflict resolution gate:
+  - Source branch: `codex/frontend-2.0`.
+  - Merged base: `origin/main@b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Strategy doc: `.kiro/plan/pr182_conflict_strategy_loop45_20260702.md`.
+  - Pre-merge docs commit: `bee60936`.
+  - Conflict-resolution merge commit: `83d432399b7d0c78f3ac033486f714543c9260df`.
+  - Conflict-resolution files: `scripts/run-production-frontend-acceptance.mjs`, `web/src/app/(workspace)/agent-market/page.tsx`, `web/src/app/(workspace)/chat/page.tsx`, `web/src/app/(workspace)/fund-compliance/page.tsx`, `web/src/app/(workspace)/fund-compliance/review/page.tsx`, `web/src/app/(workspace)/workspace-pages.test.tsx`, `web/src/components/shell/app-sidebar.tsx`, `web/src/components/shell/project-context-bar.tsx`, `web/src/components/shell/workspace-shell.test.tsx`, `web/tests/e2e/foundation.spec.ts`.
+  - Verification: conflict marker scan clean; `git diff --cached --check` passed before merge commit; typecheck passed; lint passed; web tests passed (`11` files / `94` tests); build passed (`23/23` static pages); Foundation Playwright passed (`17/17`).
+  - Local-dev note: backend proxy messages to `127.0.0.1:8021` were observed during local E2E because backend was not started; do not treat this as backend acceptance evidence.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: local PR-branch conflict resolution only; no ready-for-review transition, PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke.

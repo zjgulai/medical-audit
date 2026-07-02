@@ -769,3 +769,35 @@ Boundary:
 
 - PR conflict triage and strategy only.
 - No business-code edit, conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 46 PR 182 Conflict Resolution Gate
+
+Decision:
+
+- Execute the authorized local conflict-resolution gate for Draft PR `#182`.
+- Merge `origin/main@b1c9a6c229a7880afcbfed35c1903d514914bb15` into `codex/frontend-2.0`.
+- Preserve the PR branch's government-style density reduction and non-AI wording while preserving `main`'s B2B fund-compliance workbench skeleton and deployed workspace-copy polish where needed.
+- Stop before ready-for-review, PR merge, deployment, production probe, provider call, Docker change, or write-path smoke.
+
+Execution:
+
+- Backed up the conflict target files under `/Users/pray/.Codex/file-history/medical_audit-loop46-pre-merge-20260702T085942+0800`.
+- Created docs strategy commit `bee60936` before starting the merge.
+- Ran `git merge origin/main`, resolved the 10 known frontend/test/acceptance conflict files, and created merge commit `83d432399b7d0c78f3ac033486f714543c9260df`.
+- Used the project pnpm version through `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm` for frontend gates.
+
+Verification:
+
+- Conflict marker scan across the touched frontend/test/acceptance files returned no matches.
+- `git diff --cached --check`: passed before the merge commit.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web typecheck`: passed.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web lint`: passed.
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web test`: passed (`11` files / `94` tests).
+- `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web build`: passed (`23/23` static pages).
+- `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web exec playwright test tests/e2e/foundation.spec.ts`: passed (`17/17`).
+
+Boundary:
+
+- Loop 46 resolved and locally verified the PR branch only.
+- Local Playwright logs contained expected local-dev backend proxy messages because this loop did not start backend `127.0.0.1:8021`; those logs are not backend acceptance evidence.
+- No ready-for-review transition, PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
