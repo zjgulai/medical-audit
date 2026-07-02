@@ -785,6 +785,7 @@ Execution:
 - Created docs strategy commit `bee60936` before starting the merge.
 - Ran `git merge origin/main`, resolved the 10 known frontend/test/acceptance conflict files, and created merge commit `83d432399b7d0c78f3ac033486f714543c9260df`.
 - Used the project pnpm version through `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm` for frontend gates.
+- Created docs evidence commit `4d0368b5` after local verification and pushed `codex/frontend-2.0` to `origin`.
 
 Verification:
 
@@ -795,6 +796,8 @@ Verification:
 - `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web test`: passed (`11` files / `94` tests).
 - `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web build`: passed (`23/23` static pages).
 - `PATH="/Users/pray/.nvm/versions/node/v22.22.0/bin:$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm --filter medical-audit-web exec playwright test tests/e2e/foundation.spec.ts`: passed (`17/17`).
+- `gh pr view 182` after the first post-resolution push: `OPEN`, `isDraft=true`, `headRefOid=4d0368b558e6d4871fd5a3ab7284730526a9b3a4`, `mergeable=MERGEABLE`, `mergeStateStatus=CLEAN`, empty status check rollup.
+- `gh pr checks 182 --watch=false`: no checks reported on the branch.
 
 Boundary:
 

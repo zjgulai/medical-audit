@@ -1316,13 +1316,17 @@ Finding Status:
 Evidence Added:
 
 - Merge commit: `83d432399b7d0c78f3ac033486f714543c9260df`.
+- First verified post-resolution branch head: `4d0368b558e6d4871fd5a3ab7284730526a9b3a4`.
+- PR `#182` after GitHub recomputation: `OPEN`, `Draft`, `MERGEABLE`, `CLEAN`, empty status check rollup.
 - Backup directory: `/Users/pray/.Codex/file-history/medical_audit-loop46-pre-merge-20260702T085942+0800`.
 - Docs backup directory: `/Users/pray/.Codex/file-history/medical_audit-loop46-docs-20260702T090852+0800`.
+- Post-push docs backup directory: `/Users/pray/.Codex/file-history/medical_audit-loop46-postpush-docs-20260702T091301+0800`.
 
 Supported Claim:
 
 - The local branch conflict surface is resolved and locally verified for frontend compile/test/build plus Foundation browser coverage.
 - The relevant local UI routes still use the latest simplified copy contracts after merging `origin/main`.
+- GitHub now reports the PR conflict state clear after the pushed resolution, while the PR remains Draft.
 
 Unsupported Claim:
 
