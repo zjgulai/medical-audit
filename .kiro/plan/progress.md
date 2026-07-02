@@ -726,3 +726,46 @@ Boundary:
 
 - Draft PR publish gate only.
 - No ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 45 PR 182 Conflict Strategy Gate
+
+Decision:
+
+- Execute the PR conflict and CI review gate after Loop44 opened Draft PR `#182`.
+- Keep this loop to read-only PR/local merge-tree evidence and strategy writing.
+- Do not resolve conflicts, mark ready for review, merge, deploy, probe production, call providers, touch Docker, or run write-path smoke.
+
+Created:
+
+- `.kiro/plan/pr182_conflict_strategy_loop45_20260702.md`
+
+Evidence:
+
+- `gh pr view 182`: `OPEN`, `isDraft=true`, `mergeable=CONFLICTING`, empty status check rollup.
+- `gh pr checks 182 --watch=false`: no checks reported on `codex/frontend-2.0`.
+- `git merge-base HEAD origin/main`: `818b42b7c1045308d0e7e191a97c81e015cacc2f`.
+- `git merge-tree $(git merge-base HEAD origin/main) HEAD origin/main`: conflict surface identified.
+
+Conflict files:
+
+- `scripts/run-production-frontend-acceptance.mjs`
+- `web/src/app/(workspace)/agent-market/page.tsx`
+- `web/src/app/(workspace)/chat/page.tsx`
+- `web/src/app/(workspace)/fund-compliance/page.tsx`
+- `web/src/app/(workspace)/fund-compliance/review/page.tsx`
+- `web/src/app/(workspace)/workspace-pages.test.tsx`
+- `web/src/components/shell/app-sidebar.tsx`
+- `web/src/components/shell/project-context-bar.tsx`
+- `web/src/components/shell/workspace-shell.test.tsx`
+- `web/tests/e2e/foundation.spec.ts`
+
+Result:
+
+- CI is not the blocker; no checks are currently reported.
+- PR `#182` is blocked by merge conflicts between the latest government-style UI reduction branch and `main`'s deployed B2B/workspace-copy changes.
+- Recommended Loop46 strategy is hybrid: preserve PR branch density reduction and non-AI wording, preserve `main` where it better matches the B2B fund-compliance workbench skeleton and deployed workspace copy polish, then align tests and acceptance scripts to final visible copy.
+
+Boundary:
+
+- PR conflict triage and strategy only.
+- No business-code edit, conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.

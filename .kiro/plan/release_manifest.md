@@ -299,3 +299,11 @@ This manifest does not prove production has been updated. Production readiness c
   - Verification: `gh --version`, `gh auth status`, `gh pr list --head codex/frontend-2.0`, and `git push -u origin codex/frontend-2.0` completed; connector PR creation returned `403`, then CLI fallback created the draft PR; `gh pr view` reported `mergeable=CONFLICTING` and empty status check rollup.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: draft PR publish gate; no conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
+- Loop 45 PR 182 conflict strategy gate:
+  - Gate doc: `.kiro/plan/pr182_conflict_strategy_loop45_20260702.md`.
+  - Evidence source: `gh pr view`, `gh pr checks`, `git merge-base`, `git diff`, and read-only `git merge-tree`.
+  - Result: PR `#182` remains open/draft with `mergeable=CONFLICTING`; no checks are reported, so CI is not the current blocker.
+  - Conflict surface: 10 files across frontend acceptance, `agent-market`, `chat`, `fund-compliance`, review workbench, shell/sidebar/topbar, unit tests, and Foundation E2E.
+  - Recommended next action: Loop46 local conflict resolution using a hybrid strategy that preserves PR density cleanup/non-AI wording and preserves `main`'s B2B fund-compliance workbench semantics/workspace-copy polish where needed.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: PR conflict triage and strategy only; no business-code edit, conflict resolution, ready-for-review transition, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path review smoke.
