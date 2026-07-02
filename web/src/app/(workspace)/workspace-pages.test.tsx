@@ -1582,13 +1582,13 @@ describe("workspace foundation pages", () => {
   it("renders the fund compliance topic as a separate portal entry", () => {
     render(<FundCompliancePage />);
 
-    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "基金合规自查" })).toBeInTheDocument();
     expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
     expect(screen.getByText("B2B")).toBeInTheDocument();
-    expect(screen.getByText("2025 年 Q4 住院部专项审计")).toBeInTheDocument();
-    expect(screen.getByText("规则导航")).toBeInTheDocument();
+    expect(screen.getByText("Q4 住院部专项")).toBeInTheDocument();
+    expect(screen.getByText("规则")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "审计口径" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute("href", "/fund-compliance/review");
+    expect(screen.getByRole("link", { name: "进入审查" })).toHaveAttribute("href", "/fund-compliance/review");
     expect(screen.getByRole("link", { name: /单据审查/ })).toHaveAttribute("href", "/fund-compliance/review");
     expect(screen.getByRole("heading", { name: "待复核疑点" })).toBeInTheDocument();
   });
@@ -1648,8 +1648,8 @@ describe("workspace foundation pages", () => {
   it("renders the AI chat portal handoff to backend evidence chat", async () => {
     const { container } = render(<ChatPortalPage />);
 
-    expect(screen.getByRole("heading", { name: "审计问答" })).toBeInTheDocument();
-    expect(screen.getByText("使用说明与证据边界")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI 问答" })).toBeInTheDocument();
+    expect(screen.getByText("更多")).toBeInTheDocument();
     expect(screen.getByText("当前助手")).toBeInTheDocument();
     expect(screen.getAllByText("法规政策").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医保目录").length).toBeGreaterThan(0);
@@ -1660,7 +1660,7 @@ describe("workspace foundation pages", () => {
       "value",
       "医保基金使用合规专项自查"
     );
-    expect(screen.getByText("可用助手")).toBeInTheDocument();
+    expect(screen.getByText("先查依据")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText("已同步")).toBeInTheDocument();
     });

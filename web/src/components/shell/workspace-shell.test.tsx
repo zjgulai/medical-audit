@@ -27,7 +27,7 @@ describe("WorkspaceShell", () => {
 
     const mainNavigation = screen.getByRole("navigation", { name: "主导航" });
 
-    expect(mainNavigation).toHaveClass("overflow-x-auto");
+    expect(mainNavigation).toHaveClass("grid");
     expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
     for (const label of ["工作台", "基金合规", "审计助手", "文档依据", "项目归档"]) {
       expect(within(mainNavigation).getByText(label)).toBeInTheDocument();
@@ -35,14 +35,14 @@ describe("WorkspaceShell", () => {
     for (const label of ["我的助手", "助手库", "依据库", "数据分析", "项目空间", "底稿生成"]) {
       expect(within(mainNavigation).queryByText(label)).not.toBeInTheDocument();
     }
-    expect(screen.getByText("更多功能")).toBeInTheDocument();
+    expect(screen.getByText("更多")).toBeInTheDocument();
     expect(screen.queryByRole("tablist", { name: "已打开模块" })).not.toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "全局搜索" })).toHaveAttribute("placeholder", "搜索");
     expect(screen.getByLabelText("角色权限视图")).toBeInTheDocument();
     expect(screen.getByText(/医保基金使用合规专项自查/)).toBeInTheDocument();
     expect(screen.getAllByText("基金合规").length).toBeGreaterThan(0);
     expect(screen.getByTestId("auditscope-brand-logo")).toBeInTheDocument();
-    expect(screen.getByText("管理员视图")).toBeInTheDocument();
+    expect(screen.getAllByText("管理员").length).toBeGreaterThan(0);
     const roleMenu = screen.getByLabelText("角色权限视图");
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
       expect(within(roleMenu).getByText(role)).toBeInTheDocument();

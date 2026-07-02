@@ -15,7 +15,7 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-const SIDEBAR_PINNED_UTILITY_IDS = new Set(["agent-market", "my-agents", "knowledge-base", "analytics"]);
+const SIDEBAR_PINNED_UTILITY_IDS = new Set(["agent-market", "knowledge-base", "analytics"]);
 
 function NavigationLink({
   item,
@@ -113,7 +113,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       </Link>
 
       <nav
-        className="mt-2 flex gap-1.5 overflow-x-auto pb-1 md:mt-5 md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
+        className="mt-2 grid grid-cols-5 gap-1.5 md:mt-5 md:flex md:flex-col md:gap-1 md:overflow-x-visible md:pb-0"
         aria-label="主导航"
       >
         {visiblePrimaryNavigation.map((item) => (
@@ -127,7 +127,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
             <span aria-hidden="true" className="grid size-7 place-items-center rounded-[var(--audit-radius-sm)] bg-[var(--audit-surface-subtle)] text-[var(--audit-primary)]">
               ...
             </span>
-            <span className="flex-1">更多功能</span>
+            <span className="flex-1">更多</span>
             <span aria-hidden="true" className="text-[var(--audit-ink-subtle)] group-open:rotate-90">&gt;</span>
           </summary>
           <nav className="mt-2 flex flex-col gap-1" aria-label="更多功能">
@@ -137,7 +137,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
             {remainingUtilityItems.length > 0 ? (
               <details className="group/utility mt-1">
                 <summary className="audit-focus-ring flex cursor-pointer list-none items-center gap-2 rounded-[var(--audit-radius-md)] px-2.5 py-1.5 text-xs font-semibold text-[var(--audit-ink-subtle)] hover:bg-[var(--audit-surface-muted)] [&::-webkit-details-marker]:hidden">
-                  <span className="flex-1">全部功能</span>
+                  <span className="flex-1">全部</span>
                   <span aria-hidden="true" className="group-open/utility:rotate-90">&gt;</span>
                 </summary>
                 <div className="mt-1 flex flex-col gap-1">
