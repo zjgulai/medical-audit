@@ -320,3 +320,12 @@ This manifest does not prove production has been updated. Production readiness c
   - Local-dev note: backend proxy messages to `127.0.0.1:8021` were observed during local E2E because backend was not started; do not treat this as backend acceptance evidence.
   - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
   - Boundary: local PR-branch conflict resolution only; no ready-for-review transition, PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke.
+- Loop 47 PR 182 ready-for-review gate:
+  - PR: `https://github.com/zjgulai/medical-audit/pull/182`.
+  - Source branch: `codex/frontend-2.0`.
+  - Branch head at status change: `b48a464a3f3f6073b051a1597d6e74e597a8e59d`.
+  - Base head: `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Execution: `GH_HTTP_TIMEOUT=90 gh pr ready 182`.
+  - Remote PR state after action: `OPEN`, `isDraft=false`, `MERGEABLE`, `CLEAN`; status check rollup is empty.
+  - Production status: unchanged from Loop 28 at deployed SHA `b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+  - Boundary: PR review-status change only; no PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke.

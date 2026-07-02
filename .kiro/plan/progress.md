@@ -804,3 +804,29 @@ Boundary:
 - Loop 46 resolved and locally verified the PR branch only.
 - Local Playwright logs contained expected local-dev backend proxy messages because this loop did not start backend `127.0.0.1:8021`; those logs are not backend acceptance evidence.
 - No ready-for-review transition, PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-02 Loop 47 PR 182 Ready-For-Review Gate
+
+Decision:
+
+- Execute the authorized PR review-status gate after Loop46 cleared the PR conflict state.
+- Move PR `#182` from Draft to ready-for-review because GitHub reported `MERGEABLE/CLEAN`, the PR head matched the local branch, and no status checks were configured on the branch.
+- Stop before PR merge, deployment, production probe, provider call, Docker change, or write-path smoke.
+
+Execution:
+
+- Confirmed branch `codex/frontend-2.0` at `b48a464a3f3f6073b051a1597d6e74e597a8e59d`, matching `origin/codex/frontend-2.0`.
+- Confirmed base `origin/main@b1c9a6c229a7880afcbfed35c1903d514914bb15`.
+- Ran `GH_HTTP_TIMEOUT=90 gh pr ready 182`.
+
+Verification:
+
+- Pre-action `gh pr view 182`: `OPEN`, `isDraft=true`, `mergeable=MERGEABLE`, `mergeStateStatus=CLEAN`, empty status check rollup.
+- `gh pr checks 182 --watch=false`: no checks reported on `codex/frontend-2.0`.
+- Post-action `gh pr view 182`: `OPEN`, `isDraft=false`, `headRefOid=b48a464a3f3f6073b051a1597d6e74e597a8e59d`, `baseRefOid=b1c9a6c229a7880afcbfed35c1903d514914bb15`, `mergeable=MERGEABLE`, `mergeStateStatus=CLEAN`, empty status check rollup.
+- Working tree after action: branch matches `origin/codex/frontend-2.0`; only untracked `output/` remains outside Git.
+
+Boundary:
+
+- Loop 47 changed PR review status only.
+- No PR merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
