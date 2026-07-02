@@ -122,7 +122,7 @@ export default function ReportsPage() {
   }, [loadState]);
 
   return (
-    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+    <main className="audit-workbench-main mx-auto grid gap-4">
       <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

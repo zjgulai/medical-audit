@@ -81,7 +81,7 @@ export default function ChatPortalPage() {
   }, []);
 
   return (
-    <main className="mx-auto grid max-w-6xl min-w-0 gap-4">
+    <main className="audit-workbench-main mx-auto grid gap-4">
       <section className="audit-panel min-w-0 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

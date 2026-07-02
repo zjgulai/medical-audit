@@ -73,6 +73,23 @@ select {
   gap: 1.25rem;
 }
 
+.audit-workbench-main {
+  width: 100%;
+  min-width: 0;
+  max-width: min(72rem, 100%);
+  overflow-x: hidden;
+}
+
+.audit-workbench-main > *,
+.audit-workbench-main :where(.audit-panel, .audit-panel-rail, .audit-panel-muted, .audit-action-card, .audit-upload-drop) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.audit-workbench-main :where(input, textarea, select) {
+  max-width: 100%;
+}
+
 @media (min-width: 1280px) {
   .audit-page-grid--rail {
     grid-template-columns: minmax(0, 1fr) 22rem;
