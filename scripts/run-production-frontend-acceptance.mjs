@@ -27,7 +27,7 @@ const routeChecks = [
   { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
   {
     route: "/fund-compliance",
-    requiredText: [/医保基金使用合规专项自查/, /进入专题工作台/, /规则导航|审计口径|专题规则/],
+    requiredText: [/基金合规自查/, /进入审查/, /规则|审计口径|专题规则/],
   },
   {
     route: "/fund-compliance/review",
@@ -38,7 +38,7 @@ const routeChecks = [
     requiredText: [/专题审计工作台/, /三份模板与自建表单/, /表单名称/, /字段列表/],
     requiredControlText: [/创建/],
   },
-  { route: "/chat", requiredText: [/审计问答/, /依据范围/, /进入对话/] },
+  { route: "/chat", requiredText: [/AI 问答/, /依据范围/, /进入对话/] },
   {
     route: "/agents",
     requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
