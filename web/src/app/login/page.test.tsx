@@ -9,6 +9,8 @@ describe("LoginPage", () => {
 
     expect(screen.getByRole("heading", { name: "面向医院内审的医保审计工作台" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
+    expect(screen.getByText("医疗AI审计平台")).toBeInTheDocument();
+    expect(screen.queryByText("AuditScope Medical")).not.toBeInTheDocument();
     expect(screen.getByLabelText("账号 / 工号")).toBeRequired();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
     expect(screen.getByRole("button", { name: "进入系统" })).toBeInTheDocument();

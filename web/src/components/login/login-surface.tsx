@@ -55,7 +55,7 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
               </span>
               <span>
                 <span className="block text-sm font-semibold">医疗AI审计平台</span>
-                <span className="block text-xs text-white/72">AuditScope Medical</span>
+                <span className="block text-xs text-white/72">医保基金合规审计</span>
               </span>
             </div>
 
