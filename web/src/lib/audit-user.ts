@@ -15,6 +15,7 @@ export type AuditRoleOption = {
 };
 
 export const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
+export const AUDIT_AUTH_STORAGE_KEY = "medical-audit-authenticated";
 export const DEFAULT_AUDIT_ROLE: AuditClientRole = "admin";
 export const DEFAULT_AUDIT_TENANT_ID = "hospital-demo";
 export const DEFAULT_AUDIT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
@@ -60,6 +61,35 @@ export function writeAuditClientRole(role: AuditClientRole): void {
 
   window.localStorage.setItem(AUDIT_ROLE_STORAGE_KEY, role);
   window.dispatchEvent(new CustomEvent("medical-audit-role-change", { detail: { role } }));
+}
+
+export function isAuditClientAuthenticated(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(AUDIT_AUTH_STORAGE_KEY) === "authenticated";
+  } catch {
+    return false;
+  }
+}
+
+export function writeAuditClientSession(role: AuditClientRole = DEFAULT_AUDIT_ROLE): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(AUDIT_AUTH_STORAGE_KEY, "authenticated");
+  writeAuditClientRole(role);
+}
+
+export function clearAuditClientSession(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(AUDIT_AUTH_STORAGE_KEY);
 }
 
 export function auditClientUserId(role: AuditClientRole): string {
