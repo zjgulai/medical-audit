@@ -18,7 +18,7 @@ describe("WorkspaceAuthGate", () => {
       </WorkspaceAuthGate>
     );
 
-    expect(screen.getByRole("heading", { name: "欢迎登录" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
     expect(screen.queryByText("审计助手内容")).not.toBeInTheDocument();
   });
 
@@ -34,6 +34,6 @@ describe("WorkspaceAuthGate", () => {
     await waitFor(() => {
       expect(screen.getByText("审计助手内容")).toBeInTheDocument();
     });
-    expect(screen.queryByRole("heading", { name: "欢迎登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "登录工作台" })).not.toBeInTheDocument();
   });
 });

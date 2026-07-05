@@ -3,11 +3,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI审计应用",
-  description: "面向审计人员的 AI 对话、智能体、知识库、文档检索、数据分析和底稿工作区",
-  icons: {
-    icon: "/ai-replica-icon.svg"
-  }
+  title: "医疗AI审计平台",
+  description: "面向医院内审人员的医保基金审计、依据检索、表格分析和底稿工作区"
 };
 
 export default function RootLayout({

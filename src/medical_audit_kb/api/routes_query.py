@@ -29,12 +29,15 @@ from medical_audit_kb.api.auth import (
     resolve_authenticated_user,
 )
 from medical_audit_kb.api.document_permissions import (
+    allowed_source_collections,
     can_read_all_personal_uploads,
-    default_source_collections,
     enforce_source_collection_access,
 )
 from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import (
+    KNOWLEDGE_QUERY_CONTRACT_VERSION,
+)
 from medical_audit_kb.generation.answer_builder import (
     NoCitedEvidenceError,
     build_citation_backed_answer,
@@ -212,13 +215,12 @@ def query(
     )
 
     return {
+        "contract_version": KNOWLEDGE_QUERY_CONTRACT_VERSION,
         "question": answer.question,
         "answer": answer.answer,
         "confidence": answer.confidence.value,
         "fallback_used": answer.fallback_used,
-        "effective_source_collections": [
-            item.value for item in effective_source_collections
-        ],
+        "effective_source_collections": [item.value for item in effective_source_collections],
         "basis_groups": [
             {
                 "evidence_type": group.evidence_type.value,
@@ -297,7 +299,7 @@ def _effective_source_collections(
 ) -> tuple[SourceCollection, ...]:
     if requested_source_collections:
         return requested_source_collections
-    return tuple(sorted(default_source_collections(role), key=lambda item: item.value))
+    return tuple(sorted(allowed_source_collections(role), key=lambda item: item.value))
 
 
 def _query_filter_payload(

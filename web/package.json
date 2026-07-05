@@ -12,10 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test",
-    "smoke:interaction": "node scripts/run-replica-interaction-smoke.mjs",
-    "smoke:local:fresh": "node scripts/run-fresh-local-smoke.mjs",
-    "smoke:prodlike": "node scripts/run-prodlike-smoke.mjs"
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.0",

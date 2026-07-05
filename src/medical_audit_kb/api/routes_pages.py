@@ -40,6 +40,9 @@ from medical_audit_kb.api.review_task_store import (
     ReviewTaskStore,
 )
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import (
+    SOURCE_COLLECTION_DEFINITIONS,
+)
 from medical_audit_kb.generation.answer_builder import (
     AnswerBasisGroup,
     AnswerBasisItem,
@@ -103,31 +106,12 @@ REVIEW_TASK_ATTACHMENT_DIR = "review-task-attachments"
 REVIEW_TASK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
 SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
-    SourceCollection.MEDICAL_INSURANCE_LAWS: {
-        "title": "法规政策",
-        "description": "医保、医疗、药品、基金监管相关法律政策。",
-        "audit_hint": "用于判断制度依据和监管边界。",
-    },
-    SourceCollection.SUPERVISION_RULES_KNOWLEDGE: {
-        "title": "监管两库",
-        "description": "智能监管规则库、知识库和知识点明细。",
-        "audit_hint": "用于定位规则口径和疑点类型。",
-    },
-    SourceCollection.MEDICAL_INSURANCE_CATALOG: {
-        "title": "医保目录",
-        "description": "药品、诊疗项目、编码、支付范围和限制条件。",
-        "audit_hint": "用于核验目录编码、剂型、支付限制。",
-    },
-    SourceCollection.RISK_NEGATIVE_LIST: {
-        "title": "风险清单",
-        "description": "高风险负面清单、案例和风险线索。",
-        "audit_hint": "用于辅助排查异常模式。",
-    },
-    SourceCollection.PERSONAL_MATERIALS: {
-        "title": "个人材料",
-        "description": "用户上传的院内材料、台账和复核附件。",
-        "audit_hint": "用于补充院内证据，需先完成材料治理。",
-    },
+    definition.collection: {
+        "title": definition.label,
+        "description": definition.description,
+        "audit_hint": definition.audit_hint,
+    }
+    for definition in SOURCE_COLLECTION_DEFINITIONS
 }
 
 WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (

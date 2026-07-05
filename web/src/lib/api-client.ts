@@ -18,6 +18,7 @@ import type {
   AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  DocumentSourceCollectionCatalogResponse,
   DocumentUploadGovernanceRequest,
   DocumentPermissionsResponse,
   DocumentUploadListResponse,
@@ -37,62 +38,7 @@ import type {
   TableAnalysisUploadHistoryResponse,
   TableAnalysisUploadResponse
 } from "./api-types";
-import { backendApiEndpoints } from "./api-endpoints";
-
-type AuditClientRole = "admin" | "technician" | "director" | "member";
-
-const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
-const DEFAULT_AUDIT_ROLE: AuditClientRole = "admin";
-const DEFAULT_AUDIT_TENANT_ID = "hospital-demo";
-const DEFAULT_AUDIT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
-const DEFAULT_AUDIT_PROJECT_NAME = "医保基金使用合规专项自查";
-const auditClientUserIds: Record<AuditClientRole, string> = {
-  admin: "next-admin",
-  technician: "next-technician",
-  director: "next-director",
-  member: "next-member"
-};
-
-export type ApiClientErrorCode =
-  | "backend-request-failed"
-  | "no-cited-evidence"
-  | "search-engine-not-initialized"
-  | "source-collection-denied"
-  | "unknown-topic";
-
-export class ApiClientError extends Error {
-  readonly code: ApiClientErrorCode;
-  readonly detail: unknown;
-  readonly method: "GET" | "POST";
-  readonly path: string;
-  readonly status: number;
-
-  constructor({
-    code,
-    detail,
-    method,
-    path,
-    status
-  }: {
-    readonly code: ApiClientErrorCode;
-    readonly detail: unknown;
-    readonly method: "GET" | "POST";
-    readonly path: string;
-    readonly status: number;
-  }) {
-    super(`Backend request failed: ${method} ${path} returned ${status}`);
-    this.name = "ApiClientError";
-    this.code = code;
-    this.detail = detail;
-    this.method = method;
-    this.path = path;
-    this.status = status;
-  }
-}
-
-export function isApiClientError(error: unknown): error is ApiClientError {
-  return error instanceof ApiClientError;
-}
+import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
 
 function assertBackendProxyClientRuntime(): void {
   if (typeof window === "undefined") {
@@ -100,48 +46,6 @@ function assertBackendProxyClientRuntime(): void {
       "Backend proxy client must be called from browser/client code; server code needs an absolute backend URL."
     );
   }
-}
-
-function normalizeAuditClientRole(value: string | null | undefined): AuditClientRole {
-  if (value === "admin" || value === "technician" || value === "director" || value === "member") {
-    return value;
-  }
-  return DEFAULT_AUDIT_ROLE;
-}
-
-function readAuditClientRole(): AuditClientRole {
-  if (typeof window === "undefined") {
-    return DEFAULT_AUDIT_ROLE;
-  }
-
-  try {
-    return normalizeAuditClientRole(window.localStorage.getItem(AUDIT_ROLE_STORAGE_KEY));
-  } catch {
-    return DEFAULT_AUDIT_ROLE;
-  }
-}
-
-function auditClientHeaders(): Record<string, string> {
-  const role = readAuditClientRole();
-  return {
-    "X-Role": role,
-    "X-User-Id": auditClientUserIds[role],
-    "X-Tenant-Id": DEFAULT_AUDIT_TENANT_ID
-  };
-}
-
-function auditAgentClientHeaders(): Record<string, string> {
-  return {
-    ...auditClientHeaders(),
-    "X-Project-Name": encodeURIComponent(DEFAULT_AUDIT_PROJECT_NAME)
-  };
-}
-
-function auditProjectClientHeaders(projectKey = DEFAULT_AUDIT_PROJECT_KEY): Record<string, string> {
-  return {
-    ...auditClientHeaders(),
-    "X-Project-Key": projectKey
-  };
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -153,7 +57,7 @@ async function getJson<T>(path: string): Promise<T> {
   });
 
   if (!response.ok) {
-    throw await apiError("GET", path, response);
+    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
   }
 
   return (await response.json()) as T;
@@ -174,7 +78,7 @@ async function getJsonWithAuditHeaders<T>(
   });
 
   if (!response.ok) {
-    throw await apiError("GET", path, response);
+    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
   }
 
   return (await response.json()) as T;
@@ -199,7 +103,7 @@ async function postJson<T>(
   });
 
   if (!response.ok) {
-    throw await apiError("POST", path, response);
+    throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
   }
 
   return (await response.json()) as T;
@@ -219,148 +123,94 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
   });
 
   if (!response.ok) {
-    throw await apiError("POST", path, response);
+    throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
   }
 
   return (await response.json()) as T;
 }
 
 export function fetchBackendHealth(): Promise<BackendHealthResponse> {
-  return getJson<BackendHealthResponse>(backendApiEndpoints.backendHealth);
-}
-
-async function apiError(
-  method: "GET" | "POST",
-  path: string,
-  response: Response
-): Promise<ApiClientError> {
-  const detail = await readErrorDetail(response);
-  return new ApiClientError({
-    code: classifyApiError(response.status, detail),
-    detail,
-    method,
-    path,
-    status: response.status
-  });
-}
-
-async function readErrorDetail(response: Response): Promise<unknown> {
-  const maybeJson = response as Response & { readonly json?: () => Promise<unknown> };
-  if (typeof maybeJson.json === "function") {
-    try {
-      const body = await maybeJson.json();
-      if (body && typeof body === "object" && "detail" in body) {
-        return (body as { readonly detail: unknown }).detail;
-      }
-      return body;
-    } catch {
-      // Fall through to text for non-JSON responses or lightweight test doubles.
-    }
-  }
-
-  const maybeText = response as Response & { readonly text?: () => Promise<string> };
-  if (typeof maybeText.text === "function") {
-    try {
-      return await maybeText.text();
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
-function classifyApiError(status: number, detail: unknown): ApiClientErrorCode {
-  const text = typeof detail === "string" ? detail : JSON.stringify(detail ?? "");
-  if (status === 409 && text.includes("search engine is not initialized")) {
-    return "search-engine-not-initialized";
-  }
-  if (status === 404 && text.includes("no cited evidence found")) {
-    return "no-cited-evidence";
-  }
-  if (status === 400 && text.includes("unknown topic")) {
-    return "unknown-topic";
-  }
-  if (status === 403) {
-    return "source-collection-denied";
-  }
-  return "backend-request-failed";
+  return getJson<BackendHealthResponse>("/api/backend/health");
 }
 
 export function fetchSearchBackendStatus(): Promise<SearchBackendStatusResponse> {
-  return getJsonWithAuditHeaders<SearchBackendStatusResponse>(
-    backendApiEndpoints.searchBackendStatus
-  );
+  return getJsonWithAuditHeaders<SearchBackendStatusResponse>("/api/backend/index/search-backend");
 }
 
 export function fetchAuthSession(): Promise<AuthSessionResponse> {
   return getJsonWithAuditHeaders<AuthSessionResponse>(
-    backendApiEndpoints.authSession,
+    "/api/v1/auth/session",
     auditProjectClientHeaders()
   );
 }
 
 export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse> {
-  return postJson<QueryResponse>(backendApiEndpoints.query, payload);
+  return postJson<QueryResponse>("/api/v1/query", payload);
 }
 
 export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
-  return getJsonWithAuditHeaders<QueryHistoryResponse>(backendApiEndpoints.queryLogs());
+  return getJsonWithAuditHeaders<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
 }
 
 export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {
+  const params = new URLSearchParams();
+  if (reviewStatus) {
+    params.set("review_status", reviewStatus);
+  }
+  const queryString = params.toString();
   return getJsonWithAuditHeaders<AuditFindingsResponse>(
-    backendApiEndpoints.auditFindings(reviewStatus)
+    `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
   );
 }
 
 export function fetchReportWorkbench(): Promise<ReportWorkbenchResponse> {
-  return getJsonWithAuditHeaders<ReportWorkbenchResponse>(backendApiEndpoints.reportWorkbench);
+  return getJsonWithAuditHeaders<ReportWorkbenchResponse>("/api/v1/reports/workbench");
 }
 
 export function fetchGraphWorkbench(): Promise<GraphWorkbenchResponse> {
-  return getJsonWithAuditHeaders<GraphWorkbenchResponse>(backendApiEndpoints.graphWorkbench);
+  return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
 }
 
 export function fetchRulesWorkbench(): Promise<RulesWorkbenchResponse> {
-  return getJsonWithAuditHeaders<RulesWorkbenchResponse>(backendApiEndpoints.rulesWorkbench);
+  return getJsonWithAuditHeaders<RulesWorkbenchResponse>("/api/v1/rules/workbench");
 }
 
 export function fetchRemediationWorkbench(): Promise<RemediationWorkbenchResponse> {
-  return getJsonWithAuditHeaders<RemediationWorkbenchResponse>(
-    backendApiEndpoints.remediationWorkbench
-  );
+  return getJsonWithAuditHeaders<RemediationWorkbenchResponse>("/api/v1/remediation/workbench");
 }
 
 export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
-  return getJsonWithAuditHeaders<ArchiveWorkbenchResponse>(backendApiEndpoints.archiveWorkbench);
+  return getJsonWithAuditHeaders<ArchiveWorkbenchResponse>("/api/v1/archive/workbench");
 }
 
 export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return postForm<TableAnalysisUploadResponse>(backendApiEndpoints.analyticsTableUpload, formData);
+  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData);
 }
 
 export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {
-  return getJsonWithAuditHeaders<TableAnalysisUploadHistoryResponse>(
-    backendApiEndpoints.analyticsTableUploads
-  );
+  return getJsonWithAuditHeaders<TableAnalysisUploadHistoryResponse>("/api/v1/analytics/table-uploads");
 }
 
 export function fetchDocumentPermissions(): Promise<DocumentPermissionsResponse> {
-  return getJsonWithAuditHeaders<DocumentPermissionsResponse>(
-    backendApiEndpoints.documentPermissions
+  return getJsonWithAuditHeaders<DocumentPermissionsResponse>("/api/v1/documents/permissions");
+}
+
+export function fetchDocumentSourceCollections(): Promise<DocumentSourceCollectionCatalogResponse> {
+  return getJsonWithAuditHeaders<DocumentSourceCollectionCatalogResponse>(
+    "/api/v1/documents/source-collections"
   );
 }
 
 export function fetchDocumentUploads(): Promise<DocumentUploadListResponse> {
-  return getJsonWithAuditHeaders<DocumentUploadListResponse>(backendApiEndpoints.documentUploads);
+  return getJsonWithAuditHeaders<DocumentUploadListResponse>("/api/v1/documents/uploads");
 }
 
 export function uploadPersonalDocument(file: File): Promise<DocumentUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return postForm<DocumentUploadResponse>(backendApiEndpoints.documentUploads, formData);
+  return postForm<DocumentUploadResponse>("/api/v1/documents/uploads", formData);
 }
 
 export function updateDocumentUploadGovernance(
@@ -368,45 +218,38 @@ export function updateDocumentUploadGovernance(
   payload: DocumentUploadGovernanceRequest
 ): Promise<DocumentUploadResponse> {
   return postJson<DocumentUploadResponse>(
-    backendApiEndpoints.documentUploadGovernance(uploadId),
+    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/governance`,
     payload
   );
 }
 
 export function indexPersonalDocument(uploadId: string): Promise<DocumentUploadResponse> {
   return postJson<DocumentUploadResponse>(
-    backendApiEndpoints.documentUploadIndex(uploadId),
+    `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/index`,
     {}
   );
 }
 
 export function fetchAgents(): Promise<AgentsResponse> {
-  return getJsonWithAuditHeaders<AgentsResponse>(
-    backendApiEndpoints.agents,
-    auditAgentClientHeaders()
-  );
+  return getJsonWithAuditHeaders<AgentsResponse>("/api/v1/agents", auditAgentClientHeaders());
 }
 
 export function fetchAuditAgent(agentId: string): Promise<AgentDetailResponse> {
   return getJsonWithAuditHeaders<AgentDetailResponse>(
-    backendApiEndpoints.agent(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}`,
     auditAgentClientHeaders()
   );
 }
 
 export function createAuditAgent(payload: AgentCreateRequest): Promise<AgentCreateResponse> {
-  return postJson<AgentCreateResponse>(
-    backendApiEndpoints.agents,
-    payload,
-    auditAgentClientHeaders()
-  );
+  return postJson<AgentCreateResponse>("/api/v1/agents", payload, auditAgentClientHeaders());
 }
 
 export function fetchAuditAgentPromptVersions(
   agentId: string
 ): Promise<AgentPromptVersionsResponse> {
   return getJsonWithAuditHeaders<AgentPromptVersionsResponse>(
-    backendApiEndpoints.agentPromptVersions(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions`,
     auditAgentClientHeaders()
   );
 }
@@ -416,7 +259,7 @@ export function createAuditAgentPromptVersion(
   payload: AgentPromptVersionCreateRequest
 ): Promise<AgentCreateResponse> {
   return postJson<AgentCreateResponse>(
-    backendApiEndpoints.agentPromptVersions(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions`,
     payload,
     auditAgentClientHeaders()
   );
@@ -427,7 +270,7 @@ export function rollbackAuditAgentPromptVersion(
   payload: AgentPromptVersionRollbackRequest
 ): Promise<AgentCreateResponse> {
   return postJson<AgentCreateResponse>(
-    backendApiEndpoints.agentPromptVersionRollback(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions/rollback`,
     payload,
     auditAgentClientHeaders()
   );
@@ -438,7 +281,7 @@ export function reviewAuditAgentPromptVersion(
   payload: AgentPromptVersionReviewRequest
 ): Promise<AgentCreateResponse> {
   return postJson<AgentCreateResponse>(
-    backendApiEndpoints.agentPromptVersionReview(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/prompt-versions/review`,
     payload,
     auditAgentClientHeaders()
   );
@@ -449,7 +292,7 @@ export function updateAuditAgentLifecycle(
   payload: AgentLifecycleRequest
 ): Promise<AgentCreateResponse> {
   return postJson<AgentCreateResponse>(
-    backendApiEndpoints.agentLifecycle(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/lifecycle`,
     payload,
     auditAgentClientHeaders()
   );
@@ -457,7 +300,7 @@ export function updateAuditAgentLifecycle(
 
 export function fetchAuditAgentInvocations(agentId: string): Promise<AgentInvocationsResponse> {
   return getJsonWithAuditHeaders<AgentInvocationsResponse>(
-    backendApiEndpoints.agentInvocations(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/invocations`,
     auditAgentClientHeaders()
   );
 }
@@ -467,7 +310,7 @@ export function recordAuditAgentInvocation(
   payload: AgentInvocationCreateRequest
 ): Promise<AgentInvocationResponse> {
   return postJson<AgentInvocationResponse>(
-    backendApiEndpoints.agentInvocations(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/invocations`,
     payload,
     auditAgentClientHeaders()
   );
@@ -475,7 +318,7 @@ export function recordAuditAgentInvocation(
 
 export function fetchAuditAgentFeedback(agentId: string): Promise<AgentFeedbackListResponse> {
   return getJsonWithAuditHeaders<AgentFeedbackListResponse>(
-    backendApiEndpoints.agentFeedback(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/feedback`,
     auditAgentClientHeaders()
   );
 }
@@ -485,22 +328,19 @@ export function submitAuditAgentFeedback(
   payload: AgentFeedbackCreateRequest
 ): Promise<AgentFeedbackResponse> {
   return postJson<AgentFeedbackResponse>(
-    backendApiEndpoints.agentFeedback(agentId),
+    `/api/v1/agents/${encodeURIComponent(agentId)}/feedback`,
     payload,
     auditAgentClientHeaders()
   );
 }
 
 export function fetchProjects(): Promise<ProjectsResponse> {
-  return getJsonWithAuditHeaders<ProjectsResponse>(
-    backendApiEndpoints.projects,
-    auditProjectClientHeaders()
-  );
+  return getJsonWithAuditHeaders<ProjectsResponse>("/api/v1/projects", auditProjectClientHeaders());
 }
 
 export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
   return getJsonWithAuditHeaders<ProjectMembersResponse>(
-    backendApiEndpoints.projectMembers(projectId),
+    `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
     auditProjectClientHeaders(projectId)
   );
 }
@@ -510,7 +350,7 @@ export function createProjectMember(
   payload: ProjectMemberCreateRequest
 ): Promise<ProjectMemberCreateResponse> {
   return postJson<ProjectMemberCreateResponse>(
-    backendApiEndpoints.projectMembers(projectId),
+    `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
     payload,
     auditProjectClientHeaders(projectId)
   );

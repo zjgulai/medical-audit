@@ -1,13 +1,14 @@
 from uuid import UUID, uuid4
 
 from medical_audit_kb.domain.constants import SourceCollection
-from medical_audit_kb.indexing.bm25_index import BM25Document, BM25SearchResult, InMemoryBM25Index
-from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
+from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
+from medical_audit_kb.indexing.embeddings import (
+    DeterministicFakeEmbeddingProvider,
+    EmbeddingProviderError,
+)
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
-    ChunkEmbeddingRecord,
     InMemoryVectorIndex,
-    VectorSearchResult,
     build_chunk_embedding_records,
 )
 from medical_audit_kb.retrieval.filters import RetrievalFilters
@@ -155,67 +156,6 @@ def test_hybrid_search_returns_cross_source_recall() -> None:
     assert {ids["law"], ids["rule"], ids["catalog"]}.issubset(result_ids)
 
 
-def test_hybrid_search_rank_fusion_rescues_high_vector_rank_from_bm25_noise() -> None:
-    provider = DeterministicFakeEmbeddingProvider(dimension=3)
-    target_id = uuid4()
-    noise_ids = [uuid4() for _ in range(30)]
-    metadata = {
-        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
-        "source_path": "全量法律/中华人民共和国药品管理法.md",
-        "locator": {"type": "law-article", "article_number": "第一条"},
-    }
-    target_text = "第一条 为了加强药品管理，保证药品质量，保障公众用药安全。"
-    vector_results = (
-        VectorSearchResult(
-            record=ChunkEmbeddingRecord(
-                chunk_id=target_id,
-                text=target_text,
-                embedding=(),
-                provider="fake",
-                model_name="deterministic-token-hashing",
-                provider_version="v1",
-                dimension=3,
-                metadata=dict(metadata),
-            ),
-            score=0.72,
-        ),
-    )
-    bm25_results = tuple(
-        BM25SearchResult(
-            document=BM25Document(
-                chunk_id=noise_id,
-                text=f"第{index}条 中华人民共和国药品管理法相关管理要求。",
-                metadata={
-                    **metadata,
-                    "source_path": f"全量法律/噪声法规-{index}.md",
-                },
-            ),
-            score=100.0 - index,
-        )
-        for index, noise_id in enumerate(noise_ids, start=1)
-    ) + (
-        BM25SearchResult(
-            document=BM25Document(
-                chunk_id=target_id,
-                text=target_text,
-                metadata=dict(metadata),
-            ),
-            score=60.0,
-        ),
-    )
-    engine = HybridSearchEngine(
-        embedding_provider=provider,
-        vector_index=_StaticVectorIndex(vector_results),
-        bm25_index=_StaticBM25Index(bm25_results),
-        rerank_provider=None,
-    )
-
-    results = engine.search("中华人民共和国药品管理法的制定目的是什么？", top_k=5)
-
-    assert results[0].chunk.chunk_id == target_id
-    assert results[0].matched_by == ("vector", "bm25")
-
-
 def test_retrieval_filters_accept_multiple_metadata_values() -> None:
     filters = RetrievalFilters(regions=("国家",), business_topics=("fund-supervision",))
 
@@ -228,60 +168,36 @@ def test_retrieval_filters_accept_multiple_metadata_values() -> None:
     assert not filters.matches({"region": ["海南"], "business_topic": "fund-supervision"})
 
 
-def test_hybrid_search_pushes_single_source_collection_filter_to_backends() -> None:
-    provider = DeterministicFakeEmbeddingProvider(dimension=3)
+def test_hybrid_search_falls_back_to_bm25_when_embedding_provider_is_unavailable() -> None:
     chunk_id = uuid4()
     metadata = {
-        "source_collection": SourceCollection.RISK_NEGATIVE_LIST.value,
-        "locator": {"type": "markdown"},
-        "index_version_key": "risk-index",
-        "source_package_version_key": "risk-package",
+        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+        "locator": {"type": "law-article"},
+        "index_version_key": "index-v1",
+        "source_package_version_key": "package-v1",
     }
-    vector_index = _StaticVectorIndex(
-        (
-            VectorSearchResult(
-                record=ChunkEmbeddingRecord(
-                    chunk_id=chunk_id,
-                    text="风险负面清单提示重复收费风险。",
-                    embedding=(),
-                    provider="fake",
-                    model_name="deterministic-token-hashing",
-                    provider_version="v1",
-                    dimension=3,
-                    metadata=dict(metadata),
-                ),
-                score=0.5,
-            ),
-        )
-    )
-    bm25_index = _StaticBM25Index(
-        (
-            BM25SearchResult(
-                document=BM25Document(
-                    chunk_id=chunk_id,
-                    text="风险负面清单提示重复收费风险。",
-                    metadata=dict(metadata),
-                ),
-                score=1.0,
-            ),
-        )
+    bm25_index = InMemoryBM25Index()
+    bm25_index.upsert(
+        [
+            BM25Document(
+                chunk_id=chunk_id,
+                text="医疗机构发现异常收费时，应优先核验证据链、项目编码和收费依据。",
+                metadata=metadata,
+            )
+        ]
     )
     engine = HybridSearchEngine(
-        embedding_provider=provider,
-        vector_index=vector_index,
+        embedding_provider=_FailingEmbeddingProvider(),
+        vector_index=InMemoryVectorIndex(dimension=32),
         bm25_index=bm25_index,
         rerank_provider=None,
     )
 
-    results = engine.search(
-        "重复收费风险",
-        filters=RetrievalFilters(source_collections=(SourceCollection.RISK_NEGATIVE_LIST,)),
-        top_k=1,
-    )
+    results = engine.search("异常收费 证据链", top_k=1)
 
     assert results[0].chunk.chunk_id == chunk_id
-    assert vector_index.last_filters == {"source_collection": "risk-negative-list"}
-    assert bm25_index.last_filters == {"source_collection": "risk-negative-list"}
+    assert results[0].matched_by == ("bm25",)
+    assert results[0].vector_score == 0
 
 
 def _build_engine() -> tuple[HybridSearchEngine, dict[str, UUID]]:
@@ -379,36 +295,14 @@ def _engine_from_chunks(
     )
 
 
-class _StaticVectorIndex:
-    def __init__(self, results: tuple[VectorSearchResult, ...]) -> None:
-        self._results = results
-        self.last_filters: dict[str, object] | None = None
+class _FailingEmbeddingProvider:
+    provider = "openai"
+    model_name = "kimi-for-coding"
+    provider_version = "v1"
+    dimension = 32
 
-    def search(
-        self,
-        query_embedding: tuple[float, ...],
-        *,
-        top_k: int = 10,
-        filters: dict[str, object] | None = None,
-    ) -> tuple[VectorSearchResult, ...]:
-        self.last_filters = dict(filters) if filters else None
-        return self._results[:top_k]
-
-
-class _StaticBM25Index:
-    def __init__(self, results: tuple[BM25SearchResult, ...]) -> None:
-        self._results = results
-        self.last_filters: dict[str, object] | None = None
-
-    def search(
-        self,
-        query: str,
-        *,
-        top_k: int = 10,
-        filters: dict[str, object] | None = None,
-    ) -> tuple[BM25SearchResult, ...]:
-        self.last_filters = dict(filters) if filters else None
-        return self._results[:top_k]
+    def embed_texts(self, texts: list[str]) -> tuple[tuple[float, ...], ...]:
+        raise EmbeddingProviderError("embedding provider quota exhausted")
 
 
 def _chunk_input(

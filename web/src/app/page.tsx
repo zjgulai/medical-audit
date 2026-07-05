@@ -1,5 +1,11 @@
-import { redirect } from "next/navigation";
+import { ProjectDashboard } from "@/components/dashboard/project-dashboard";
+import { WorkspaceShell } from "@/components/shell/workspace-shell";
+import { currentSelfCheckProject } from "@/lib/projects";
 
 export default function HomePage() {
-  redirect("/chat");
+  return (
+    <WorkspaceShell>
+      <ProjectDashboard project={currentSelfCheckProject} />
+    </WorkspaceShell>
+  );
 }

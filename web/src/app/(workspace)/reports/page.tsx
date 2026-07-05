@@ -1,237 +1,530 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { referenceHistoryItems } from "@/lib/reference-replica-data";
-import type { ReferenceReportRecord } from "@/lib/reference-replica-data";
+import { fetchReportWorkbench } from "@/lib/api-client";
+import { DataSourceBadge } from "@/components/ui/data-source-badge";
+import { StatusPill } from "@/components/ui/status-pill";
 import {
-  buildReplicaLocalGateNotice,
-  ReplicaMetric,
-  ReplicaNotice,
-  ReplicaPageHeader
-} from "@/components/replica/replica-page-kit";
-import { useReplicaProjectsData, useReplicaReportsData } from "@/components/replica/use-replica-runtime";
+  rectificationSummaries,
+  reportEntries,
+  reportEvidenceSources,
+  reportGateItems,
+  workpaperPromptTemplates
+} from "@/lib/portal-data";
+import type {
+  RectificationSummary,
+  ReportEntry,
+  ReportEvidenceSource,
+  ReportGateItem,
+  WorkpaperPromptTemplate
+} from "@/lib/portal-data";
+import type {
+  ReportWorkbenchEntry,
+  ReportWorkbenchEvidenceSource,
+  WorkpaperTemplateRegistryItem
+} from "@/lib/api-types";
 
-type ReportAction = "查看底稿" | "导出报告" | "提交签发";
+const reportWorkflowSteps = [
+  {
+    title: "复核结论进入底稿",
+    description: "只允许已确认违规或已明确排除的疑点进入底稿记录。",
+    href: "/findings"
+  },
+  {
+    title: "报告门禁预检",
+    description: "核对附件、负责人确认、报告正文和整改请求，不通过时阻断签发。",
+    href: "#report-gate-title"
+  },
+  {
+    title: "正式报告与整改",
+    description: "签发后冻结正文 hash，并把整改事项纳入任务结案门禁。",
+    href: "/remediation"
+  }
+] as const;
+
+const reviewWorkbenchHref = "/fund-compliance/review";
+const reportsHref = "/reports";
+const reportEvidenceChainHref = "/graph#graph-node-report";
+
+function safePortalHref(href: string | null | undefined, fallback = reportEvidenceChainHref): string {
+  if (!href || href === reportsHref || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+
+  return href;
+}
+
+function safeDownloadHref(href: string | null | undefined): string | undefined {
+  if (!href || href.startsWith("/review-tasks/")) {
+    return undefined;
+  }
+
+  return href;
+}
+
+type ReportPageDashboardData = {
+  readonly workpaperPromptTemplates: readonly WorkpaperPromptTemplate[];
+  readonly reportEntries: readonly ReportEntry[];
+  readonly reportEvidenceSources: readonly ReportEvidenceSource[];
+};
+
+type LoadState =
+  | { readonly status: "fallback" }
+  | { readonly status: "backend" }
+  | { readonly status: "error" };
+
+const initialDashboardData: ReportPageDashboardData = {
+  workpaperPromptTemplates,
+  reportEntries,
+  reportEvidenceSources
+};
 
 export default function ReportsPage() {
-  const reportsData = useReplicaReportsData();
-  const projectsData = useReplicaProjectsData();
-  const reportRecords = reportsData.data.records;
-  const projects = projectsData.data.projects;
-  const [selectedProject, setSelectedProject] = useState(projects[0]?.id ?? "");
-  const [selectedHistory, setSelectedHistory] = useState<readonly string[]>([]);
-  const [selectedReportId, setSelectedReportId] = useState(reportRecords[0]?.id ?? "");
-  const [reportDetailOpen, setReportDetailOpen] = useState(false);
-  const [activeReportAction, setActiveReportAction] = useState<ReportAction | null>(null);
-  const [notice, setNotice] = useState("");
-  const selectedReport = reportRecords.find((record) => record.id === selectedReportId) ?? reportRecords[0];
+  const [dashboardData, setDashboardData] = useState<ReportPageDashboardData>(initialDashboardData);
+  const [loadState, setLoadState] = useState<LoadState>({ status: "fallback" });
 
   useEffect(() => {
-    if (projects.length === 0) {
-      setSelectedProject("");
-      return;
-    }
-    if (!projects.some((project) => project.id === selectedProject)) {
-      setSelectedProject(projects[0]?.id ?? "");
-    }
-  }, [projects, selectedProject]);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (reportRecords.length === 0) {
-      setSelectedReportId("");
-      setReportDetailOpen(false);
-      return;
+    fetchReportWorkbench()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        const mappedTemplates = mapWorkbenchTemplates(response.workpaper_templates);
+        const mappedEntries = mapWorkbenchEntries(response.report_entries);
+        const mappedEvidenceSources = mapWorkbenchEvidenceSources(response.report_evidence_sources);
+        setDashboardData({
+          workpaperPromptTemplates:
+            mappedTemplates.length > 0 ? mappedTemplates : workpaperPromptTemplates,
+          reportEntries: mappedEntries.length > 0 ? mappedEntries : reportEntries,
+          reportEvidenceSources:
+            mappedEvidenceSources.length > 0 ? mappedEvidenceSources : reportEvidenceSources
+        });
+        setLoadState({ status: "backend" });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadState({ status: "error" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const signedReportCount = useMemo(
+    () => dashboardData.reportEntries.filter((entry) => entry.status === "已签发").length,
+    [dashboardData]
+  );
+  const blockedReportCount = useMemo(
+    () => dashboardData.reportEntries.filter((entry) => entry.status === "门禁阻断").length,
+    [dashboardData]
+  );
+  const includedFindingCount = useMemo(
+    () => dashboardData.reportEntries.reduce((sum, entry) => sum + entry.includedFindingCount, 0),
+    [dashboardData]
+  );
+  const openRectificationCount = useMemo(
+    () => rectificationSummaries.filter((item) => item.status !== "已整改").length,
+    []
+  );
+  const dataSourceTag = useMemo(() => {
+    if (loadState.status === "backend") {
+      return "后端驱动";
     }
-
-    if (!reportRecords.some((record) => record.id === selectedReportId)) {
-      setSelectedReportId(reportRecords[0]?.id ?? "");
+    if (loadState.status === "error") {
+      return "样例模式（后端异常）";
     }
-  }, [reportRecords, selectedReportId]);
-
-  function toggleHistory(id: string) {
-    setSelectedHistory((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    );
-  }
-
-  function generateWorkpaper() {
-    if (selectedHistory.length === 0) {
-      setNotice("请先选择要纳入底稿的历史会话。");
-      return;
-    }
-    setNotice(buildReplicaLocalGateNotice({
-      action: `生成 ${selectedHistory.length} 条历史会话的底稿预览`,
-      nextStep: "报告生成任务 API"
-    }));
-  }
-
-  function runReportAction(record: ReferenceReportRecord, action: ReportAction) {
-    setSelectedReportId(record.id);
-    setReportDetailOpen(true);
-    setActiveReportAction(action);
-    setNotice(buildReplicaLocalGateNotice({
-      action: `${action}「${record.title}」`,
-      nextStep: getReportActionNextStep(action)
-    }));
-  }
+    return "样例数据";
+  }, [loadState]);
 
   return (
-    <main
-      className="replica-page"
-      data-replica-source={reportsData.source}
-      data-replica-status={reportsData.status}
-    >
-      <ReplicaPageHeader
-        kicker="审计底稿/报告"
-        title="底稿与报告"
-        description="选择项目和会话范围，先生成可复核底稿，再进入正式签发。"
-        actions={<button type="button" className="replica-primary-button" onClick={generateWorkpaper}>一键生成底稿</button>}
-      />
-
-      <section className="replica-metric-grid">
-        <ReplicaMetric label="历史记录" value={`${reportRecords.length}`} />
-        <ReplicaMetric label="可选会话" value={`${referenceHistoryItems.length}`} tone="green" />
-        <ReplicaMetric label="已选择" value={`${selectedHistory.length}`} tone="amber" />
-        <ReplicaMetric label="模式" value="草稿预览" tone="slate" />
+    <main className="audit-workbench-main mx-auto grid gap-4">
+      <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="audit-kicker">报告流程</p>
+            <h2 className="audit-section-title mt-1">从复核到签发</h2>
+          </div>
+          <StatusPill tone={loadState.status === "error" ? "warning" : "success"}>{dataSourceTag}</StatusPill>
+        </div>
+        <ol className="mt-4 grid gap-2 md:grid-cols-3">
+          {reportWorkflowSteps.map((step, index) => (
+            <li key={step.title}>
+              <a className="audit-focus-ring grid h-full grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white p-3 hover:bg-[var(--audit-primary-soft)]" href={step.href}>
+                <span className="grid size-7 place-items-center rounded-[var(--audit-radius-sm)] bg-[var(--audit-primary)] text-xs font-semibold text-white">
+                  {index + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-[var(--audit-ink)]">{step.title}</span>
+                  <span className="mt-1 block line-clamp-1 audit-meta">{step.description}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      <section className="replica-report-layout">
-        <div className="replica-panel">
-          <label className="replica-field">
-            <span>项目</span>
-            <select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="replica-statebar" aria-label="底稿生成状态">
-            <span>{projects.find((project) => project.id === selectedProject)?.type ?? "未选择项目"}</span>
-            <strong>{selectedHistory.length} 条已选</strong>
-            <span>本地草稿</span>
+      <section className="audit-panel min-w-0 p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="audit-kicker">审计底稿/报告</p>
+            <h1 className="audit-page-title">底稿与报告</h1>
+            <p className="audit-copy mt-2 max-w-2xl">汇总已复核疑点、底稿草稿、报告门禁和整改跟踪。</p>
           </div>
-
-          <div className="replica-history-select">
-            <div className="replica-results-head">
-              <div>
-                <p className="replica-kicker">历史对话</p>
-                <h2>选择生成范围</h2>
-              </div>
-              <span>选择要纳入底稿的会话</span>
-            </div>
-            {referenceHistoryItems.slice(0, 8).map((item) => (
-              <label key={item.id}>
-                <input
-                  type="checkbox"
-                  aria-label={item.title}
-                  className="replica-large-checkbox"
-                  checked={selectedHistory.includes(item.id)}
-                  onChange={() => toggleHistory(item.id)}
-                />
-                <span>{item.title}</span>
-              </label>
-            ))}
+          <div className="flex flex-col items-end gap-2">
+            <DataSourceBadge source="hybrid" />
           </div>
-
-          {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
         </div>
 
-        <div className="replica-panel">
-          <div className="replica-results-head">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ReportMetric label="已签发报告" value={`${signedReportCount} 份`} />
+          <ReportMetric label="门禁阻断" value={`${blockedReportCount} 份`} />
+          <ReportMetric label="纳入疑点" value={`${includedFindingCount} 条`} />
+          <ReportMetric label="待整改" value={`${openRectificationCount} 项`} />
+        </div>
+
+        <section className="mt-5" aria-labelledby="workpaper-template-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="replica-kicker">历史生成记录</p>
-              <h2>历史生成记录</h2>
-            </div>
-            <span>{reportRecords.length} 条</span>
+              <h2 id="workpaper-template-title" className="audit-section-title">
+                底稿模板
+              </h2>
+                          </div>
+            <StatusPill tone="warning">仅草稿</StatusPill>
           </div>
-          <div className="replica-record-list">
-            {reportRecords.map((record) => (
-              <article key={record.id} className={selectedReportId === record.id ? "is-active" : ""}>
-                <div>
-                  <h3>{record.title}</h3>
-                  <p>{record.project} / {record.generatedAt}</p>
-                </div>
-                <span>{record.status}</span>
-                <strong>{record.sourceCount} 条来源</strong>
-                <div className="replica-record-actions">
-                  <button type="button" onClick={() => runReportAction(record, "查看底稿")}>
-                    查看底稿
-                  </button>
-                  <button type="button" onClick={() => runReportAction(record, "导出报告")}>
-                    导出报告
-                  </button>
-                </div>
-              </article>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {dashboardData.workpaperPromptTemplates.map((template) => (
+              <WorkpaperPromptCard key={template.id} template={template} />
             ))}
           </div>
-          {reportDetailOpen && selectedReport ? (
-            <section className="replica-report-detail" aria-label="报告详情预览">
-              <div className="replica-results-head">
-                <div>
-                  <p className="replica-kicker">报告详情</p>
-                  <h2>{selectedReport.title}</h2>
-                </div>
-                <button type="button" aria-label="关闭报告详情" onClick={() => setReportDetailOpen(false)}>×</button>
-              </div>
-              <dl>
-                <div>
-                  <dt>所属项目</dt>
-                  <dd>{selectedReport.project}</dd>
-                </div>
-                <div>
-                  <dt>当前状态</dt>
-                  <dd>{selectedReport.status}</dd>
-                </div>
-                <div>
-                  <dt>生成时间</dt>
-                  <dd>{selectedReport.generatedAt}</dd>
-                </div>
-                <div>
-                  <dt>来源证据</dt>
-                  <dd>{selectedReport.sourceCount} 条</dd>
-                </div>
-              </dl>
-              <div className="replica-card-actions">
-                <button type="button" onClick={() => runReportAction(selectedReport, "查看底稿")}>查看底稿</button>
-                <button type="button" onClick={() => runReportAction(selectedReport, "导出报告")}>导出报告</button>
-                <button type="button" onClick={() => runReportAction(selectedReport, "提交签发")}>提交签发</button>
-              </div>
-              {activeReportAction ? (
-                <div className="replica-report-next-panel" aria-label="报告后续操作预览">
-                  <strong>{activeReportAction}</strong>
-                  <p>{getReportActionPreview(selectedReport, activeReportAction)}</p>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-        </div>
+        </section>
+
+        <section className="mt-5" aria-labelledby="report-records-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="report-records-title" className="audit-section-title">
+              报告记录
+            </h2>
+            <a className="audit-focus-ring audit-btn audit-btn-secondary" href={reviewWorkbenchHref}>
+              打开复核任务台
+            </a>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {dashboardData.reportEntries.map((entry) => (
+              <ReportRecordCard key={entry.id} entry={entry} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-5 grid gap-5" aria-labelledby="report-gate-title">
+          <div>
+            <h2 id="report-gate-title" className="audit-section-title">
+              报告门禁预检
+            </h2>
+            <div className="mt-4 grid gap-3">
+              {reportGateItems.map((item) => (
+                <GateCard key={item.id} item={item} />
+              ))}
+            </div>
+          </div>
+
+          <aside className="audit-callout p-5">
+            <p className="audit-kicker">报告正文规则</p>
+            <h3 className="audit-section-title mt-2">只纳入已确认违规问题</h3>
+            <p className="audit-copy mt-2">
+              附录展示复核分布、附件清单和整改请求；AI 对话内容只能作为引用材料和底稿草稿来源。
+            </p>
+          </aside>
+        </section>
+      </section>
+
+      <section className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">底稿证据来源</h2>
+          <div className="mt-4 space-y-3">
+            {dashboardData.reportEvidenceSources.map((source) => (
+              <EvidenceSourceCard key={source.id} source={source} />
+            ))}
+          </div>
+        </section>
+
+        <section className="audit-panel-rail p-5">
+          <h2 className="audit-section-title">整改跟踪</h2>
+          <div className="mt-4 space-y-3">
+            {rectificationSummaries.map((item) => (
+              <RectificationCard key={item.id} item={item} />
+            ))}
+          </div>
+        </section>
+
+        <a className="audit-focus-ring audit-action-card p-5" href="/graph">
+          <p className="audit-kicker">知识图谱</p>
+          <h2 className="audit-section-title mt-2">查看报告证据链</h2>
+        </a>
       </section>
     </main>
   );
 }
 
-function getReportActionNextStep(action: ReportAction) {
-  if (action === "查看底稿") {
-    return "报告详情 API";
-  }
-
-  if (action === "导出报告") {
-    return "报告导出 API";
-  }
-
-  return "报告签发流程 API";
+function mapWorkbenchTemplates(
+  items: readonly WorkpaperTemplateRegistryItem[]
+): readonly WorkpaperPromptTemplate[] {
+  return items.map((finding, index) => {
+    return {
+      id: finding.id,
+      name: finding.name,
+      sourceTemplateId: finding.source_template_id as WorkpaperPromptTemplate["sourceTemplateId"],
+      sourceTable: finding.source_table,
+      sourceFileName: finding.source_file_name,
+      templateStatus: finding.registry_status === "active" ? "模板字段已注册" : finding.registry_status,
+      outputType: mapWorkpaperOutputType(finding.output_type),
+      evidenceBindings: finding.evidence_bindings,
+      prompt: finding.prompt,
+      href: finding.chat_href || workpaperPromptTemplates[index]?.href || "/chat"
+    };
+  });
 }
 
-function getReportActionPreview(record: ReferenceReportRecord, action: ReportAction) {
-  if (action === "查看底稿") {
-    return `已打开 ${record.sourceCount} 条来源证据的底稿预览，正式环境需拉取报告详情与证据链。`;
+function mapWorkbenchEntries(items: readonly ReportWorkbenchEntry[]): readonly ReportEntry[] {
+  return items.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    status: mapReportStatus(entry.status),
+    reportNo: entry.report_no,
+    owner: entry.owner,
+    source: entry.source,
+    includedFindingCount: entry.included_finding_count,
+    appendixCount: entry.appendix_count,
+    gateSummary: entry.gate_summary,
+    updatedAt: formatDate(entry.updated_at),
+    href: safePortalHref(entry.href),
+    taskDocxHref: safeDownloadHref(entry.download_links.task_docx),
+    reportDocxHref: safeDownloadHref(entry.download_links.report_docx),
+    reportMarkdownHref: safeDownloadHref(entry.download_links.report_markdown),
+    reportJsonHref: safeDownloadHref(entry.download_links.report_json)
+  }));
+}
+
+function mapWorkbenchEvidenceSources(
+  items: readonly ReportWorkbenchEvidenceSource[]
+): readonly ReportEvidenceSource[] {
+  return items.slice(0, 6).map((source) => ({
+    id: source.id,
+    title: source.title,
+    kind: mapEvidenceKind(source.kind),
+    reference: source.reference,
+    status: mapEvidenceStatus(source.status),
+    href: safePortalHref(source.href)
+  }));
+}
+
+function formatDate(value: string): string {
+  return value.includes("T") ? value.split("T")[0] : value.slice(0, 10);
+}
+
+function mapWorkpaperOutputType(value: string): WorkpaperPromptTemplate["outputType"] {
+  if (value === "底稿草稿" || value === "问题清单" || value === "复核摘要") {
+    return value;
+  }
+  return "底稿草稿";
+}
+
+function mapReportStatus(value: string): ReportEntry["status"] {
+  if (value === "草稿" || value === "门禁阻断" || value === "已签发") {
+    return value;
+  }
+  return "草稿";
+}
+
+function mapEvidenceKind(value: string): ReportEvidenceSource["kind"] {
+  if (value === "疑点" || value === "底稿" || value === "附件" || value === "负责人确认") {
+    return value;
+  }
+  return "底稿";
+}
+
+function mapEvidenceStatus(value: string): ReportEvidenceSource["status"] {
+  if (value === "已纳入" || value === "待补证" || value === "只读") {
+    return value;
+  }
+  return "待补证";
+}
+
+function WorkpaperPromptCard({ template }: { readonly template: WorkpaperPromptTemplate }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="audit-card-title">{template.name}</h3>
+          <p className="audit-meta mt-1">{template.sourceTable}</p>
+          {template.sourceFileName ? (
+            <p className="audit-meta mt-1 break-words">{template.sourceFileName}</p>
+          ) : null}
+        </div>
+        <StatusPill tone="info">{template.outputType}</StatusPill>
+      </div>
+      <p className="line-clamp-2 audit-copy mt-3">{template.prompt}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {template.evidenceBindings.slice(0, 2).map((binding) => (
+          <span key={binding} className="audit-chip bg-white">
+            {binding}
+          </span>
+        ))}
+        {template.evidenceBindings.length > 2 ? (
+          <span className="audit-chip bg-white">另 {template.evidenceBindings.length - 2} 项</span>
+        ) : null}
+        {template.templateStatus ? (
+          <span className="audit-chip bg-white">{template.templateStatus}</span>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-8 px-3 py-1.5 text-xs" href={template.href}>
+          套用模板
+        </a>
+        <a className="audit-focus-ring audit-btn audit-btn-neutral min-h-8 px-3 py-1.5 text-xs" href={reviewWorkbenchHref}>
+          绑定复核任务
+        </a>
+      </div>
+    </article>
+  );
+}
+
+function ReportMetric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
+    </div>
+  );
+}
+
+function ReportRecordCard({ entry }: { readonly entry: ReportEntry }) {
+  return (
+    <article id={entry.id} className="audit-panel-muted scroll-mt-24 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="audit-compact-title">{entry.title}</h3>
+          <p className="audit-meta mt-1">{entry.gateSummary}</p>
+        </div>
+        <StatusPill tone={entry.status === "已签发" ? "success" : entry.status === "门禁阻断" ? "danger" : "neutral"}>
+          {entry.status}
+        </StatusPill>
+      </div>
+
+      <dl className="audit-meta mt-4 grid gap-3">
+        <div>
+          <dt className="font-semibold">编号</dt>
+          <dd className="mt-1 break-words font-medium text-[var(--audit-ink)]">{entry.reportNo}</dd>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <dt className="font-semibold">负责人</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.owner}</dd>
+          </div>
+          <div>
+            <dt className="font-semibold">更新时间</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.updatedAt}</dd>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <dt className="font-semibold">纳入疑点</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.includedFindingCount} 条</dd>
+          </div>
+          <div>
+            <dt className="font-semibold">附录</dt>
+            <dd className="mt-1 text-[var(--audit-ink)]">{entry.appendixCount} 个</dd>
+          </div>
+        </div>
+      </dl>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <a className="audit-focus-ring audit-btn audit-btn-primary min-h-9 flex-1 px-3 py-2 text-sm" href={entry.href}>
+          查看证据链
+        </a>
+        {entry.taskDocxHref ? (
+          <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-2 text-sm" href={entry.taskDocxHref}>
+            任务 Word
+          </a>
+        ) : null}
+        {entry.reportDocxHref ? (
+          <a className="audit-focus-ring audit-btn audit-btn-secondary min-h-9 px-3 py-2 text-sm" href={entry.reportDocxHref}>
+            报告 Word
+          </a>
+        ) : (
+          <span className="inline-flex min-h-9 items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white px-3 py-2 text-sm font-semibold text-[var(--audit-ink-muted)]">
+            报告 Word 需过门禁
+          </span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function GateCard({ item }: { readonly item: ReportGateItem }) {
+  return (
+    <article className="audit-panel-muted p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="audit-card-title">{item.label}</h3>
+          <p className="audit-meta mt-1">责任人：{item.owner}</p>
+        </div>
+        <StatusPill tone={getGateTone(item.status)}>{item.status}</StatusPill>
+      </div>
+      <p className="audit-copy mt-3">{item.detail}</p>
+    </article>
+  );
+}
+
+function EvidenceSourceCard({ source }: { readonly source: ReportEvidenceSource }) {
+  return (
+    <a id={source.id} className="audit-focus-ring block scroll-mt-24 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={source.href}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="audit-compact-title">{source.title}</p>
+          <p className="audit-meta mt-1">
+            {source.kind} / {source.reference}
+          </p>
+        </div>
+        <StatusPill tone={source.status === "已纳入" ? "success" : source.status === "待补证" ? "warning" : "neutral"}>
+          {source.status}
+        </StatusPill>
+      </div>
+    </a>
+  );
+}
+
+function RectificationCard({ item }: { readonly item: RectificationSummary }) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="audit-compact-title">{item.title}</h3>
+          <p className="audit-meta mt-1">
+            {item.department} / {item.dueDate}
+          </p>
+          <p className="audit-meta mt-2">{item.reportNo}</p>
+        </div>
+        <StatusPill tone={item.status === "已整改" ? "success" : item.status === "整改中" ? "info" : "warning"}>
+          {item.status}
+        </StatusPill>
+      </div>
+    </article>
+  );
+}
+
+function getGateTone(status: ReportGateItem["status"]) {
+  if (status === "通过") {
+    return "success";
   }
 
-  if (action === "导出报告") {
-    return `已生成「${record.title}」导出确认态，正式环境需进入受控下载与水印审计。`;
+  if (status === "阻断") {
+    return "danger";
   }
 
-  return `已进入「${record.title}」签发前确认态，正式环境需按角色流转到复核与签发。`;
+  return "warning";
 }

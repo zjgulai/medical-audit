@@ -21,7 +21,6 @@ from medical_audit_kb.api.auth_user_store import (
     AUTH_USER_ID_PREFIX,
     SqlAlchemyAuthUserStore,
 )
-from medical_audit_kb.api.document_permissions import DOCUMENT_SOURCE_COLLECTION_LABELS
 from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
@@ -45,6 +44,10 @@ from medical_audit_kb.core.config import (
     ModelProviderSettings,
 )
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import (
+    KNOWLEDGE_QUERY_CONTRACT_VERSION,
+    SYSTEM_SOURCE_COLLECTION_DEFINITIONS,
+)
 from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
@@ -785,6 +788,70 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     assert any(item["id"] == "agent-citation-check" for item in persisted_items)
 
 
+def test_agents_api_preserves_catalog_source_row_metadata(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents-catalog-row.db'}"
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    catalog_metadata = {
+        "catalog_source": "audit-agent-prompts-0613",
+        "catalog_row_id": "audit-agent-prompts-0613-042",
+        "source_key": "audit-agent-prompts-0613-042",
+        "source_row_index": 42,
+        "legacy_source_key": "财务收支审计|会议费用核验",
+        "source_category": "财务收支审计",
+        "source_title": "会议费用核验",
+        "source_scene": "用于会议费报销材料审计",
+        "source_file": "提示词分类0613.zip",
+        "display_name": "会议费用核验",
+        "avatar_seed": "财务收支审计-会议费用核验-042",
+    }
+
+    create_response = client.post(
+        "/agents",
+        headers={
+            "X-User-Id": "director-1",
+            "X-Role": "director",
+            "X-Project-Name": PROJECT_NAME_HEADER,
+        },
+        json={
+            "name": "会议费用核验",
+            "category": "业务类",
+            "topic": "会议费报销合规",
+            "prompt": "仅基于会议通知、签到表、报销凭证和制度依据输出核验意见。",
+            "knowledge_base": "系统医保审计知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+            "allowed_roles": ["admin", "technician", "director", "member"],
+            "metadata": catalog_metadata,
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()["item"]
+    assert created["id"].startswith(AGENT_ID_PREFIX)
+    assert created["metadata"] | catalog_metadata == created["metadata"]
+    assert created["metadata"]["catalog_row_id"] == "audit-agent-prompts-0613-042"
+    assert created["metadata"]["source_row_index"] == 42
+    assert created["metadata"]["prompt_version_key"] == f"{created['id']}@v1"
+
+    second_state = _api_state(tmp_path / "second-catalog-row")
+    second_state.agent_store = SqlAlchemyAgentStore(database_url)
+    second_client = TestClient(create_app(second_state))
+    persisted_response = second_client.get(
+        "/agents",
+        headers={"X-Project-Name": PROJECT_NAME_HEADER},
+    )
+
+    assert persisted_response.status_code == 200
+    persisted = next(
+        item for item in persisted_response.json()["items"] if item["id"] == created["id"]
+    )
+    assert persisted["metadata"] | catalog_metadata == persisted["metadata"]
+    assert persisted["metadata"]["catalog_row_id"] == "audit-agent-prompts-0613-042"
+    assert persisted["metadata"]["source_row_index"] == 42
+
+
 def test_agents_api_fallback_defaults_include_prompt_version_metadata(tmp_path: Path) -> None:
     class UnavailableAgentStore:
         def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
@@ -1465,12 +1532,8 @@ def test_documents_governance_status_is_redacted_get_only(
     assert body["governance"]["dlp_review"]["provider"] == "external-dlp"
     assert fields["document_storage_provider"] == "tencent-cos"
     assert fields["document_storage_objects_schema_ready"] is True
-    assert fields["document_upload_list_readonly_status"] == (
-        "blocked_by_audit_log_side_effect"
-    )
-    assert fields["download_metadata_readonly_status"] == (
-        "blocked_by_audit_log_side_effect"
-    )
+    assert fields["document_upload_list_readonly_status"] == ("blocked_by_audit_log_side_effect")
+    assert fields["download_metadata_readonly_status"] == ("blocked_by_audit_log_side_effect")
     assert fields["audit_log_readonly_status"] == "available_no_event_written"
     assert body["boundaries"] == {
         "production_write": False,
@@ -1521,8 +1584,8 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     permissions_body = permissions_response.json()
     assert permissions_body["role"] == "auditor"
     assert [item["source_collection"] for item in permissions_body["source_collections"]] == [
-        *(collection.value for collection in DOCUMENT_SOURCE_COLLECTION_LABELS),
-        "personal-materials",
+        *[definition.collection.value for definition in SYSTEM_SOURCE_COLLECTION_DEFINITIONS],
+        SourceCollection.PERSONAL_MATERIALS.value,
     ]
     assert permissions_body["source_collections"][-1]["access"] == "explicit-owner-read"
     assert permissions_body["upload_permissions"] == {
@@ -1794,12 +1857,9 @@ def test_documents_index_readiness_governance_result_and_manual_approval(
     )
     assert auditor_update.status_code == 403
     assert auditor_update.json()["detail"] == (
-        "document upload governance result update requires department-head "
-        "or system-admin role"
+        "document upload governance result update requires department-head or system-admin role"
     )
-    assert state.operation_logs[-1]["action"] == (
-        "document-upload-governance-result-access-denied"
-    )
+    assert state.operation_logs[-1]["action"] == ("document-upload-governance-result-access-denied")
 
     virus_response = client.post(
         f"/documents/uploads/{upload_id}/index-readiness/governance-result",
@@ -2064,18 +2124,15 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
 
     assert response.status_code == 200
     body = response.json()
+    assert body["contract_version"] == KNOWLEDGE_QUERY_CONTRACT_VERSION
     assert "[C1]" in body["answer"]
+    assert "medical-insurance-laws" in body["effective_source_collections"]
+    assert "personal-materials" not in body["effective_source_collections"]
     assert body["citations"][0]["source_collection"] == "medical-insurance-laws"
     assert body["citations"][0]["index_version_key"] == "index-v1"
     assert body["citations"][0]["source_package_version_key"] == "package-v1"
     assert body["basis_groups"][0]["title"] == "法规依据"
     assert body["basis_groups"][0]["items"][0]["source_collection"] == "medical-insurance-laws"
-    assert body["effective_source_collections"] == [
-        "medical-insurance-catalog",
-        "medical-insurance-laws",
-        "risk-negative-list",
-        "supervision-rules-knowledge",
-    ]
     assert body["query_log_index"] == 0
 
     logs_response = client.get("/query/logs")
@@ -2103,20 +2160,13 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
 
     assert response.status_code == 200
     body = response.json()
+    assert body["contract_version"] == KNOWLEDGE_QUERY_CONTRACT_VERSION
     assert body["citations"]
-    assert {
-        item["source_collection"] for item in body["citations"]
-    } == {"medical-insurance-laws"}
+    assert {item["source_collection"] for item in body["citations"]} == {"medical-insurance-laws"}
     assert state.query_logs[-1]["filters"]["source_collections"] == []
-    assert body["effective_source_collections"] == [
-        "medical-insurance-catalog",
-        "medical-insurance-laws",
-        "risk-negative-list",
-        "supervision-rules-knowledge",
-    ]
-    assert "personal-materials" not in state.query_logs[-1]["filters"][
-        "effective_source_collections"
-    ]
+    assert (
+        "personal-materials" not in state.query_logs[-1]["filters"]["effective_source_collections"]
+    )
     assert state.query_logs[-1]["filters"]["personal_material_scope"] == "none"
 
     explicit_personal_response = client.post(
@@ -2130,14 +2180,12 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
     )
     assert explicit_personal_response.status_code == 200
     explicit_body = explicit_personal_response.json()
-    assert {
-        item["source_collection"] for item in explicit_body["citations"]
-    } == {"personal-materials"}
-    assert state.query_logs[-1]["filters"]["source_collections"] == ["personal-materials"]
     assert explicit_body["effective_source_collections"] == ["personal-materials"]
-    assert state.query_logs[-1]["filters"]["effective_source_collections"] == [
+    assert {item["source_collection"] for item in explicit_body["citations"]} == {
         "personal-materials"
-    ]
+    }
+    assert state.query_logs[-1]["filters"]["source_collections"] == ["personal-materials"]
+    assert state.query_logs[-1]["filters"]["effective_source_collections"] == ["personal-materials"]
     assert state.query_logs[-1]["filters"]["personal_material_scope"] == "self"
 
     other_auditor_response = client.post(
@@ -2161,9 +2209,9 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
         },
     )
     assert admin_personal_response.status_code == 200
-    assert {
-        item["source_collection"] for item in admin_personal_response.json()["citations"]
-    } == {"personal-materials"}
+    assert {item["source_collection"] for item in admin_personal_response.json()["citations"]} == {
+        "personal-materials"
+    }
     assert state.query_logs[-1]["filters"]["personal_material_scope"] == "all"
 
 
@@ -2201,6 +2249,81 @@ def test_query_endpoint_records_selected_agent_invocation(tmp_path: Path) -> Non
     assert state.operation_logs[-2]["action"] == "agent-invocation-create"
     assert state.operation_logs[-1]["action"] == "query"
     assert state.operation_logs[-1]["payload"]["agent_invocation_id"] == body["agent_invocation_id"]
+
+
+def test_query_endpoint_records_installed_catalog_agent_invocation(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'query-installed-catalog-agent.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    project_headers = {
+        "X-User-Id": "director-1",
+        "X-Role": "director",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
+    catalog_metadata = {
+        "catalog_source": "audit-agent-prompts-0613",
+        "catalog_row_id": "audit-agent-prompts-0613-118",
+        "source_key": "audit-agent-prompts-0613-118",
+        "source_row_index": 118,
+        "legacy_source_key": "工具智能体|医保基金问答助手",
+        "source_title": "医保基金问答助手",
+        "display_name": "基金问答助手",
+        "avatar_seed": "工具智能体-医保基金问答助手-118",
+    }
+    create_response = client.post(
+        "/agents",
+        headers=project_headers,
+        json={
+            "name": "基金问答助手",
+            "category": "效率类",
+            "topic": "医保基金问答",
+            "prompt": "围绕医保基金审核依据回答，并保留引用边界。",
+            "knowledge_base": "系统医保审计知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+            "metadata": catalog_metadata,
+        },
+    )
+    assert create_response.status_code == 200
+    agent_id = str(create_response.json()["item"]["id"])
+
+    response = client.post(
+        "/query",
+        headers={
+            "X-User-Id": "auditor-1",
+            "X-Role": "auditor",
+            "X-Project-Name": PROJECT_NAME_HEADER,
+        },
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "topic": "medical-insurance-fund",
+            "source_collections": ["medical-insurance-laws"],
+            "agent": agent_id,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["agent_invocation_id"]
+    assert state.agent_store is not None
+    invocations = state.agent_store.list_invocations(agent_id)
+    assert invocations[0]["id"] == body["agent_invocation_id"]
+    assert invocations[0]["agent_key"] == agent_id
+    assert invocations[0]["invocation_source"] == "/query"
+    assert invocations[0]["question"] == "医保基金审核依据"
+    invocation_metadata = invocations[0]["metadata"]
+    assert invocation_metadata["filters"]["agent"] == agent_id
+    assert invocation_metadata["filters"]["source_collections"] == ["medical-insurance-laws"]
+    assert invocation_metadata["query_log_index"] == body["query_log_index"]
+    assert invocation_metadata["project_name"] == "医保基金使用合规专项自查"
+    stored_agent = state.agent_store.get_agent(agent_id)
+    assert stored_agent is not None
+    assert stored_agent["metadata"]["catalog_row_id"] == "audit-agent-prompts-0613-118"
+    assert stored_agent["metadata"]["source_row_index"] == 118
 
 
 def test_query_endpoint_supports_title_only_filter(tmp_path: Path) -> None:
