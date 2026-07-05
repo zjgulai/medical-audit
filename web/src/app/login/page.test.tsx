@@ -34,8 +34,8 @@ describe("LoginPage", () => {
   it("opens the initial-password security prompt before entering the workspace", () => {
     render(<LoginPage />);
 
-    fireEvent.change(screen.getByLabelText("账号 / 工号"), { target: { value: "ray" } });
-    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "Aa111111@#!" } });
+    fireEvent.change(screen.getByLabelText("账号 / 工号"), { target: { value: "demo_user" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "demo_password" } });
     fireEvent.submit(screen.getByRole("form", { name: "登录系统" }));
 
     expect(screen.getByRole("dialog", { name: "初始密码安全提示" })).toBeInTheDocument();

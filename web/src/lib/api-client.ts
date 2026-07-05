@@ -38,7 +38,20 @@ import type {
   TableAnalysisUploadResponse
 } from "./api-types";
 import { backendApiEndpoints } from "./api-endpoints";
-import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
+
+type AuditClientRole = "admin" | "technician" | "director" | "member";
+
+const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
+const DEFAULT_AUDIT_ROLE: AuditClientRole = "admin";
+const DEFAULT_AUDIT_TENANT_ID = "hospital-demo";
+const DEFAULT_AUDIT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
+const DEFAULT_AUDIT_PROJECT_NAME = "医保基金使用合规专项自查";
+const auditClientUserIds: Record<AuditClientRole, string> = {
+  admin: "next-admin",
+  technician: "next-technician",
+  director: "next-director",
+  member: "next-member"
+};
 
 export type ApiClientErrorCode =
   | "backend-request-failed"
@@ -87,6 +100,48 @@ function assertBackendProxyClientRuntime(): void {
       "Backend proxy client must be called from browser/client code; server code needs an absolute backend URL."
     );
   }
+}
+
+function normalizeAuditClientRole(value: string | null | undefined): AuditClientRole {
+  if (value === "admin" || value === "technician" || value === "director" || value === "member") {
+    return value;
+  }
+  return DEFAULT_AUDIT_ROLE;
+}
+
+function readAuditClientRole(): AuditClientRole {
+  if (typeof window === "undefined") {
+    return DEFAULT_AUDIT_ROLE;
+  }
+
+  try {
+    return normalizeAuditClientRole(window.localStorage.getItem(AUDIT_ROLE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_AUDIT_ROLE;
+  }
+}
+
+function auditClientHeaders(): Record<string, string> {
+  const role = readAuditClientRole();
+  return {
+    "X-Role": role,
+    "X-User-Id": auditClientUserIds[role],
+    "X-Tenant-Id": DEFAULT_AUDIT_TENANT_ID
+  };
+}
+
+function auditAgentClientHeaders(): Record<string, string> {
+  return {
+    ...auditClientHeaders(),
+    "X-Project-Name": encodeURIComponent(DEFAULT_AUDIT_PROJECT_NAME)
+  };
+}
+
+function auditProjectClientHeaders(projectKey = DEFAULT_AUDIT_PROJECT_KEY): Record<string, string> {
+  return {
+    ...auditClientHeaders(),
+    "X-Project-Key": projectKey
+  };
 }
 
 async function getJson<T>(path: string): Promise<T> {

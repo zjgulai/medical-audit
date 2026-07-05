@@ -139,13 +139,13 @@ async function main() {
   await runStep(page, steps, "登录页显示密码切换", async () => {
     await page.getByLabel("显示密码").click();
   });
-  await runStep(page, steps, "登录提交跳转到工作台", async () => {
+  await runStep(page, steps, "登录提交进入AI对话", async () => {
     await page.getByPlaceholder("请输入账号或工号").fill("demo_user");
     await page.getByPlaceholder("请输入密码").fill("demo_password");
     await page.getByRole("button", { name: "登 录" }).click();
     await page.getByRole("dialog", { name: "初始密码安全提示" }).waitFor();
     await page.getByRole("button", { name: "稍后处理" }).click();
-    await page.waitForURL(/\/workspace$/, { timeout: 6000 });
+    await page.waitForURL(/\/chat$/, { timeout: 6000 });
   });
 
   const navItems = [
@@ -164,7 +164,7 @@ async function main() {
   for (const [label, route] of navItems) {
     await runStep(page, steps, `侧栏跳转：${label}`, async () => {
       await goto(page, "/workspace");
-      await page.getByRole("link", { name: label, exact: true }).click();
+      await page.getByLabel("主导航").getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(new RegExp(`${route.replace("/", "\\/")}$`), { timeout: 6000 });
     });
   }
@@ -273,19 +273,28 @@ async function main() {
     await page.getByRole("tab", { name: "就诊明细表" }).click();
   });
 
-  await runStep(page, steps, "基金合规专题进入审查与表单新建", async () => {
+  await runStep(page, steps, "旧基金合规入口转入医保审计表单", async () => {
     await goto(page, "/fund-compliance");
-    await page.getByRole("link", { name: "进入审查" }).click();
-    await page.waitForURL(/\/fund-compliance\/review$/, { timeout: 6000 });
-    await page.getByRole("tab", { name: "费用表单" }).click();
-    await page.getByRole("tab", { name: "表2" }).click();
-    await page.getByRole("tab", { name: "表3" }).click();
-    await page.getByText("新建表单").click();
+    await page.waitForURL(/\/medical-audit$/, { timeout: 6000 });
+    await page.getByRole("tab", { name: "费用汇总表" }).click();
+    await page.getByRole("tab", { name: "分类汇总表" }).click();
+    await page.getByRole("tab", { name: "就诊明细表" }).click();
+    await page.getByRole("button", { name: "新建表单" }).click();
   });
 
-  await runStep(page, steps, "规则整改归档疑点知识查询页面可达", async () => {
-    for (const route of ["/rules", "/remediation", "/archive", "/findings", "/knowledge-query", "/guided-check"]) {
+  await runStep(page, steps, "旧入口重定向到重构页面", async () => {
+    const redirects = [
+      ["/rules", /\/knowledge-base$/],
+      ["/remediation", /\/medical-audit$/],
+      ["/archive", /\/reports$/],
+      ["/findings", /\/medical-audit$/],
+      ["/knowledge-query", /\/documents$/],
+      ["/guided-check", /\/chat$/],
+      ["/fund-compliance/review", /\/medical-audit$/]
+    ];
+    for (const [route, expected] of redirects) {
       await goto(page, route);
+      await page.waitForURL(expected, { timeout: 6000 });
     }
   });
 

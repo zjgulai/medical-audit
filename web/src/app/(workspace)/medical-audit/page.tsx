@@ -1056,6 +1056,9 @@ function TablePageHeader({
         {extra ? <em>{extra}</em> : null}
       </div>
       <div>
+        <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("新建表单")}>
+          新建表单
+        </button>
         <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("打印")}>
           打印
         </button>
