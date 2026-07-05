@@ -1,0 +1,209 @@
+{
+  "contract_version": "frontend-backend-page-contract-v1",
+  "created_at": "2026-07-05",
+  "boundaries": {
+    "ui_style_change": false,
+    "production_write": false,
+    "provider_call": false,
+    "database_write": false,
+    "scope": "local_acceptance_and_frontend_contract_only"
+  },
+  "placeholders": {
+    "agentId": "agent-citation-check",
+    "projectId": "SELF-CHECK-FUND-20260607"
+  },
+  "pages": [
+    {
+      "page_id": "workspace-home",
+      "route": "/workspace",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "backend-health", "method": "GET", "path": "/api/backend/health" },
+        { "name": "auth-session", "method": "GET", "path": "/api/v1/auth/session" },
+        { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
+      ]
+    },
+    {
+      "page_id": "chat",
+      "route": "/chat",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "agents-list", "method": "GET", "path": "/api/v1/agents" },
+        {
+          "name": "knowledge-query",
+          "method": "POST",
+          "path": "/api/v1/query",
+          "sample_body": {
+            "question": "医保基金审核依据是什么？",
+            "top_k": 2,
+            "source_collections": ["medical-insurance-laws"],
+            "topic": "medical-insurance-fund",
+            "agent": "agent-citation-check"
+          }
+        }
+      ]
+    },
+    {
+      "page_id": "knowledge-query",
+      "route": "/knowledge-query",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        {
+          "name": "knowledge-query",
+          "method": "POST",
+          "path": "/api/v1/query",
+          "sample_body": {
+            "question": "医保基金审核依据是什么？",
+            "top_k": 2,
+            "source_collections": ["medical-insurance-laws"],
+            "topic": "medical-insurance-fund",
+            "agent": "agent-citation-check"
+          }
+        },
+        { "name": "query-history", "method": "GET", "path": "/api/v1/query/logs?limit=8" }
+      ]
+    },
+    {
+      "page_id": "agents",
+      "route": "/agents",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "agents-list", "method": "GET", "path": "/api/v1/agents" },
+        { "name": "agent-detail", "method": "GET", "path": "/api/v1/agents/{agentId}" },
+        {
+          "name": "agent-prompt-versions",
+          "method": "GET",
+          "path": "/api/v1/agents/{agentId}/prompt-versions"
+        },
+        { "name": "agent-invocations", "method": "GET", "path": "/api/v1/agents/{agentId}/invocations" },
+        { "name": "agent-feedback", "method": "GET", "path": "/api/v1/agents/{agentId}/feedback" }
+      ]
+    },
+    {
+      "page_id": "agent-market",
+      "route": "/agent-market",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "agents-list", "method": "GET", "path": "/api/v1/agents" },
+        {
+          "name": "agent-install",
+          "method": "POST",
+          "path": "/api/v1/agents",
+          "sample_body": {
+            "name": "医保目录核验",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "仅基于医保目录、费用明细和引用依据输出待复核问题。",
+            "knowledge_base": "医保审计知识库",
+            "project_name": "医保基金使用合规专项自查"
+          }
+        }
+      ]
+    },
+    {
+      "page_id": "knowledge-base",
+      "route": "/knowledge-base",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
+        { "name": "document-permissions", "method": "GET", "path": "/api/v1/documents/permissions" },
+        { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
+      ]
+    },
+    {
+      "page_id": "documents",
+      "route": "/documents",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
+        { "name": "document-permissions", "method": "GET", "path": "/api/v1/documents/permissions" },
+        { "name": "document-uploads", "method": "GET", "path": "/api/v1/documents/uploads" },
+        { "name": "query-history", "method": "GET", "path": "/api/v1/query/logs?limit=8" }
+      ]
+    },
+    {
+      "page_id": "analytics",
+      "route": "/analytics",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "analysis-upload-history", "method": "GET", "path": "/api/v1/analytics/table-uploads" }
+      ]
+    },
+    {
+      "page_id": "graph",
+      "route": "/graph",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "graph-workbench", "method": "GET", "path": "/api/v1/graph/workbench" }
+      ]
+    },
+    {
+      "page_id": "rules",
+      "route": "/rules",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "rules-workbench", "method": "GET", "path": "/api/v1/rules/workbench" }
+      ]
+    },
+    {
+      "page_id": "reports",
+      "route": "/reports",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "reports-workbench", "method": "GET", "path": "/api/v1/reports/workbench" }
+      ]
+    },
+    {
+      "page_id": "projects",
+      "route": "/projects",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "projects-list", "method": "GET", "path": "/api/v1/projects" },
+        { "name": "project-members", "method": "GET", "path": "/api/v1/projects/{projectId}/members" },
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings" }
+      ]
+    },
+    {
+      "page_id": "findings",
+      "route": "/findings",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings" }
+      ]
+    },
+    {
+      "page_id": "remediation",
+      "route": "/remediation",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "remediation-workbench", "method": "GET", "path": "/api/v1/remediation/workbench" }
+      ]
+    },
+    {
+      "page_id": "archive",
+      "route": "/archive",
+      "connection_status": "connected_first_batch",
+      "endpoints": [
+        { "name": "archive-workbench", "method": "GET", "path": "/api/v1/archive/workbench" }
+      ]
+    },
+    {
+      "page_id": "fund-compliance",
+      "route": "/fund-compliance",
+      "connection_status": "static_shell_first_batch",
+      "endpoints": []
+    },
+    {
+      "page_id": "fund-compliance-review",
+      "route": "/fund-compliance/review",
+      "connection_status": "static_shell_first_batch",
+      "endpoints": []
+    },
+    {
+      "page_id": "guided-check",
+      "route": "/guided-check",
+      "connection_status": "static_shell_first_batch",
+      "endpoints": []
+    }
+  ]
+}

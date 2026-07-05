@@ -1,0 +1,209 @@
+{
+  "contract_version": "knowledge-query-contract-v2",
+  "evidence_grade": "L1-local-contract",
+  "boundaries": {
+    "provider_call": false,
+    "database_write": false,
+    "index_activation": false,
+    "production_probe": false,
+    "frontend_business_change": false
+  },
+  "source_collections": [
+    {
+      "value": "medical-insurance-laws",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "legal",
+      "product_queryable": true
+    },
+    {
+      "value": "supervision-rules-knowledge",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "rule",
+      "product_queryable": true
+    },
+    {
+      "value": "medical-insurance-catalog",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "catalog",
+      "product_queryable": true
+    },
+    {
+      "value": "risk-negative-list",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "risk",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-general-policy",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-finance-price-procurement",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-data-statistics-disclosure",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-reform-pilot",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-social-security-livelihood",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-industry-business-environment",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "management-org-personnel-qualification",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-market-quality",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-license-enforcement",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-safety-emergency",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-judicial-audit-procedure",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-ecology-resources",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-urban-municipal",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-general-admin",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "other-agriculture-water",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-culture-tourism-sports",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-defense-confidentiality",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-education-research",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-ethnic-religious-foreign",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-transport-maritime",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "personal-materials",
+      "phase": "personal-materials",
+      "domain": "personal",
+      "evidence_group": "personal",
+      "product_queryable": true
+    }
+  ],
+  "excluded_collections": [
+    {
+      "value": "other-unclassified",
+      "phase": "P6D-manual-classification-before-ingestion",
+      "domain": "manual-review",
+      "product_queryable": false,
+      "reason": "P6D is a manual classification pool and must be reclassified or excluded before product query exposure."
+    }
+  ],
+  "query_response_required_fields": [
+    "contract_version",
+    "effective_source_collections",
+    "question",
+    "answer",
+    "confidence",
+    "fallback_used",
+    "basis_groups",
+    "citations",
+    "personal_upload_matches",
+    "query_log_index"
+  ]
+}

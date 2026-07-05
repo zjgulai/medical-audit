@@ -1,6 +1,5 @@
-import { ProjectDashboard } from "@/components/dashboard/project-dashboard";
-import { currentSelfCheckProject } from "@/lib/projects";
+import { DocumentSearchHome } from "@/components/portal/document-search-home";
 
 export default function WorkspacePage() {
-  return <ProjectDashboard project={currentSelfCheckProject} />;
+  return <DocumentSearchHome />;
 }

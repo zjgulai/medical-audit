@@ -22,6 +22,19 @@ describe("WorkspaceAuthGate", () => {
     expect(screen.queryByText("审计助手内容")).not.toBeInTheDocument();
   });
 
+  it("keeps the workspace document-search entry behind the login surface", () => {
+    window.history.replaceState(null, "", "/workspace");
+
+    render(
+      <WorkspaceAuthGate>
+        <main>文档检索入口内容</main>
+      </WorkspaceAuthGate>
+    );
+
+    expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
+    expect(screen.queryByText("文档检索入口内容")).not.toBeInTheDocument();
+  });
+
   it("renders protected workspace content when a local audit session exists", async () => {
     window.localStorage.setItem(AUDIT_AUTH_STORAGE_KEY, "authenticated");
 
