@@ -1,9 +1,9 @@
-import { WorkspaceShell } from "@/components/shell/workspace-shell";
+import { ReplicaShell } from "@/components/replica/replica-shell";
 
 export default function WorkspaceLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <WorkspaceShell>{children}</WorkspaceShell>;
+  return <ReplicaShell>{children}</ReplicaShell>;
 }

@@ -1,0 +1,635 @@
+dataset_id: knowledge-query-medical-supervision-full-candidate-evaluation-cases-v1
+title: 监管两库 full candidate 检索评测集 V1
+status: review
+created: '2026-07-03'
+updated: '2026-07-03'
+owner: self
+source: medical-supervision-rules-kimi-1024-full-20260703
+description: 用于验证监管两库 full Kimi 1024 candidate PostgreSQL 检索链路的代表性自动材料评测集。当前为自动生成
+  smoke，不等同于专家全量验收集。
+cases:
+- case_id: supervision-full-candidate-0001
+  question: 第一批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 21
+      line_end: 23
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0002
+  question: 第三批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第三批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第三批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 37
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0003
+  question: 第九批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第九批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第九批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 40
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0004
+  question: 第二批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第二批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第二批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 28
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0005
+  question: 第五批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 32
+      line_end: 40
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0006
+  question: 第八批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第八批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第八批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 51
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0007
+  question: 第六批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第六批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第六批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 39
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0008
+  question: 第十批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第十批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第十批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 35
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0009
+  question: 第四批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第四批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第四批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 31
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0010
+  question: 第一批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 19
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0011
+  question: 第一批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 25
+      line_end: 45
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0012
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 19
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0013
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 21
+      line_end: 23
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0014
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 25
+      line_end: 25
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0015
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 27
+      line_end: 27
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0016
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 29
+      line_end: 31
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0017
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 33
+      line_end: 33
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0018
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 35
+      line_end: 36
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0019
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 38
+      line_end: 39
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0020
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 41
+      line_end: 42
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0021
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 44
+      line_end: 45
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0022
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 47
+      line_end: 47
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0023
+  question: 第七批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 49
+      line_end: 55
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0024
+  question: 第五批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 20
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0025
+  question: 第五批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 22
+      line_end: 22
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - supervision-rules-knowledge

@@ -3117,9 +3117,15 @@ def _source_collection_cards(
     return tuple(
         {
             "value": collection.value,
-            "title": SOURCE_COLLECTION_UI[collection]["title"],
-            "description": SOURCE_COLLECTION_UI[collection]["description"],
-            "audit_hint": SOURCE_COLLECTION_UI[collection]["audit_hint"],
+            "title": SOURCE_COLLECTION_UI.get(collection, {}).get("title", collection.value),
+            "description": SOURCE_COLLECTION_UI.get(collection, {}).get(
+                "description",
+                "二级分类知识库，完成入库后可用于限定检索范围。",
+            ),
+            "audit_hint": SOURCE_COLLECTION_UI.get(collection, {}).get(
+                "audit_hint",
+                "用于补充背景资料和分类检索。",
+            ),
             "selected": collection.value in selected_values,
         }
         for collection in SourceCollection

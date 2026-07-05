@@ -17,6 +17,7 @@ class EvidenceType(StrEnum):
     RULE_BASIS = "rule_basis"
     CATALOG_BASIS = "catalog_basis"
     RISK_CASE_BASIS = "risk_case_basis"
+    REFERENCE_BASIS = "reference_basis"
     PERSONAL_MATERIAL_BASIS = "personal_material_basis"
 
 
@@ -25,6 +26,7 @@ EVIDENCE_TITLES: dict[EvidenceType, str] = {
     EvidenceType.RULE_BASIS: "规则依据",
     EvidenceType.CATALOG_BASIS: "目录依据",
     EvidenceType.RISK_CASE_BASIS: "风险案例依据",
+    EvidenceType.REFERENCE_BASIS: "通用资料依据",
     EvidenceType.PERSONAL_MATERIAL_BASIS: "个人材料依据",
 }
 
@@ -33,6 +35,7 @@ EVIDENCE_ORDER: tuple[EvidenceType, ...] = (
     EvidenceType.RULE_BASIS,
     EvidenceType.CATALOG_BASIS,
     EvidenceType.RISK_CASE_BASIS,
+    EvidenceType.REFERENCE_BASIS,
     EvidenceType.PERSONAL_MATERIAL_BASIS,
 )
 
@@ -121,7 +124,7 @@ def evidence_type_for_source_collection(source_collection: SourceCollection) -> 
         return EvidenceType.RISK_CASE_BASIS
     if source_collection == SourceCollection.PERSONAL_MATERIALS:
         return EvidenceType.PERSONAL_MATERIAL_BASIS
-    raise ValueError(f"unsupported source collection: {source_collection}")
+    return EvidenceType.REFERENCE_BASIS
 
 
 def _source_collection_from_metadata(metadata: dict[str, object]) -> SourceCollection:

@@ -1,0 +1,83 @@
+dataset_id: knowledge-query-medical-legal-p6a-candidate-evaluation-cases-v1
+title: 法律法规 P6A candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-04'
+updated: '2026-07-04'
+owner: self
+source: medical-insurance-laws:full-rebuild-20260704084457:candidate-db-source-paths
+description: P6A candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6a-medical-insurance-laws-0001
+  question: 请检索并引用《中华人民共和国药品管理法_20190826》中与“第一条 为了加强药品管理，保证药品质量，保障公众用药安全和合法权益，保护和促进公众健康，制定本法。”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/医保审核前期资料/全量法律/中华人民共和国药品管理法_20190826.md
+    locator:
+      type: law-article
+      line_end: 33
+      line_start: 33
+      title_path:
+      - 第一章　总　　则
+      page_number: null
+      source_path: 全量法律/医保审核前期资料/全量法律/中华人民共和国药品管理法_20190826.md
+      article_number: 第一条
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-laws
+  filters:
+    source_collections:
+    - medical-insurance-laws
+- case_id: p6a-medical-insurance-laws-0002
+  question: 请检索并引用《护士条例_20200327》中与“第一条 为了维护护士的合法权益，规范护理行为，促进护理事业发展，保障医疗安全和人体健康，制定本条例。”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/医保审核前期资料/全量法律/护士条例_20200327.md
+    locator:
+      type: law-article
+      line_end: 7
+      line_start: 7
+      title_path: []
+      page_number: null
+      source_path: 全量法律/医保审核前期资料/全量法律/护士条例_20200327.md
+      article_number: 第一条
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-laws
+  filters:
+    source_collections:
+    - medical-insurance-laws
+- case_id: p6a-medical-insurance-laws-0003
+  question: 请检索并引用《医疗器械监督管理条例_20241206》中与“第一条 为了保证医疗器械的安全、有效，保障人体健康和生命安全，促进医疗器械产业发展，制定本条例。”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/医保审核前期资料/全量法律/医疗器械监督管理条例_20241206.md
+    locator:
+      type: law-article
+      line_end: 7
+      line_start: 7
+      title_path:
+      - 第一章　总　　则
+      page_number: null
+      source_path: 全量法律/医保审核前期资料/全量法律/医疗器械监督管理条例_20241206.md
+      article_number: 第一条
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-laws
+  filters:
+    source_collections:
+    - medical-insurance-laws

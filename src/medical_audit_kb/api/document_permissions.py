@@ -10,13 +10,36 @@ from medical_audit_kb.api.auth import (
     has_permission,
     normalize_hospital_role,
 )
-from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.constants import (
+    DEFAULT_QUERY_SOURCE_COLLECTIONS,
+    SourceCollection,
+)
 
 DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
     SourceCollection.MEDICAL_INSURANCE_LAWS: ("法规政策", "公开知识库"),
     SourceCollection.SUPERVISION_RULES_KNOWLEDGE: ("监管两库", "系统知识库"),
     SourceCollection.MEDICAL_INSURANCE_CATALOG: ("医保目录", "系统知识库"),
     SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
+    SourceCollection.POLICY_GENERAL_POLICY: ("综合政策与规范性文件", "政策类知识库"),
+    SourceCollection.POLICY_REFORM_PILOT: ("规划改革与试点方案", "政策类知识库"),
+    SourceCollection.POLICY_FINANCE_PRICE_PROCUREMENT: ("财政价格与采购政策", "政策类知识库"),
+    SourceCollection.POLICY_SOCIAL_SECURITY_LIVELIHOOD: ("社会保障与民生政策", "政策类知识库"),
+    SourceCollection.POLICY_INDUSTRY_BUSINESS_ENVIRONMENT: ("产业发展与营商环境", "政策类知识库"),
+    SourceCollection.POLICY_DATA_STATISTICS_DISCLOSURE: ("数据统计与政务公开", "政策类知识库"),
+    SourceCollection.MANAGEMENT_GENERAL_ADMIN: ("综合行政管理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_LICENSE_ENFORCEMENT: ("行政许可与监督执法", "管理类知识库"),
+    SourceCollection.MANAGEMENT_ORG_PERSONNEL_QUALIFICATION: ("机构人员与资质管理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_URBAN_MUNICIPAL: ("城乡建设与市政治理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_ECOLOGY_RESOURCES: ("生态环境与资源管理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_SAFETY_EMERGENCY: ("安全生产与应急管理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_MARKET_QUALITY: ("市场监管与质量管理", "管理类知识库"),
+    SourceCollection.MANAGEMENT_JUDICIAL_AUDIT_PROCEDURE: ("司法审计与程序管理", "管理类知识库"),
+    SourceCollection.OTHER_EDUCATION_RESEARCH: ("教育科研", "其他类知识库"),
+    SourceCollection.OTHER_CULTURE_TOURISM_SPORTS: ("文化旅游体育", "其他类知识库"),
+    SourceCollection.OTHER_AGRICULTURE_WATER: ("农业农村与水利", "其他类知识库"),
+    SourceCollection.OTHER_TRANSPORT_MARITIME: ("交通运输与海事", "其他类知识库"),
+    SourceCollection.OTHER_ETHNIC_RELIGIOUS_FOREIGN: ("民族宗教外事", "其他类知识库"),
+    SourceCollection.OTHER_DEFENSE_CONFIDENTIALITY: ("国防保密与征兵", "其他类知识库"),
 }
 PERSONAL_MATERIAL_PERMISSION_LABEL = ("个人材料", "个人上传材料")
 
@@ -88,6 +111,10 @@ def document_permissions_for_role(role: str) -> tuple[DocumentPermission, ...]:
 
 def allowed_source_collections(role: str) -> frozenset[SourceCollection]:
     return frozenset(DOCUMENT_SOURCE_COLLECTION_LABELS)
+
+
+def default_source_collections(role: str) -> frozenset[SourceCollection]:
+    return DEFAULT_QUERY_SOURCE_COLLECTIONS
 
 
 def allowed_explicit_source_collections(role: str) -> frozenset[SourceCollection]:

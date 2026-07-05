@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
 from uuid import UUID
 
 import psycopg
@@ -10,7 +9,7 @@ from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import EmbeddingProvider, EmbeddingVector
 from medical_audit_kb.indexing.vector_index import ChunkEmbeddingRecord, VectorSearchResult
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
-from medical_audit_kb.retrieval.rerank import FakeRerankProvider, RerankProvider
+from medical_audit_kb.retrieval.rerank import RerankProvider
 
 DEFAULT_FETCH_MULTIPLIER = 3
 
@@ -62,6 +61,7 @@ class PostgresVectorIndex:
             dimension=self._dimension,
             index_version_status=self._index_version_status,
             index_version_key=self._index_version_key,
+            filters=filters,
             fetch_k=_fetch_k_for_filters(top_k, filters),
         )
         results = tuple(_vector_search_result(row) for row in rows)
@@ -99,7 +99,7 @@ def load_postgres_hybrid_search_engine(
         embedding_provider=embedding_provider,
         vector_index=vector_index,
         bm25_index=bm25_index,
-        rerank_provider=rerank_provider or cast(RerankProvider, FakeRerankProvider()),
+        rerank_provider=rerank_provider,
         source_collection_weights=source_collection_weights,
     )
 
@@ -156,33 +156,25 @@ def _query_vector_rows(
     dimension: int,
     index_version_status: str,
     index_version_key: str | None,
+    filters: Mapping[str, object] | None,
     fetch_k: int,
 ) -> tuple[tuple[object, ...], ...]:
     version_key_filter = "AND iv.version_key = %s" if index_version_key else ""
-    params: tuple[object, ...] = (
-        (
-            vector_literal,
-            provider,
-            model_name,
-            provider_version,
-            dimension,
-            index_version_status,
-            index_version_key,
-            vector_literal,
-            fetch_k,
-        )
-        if index_version_key
-        else (
-            vector_literal,
-            provider,
-            model_name,
-            provider_version,
-            dimension,
-            index_version_status,
-            vector_literal,
-            fetch_k,
-        )
-    )
+    source_collection = _source_collection_filter(filters)
+    source_collection_filter = "AND sd.source_collection = %s" if source_collection else ""
+    params: list[object] = [
+        vector_literal,
+        provider,
+        model_name,
+        provider_version,
+        dimension,
+        index_version_status,
+    ]
+    if index_version_key:
+        params.append(index_version_key)
+    if source_collection:
+        params.append(source_collection)
+    params.extend([vector_literal, fetch_k])
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
         cursor.execute(
             f"""
@@ -206,10 +198,11 @@ def _query_vector_rows(
               AND iv.status = %s
               AND sd.status = 'indexed'
               {version_key_filter}
+              {source_collection_filter}
             ORDER BY ce.embedding <=> %s::vector
             LIMIT %s
             """,
-            params,
+            tuple(params),
         )
         return tuple(cursor.fetchall())
 
@@ -247,6 +240,13 @@ def _fetch_k_for_filters(
     if not filters:
         return top_k
     return max(top_k * DEFAULT_FETCH_MULTIPLIER, top_k)
+
+
+def _source_collection_filter(filters: Mapping[str, object] | None) -> str:
+    if not filters:
+        return ""
+    value = filters.get("source_collection")
+    return value if isinstance(value, str) and value else ""
 
 
 def _metadata_matches(

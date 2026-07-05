@@ -51,6 +51,7 @@ def chunk_extraction_result(
     relative_path: str | None = None,
     max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
     overlap_chars: int = DEFAULT_OVERLAP_CHARS,
+    include_law_preamble: bool = True,
 ) -> list[DocumentChunkCreate]:
     if result.status != ExtractionStatus.EXTRACTED:
         return []
@@ -67,7 +68,9 @@ def chunk_extraction_result(
 
     lines = _located_lines(result.text_segments)
     if source_collection == SourceCollection.MEDICAL_INSURANCE_LAWS:
-        blocks = _law_blocks(lines)
+        blocks = _law_blocks(lines, include_preamble=include_law_preamble)
+        if not blocks:
+            blocks = _ordinary_text_blocks(lines)
     else:
         blocks = _ordinary_text_blocks(lines)
 
@@ -165,7 +168,7 @@ def _located_lines(segments: tuple[TextSegment, ...]) -> list[LocatedLine]:
     return lines
 
 
-def _law_blocks(lines: list[LocatedLine]) -> list[TextBlock]:
+def _law_blocks(lines: list[LocatedLine], *, include_preamble: bool) -> list[TextBlock]:
     blocks: list[TextBlock] = []
     title_path: list[str] = []
     current_article: str | None = None
@@ -193,8 +196,10 @@ def _law_blocks(lines: list[LocatedLine]) -> list[TextBlock]:
 
         article_match = LAW_ARTICLE_PATTERN.match(stripped)
         if article_match:
-            if current_article is None and preamble_lines:
+            if include_preamble and current_article is None and preamble_lines:
                 blocks.append(_text_block(preamble_lines, tuple(title_path), None, "law-preamble"))
+                preamble_lines = []
+            elif current_article is None:
                 preamble_lines = []
             _flush_law_article(blocks, current_lines, title_path, current_article)
             current_article = article_match.group(1)
@@ -206,7 +211,7 @@ def _law_blocks(lines: list[LocatedLine]) -> list[TextBlock]:
         else:
             current_lines.append(line)
 
-    if current_article is None and preamble_lines:
+    if include_preamble and current_article is None and preamble_lines:
         blocks.append(_text_block(preamble_lines, tuple(title_path), None, "law-preamble"))
     _flush_law_article(blocks, current_lines, title_path, current_article)
     return blocks

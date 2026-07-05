@@ -1,0 +1,371 @@
+dataset_id: knowledge-query-medical-three-libraries-active-expert-cases-v1
+title: 医疗三类二级库 active 专家固定检索评测集 V1
+status: review
+created: "2026-07-03"
+updated: "2026-07-03"
+owner: self
+source: active-db-evidence-curation
+description: >
+  面向风险清单、法律法规、监管两库三个二级库同时 active 后的固定检索门槛。
+  本版本基于当前 active PostgreSQL 索引中的真实 source_path、条文号和规则短语人工筛选，
+  用于替代纯自动 smoke；仍需医保审计专家复核后才能升级为 stable。
+cases:
+  - case_id: expert-risk-fund-use-supervision-regulation-prohibited-actions-001
+    question: 医疗保障基金使用监督管理条例第十五条中，定点医药机构及其工作人员不得有哪些典型违规行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/审计通用法律法规/01776_医疗保障基金使用监督管理条例2021-01-15.md
+        article_or_rule: 第十五条
+        required_terms: [挂床住院, 超量开药, 重复收费]
+    acceptance_criteria:
+      required_terms: [第十五条, 定点医药机构]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, fund-supervision, prohibited-actions]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-fund-use-supervision-regulation-fraud-001
+    question: 医疗保障基金使用监督管理条例第二十条如何界定通过虚构医药服务项目骗取基金？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/审计通用法律法规/01776_医疗保障基金使用监督管理条例2021-01-15.md
+        article_or_rule: 第二十条
+        required_terms: [虚构医药服务项目, 骗取医疗保障基金]
+    acceptance_criteria:
+      required_terms: [第二十条, 骗取医疗保障基金]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, fraud]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-fund-use-supervision-regulation-penalty-001
+    question: 医疗保障基金使用监督管理条例第三十八条对定点医药机构造成基金损失的处理是什么？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/审计通用法律法规/01776_医疗保障基金使用监督管理条例2021-01-15.md
+        article_or_rule: 第三十八条
+        required_terms: [责令退回, 1倍以上2倍以下]
+    acceptance_criteria:
+      required_terms: [第三十八条, 定点医药机构]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, penalty]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-fund-use-supervision-regulation-resell-drug-001
+    question: 医疗保障基金使用监督管理条例第四十一条中，个人转卖医保药品会触发哪些处理？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/审计通用法律法规/01776_医疗保障基金使用监督管理条例2021-01-15.md
+        article_or_rule: 第四十一条
+        required_terms: [转卖药品, 联网结算]
+    acceptance_criteria:
+      required_terms: [第四十一条, 转卖药品]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, personal-fraud]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-shanxi-fund-supervision-prohibited-actions-001
+    question: 山西省医疗保障基金使用监督管理办法第十九条列举了哪些定点医药机构违规行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/国家规章平台文档/山西省医疗保障基金使用监督管理办法.md
+        article_or_rule: 第十九条
+        required_terms: [分解住院, 超量开药, 串换药品]
+    acceptance_criteria:
+      required_terms: [第十九条, 定点医药机构]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, shanxi]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-jiangxi-fund-supervision-prohibited-actions-001
+    question: 江西省医疗保障基金使用监督管理办法第二十条要求定点医药机构不得有哪些不必要医药服务行为？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/国家规章平台文档/江西省医疗保障基金使用监督管理办法.md
+        article_or_rule: 第二十条
+        required_terms: [过度诊疗, 过度检查, 超量开药]
+    acceptance_criteria:
+      required_terms: [第二十条, 定点医药机构]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, jiangxi]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-report-handling-authority-001
+    question: 医疗保障基金使用监督管理举报处理暂行办法第三条如何划分举报处理主管职责？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+        article_or_rule: 第三条
+        required_terms: [国务院医疗保障行政部门, 举报处理工作机制]
+    acceptance_criteria:
+      required_terms: [第三条, 举报处理]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, reporting]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-risk-report-handling-confidentiality-001
+    question: 医疗保障基金使用监督管理举报处理暂行办法第十六条对举报人信息保密有什么要求？
+    expected_evidence:
+      - source_collection: risk-negative-list
+        source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+        article_or_rule: 第十六条
+        required_terms: [举报人的信息, 严格保密]
+    acceptance_criteria:
+      required_terms: [第十六条, 保密]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, risk-negative-list, reporting, confidentiality]
+    filters:
+      source_collections: [risk-negative-list]
+
+  - case_id: expert-law-drug-management-purpose-001
+    question: 药品管理法第一条的立法目的是否包括保障公众用药安全？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/01074_中华人民共和国药品管理法2019-08-26.md
+        article_or_rule: 第一条
+        required_terms: [药品质量, 保障公众用药安全]
+    acceptance_criteria:
+      required_terms: [第一条, 保障公众用药安全]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, drug-law]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-nurse-practice-registration-001
+    question: 护士条例第七条对护士执业注册和护士执业证书有什么要求？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/01935_护士条例2020-03-27.md
+        article_or_rule: 第七条
+        required_terms: [护士执业, 执业注册, 护士执业证书]
+    acceptance_criteria:
+      required_terms: [第七条, 护士执业证书]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, nurse]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-device-regulation-scope-001
+    question: 医疗器械监督管理条例第二条适用于哪些医疗器械活动和监督管理？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/医疗器械监督管理条例_20241206.md
+        article_or_rule: 第二条
+        required_terms: [研制, 生产, 经营, 使用, 监督管理]
+    acceptance_criteria:
+      required_terms: [第二条, 医疗器械]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, device]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-medical-institution-license-001
+    question: 医疗机构管理条例第十四条对医疗机构执业许可证有什么要求？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/01684_医疗机构管理条例2022-03-29.md
+        article_or_rule: 第十四条
+        required_terms: [医疗机构执业, 医疗机构执业许可证]
+    acceptance_criteria:
+      required_terms: [第十四条, 医疗机构执业许可证]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, medical-institution]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-health-promotion-license-001
+    question: 基本医疗卫生与健康促进法第三十八条中，举办医疗机构需要具备哪些条件并如何取得执业许可？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/02345_中华人民共和国基本医疗卫生与健康促进法2019-12-28.md
+        article_or_rule: 第三十八条
+        required_terms: [举办医疗机构, 执业许可证]
+    acceptance_criteria:
+      required_terms: [第三十八条, 医疗机构]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, health-promotion]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-medical-quality-core-system-001
+    question: 医疗质量管理办法第十七条要求医疗机构和医务人员如何开展诊疗工作？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/国家规章平台文档/医疗质量管理办法.md
+        article_or_rule: 第十七条
+        required_terms: [临床诊疗指南, 医疗质量安全核心制度, 合理用药]
+    acceptance_criteria:
+      required_terms: [第十七条, 合理用药]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, medical-quality]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-device-production-traceability-001
+    question: 医疗器械生产监督管理办法第三条如何要求生产全过程信息可追溯？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/国家规章平台文档/医疗器械生产监督管理办法.md
+        article_or_rule: 第三条
+        required_terms: [生产全过程信息, 真实, 准确, 完整, 可追溯]
+    acceptance_criteria:
+      required_terms: [第三条, 可追溯]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, device-production]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-law-device-online-sale-record-001
+    question: 医疗器械网络销售监督管理办法第十二条对销售记录保存期限有什么要求？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/国家规章平台文档/医疗器械网络销售监督管理办法.md
+        article_or_rule: 第十二条
+        required_terms: [销售信息, 有效期后2年, 不得少于5年, 永久保存]
+    acceptance_criteria:
+      required_terms: [第十二条, 销售信息]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, legal-regulations, device-online-sale]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: expert-supervision-service-duplicate-fee-001
+    question: 第七批智能监管两库中，医疗服务项目重复收费规则对应知识点明细是什么？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+        article_or_rule: 医疗服务项目重复收费
+        required_terms: [医疗服务项目重复收费, 900条]
+    acceptance_criteria:
+      required_terms: [医疗服务项目重复收费]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, duplicate-fee]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-seventh-batch-dynamic-update-001
+    question: 第七批材料要求各省级医保部门如何更新省级医保信息平台智能监管子系统两库？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/ocr-markdown/第七批.md
+        article_or_rule: 动态更新
+        required_terms: [省级医保部门, 动态更新]
+    acceptance_criteria:
+      required_terms: [动态更新]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, dynamic-update, ocr]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-payment-course-code-table-001
+    question: 2025年版第三部分中，药品限支付疗程对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/10.药品限支付疗程对应知识代码表.xlsx
+        article_or_rule: 药品限支付疗程
+        required_terms: [药品限支付疗程, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [药品限支付疗程]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, payment-course, code-table]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-gender-specific-drug-001
+    question: 2025年版第三部分中，药品区分性别使用对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/67.药品区分性别使用对应知识代码表.xlsx
+        article_or_rule: 药品区分性别使用
+        required_terms: [药品区分性别使用, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [药品区分性别使用]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, gender-specific-drug]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-off-label-dosage-001
+    question: 2025年版第三部分中，超说明书用量开药对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/68.超说明书用量开药对应知识代码表.xlsx
+        article_or_rule: 超说明书用量开药
+        required_terms: [超说明书用量开药, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [超说明书用量开药]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, off-label-dosage]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-duplicate-prescription-001
+    question: 2025年版第三部分中，重复开药对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/69.重复开药对应知识代码表.xlsx
+        article_or_rule: 重复开药
+        required_terms: [重复开药, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [重复开药]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, duplicate-prescription]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-drug-contraindication-001
+    question: 2025年版第三部分中，药品禁忌症对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/71.药品禁忌症对应知识代码表.xlsx
+        article_or_rule: 药品禁忌症
+        required_terms: [药品禁忌症, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [药品禁忌症]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, drug-contraindication]
+    filters:
+      source_collections: [supervision-rules-knowledge]
+
+  - case_id: expert-supervision-pregnancy-lactation-safety-001
+    question: 2025年版第三部分中，妊娠期及哺乳期用药安全对应知识代码表应命中哪份表？
+    expected_evidence:
+      - source_collection: supervision-rules-knowledge
+        source_path: 智能监管“两库”规则和知识点/rar-extracted/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）/73.妊娠期及哺乳期用药安全对应知识代码表.xlsx
+        article_or_rule: 妊娠期及哺乳期用药安全
+        required_terms: [妊娠期及哺乳期用药安全, 对应药品代码]
+    acceptance_criteria:
+      required_terms: [妊娠期及哺乳期用药安全]
+      min_citations: 1
+      require_preview: true
+    tags: [expert, supervision-rules, pregnancy-lactation]
+    filters:
+      source_collections: [supervision-rules-knowledge]

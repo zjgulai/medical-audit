@@ -4,9 +4,11 @@ from uuid import UUID
 
 from pytest import MonkeyPatch
 
+from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
 from medical_audit_kb.retrieval.postgres_search import (
     PostgresVectorIndex,
     load_postgres_bm25_index,
+    load_postgres_hybrid_search_engine,
 )
 
 
@@ -126,6 +128,51 @@ def test_postgres_indexes_can_target_candidate_version(
     assert "iv.version_key = %s" in cursor.query
     assert cursor.params is not None
     assert cursor.params[5:7] == ("candidate", "full-rebuild-next")
+
+
+def test_postgres_vector_index_pushes_source_collection_filter_to_sql(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cursor = FakeCursor(rows=[])
+    monkeypatch.setattr(
+        "medical_audit_kb.retrieval.postgres_search.psycopg.connect",
+        lambda database_url: FakeConnection(cursor),
+    )
+    index = PostgresVectorIndex(
+        database_url="postgresql://user:pass@localhost/db",
+        provider="openai",
+        model_name="kimi-for-coding",
+        provider_version="v1",
+        dimension=3,
+    )
+
+    index.search(
+        (1.0, 0.0, 0.0),
+        top_k=1,
+        filters={"source_collection": "risk-negative-list"},
+    )
+
+    assert cursor.query is not None
+    assert "sd.source_collection = %s" in cursor.query
+    assert cursor.params is not None
+    assert cursor.params[5:7] == ("active", "risk-negative-list")
+
+
+def test_load_postgres_hybrid_search_engine_keeps_rerank_disabled_by_default(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    cursor = FakeCursor(rows=[])
+    monkeypatch.setattr(
+        "medical_audit_kb.retrieval.postgres_search.psycopg.connect",
+        lambda database_url: FakeConnection(cursor),
+    )
+
+    engine = load_postgres_hybrid_search_engine(
+        database_url="postgresql://user:pass@localhost/db",
+        embedding_provider=DeterministicFakeEmbeddingProvider(dimension=3),
+    )
+
+    assert engine._rerank_provider is None
 
 
 class FakeConnection:

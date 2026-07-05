@@ -1,5 +1,5 @@
-import { KnowledgeQueryWorkbench } from "@/components/query/knowledge-query-workbench";
+import { redirect } from "next/navigation";
 
 export default function KnowledgeQueryPage() {
-  return <KnowledgeQueryWorkbench />;
+  redirect("/documents");
 }

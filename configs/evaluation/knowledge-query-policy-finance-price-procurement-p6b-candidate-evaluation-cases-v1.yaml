@@ -1,0 +1,251 @@
+dataset_id: knowledge-query-policy-finance-price-procurement-p6b-candidate-evaluation-cases-v1
+title: 财政价格与采购政策 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-finance-price-procurement:full-rebuild-20260704152603:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-finance-0001
+  question: 请检索并引用《中华人民共和国关税法_20240426》中与“（二）查封、扣押纳税人、扣缴义务人价值相当于应纳税款的货物或者其他财产，依法拍卖或者变卖所查封、扣押的货物或”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/中华人民共和国关税法_20240426.md
+    locator:
+      type: paragraph
+      line_end: 353
+      line_start: 353
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/中华人民共和国关税法_20240426.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0002
+  question: 请检索并引用《海南省税收保障条例_》中与“县级以上税务机关应当建立健全税务公开制度，实行涉税信息公开标准化，公开职责权限、征收依据、减免税规定、办税程”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/海南省税收保障条例_.md
+    locator:
+      type: paragraph
+      line_end: 201
+      line_start: 201
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/海南省税收保障条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0003
+  question: 请检索并引用《湖南省人民代表大会常务委员会关于契税具体适用税率等事项的决定_20210527》中与“三、因不可抗力灭失住房，重新承受住房权属的，没有超出原面积的，免征契税；超出原面积的部分，按照超出部分的价值”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/湖南省人民代表大会常务委员会关于契税具体适用税率等事项的决定_20210527.md
+    locator:
+      type: paragraph
+      line_end: 29
+      line_start: 29
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/湖南省人民代表大会常务委员会关于契税具体适用税率等事项的决定_20210527.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0004
+  question: 请检索并引用《四川省城镇土地使用税实施办法》中与“第九条 新征用的土地，依照下列规定缴纳土地使用税： （一）征用的耕地，自批准征用之日起满1年时开始缴纳土地使”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/国家规章平台文档/四川省城镇土地使用税实施办法.converted.txt
+    locator:
+      type: paragraph
+      line_end: 28
+      line_start: 28
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/国家规章平台文档/四川省城镇土地使用税实施办法.converted.txt
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0005
+  question: 请检索并引用《安徽省非税收入管理条例_20171120》中与“涉及分成的非税收入，由县级以上人民政府财政部门按照有关规定，通过非税收入汇缴结算账户及时划解、结算，不得滞留”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/安徽省非税收入管理条例_20171120.md
+    locator:
+      type: paragraph
+      line_end: 375
+      line_start: 375
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/安徽省非税收入管理条例_20171120.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0006
+  question: 请检索并引用《山西省人民代表大会常务委员会关于资源税具体适用税率等有关事项的决定_20240328》中与“（一）纳税人开采或者生产应税产品过程中，因意外事故或者自然灾害等原因遭受重大损失的，减征当年度百分之三十资源”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/山西省人民代表大会常务委员会关于资源税具体适用税率等有关事项的决定_20240328.md
+    locator:
+      type: paragraph
+      line_end: 27
+      line_start: 27
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/山西省人民代表大会常务委员会关于资源税具体适用税率等有关事项的决定_20240328.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0007
+  question: 请检索并引用《天津市人民代表大会常务委员会关于天津市契税适用税率和减征免征办法的决定_20210526》中与“三、因土地、房屋被区级以上人民政府征收、征用，在本市行政区域内重新承受土地、房屋权属的，其成交价格没有超出被”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/天津市人民代表大会常务委员会关于天津市契税适用税率和减征免征办法的决定_20210526.md
+    locator:
+      type: paragraph
+      line_end: 29
+      line_start: 29
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/天津市人民代表大会常务委员会关于天津市契税适用税率和减征免征办法的决定_20210526.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0008
+  question: 请检索并引用《福建省价格管理条例_》中与“经营者违反本条例第五条规定，由价格主管部门或者法律规定的其他处罚机关责令其改正，没收违法所得，可并处违法所得”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/福建省价格管理条例_.md
+    locator:
+      type: paragraph
+      line_end: 235
+      line_start: 235
+      title_path:
+      - 福建省价格管理条例
+      - （1998年4月4日福建省第九届人民代表大会常务委员会第二次会议通过）
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/福建省价格管理条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0009
+  question: 请检索并引用《山东省行政事业性收费管理条例_20240120》中与“第十一条 县级以上人民政府财政、发展改革、市场监督管理等部门依法对行政事业性收费实施监督检查时，收费单位应当”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/山东省行政事业性收费管理条例_20240120.md
+    locator:
+      type: paragraph
+      line_end: 69
+      line_start: 69
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/山东省行政事业性收费管理条例_20240120.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement
+- case_id: p6b-policy-finance-0010
+  question: 请检索并引用《广西壮族自治区税收保障条例_20240328》中与“第二十四条 举办商业性演出、比赛、会展、商贸交流等活动的主办单位应当依法代征、代扣代缴税款，并自合同订立之日”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-finance-price-procurement
+    source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/广西壮族自治区税收保障条例_20240328.md
+    locator:
+      type: paragraph
+      line_end: 245
+      line_start: 245
+      title_path: []
+      page_number: null
+      source_path: policy-finance-price-procurement/医保审核前期资料/全量法律/广西壮族自治区税收保障条例_20240328.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-finance-price-procurement
+  filters:
+    source_collections:
+    - policy-finance-price-procurement

@@ -1,0 +1,240 @@
+dataset_id: knowledge-query-medical-catalog-payment-codes-p6a-candidate-evaluation-cases-v1
+title: 医保目录 P6A candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-04'
+updated: '2026-07-04'
+owner: self
+source: medical-insurance-catalog:full-rebuild-20260704083912:candidate-db-source-paths
+description: P6A candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6a-medical-insurance-catalog-0001
+  question: 请检索并引用《ICD-10医保2.0版》中与“第 1 页，共 4038 页 章 章代码 范围 章的名称 节代码范 围 节名称 类目代码 类目名称 亚目”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/ICD-10医保2.0版.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/ICD-10医保2.0版.pdf
+      window_count: 2299
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0002
+  question: "请检索并引用《国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c》中与“\uFEFF国家医疗保障局关于印发 《医疗保障按病种付费管理暂行办法》的通知各省、自治区、直辖市及新疆生产建设兵团”相关的原文依据。"
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c.txt
+    locator:
+      type: paragraph
+      line_end: 3
+      line_start: 1
+      title_path: []
+      page_number: null
+      source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c.txt
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0003
+  question: 请检索并引用《国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知》中与“各省、自治区、直辖市及新疆生产建设兵团医疗保障局： 现将《按病种付费医疗保障经办管理规程（2025版）》”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知.txt
+    locator:
+      type: paragraph
+      line_end: 5
+      line_start: 3
+      title_path: []
+      page_number: null
+      source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知.txt
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0004
+  question: 请检索并引用《国家医疗保障局办公室关于开展智能监管改革试点的通知》中与“国家医疗保障局办公室关于开展 智能监管改革试点的通知各省、自治区、直辖市及新疆生产建设兵团医疗保障局： ”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局办公室关于开展智能监管改革试点的通知.txt
+    locator:
+      type: paragraph
+      line_end: 50
+      line_start: 1
+      title_path: []
+      page_number: null
+      source_path: 医保目录/医保审核前期资料/医保目录/国家医疗保障局办公室关于开展智能监管改革试点的通知.txt
+      window_count: 2
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0005
+  question: 请检索并引用《《国家基本医疗保险、生育保险和1》中与“河 南 省 医 疗 保 障 局 河南省人力资源和社会保障厅 文件 豫医保办 〔2025〕86号 河南省医”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/《国家基本医疗保险、生育保险和1.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/《国家基本医疗保险、生育保险和1.pdf
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0006
+  question: 请检索并引用《国家基本医疗保险、生育保险和工伤保险药品目录(2025年)》中与“一、凡 例.......................................1 二、西药部分”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+      window_count: 91
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0007
+  question: 请检索并引用《手术与操作编码标准》中与“WS 中华人民共和国卫生行业标准 WS/T XXXXX—XXXX”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/手术与操作编码标准.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/手术与操作编码标准.pdf
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0008
+  question: 请检索并引用《按病种分值（DIP）付费病种库》中与“按病种分值（DIP）付费病种库（2.0 版） DIP 技术指导组（首都医科大学国家医疗保障研究院） 20”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/按病种分值（DIP）付费病种库.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/按病种分值（DIP）付费病种库.pdf
+      window_count: 231
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: p6a-medical-insurance-catalog-0009
+  question: 请检索并引用《按病组（DRG）付费分组方案（2.0版）》中与“按病组（DRG）付费分组方案（2.0 版） DRG 技术指导组（北京市医疗保障局） 2024 年 7 月”相关的原文依据。
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/医保审核前期资料/医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 医保目录/医保审核前期资料/医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+      window_count: 1763
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - medical-insurance-catalog
+  filters:
+    source_collections:
+    - medical-insurance-catalog
