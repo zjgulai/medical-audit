@@ -95,7 +95,7 @@ export default function RemediationPage() {
 
   const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
   const statusLabel =
-    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+    backendStatus === "ready" ? "数据已同步" : backendStatus === "loading" ? "同步中" : "演示数据";
 
   return (
     <main className="space-y-5">
@@ -107,6 +107,9 @@ export default function RemediationPage() {
           </div>
           <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
         </div>
+        {backendStatus === "fallback" ? (
+          <p className="audit-meta mt-4">当前展示演示整改台账，用于核对责任科室、补证材料和关闭门禁。</p>
+        ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <RemediationMetric label="未关闭事项" value={`${workbench.metrics.active_case_count} 项`} />

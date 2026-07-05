@@ -1,26 +1,35 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => window.location.pathname,
+  useRouter: () => ({
+    push() {},
+    replace() {},
+    prefetch() {}
+  }),
+  useSearchParams: () => new URLSearchParams(window.location.search)
+}));
+
 import {
   createAuditAgent,
   createAuditAgentPromptVersion,
   createProjectMember,
-  fetchAnalysisUploadHistory,
   fetchArchiveWorkbench,
+  fetchAgents,
   fetchAuditAgent,
+  fetchAnalysisUploadHistory,
   fetchDocumentPermissions,
-  fetchDocumentUploads,
   fetchGraphWorkbench,
+  fetchProjects,
   fetchQueryHistory,
   fetchRemediationWorkbench,
   fetchReportWorkbench,
   fetchRulesWorkbench,
   fetchSearchBackendStatus,
-  recordAuditAgentInvocation,
   reviewAuditAgentPromptVersion,
   rollbackAuditAgentPromptVersion,
   runKnowledgeQuery,
-  submitAuditAgentFeedback,
   uploadAnalysisTable,
   uploadPersonalDocument,
   updateAuditAgentLifecycle
@@ -29,6 +38,7 @@ import { AuditUserProvider } from "@/components/shell/audit-user-context";
 import { AUDIT_ROLE_STORAGE_KEY } from "@/lib/audit-user";
 import {
   fundComplianceNavigation,
+  medicalAuditNavigation,
   primaryNavigation,
   secondaryNavigation,
   workspaceHomeNavigation
@@ -47,6 +57,7 @@ import GraphPage from "./graph/page";
 import GuidedCheckPage from "./guided-check/page";
 import KnowledgeBasePage from "./knowledge-base/page";
 import KnowledgeQueryPage from "./knowledge-query/page";
+import MedicalAuditPage from "./medical-audit/page";
 import ProjectsPage from "./projects/page";
 import RemediationPage from "./remediation/page";
 import ReportsPage from "./reports/page";
@@ -54,6 +65,31 @@ import RulesPage from "./rules/page";
 import WorkspacePage from "./workspace/page";
 
 vi.mock("@/lib/api-client", () => ({
+  fetchAuthSession: vi.fn(async () => ({
+    user_identifier: "next-admin",
+    role: "admin",
+    role_label: "管理员",
+    permissions: ["manage_project_members"],
+    legacy_api_role: "it-admin",
+    tenant_id: "hospital-demo",
+    auth_source: "persistent_role",
+    profile_status: "active",
+    auth_scope_type: "global",
+    auth_scope_key: null,
+    auth_mode: "header_transition_layer",
+    profile: {
+      user_key: "next-admin",
+      display_name: "系统管理员",
+      department_key: "it-department",
+      department_name: "信息科",
+      status: "active",
+      created_by: "system",
+      metadata: {},
+      role_assignments: [],
+      source: "system-default"
+    },
+    store: { ready: true, backend: "SqlAlchemyAuthUserStore" }
+  })),
   createAuditAgent: vi.fn(
     async (payload: {
       readonly name: string;
@@ -1511,7 +1547,8 @@ const routePages = [
   ["/analytics", AnalyticsPage],
   ["/graph", GraphPage],
   ["/reports", ReportsPage],
-  ["/projects", ProjectsPage]
+  ["/projects", ProjectsPage],
+  [medicalAuditNavigation.href, MedicalAuditPage]
 ] as const;
 
 const allWorkspaceRoutePages = [
@@ -1593,6 +1630,66 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "待复核疑点" })).toBeInTheDocument();
   });
 
+  it("renders the replicated medical audit workspace and local interactions", () => {
+    render(<MedicalAuditPage />);
+
+    expect(screen.getByLabelText("医保审计工作台")).toBeInTheDocument();
+    expect(screen.getByLabelText("医保审计工具栏")).toBeInTheDocument();
+    expect(screen.getByLabelText("智能审计规则导航")).toBeInTheDocument();
+    expect(screen.getByText("本月疑点总数")).toBeInTheDocument();
+    expect(screen.getByText("智能审计 - 规则导航")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "智能审计" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("columnheader", { name: "单据号" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "日期" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "DIP/DRG审计" }));
+    expect(screen.getAllByText("DIP分值高套").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("风险"), { target: { value: "中风险" } });
+    expect(screen.getAllByText("ICD-10编码不完整").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "20251128045" }));
+    expect(screen.getByLabelText("疑点详情")).toBeInTheDocument();
+    expect(screen.getByText("基本信息")).toBeInTheDocument();
+    expect(screen.getByText("病案首页主要诊断需编码到规则要求粒度")).toBeInTheDocument();
+
+    const confirmButtons = screen.getAllByRole("button", { name: "确认违规" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    expect(screen.getByText(/确认违规已生成预览/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开AI审计助手" }));
+    expect(screen.queryByLabelText("疑点详情")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("AI审计助手抽屉")).toBeInTheDocument();
+    expect(screen.getByText("AI 审计助手")).toBeInTheDocument();
+    expect(screen.getByText("安全预览")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "分析当前疑点" }));
+    expect(screen.getByText(/已基于当前疑点生成分析/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("询问当前疑点、复核意见或整改建议..."), {
+      target: { value: "请生成复核意见" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.getByText(/复核意见草稿/)).toBeInTheDocument();
+    expect(screen.getByText(/生成 AI 审计建议已生成预览/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "费用汇总表" }));
+    expect(screen.getByRole("heading", { name: "医保费用汇总表" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "记账合计" })).toBeInTheDocument();
+    expect(screen.getByText("主管领导：__________")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "分类汇总表" }));
+    expect(screen.getByRole("heading", { name: "医保费用分类汇总表" })).toBeInTheDocument();
+    expect(screen.getAllByText("医疗总费用").length).toBeGreaterThan(0);
+    expect(screen.getByRole("columnheader", { name: "趋势" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "就诊明细表" }));
+    expect(screen.getByRole("heading", { name: "就诊费用明细表" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索姓名/诊断...")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索姓名/诊断..."), { target: { value: "林建华" } });
+    expect(screen.getByText("肺恶性肿瘤化疗")).toBeInTheDocument();
+  });
+
   it("renders the fund compliance review workbench with three form templates", () => {
     render(<FundComplianceReviewPage />);
 
@@ -1645,27 +1742,40 @@ describe("workspace foundation pages", () => {
     });
   });
 
-  it("renders the AI chat portal handoff to backend evidence chat", async () => {
-    const { container } = render(<ChatPortalPage />);
+  it("renders the replicated AI chat first screen and local submit state", () => {
+    render(<ChatPortalPage />);
 
-    expect(screen.getByRole("heading", { name: "AI 问答" })).toBeInTheDocument();
-    expect(screen.getByText("更多")).toBeInTheDocument();
-    expect(screen.getByText("当前助手")).toBeInTheDocument();
-    expect(screen.getAllByText("法规政策").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("医保目录").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "进入对话" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "打开后端深页" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "先检索文档" })).toHaveAttribute("href", "/documents");
-    expect(container.querySelector('input[name="project_name"]')).toHaveAttribute(
-      "value",
-      "医保基金使用合规专项自查"
-    );
-    expect(screen.getByText("先查依据")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("已同步")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /AI，\s*让审计更智能/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("输入相关问题以对话")).toBeInTheDocument();
+    expect(screen.getByText("与 AI 审计助手进行自然语言对话，获取审计建议和数据分析")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /智能体广场/ })).toHaveAttribute("href", "/agent-market");
+    expect(screen.getByRole("link", { name: /数据分析/ })).toHaveAttribute("href", "/analytics");
+
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "请分析招标人违法确定中标人" }
     });
-    expect(screen.queryByText("已下架测试智能体")).not.toBeInTheDocument();
-    expect(screen.getByText("参保身份、就诊记录和结算记录不一致时，应先做哪三类交叉核验？")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    expect(screen.getByText("请分析招标人违法确定中标人")).toBeInTheDocument();
+    expect(screen.getByText(/提交给/)).toBeInTheDocument();
+    expect(screen.getByText(/已生成预览/)).toBeInTheDocument();
+    expect(fetchAgents).not.toHaveBeenCalled();
+    expect(fetchQueryHistory).not.toHaveBeenCalled();
+  });
+
+  it("restores the replicated AI chat context from a history query", () => {
+    window.history.pushState({}, "", "/chat?history=history-1");
+
+    try {
+      render(<ChatPortalPage />);
+
+      expect(screen.getByLabelText("历史对话恢复")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "中标候选人名单表" })).toBeInTheDocument();
+      expect(screen.getByText("请核验中标候选人名单表是否支持定标结论。")).toBeInTheDocument();
+      expect(screen.getByText(/本地历史记录：已标出候选人排序/)).toBeInTheDocument();
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
   });
 
   it("renders the guided self-check workbench with steps, prompts and gates", () => {
@@ -1696,289 +1806,127 @@ describe("workspace foundation pages", () => {
     );
   });
 
-  it("analyzes an uploaded CSV with audit-ready quality hints", async () => {
-    render(<AnalyticsPage />);
+  it("runs the replicated analytics workbench without backend upload", () => {
+    const { container } = render(<AnalyticsPage />);
 
-    expect(screen.getByRole("heading", { name: "常用表模板" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /表1 医保费用汇总表/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /表2 医保费用分类汇总表/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /表3 就诊费用明细表/ })).toBeInTheDocument();
-    expect(screen.getByText("当前模板：表1")).toBeInTheDocument();
-    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx / 汇总表")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "模板字段" })).toBeInTheDocument();
-    expect(screen.getAllByText("统筹支付").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { level: 1, name: "AI数据分析" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "数据处理" })).toHaveClass("is-active");
+    expect(screen.getByText("上传数据")).toBeInTheDocument();
+    expect(screen.getByText("选择目标")).toBeInTheDocument();
+    expect(screen.getByText("生成洞察")).toBeInTheDocument();
+    expect(screen.getByText("沉淀底稿")).toBeInTheDocument();
+    expect(screen.getByLabelText("审计分析轨道")).toBeInTheDocument();
+    expect(screen.getByText("异常金额")).toBeInTheDocument();
+    expect(screen.getByText("重复收费")).toBeInTheDocument();
+    expect(screen.getByText("字段缺失")).toBeInTheDocument();
+    expect(screen.getByLabelText("异常分布图表预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("数据集详情预览")).toBeInTheDocument();
+    expect(screen.getAllByText("政府采购合同台账.xlsx").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("医保结算明细.csv").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /表3 就诊费用明细表/ }));
-    expect(screen.getByText("当前模板：表3")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/按就诊记录号、诊断、医疗费用/)).toBeInTheDocument();
-
-    const input = screen.getByLabelText("上传审计表格");
-    const file = new File(
-      [
-        [
-          "patient_id,visit_date,item_code,charge_amount,insurance_pay",
-          "P001,2026-01-01,A100,120.00,80.00",
-          "P001,2026-01-01,A100,120.00,80.00",
-          "P002,2026-01-02,B200,,50.00"
-        ].join("\n")
-      ],
-      "charge-sample.csv",
-      { type: "text/csv" }
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
-
-    await waitFor(() => {
-      expect(uploadAnalysisTable).toHaveBeenCalledWith(file);
+    const input = container.querySelector('input[type="file"]');
+    expect(input).not.toBeNull();
+    fireEvent.change(input as HTMLInputElement, {
+      target: { files: [new File(["a,b\n1,2"], "charge-sample.csv", { type: "text/csv" })] }
     });
-    await waitFor(() => {
-      expect(fetchAnalysisUploadHistory).toHaveBeenCalled();
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "charge-sample.csv" })).toBeInTheDocument();
-    });
-    expect(screen.getByText("数据质量提示")).toBeInTheDocument();
-    expect(screen.getByText("审计初步分析")).toBeInTheDocument();
-    expect(screen.getByText("金额/费用字段")).toBeInTheDocument();
-    expect(screen.getByText("重复收费核验字段基础完整，可按患者/就诊、项目、日期和金额形成初筛分组。")).toBeInTheDocument();
-    expect(screen.getByText("发现 1 条完全重复行。")).toBeInTheDocument();
-    expect(screen.getByText("上传历史")).toBeInTheDocument();
-    expect(screen.getByText("history-charge.csv")).toBeInTheDocument();
+    expect(screen.getByText("charge-sample.csv")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "绘制图表" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始分析" }));
+    expect(screen.getByText(/绘制图表结果预览已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "生成图表" })[0]);
+    expect(screen.getByText(/生成图表「政府采购合同台账.xlsx」已生成预览/)).toBeInTheDocument();
+    expect(fetchAnalysisUploadHistory).not.toHaveBeenCalled();
+    expect(uploadAnalysisTable).not.toHaveBeenCalled();
   });
 
-  it("renders project list and creates project members through the backend API", async () => {
+  it("renders the replicated project list and local project dialog", () => {
     render(<ProjectsPage />);
 
-    expect(screen.getByRole("heading", { name: "项目与成员" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("项目已同步")).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getAllByText("成员已同步").length).toBeGreaterThan(0);
-    });
-    expect(screen.getByRole("heading", { name: "项目列表" })).toBeInTheDocument();
-    expect(screen.getByText("项目名称")).toBeInTheDocument();
-    expect(screen.getByText("成员数")).toBeInTheDocument();
-    expect(screen.getByText("创建人")).toBeInTheDocument();
-    expect(screen.getByText("创建时间")).toBeInTheDocument();
-    expect(screen.getAllByText("医保目录限制条件核验").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "权限角色" })).toBeInTheDocument();
-    expect(screen.getAllByText("管理员").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("技术人员").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("主任").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("普通成员").length).toBeGreaterThan(0);
-    expect(screen.getByText("权限已接入")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "项目管理" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索项目名称")).toBeInTheDocument();
+    expect(screen.getAllByText("项目成员数").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("乡村振兴资金专项审计").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "查看成员" }));
-    await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "医保目录限制条件核验" }).length).toBeGreaterThan(0);
-    });
+    fireEvent.change(screen.getByPlaceholderText("搜索项目名称"), { target: { value: "医保" } });
+    expect(screen.getByText("医保基金使用合规审计")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("医保基金使用合规审计"));
+    fireEvent.click(screen.getByRole("button", { name: "成员管理" }));
+    expect(screen.getByText(/成员管理「医保基金使用合规审计」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByLabelText("项目后续操作预览")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭项目操作预览" }));
+    expect(screen.queryByLabelText("项目后续操作预览")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "归档检查" }));
+    expect(screen.getByText(/归档检查「医保基金使用合规审计」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "修改当前项目" }));
+    expect(screen.getByRole("dialog", { name: "修改项目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
-    fireEvent.change(screen.getByLabelText("权限角色视图"), { target: { value: "hospital-technician" } });
-    expect(screen.getByLabelText("项目成员角色")).toHaveValue("信息科");
-    expect(screen.getByLabelText("部门")).toHaveValue("信息科");
-    expect(screen.getByText("提交到现有后端角色：信息科")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "赵审计" } });
-    fireEvent.click(screen.getByRole("button", { name: "添加成员" }));
-
-    await waitFor(() => {
-      expect(createProjectMember).toHaveBeenCalledWith("CATALOG-LIMIT-202606", {
-        name: "赵审计",
-        role: "信息科",
-        department: "信息科"
-      });
-    });
-    expect(screen.getAllByText("赵审计").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("信息科").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("待确认").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "创建新项目" }));
+    expect(screen.getByRole("dialog", { name: "新增项目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(screen.getByText(/新增项目已生成预览/)).toBeInTheDocument();
+    expect(fetchProjects).not.toHaveBeenCalled();
+    expect(createProjectMember).not.toHaveBeenCalled();
   });
 
-  it("filters agent marketplace templates and keeps agent chat handoff in the portal", async () => {
-    render(<AgentMarketPage />);
+  it("filters replicated agent marketplace templates and my-agent cards locally", () => {
+    const { unmount } = render(<AgentMarketPage />);
 
-    expect(screen.getByRole("heading", { name: "审计助手库" })).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "审计助手分类" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
-    expect(screen.getByText("默认展示常用核验助手，可搜索完整方法库。")).toBeInTheDocument();
-    expect(screen.getByText(/已显示前 8 个/)).toBeInTheDocument();
-
-    const agentList = document.querySelector('[aria-label="审计助手列表"]');
-    expect(agentList).not.toBeNull();
-    const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
-    expect(visibleNames.length).toBeGreaterThan(0);
-    expect(visibleNames.length).toBeLessThanOrEqual(12);
-    for (const name of visibleNames) {
-      expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
-      expect(Array.from(name).length).toBeLessThanOrEqual(10);
-    }
-
-    fireEvent.click(screen.getAllByRole("button", { name: /出国差旅核验/ })[0]);
-    expect(screen.getByRole("dialog", { name: "出国差旅核验" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "怎么使用" })).toBeInTheDocument();
-    expect(screen.getByText("关注问题")).toBeInTheDocument();
-    expect(screen.getByText("需要材料")).toBeInTheDocument();
-    expect(screen.queryByText(/```json|filename|tablename|\\n/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-
-    const fundCategory = screen.getByRole("tab", { name: /财务收支/ });
-    fireEvent.click(fundCategory);
-    expect(fundCategory).toHaveAttribute("aria-selected", "true");
-
-    fireEvent.click(screen.getByRole("tab", { name: /全部/ }));
-    fireEvent.change(screen.getByLabelText("搜索审计助手"), {
-      target: { value: "绝不匹配的关键词zzz" }
-    });
-    expect(screen.getByText("没有匹配的审计助手，换个关键词或分类试试。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "发现审计智能体" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索AI智能体")).toBeInTheDocument();
+    expect(screen.getByLabelText("智能体广场复制路径")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索AI智能体"), { target: { value: "医保" } });
+    expect(screen.getAllByRole("heading", { name: "医保支付核验" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "创建副本：医保支付核验" }));
+    expect(screen.getByText(/创建副本「医保支付核验」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByLabelText("智能体模板详情")).toBeInTheDocument();
+    expect(screen.getByLabelText("模板安装后续预览")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "配置知识" }));
+    expect(screen.getByText(/配置知识「医保支付核验」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByText("接入知识")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭智能体详情" }));
+    expect(screen.queryByLabelText("智能体模板详情")).not.toBeInTheDocument();
+    unmount();
 
     render(<AgentsPage />);
-    await waitFor(() => {
-      expect(screen.getByText("后端已连接")).toBeInTheDocument();
-    });
-    expect(screen.getAllByText("医保基金使用合规专项自查").length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "进入对话" })[0]).toHaveAttribute("href", "/chat?agent=agent-citation-check");
+    expect(screen.getByRole("heading", { level: 1, name: "我的助手" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索我的助手")).toBeInTheDocument();
+    expect(screen.getByLabelText("我的智能体使用路径")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "模拟数据助手" }).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("我的智能体详情")).toBeInTheDocument();
+    expect(screen.getByLabelText("智能体后续操作预览")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^查看详情：/ }).length).toBeGreaterThan(0);
+    expect(fetchAgents).not.toHaveBeenCalled();
   });
 
-  it("prefills a custom audit agent from a marketplace template before backend save", async () => {
+  it("records create-agent intent as local replica state", () => {
     window.history.replaceState(null, "", "/agents?template=template-identity-risk#new-agent");
     render(<AgentsPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("status", { name: "模板已预填" })).toBeInTheDocument();
-    });
-    expect(screen.getByDisplayValue("参保身份异常核验")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("身份骗保")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("风险负面清单")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("医保基金使用合规专项自查")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/围绕参保身份、就诊记录和结算记录/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ 创建我的助手" }));
+    expect(screen.getByText(/创建我的助手已生成预览/)).toBeInTheDocument();
     expect(createAuditAgent).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "新增智能体" }));
-
-    await waitFor(() => {
-      expect(createAuditAgent).toHaveBeenCalledWith({
-        name: "参保身份异常核验",
-        category: "业务类",
-        topic: "身份骗保",
-        prompt: "围绕参保身份、就诊记录和结算记录查找不一致线索，只输出可追溯问题清单。",
-        knowledge_base: "风险负面清单",
-        project_name: "医保基金使用合规专项自查",
-        visibility_scope: "project",
-        allowed_roles: ["admin", "technician", "director", "member"]
-      });
-    });
   });
 
-  it("creates a custom audit agent through the backend API", async () => {
+  it("records my-agent edit actions locally", () => {
     render(<AgentsPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("后端已连接")).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "目录限制核验助手" } });
-    fireEvent.change(screen.getByLabelText("审计专题"), { target: { value: "医保目录限制条件核验" } });
-    fireEvent.change(screen.getByLabelText("提示词"), {
-      target: { value: "仅基于目录限制字段和引用依据输出待补证问题。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "新增智能体" }));
-
-    await waitFor(() => {
-      expect(createAuditAgent).toHaveBeenCalledWith({
-        name: "目录限制核验助手",
-        category: "业务类",
-        topic: "医保目录限制条件核验",
-        prompt: "仅基于目录限制字段和引用依据输出待补证问题。",
-        knowledge_base: "项目默认知识库",
-        project_name: "医保基金使用合规专项自查",
-        visibility_scope: "project",
-        allowed_roles: ["admin", "technician", "director", "member"]
-      });
-    });
-    expect(screen.getAllByText("目录限制核验助手").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("v1").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("项目内").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "版本对比" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "调用与反馈" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(fetchAuditAgent).toHaveBeenCalledWith("agent-custom-test");
-    });
-    await waitFor(() => {
-      expect(screen.getByLabelText("新版本提示词")).toHaveValue(
-        "仅基于目录限制字段和引用依据输出待补证问题。"
-      );
-    });
-
-    fireEvent.change(screen.getByLabelText("新版本提示词"), {
-      target: { value: "仅基于目录限制字段、引用依据和原文截图输出待补证问题。" }
-    });
-    fireEvent.change(screen.getByLabelText("变更说明"), {
-      target: { value: "补充原文截图约束。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存新版本" }));
-
-    await waitFor(() => {
-      expect(createAuditAgentPromptVersion).toHaveBeenCalledWith("agent-custom-test", {
-        prompt: "仅基于目录限制字段、引用依据和原文截图输出待补证问题。",
-        change_summary: "补充原文截图约束。",
-        review_note: "补充原文截图约束。"
-      });
-    });
-    expect(await screen.findByText("已保存 目录限制核验助手 v2，待审批通过后激活。")).toBeInTheDocument();
-    expect(screen.getAllByText("待审批").length).toBeGreaterThan(0);
-    expect(screen.getByText("审核对象：v2")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("审核意见"), {
-      target: { value: "主任已复核提示词引用边界。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "审批通过" }));
-
-    await waitFor(() => {
-      expect(reviewAuditAgentPromptVersion).toHaveBeenCalledWith("agent-custom-test", {
-        version: 2,
-        review_status: "approved",
-        review_note: "主任已复核提示词引用边界。"
-      });
-    });
-    expect(await screen.findByText("已批准并激活 目录限制核验助手 v2。")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "登记试用" }));
-
-    await waitFor(() => {
-      expect(recordAuditAgentInvocation).toHaveBeenCalledWith("agent-custom-test", {
-        invocation_source: "agent-workspace",
-        question: "目录限制核验助手 工作台试用登记",
-        metadata: { prompt_version_key: "agent-custom-test@v2" }
-      });
-    });
-    expect(await screen.findByText(/agent-workspace/)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("效果评级"), { target: { value: "needs_review" } });
-    fireEvent.change(screen.getByLabelText("反馈说明"), {
-      target: { value: "需要补充目录限制原文适用条件。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
-
-    await waitFor(() => {
-      expect(submitAuditAgentFeedback).toHaveBeenCalledWith("agent-custom-test", {
-        invocation_id: "agent-invocation-test",
-        rating: "needs_review",
-        comment: "需要补充目录限制原文适用条件。",
-        metadata: { prompt_version_key: "agent-custom-test@v2" }
-      });
-    });
-    expect(await screen.findByText("需要补充目录限制原文适用条件。")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "下架智能体" }));
-
-    await waitFor(() => {
-      expect(updateAuditAgentLifecycle).toHaveBeenCalledWith("agent-custom-test", {
-        status: "inactive",
-        reason: "工作台下架，保留历史追溯。"
-      });
-    });
+    fireEvent.change(screen.getByPlaceholderText("搜索我的助手"), { target: { value: "招标人" } });
+    expect(screen.getAllByRole("heading", { name: "定标合规核验" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "编辑：定标合规核验" }));
+    expect(screen.getByText(/编辑「定标合规核验」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "配置知识" }));
+    expect(screen.getByText(/配置知识「定标合规核验」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByText("知识配置")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "调用记录" }));
+    expect(screen.getByText(/查看调用「定标合规核验」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "调用记录" })).toBeInTheDocument();
+    expect(fetchAuditAgent).not.toHaveBeenCalled();
+    expect(createAuditAgentPromptVersion).not.toHaveBeenCalled();
   });
 
-  it("keeps prompt activation controls disabled for technician role", async () => {
+  it("keeps replica agent controls local for technician role", () => {
     window.localStorage.setItem(AUDIT_ROLE_STORAGE_KEY, "technician");
     render(
       <AuditUserProvider>
@@ -1986,268 +1934,156 @@ describe("workspace foundation pages", () => {
       </AuditUserProvider>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("后端已连接")).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "目录限制核验助手" } });
-    fireEvent.change(screen.getByLabelText("审计专题"), { target: { value: "医保目录限制条件核验" } });
-    fireEvent.change(screen.getByLabelText("提示词"), {
-      target: { value: "仅基于目录限制字段和引用依据输出待补证问题。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "新增智能体" }));
-
-    await waitFor(() => {
-      expect(createAuditAgent).toHaveBeenCalled();
-    });
-    await waitFor(() => {
-      expect(screen.getByLabelText("新版本提示词")).toHaveValue(
-        "仅基于目录限制字段和引用依据输出待补证问题。"
-      );
-    });
-
-    fireEvent.change(screen.getByLabelText("新版本提示词"), {
-      target: { value: "仅基于目录限制字段、引用依据和原文截图输出待补证问题。" }
-    });
-    fireEvent.change(screen.getByLabelText("变更说明"), {
-      target: { value: "补充原文截图约束。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存新版本" }));
-
-    await waitFor(() => {
-      expect(createAuditAgentPromptVersion).toHaveBeenCalledWith("agent-custom-test", {
-        prompt: "仅基于目录限制字段、引用依据和原文截图输出待补证问题。",
-        change_summary: "补充原文截图约束。",
-        review_note: "补充原文截图约束。"
-      });
-    });
-
-    const approveButton = await screen.findByRole("button", { name: "审批通过" });
-    const changesButton = screen.getByRole("button", { name: "要求修改" });
-    await waitFor(() => {
-      expect(approveButton).toBeDisabled();
-      expect(changesButton).toBeDisabled();
-    });
-
-    fireEvent.click(approveButton);
-    fireEvent.click(changesButton);
+    fireEvent.change(screen.getByPlaceholderText("搜索我的助手"), { target: { value: "招标人" } });
+    fireEvent.click(screen.getByRole("button", { name: "历史版本：定标合规核验" }));
+    expect(screen.getByText(/历史版本「定标合规核验」已生成预览/)).toBeInTheDocument();
     expect(reviewAuditAgentPromptVersion).not.toHaveBeenCalled();
     expect(rollbackAuditAgentPromptVersion).not.toHaveBeenCalled();
   });
 
-  it("soft archives a custom audit agent without hard deletion", async () => {
+  it("does not call backend lifecycle when deleting a replica agent", () => {
     render(<AgentsPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("后端已连接")).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "目录限制核验助手" } });
-    fireEvent.change(screen.getByLabelText("审计专题"), { target: { value: "医保目录限制条件核验" } });
-    fireEvent.change(screen.getByLabelText("提示词"), {
-      target: { value: "仅基于目录限制字段和引用依据输出待补证问题。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "新增智能体" }));
-
-    await waitFor(() => {
-      expect(screen.getAllByText("目录限制核验助手").length).toBeGreaterThan(0);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "软归档智能体" }));
-
-    await waitFor(() => {
-      expect(updateAuditAgentLifecycle).toHaveBeenCalledWith("agent-custom-test", {
-        status: "archived",
-        reason: "工作台软归档，不做物理删除。"
-      });
-    });
+    fireEvent.change(screen.getByPlaceholderText("搜索我的助手"), { target: { value: "招标人" } });
+    fireEvent.click(screen.getByRole("button", { name: "删除：定标合规核验" }));
+    expect(screen.getByText(/删除「定标合规核验」已生成预览/)).toBeInTheDocument();
+    expect(updateAuditAgentLifecycle).not.toHaveBeenCalled();
   });
 
-  it("renders read-only knowledge base asset metrics", async () => {
+  it("renders replicated knowledge base metrics and filters", () => {
     render(<KnowledgeBasePage />);
 
-    expect(screen.getByRole("heading", { name: "知识库总览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "知识库" })).toBeInTheDocument();
     expect(screen.getAllByText("个人知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("系统知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("公开知识库").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("知识来源概览")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识库工作流")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识库详情预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识库后续操作预览")).toBeInTheDocument();
     expect(screen.getAllByText("文档数").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("字符数").length).toBeGreaterThan(0);
     expect(screen.getAllByText("应用数").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("系统医保审计知识库").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("法规政策、医保目录、监管规则和风险负面清单组成的系统检索底座。").length).toBeGreaterThan(0);
-    await waitFor(() => {
-      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
-    });
+    expect(screen.getAllByText("法律法规库").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索知识库"), { target: { value: "乡村振兴" } });
+    expect(screen.getAllByRole("heading", { name: "乡村振兴项目知识库" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "查看知识库：乡村振兴项目知识库" }));
+    expect(screen.getByText(/查看「乡村振兴项目知识库」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关联智能体" }));
+    expect(screen.getByText(/关联智能体「乡村振兴项目知识库」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "关联智能体" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "权限设置" }));
+    expect(screen.getByText(/权限设置「乡村振兴项目知识库」已生成预览/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "权限设置" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭知识库详情" }));
+    expect(screen.queryByLabelText("知识库详情预览")).not.toBeInTheDocument();
+    expect(fetchDocumentPermissions).not.toHaveBeenCalled();
+    expect(fetchSearchBackendStatus).not.toHaveBeenCalled();
   });
 
-  it("falls back to sample knowledge base when search backend probe fails", async () => {
-    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
-
+  it("renders a local empty state when knowledge base filters miss", () => {
     render(<KnowledgeBasePage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
-    });
-    expect(screen.getByRole("heading", { name: "知识库总览" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "+ 创建知识库" }));
+    expect(screen.getByText(/创建知识库已生成预览/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "创建预览" })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索知识库"), { target: { value: "不存在的知识库" } });
+    expect(screen.getByText("未找到知识库")).toBeInTheDocument();
   });
 
-  it("runs document search through the backend query API and renders citations", async () => {
+  it("runs replicated document search and local history interactions", () => {
     render(<DocumentsPage />);
 
-    expect(screen.getByRole("heading", { name: "文档依据检索" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "选择检索来源" })).toBeInTheDocument();
-    expect(screen.getByLabelText("审计问题或文档关键词")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "文档检索" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("劳动争议司法案件解释")).toBeInTheDocument();
     expect(screen.getByLabelText("仅标题")).toBeInTheDocument();
-    expect(screen.getByText("需人工复核")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "搜索历史" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("医保基金支付异常")).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(fetchDocumentPermissions).toHaveBeenCalled();
-    });
-    await waitFor(() => {
-      expect(fetchDocumentUploads).toHaveBeenCalled();
-    });
-    expect(screen.getByText("可用")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "个人材料" })).toBeInTheDocument();
-    expect(screen.getByText("policy-retained.pdf")).toBeInTheDocument();
-    expect(screen.getByText("待治理")).toBeInTheDocument();
-    expect(screen.getByText("安全：本地策略通过 / DLP：未提示")).toBeInTheDocument();
-    expect(screen.getByText("本地索引：未入本地索引")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "下载留存文件" })).toHaveAttribute(
-      "href",
-      "/api/v1/documents/uploads/document-upload-history/download"
-    );
-    expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
-    expect(screen.getByText("监管两库")).toBeInTheDocument();
-    expect(screen.getByText("风险清单")).toBeInTheDocument();
-    expect(screen.getByText("等待检索")).toBeInTheDocument();
+    expect(screen.getByText("搜索历史:")).toBeInTheDocument();
+    expect(screen.getAllByText("法律法规库").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("审计案例库").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("对话文档").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("文档详情预览")).toBeInTheDocument();
+    expect(screen.getAllByText("雨丰民生25年流水.xlsx").length).toBeGreaterThan(0);
 
+    fireEvent.click(screen.getByRole("button", { name: "投标" }));
+    expect(screen.getAllByText("关键词：投标").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("仅标题"));
-    fireEvent.change(screen.getByLabelText("审计问题或文档关键词"), {
-      target: { value: "医保目录限制" }
-    });
-    expect(screen.getByText("医保目录限制条件资料包")).toBeInTheDocument();
-    expect(screen.getByText("当前关键词没有匹配的标题文档，可切换为全文模式或直接执行后端检索。")).toBeInTheDocument();
-    expect(screen.getByText("只按标题找材料。")).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("仅标题"));
+    fireEvent.change(screen.getByPlaceholderText("劳动争议司法案件解释"), { target: { value: "厕所" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    expect(screen.getAllByText("关键词：厕所").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /检索AI\+/ }));
+    expect(screen.getByText(/AI增强检索已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看全部对话文档" }));
+    expect(screen.getByText(/查看全部对话文档已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /雨丰民生25年流水\.xlsx/ })[0]);
+    expect(screen.getByText(/查看文档「雨丰民生25年流水\.xlsx」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加入对话" }));
+    expect(screen.getByText(/加入对话「雨丰民生25年流水\.xlsx」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭文档详情" }));
+    expect(screen.queryByLabelText("文档详情预览")).not.toBeInTheDocument();
 
-    const documentFile = new File(["policy"], "policy.pdf", { type: "application/pdf" });
-    fireEvent.change(screen.getByLabelText("上传个人知识库材料"), {
-      target: { files: [documentFile] }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "上传材料" }));
-    await waitFor(() => {
-      expect(uploadPersonalDocument).toHaveBeenCalledWith(documentFile);
-    });
-    expect(screen.getByText("policy.pdf 已留存，治理状态：待治理")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /监管两库/ }));
-    fireEvent.change(screen.getByLabelText("审计问题或文档关键词"), {
-      target: { value: "医保基金审核依据" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "执行检索" }));
-
-    await waitFor(() => {
-      expect(runKnowledgeQuery).toHaveBeenCalledWith({
-        question: "医保基金审核依据",
-        top_k: 8,
-        source_collections: ["supervision-rules-knowledge"],
-        title_only: false,
-        topic: "medical-insurance-fund"
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "医保基金审核依据" })).toBeInTheDocument();
-    });
-    expect(screen.getByText("应核验诊疗记录、收费明细和政策依据。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "引用分组：法规政策" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "个人材料命中" })).toBeInTheDocument();
-    expect(screen.getByText("个人材料提示：医保基金审核依据需核对院内报销清单。")).toBeInTheDocument();
-    expect(screen.getByText("医疗机构应当保留医保基金审核依据。")).toBeInTheDocument();
-    expect(screen.getByText("来源：法规政策")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "核验原文" })).toHaveAttribute("href", "/pages/preview/chunk-doc-001");
-    expect(screen.getByRole("heading", { name: "对话文档" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "知识库文档" })).toBeInTheDocument();
-    expect(screen.getByText("重复收费疑点复核对话")).toBeInTheDocument();
-    expect(screen.getByText("医保目录限制条件资料包")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "转入对话" })[0]).toHaveAttribute(
-      "href",
-      expect.stringContaining("/chat?question=")
-    );
-    expect(fetchQueryHistory).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "清空搜索历史" }));
+    expect(screen.getByText(/隐藏搜索历史已生成预览/)).toBeInTheDocument();
+    expect(fetchQueryHistory).not.toHaveBeenCalled();
+    expect(runKnowledgeQuery).not.toHaveBeenCalled();
+    expect(uploadPersonalDocument).not.toHaveBeenCalled();
   });
 
-  it("renders the read-only knowledge graph coverage view", async () => {
+  it("renders the replicated knowledge graph coverage view", () => {
     render(<GraphPage />);
 
-    expect(screen.getByRole("heading", { name: "知识图谱入口" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "审计知识图谱静态关系预览" })).toBeInTheDocument();
-    expect(screen.getByText("医保基金使用合规专项图谱")).toBeInTheDocument();
-    expect(screen.getByText("节点覆盖")).toBeInTheDocument();
-    expect(screen.getByText("节点证据")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识图谱" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索知识图谱")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识图谱列表")).toBeInTheDocument();
+    expect(screen.getByLabelText("图谱详情预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("知识图谱关系预览")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /乡村振兴专项审计图谱/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /医保基金合规审计图谱/ })).toBeInTheDocument();
+    expect(screen.getAllByText("乡村振兴专项审计").length).toBeGreaterThan(0);
     expect(screen.getAllByText("项目").length).toBeGreaterThan(0);
     expect(screen.getAllByText("知识库").length).toBeGreaterThan(0);
     expect(screen.getAllByText("文档").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("规则").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("疑点").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("复核").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("报告").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("整改").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("FINDING-F044EBD309B659DC").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("review-task-0007").length).toBeGreaterThan(0);
-    await waitFor(() => {
-      expect(fetchGraphWorkbench).toHaveBeenCalledTimes(1);
-    });
-    expect(screen.getByText("后端已连接")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
-    });
+
+    fireEvent.click(screen.getByRole("button", { name: /乡村振兴专项审计图谱/ }));
+    expect(screen.getByText(/打开「乡村振兴专项审计图谱」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "银行" }));
+    expect(screen.getAllByText("县级财政专户").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "聚焦节点：县级财政专户" }));
+    expect(screen.getByText(/聚焦节点「县级财政专户」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
+    expect(screen.getByText(/查看证据「县级财政专户」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭图谱详情" }));
+    expect(screen.queryByLabelText("图谱详情预览")).not.toBeInTheDocument();
+    expect(fetchGraphWorkbench).not.toHaveBeenCalled();
   });
 
-  it("keeps graph sample topology when search backend probe fails", async () => {
-    vi.mocked(fetchSearchBackendStatus).mockRejectedValueOnce(new Error("search service down"));
-
+  it("renders a local empty state when graph filters miss", () => {
     render(<GraphPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
-    });
-    expect(screen.getByRole("heading", { name: "知识图谱入口" })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索知识图谱"), { target: { value: "不存在的节点" } });
+    expect(screen.getByText("暂无节点")).toBeInTheDocument();
   });
 
-  it("renders the report homepage with API-first templates, downloads and gates", async () => {
+  it("renders replicated workpaper generation as local draft state", () => {
     render(<ReportsPage />);
 
     expect(screen.getByRole("heading", { name: "底稿与报告" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(fetchReportWorkbench).toHaveBeenCalledTimes(1);
-    });
-    expect(screen.getByText("已签发报告")).toBeInTheDocument();
-    expect(screen.getAllByText("门禁阻断").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("纳入疑点").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "底稿模板" })).toBeInTheDocument();
-    expect(screen.getByText("费用汇总风险底稿")).toBeInTheDocument();
-    expect(screen.getByText("分类费用复核清单")).toBeInTheDocument();
-    expect(screen.getByText("就诊明细疑点摘要")).toBeInTheDocument();
-    expect(screen.getByText("表1_医保费用汇总表（空白）.xlsx")).toBeInTheDocument();
-    expect(screen.getAllByText("模板字段已注册").length).toBeGreaterThan(0);
-    expect(screen.getByText("隐私字段处理记录")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "套用模板" })[0]).toHaveAttribute("href", expect.stringContaining("/chat?agent="));
-    expect(screen.getByRole("heading", { name: "报告记录" })).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "报告门禁预检" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("底稿与负责人确认")).toBeInTheDocument();
-    expect(screen.getByText("附件登记与报告草稿")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "底稿证据来源" })).toBeInTheDocument();
-    expect(screen.getByText("workpaper-20260604-001")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "整改跟踪" })).toBeInTheDocument();
-    expect(screen.getByText("重复收费退费与流程复核")).toBeInTheDocument();
-    expect(screen.getByText("signed-report-abc123")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "查看证据链" })[0]).toHaveAttribute("href", "/graph#graph-node-report");
-    expect(screen.queryByRole("link", { name: "任务 Word" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "报告 Word" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("报告 Word 需过门禁").length).toBeGreaterThan(0);
+    expect(screen.getByText("选择要纳入底稿的会话")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "历史生成记录" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "一键生成底稿" }));
+    expect(screen.getAllByText("请先选择要纳入底稿的历史会话。").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByLabelText("中标候选人名单表"));
+    fireEvent.click(screen.getByRole("button", { name: "一键生成底稿" }));
+    expect(screen.getByText(/生成 1 条历史会话的底稿预览已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看底稿" })[0]);
+    expect(screen.getByLabelText("报告详情预览")).toBeInTheDocument();
+    expect(screen.getByText(/查看底稿「招标人违法确定中标人审计底稿」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "提交签发" })[0]);
+    expect(screen.getByText(/提交签发「招标人违法确定中标人审计底稿」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭报告详情" }));
+    expect(screen.queryByLabelText("报告详情预览")).not.toBeInTheDocument();
+    expect(fetchReportWorkbench).not.toHaveBeenCalled();
   });
 
   it("renders the remediation homepage with evidence requests and closure gates", async () => {
@@ -2271,7 +2107,7 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(fetchRemediationWorkbench).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByText("后端已连接")).toBeInTheDocument();
+    expect(screen.getByText("数据已同步")).toBeInTheDocument();
   });
 
   it("keeps remediation samples when the remediation workbench API fails", async () => {
@@ -2280,7 +2116,7 @@ describe("workspace foundation pages", () => {
     render(<RemediationPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("本地样例兜底")).toBeInTheDocument();
+      expect(screen.getByText("演示数据")).toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "整改事项与补证闭环" })).toBeInTheDocument();
     expect(screen.getAllByText("重复收费退费与流程复核").length).toBeGreaterThan(0);
@@ -2304,17 +2140,19 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "入档动态" })).toBeInTheDocument();
     expect(screen.getByText("附件 hash 阻断归档")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看归档策略" })).toHaveAttribute("href", "#archive-policy-title");
-    expect(screen.getAllByRole("link", { name: "查看档案" })[0]).toHaveAttribute("href", "/reports");
-    expect(screen.getAllByRole("link", { name: "查看留痕" })[0]).toHaveAttribute(
-      "href",
-      "#archive-policy-title"
-    );
+    fireEvent.click(screen.getAllByRole("button", { name: "查看档案" })[0]);
+    expect(screen.getByLabelText("档案包详情预览")).toBeInTheDocument();
+    expect(screen.getByText(/查看档案「医保基金使用合规专项自查」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看留痕" })[0]);
+    expect(screen.getByText(/查看留痕「医保基金使用合规专项自查」已生成预览/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭档案包详情" }));
+    expect(screen.queryByLabelText("档案包详情预览")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(fetchArchiveWorkbench).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByText("后端已连接")).toBeInTheDocument();
+    expect(screen.getByText("数据已同步")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+      expect(screen.getByText("检索状态：可用")).toBeInTheDocument();
     });
   });
 
@@ -2324,7 +2162,7 @@ describe("workspace foundation pages", () => {
     render(<ArchivePage />);
 
     await waitFor(() => {
-      expect(screen.getByText("本地样例兜底")).toBeInTheDocument();
+      expect(screen.getByText("演示数据")).toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "项目档案与审计日志归档" })).toBeInTheDocument();
     expect(screen.getAllByText("ARCHIVE-SELF-CHECK-FUND-202606").length).toBeGreaterThan(0);
@@ -2336,7 +2174,7 @@ describe("workspace foundation pages", () => {
     render(<ArchivePage />);
 
     await waitFor(() => {
-      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+      expect(screen.getByText("检索状态：演示数据")).toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "项目档案与审计日志归档" })).toBeInTheDocument();
     expect(screen.getByText("ARCHIVE-SELF-CHECK-FUND-202606")).toBeInTheDocument();
@@ -2362,9 +2200,9 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(fetchRulesWorkbench).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByText("后端已连接")).toBeInTheDocument();
+    expect(screen.getByText("数据已同步")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
+      expect(screen.getByText("检索状态：可用")).toBeInTheDocument();
     });
   });
 
@@ -2374,7 +2212,7 @@ describe("workspace foundation pages", () => {
     render(<RulesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("本地样例兜底")).toBeInTheDocument();
+      expect(screen.getByText("演示数据")).toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "审计规则与依据总览" })).toBeInTheDocument();
     expect(screen.getAllByText("CHARGE-RULE-001").length).toBeGreaterThan(0);
@@ -2386,7 +2224,7 @@ describe("workspace foundation pages", () => {
     render(<RulesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("检索索引：异常")).toBeInTheDocument();
+      expect(screen.getByText("检索状态：演示数据")).toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "审计规则与依据总览" })).toBeInTheDocument();
     expect(screen.getAllByText("CHARGE-RULE-001").length).toBeGreaterThan(0);
