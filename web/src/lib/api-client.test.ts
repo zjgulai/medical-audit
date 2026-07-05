@@ -20,6 +20,7 @@ import {
   fetchProjectMembers,
   fetchProjects,
   fetchQueryHistory,
+  isApiClientError,
   fetchRemediationWorkbench,
   fetchReportWorkbench,
   fetchRulesWorkbench,
@@ -99,6 +100,7 @@ describe("api-client", () => {
           fallback_used: true,
           basis_groups: [],
           citations: [],
+          effective_source_collections: ["medical-insurance-laws"],
           personal_upload_matches: [],
           query_log_index: 0
         })
@@ -109,6 +111,10 @@ describe("api-client", () => {
       question: "医保基金审核依据",
       top_k: 5,
       source_collections: ["medical-insurance-laws"],
+      years: [2024],
+      regions: ["国家"],
+      document_types: ["law"],
+      business_topics: ["fund-supervision"],
       title_only: true
     });
 
@@ -125,11 +131,43 @@ describe("api-client", () => {
         question: "医保基金审核依据",
         top_k: 5,
         source_collections: ["medical-insurance-laws"],
+        years: [2024],
+        regions: ["国家"],
+        document_types: ["law"],
+        business_topics: ["fund-supervision"],
         title_only: true
       }),
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
+    expect(result.effective_source_collections).toEqual(["medical-insurance-laws"]);
+  });
+
+  it("classifies knowledge query backend errors by status and detail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "no cited evidence found" })
+      }))
+    );
+
+    await expect(
+      runKnowledgeQuery({
+        question: "医保基金审核依据"
+      })
+    ).rejects.toMatchObject({
+      code: "no-cited-evidence",
+      path: "/api/v1/query",
+      status: 404
+    });
+
+    try {
+      await runKnowledgeQuery({ question: "医保基金审核依据" });
+    } catch (error) {
+      expect(isApiClientError(error)).toBe(true);
+    }
   });
 
   it("fetches auth session through the versioned API proxy with current audit headers", async () => {

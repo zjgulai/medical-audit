@@ -23,12 +23,13 @@ describe("primaryNavigation", () => {
       "/analytics",
       "/graph",
       "/reports",
-      "/projects"
+      "/projects",
+      "/medical-audit"
     ]);
   });
 
-  it("keeps the portal at nine primary modules", () => {
-    expect(primaryNavigation).toHaveLength(9);
+  it("keeps the portal at ten primary modules", () => {
+    expect(primaryNavigation).toHaveLength(10);
   });
 
   it("promotes document search to a Next-native module", () => {
@@ -41,9 +42,10 @@ describe("primaryNavigation", () => {
     });
   });
 
-  it("keeps data analysis and project management as first-class modules", () => {
+  it("keeps data analysis, project management and medical audit as first-class modules", () => {
     const analytics = primaryNavigation.find((item) => item.id === "analytics");
     const projects = primaryNavigation.find((item) => item.id === "projects");
+    const medicalAudit = primaryNavigation.find((item) => item.id === "medical-audit");
 
     expect(analytics).toMatchObject({
       label: "数据分析",
@@ -53,6 +55,11 @@ describe("primaryNavigation", () => {
     expect(projects).toMatchObject({
       label: "项目空间",
       href: "/projects",
+      target: "workspace"
+    });
+    expect(medicalAudit).toMatchObject({
+      label: "医保审计",
+      href: "/medical-audit",
       target: "workspace"
     });
   });
@@ -81,10 +88,11 @@ describe("primaryNavigation", () => {
     });
   });
 
-  it("keeps the sidebar visible layer to five common entries", () => {
+  it("keeps the sidebar visible layer to six common entries", () => {
     expect(visiblePrimaryNavigation.map((item) => item.href)).toEqual([
       "/workspace",
       "/fund-compliance",
+      "/medical-audit",
       "/chat",
       "/documents",
       "/archive"
@@ -107,6 +115,7 @@ describe("primaryNavigation", () => {
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
       "/workspace",
       "/fund-compliance",
+      "/medical-audit",
       "/chat",
       "/documents",
       "/archive"

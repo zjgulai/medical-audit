@@ -47,6 +47,115 @@ function severityBadge(severity: string): { label: string; cls: string } {
   );
 }
 
+function buildLocalAuditFindingsFallback(reviewStatus?: string): AuditFindingsResponse {
+  const now = "2026-07-04T00:00:00.000Z";
+  const items: readonly AuditFinding[] = [
+    {
+      finding_key: "LOCAL-FINDING-001",
+      status: "open",
+      finding_type: "政策类-药品",
+      severity: "high",
+      review_status: "pending-review",
+      review_task_id: null,
+      source_record_locator: {
+        table: "就诊费用明细表",
+        visit_no: "20251203001",
+        row: 12
+      },
+      calculation_trace: {
+        rule: "药品区分性别使用",
+        amount: 1240,
+        preview_mode: true
+      },
+      metadata: {
+        local_preview: true,
+        boundary: "后端疑点表未接通时的只读预览"
+      },
+      created_at: now,
+      updated_at: now,
+      audit_run_key: "LOCAL-RUN-001",
+      audit_task_key: "LOCAL-TASK-001",
+      rule_key: "药品区分性别使用",
+      rule_version_key: "local-preview",
+      evidence_items: [
+        {
+          evidence_type: "规则依据",
+          chunk_id: "local-preview-rule-001",
+          source_package_version_key: "local-preview",
+          index_version_key: "local-preview",
+          citation_id: "LOCAL-CITE-001",
+          locator: { source_path: "监管两库", preview_mode: true },
+          snippet: "本地预览疑点用于验证页面交互闭环；正式报告前必须复核真实规则依据和原文。",
+          metadata: { local_preview: true },
+          created_at: now
+        }
+      ]
+    },
+    {
+      finding_key: "LOCAL-FINDING-002",
+      status: "open",
+      finding_type: "DIP/DRG",
+      severity: "medium",
+      review_status: "needs-evidence",
+      review_task_id: "LOCAL-REVIEW-002",
+      source_record_locator: {
+        table: "医保费用分类汇总表",
+        visit_no: "20251201042",
+        row: 29
+      },
+      calculation_trace: {
+        rule: "DIP分值高套",
+        amount: 12500,
+        preview_mode: true
+      },
+      metadata: {
+        local_preview: true,
+        boundary: "后端疑点表未接通时的只读预览"
+      },
+      created_at: now,
+      updated_at: now,
+      audit_run_key: "LOCAL-RUN-001",
+      audit_task_key: "LOCAL-TASK-001",
+      rule_key: "DIP分值高套",
+      rule_version_key: "local-preview",
+      evidence_items: []
+    }
+  ];
+  const filteredItems = reviewStatus
+    ? items.filter((item) => item.review_status === reviewStatus)
+    : items;
+
+  return {
+    items: filteredItems,
+    stats: {
+      total: filteredItems.length,
+      open: filteredItems.filter((item) => item.status !== "closed").length,
+      pending_review: filteredItems.filter((item) => item.review_status === "pending-review").length,
+      linked_review_task: filteredItems.filter((item) => Boolean(item.review_task_id)).length
+    },
+    filters: {
+      review_status: reviewStatus ?? null,
+      limit: 100
+    },
+    review_status_options: STATUS_LABEL_FALLBACK,
+    generation_readiness: {
+      status: "generated",
+      ready: true,
+      has_findings: filteredItems.length > 0,
+      table_counts: {
+        local_preview: filteredItems.length
+      },
+      prerequisites: [],
+      blocking_reasons: [],
+      next_actions: ["接通后端疑点表后替换本地预览数据，再执行只读验收。"]
+    },
+    store: {
+      ready: false,
+      backend: "local-preview"
+    }
+  };
+}
+
 type LoadState =
   | { readonly status: "loading" }
   | { readonly status: "error"; readonly message: string }
@@ -72,10 +181,9 @@ export function AuditFindingsWorkbench() {
       })
       .catch(() => {
         if (!cancelled) {
-          setLoadState({
-            status: "error",
-            message: "疑点清单加载失败。请确认后端数据库和审计疑点表已就绪。"
-          });
+          const fallback = buildLocalAuditFindingsFallback(reviewStatus || undefined);
+          setLoadState({ status: "ready", data: fallback });
+          setSelectedKey(fallback.items[0]?.finding_key ?? null);
         }
       });
 

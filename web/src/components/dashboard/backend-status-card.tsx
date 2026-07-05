@@ -18,6 +18,12 @@ type StatusState =
 
 export function BackendStatusCard() {
   const [state, setState] = useState<StatusState>({ status: "loading" });
+  const headline =
+    state.status === "ready"
+      ? "知识库连接正常"
+      : state.status === "loading"
+        ? "正在检测知识库"
+        : "知识库暂未连接";
 
   useEffect(() => {
     let active = true;
@@ -59,7 +65,7 @@ export function BackendStatusCard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="audit-kicker">服务状态</p>
-          <h2 className="mt-2 audit-section-title">知识库连接正常</h2>
+          <h2 className="mt-2 audit-section-title">{headline}</h2>
         </div>
         {state.status === "ready" && (
           <StatusPill tone={state.searchReady ? "success" : "warning"}>
@@ -67,7 +73,7 @@ export function BackendStatusCard() {
           </StatusPill>
         )}
         {state.status === "loading" && <StatusPill tone="neutral">检测中</StatusPill>}
-        {state.status === "error" && <StatusPill tone="warning">只读失败</StatusPill>}
+        {state.status === "error" && <StatusPill tone="warning">本地样例</StatusPill>}
       </div>
 
       {state.status === "loading" && (
@@ -75,8 +81,8 @@ export function BackendStatusCard() {
       )}
       {state.status === "error" && (
         <div className="mt-5 space-y-1 audit-copy">
-          <p>服务状态暂不可用</p>
-          <p>当前页面不会生成疑点或正式底稿。</p>
+          <p>当前展示演示数据，可先体验检索、审证和底稿路径。</p>
+          <p>正式生成疑点和底稿前，请先完成数据同步。</p>
         </div>
       )}
       {state.status === "ready" && (

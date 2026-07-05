@@ -476,6 +476,10 @@ export type QueryRequest = {
   readonly question: string;
   readonly top_k?: number;
   readonly source_collections?: readonly SourceCollection[];
+  readonly years?: readonly number[];
+  readonly regions?: readonly string[];
+  readonly document_types?: readonly string[];
+  readonly business_topics?: readonly string[];
   readonly title_only?: boolean;
   readonly agent?: string | null;
   readonly topic?: string;
@@ -527,6 +531,7 @@ export type QueryResponse = {
   readonly answer: string;
   readonly confidence: string;
   readonly fallback_used: boolean;
+  readonly effective_source_collections: readonly SourceCollection[];
   readonly basis_groups: readonly QueryBasisGroup[];
   readonly citations: readonly QueryCitation[];
   readonly personal_upload_matches: readonly PersonalUploadMatch[];

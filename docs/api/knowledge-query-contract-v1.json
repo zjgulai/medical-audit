@@ -1,0 +1,248 @@
+{
+  "contract_id": "knowledge-query-contract-v1",
+  "project": "medical_audit",
+  "status": "stable",
+  "created_at": "2026-07-04T13:45:00+08:00",
+  "evidence_grade": "L1-local-contract-freeze",
+  "purpose": "Freeze the frontend-backend query contract while the frontend is being refactored.",
+  "source_collections": {
+    "allowed": [
+      "medical-insurance-catalog",
+      "medical-insurance-laws",
+      "personal-materials",
+      "risk-negative-list",
+      "supervision-rules-knowledge"
+    ],
+    "medical_second_level": [
+      "medical-insurance-catalog",
+      "medical-insurance-laws",
+      "risk-negative-list",
+      "supervision-rules-knowledge"
+    ],
+    "default_member_effective": [
+      "medical-insurance-catalog",
+      "medical-insurance-laws",
+      "risk-negative-list",
+      "supervision-rules-knowledge"
+    ],
+    "explicit_only": [
+      "personal-materials"
+    ]
+  },
+  "endpoints": {
+    "post_query": {
+      "method": "POST",
+      "backend_path": "/query",
+      "frontend_proxy_path": "/api/v1/query",
+      "request": {
+        "content_type": "application/json",
+        "required": [
+          "question"
+        ],
+        "fields": {
+          "question": {
+            "type": "string",
+            "required": true,
+            "constraints": {
+              "min_length": 1
+            }
+          },
+          "top_k": {
+            "type": "integer",
+            "required": false,
+            "default": 5,
+            "constraints": {
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "source_collections": {
+            "type": "array",
+            "required": false,
+            "items": "SourceCollection",
+            "default": []
+          },
+          "years": {
+            "type": "array",
+            "required": false,
+            "items": "integer",
+            "default": []
+          },
+          "regions": {
+            "type": "array",
+            "required": false,
+            "items": "string",
+            "default": []
+          },
+          "document_types": {
+            "type": "array",
+            "required": false,
+            "items": "string",
+            "default": []
+          },
+          "business_topics": {
+            "type": "array",
+            "required": false,
+            "items": "string",
+            "default": []
+          },
+          "topic": {
+            "type": "string|null",
+            "required": false,
+            "constraints": {
+              "max_length": 64
+            }
+          },
+          "title_only": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "agent": {
+            "type": "string|null",
+            "required": false,
+            "constraints": {
+              "max_length": 128
+            }
+          }
+        }
+      },
+      "response": {
+        "content_type": "application/json",
+        "required": [
+          "question",
+          "answer",
+          "confidence",
+          "fallback_used",
+          "effective_source_collections",
+          "basis_groups",
+          "citations",
+          "personal_upload_matches",
+          "query_log_index",
+          "query_log_id",
+          "agent_invocation_id"
+        ],
+        "fields": {
+          "question": "string",
+          "answer": "string",
+          "confidence": "string",
+          "fallback_used": "boolean",
+          "effective_source_collections": "SourceCollection[]",
+          "basis_groups": "QueryBasisGroup[]",
+          "citations": "QueryCitation[]",
+          "personal_upload_matches": "PersonalUploadMatch[]",
+          "query_log_index": "integer",
+          "query_log_id": "string|null",
+          "agent_invocation_id": "string|null"
+        },
+        "nested_required": {
+          "basis_groups.items": [
+            "citation_id",
+            "chunk_id",
+            "source_collection",
+            "snippet",
+            "locator",
+            "index_version_key",
+            "source_package_version_key"
+          ],
+          "citations.items": [
+            "citation_id",
+            "marker",
+            "chunk_id",
+            "evidence_type",
+            "source_collection",
+            "snippet",
+            "locator",
+            "index_version_key",
+            "source_package_version_key"
+          ],
+          "personal_upload_matches.items": [
+            "id",
+            "upload_id",
+            "name",
+            "extension",
+            "created_by",
+            "indexed_at",
+            "chunk_index",
+            "snippet",
+            "score",
+            "locator"
+          ]
+        }
+      },
+      "error_contract": [
+        {
+          "status": 400,
+          "backend_detail_prefix": "unknown topic",
+          "frontend_code": "unknown-topic",
+          "frontend_state": "unknown-topic"
+        },
+        {
+          "status": 403,
+          "backend_detail_prefix": "source collection access denied",
+          "frontend_code": "source-collection-denied",
+          "frontend_state": "source-collection-denied"
+        },
+        {
+          "status": 404,
+          "backend_detail_prefix": "no cited evidence found",
+          "frontend_code": "no-cited-evidence",
+          "frontend_state": "no-cited-evidence"
+        },
+        {
+          "status": 409,
+          "backend_detail_prefix": "search engine is not initialized",
+          "frontend_code": "search-engine-not-initialized",
+          "frontend_state": "search-engine-not-initialized"
+        }
+      ]
+    },
+    "get_query_logs": {
+      "method": "GET",
+      "backend_path": "/query/logs",
+      "frontend_proxy_path": "/api/v1/query/logs",
+      "query_parameters": {
+        "limit": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "frontend_default": 8
+        }
+      },
+      "response": {
+        "required": [
+          "items",
+          "store"
+        ],
+        "store_required": [
+          "ready",
+          "backend"
+        ]
+      }
+    }
+  },
+  "frontend_freeze_points": [
+    "Use /api/v1/query and /api/v1/query/logs through the Next proxy.",
+    "Render effective_source_collections rather than echoing requested source_collections.",
+    "Render citations and basis_groups source_collection fields as the evidence source of record.",
+    "Treat query_log_id as nullable; no-history and query-history-store failure modes are valid.",
+    "Treat agent_invocation_id as nullable; it is present only when agent selection is active.",
+    "Classify 400, 403, 404, and 409 into typed frontend states."
+  ],
+  "unsupported_claims": [
+    "This contract does not prove live backend write-path behavior.",
+    "This contract does not prove production behavior.",
+    "This contract does not prove answer-provider behavior."
+  ],
+  "boundary": {
+    "provider_call": false,
+    "database_write": false,
+    "index_activation": false,
+    "production_probe": false,
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "write_path_smoke": false
+  }
+}
