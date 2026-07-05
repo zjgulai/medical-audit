@@ -43,7 +43,7 @@ type AgentInstallStatus = {
 
 const AGENT_CATALOG_SOURCE = "audit-agent-prompts-0613";
 
-const auditAgents: readonly CatalogAgentPrompt[] = (promptsData as readonly AgentPrompt[]).map((agent, index) => {
+const auditAgentSourceRows: readonly CatalogAgentPrompt[] = (promptsData as readonly AgentPrompt[]).map((agent, index) => {
   const sourceRowIndex = index + 1;
   return {
     ...agent,
@@ -52,6 +52,20 @@ const auditAgents: readonly CatalogAgentPrompt[] = (promptsData as readonly Agen
     legacySourceKey: `${agent.category}|${agent.title}`
   };
 });
+function uniqueCatalogAgents(rows: readonly CatalogAgentPrompt[]): readonly CatalogAgentPrompt[] {
+  const seen = new Set<string>();
+  const unique: CatalogAgentPrompt[] = [];
+  for (const agent of rows) {
+    if (seen.has(agent.legacySourceKey)) {
+      continue;
+    }
+    seen.add(agent.legacySourceKey);
+    unique.push(agent);
+  }
+  return unique;
+}
+
+const auditAgents: readonly CatalogAgentPrompt[] = uniqueCatalogAgents(auditAgentSourceRows);
 
 const CATEGORY_ORDER = [
   "财务收支审计",
@@ -420,7 +434,9 @@ export default function AgentMarketPage() {
           <div>
             <p className="audit-kicker">审计助手库</p>
             <h1 className="audit-page-title">审计助手库</h1>
-            <p className="mt-1 audit-copy">已纳入 {auditAgents.length} 个审计智能体，可按专题检索并安装到我的智能体。</p>
+            <p className="mt-1 audit-copy">
+              源提示词 {auditAgentSourceRows.length} 条，已去重为 {auditAgents.length} 个审计智能体，可按专题检索并安装到我的智能体。
+            </p>
           </div>
           <input
             className="audit-focus-ring audit-input w-full px-3 py-2.5"

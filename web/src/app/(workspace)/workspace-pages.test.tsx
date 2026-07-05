@@ -55,6 +55,17 @@ import ReportsPage from "./reports/page";
 import RulesPage from "./rules/page";
 import WorkspacePage from "./workspace/page";
 
+type PromptCatalogRow = {
+  readonly category: string;
+  readonly title: string;
+};
+
+function uniqueAgentPromptCount(): number {
+  return new Set(
+    (promptsData as readonly PromptCatalogRow[]).map((prompt) => `${prompt.category}|${prompt.title}`)
+  ).size;
+}
+
 vi.mock("@/lib/api-client", () => ({
   createAuditAgent: vi.fn(
     async (payload: {
@@ -1947,12 +1958,16 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "审计助手库" })).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "审计助手分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
-    expect(screen.getByText(`已纳入 ${(promptsData as readonly unknown[]).length} 个审计智能体，可按专题检索并安装到我的智能体。`)).toBeInTheDocument();
+    const sourcePromptCount = (promptsData as readonly unknown[]).length;
+    const uniquePromptCount = uniqueAgentPromptCount();
+    expect(
+      screen.getByText(`源提示词 ${sourcePromptCount} 条，已去重为 ${uniquePromptCount} 个审计智能体，可按专题检索并安装到我的智能体。`)
+    ).toBeInTheDocument();
 
     const agentList = document.querySelector('[aria-label="审计助手列表"]');
     expect(agentList).not.toBeNull();
     const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
-    expect(visibleNames.length).toBe((promptsData as readonly unknown[]).length);
+    expect(visibleNames.length).toBe(uniquePromptCount);
     for (const name of visibleNames) {
       expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
       expect(Array.from(name).length).toBeLessThanOrEqual(10);
