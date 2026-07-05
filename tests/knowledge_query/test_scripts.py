@@ -493,6 +493,44 @@ def test_audit_document_governance_contract_readiness_accepts_enterprise_config(
     }
 
 
+def test_audit_frontend_backend_api_contract_schema_script_is_valid() -> None:
+    script_path = Path("scripts/audit-frontend-backend-api-contract-schema.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "production_side_effect" in script_text
+    assert "provider_call_status" in script_text
+    assert "secret_values_reported" in script_text
+
+
+def test_audit_frontend_backend_api_contract_schema_marks_schema_gaps() -> None:
+    module = _load_script_module(
+        "audit_frontend_backend_api_contract_schema",
+        Path("scripts/audit-frontend-backend-api-contract-schema.py"),
+    )
+    schema = module._load_openapi_schema()
+    api_types_text = Path("web/src/lib/api-types.ts").read_text(encoding="utf-8")
+
+    report = module.build_contract_report(schema=schema, api_types_text=api_types_text)
+    items = {item["surface"]: item for item in report["items"]}
+
+    assert report["evidence_grade"] == "L2-fixture-or-dry-run"
+    assert report["boundaries"]["production_side_effect"] == "none"
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+    assert report["summary"]["contract_count"] >= 30
+    assert items["document-uploads"]["response"]["status"] == "aligned"
+    assert items["knowledge-query"]["response"]["status"] == "missing_response_schema"
+    assert items["agents-list"]["response"]["status"] == "missing_response_schema"
+
+
 def test_audit_document_governance_ready_profile_outputs_ready_without_secret_leak(
     tmp_path: Path,
 ) -> None:

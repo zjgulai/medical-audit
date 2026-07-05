@@ -1,111 +1,168 @@
-import Link from "next/link";
+"use client";
+
+import { useState, type FormEvent } from "react";
 
 import { BrandLogo } from "@/components/shell/brand-logo";
 
-const roleEntries = [
-  { label: "管理员", description: "账号、权限、日志" },
-  { label: "技术人员", description: "数据、索引、模板" },
-  { label: "主任", description: "复核、签发、闭环" },
-  { label: "普通成员", description: "审证、分析、底稿" }
-] as const;
+type LoginSecurityStep = "closed" | "notice" | "password";
 
 export default function LoginPage() {
+  const [showPassword, setShowPassword] = useState(false);
+  const [securityStep, setSecurityStep] = useState<LoginSecurityStep>("closed");
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState("");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordChangeStatus("");
+    setSecurityStep("notice");
+  }
+
+  function enterWorkspace() {
+    window.location.assign("/workspace");
+  }
+
   return (
-    <main className="audit-login-shell flex items-center justify-center px-4 py-8 sm:px-6">
-      <section className="grid w-full max-w-6xl gap-6 lg:grid-cols-[1fr_26rem]">
-        <div className="flex min-h-[34rem] flex-col justify-between rounded-[14px] border border-white/20 bg-white/10 p-6 text-white shadow-[0_24px_70px_rgb(10_31_68/0.18)] backdrop-blur lg:p-8">
-          <div>
-            <div className="inline-flex items-center gap-3 rounded-[var(--audit-radius-lg)] border border-white/20 bg-white/12 px-3 py-2">
-              <span className="grid size-10 place-items-center rounded-[var(--audit-radius-md)] bg-white">
-                <BrandLogo priority />
-              </span>
-              <span>
-                <span className="block text-sm font-semibold">医保智能审计平台</span>
-                <span className="block text-xs text-white/72">AuditScope Medical</span>
-              </span>
-            </div>
+    <main className="audit-login-shell">
+      <div className="audit-login-glow audit-login-glow-top" aria-hidden="true" />
+      <div className="audit-login-glow audit-login-glow-bottom" aria-hidden="true" />
 
-            <div className="mt-14 max-w-2xl">
-              <p className="text-sm font-semibold text-sky-100">医保基金审计专题</p>
-              <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-[0] sm:text-5xl">
-                面向医院内审的医保审计工作台
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-sky-50/84">
-                围绕依据检索、审计助手、表格分析和底稿生成组织日常工作，系统建议保持人工复核边界。
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-4">
-            {roleEntries.map((role) => (
-              <div key={role.label} className="rounded-[var(--audit-radius-md)] border border-white/18 bg-white/10 p-3">
-                <p className="text-sm font-semibold">{role.label}</p>
-                <p className="mt-1 text-xs leading-5 text-sky-50/76">{role.description}</p>
-              </div>
-            ))}
-          </div>
+      <form className="audit-login-card" action="/workspace" method="get" aria-label="登录系统" onSubmit={handleSubmit}>
+        <div className="audit-login-brand">
+          <span className="audit-login-mark" aria-hidden="true">
+            <BrandLogo height={20} priority width={20} />
+          </span>
+          <span className="audit-login-brand-name">医保智能审计平台</span>
         </div>
 
-        <form className="audit-login-card p-6 sm:p-7" action="/workspace" method="get">
-          <div>
-            <p className="audit-kicker">医院统一入口</p>
-            <h2 className="mt-2 text-2xl font-semibold leading-8 text-[var(--audit-ink)]">登录工作台</h2>
-            <p className="mt-2 audit-copy">使用信息科分配的账号进入对应角色视图。</p>
+        <div className="audit-login-heading">
+          <h1>欢迎登录</h1>
+          <p>请使用您的账号密码进入系统</p>
+        </div>
+
+        <div className="audit-login-fields">
+          <div className="audit-login-field">
+            <label htmlFor="login-account">账号 / 工号</label>
+            <input
+              id="login-account"
+              autoComplete="username"
+              placeholder="请输入账号或工号"
+              required
+              type="text"
+            />
           </div>
 
-          <div className="mt-7 space-y-5">
-            <label className="block">
-              <span className="audit-label">账号 / 工号</span>
+          <div className="audit-login-field">
+            <label htmlFor="login-password">密码</label>
+            <span className="audit-login-password-wrap">
               <input
-                className="audit-focus-ring audit-input mt-2 px-3 py-3"
-                name="account"
-                autoComplete="username"
-                placeholder="请输入账号或工号"
-                required
-              />
-            </label>
-
-            <label className="block">
-              <span className="audit-label">密码</span>
-              <input
-                className="audit-focus-ring audit-input mt-2 px-3 py-3"
-                name="password"
-                type="password"
+                id="login-password"
                 autoComplete="current-password"
                 placeholder="请输入密码"
                 required
+                type={showPassword ? "text" : "password"}
               />
-            </label>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-sm text-[var(--audit-ink-muted)]">
-                <input className="size-4 rounded border-[var(--audit-line)]" type="checkbox" name="remember" />
-                保持本机登录
-              </label>
-              <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-sm font-semibold text-[var(--audit-primary)]" href="#support">
-                联系信息中心
-              </a>
-            </div>
+              <button
+                className="audit-login-visibility"
+                type="button"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? "◐" : "◎"}
+              </button>
+            </span>
           </div>
+        </div>
 
-          <button className="audit-focus-ring audit-btn audit-btn-primary mt-7 w-full" type="submit">
-            进入系统
-          </button>
+        <button className="audit-login-submit" type="submit">
+          登 录
+        </button>
 
-          <div id="support" className="mt-6 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-4">
-            <p className="text-sm font-semibold text-[var(--audit-ink)]">访问边界</p>
-            <p className="mt-1 audit-meta">
-              账号由医院信息科统一开通；权限范围以管理员配置为准。
-            </p>
-          </div>
+        <p className="audit-login-support">
+          忘记密码或账号？请联系
+          <a href="#support">信息中心</a>
+        </p>
+      </form>
 
-          <div className="mt-5 text-center">
-            <Link className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-sm font-semibold text-[var(--audit-ink-muted)]" href="/workspace">
-              查看当前工作台
-            </Link>
-          </div>
-        </form>
-      </section>
+      {securityStep !== "closed" && (
+        <div className="audit-login-dialog-layer">
+          <section
+            className="audit-login-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audit-login-security-title"
+          >
+            {securityStep === "notice" ? (
+              <>
+                <div className="audit-login-dialog-header">
+                  <span aria-hidden="true">!</span>
+                  <div>
+                    <h2 id="audit-login-security-title">初始密码安全提示</h2>
+                    <p>检测到当前账号仍可能使用初始密码。建议先修改密码，再进入审计工作台。</p>
+                  </div>
+                </div>
+
+                <div className="audit-login-dialog-actions">
+                  <button type="button" className="audit-login-dialog-secondary" onClick={enterWorkspace}>
+                    稍后处理
+                  </button>
+                  <button type="button" className="audit-login-dialog-primary" onClick={() => setSecurityStep("password")}>
+                    修改密码
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="audit-login-dialog-header">
+                  <span aria-hidden="true">锁</span>
+                  <div>
+                    <h2 id="audit-login-security-title">修改密码</h2>
+                    <p>请输入新密码并再次确认。正式保存前请确保密码符合机构安全要求。</p>
+                  </div>
+                </div>
+
+                <div className="audit-login-dialog-fields">
+                  <label htmlFor="login-new-password">新密码</label>
+                  <input id="login-new-password" type="password" autoComplete="new-password" placeholder="请输入新密码" />
+                  <label htmlFor="login-confirm-password">确认密码</label>
+                  <input
+                    id="login-confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="请再次输入新密码"
+                  />
+                </div>
+
+                {passwordChangeStatus && (
+                  <p className="audit-login-dialog-status" role="status">
+                    {passwordChangeStatus}
+                  </p>
+                )}
+
+                <div className="audit-login-dialog-actions">
+                  <button type="button" className="audit-login-dialog-secondary" onClick={() => setSecurityStep("notice")}>
+                    返回提示
+                  </button>
+                  <button
+                    type="button"
+                    className="audit-login-dialog-secondary"
+                    onClick={() => setPasswordChangeStatus("密码修改已生成预览。请确认后进入正式保存流程。")}
+                  >
+                    提交修改
+                  </button>
+                  <button type="button" className="audit-login-dialog-primary" onClick={enterWorkspace}>
+                    进入系统
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
+      <p id="support" className="audit-login-footer">
+        医保智能审计平台 · 基金合规审计
+      </p>
     </main>
   );
 }

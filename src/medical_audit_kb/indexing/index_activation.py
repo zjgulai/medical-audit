@@ -119,8 +119,8 @@ def activate_index_version_to_cursor(
     _validate_activation_allowed(version_key=str(version_key), metadata=_object_dict(raw_metadata))
 
     cursor.execute(
-        DEACTIVATE_MATCHING_ACTIVE_INDEX_VERSIONS_SQL,
-        (target_uuid, provider, model),
+        DEACTIVATE_OVERLAPPING_ACTIVE_INDEX_VERSIONS_SQL,
+        (target_uuid, provider, model, target_uuid),
     )
     deactivated = tuple(str(row[0]) for row in cursor.fetchall())
     cursor.execute(ACTIVATE_INDEX_VERSION_SQL, (target_uuid,))
@@ -157,8 +157,8 @@ def rollback_index_version_to_cursor(
         )
 
     cursor.execute(
-        DEACTIVATE_MATCHING_ACTIVE_INDEX_VERSIONS_SQL,
-        (target_uuid, provider, model),
+        DEACTIVATE_OVERLAPPING_ACTIVE_INDEX_VERSIONS_SQL,
+        (target_uuid, provider, model, target_uuid),
     )
     deactivated = tuple(str(row[0]) for row in cursor.fetchall())
     cursor.execute(ACTIVATE_INDEX_VERSION_SQL, (target_uuid,))
@@ -305,14 +305,26 @@ WHERE version_key = %s
 FOR UPDATE
 """
 
-DEACTIVATE_MATCHING_ACTIVE_INDEX_VERSIONS_SQL = """
-UPDATE index_versions
+DEACTIVATE_OVERLAPPING_ACTIVE_INDEX_VERSIONS_SQL = """
+UPDATE index_versions active_iv
 SET status = 'inactive'
-WHERE status = 'active'
-  AND id <> %s
-  AND vector_provider IS NOT DISTINCT FROM %s
-  AND vector_model IS NOT DISTINCT FROM %s
-RETURNING version_key
+WHERE active_iv.status = 'active'
+  AND active_iv.id <> %s
+  AND active_iv.vector_provider IS NOT DISTINCT FROM %s
+  AND active_iv.vector_model IS NOT DISTINCT FROM %s
+  AND EXISTS (
+      SELECT 1
+      FROM source_documents active_sd
+      WHERE active_sd.source_package_version_id = active_iv.source_package_version_id
+        AND active_sd.source_collection IN (
+            SELECT target_sd.source_collection
+            FROM index_versions target_iv
+            JOIN source_documents target_sd
+              ON target_sd.source_package_version_id = target_iv.source_package_version_id
+            WHERE target_iv.id = %s
+        )
+  )
+RETURNING active_iv.version_key
 """
 
 ACTIVATE_INDEX_VERSION_SQL = """

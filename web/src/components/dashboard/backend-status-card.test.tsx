@@ -43,7 +43,8 @@ describe("BackendStatusCard", () => {
     render(<BackendStatusCard />);
 
     await waitFor(() => {
-      expect(screen.getByText("服务状态暂不可用")).toBeInTheDocument();
+      expect(screen.getByText("当前展示演示数据，可先体验检索、审证和底稿路径。")).toBeInTheDocument();
     });
+    expect(screen.getByRole("heading", { name: "知识库暂未连接" })).toBeInTheDocument();
   });
 });

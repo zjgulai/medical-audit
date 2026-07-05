@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
+import { buildReplicaLocalGateNotice } from "@/components/replica/replica-page-kit";
 import { StatusPill } from "@/components/ui/status-pill";
 import { fetchArchiveWorkbench } from "@/lib/api-client";
 import type {
@@ -23,6 +24,8 @@ import {
 
 const archivePolicyHref = "#archive-policy-title";
 const backendAuditLogsPath = "/pages/audit-logs";
+
+type ArchiveAction = "查看档案" | "查看留痕" | "导出清单" | "移交归档";
 
 const staticArchiveWorkbench: ArchiveWorkbenchResponse = {
   format: "archive-workbench-v1",
@@ -50,6 +53,10 @@ const staticArchiveWorkbench: ArchiveWorkbenchResponse = {
 export default function ArchivePage() {
   const [workbench, setWorkbench] = useState<ArchiveWorkbenchResponse>(staticArchiveWorkbench);
   const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
+  const [selectedPackageId, setSelectedPackageId] = useState(workbench.archive_packages[0]?.id ?? "");
+  const [packageDetailOpen, setPackageDetailOpen] = useState(false);
+  const [activeArchiveAction, setActiveArchiveAction] = useState<ArchiveAction | null>(null);
+  const [archiveNotice, setArchiveNotice] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -75,9 +82,33 @@ export default function ArchivePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (workbench.archive_packages.length === 0) {
+      setSelectedPackageId("");
+      setPackageDetailOpen(false);
+      return;
+    }
+
+    if (!workbench.archive_packages.some((item) => item.id === selectedPackageId)) {
+      setSelectedPackageId(workbench.archive_packages[0]?.id ?? "");
+    }
+  }, [selectedPackageId, workbench.archive_packages]);
+
   const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
   const statusLabel =
-    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+    backendStatus === "ready" ? "数据已同步" : backendStatus === "loading" ? "同步中" : "演示数据";
+  const selectedPackage =
+    workbench.archive_packages.find((item) => item.id === selectedPackageId) ?? workbench.archive_packages[0];
+
+  function runArchiveAction(item: ArchivePackageApiItem, action: ArchiveAction) {
+    setSelectedPackageId(item.id);
+    setPackageDetailOpen(true);
+    setActiveArchiveAction(action);
+    setArchiveNotice(buildReplicaLocalGateNotice({
+      action: `${action}「${item.projectName}」`,
+      nextStep: getArchiveActionNextStep(action)
+    }));
+  }
 
   return (
     <main className="space-y-5">
@@ -92,6 +123,9 @@ export default function ArchivePage() {
             <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
           </div>
         </div>
+        {backendStatus === "fallback" ? (
+          <p className="audit-meta mt-4">当前展示演示归档包，用于核对材料完整性、签名链和归档策略。</p>
+        ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ArchiveMetric label="已归档项目" value={`${workbench.metrics.archived_package_count} 个`} />
@@ -108,9 +142,69 @@ export default function ArchivePage() {
         </div>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {workbench.archive_packages.map((item) => (
-            <ArchivePackageCard key={item.id} item={item} />
+            <ArchivePackageCard
+              key={item.id}
+              item={item}
+              selected={selectedPackageId === item.id}
+              onAction={runArchiveAction}
+            />
           ))}
         </div>
+        {archiveNotice ? (
+          <p className="archive-local-notice" role="status">{archiveNotice}</p>
+        ) : null}
+        {packageDetailOpen && selectedPackage ? (
+          <section className="archive-package-detail" aria-label="档案包详情预览">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="audit-kicker">档案包详情</p>
+                <h3 className="audit-section-title break-words">{selectedPackage.projectName}</h3>
+                <p className="audit-meta mt-1 break-words">{selectedPackage.archiveNo}</p>
+              </div>
+              <button
+                type="button"
+                className="audit-focus-ring audit-btn audit-btn-secondary"
+                aria-label="关闭档案包详情"
+                onClick={() => setPackageDetailOpen(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="min-w-0">
+                <dt className="audit-label">报告编号</dt>
+                <dd className="audit-copy mt-1 break-words">{selectedPackage.reportNo}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="audit-label">责任方</dt>
+                <dd className="audit-copy mt-1 break-words">{selectedPackage.owner}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="audit-label">签发时间</dt>
+                <dd className="audit-copy mt-1">{selectedPackage.signedAt}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="audit-label">留存期限</dt>
+                <dd className="audit-copy mt-1">{selectedPackage.retainedUntil}</dd>
+              </div>
+            </dl>
+            <p className="audit-copy mt-4">{getArchiveActionPreview(selectedPackage, activeArchiveAction)}</p>
+            <div className="archive-action-panel" aria-label="档案包后续操作预览">
+              <button type="button" className="audit-focus-ring audit-btn audit-btn-primary" onClick={() => runArchiveAction(selectedPackage, "查看档案")}>
+                查看档案
+              </button>
+              <button type="button" className="audit-focus-ring audit-btn audit-btn-secondary" onClick={() => runArchiveAction(selectedPackage, "查看留痕")}>
+                查看留痕
+              </button>
+              <button type="button" className="audit-focus-ring audit-btn audit-btn-secondary" onClick={() => runArchiveAction(selectedPackage, "导出清单")}>
+                导出清单
+              </button>
+              <button type="button" className="audit-focus-ring audit-btn audit-btn-secondary" onClick={() => runArchiveAction(selectedPackage, "移交归档")}>
+                移交归档
+              </button>
+            </div>
+          </section>
+        ) : null}
       </section>
 
       <section className="audit-panel p-6" aria-labelledby="archive-policy-title">
@@ -161,9 +255,17 @@ function ArchiveMetric({ label, value }: { readonly label: string; readonly valu
   );
 }
 
-function ArchivePackageCard({ item }: { readonly item: ArchivePackageApiItem }) {
+function ArchivePackageCard({
+  item,
+  selected,
+  onAction
+}: {
+  readonly item: ArchivePackageApiItem;
+  readonly selected: boolean;
+  readonly onAction: (item: ArchivePackageApiItem, action: ArchiveAction) => void;
+}) {
   return (
-    <article className="audit-panel-muted min-w-0 p-4">
+    <article className={`audit-panel-muted min-w-0 p-4 ${selected ? "archive-package-card-active" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="audit-compact-title break-words">{item.projectName}</h3>
@@ -192,12 +294,12 @@ function ArchivePackageCard({ item }: { readonly item: ArchivePackageApiItem }) 
       </dl>
       <p className="audit-copy mt-3">{item.evidenceSummary}</p>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        <a className="audit-focus-ring audit-btn audit-btn-primary" href={item.href}>
+        <button type="button" className="audit-focus-ring audit-btn audit-btn-primary" onClick={() => onAction(item, "查看档案")}>
           查看档案
-        </a>
-        <a className="audit-focus-ring audit-btn audit-btn-secondary" href={safeArchiveLogHref(item.logHref)}>
+        </button>
+        <button type="button" className="audit-focus-ring audit-btn audit-btn-secondary" onClick={() => onAction(item, "查看留痕")}>
           查看留痕
-        </a>
+        </button>
       </div>
     </article>
   );
@@ -322,6 +424,38 @@ function getSignatureTone(status: ArchiveSignatureItemApiItem["status"]) {
   }
 
   return "warning";
+}
+
+function getArchiveActionNextStep(action: ArchiveAction) {
+  if (action === "查看档案") {
+    return "档案包详情 API";
+  }
+
+  if (action === "查看留痕") {
+    return "审计日志检索 API";
+  }
+
+  if (action === "导出清单") {
+    return "受控导出 API";
+  }
+
+  return "归档移交 API";
+}
+
+function getArchiveActionPreview(item: ArchivePackageApiItem, action: ArchiveAction | null) {
+  if (action === "查看留痕") {
+    return `已打开「${item.projectName}」留痕预览，正式环境需读取审计日志、签名链和访问记录。`;
+  }
+
+  if (action === "导出清单") {
+    return `已生成「${item.archiveNo}」清单导出确认态，正式环境需完成权限校验和下载留痕。`;
+  }
+
+  if (action === "移交归档") {
+    return `已进入「${item.projectName}」移交前检查态，正式环境需复核报告、附件 hash、签名链和保留策略。`;
+  }
+
+  return `已打开「${item.projectName}」档案包预览，正式环境需加载文件目录、报告附件和证据摘要。`;
 }
 
 function buildArchiveMetrics(

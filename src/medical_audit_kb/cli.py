@@ -128,6 +128,14 @@ from medical_audit_kb.indexing.pgvector_writer import (
     render_pgvector_import_execution_markdown,
     run_pgvector_import,
 )
+from medical_audit_kb.indexing.taxonomy_backfill import (
+    DEFAULT_MANIFEST_CSV as DEFAULT_TAXONOMY_MANIFEST_CSV,
+)
+from medical_audit_kb.indexing.taxonomy_backfill import (
+    DEFAULT_TAXONOMY_VERSION,
+    render_taxonomy_backfill_markdown,
+    run_taxonomy_backfill,
+)
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline
 from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
@@ -180,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
         return _pgvector_import_plan(args)
     if args.command == "pgvector-import":
         return _pgvector_import(args)
+    if args.command == "taxonomy-backfill":
+        return _taxonomy_backfill(args)
     if args.command == "index-activate":
         return _index_activate(args)
     if args.command == "index-rollback":
@@ -339,6 +349,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--execute",
         action="store_true",
         help="Actually write to PostgreSQL. Omit this flag to run dry-run only.",
+    )
+
+    taxonomy_backfill = subparsers.add_parser(
+        "taxonomy-backfill",
+        help="Backfill logical knowledge-base taxonomy metadata for indexed documents.",
+    )
+    taxonomy_backfill.add_argument(
+        "--manifest-csv",
+        type=Path,
+        default=Path(DEFAULT_TAXONOMY_MANIFEST_CSV),
+    )
+    taxonomy_backfill.add_argument(
+        "--taxonomy-version",
+        default=DEFAULT_TAXONOMY_VERSION,
+    )
+    taxonomy_backfill.add_argument("--output", required=True, type=Path)
+    taxonomy_backfill.add_argument("--json-output", type=Path)
+    taxonomy_backfill.add_argument("--database-url-env", default=DATABASE_URL_ENV)
+    taxonomy_backfill.add_argument(
+        "--index-version-status",
+        choices=("active", "candidate", "inactive"),
+        default="active",
+    )
+    taxonomy_backfill.add_argument("--index-version-key")
+    taxonomy_backfill.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually update PostgreSQL metadata. Omit this flag to run dry-run only.",
     )
 
     index_activate = subparsers.add_parser(
@@ -801,6 +839,27 @@ def _pgvector_import(args: argparse.Namespace) -> int:
     except ValueError as exc:
         _die(str(exc))
     _write_text(args.output, render_pgvector_import_execution_markdown(result))
+    if args.json_output is not None:
+        _write_text(
+            args.json_output,
+            json.dumps(result.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        )
+    return 0 if result.success else 2
+
+
+def _taxonomy_backfill(args: argparse.Namespace) -> int:
+    try:
+        result = run_taxonomy_backfill(
+            args.manifest_csv,
+            execute=args.execute,
+            database_url_env=args.database_url_env,
+            taxonomy_version=args.taxonomy_version,
+            index_version_status=args.index_version_status,
+            index_version_key=args.index_version_key,
+        )
+    except ValueError as exc:
+        _die(str(exc))
+    _write_text(args.output, render_taxonomy_backfill_markdown(result))
     if args.json_output is not None:
         _write_text(
             args.json_output,

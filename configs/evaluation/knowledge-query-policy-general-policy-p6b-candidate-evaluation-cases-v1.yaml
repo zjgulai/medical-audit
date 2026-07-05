@@ -1,0 +1,249 @@
+dataset_id: knowledge-query-policy-general-policy-p6b-candidate-evaluation-cases-v1
+title: 综合政策与规范性文件 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-general-policy:full-rebuild-20260704151859:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-general-0001
+  question: 请检索并引用《凉山彝族自治州人民代表大会关于修改《凉山彝族自治州自治条例》等四部条例的决定_20250403》中与“《凉山彝族自治州自治条例》、《凉山彝族自治州大桥水库工程管理条例》、《凉山彝族自治州矿产资源管理条例》、《凉”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/凉山彝族自治州人民代表大会关于修改《凉山彝族自治州自治条例》等四部条例的决定_20250403.md
+    locator:
+      type: paragraph
+      line_end: 97
+      line_start: 97
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/凉山彝族自治州人民代表大会关于修改《凉山彝族自治州自治条例》等四部条例的决定_20250403.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0002
+  question: 请检索并引用《贵阳市人民代表大会常务委员会关于废止《贵阳市预防职务犯罪工作规定》的决定_20250530》中与“（2025年4月29日贵阳市第十五届人民代表大会常务委员会第二十六次会议通过 2025年5月29日贵州省第十”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/贵阳市人民代表大会常务委员会关于废止《贵阳市预防职务犯罪工作规定》的决定_20250530.md
+    locator:
+      type: paragraph
+      line_end: 7
+      line_start: 7
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/贵阳市人民代表大会常务委员会关于废止《贵阳市预防职务犯罪工作规定》的决定_20250530.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0003
+  question: 请检索并引用《河南省人民代表大会常务委员会关于废止《河南省经纪人条例》等六部地方性法规的决定_20250907》中与“（2025年9月7日河南省第十四届人民代表大会常务委员会第十九次会议通过）”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/河南省人民代表大会常务委员会关于废止《河南省经纪人条例》等六部地方性法规的决定_20250907.md
+    locator:
+      type: paragraph
+      line_end: 9
+      line_start: 9
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/河南省人民代表大会常务委员会关于废止《河南省经纪人条例》等六部地方性法规的决定_20250907.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0004
+  question: 请检索并引用《辽宁省人民代表大会常务委员会关于依法科学有序做好当前新冠肺炎疫情防控工作的决定_20200219》中与“乡镇人民政府和街道办事处应当按照省、市、县（市、区）统一部署，坚持力量下沉，发挥群防群治力量，组织指导居民委”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/辽宁省人民代表大会常务委员会关于依法科学有序做好当前新冠肺炎疫情防控工作的决定_20200219.md
+    locator:
+      type: paragraph
+      line_end: 45
+      line_start: 45
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/辽宁省人民代表大会常务委员会关于依法科学有序做好当前新冠肺炎疫情防控工作的决定_20200219.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0005
+  question: 请检索并引用《云南省人民代表大会常务委员会关于加强赤水河流域共同保护的决定_20210530》中与“三省建立健全赤水河流域突发生态环境事件应急演练和应急处置联动机制，发生突发生态环境事件时应当及时相互通报，协”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/云南省人民代表大会常务委员会关于加强赤水河流域共同保护的决定_20210530.md
+    locator:
+      type: paragraph
+      line_end: 65
+      line_start: 65
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/云南省人民代表大会常务委员会关于加强赤水河流域共同保护的决定_20210530.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0006
+  question: 请检索并引用《江苏省人民代表大会常务委员会关于促进全民阅读的决定_20250114》中与“推进公共图书馆实行总分馆制，逐步实现县级公共图书馆图书与本行政区域内各类图书馆、基层公共阅读服务场所之间通借”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/江苏省人民代表大会常务委员会关于促进全民阅读的决定_20250114.md
+    locator:
+      type: paragraph
+      line_end: 95
+      line_start: 95
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/江苏省人民代表大会常务委员会关于促进全民阅读的决定_20250114.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0007
+  question: 请检索并引用《国家广播电视总局关于取消部分规章和规范性文件设定的证明事项材料的决定》中与“第二十二条第二项规定的“制作机构资质的有效证明”，改由总局和省局通过内部政务系统数据信息共享核查替代。 （十”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/国家规章平台文档/国家广播电视总局关于取消部分规章和规范性文件设定的证明事项材料的决定.converted.txt
+    locator:
+      type: paragraph
+      line_end: 36
+      line_start: 36
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/国家规章平台文档/国家广播电视总局关于取消部分规章和规范性文件设定的证明事项材料的决定.converted.txt
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0008
+  question: 请检索并引用《重庆市人民代表大会常务委员会关于川渝高竹新区行政管理事项的决定_20240731》中与“一、川渝高竹新区管理委员会（以下简称川渝高竹新区管委会）是川渝高竹新区管理机构，行使依法赋予的市级、区级行政”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/重庆市人民代表大会常务委员会关于川渝高竹新区行政管理事项的决定_20240731.md
+    locator:
+      type: paragraph
+      line_end: 15
+      line_start: 15
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/重庆市人民代表大会常务委员会关于川渝高竹新区行政管理事项的决定_20240731.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0009
+  question: 请检索并引用《桂林市人民代表大会常务委员会关于修改《桂林市地方性法规制定条例》的决定_20251012》中与“十、将第二十二条修改为："常务委员会决定提请市人民代表大会会议审议的地方性法规案，应当在会议举行的十日前将地”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/桂林市人民代表大会常务委员会关于修改《桂林市地方性法规制定条例》的决定_20251012.md
+    locator:
+      type: paragraph
+      line_end: 87
+      line_start: 87
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/桂林市人民代表大会常务委员会关于修改《桂林市地方性法规制定条例》的决定_20251012.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy
+- case_id: p6b-policy-general-0010
+  question: 请检索并引用《广东省各级人民代表大会常务委员会讨论决定重大事项规定_20171130》中与“人大常委会讨论、决定重大事项应当坚持中国共产党的领导、人民当家作主、依法治国有机统一，坚持科学决策、民主决策”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-general-policy
+    source_path: policy-general-policy/医保审核前期资料/全量法律/广东省各级人民代表大会常务委员会讨论决定重大事项规定_20171130.md
+    locator:
+      type: paragraph
+      line_end: 27
+      line_start: 27
+      title_path: []
+      page_number: null
+      source_path: policy-general-policy/医保审核前期资料/全量法律/广东省各级人民代表大会常务委员会讨论决定重大事项规定_20171130.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-general-policy
+  filters:
+    source_collections:
+    - policy-general-policy

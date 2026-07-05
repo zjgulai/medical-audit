@@ -274,48 +274,46 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await page.goto("/documents");
 
   const primaryNavigation = page.getByRole("navigation", { name: "主导航" });
-  const chatLink = primaryNavigation.getByRole("link", { name: /审计助手/ });
-  const topicLink = primaryNavigation.getByRole("link", { name: /基金合规/ });
+  const chatLink = primaryNavigation.getByRole("link", { name: /AI 对话/ });
 
-  await expect(page.getByText("医保智能审计平台")).toBeVisible();
-  await expect(page.getByTestId("auditscope-brand-logo")).toBeVisible();
-  await expect(topicLink).toHaveAttribute("href", "/fund-compliance");
+  await expect(page.getByRole("link", { name: "AI审计应用" })).toHaveAttribute("href", "/chat");
   const navigationBox = await primaryNavigation.boundingBox();
 
   expect(navigationBox).not.toBeNull();
 
-  await expect(page.getByRole("heading", { name: "文档依据检索" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文档检索" })).toBeVisible();
   await expect(chatLink).toBeVisible();
   await expect(chatLink).toHaveAttribute("href", "/chat");
-  await expect(primaryNavigation.getByRole("link", { name: /工作台/ })).toHaveAttribute("href", "/workspace");
-  await expect(primaryNavigation.getByRole("link", { name: /文档依据/ })).toHaveAttribute("href", "/documents");
-  await expect(primaryNavigation.getByRole("link", { name: /项目归档/ })).toHaveAttribute("href", "/archive");
-  await expect(primaryNavigation.getByRole("link")).toHaveCount(5);
-  await page.getByText("更多功能").click();
-  await expect(page.getByRole("link", { name: /我的助手/ })).toHaveAttribute("href", "/agents");
-  await expect(page.getByRole("link", { name: /助手库/ })).toHaveAttribute("href", "/agent-market");
-  await expect(page.getByRole("link", { name: /依据库/ })).toHaveAttribute("href", "/knowledge-base");
-  await expect(page.getByRole("link", { name: /数据分析/ })).toHaveAttribute("href", "/analytics");
-  await page.getByText("全部功能").click();
-  await expect(page.getByRole("link", { name: /关系图谱/ })).toHaveAttribute("href", "/graph");
-  await expect(page.getByRole("link", { name: "底稿生成" })).toHaveAttribute("href", "/reports");
-  await expect(page.getByRole("link", { name: /项目空间/ })).toHaveAttribute("href", "/projects");
+  await expect(primaryNavigation.getByRole("link", { name: /我的智能体/ })).toHaveAttribute("href", "/agents");
+  await expect(primaryNavigation.getByRole("link", { name: /智能体广场/ })).toHaveAttribute("href", "/agent-market");
+  await expect(primaryNavigation.getByRole("link", { name: /知识库/ })).toHaveAttribute("href", "/knowledge-base");
+  await expect(primaryNavigation.getByRole("link", { name: /文档检索/ })).toHaveAttribute("href", "/documents");
+  await expect(primaryNavigation.getByRole("link", { name: /AI数据分析/ })).toHaveAttribute("href", "/analytics");
+  await expect(primaryNavigation.getByRole("link", { name: /知识图谱/ })).toHaveAttribute("href", "/graph");
+  await expect(primaryNavigation.getByRole("link", { name: /审计底稿\/报告/ })).toHaveAttribute("href", "/reports");
+  await expect(primaryNavigation.getByRole("link", { name: /项目管理/ })).toHaveAttribute("href", "/projects");
+  await expect(primaryNavigation.getByRole("link", { name: /医保审计/ })).toHaveAttribute("href", "/medical-audit");
+  await expect(primaryNavigation.getByRole("link")).toHaveCount(10);
+  await expect(page.getByRole("link", { name: "打开历史对话：中标候选人名单表" })).toHaveAttribute(
+    "href",
+    "/chat?history=history-1"
+  );
   await expectNoBrokenImages(page);
 });
 
 test("fund compliance topic opens a separate review workbench", async ({ page }) => {
   await page.goto("/fund-compliance");
 
-  await expect(page.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeVisible();
-  await expect(page.getByRole("main").getByText("医保智能审计平台")).toBeVisible();
-  await expect(page.getByText("2025 年 Q4 住院部专项审计")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "基金合规自查" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "专题总览" })).toBeVisible();
+  await expect(page.getByText("Q4 住院部专项")).toBeVisible();
   await expect(page.getByRole("heading", { name: "审计口径" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "进入审查" })).toHaveAttribute(
     "href",
     "/fund-compliance/review"
   );
 
-  await page.getByRole("link", { name: "进入专题工作台" }).click();
+  await page.getByRole("link", { name: "进入审查" }).click();
   await expect(page).toHaveURL(/\/fund-compliance\/review$/);
   await expect(page.getByRole("heading", { name: "专题审计工作台" })).toBeVisible();
   await page.getByRole("tab", { name: "费用表单" }).click();
@@ -336,9 +334,13 @@ test("fund compliance topic opens a separate review workbench", async ({ page })
 test("Next-native audit chat portal is reachable", async ({ page }) => {
   await page.goto("/chat");
 
-  await expect(page.getByRole("heading", { name: "审计问答" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "进入对话" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "先检索文档" })).toHaveAttribute("href", "/documents");
+  await expect(page.getByRole("heading", { name: "AI，让审计更智能" })).toBeVisible();
+  await expect(page.getByLabel("输入相关问题以对话")).toBeVisible();
+  await expect(page.getByRole("button", { name: "上传附件" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送问题" })).toBeVisible();
+  await expect(
+    page.getByLabel("AI 对话快捷入口").getByRole("link", { name: /智能体广场/ })
+  ).toBeVisible();
 });
 
 test("Next-native query workbench is reachable", async ({ page }) => {
@@ -364,7 +366,8 @@ test("AI data analysis accepts CSV uploads and shows audit hints", async ({ page
   await mockAnalyticsWorkbench(page);
   await page.goto("/analytics");
 
-  await page.getByLabel("上传审计表格").setInputFiles({
+  await expect(page.getByRole("heading", { name: "AI数据分析" })).toBeVisible();
+  await page.locator("input[type=file]").setInputFiles({
     name: "charge-sample.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(
@@ -377,118 +380,97 @@ test("AI data analysis accepts CSV uploads and shows audit hints", async ({ page
     )
   });
 
-  await expect(page.getByRole("heading", { name: "charge-sample.csv" })).toBeVisible();
-  await expect(page.getByText("数据质量提示")).toBeVisible();
-  await expect(page.getByText("审计初步分析")).toBeVisible();
-  await expect(page.getByText("金额/费用字段").first()).toBeVisible();
-  await expect(page.getByText("发现 1 条完全重复行。")).toBeVisible();
+  await expect(page.getByText("charge-sample.csv", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "绘制图表" }).click();
+  await page.getByRole("button", { name: "开始分析" }).click();
+  await expect(page.getByText(/绘制图表结果预览已生成预览/)).toBeVisible();
 });
 
 test("project management exposes project list and member workflow", async ({ page }) => {
   await mockProjectWorkbench(page);
   await page.goto("/projects");
 
-  await expect(page.getByRole("heading", { name: "项目与成员" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "项目列表" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "项目管理" })).toBeVisible();
   await expect(page.getByText("项目名称")).toBeVisible();
-  await expect(page.getByText("成员数")).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "创建人" })).toBeVisible();
-  await expect(page.getByText("创建时间")).toBeVisible();
-  await expect(page.getByRole("row").filter({ hasText: "医保目录限制条件核验" }).first()).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "项目成员数" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "负责人" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "乡村振兴资金专项审计" }).first()).toBeVisible();
 
-  await page.getByRole("button", { name: "查看成员" }).click();
-  await expect(page.getByRole("heading", { name: "医保目录限制条件核验" })).toBeVisible();
+  await page.getByPlaceholder("搜索项目名称").fill("医保");
+  await expect(page.getByText("医保基金使用合规审计")).toBeVisible();
 
-  await page.getByLabel("姓名").fill("赵审计");
-  await page.getByLabel("部门").fill("医保办");
-  await page.getByRole("button", { name: "添加成员" }).click();
-
-  const createdMemberRow = page.getByRole("row").filter({ hasText: "赵审计" }).last();
-  await expect(createdMemberRow).toBeVisible();
-  await expect(createdMemberRow.getByRole("cell", { name: "医保办" })).toBeVisible();
+  await page.getByRole("button", { name: "创建新项目" }).click();
+  await expect(page.getByRole("dialog", { name: "新增项目" })).toBeVisible();
+  await page.getByPlaceholder("请输入项目名称").fill("医保基金演示项目");
+  await page.getByRole("button", { name: "确定" }).click();
+  await expect(page.getByText(/新增项目已生成预览/)).toBeVisible();
 });
 
 test("agent marketplace filters templates and agents enter portal chat", async ({ page }) => {
   await page.goto("/agent-market");
 
-  await expect(page.getByRole("heading", { name: "审计助手库" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /^全部132$/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /出国差旅核验/ }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "发现审计智能体" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "全部" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "招标流程核验" }).first()).toBeVisible();
 
-  await page.getByRole("tab", { name: /^工具智能体10$/ }).click();
-  await expect(page.getByRole("button", { name: /质量检查核验/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /出国差旅核验/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "研究类" }).click();
+  await expect(page.getByRole("heading", { name: "国企指标分析" })).toBeVisible();
 
-  await page.getByRole("tab", { name: /^全部132$/ }).click();
-  await page.getByLabel("搜索审计助手").fill("合同要素");
-  await expect(page.getByRole("button", { name: /合同风险核验/ }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /会议费用核验/ })).toHaveCount(0);
-
-  await page.getByRole("button", { name: /合同风险核验/ }).first().click();
-  await expect(page.getByRole("dialog", { name: "合同风险核验" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "用此助手提问" })).toHaveAttribute("href", /\/chat\?agent=/);
+  await page.getByRole("button", { name: "全部" }).click();
+  await page.getByPlaceholder("搜索AI智能体").fill("政策依据");
+  await expect(page.getByRole("heading", { name: "政策依据速查" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "招标流程核验" })).toHaveCount(0);
+  await page.getByRole("button", { name: "创建副本" }).first().click();
+  await expect(page.getByText(/创建副本「政策依据速查」已生成预览/)).toBeVisible();
 
   await page.goto("/agents");
-  await expect(page.locator("main").getByText("医保基金使用合规专项自查").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入对话" }).first()).toHaveAttribute(
-    "href",
-    "/chat?agent=agent-citation-check"
-  );
+  await expect(page.getByRole("heading", { name: "我的助手" })).toBeVisible();
+  await page.getByPlaceholder("搜索我的助手").fill("定标");
+  await expect(page.getByRole("heading", { name: "定标合规核验" }).first()).toBeVisible();
 });
 
 test("knowledge base page exposes read-only asset metrics", async ({ page }) => {
   await page.goto("/knowledge-base");
 
-  await expect(page.getByRole("heading", { name: "知识库总览" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知识库", exact: true })).toBeVisible();
   await expect(page.getByText("个人知识库").first()).toBeVisible();
   await expect(page.getByText("系统知识库").first()).toBeVisible();
   await expect(page.getByText("公开知识库").first()).toBeVisible();
   await expect(page.getByText("文档数").first()).toBeVisible();
-  await expect(page.getByText("字符数").first()).toBeVisible();
   await expect(page.getByText("应用数").first()).toBeVisible();
-  await expect(page.getByText("法规政策、医保目录、监管规则和风险负面清单组成的系统检索底座。").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "法律法规库" })).toBeVisible();
+  await page.getByPlaceholder("搜索知识库").fill("乡村振兴");
+  await expect(page.getByRole("heading", { name: "乡村振兴项目知识库" }).first()).toBeVisible();
 });
 
 test("document search homepage exposes history and document groups", async ({ page }) => {
   await mockDocumentWorkbench(page);
   await page.goto("/documents");
 
-  await expect(page.getByRole("heading", { name: "文档依据检索" })).toBeVisible();
-  await expect(page.getByLabel("审计问题或文档关键词")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "文档检索" })).toBeVisible();
+  await expect(page.getByPlaceholder("劳动争议司法案件解释")).toBeVisible();
   await expect(page.getByLabel("仅标题")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "搜索历史" })).toBeVisible();
-  await expect(page.getByText("监管两库")).toBeVisible();
-  await expect(page.getByText("风险清单")).toBeVisible();
-  await page.getByLabel("审计问题或文档关键词").fill("医保基金审核依据是什么");
-  await page.getByRole("button", { name: "执行检索" }).click();
-  await expect(page.getByRole("heading", { name: "医保基金审核依据是什么" })).toBeVisible();
-  await expect(page.getByText("1 条引用").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "对话文档" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "知识库文档" })).toBeVisible();
-  await expect(page.getByText("重复收费疑点复核对话")).toBeVisible();
-  await expect(page.getByText("医保目录限制条件资料包")).toBeVisible();
-  await expect(page.getByRole("link", { name: "转入对话" }).first()).toHaveAttribute("href", /\/chat/);
+  await expect(page.getByRole("heading", { name: "搜索历史:" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "法律法规库 (3,833)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "审计案例库 (0)" })).toBeVisible();
+  await page.getByPlaceholder("劳动争议司法案件解释").fill("医保基金重复收费怎么取证");
+  await page.getByRole("button", { name: "搜索", exact: true }).click();
+  await expect(page.getByLabel("当前检索状态").getByText("关键词：医保基金重复收费怎么取证")).toBeVisible();
+  await page.getByRole("button", { name: "清空搜索历史" }).click();
+  await expect(page.getByText(/隐藏搜索历史已生成预览/)).toBeVisible();
 });
 
 test("knowledge graph exposes read-only relationship coverage", async ({ page }) => {
   await page.goto("/graph");
 
-  await expect(page.getByRole("heading", { name: "知识图谱入口" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "审计知识图谱静态关系预览" })).toBeVisible();
-  await expect(page.getByText("医保基金使用合规专项图谱")).toBeVisible();
-  await expect(page.getByText("节点覆盖")).toBeVisible();
-  await expect(page.getByText("节点证据")).toBeVisible();
-  const nodeCoverage = page.locator("section", { has: page.getByRole("heading", { name: "节点覆盖" }) });
-  await expect(nodeCoverage.getByText("项目", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("知识库", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("文档", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("规则", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("疑点", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("复核", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("报告", { exact: true })).toBeVisible();
-  await expect(nodeCoverage.getByText("整改", { exact: true })).toBeVisible();
-  await expect(page.getByText("FINDING-F044EBD309B659DC").first()).toBeVisible();
-  await expect(page.getByText("review-task-0007").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知识图谱" })).toBeVisible();
+  await expect(page.getByLabel("知识图谱关系预览")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "节点列表" })).toBeVisible();
+  await expect(page.getByText("关系预览")).toBeVisible();
+  await page.getByRole("button", { name: "银行" }).click();
+  await expect(page.getByRole("heading", { name: "县级财政专户" })).toBeVisible();
+  await page.getByRole("button", { name: "新建图谱" }).click();
+  await expect(page.getByText(/新建图谱已生成预览/)).toBeVisible();
 });
 
 test("rules homepage exposes sources, runs and release gates", async ({ page }) => {
@@ -515,21 +497,15 @@ test("report homepage exposes gates, evidence and remediation", async ({ page })
   await page.goto("/reports");
 
   await expect(page.getByRole("heading", { name: "底稿与报告" })).toBeVisible();
-  await expect(page.getByText("已签发报告")).toBeVisible();
-  await expect(page.getByText("门禁阻断").first()).toBeVisible();
-  await expect(page.getByText("纳入疑点").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "报告记录" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "报告门禁预检" }).first()).toBeVisible();
-  await expect(page.getByText("表1 医保费用汇总表").first()).toBeVisible();
-  await expect(page.getByText("费用汇总风险底稿")).toBeVisible();
-  await expect(page.getByText("底稿与负责人确认")).toBeVisible();
-  await expect(page.getByText("附件登记与报告草稿")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "底稿证据来源" })).toBeVisible();
-  await expect(page.getByText("workpaper-20260604-001")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "整改跟踪" })).toBeVisible();
-  await expect(page.getByText("重复收费退费与流程复核")).toBeVisible();
-  await expect(page.getByText("AUDIT-REPORT-20260611-001").first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看证据链" }).first()).toHaveAttribute("href", "/graph#graph-node-report");
+  await expect(page.getByText("历史记录")).toBeVisible();
+  await expect(page.getByText("可选会话")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选择生成范围" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "历史生成记录" })).toBeVisible();
+  await page.getByRole("button", { name: "一键生成底稿" }).click();
+  await expect(page.getByText("请先选择要纳入底稿的历史会话。")).toBeVisible();
+  await page.getByRole("checkbox", { name: "中标候选人名单表" }).check();
+  await page.getByRole("button", { name: "一键生成底稿" }).click();
+  await expect(page.getByText(/生成 1 条历史会话的底稿预览已生成预览/)).toBeVisible();
 });
 
 test("remediation homepage exposes evidence requests and closure gates", async ({ page }) => {
@@ -575,11 +551,10 @@ test("archive homepage exposes packages, audit runs and signature chain", async 
   await expect(page.getByRole("heading", { name: "入档动态" })).toBeVisible();
   await expect(page.getByText("附件 hash 阻断归档")).toBeVisible();
   await expect(page.getByRole("link", { name: "查看归档策略" })).toHaveAttribute("href", "#archive-policy-title");
-  await expect(page.getByRole("link", { name: "查看档案" }).first()).toHaveAttribute("href", "/reports");
-  await expect(page.getByRole("link", { name: "查看留痕" }).first()).toHaveAttribute(
-    "href",
-    "#archive-policy-title"
-  );
+  await page.getByRole("button", { name: "查看档案" }).first().click();
+  await expect(page.getByText(/查看档案「医保基金使用合规专项自查」已生成预览/)).toBeVisible();
+  await page.getByRole("button", { name: "查看留痕" }).first().click();
+  await expect(page.getByText(/查看留痕「医保基金使用合规专项自查」已生成预览/)).toBeVisible();
 });
 
 test("guided check homepage exposes steps, prompts and evidence gates", async ({ page }) => {

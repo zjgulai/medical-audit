@@ -96,9 +96,9 @@ function buildErrorProfile(file: File, message: string): UploadProfile {
     emptyCellCount: 0,
     duplicateRowCount: 0,
     message,
-    qualityFindings: ["后端未返回字段画像，当前文件不能进入审计判断。"],
+    qualityFindings: ["未能生成字段画像，当前文件不能进入审计判断。"],
     auditSignals: [],
-    recommendations: ["检查文件格式、大小和后端分析服务状态后重新上传。"],
+    recommendations: ["检查文件格式、大小和分析服务状态后重新上传。"],
     uploadId: null,
     sha256: null,
     retentionStatus: "not-configured",
@@ -151,7 +151,7 @@ export function DataAnalysisWorkbench() {
       setProfile(mapUploadProfile(result));
       await refreshHistory();
     } catch {
-      setProfile(buildErrorProfile(file, "后端表格分析失败，请检查文件格式或稍后重试。"));
+      setProfile(buildErrorProfile(file, "表格分析未完成，请检查文件格式或稍后重试。"));
     } finally {
       setIsUploading(false);
     }
@@ -163,7 +163,7 @@ export function DataAnalysisWorkbench() {
         <div className="audit-panel-muted p-6 text-center">
           <h2 className="audit-section-title">正在上传并分析数据文件</h2>
           <p className="audit-copy mx-auto mt-2 max-w-xl">
-            后端正在读取工作簿、生成字段画像、质量提示和审计初步分析。
+            正在读取工作簿、生成字段画像、质量提示和审计初步分析。
           </p>
         </div>
       );
@@ -174,7 +174,7 @@ export function DataAnalysisWorkbench() {
         <div className="audit-panel-muted p-6 text-center">
           <h2 className="audit-section-title">等待上传{selectedTemplate?.shortName ?? "审计"}数据文件</h2>
           <p className="audit-copy mx-auto mt-2 max-w-xl">
-            选择 CSV 或 XLSX 文件后，后端会生成字段画像、质量提示和审计初步分析。
+            选择 CSV 或 XLSX 文件后，系统会生成字段画像、质量提示和审计初步分析。
           </p>
           {selectedTemplate && (
             <div className="mt-5 grid gap-4 text-left lg:grid-cols-2">
@@ -209,7 +209,7 @@ map_audit_signals()`}</pre>
             <p>[ok] 文件入口校验通过</p>
             <p>[ok] 字段数: {profile.columns.length}</p>
             <p>[ok] 数据行: {profile.rowCount}</p>
-            <p>{profile.status === "parsed" ? "[ok] 后端表格解析完成" : "[error] 后端表格解析失败"}</p>
+            <p>{profile.status === "parsed" ? "[ok] 表格解析完成" : "[error] 表格解析未完成"}</p>
             <p>{profile.retentionStatus === "retained" ? "[ok] 上传文件已留存" : "[warn] 上传文件未留存"}</p>
           </div>
         </section>

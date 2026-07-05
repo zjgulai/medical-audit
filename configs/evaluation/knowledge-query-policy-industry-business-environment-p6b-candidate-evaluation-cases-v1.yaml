@@ -1,0 +1,249 @@
+dataset_id: knowledge-query-policy-industry-business-environment-p6b-candidate-evaluation-cases-v1
+title: 产业发展与营商环境 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-industry-business-environment:full-rebuild-20260704160238:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-industry-0001
+  question: 请检索并引用《上海市促进浦东新区标准化创新发展若干规定_20230725》中与“企业联合标准的技术要求低于强制性国家标准的相关技术要求的，由市或者区标准化行政主管部门责令限期改正；逾期不改”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/上海市促进浦东新区标准化创新发展若干规定_20230725.md
+    locator:
+      type: paragraph
+      line_end: 97
+      line_start: 97
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/上海市促进浦东新区标准化创新发展若干规定_20230725.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0002
+  question: 请检索并引用《长春市科技创新条例_20220118》中与“市、县（市）区人民政府支持国有企业投资创业投资企业和创业投资母基金，支持具备条件的国有创业投资企业开展混合所”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/长春市科技创新条例_20220118.md
+    locator:
+      type: paragraph
+      line_end: 537
+      line_start: 537
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/长春市科技创新条例_20220118.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0003
+  question: 请检索并引用《巴马瑶族自治县油茶产业发展条例_20250411》中与“第十五条 鼓励油茶生产经营主体采用低温压榨、鲜果鲜榨等先进制油工艺生产加工绿色健康茶油，保留茶油原香味和营养”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/巴马瑶族自治县油茶产业发展条例_20250411.md
+    locator:
+      type: paragraph
+      line_end: 101
+      line_start: 101
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/巴马瑶族自治县油茶产业发展条例_20250411.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0004
+  question: 请检索并引用《北川羌族自治县投资促进条例_20220617》中与“任何单位和个人在开展投资促进活动中弄虚作假、徇私舞弊，骗取奖励的，由表扬奖励机关取消该奖励，追回奖补资金，并”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/北川羌族自治县投资促进条例_20220617.md
+    locator:
+      type: paragraph
+      line_end: 385
+      line_start: 385
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/北川羌族自治县投资促进条例_20220617.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0005
+  question: 请检索并引用《中华人民共和国促进科技成果转化法_20150829》中与“第三条 科技成果转化活动应当有利于加快实施创新驱动发展战略，促进科技与经济的结合，有利于提高经济效益、社会效”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/中华人民共和国促进科技成果转化法_20150829.md
+    locator:
+      type: paragraph
+      line_end: 27
+      line_start: 27
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/中华人民共和国促进科技成果转化法_20150829.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0006
+  question: 请检索并引用《滨州市冬枣产业发展促进条例_20250805》中与“第二十六条 市、有关县（市、区）人民政府农业农村主管部门应当加强对冬枣种植过程中农药、肥料等农业投入品使用的”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/滨州市冬枣产业发展促进条例_20250805.md
+    locator:
+      type: paragraph
+      line_end: 221
+      line_start: 221
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/滨州市冬枣产业发展促进条例_20250805.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0007
+  question: 请检索并引用《吉林省促进中小企业发展条例_20171201》中与“加快建立全省资源共享、协同服务、互联互通的中小企业公共服务平台网络，引导和带动社会各类服务资源，为中小企业提”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/吉林省促进中小企业发展条例_20171201.md
+    locator:
+      type: paragraph
+      line_end: 417
+      line_start: 417
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/吉林省促进中小企业发展条例_20171201.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0008
+  question: 请检索并引用《乌鲁木齐高新技术产业开发区管理条例_20201118》中与“高新区管委会健全支持创新发展工作机制，强化市场主导作用和企业创新主体地位，构建产业创新体系。支持企业加大研发”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/乌鲁木齐高新技术产业开发区管理条例_20201118.md
+    locator:
+      type: paragraph
+      line_end: 153
+      line_start: 153
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/乌鲁木齐高新技术产业开发区管理条例_20201118.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0009
+  question: 请检索并引用《重庆市科技创新促进条例_20211125》中与“市人民政府负责确定重大科技项目布局；建立健全科技创新工作协调机制，推动科技创新工作跨部门、跨区域协同联动；完”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/重庆市科技创新促进条例_20211125.md
+    locator:
+      type: paragraph
+      line_end: 87
+      line_start: 87
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/重庆市科技创新促进条例_20211125.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment
+- case_id: p6b-policy-industry-0010
+  question: 请检索并引用《云南省企业工会条例_》中与“企业工会接受职工和上级工会的监督。职工有权对企业工会及其工作人员提出批评和建议，有权要求上级工会对企业工会不”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-industry-business-environment
+    source_path: policy-industry-business-environment/医保审核前期资料/全量法律/云南省企业工会条例_.md
+    locator:
+      type: paragraph
+      line_end: 301
+      line_start: 301
+      title_path: []
+      page_number: null
+      source_path: policy-industry-business-environment/医保审核前期资料/全量法律/云南省企业工会条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-industry-business-environment
+  filters:
+    source_collections:
+    - policy-industry-business-environment

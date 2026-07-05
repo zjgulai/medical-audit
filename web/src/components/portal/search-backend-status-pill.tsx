@@ -43,10 +43,10 @@ export function SearchBackendStatusPill() {
 
   const searchBackendTag =
     searchBackendState.status === "ready"
-      ? `检索索引：${searchBackendState.ready ? "就绪" : "待初始化"}（${searchBackendState.backend}）`
+      ? `检索状态：${searchBackendState.ready ? "可用" : "准备中"}`
       : searchBackendState.status === "error"
-        ? "检索索引：异常"
-        : "检索索引：检测中";
+        ? "检索状态：演示数据"
+        : "检索状态：检测中";
 
   return (
     <StatusPill tone={searchBackendState.status === "error" ? "warning" : "info"}>

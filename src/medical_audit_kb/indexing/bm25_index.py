@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -35,11 +35,13 @@ class InMemoryBM25Index:
         self._document_frequencies: Counter[str] = Counter()
         self._document_lengths: dict[UUID, int] = {}
         self._average_document_length = 0.0
+        self._filtered_indexes: dict[tuple[tuple[str, Hashable], ...], InMemoryBM25Index] = {}
 
     def upsert(self, documents: Sequence[BM25Document]) -> None:
         for document in documents:
             self._documents[document.chunk_id] = document
         self._rebuild_statistics()
+        self._filtered_indexes.clear()
 
     def search(
         self,
@@ -52,6 +54,10 @@ class InMemoryBM25Index:
         if not query_terms:
             return ()
 
+        filter_key = _filter_cache_key(filters)
+        if filter_key:
+            return self._filtered_index(filter_key, filters).search(query, top_k=top_k)
+
         results: list[BM25SearchResult] = []
         for document in self._documents.values():
             if not _metadata_matches(document.metadata, filters):
@@ -61,6 +67,25 @@ class InMemoryBM25Index:
                 results.append(BM25SearchResult(document=document, score=score))
 
         return tuple(sorted(results, key=lambda result: result.score, reverse=True)[:top_k])
+
+    def _filtered_index(
+        self,
+        filter_key: tuple[tuple[str, Hashable], ...],
+        filters: Mapping[str, object] | None,
+    ) -> InMemoryBM25Index:
+        cached = self._filtered_indexes.get(filter_key)
+        if cached is not None:
+            return cached
+        scoped = InMemoryBM25Index()
+        scoped.upsert(
+            tuple(
+                document
+                for document in self._documents.values()
+                if _metadata_matches(document.metadata, filters)
+            )
+        )
+        self._filtered_indexes[filter_key] = scoped
+        return scoped
 
     @property
     def size(self) -> int:
@@ -128,3 +153,16 @@ def _metadata_matches(
     if not filters:
         return True
     return all(metadata.get(key) == value for key, value in filters.items())
+
+
+def _filter_cache_key(
+    filters: Mapping[str, object] | None,
+) -> tuple[tuple[str, Hashable], ...] | None:
+    if not filters:
+        return ()
+    items: list[tuple[str, Hashable]] = []
+    for key, value in filters.items():
+        if not isinstance(value, Hashable):
+            return None
+        items.append((str(key), value))
+    return tuple(sorted(items, key=lambda item: item[0]))

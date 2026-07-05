@@ -1,0 +1,250 @@
+dataset_id: knowledge-query-policy-reform-pilot-p6b-candidate-evaluation-cases-v1
+title: 规划改革与试点方案 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-reform-pilot:full-rebuild-20260704154112:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-reform-0001
+  question: 请检索并引用《湖南省实施《中华人民共和国城乡规划法》办法_20151204》中与“转让以出让方式取得的国有土地使用权的，转让方、受让方应当持转让合同等材料向城市、县人民政府城乡规划主管部门申”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/湖南省实施《中华人民共和国城乡规划法》办法_20151204.md
+    locator:
+      type: paragraph
+      line_end: 467
+      line_start: 467
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/湖南省实施《中华人民共和国城乡规划法》办法_20151204.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0002
+  question: 请检索并引用《武汉市城乡规划条例_20190814》中与“已办理建设用地规划许可证的，无须办理选址意见书延期；已办理建设工程规划许可证和国有土地使用证的，无须办理建设”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/武汉市城乡规划条例_20190814.md
+    locator:
+      type: paragraph
+      line_end: 343
+      line_start: 343
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/武汉市城乡规划条例_20190814.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0003
+  question: 请检索并引用《南京市城乡规划条例_》中与“第二十六条 开发利用城市、镇地下空间，应当符合有关规划和规划条件，依法办理规划审批手续。与地面建设工程一并开”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/南京市城乡规划条例_.md
+    locator:
+      type: paragraph
+      line_end: 237
+      line_start: 237
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/南京市城乡规划条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0004
+  question: 请检索并引用《贵阳市城乡规划条例_20101215》中与“第一条 为了科学制定城乡规划，加强城乡规划管理，建设生态文明城市，促进经济社会全面协调可持续发展，根据《中华”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/贵阳市城乡规划条例_20101215.md
+    locator:
+      type: paragraph
+      line_end: 45
+      line_start: 45
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/贵阳市城乡规划条例_20101215.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0005
+  question: 请检索并引用《淮南市城乡规划条例_》中与“符合控制性详细规划的，城乡规划主管部门予以办理建设用地规划许可证变更手续。受让方应当承担原土地出让合同中规定”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/淮南市城乡规划条例_.md
+    locator:
+      type: paragraph
+      line_end: 295
+      line_start: 295
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/淮南市城乡规划条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0006
+  question: 请检索并引用《南昌市城乡规划管理规定_》中与“城市和县人民政府所在地镇的中心区主、次干道临街建筑物和其他高层建筑物、大型公共建筑物的建设应当提交两个以上修”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/南昌市城乡规划管理规定_.md
+    locator:
+      type: paragraph
+      line_end: 339
+      line_start: 339
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/南昌市城乡规划管理规定_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0007
+  question: 请检索并引用《苏州市城乡规划条例_20200810》中与“城乡规划报送审批前，组织编制机关应当依法将城乡规划草案予以公告，并采取论证会、听证会或者其他方式征求专家和公”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/苏州市城乡规划条例_20200810.md
+    locator:
+      type: paragraph
+      line_end: 173
+      line_start: 173
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/苏州市城乡规划条例_20200810.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0008
+  question: 请检索并引用《毕节市城乡规划条例_20190513》中与“在历史文化名城、名镇、名村、街区、文物保护单位规划划定的环境协调区域内进行建设的，规划许可机关在核发建设工程”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/毕节市城乡规划条例_20190513.md
+    locator:
+      type: paragraph
+      line_end: 197
+      line_start: 197
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/毕节市城乡规划条例_20190513.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0009
+  question: 请检索并引用《宁夏回族自治区国土空间规划条例_20241128》中与“第六条 县级以上人民政府应当加强对国土空间规划工作的领导，建立健全国土空间规划工作决策机制和协同机制，研究国”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/宁夏回族自治区国土空间规划条例_20241128.md
+    locator:
+      type: paragraph
+      line_end: 109
+      line_start: 109
+      title_path: []
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/宁夏回族自治区国土空间规划条例_20241128.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot
+- case_id: p6b-policy-reform-0010
+  question: 请检索并引用《沈阳市城乡规划条例_20110610》中与“城乡规划确需修改的，组织编制机关应当对修改的必要性进行论证，向原审批机关提出修改报告之前，应当征求专家和利害”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-reform-pilot
+    source_path: policy-reform-pilot/医保审核前期资料/全量法律/沈阳市城乡规划条例_20110610.md
+    locator:
+      type: paragraph
+      line_end: 241
+      line_start: 241
+      title_path:
+      - 第四章 城乡规划的修改
+      page_number: null
+      source_path: policy-reform-pilot/医保审核前期资料/全量法律/沈阳市城乡规划条例_20110610.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-reform-pilot
+  filters:
+    source_collections:
+    - policy-reform-pilot

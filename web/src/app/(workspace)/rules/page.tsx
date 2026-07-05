@@ -65,7 +65,7 @@ export default function RulesPage() {
 
   const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
   const statusLabel =
-    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
+    backendStatus === "ready" ? "数据已同步" : backendStatus === "loading" ? "同步中" : "演示数据";
 
   return (
     <main className="space-y-5">
@@ -80,6 +80,9 @@ export default function RulesPage() {
             <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
           </div>
         </div>
+        {backendStatus === "fallback" ? (
+          <p className="audit-meta mt-4">当前展示演示规则，用于核对规则分类、来源覆盖和疑点流转。</p>
+        ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <RulesMetric label="可运行规则" value={`${workbench.metrics.enabled_rule_count} 条`} />

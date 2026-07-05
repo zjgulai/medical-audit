@@ -103,6 +103,15 @@ def test_collection_mapping_and_medical_law_keyword_filter() -> None:
     )
     assert is_medical_insurance_law("DRG付费分组方案.md")
     assert not is_medical_insurance_law("行政复议法.md")
+    assert classify_source_collection(Path("policy-general-policy/通知.md")) == (
+        SourceCollection.POLICY_GENERAL_POLICY
+    )
+    assert classify_source_collection(Path("management-general-admin/管理办法.md")) == (
+        SourceCollection.MANAGEMENT_GENERAL_ADMIN
+    )
+    assert classify_source_collection(Path("other-education-research/教育条例.md")) == (
+        SourceCollection.OTHER_EDUCATION_RESEARCH
+    )
 
 
 def test_classify_domain_taxonomy() -> None:
@@ -118,6 +127,12 @@ def test_classify_domain_taxonomy() -> None:
     assert classify_domain("中华人民共和国统计法.md", laws) == "统计"
     assert classify_domain("养犬管理条例.md", laws) == "其他"
     assert classify_domain("餐厨垃圾管理办法.md", laws) == "其他"
+    assert classify_domain("通知.md", SourceCollection.POLICY_GENERAL_POLICY) == (
+        "综合政策与规范性文件"
+    )
+    assert classify_domain("管理办法.md", SourceCollection.MANAGEMENT_GENERAL_ADMIN) == (
+        "综合行政管理"
+    )
 
 
 def _write_text(path: Path, content: str) -> Path:

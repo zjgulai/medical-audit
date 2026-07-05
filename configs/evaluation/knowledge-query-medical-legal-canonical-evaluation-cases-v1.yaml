@@ -1,0 +1,55 @@
+dataset_id: knowledge-query-medical-legal-canonical-evaluation-cases-v1
+title: 医疗法律法规 canonical 检索评测集 V1
+status: review
+created: "2026-07-03"
+updated: "2026-07-03"
+owner: self
+source: canonical-source-root-gate
+description: >
+  用于验证 medical.legal_regulations canonical source root 与候选索引的固定检索门槛。
+  当前仅覆盖三个代表性法规，不等同于专家验收集。
+cases:
+  - case_id: legal-canonical-drug-law-safety-001
+    question: 药品管理法中制定本法的目的是什么，是否包含保障公众用药安全？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/01074_中华人民共和国药品管理法2019-08-26.md
+        article_or_rule: 第一条
+        required_terms: [药品质量, 保障公众用药安全]
+    acceptance_criteria:
+      required_terms: [保障公众用药安全]
+      min_citations: 1
+      require_preview: true
+    tags: [legal-canonical, drug-law, safety]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: legal-canonical-nurse-license-001
+    question: 护士条例中护士执业注册和护士执业证书的要求是什么？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/docx-converted/审计通用法律法规/01935_护士条例2020-03-27.md
+        article_or_rule: 第七条
+        required_terms: [护士执业, 执业注册, 护士执业证书]
+    acceptance_criteria:
+      required_terms: [护士执业证书]
+      min_citations: 1
+      require_preview: true
+    tags: [legal-canonical, nurse, license]
+    filters:
+      source_collections: [medical-insurance-laws]
+
+  - case_id: legal-canonical-device-scope-001
+    question: 医疗器械监督管理条例适用于哪些医疗器械相关活动及监督管理？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/医疗器械监督管理条例_20241206.md
+        article_or_rule: 第二条
+        required_terms: [研制, 生产, 经营, 使用, 监督管理]
+    acceptance_criteria:
+      required_terms: [医疗器械, 监督管理]
+      min_citations: 1
+      require_preview: true
+    tags: [legal-canonical, device, scope]
+    filters:
+      source_collections: [medical-insurance-laws]

@@ -1,0 +1,258 @@
+dataset_id: knowledge-query-medical-catalog-payment-codes-candidate-evaluation-cases-v1
+title: 医保目录二级库 candidate 检索评测集 V1
+status: review
+created: '2026-07-04'
+updated: '2026-07-04'
+owner: self
+source: medical-catalog-payment-codes-source-20260704 + fake local index chunks
+description: 用于本地和候选库 smoke 验证 medical-insurance-catalog 二级知识库的 source_path/source_collection
+  路由；不是专家全量验收集。
+cases:
+- case_id: catalog-payment-codes-candidate-0001
+  question: ICD-10医保2.0版 中与 第 1 页，共 4038 页 章 章代码 范围 章的名称 节代码范 围  相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/ICD-10医保2.0版.pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/ICD-10医保2.0版.pdf
+      title_path: []
+      article_number: null
+      page_number: 1
+      line_start: null
+      line_end: null
+      parent_article_number: null
+      window_index: 0
+      window_count: 2299
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0002
+  question: 《国家基本医疗保险、生育保险和1 中与 河 南 省 医 疗 保 障 局 河南省人力资源和社会保障厅 文件 豫医保 相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/《国家基本医疗保险、生育保险和1.pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/《国家基本医疗保险、生育保险和1.pdf
+      title_path: []
+      article_number: null
+      page_number: 1
+      line_start: null
+      line_end: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0003
+  question: "国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c 中与 \uFEFF国家医疗保障局关于印发 《医疗保障按病种付费管理暂行办法》的通知各省、\
+    \ 相关的核心内容是什么？"
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c.txt
+    locator:
+      type: paragraph
+      source_path: 医保目录/国家医疗保障局关于印发《医疗保障按病种付费管理暂行办法》的通知c.txt
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 3
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0004
+  question: 国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知 中与 各省、自治区、直辖市及新疆生产建设兵团医疗保障局：
+    现将《按病种付费医疗 相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知.txt
+    locator:
+      type: paragraph
+      source_path: 医保目录/国家医疗保障局办公室关于印发《按病种付费医疗保障经办管理规程（2025版）》的通知.txt
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 3
+      line_end: 5
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0005
+  question: 国家医疗保障局办公室关于开展智能监管改革试点的通知 中与 国家医疗保障局办公室关于开展 智能监管改革试点的通知各省、自治区、直辖市 相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/国家医疗保障局办公室关于开展智能监管改革试点的通知.txt
+    locator:
+      type: paragraph
+      source_path: 医保目录/国家医疗保障局办公室关于开展智能监管改革试点的通知.txt
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 50
+      parent_article_number: null
+      window_index: 0
+      window_count: 2
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0006
+  question: 国家基本医疗保险、生育保险和工伤保险药品目录(2025年) 中与 一、凡 例...............................
+    相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/国家基本医疗保险、生育保险和工伤保险药品目录(2025年).pdf
+      title_path: []
+      article_number: null
+      page_number: 1
+      line_start: null
+      line_end: null
+      parent_article_number: null
+      window_index: 0
+      window_count: 91
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0007
+  question: 手术与操作编码标准中 ICD10-PCS、编码标准和分类原则的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/手术与操作编码标准.pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/手术与操作编码标准.pdf
+      title_path: []
+      article_number: null
+      page_number: 3
+      line_start: null
+      line_end: null
+    article_or_rule: ICD10-PCS
+    required_terms:
+    - ICD10-PCS
+    - 分类原则
+  acceptance_criteria:
+    required_terms:
+    - ICD10-PCS
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0008
+  question: 按病种分值（DIP）付费病种库 中与 按病种分值（DIP）付费病种库（2.0 版） DIP 技术指导组（首都医 相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/按病种分值（DIP）付费病种库.pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/按病种分值（DIP）付费病种库.pdf
+      title_path: []
+      article_number: null
+      page_number: 1
+      line_start: null
+      line_end: null
+      parent_article_number: null
+      window_index: 0
+      window_count: 231
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog
+- case_id: catalog-payment-codes-candidate-0009
+  question: 按病组（DRG）付费分组方案（2.0版） 中与 按病组（DRG）付费分组方案（2.0 版） DRG 技术指导组（北京市医 相关的核心内容是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-catalog
+    source_path: 医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+    locator:
+      type: paragraph
+      source_path: 医保目录/按病组（DRG）付费分组方案（2.0版）.pdf
+      title_path: []
+      article_number: null
+      page_number: 1
+      line_start: null
+      line_end: null
+      parent_article_number: null
+      window_index: 0
+      window_count: 1763
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - catalog-payment-codes
+  - candidate-evaluation
+  filters:
+    source_collections:
+    - medical-insurance-catalog

@@ -53,9 +53,11 @@ class KnowledgeIndexPipeline:
         *,
         max_chunk_chars: int = 1800,
         overlap_chars: int = 180,
+        include_law_preamble: bool = False,
     ) -> None:
         self._max_chunk_chars = max_chunk_chars
         self._overlap_chars = overlap_chars
+        self._include_law_preamble = include_law_preamble
 
     def run_full_rebuild(
         self,
@@ -255,6 +257,7 @@ class KnowledgeIndexPipeline:
                         relative_path=file.relative_path,
                         max_chunk_chars=self._max_chunk_chars,
                         overlap_chars=self._overlap_chars,
+                        include_law_preamble=self._include_law_preamble,
                     )
                     selected_chunks = (
                         tuple(chunks[:remaining_chunks])

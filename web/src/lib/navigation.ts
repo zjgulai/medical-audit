@@ -37,6 +37,16 @@ export const fundComplianceNavigation: NavigationItem = {
   target: "workspace"
 };
 
+export const medicalAuditNavigation: NavigationItem = {
+  id: "medical-audit",
+  label: "医保审计",
+  href: "/medical-audit",
+  symbol: "医",
+  description: "打开医保审计专题工作台，查看疑点单据、规则导航、证据链和费用表单。",
+  emphasis: "primary",
+  target: "workspace"
+};
+
 export const primaryNavigation: readonly NavigationItem[] = [
   {
     id: "ai-chat",
@@ -118,6 +128,10 @@ export const primaryNavigation: readonly NavigationItem[] = [
     description: "管理审计项目、成员、角色和项目空间。",
     emphasis: "standard",
     target: "workspace"
+  },
+  {
+    ...medicalAuditNavigation,
+    emphasis: "primary"
   }
 ];
 
@@ -200,6 +214,7 @@ function requireNavigationItemById(id: string): NavigationItem {
 export const visiblePrimaryNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("workspace"),
   requireNavigationItemById("fund-compliance"),
+  requireNavigationItemById("medical-audit"),
   requireNavigationItemById("ai-chat"),
   requireNavigationItemById("documents"),
   requireNavigationItemById("archive")
@@ -212,6 +227,7 @@ export const sidebarUtilityNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("analytics"),
   requireNavigationItemById("reports"),
   requireNavigationItemById("projects"),
+  requireNavigationItemById("medical-audit"),
   requireNavigationItemById("guided-check"),
   requireNavigationItemById("rules"),
   requireNavigationItemById("remediation"),
@@ -233,6 +249,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
       requireNavigationItemById("analytics"),
       requireNavigationItemById("reports"),
       requireNavigationItemById("projects"),
+      requireNavigationItemById("medical-audit"),
       requireNavigationItemById("guided-check"),
       requireNavigationItemById("remediation")
     ]

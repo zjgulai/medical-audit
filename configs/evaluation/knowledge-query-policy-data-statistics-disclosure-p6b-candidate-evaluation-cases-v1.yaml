@@ -1,0 +1,251 @@
+dataset_id: knowledge-query-policy-data-statistics-disclosure-p6b-candidate-evaluation-cases-v1
+title: 数据统计与政务公开 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-data-statistics-disclosure:full-rebuild-20260704153350:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-data-0001
+  question: 请检索并引用《新疆维吾尔自治区统计管理条例_》中与“根据1997年10月11日新疆维吾尔自治区第八届人民代表大会常务委员会第二十九次会议《关于修改＜新疆维吾尔自”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/新疆维吾尔自治区统计管理条例_.md
+    locator:
+      type: paragraph
+      line_end: 7
+      line_start: 7
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/新疆维吾尔自治区统计管理条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0002
+  question: 请检索并引用《沈阳市档案管理条例_》中与“市、县（含县级市，下同）、区人民政府领导本行政区域内的档案工作，应当把档案事业的建设列入国民经济和社会发展计”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/沈阳市档案管理条例_.md
+    locator:
+      type: paragraph
+      line_end: 85
+      line_start: 85
+      title_path:
+      - 第一章 总 则
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/沈阳市档案管理条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0003
+  question: 请检索并引用《广州市政务服务条例_20250410》中与“提供政务服务的相关单位应当提供办理情况反馈、办理进度查询、办理结果告知等服务，确因客观原因在办结时限内不能办”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/广州市政务服务条例_20250410.md
+    locator:
+      type: paragraph
+      line_end: 165
+      line_start: 165
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/广州市政务服务条例_20250410.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0004
+  question: 请检索并引用《长春市档案征集条例_20001211》中与“属于集体所有、个人所有以及其他不属于国家所有的档案，档案所有者可以向档案馆寄存、捐赠、出卖；向档案馆以外的任”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/长春市档案征集条例_20001211.md
+    locator:
+      type: paragraph
+      line_end: 119
+      line_start: 119
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/长春市档案征集条例_20001211.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0005
+  question: 请检索并引用《沈阳市政务数据资源共享开放条例_20200814》中与“有条件共享类政务数据资源，政务数据资源需求部门（以下简称需求部门）应当向提供政务数据资源的政务部门（以下简称”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/沈阳市政务数据资源共享开放条例_20200814.md
+    locator:
+      type: paragraph
+      line_end: 229
+      line_start: 229
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/沈阳市政务数据资源共享开放条例_20200814.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0006
+  question: 请检索并引用《南京市政务数据管理暂行办法》中与“第十六条政务部门应当按照国家、省政务信息资源目录编制要求，编制本单位政务数据目录（以下称政务部门数据目录）。”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/国家规章平台文档/南京市政务数据管理暂行办法.converted.txt
+    locator:
+      type: paragraph
+      line_end: 40
+      line_start: 40
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/国家规章平台文档/南京市政务数据管理暂行办法.converted.txt
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0007
+  question: 请检索并引用《关于统计报表管理的暂行规定_19801117》中与“一、为了使统计报表制度适应社会主义现代化建设的需要，而又不致过多地加重基层单位的负担，防止滥发统计报表，根据”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/关于统计报表管理的暂行规定_19801117.md
+    locator:
+      type: paragraph
+      line_end: 5
+      line_start: 5
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/关于统计报表管理的暂行规定_19801117.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0008
+  question: 请检索并引用《山西省政务数据资产管理试行办法》中与“山西省政务数据资产管理试行办法山西省政务数据资产管理试行办法 (2019年11月27日山西省人民政府令第26”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/国家规章平台文档/山西省政务数据资产管理试行办法.md
+    locator:
+      type: paragraph
+      line_end: 9
+      line_start: 9
+      title_path:
+      - 山西省政务数据资产管理试行办法
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/国家规章平台文档/山西省政务数据资产管理试行办法.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0009
+  question: 请检索并引用《四川省政务服务条例_》中与“政务服务管理机构应当会同监察等有关行政主管部门，对政务服务事项、部门授权、现场办理等情况进行监督，建立政务服”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/四川省政务服务条例_.md
+    locator:
+      type: paragraph
+      line_end: 283
+      line_start: 283
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/四川省政务服务条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure
+- case_id: p6b-policy-data-0010
+  question: 请检索并引用《黄山市徽州文书档案保护条例_20211021》中与“第三条 本条例所称徽州文书档案，是指1949年10月1日以前，徽州及周边区域国家机构、社会组织和个人从事经济”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-data-statistics-disclosure
+    source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/黄山市徽州文书档案保护条例_20211021.md
+    locator:
+      type: paragraph
+      line_end: 29
+      line_start: 29
+      title_path: []
+      page_number: null
+      source_path: policy-data-statistics-disclosure/医保审核前期资料/全量法律/黄山市徽州文书档案保护条例_20211021.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-data-statistics-disclosure
+  filters:
+    source_collections:
+    - policy-data-statistics-disclosure

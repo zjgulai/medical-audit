@@ -1,0 +1,261 @@
+dataset_id: knowledge-query-policy-social-security-livelihood-p6b-candidate-evaluation-cases-v1
+title: 社会保障与民生政策 P6B candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-05'
+updated: '2026-07-05'
+owner: self
+source: policy-social-security-livelihood:full-rebuild-20260704154952:candidate-db-source-paths
+description: P6B candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证政策类二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6b-policy-livelihood-0001
+  question: 请检索并引用《海南省人民政府关于将部分省级管理权限调整由儋州市实施的决定》中与“自然资源和规划局 委托 25 勘查矿产资源审批 省自然资源和规划厅 儋州市自然资源和规划局 委托 26 矿产”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/海南省人民政府关于将部分省级管理权限调整由儋州市实施的决定.md
+    locator:
+      type: paragraph
+      line_end: 9
+      line_start: 9
+      title_path:
+      - 海南省人民政府关于将部分省级管理权限调整由儋州市实施的决定
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/海南省人民政府关于将部分省级管理权限调整由儋州市实施的决定.md
+      window_count: 2
+      window_index: 1
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0002
+  question: 请检索并引用《河北省养老服务条例_20210528》中与“各级人民政府及其有关部门应当支持和引导机构、社会组织、行业协会等，为家庭照料护理老年人提供指导服务。用人单位”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/河北省养老服务条例_20210528.md
+    locator:
+      type: paragraph
+      line_end: 315
+      line_start: 315
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/河北省养老服务条例_20210528.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0003
+  question: 请检索并引用《中华人民共和国地方各级人民代表大会和地方各级人民政府组织法_20220311》中与“第十九条 乡、民族乡、镇的人民代表大会举行会议的时候，选举主席团。由主席团主持会议，并负责召集下一次的本级人”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/中华人民共和国地方各级人民代表大会和地方各级人民政府组织法_20220311.md
+    locator:
+      type: paragraph
+      line_end: 182
+      line_start: 182
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/中华人民共和国地方各级人民代表大会和地方各级人民政府组织法_20220311.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0004
+  question: 请检索并引用《温州市居家养老服务促进条例_20220608》中与“发展改革、教育、财政、人力社保、自然资源和规划、住房城乡建设、文化广电旅游、退役军人事务、审计、市场监督管理”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/温州市居家养老服务促进条例_20220608.md
+    locator:
+      type: paragraph
+      line_end: 127
+      line_start: 127
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/温州市居家养老服务促进条例_20220608.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0005
+  question: 请检索并引用《呼和浩特市就业促进条例_20251205》中与“第十二条 市、旗县区人民政府应当根据就业状况和就业工作目标，在同级财政预算中足额安排就业补助资金，合理安排创”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/呼和浩特市就业促进条例_20251205.md
+    locator:
+      type: paragraph
+      line_end: 93
+      line_start: 93
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/呼和浩特市就业促进条例_20251205.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0006
+  question: 请检索并引用《云南省劳动就业条例_》中与“第一条 为建立与社会主义市场经济相适应的就业机制，保护劳动者和用人单位的合法权益，推动经济发展和维护社会稳定”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/云南省劳动就业条例_.md
+    locator:
+      type: paragraph
+      line_end: 41
+      line_start: 41
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/云南省劳动就业条例_.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0007
+  question: 请检索并引用《杭州市人民代表大会常务委员会关于授权市人民政府调整适用《杭州市销售燃放烟花爆竹管理条例》有关规定的决定_20160119》中与“（2016年1月8日杭州市第十二届人民代表大会常务委员会第三十四次会议通过 2016年1月14日浙江省第十二”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/杭州市人民代表大会常务委员会关于授权市人民政府调整适用《杭州市销售燃放烟花爆竹管理条例》有关规定的决定_20160119.md
+    locator:
+      type: paragraph
+      line_end: 13
+      line_start: 13
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/杭州市人民代表大会常务委员会关于授权市人民政府调整适用《杭州市销售燃放烟花爆竹管理条例》有关规定的决定_20160119.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0008
+  question: 请检索并引用《社会保险业务档案管理规定（试行）》中与“能力鉴定等费用申报核定业务表单及相关材料………………………………………〔10年〕 （六）工伤预防费用核定材料”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/社会保险业务档案管理规定（试行）.md
+    locator:
+      type: paragraph
+      line_end: 9
+      line_start: 9
+      title_path:
+      - 社会保险业务档案管理规定（试行）
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/社会保险业务档案管理规定（试行）.md
+      window_count: 4
+      window_index: 3
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0009
+  question: 请检索并引用《浙江省职工基本养老保险条例_20080530》中与“（三）过渡性养老金月标准按照职工本人1997年12月31日以前的指数化月平均缴费工资，乘以1997年12月3”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/浙江省职工基本养老保险条例_20080530.md
+    locator:
+      type: paragraph
+      line_end: 329
+      line_start: 329
+      title_path: []
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/浙江省职工基本养老保险条例_20080530.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
+- case_id: p6b-policy-livelihood-0010
+  question: 请检索并引用《甘肃省特困人员救助供养办法》中与“）农村集体经营等收入安排的资金； （三）福利彩票公益金安排的资金； （四）社会捐赠资金。 特困人员救助供养资”相关的原文依据。
+  expected_evidence:
+  - source_collection: policy-social-security-livelihood
+    source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/甘肃省特困人员救助供养办法.md
+    locator:
+      type: paragraph
+      line_end: 9
+      line_start: 9
+      title_path:
+      - 甘肃省特困人员救助供养办法
+      page_number: null
+      source_path: policy-social-security-livelihood/医保审核前期资料/全量法律/国家规章平台文档/甘肃省特困人员救助供养办法.md
+      window_count: 3
+      window_index: 2
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6b-candidate-aligned
+  - policy-social-security-livelihood
+  filters:
+    source_collections:
+    - policy-social-security-livelihood
