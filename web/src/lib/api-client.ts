@@ -18,6 +18,7 @@ import type {
   AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  DocumentSourceCollectionCatalogResponse,
   DocumentUploadGovernanceRequest,
   DocumentPermissionsResponse,
   DocumentUploadListResponse,
@@ -194,6 +195,12 @@ export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistory
 
 export function fetchDocumentPermissions(): Promise<DocumentPermissionsResponse> {
   return getJsonWithAuditHeaders<DocumentPermissionsResponse>("/api/v1/documents/permissions");
+}
+
+export function fetchDocumentSourceCollections(): Promise<DocumentSourceCollectionCatalogResponse> {
+  return getJsonWithAuditHeaders<DocumentSourceCollectionCatalogResponse>(
+    "/api/v1/documents/source-collections"
+  );
 }
 
 export function fetchDocumentUploads(): Promise<DocumentUploadListResponse> {

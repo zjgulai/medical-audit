@@ -1,10 +1,16 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { StatusPill } from "@/components/ui/status-pill";
-import { runKnowledgeQuery } from "@/lib/api-client";
-import type { QueryCitation, QueryResponse, SourceCollection } from "@/lib/api-types";
+import { fetchDocumentSourceCollections, runKnowledgeQuery } from "@/lib/api-client";
+import type {
+  DocumentSourceCollectionCatalogResponse,
+  QueryCitation,
+  QueryResponse,
+  SourceCollection
+} from "@/lib/api-types";
+import { sourceCollectionCatalogToGroups } from "@/lib/source-collection-catalog";
 
 type QueryState =
   | { readonly status: "idle" }
@@ -12,41 +18,35 @@ type QueryState =
   | { readonly status: "success"; readonly result: QueryResponse }
   | { readonly status: "error"; readonly message: string };
 
-type SourceCollectionOption = {
-  readonly value: SourceCollection;
-  readonly label: string;
-  readonly description: string;
-};
-
-const SOURCE_COLLECTION_OPTIONS: readonly SourceCollectionOption[] = [
-  {
-    value: "medical-insurance-laws",
-    label: "法规政策",
-    description: "医保、医疗、药品、基金监管相关法律政策。"
-  },
-  {
-    value: "supervision-rules-knowledge",
-    label: "监管两库",
-    description: "智能监管规则库、知识库和知识点明细。"
-  },
-  {
-    value: "medical-insurance-catalog",
-    label: "医保目录",
-    description: "药品、诊疗项目、编码、支付范围和限制条件。"
-  },
-  {
-    value: "risk-negative-list",
-    label: "风险清单",
-    description: "高风险负面清单、案例和风险线索。"
-  }
-];
-
 const DEFAULT_QUESTION = "医保基金审核发现异常收费时应优先核验证据链的哪些要点？";
 
 export function KnowledgeQueryWorkbench() {
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [selectedCollections, setSelectedCollections] = useState<readonly SourceCollection[]>([]);
+  const [sourceCatalog, setSourceCatalog] = useState<DocumentSourceCollectionCatalogResponse | null>(null);
   const [queryState, setQueryState] = useState<QueryState>({ status: "idle" });
+  const sourceCollectionGroups = useMemo(
+    () => sourceCollectionCatalogToGroups(sourceCatalog?.items),
+    [sourceCatalog]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDocumentSourceCollections()
+      .then((result) => {
+        if (!cancelled) {
+          setSourceCatalog(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSourceCatalog(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const chatHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -115,31 +115,38 @@ export function KnowledgeQueryWorkbench() {
 
           <fieldset className="space-y-3">
             <legend className="audit-label">来源过滤</legend>
-            <div className="grid gap-3 lg:grid-cols-4">
-              {SOURCE_COLLECTION_OPTIONS.map((option) => {
-                const checked = selectedCollections.includes(option.value);
-                return (
-                  <label
-                    className={`audit-focus-ring block rounded-[var(--audit-radius-lg)] border p-4 text-sm transition ${
-                      checked
-                        ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] text-[var(--audit-primary)]"
-                        : "border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] text-[var(--audit-ink-muted)]"
-                    }`}
-                    key={option.value}
-                  >
-                    <span className="flex items-center gap-2 font-semibold text-[var(--audit-ink)]">
-                      <input
-                        checked={checked}
-                        className="size-4"
-                        onChange={() => toggleCollection(option.value)}
-                        type="checkbox"
-                      />
-                      {option.label}
-                    </span>
-                    <span className="mt-2 block audit-meta">{option.description}</span>
-                  </label>
-                );
-              })}
+            <div className="space-y-5">
+              {sourceCollectionGroups.map((group) => (
+                <div className="space-y-2" key={group.title}>
+                  <p className="audit-compact-title">{group.title}</p>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {group.options.map((option) => {
+                      const checked = selectedCollections.includes(option.value);
+                      return (
+                        <label
+                          className={`audit-focus-ring block rounded-[var(--audit-radius-lg)] border p-4 text-sm transition ${
+                            checked
+                              ? "border-[var(--audit-primary-line)] bg-[var(--audit-primary-soft)] text-[var(--audit-primary)]"
+                              : "border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] text-[var(--audit-ink-muted)]"
+                          }`}
+                          key={option.value}
+                        >
+                          <span className="flex items-center gap-2 font-semibold text-[var(--audit-ink)]">
+                            <input
+                              checked={checked}
+                              className="size-4"
+                              onChange={() => toggleCollection(option.value)}
+                              type="checkbox"
+                            />
+                            {option.label}
+                          </span>
+                          <span className="mt-2 block audit-meta">{option.description}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </fieldset>
 

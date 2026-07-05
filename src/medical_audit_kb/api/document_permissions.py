@@ -11,14 +11,16 @@ from medical_audit_kb.api.auth import (
     normalize_hospital_role,
 )
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import (
+    SYSTEM_SOURCE_COLLECTION_DEFINITIONS,
+)
 
 DOCUMENT_SOURCE_COLLECTION_LABELS: dict[SourceCollection, tuple[str, str]] = {
-    SourceCollection.MEDICAL_INSURANCE_LAWS: ("法规政策", "公开知识库"),
-    SourceCollection.SUPERVISION_RULES_KNOWLEDGE: ("监管两库", "系统知识库"),
-    SourceCollection.MEDICAL_INSURANCE_CATALOG: ("医保目录", "系统知识库"),
-    SourceCollection.RISK_NEGATIVE_LIST: ("风险清单", "系统知识库"),
+    definition.collection: (definition.label, definition.scope)
+    for definition in SYSTEM_SOURCE_COLLECTION_DEFINITIONS
 }
 PERSONAL_MATERIAL_PERMISSION_LABEL = ("个人材料", "个人上传材料")
+
 
 @dataclass(frozen=True, slots=True)
 class DocumentPermission:

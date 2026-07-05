@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 
 from medical_audit_kb.domain.constants import DocumentStatus, SourceCollection
+from medical_audit_kb.domain.source_collection_registry import source_collection_definition
 from medical_audit_kb.domain.schemas import SourcePackageVersionCreate
 
 SOURCE_COLLECTION_BY_TOP_LEVEL: Final = {
@@ -153,6 +154,9 @@ def classify_source_collection(relative_path: Path) -> SourceCollection | None:
         return None
 
     top_level = relative_path.parts[0]
+    if top_level in SourceCollection._value2member_map_:
+        return SourceCollection(top_level)
+
     if top_level in SOURCE_COLLECTION_BY_TOP_LEVEL:
         # 全量入库：全量法律目录下所有文档都归入法律集合（不再用 is_medical_insurance_law 丢弃），
         # 医保 vs 非医保的区分交给 domain 领域标签（见 classify_domain）。
@@ -172,6 +176,8 @@ def classify_domain(file_name: str, source_collection: SourceCollection | None =
     """
     if source_collection in _CURATED_MEDICAL_COLLECTIONS:
         return DOMAIN_MEDICAL_INSURANCE
+    if source_collection not in {None, SourceCollection.MEDICAL_INSURANCE_LAWS}:
+        return source_collection_definition(source_collection).label
     if is_medical_insurance_law(file_name):
         return DOMAIN_MEDICAL_INSURANCE
     normalized = file_name.upper()

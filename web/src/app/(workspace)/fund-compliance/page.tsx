@@ -135,7 +135,7 @@ export default function FundCompliancePage() {
           <div className="border-b border-[var(--audit-line-soft)] p-5 lg:w-72 lg:border-b-0 lg:border-r">
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-[var(--audit-primary)] px-2 py-1 text-xs font-bold text-white">B2B</span>
-              <span className="audit-kicker">医保智能审计平台</span>
+              <span className="audit-kicker">医疗AI审计平台</span>
             </div>
             <h1 className="audit-page-title mt-3">基金合规自查</h1>
             <p className="audit-copy mt-2">规则、表单、疑点、底稿集中处理。</p>

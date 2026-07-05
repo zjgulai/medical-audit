@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 import httpx
@@ -67,6 +68,106 @@ def test_openai_compatible_embedding_provider_posts_batches_and_validates_dimens
     assert embeddings == ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
     assert requests[0].url == "https://example.test/v1/embeddings"
     assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+def test_openai_compatible_embedding_provider_retries_retryable_responses() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(500, json={"error": {"message": "temporary"}})
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        api_key="test-key",
+        model_name="custom-embedding",
+        dimension=2,
+        base_url="https://example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=1,
+        retry_base_delay_seconds=0,
+    )
+
+    assert provider.embed_texts(["医保审核"]) == ((1.0, 0.0),)
+    assert len(requests) == 2
+
+
+def test_openai_compatible_embedding_provider_splits_retryable_failed_batches() -> None:
+    request_sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        inputs = payload["input"]
+        request_sizes.append(len(inputs))
+        if len(inputs) > 1:
+            return httpx.Response(500, json={"error": {"message": "temporary batch failure"}})
+        embedding = [1.0, 0.0] if inputs[0] == "医保审核" else [0.0, 1.0]
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": embedding}]})
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        api_key="test-key",
+        model_name="custom-embedding",
+        dimension=2,
+        base_url="https://example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=0,
+        retry_base_delay_seconds=0,
+    )
+
+    embeddings = provider.embed_texts(["医保审核", "超量开药"])
+
+    assert embeddings == ((1.0, 0.0), (0.0, 1.0))
+    assert request_sizes == [2, 1, 1]
+
+
+def test_openai_compatible_embedding_provider_retries_malformed_success_responses() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, json={"error": {"message": "temporary malformed response"}})
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        api_key="test-key",
+        model_name="custom-embedding",
+        dimension=2,
+        base_url="https://example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=1,
+        retry_base_delay_seconds=0,
+    )
+
+    assert provider.embed_texts(["医保审核"]) == ((1.0, 0.0),)
+    assert len(requests) == 2
+
+
+def test_openai_compatible_embedding_provider_does_not_retry_auth_or_quota_responses() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(403, json={"error": {"message": "quota"}})
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        api_key="test-key",
+        model_name="custom-embedding",
+        dimension=2,
+        base_url="https://example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=3,
+        retry_base_delay_seconds=0,
+    )
+
+    try:
+        provider.embed_texts(["医保审核", "超量开药"])
+    except EmbeddingProviderError as exc:
+        assert "403" in str(exc)
+    else:
+        raise AssertionError("expected EmbeddingProviderError")
+    assert len(requests) == 1
 
 
 def test_openai_compatible_embedding_provider_requires_dimension_for_unknown_model() -> None:

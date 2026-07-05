@@ -9,6 +9,7 @@ import {
   fetchArchiveWorkbench,
   fetchAuditAgent,
   fetchDocumentPermissions,
+  fetchDocumentSourceCollections,
   fetchDocumentUploads,
   fetchGraphWorkbench,
   fetchQueryHistory,
@@ -33,6 +34,7 @@ import {
   secondaryNavigation,
   workspaceHomeNavigation
 } from "@/lib/navigation";
+import promptsData from "@/data/audit-agent-prompts.json";
 
 import AgentMarketPage from "./agent-market/page";
 import AgentsPage from "./agents/page";
@@ -529,6 +531,110 @@ vi.mock("@/lib/api-client", () => ({
       can_upload_personal: true,
       can_read_all_personal_uploads: false,
       can_govern_personal_uploads: false
+    }
+  })),
+  fetchDocumentSourceCollections: vi.fn(async () => ({
+    contract_version: "document-source-collections-v1",
+    role: "auditor",
+    items: [
+      {
+        source_collection: "medical-insurance-laws",
+        label: "法规政策",
+        scope: "公开知识库",
+        phase: "P6A-medical-current-library-completion",
+        domain: "medical",
+        evidence_group: "legal",
+        description: "医保、医疗、药品、基金监管相关法律政策。",
+        audit_hint: "用于判断制度依据和监管边界。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: null,
+          chunk_count: 1,
+          character_count: null,
+          linked_app_count: 1
+        }
+      },
+      {
+        source_collection: "supervision-rules-knowledge",
+        label: "监管两库",
+        scope: "系统知识库",
+        phase: "P6A-medical-current-library-completion",
+        domain: "medical",
+        evidence_group: "rule",
+        description: "智能监管规则库、知识库和知识点明细。",
+        audit_hint: "用于定位规则口径和疑点类型。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: null,
+          chunk_count: null,
+          character_count: null,
+          linked_app_count: 1
+        }
+      },
+      {
+        source_collection: "medical-insurance-catalog",
+        label: "医保目录",
+        scope: "系统知识库",
+        phase: "P6A-medical-current-library-completion",
+        domain: "medical",
+        evidence_group: "catalog",
+        description: "药品、诊疗项目、编码、支付范围和限制条件。",
+        audit_hint: "用于核验目录编码、剂型、支付限制。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: null,
+          chunk_count: null,
+          character_count: null,
+          linked_app_count: 1
+        }
+      },
+      {
+        source_collection: "risk-negative-list",
+        label: "风险清单",
+        scope: "系统知识库",
+        phase: "P6A-medical-current-library-completion",
+        domain: "medical",
+        evidence_group: "risk",
+        description: "高风险负面清单、案例和风险线索。",
+        audit_hint: "用于辅助排查异常模式。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: null,
+          chunk_count: null,
+          character_count: null,
+          linked_app_count: 1
+        }
+      }
+    ],
+    search_backend: {
+      ready: true,
+      backend: "local-acceptance",
+      details: {
+        provider_call: false,
+        database_write: false,
+        source_collection: "medical-insurance-laws",
+        matching_embedding_count: 1
+      }
+    },
+    upload_permissions: {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: false,
+      can_govern_personal_uploads: false
+    },
+    boundaries: {
+      production_write: false,
+      provider_call: false,
+      database_write: false,
+      object_storage_write: false,
+      source: "runtime_state_and_registry_only"
     }
   })),
   fetchDocumentUploads: vi.fn(async () => ({
@@ -1431,10 +1537,12 @@ vi.mock("@/lib/api-client", () => ({
     details: { matching_embedding_count: 48985 }
   })),
   runKnowledgeQuery: vi.fn(async (payload: { readonly question: string }) => ({
+    contract_version: "knowledge-query-contract-v2",
     question: payload.question,
     answer: "应核验诊疗记录、收费明细和政策依据。",
     confidence: "high",
     fallback_used: true,
+    effective_source_collections: ["medical-insurance-laws"],
     basis_groups: [
       {
         evidence_type: "law",
@@ -1492,7 +1600,8 @@ vi.mock("@/lib/api-client", () => ({
         }
       }
     ],
-    query_log_index: 0
+    query_log_index: 0,
+    agent_invocation_id: "agent-invocation-chat-test"
   }))
 }));
 
@@ -1583,7 +1692,7 @@ describe("workspace foundation pages", () => {
     render(<FundCompliancePage />);
 
     expect(screen.getByRole("heading", { name: "基金合规自查" })).toBeInTheDocument();
-    expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
+    expect(screen.getByText("医疗AI审计平台")).toBeInTheDocument();
     expect(screen.getByText("B2B")).toBeInTheDocument();
     expect(screen.getByText("Q4 住院部专项")).toBeInTheDocument();
     expect(screen.getByText("规则")).toBeInTheDocument();
@@ -1637,6 +1746,9 @@ describe("workspace foundation pages", () => {
   it("keeps legacy real routes outside the primary portal navigation", async () => {
     render(<KnowledgeQueryPage />);
     expect(screen.getByRole("heading", { name: "引用优先的知识查询" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchDocumentSourceCollections).toHaveBeenCalled();
+    });
 
     render(<FindingsPage />);
     expect(screen.getByRole("heading", { name: "规则命中疑点工作台" })).toBeInTheDocument();
@@ -1653,7 +1765,9 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("当前助手")).toBeInTheDocument();
     expect(screen.getAllByText("法规政策").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医保目录").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "进入对话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提交问题" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "@引用依据核验助手" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "插入 @ 当前助手" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "打开后端深页" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "先检索文档" })).toHaveAttribute("href", "/documents");
     expect(container.querySelector('input[name="project_name"]')).toHaveAttribute(
@@ -1664,8 +1778,33 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(screen.getByText("已同步")).toBeInTheDocument();
     });
+    await waitFor(() => {
+      expect(fetchDocumentSourceCollections).toHaveBeenCalled();
+    });
     expect(screen.queryByText("已下架测试智能体")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("审计助手"), {
+      target: { value: "agent-duplicate-charge" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "插入 @ 当前助手" }));
+    expect(screen.getByLabelText("审计问题")).toHaveValue("@重复收费复核助手 ");
     expect(screen.getByText("参保身份、就诊记录和结算记录不一致时，应先做哪三类交叉核验？")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("审计问题"), {
+      target: { value: "重复收费需要核验哪些依据？" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交问题" }));
+    await waitFor(() => {
+      expect(runKnowledgeQuery).toHaveBeenCalledWith({
+        question: "重复收费需要核验哪些依据？",
+        agent: "agent-duplicate-charge",
+        top_k: 5,
+        topic: "medical-insurance-fund",
+        source_collections: ["medical-insurance-laws", "medical-insurance-catalog"]
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByRole("heading", { name: "重复收费复核助手" }).length).toBeGreaterThan(1);
+    });
+    expect(screen.getByText("已记录调用")).toBeInTheDocument();
   });
 
   it("renders the guided self-check workbench with steps, prompts and gates", () => {
@@ -1799,14 +1938,12 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "审计助手库" })).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "审计助手分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
-    expect(screen.getByText("默认展示常用核验助手，可搜索完整方法库。")).toBeInTheDocument();
-    expect(screen.getByText(/已显示前 8 个/)).toBeInTheDocument();
+    expect(screen.getByText(`已纳入 ${(promptsData as readonly unknown[]).length} 个审计智能体，可按专题检索并安装到我的智能体。`)).toBeInTheDocument();
 
     const agentList = document.querySelector('[aria-label="审计助手列表"]');
     expect(agentList).not.toBeNull();
     const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
-    expect(visibleNames.length).toBeGreaterThan(0);
-    expect(visibleNames.length).toBeLessThanOrEqual(12);
+    expect(visibleNames.length).toBe((promptsData as readonly unknown[]).length);
     for (const name of visibleNames) {
       expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
       expect(Array.from(name).length).toBeLessThanOrEqual(10);
@@ -1818,6 +1955,32 @@ describe("workspace foundation pages", () => {
     expect(screen.getByText("关注问题")).toBeInTheDocument();
     expect(screen.getByText("需要材料")).toBeInTheDocument();
     expect(screen.queryByText(/```json|filename|tablename|\\n/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "安装到我的智能体" }));
+    await waitFor(() => {
+      expect(createAuditAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "出国差旅核验",
+          category: "业务类",
+          knowledge_base: "系统医保审计知识库",
+          project_name: "医保基金使用合规专项自查",
+          metadata: expect.objectContaining({
+            catalog_source: "audit-agent-prompts-0613",
+            catalog_row_id: "audit-agent-prompts-0613-001",
+            source_key: "audit-agent-prompts-0613-001",
+            source_row_index: 1,
+            legacy_source_key: "财务收支审计|违反出国团组管理相关规定",
+            display_name: "出国差旅核验"
+          })
+        })
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("已安装到我的智能体").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole("link", { name: "用此助手提问" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/chat?agent=agent-custom-test")
+    );
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
     const fundCategory = screen.getByRole("tab", { name: /财务收支/ });
@@ -2078,6 +2241,9 @@ describe("workspace foundation pages", () => {
     await waitFor(() => {
       expect(screen.getByText("检索索引：就绪（postgres）")).toBeInTheDocument();
     });
+    await waitFor(() => {
+      expect(fetchDocumentSourceCollections).toHaveBeenCalled();
+    });
   });
 
   it("falls back to sample knowledge base when search backend probe fails", async () => {
@@ -2108,6 +2274,9 @@ describe("workspace foundation pages", () => {
     });
     await waitFor(() => {
       expect(fetchDocumentUploads).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(fetchDocumentSourceCollections).toHaveBeenCalled();
     });
     expect(screen.getByText("可用")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "个人材料" })).toBeInTheDocument();

@@ -393,11 +393,35 @@ export type TableAnalysisUploadHistoryResponse = {
   };
 };
 
+export const KNOWLEDGE_QUERY_CONTRACT_VERSION = "knowledge-query-contract-v2" as const;
+
+export type KnowledgeQueryContractVersion = typeof KNOWLEDGE_QUERY_CONTRACT_VERSION;
+
 export type SourceCollection =
   | "medical-insurance-laws"
   | "supervision-rules-knowledge"
   | "medical-insurance-catalog"
   | "risk-negative-list"
+  | "policy-general-policy"
+  | "policy-finance-price-procurement"
+  | "policy-data-statistics-disclosure"
+  | "policy-reform-pilot"
+  | "policy-social-security-livelihood"
+  | "policy-industry-business-environment"
+  | "management-org-personnel-qualification"
+  | "management-market-quality"
+  | "management-license-enforcement"
+  | "management-safety-emergency"
+  | "management-judicial-audit-procedure"
+  | "management-ecology-resources"
+  | "management-urban-municipal"
+  | "management-general-admin"
+  | "other-agriculture-water"
+  | "other-culture-tourism-sports"
+  | "other-defense-confidentiality"
+  | "other-education-research"
+  | "other-ethnic-religious-foreign"
+  | "other-transport-maritime"
   | "personal-materials";
 
 export type DocumentSourcePermissionItem = {
@@ -417,6 +441,47 @@ export type DocumentPermissionsResponse = {
   readonly role: string;
   readonly source_collections: readonly DocumentSourcePermissionItem[];
   readonly upload_permissions: DocumentUploadPermissions;
+};
+
+export type DocumentSourceCollectionMetrics = {
+  readonly document_count: number | null;
+  readonly chunk_count: number | null;
+  readonly character_count: number | null;
+  readonly linked_app_count: number | null;
+};
+
+export type DocumentSourceCollectionCatalogItem = {
+  readonly source_collection: SourceCollection;
+  readonly label: string;
+  readonly scope: string;
+  readonly phase: string;
+  readonly domain: string;
+  readonly evidence_group: string;
+  readonly description: string;
+  readonly audit_hint: string;
+  readonly access: DocumentSourcePermissionItem["access"];
+  readonly product_queryable: boolean;
+  readonly queryable: boolean;
+  readonly metrics: DocumentSourceCollectionMetrics;
+};
+
+export type DocumentSourceCollectionCatalogResponse = {
+  readonly contract_version: "document-source-collections-v1";
+  readonly role: string;
+  readonly items: readonly DocumentSourceCollectionCatalogItem[];
+  readonly search_backend: {
+    readonly ready: boolean;
+    readonly backend: string;
+    readonly details: Record<string, unknown>;
+  };
+  readonly upload_permissions: DocumentUploadPermissions;
+  readonly boundaries: {
+    readonly production_write: false;
+    readonly provider_call: false;
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly source: "runtime_state_and_registry_only";
+  };
 };
 
 export type DocumentUploadItem = {
@@ -523,10 +588,12 @@ export type PersonalUploadMatch = {
 };
 
 export type QueryResponse = {
+  readonly contract_version: KnowledgeQueryContractVersion;
   readonly question: string;
   readonly answer: string;
   readonly confidence: string;
   readonly fallback_used: boolean;
+  readonly effective_source_collections: readonly SourceCollection[];
   readonly basis_groups: readonly QueryBasisGroup[];
   readonly citations: readonly QueryCitation[];
   readonly personal_upload_matches: readonly PersonalUploadMatch[];

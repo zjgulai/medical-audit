@@ -1,14 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { runKnowledgeQuery } from "@/lib/api-client";
+import { fetchDocumentSourceCollections, runKnowledgeQuery } from "@/lib/api-client";
 
 import { KnowledgeQueryWorkbench } from "./knowledge-query-workbench";
 
 vi.mock("@/lib/api-client", () => ({
+  fetchDocumentSourceCollections: vi.fn(async () => {
+    throw new Error("catalog fixture intentionally unavailable");
+  }),
   runKnowledgeQuery: vi.fn()
 }));
 
+const fetchDocumentSourceCollectionsMock = vi.mocked(fetchDocumentSourceCollections);
 const runKnowledgeQueryMock = vi.mocked(runKnowledgeQuery);
 
 describe("KnowledgeQueryWorkbench", () => {
@@ -16,12 +20,29 @@ describe("KnowledgeQueryWorkbench", () => {
     vi.restoreAllMocks();
   });
 
+  it("exposes the contract-aligned source collection filters", async () => {
+    render(<KnowledgeQueryWorkbench />);
+
+    expect(screen.getAllByRole("checkbox")).toHaveLength(25);
+    expect(screen.getByRole("checkbox", { name: /^法规政策/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^综合政策/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^城市市政/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^农业水利/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^个人上传材料/ })).toBeInTheDocument();
+    expect(screen.queryByText("other-unclassified")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchDocumentSourceCollectionsMock).toHaveBeenCalled();
+    });
+  });
+
   it("runs a query through the API-first client and renders citations", async () => {
     runKnowledgeQueryMock.mockResolvedValue({
+      contract_version: "knowledge-query-contract-v2",
       question: "医保基金审核依据",
       answer: "应核验诊疗记录、收费明细和政策依据。",
       confidence: "high",
       fallback_used: true,
+      effective_source_collections: ["medical-insurance-laws"],
       query_log_index: 7,
       basis_groups: [
         {

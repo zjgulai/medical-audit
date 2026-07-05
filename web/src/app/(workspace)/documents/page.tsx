@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   fetchDocumentPermissions,
+  fetchDocumentSourceCollections,
   fetchDocumentUploads,
   fetchQueryHistory,
   indexPersonalDocument,
@@ -13,6 +14,7 @@ import {
   uploadPersonalDocument
 } from "@/lib/api-client";
 import type {
+  DocumentSourceCollectionCatalogResponse,
   DocumentPermissionsResponse,
   DocumentUploadItem,
   PersonalUploadMatch,
@@ -21,6 +23,12 @@ import type {
   QueryResponse,
   SourceCollection
 } from "@/lib/api-types";
+import {
+  isSourceCollectionValue,
+  readableSourceCollectionsFromCatalog,
+  selectedSourceCollectionLabel,
+  sourceCollectionCatalogToDocumentCategories
+} from "@/lib/source-collection-catalog";
 import {
   conversationDocuments,
   documentCategoryStats,
@@ -38,12 +46,9 @@ type PermissionStatus = "loading" | "ready" | "unavailable";
 type UploadStatus = "loading" | "ready" | "uploading" | "unavailable";
 type DocumentGovernanceAction = DocumentUploadItem["governance_status"];
 
-const SOURCE_COLLECTIONS: readonly SourceCollection[] = [
-  "medical-insurance-laws",
-  "supervision-rules-knowledge",
-  "medical-insurance-catalog",
-  "risk-negative-list"
-];
+const FALLBACK_DOCUMENT_SOURCES = documentCategoryStats
+  .map((category) => category.sourceCollection)
+  .filter(isSourceCollectionValue);
 
 export default function DocumentsPage() {
   const totalDocuments = documentCategoryStats.reduce((sum, category) => sum + category.documentCount, 0);
@@ -55,6 +60,8 @@ export default function DocumentsPage() {
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>("loading");
   const [documentPermissions, setDocumentPermissions] = useState<DocumentPermissionsResponse | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>("loading");
+  const [sourceCatalog, setSourceCatalog] = useState<DocumentSourceCollectionCatalogResponse | null>(null);
+  const [sourceCatalogStatus, setSourceCatalogStatus] = useState<PermissionStatus>("loading");
   const [uploads, setUploads] = useState<readonly DocumentUploadItem[]>([]);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("loading");
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
@@ -84,6 +91,18 @@ export default function DocumentsPage() {
     }
   }, []);
 
+  const refreshSourceCatalog = useCallback(async () => {
+    setSourceCatalogStatus("loading");
+    try {
+      const result = await fetchDocumentSourceCollections();
+      setSourceCatalog(result);
+      setSourceCatalogStatus("ready");
+    } catch {
+      setSourceCatalog(null);
+      setSourceCatalogStatus("unavailable");
+    }
+  }, []);
+
   const refreshDocumentUploads = useCallback(async () => {
     setUploadStatus("loading");
     try {
@@ -99,29 +118,28 @@ export default function DocumentsPage() {
   useEffect(() => {
     void refreshHistory();
     void refreshDocumentPermissions();
+    void refreshSourceCatalog();
     void refreshDocumentUploads();
-  }, [refreshDocumentPermissions, refreshDocumentUploads, refreshHistory]);
+  }, [refreshDocumentPermissions, refreshDocumentUploads, refreshHistory, refreshSourceCatalog]);
+
+  const sourceCategories = useMemo(
+    () => sourceCollectionCatalogToDocumentCategories(sourceCatalog?.items, documentCategoryStats),
+    [sourceCatalog]
+  );
 
   const readableCollections = useMemo(() => {
-    if (documentPermissions === null) {
-      return new Set<SourceCollection>(SOURCE_COLLECTIONS);
-    }
-    return new Set(
-      documentPermissions.source_collections
-        .filter((item) => item.access === "read")
-        .map((item) => item.source_collection)
+    return readableSourceCollectionsFromCatalog(
+      sourceCatalog?.items,
+      documentPermissions?.source_collections,
+      FALLBACK_DOCUMENT_SOURCES
     );
-  }, [documentPermissions]);
+  }, [documentPermissions, sourceCatalog]);
 
   const selectedScopeText = useMemo(() => {
-    if (selectedCollections.length === 0) {
-      return "全部来源";
-    }
-    return documentCategoryStats
-      .filter((category) => selectedCollections.includes(category.sourceCollection as SourceCollection))
-      .map((category) => category.name)
-      .join("、");
-  }, [selectedCollections]);
+    return selectedSourceCollectionLabel(selectedCollections, sourceCategories);
+  }, [selectedCollections, sourceCategories]);
+
+  const sourceStatus = sourceCatalogStatus === "ready" ? sourceCatalogStatus : permissionStatus;
 
   const canUploadPersonal =
     permissionStatus === "ready" && (documentPermissions?.upload_permissions.can_upload_personal ?? false);
@@ -155,7 +173,7 @@ export default function DocumentsPage() {
   }
 
   function toggleCollection(sourceCollection: string) {
-    if (!isSourceCollection(sourceCollection)) {
+    if (!isSourceCollectionValue(sourceCollection)) {
       return;
     }
     if (!readableCollections.has(sourceCollection)) {
@@ -233,12 +251,12 @@ export default function DocumentsPage() {
             <p className="audit-kicker">依据范围</p>
             <h2 className="audit-section-title mt-1">选择检索来源</h2>
           </div>
-          <StatusPill tone={permissionStatus === "ready" ? "success" : permissionStatus === "loading" ? "info" : "warning"}>
-            {permissionStatus === "ready" ? "可用" : permissionStatus === "loading" ? "读取中" : "需登录"}
+          <StatusPill tone={sourceStatus === "ready" ? "success" : sourceStatus === "loading" ? "info" : "warning"}>
+            {sourceStatus === "ready" ? "可用" : sourceStatus === "loading" ? "读取中" : "需登录"}
           </StatusPill>
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {documentCategoryStats.map((category) => (
+          {sourceCategories.map((category) => (
             <DocumentSourceCard
               category={category}
               readable={readableCollections.has(category.sourceCollection as SourceCollection)}
@@ -314,7 +332,7 @@ export default function DocumentsPage() {
         </div>
 
         <div className="mt-6">
-          <DocumentSearchResult state={searchState} />
+          <DocumentSearchResult sourceCategories={sourceCategories} state={searchState} />
         </div>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -577,7 +595,13 @@ function DocumentUploadRow({
   );
 }
 
-function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }) {
+function DocumentSearchResult({
+  sourceCategories,
+  state
+}: {
+  readonly sourceCategories: readonly (typeof documentCategoryStats)[number][];
+  readonly state: DocumentSearchState;
+}) {
   if (state.status === "idle") {
     return (
       <section className="audit-panel-muted p-5">
@@ -606,7 +630,7 @@ function DocumentSearchResult({ state }: { readonly state: DocumentSearchState }
 
   const { result } = state;
   const chatHref = `/chat?question=${encodeURIComponent(result.question)}`;
-  const citationGroups = groupCitationsBySource(result.citations);
+  const citationGroups = groupCitationsBySource(result.citations, sourceCategories);
   const personalMatches = result.personal_upload_matches ?? [];
   return (
     <section className="audit-panel-muted p-5">
@@ -787,17 +811,13 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
   );
 }
 
-function isSourceCollection(value: string): value is SourceCollection {
-  return SOURCE_COLLECTIONS.includes(value as SourceCollection);
-}
-
 function historySourceCollections(item: QueryHistoryItem): readonly SourceCollection[] {
   const sourceCollections = item.filters.source_collections;
   if (!Array.isArray(sourceCollections)) {
     return [];
   }
   return sourceCollections.filter((value): value is SourceCollection =>
-    typeof value === "string" && isSourceCollection(value)
+    typeof value === "string" && isSourceCollectionValue(value)
   );
 }
 
@@ -813,13 +833,23 @@ function filterPortalDocuments(
   return documents.filter((document) => document.title.toLowerCase().includes(normalizedQuery));
 }
 
-function groupCitationsBySource(citations: readonly QueryCitation[]): readonly {
+function groupCitationsBySource(
+  citations: readonly QueryCitation[],
+  sourceCategories: readonly (typeof documentCategoryStats)[number][]
+): readonly {
   readonly sourceCollection: SourceCollection;
   readonly label: string;
   readonly citations: readonly QueryCitation[];
 }[] {
-  return SOURCE_COLLECTIONS.map((sourceCollection) => {
-    const category = documentCategoryStats.find((item) => item.sourceCollection === sourceCollection);
+  const sourceCollections = [
+    ...sourceCategories
+      .map((category) => category.sourceCollection)
+      .filter(isSourceCollectionValue),
+    ...citations.map((citation) => citation.source_collection).filter(isSourceCollectionValue)
+  ].filter((sourceCollection, index, all) => all.indexOf(sourceCollection) === index);
+
+  return sourceCollections.map((sourceCollection) => {
+    const category = sourceCategories.find((item) => item.sourceCollection === sourceCollection);
     return {
       sourceCollection,
       label: category?.name ?? sourceCollection,

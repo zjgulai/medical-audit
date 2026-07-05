@@ -41,7 +41,7 @@ export function BrandLogo({
       height={height}
       onError={() => setImageFailed(true)}
       priority={priority}
-      src="/brand/auditscope-logo.png"
+      src="/brand/medical-ai-audit-logo.png"
       unoptimized
       width={width}
     />

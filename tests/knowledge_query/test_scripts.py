@@ -149,6 +149,24 @@ def test_serve_chat_workbench_container_script_is_valid_and_does_not_store_secre
     assert "X-Project-Key" in script_text
 
 
+def test_serve_local_acceptance_api_script_is_valid_and_does_not_store_secret() -> None:
+    script_path = Path("scripts/serve-local-acceptance-api.py")
+
+    result = subprocess.run(
+        ["python3", "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "create_local_acceptance_app" in script_text
+    assert "--state-root" in script_text
+    assert "8021" in script_text
+    assert "sk-" not in script_text
+
+
 def test_serve_chat_workbench_container_internal_auth_headers(
     monkeypatch: MonkeyPatch,
 ) -> None:

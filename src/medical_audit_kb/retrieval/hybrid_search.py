@@ -7,7 +7,11 @@ from uuid import UUID
 
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25SearchResult, InMemoryBM25Index
-from medical_audit_kb.indexing.embeddings import EmbeddingProvider, EmbeddingVector
+from medical_audit_kb.indexing.embeddings import (
+    EmbeddingProvider,
+    EmbeddingProviderError,
+    EmbeddingVector,
+)
 from medical_audit_kb.indexing.vector_index import InMemoryVectorIndex, VectorSearchResult
 from medical_audit_kb.retrieval.filters import RetrievalFilters
 from medical_audit_kb.retrieval.rerank import RerankCandidate, RerankProvider
@@ -104,8 +108,11 @@ class HybridSearchEngine:
         fetch_k: int = 50,
     ) -> tuple[HybridSearchResult, ...]:
         active_filters = filters or RetrievalFilters()
-        query_embedding = self._embedding_provider.embed_texts([query])[0]
-        vector_results = self._vector_index.search(query_embedding, top_k=fetch_k)
+        try:
+            query_embedding = self._embedding_provider.embed_texts([query])[0]
+            vector_results = self._vector_index.search(query_embedding, top_k=fetch_k)
+        except EmbeddingProviderError:
+            vector_results = ()
         bm25_results = self._bm25_index.search(query, top_k=fetch_k)
 
         candidates = _merge_candidates(vector_results, bm25_results)

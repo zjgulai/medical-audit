@@ -28,7 +28,7 @@ describe("WorkspaceShell", () => {
     const mainNavigation = screen.getByRole("navigation", { name: "主导航" });
 
     expect(mainNavigation).toHaveClass("grid");
-    expect(screen.getByText("医保智能审计平台")).toBeInTheDocument();
+    expect(screen.getByText("医疗AI审计平台")).toBeInTheDocument();
     for (const label of ["工作台", "基金合规", "审计助手", "文档依据", "项目归档"]) {
       expect(within(mainNavigation).getByText(label)).toBeInTheDocument();
     }

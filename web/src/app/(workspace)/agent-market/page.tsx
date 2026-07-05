@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import promptsData from "@/data/audit-agent-prompts.json";
+import { createAuditAgent, fetchAgents } from "@/lib/api-client";
+import type { ApiAgentCategory, AuditAgentApiItem } from "@/lib/api-types";
 
 type AgentPrompt = {
   readonly category: string;
@@ -14,30 +16,42 @@ type AgentPrompt = {
   readonly source: string;
 };
 
+type CatalogAgentPrompt = AgentPrompt & {
+  readonly catalogRowId: string;
+  readonly sourceRowIndex: number;
+  readonly legacySourceKey: string;
+};
+
 type PromptSection = {
   readonly title: string;
   readonly lines: readonly string[];
 };
 
 type AgentCard = {
-  readonly source: AgentPrompt;
+  readonly source: CatalogAgentPrompt;
   readonly displayName: string;
   readonly summary: string;
   readonly sections: readonly PromptSection[];
   readonly tags: readonly string[];
 };
 
-const auditAgents: readonly AgentPrompt[] = (() => {
-  const seen = new Set<string>();
-  return (promptsData as readonly AgentPrompt[]).filter((agent) => {
-    const key = `${agent.category}|${agent.title}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-})();
+type AgentInstallStatus = {
+  readonly status: "idle" | "installed" | "installing" | "error";
+  readonly agentId?: string;
+  readonly message?: string;
+};
+
+const AGENT_CATALOG_SOURCE = "audit-agent-prompts-0613";
+
+const auditAgents: readonly CatalogAgentPrompt[] = (promptsData as readonly AgentPrompt[]).map((agent, index) => {
+  const sourceRowIndex = index + 1;
+  return {
+    ...agent,
+    catalogRowId: `${AGENT_CATALOG_SOURCE}-${String(sourceRowIndex).padStart(3, "0")}`,
+    sourceRowIndex,
+    legacySourceKey: `${agent.category}|${agent.title}`
+  };
+});
 
 const CATEGORY_ORDER = [
   "财务收支审计",
@@ -76,7 +90,7 @@ const SECTION_LABELS = {
   material: "需要材料",
   method: "核验步骤"
 } as const;
-const DEFAULT_AGENT_LIMIT = 8;
+const DEFAULT_PROJECT_NAME = "医保基金使用合规专项自查";
 
 function normalizeVisibleText(text: string): string {
   return text
@@ -143,7 +157,7 @@ function tagList(tags: string): readonly string[] {
     .slice(0, 3);
 }
 
-function compactAgentTitle(agent: AgentPrompt): string {
+function compactAgentTitle(agent: CatalogAgentPrompt): string {
   const rawTitle = cleanLine(agent.title);
   const matchedRule = DISPLAY_NAME_RULES.find(([pattern]) => pattern.test(rawTitle));
   if (matchedRule) {
@@ -196,7 +210,7 @@ function promptHeadingKind(rawLine: string): keyof typeof SECTION_LABELS | null 
   return sectionKindFromTitle(cleaned);
 }
 
-function promptSections(agent: AgentPrompt): readonly PromptSection[] {
+function promptSections(agent: CatalogAgentPrompt): readonly PromptSection[] {
   const grouped: Record<keyof typeof SECTION_LABELS, string[]> = {
     focus: [],
     material: [],
@@ -231,7 +245,7 @@ function promptSections(agent: AgentPrompt): readonly PromptSection[] {
     .slice(0, 3);
 }
 
-function buildAgentCard(agent: AgentPrompt): AgentCard {
+function buildAgentCard(agent: CatalogAgentPrompt): AgentCard {
   return {
     source: agent,
     displayName: compactAgentTitle(agent),
@@ -241,10 +255,38 @@ function buildAgentCard(agent: AgentPrompt): AgentCard {
   };
 }
 
+function sourceKey(agent: CatalogAgentPrompt): string {
+  return agent.catalogRowId;
+}
+
+function apiCategoryForAgent(agent: CatalogAgentPrompt): ApiAgentCategory {
+  if (agent.category.includes("工具")) {
+    return "效率类";
+  }
+  if (agent.category.includes("科研")) {
+    return "研究类";
+  }
+  return "业务类";
+}
+
+function agentTopic(agent: CatalogAgentPrompt): string {
+  return agent.category.replace("智能体", "工具").replace("审计", "") || "审计核验";
+}
+
+function defaultQuestionForAgent(agent: AgentCard): string {
+  return `请使用 @${agent.displayName} 帮我核验：${cleanLine(agent.source.title)}`;
+}
+
+function metadataText(agent: AuditAgentApiItem, key: string): string | null {
+  const value = agent.metadata[key];
+  return typeof value === "string" ? value : null;
+}
+
 export default function AgentMarketPage() {
   const [category, setCategory] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<AgentCard | null>(null);
+  const [installStatuses, setInstallStatuses] = useState<Record<string, AgentInstallStatus>>({});
   const agentCards = useMemo(() => auditAgents.map(buildAgentCard), []);
 
   const counts = useMemo(() => {
@@ -253,6 +295,22 @@ export default function AgentMarketPage() {
       map[agent.category] = (map[agent.category] ?? 0) + 1;
     }
     return map;
+  }, []);
+
+  const uniqueLegacySourceRows = useMemo(() => {
+    const rowByLegacyKey = new Map<string, string>();
+    const duplicateLegacyKeys = new Set<string>();
+    for (const agent of auditAgents) {
+      if (rowByLegacyKey.has(agent.legacySourceKey)) {
+        duplicateLegacyKeys.add(agent.legacySourceKey);
+        continue;
+      }
+      rowByLegacyKey.set(agent.legacySourceKey, agent.catalogRowId);
+    }
+    for (const duplicateKey of duplicateLegacyKeys) {
+      rowByLegacyKey.delete(duplicateKey);
+    }
+    return rowByLegacyKey;
   }, []);
 
   const filtered = useMemo(() => {
@@ -268,7 +326,92 @@ export default function AgentMarketPage() {
     });
   }, [agentCards, category, query]);
 
-  const visibleAgents = filtered.slice(0, DEFAULT_AGENT_LIMIT);
+  useEffect(() => {
+    let isMounted = true;
+    fetchAgents()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        const installed: Record<string, AgentInstallStatus> = {};
+        for (const agent of response.items) {
+          if (metadataText(agent, "catalog_source") !== AGENT_CATALOG_SOURCE) {
+            continue;
+          }
+          const rowKey = metadataText(agent, "catalog_row_id") ?? metadataText(agent, "source_key");
+          if (rowKey?.startsWith(`${AGENT_CATALOG_SOURCE}-`)) {
+            installed[rowKey] = { status: "installed", agentId: agent.id, message: "已在我的智能体" };
+            continue;
+          }
+          const legacyKey = metadataText(agent, "legacy_source_key") ?? metadataText(agent, "source_key");
+          const uniqueRowKey = legacyKey ? uniqueLegacySourceRows.get(legacyKey) : null;
+          if (uniqueRowKey) {
+            installed[uniqueRowKey] = { status: "installed", agentId: agent.id, message: "已在我的智能体" };
+          }
+        }
+        setInstallStatuses((current) => ({ ...installed, ...current }));
+      })
+      .catch(() => {
+        // 广场仍可离线浏览；安装时再提示后端状态。
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [uniqueLegacySourceRows]);
+
+  async function installAgent(agent: AgentCard): Promise<void> {
+    const key = sourceKey(agent.source);
+    const current = installStatuses[key];
+    if (current?.status === "installed" || current?.status === "installing") {
+      return;
+    }
+    setInstallStatuses((statuses) => ({
+      ...statuses,
+      [key]: { status: "installing", message: "正在安装" }
+    }));
+    try {
+      const response = await createAuditAgent({
+        name: agent.displayName,
+        category: apiCategoryForAgent(agent.source),
+        topic: agentTopic(agent.source),
+        prompt: normalizeVisibleText(agent.source.prompt),
+        knowledge_base: "系统医保审计知识库",
+        project_name: DEFAULT_PROJECT_NAME,
+        visibility_scope: "project",
+        allowed_roles: ["admin", "technician", "director", "member"],
+        metadata: {
+          catalog_source: AGENT_CATALOG_SOURCE,
+          catalog_row_id: agent.source.catalogRowId,
+          source_key: agent.source.catalogRowId,
+          source_row_index: agent.source.sourceRowIndex,
+          legacy_source_key: agent.source.legacySourceKey,
+          source_category: agent.source.category,
+          source_title: cleanLine(agent.source.title),
+          source_scene: cleanLine(agent.source.scene),
+          source_file: agent.source.source,
+          display_name: agent.displayName,
+          avatar_seed: `${agent.source.category}-${agent.source.title}-${agent.source.catalogRowId}`
+        }
+      });
+      setInstallStatuses((statuses) => ({
+        ...statuses,
+        [key]: {
+          status: "installed",
+          agentId: response.item.id,
+          message: "已安装到我的智能体"
+        }
+      }));
+    } catch {
+      setInstallStatuses((statuses) => ({
+        ...statuses,
+        [key]: {
+          status: "error",
+          message: "安装未完成，请检查后端连接"
+        }
+      }));
+    }
+  }
 
   return (
     <main className="space-y-4 sm:space-y-5">
@@ -277,7 +420,7 @@ export default function AgentMarketPage() {
           <div>
             <p className="audit-kicker">审计助手库</p>
             <h1 className="audit-page-title">审计助手库</h1>
-            <p className="mt-1 audit-copy">默认展示常用核验助手，可搜索完整方法库。</p>
+            <p className="mt-1 audit-copy">已纳入 {auditAgents.length} 个审计智能体，可按专题检索并安装到我的智能体。</p>
           </div>
           <input
             className="audit-focus-ring audit-input w-full px-3 py-2.5"
@@ -308,12 +451,14 @@ export default function AgentMarketPage() {
       </section>
 
       <section className="grid gap-2.5 md:grid-cols-2" aria-label="审计助手列表">
-        {visibleAgents.map((agent) => (
+        {filtered.map((agent) => {
+          const installStatus = installStatuses[sourceKey(agent.source)] ?? { status: "idle" as const };
+          return (
           <button
-            key={`${agent.source.category}-${agent.source.title}`}
+            key={agent.source.catalogRowId}
             type="button"
             onClick={() => setSelected(agent)}
-            className="audit-focus-ring audit-panel grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left transition hover:border-[var(--audit-primary-line)]"
+            className="audit-focus-ring audit-panel grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3.5 text-left transition hover:border-[var(--audit-primary-line)]"
           >
             <AgentAvatar agent={agent} size="compact" />
             <div className="min-w-0">
@@ -322,14 +467,12 @@ export default function AgentMarketPage() {
                 <span className="truncate">{agent.tags[0] ?? agent.source.category.replace("审计", "")}</span>
               </span>
             </div>
-            <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">打开</span>
+            <span className="shrink-0 text-xs font-semibold text-[var(--audit-primary)]">
+              {installStatus.status === "installed" ? "已安装" : "打开"}
+            </span>
           </button>
-        ))}
-        {filtered.length > visibleAgents.length ? (
-          <p className="audit-panel-muted p-4 audit-copy md:col-span-2">
-            已显示前 {visibleAgents.length} 个。输入关键词可继续缩小范围。
-          </p>
-        ) : null}
+          );
+        })}
         {filtered.length === 0 ? (
           <p className="audit-panel-muted p-6 audit-copy md:col-span-2">
             没有匹配的审计助手，换个关键词或分类试试。
@@ -337,7 +480,16 @@ export default function AgentMarketPage() {
         ) : null}
       </section>
 
-      {selected ? <AgentDetailDialog agent={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <AgentDetailDialog
+          agent={selected}
+          installStatus={installStatuses[sourceKey(selected.source)] ?? { status: "idle" }}
+          onClose={() => setSelected(null)}
+          onInstall={() => {
+            void installAgent(selected);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
@@ -371,8 +523,20 @@ function CategoryChip({
   );
 }
 
-function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentCard; readonly onClose: () => void }) {
-  const chatHref = `/chat?agent=${encodeURIComponent(agent.source.title)}`;
+function AgentDetailDialog({
+  agent,
+  installStatus,
+  onClose,
+  onInstall
+}: {
+  readonly agent: AgentCard;
+  readonly installStatus: AgentInstallStatus;
+  readonly onClose: () => void;
+  readonly onInstall: () => void;
+}) {
+  const chatHref = installStatus.agentId
+    ? `/chat?agent=${encodeURIComponent(installStatus.agentId)}&question=${encodeURIComponent(defaultQuestionForAgent(agent))}`
+    : `/chat?question=${encodeURIComponent(defaultQuestionForAgent(agent))}`;
   const normalizedPrompt = normalizeVisibleText(agent.source.prompt);
   return (
     <div
@@ -434,9 +598,21 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentCard; read
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <a className="audit-focus-ring audit-btn audit-btn-primary" href={chatHref}>
-            用此助手提问
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="audit-focus-ring audit-btn audit-btn-primary"
+            onClick={onInstall}
+            disabled={installStatus.status === "installed" || installStatus.status === "installing"}
+          >
+            {installStatus.status === "installed"
+              ? "已安装到我的智能体"
+              : installStatus.status === "installing"
+                ? "安装中"
+                : "安装到我的智能体"}
+          </button>
+          <a className="audit-focus-ring audit-btn audit-btn-secondary" href={chatHref}>
+            {installStatus.status === "installed" ? "用此助手提问" : "带问题去对话"}
           </a>
           <button
             type="button"
@@ -447,6 +623,15 @@ function AgentDetailDialog({ agent, onClose }: { readonly agent: AgentCard; read
           >
             复制核验方法
           </button>
+          {installStatus.message ? (
+            <span
+              className={`text-sm font-semibold ${
+                installStatus.status === "error" ? "text-[var(--audit-red)]" : "text-[var(--audit-ink-muted)]"
+              }`}
+            >
+              {installStatus.message}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
@@ -460,18 +645,24 @@ function AgentAvatar({
   readonly agent: AgentCard;
   readonly size: "compact" | "detail";
 }) {
-  const hue = agentHue(`${agent.source.category}-${agent.source.title}`);
+  const hue = agentHue(`${agent.source.category}-${agent.source.title}-${agent.source.catalogRowId}`);
   const sizeClass = size === "detail" ? "size-11 text-sm" : "size-10 text-xs";
+  const faceSize = size === "detail" ? "size-7" : "size-6";
   return (
     <span
       aria-hidden="true"
-      className={`grid shrink-0 place-items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] font-semibold shadow-[0_8px_18px_rgb(35_45_84/0.06)] ${sizeClass}`}
+      className={`relative grid shrink-0 place-items-center overflow-hidden rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] font-semibold shadow-[0_8px_18px_rgb(35_45_84/0.06)] ${sizeClass}`}
       style={{
         background: `linear-gradient(135deg, hsl(${hue} 76% 95%), hsl(${(hue + 28) % 360} 68% 88%))`,
         color: `hsl(${hue} 70% 30%)`
       }}
     >
-      {agentInitials(agent.displayName)}
+      <span className={`relative grid place-items-center rounded-full bg-white/82 ${faceSize}`}>
+        <span className="absolute top-[30%] left-[27%] size-1 rounded-full bg-current" />
+        <span className="absolute top-[30%] right-[27%] size-1 rounded-full bg-current" />
+        <span className="absolute bottom-[28%] h-1 w-3 rounded-b-full border-b-2 border-current" />
+      </span>
+      <span className="absolute right-0.5 bottom-0.5 text-[9px] leading-none">{agentInitials(agent.displayName).slice(0, 1)}</span>
     </span>
   );
 }

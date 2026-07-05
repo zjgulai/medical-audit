@@ -4,6 +4,7 @@ import hashlib
 import math
 import os
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -32,6 +33,10 @@ class EmbeddingProvider(Protocol):
 
 
 class EmbeddingProviderError(RuntimeError):
+    pass
+
+
+class _RetryableEmbeddingProviderError(EmbeddingProviderError):
     pass
 
 
@@ -93,11 +98,17 @@ class OpenAICompatibleEmbeddingProvider:
         batch_size: int = 128,
         timeout_seconds: float = 60.0,
         http_client: httpx.Client | None = None,
+        max_retries: int = 3,
+        retry_base_delay_seconds: float = 1.0,
     ) -> None:
         if not api_key:
             raise EmbeddingProviderError("embedding api_key must be non-empty")
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if retry_base_delay_seconds < 0:
+            raise ValueError("retry_base_delay_seconds must be non-negative")
         self.provider = provider
         self.model_name = model_name
         self.provider_version = provider_version
@@ -105,6 +116,8 @@ class OpenAICompatibleEmbeddingProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._batch_size = batch_size
+        self._max_retries = max_retries
+        self._retry_base_delay_seconds = retry_base_delay_seconds
         self._http_client = http_client or httpx.Client(timeout=timeout_seconds)
 
     @property
@@ -135,36 +148,90 @@ class OpenAICompatibleEmbeddingProvider:
     def embed_texts(self, texts: Sequence[str]) -> tuple[EmbeddingVector, ...]:
         embeddings: list[EmbeddingVector] = []
         for batch in _batches(tuple(texts), self._batch_size):
-            embeddings.extend(self._embed_batch(batch))
+            embeddings.extend(self._embed_batch_with_adaptive_split(batch))
         return tuple(embeddings)
 
-    def _embed_batch(self, texts: tuple[str, ...]) -> tuple[EmbeddingVector, ...]:
-        response = self._http_client.post(
-            f"{self._base_url}/embeddings",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"model": self.model_name, "input": list(texts)},
-        )
+    def _embed_batch_with_adaptive_split(
+        self,
+        texts: tuple[str, ...],
+    ) -> tuple[EmbeddingVector, ...]:
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise EmbeddingProviderError(
-                f"embedding request failed: {exc.response.status_code} {exc.response.text}"
-            ) from exc
+            return self._embed_batch(texts)
+        except _RetryableEmbeddingProviderError:
+            if len(texts) <= 1:
+                raise
+            midpoint = len(texts) // 2
+            return self._embed_batch_with_adaptive_split(
+                texts[:midpoint]
+            ) + self._embed_batch_with_adaptive_split(texts[midpoint:])
 
-        payload = response.json()
-        data = payload.get("data")
-        if not isinstance(data, list):
-            raise EmbeddingProviderError("embedding response missing data list")
-        sorted_items = sorted(data, key=lambda item: int(item.get("index", 0)))
-        vectors = tuple(_embedding_vector(item, dimension=self.dimension) for item in sorted_items)
-        if len(vectors) != len(texts):
-            raise EmbeddingProviderError(
-                f"embedding response count mismatch: expected {len(texts)}, got {len(vectors)}"
+    def _embed_batch(self, texts: tuple[str, ...]) -> tuple[EmbeddingVector, ...]:
+        for attempt_index in range(self._max_retries + 1):
+            response = self._http_client.post(
+                f"{self._base_url}/embeddings",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"model": self.model_name, "input": list(texts)},
             )
-        return vectors
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if attempt_index < self._max_retries and _is_retryable_status(
+                    exc.response.status_code
+                ):
+                    self._sleep_before_retry(attempt_index, exc.response)
+                    continue
+                if _is_retryable_status(exc.response.status_code):
+                    raise _RetryableEmbeddingProviderError(
+                        f"embedding request failed: {exc.response.status_code} {exc.response.text}"
+                    ) from exc
+                raise EmbeddingProviderError(
+                    f"embedding request failed: {exc.response.status_code} {exc.response.text}"
+                ) from exc
+
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                if attempt_index < self._max_retries:
+                    self._sleep_before_retry(attempt_index, response)
+                    continue
+                raise _RetryableEmbeddingProviderError(
+                    f"embedding response invalid json: {_response_text_excerpt(response)}"
+                ) from exc
+
+            data = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(data, list):
+                if attempt_index < self._max_retries:
+                    self._sleep_before_retry(attempt_index, response)
+                    continue
+                raise _RetryableEmbeddingProviderError(
+                    f"embedding response missing data list: {_response_text_excerpt(response)}"
+                )
+            sorted_items = sorted(data, key=lambda item: int(item.get("index", 0)))
+            vectors = tuple(
+                _embedding_vector(item, dimension=self.dimension) for item in sorted_items
+            )
+            if len(vectors) != len(texts):
+                if attempt_index < self._max_retries:
+                    self._sleep_before_retry(attempt_index, response)
+                    continue
+                raise _RetryableEmbeddingProviderError(
+                    f"embedding response count mismatch: expected {len(texts)}, got {len(vectors)}"
+                )
+            return vectors
+
+        raise EmbeddingProviderError("embedding request retry loop exhausted")
+
+    def _sleep_before_retry(self, attempt_index: int, response: httpx.Response) -> None:
+        if self._retry_base_delay_seconds == 0:
+            return
+        retry_after = _retry_after_seconds(response)
+        delay = retry_after if retry_after is not None else self._retry_base_delay_seconds * (
+            2**attempt_index
+        )
+        time.sleep(delay)
 
 
 def tokenize_text(text: str) -> tuple[str, ...]:
@@ -191,6 +258,28 @@ def _embedding_vector(item: object, *, dimension: int) -> EmbeddingVector:
             f"embedding dimension mismatch: expected {dimension}, got {len(vector)}"
         )
     return vector
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code <= 599
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("retry-after")
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        return None
+    return max(0.0, seconds)
+
+
+def _response_text_excerpt(response: httpx.Response, *, limit: int = 500) -> str:
+    text = response.text.replace("\n", " ")
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."
 
 
 def _default_openai_embedding_dimension(model_name: str) -> int:

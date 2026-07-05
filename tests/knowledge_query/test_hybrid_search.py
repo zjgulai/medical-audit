@@ -2,7 +2,10 @@ from uuid import UUID, uuid4
 
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
-from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
+from medical_audit_kb.indexing.embeddings import (
+    DeterministicFakeEmbeddingProvider,
+    EmbeddingProviderError,
+)
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
     InMemoryVectorIndex,
@@ -165,6 +168,38 @@ def test_retrieval_filters_accept_multiple_metadata_values() -> None:
     assert not filters.matches({"region": ["海南"], "business_topic": "fund-supervision"})
 
 
+def test_hybrid_search_falls_back_to_bm25_when_embedding_provider_is_unavailable() -> None:
+    chunk_id = uuid4()
+    metadata = {
+        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+        "locator": {"type": "law-article"},
+        "index_version_key": "index-v1",
+        "source_package_version_key": "package-v1",
+    }
+    bm25_index = InMemoryBM25Index()
+    bm25_index.upsert(
+        [
+            BM25Document(
+                chunk_id=chunk_id,
+                text="医疗机构发现异常收费时，应优先核验证据链、项目编码和收费依据。",
+                metadata=metadata,
+            )
+        ]
+    )
+    engine = HybridSearchEngine(
+        embedding_provider=_FailingEmbeddingProvider(),
+        vector_index=InMemoryVectorIndex(dimension=32),
+        bm25_index=bm25_index,
+        rerank_provider=None,
+    )
+
+    results = engine.search("异常收费 证据链", top_k=1)
+
+    assert results[0].chunk.chunk_id == chunk_id
+    assert results[0].matched_by == ("bm25",)
+    assert results[0].vector_score == 0
+
+
 def _build_engine() -> tuple[HybridSearchEngine, dict[str, UUID]]:
     provider = DeterministicFakeEmbeddingProvider(dimension=32)
     ids = {
@@ -258,6 +293,16 @@ def _engine_from_chunks(
         rerank_provider=FakeRerankProvider() if rerank else None,
         source_collection_weights=source_collection_weights,
     )
+
+
+class _FailingEmbeddingProvider:
+    provider = "openai"
+    model_name = "kimi-for-coding"
+    provider_version = "v1"
+    dimension = 32
+
+    def embed_texts(self, texts: list[str]) -> tuple[tuple[float, ...], ...]:
+        raise EmbeddingProviderError("embedding provider quota exhausted")
 
 
 def _chunk_input(

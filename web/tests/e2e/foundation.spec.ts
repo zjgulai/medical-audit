@@ -11,6 +11,64 @@ async function mockJson(page: Page, url: string | RegExp, body: unknown, status 
 }
 
 async function mockCommonPortalBackend(page: Page) {
+  const sourceCatalogItems = [
+    {
+      source_collection: "medical-insurance-laws",
+      label: "法规政策",
+      scope: "公开知识库",
+      phase: "P6A-medical-current-library-completion",
+      domain: "medical",
+      evidence_group: "legal",
+      description: "医保、医疗、药品、基金监管相关法律政策。",
+      audit_hint: "用于判断制度依据和监管边界。",
+      access: "read",
+      product_queryable: true,
+      queryable: true,
+      metrics: { document_count: 612, chunk_count: null, character_count: null, linked_app_count: 1 }
+    },
+    {
+      source_collection: "supervision-rules-knowledge",
+      label: "监管两库",
+      scope: "系统知识库",
+      phase: "P6A-medical-current-library-completion",
+      domain: "medical",
+      evidence_group: "rule",
+      description: "智能监管规则库、知识库和知识点明细。",
+      audit_hint: "用于定位规则口径和疑点类型。",
+      access: "read",
+      product_queryable: true,
+      queryable: true,
+      metrics: { document_count: 12840, chunk_count: null, character_count: null, linked_app_count: 1 }
+    },
+    {
+      source_collection: "medical-insurance-catalog",
+      label: "医保目录",
+      scope: "系统知识库",
+      phase: "P6A-medical-current-library-completion",
+      domain: "medical",
+      evidence_group: "catalog",
+      description: "药品、诊疗项目、编码、支付范围和限制条件。",
+      audit_hint: "用于核验目录编码、剂型、支付限制。",
+      access: "read",
+      product_queryable: true,
+      queryable: true,
+      metrics: { document_count: 18266, chunk_count: null, character_count: null, linked_app_count: 1 }
+    },
+    {
+      source_collection: "risk-negative-list",
+      label: "风险清单",
+      scope: "系统知识库",
+      phase: "P6A-medical-current-library-completion",
+      domain: "medical",
+      evidence_group: "risk",
+      description: "高风险负面清单、案例和风险线索。",
+      audit_hint: "用于辅助排查异常模式。",
+      access: "read",
+      product_queryable: true,
+      queryable: true,
+      metrics: { document_count: 731, chunk_count: null, character_count: null, linked_app_count: 1 }
+    }
+  ];
   await mockJson(page, "**/api/backend/index/search-backend", {
     backend: "playwright-fixture",
     ready: true,
@@ -35,6 +93,32 @@ async function mockCommonPortalBackend(page: Page) {
     auth_mode: "header_transition_layer",
     profile: null,
     store: { ready: true, backend: "playwright-fixture" }
+  });
+  await mockJson(page, "**/api/v1/documents/source-collections", {
+    contract_version: "document-source-collections-v1",
+    role: "admin",
+    items: sourceCatalogItems,
+    search_backend: {
+      ready: true,
+      backend: "playwright-fixture",
+      details: {
+        provider_call: false,
+        database_write: false,
+        matching_embedding_count: 12
+      }
+    },
+    upload_permissions: {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: true,
+      can_govern_personal_uploads: true
+    },
+    boundaries: {
+      production_write: false,
+      provider_call: false,
+      database_write: false,
+      object_storage_write: false,
+      source: "runtime_state_and_registry_only"
+    }
   });
 }
 
@@ -235,6 +319,10 @@ async function mockDocumentWorkbench(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("medical-audit-authenticated", "authenticated");
+    window.localStorage.setItem("medical-audit-current-role", "admin");
+  });
   await mockCommonPortalBackend(page);
 });
 
@@ -277,7 +365,7 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   const chatLink = primaryNavigation.getByRole("link", { name: /审计助手/ });
   const topicLink = primaryNavigation.getByRole("link", { name: /基金合规/ });
 
-  await expect(page.getByText("医保智能审计平台")).toBeVisible();
+  await expect(page.getByText("医疗AI审计平台")).toBeVisible();
   await expect(page.getByTestId("auditscope-brand-logo")).toBeVisible();
   await expect(topicLink).toHaveAttribute("href", "/fund-compliance");
   const navigationBox = await primaryNavigation.boundingBox();
@@ -291,12 +379,12 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
   await expect(primaryNavigation.getByRole("link", { name: /文档依据/ })).toHaveAttribute("href", "/documents");
   await expect(primaryNavigation.getByRole("link", { name: /项目归档/ })).toHaveAttribute("href", "/archive");
   await expect(primaryNavigation.getByRole("link")).toHaveCount(5);
-  await page.getByText("更多功能").click();
-  await expect(page.getByRole("link", { name: /我的助手/ })).toHaveAttribute("href", "/agents");
+  await page.getByText("更多", { exact: true }).click();
   await expect(page.getByRole("link", { name: /助手库/ })).toHaveAttribute("href", "/agent-market");
   await expect(page.getByRole("link", { name: /依据库/ })).toHaveAttribute("href", "/knowledge-base");
   await expect(page.getByRole("link", { name: /数据分析/ })).toHaveAttribute("href", "/analytics");
-  await page.getByText("全部功能").click();
+  await page.getByText("全部", { exact: true }).click();
+  await expect(page.getByRole("link", { name: /我的助手/ })).toHaveAttribute("href", "/agents");
   await expect(page.getByRole("link", { name: /关系图谱/ })).toHaveAttribute("href", "/graph");
   await expect(page.getByRole("link", { name: "底稿生成" })).toHaveAttribute("href", "/reports");
   await expect(page.getByRole("link", { name: /项目空间/ })).toHaveAttribute("href", "/projects");
@@ -306,16 +394,16 @@ test("AI audit portal foundation renders navigation and core modules", async ({ 
 test("fund compliance topic opens a separate review workbench", async ({ page }) => {
   await page.goto("/fund-compliance");
 
-  await expect(page.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeVisible();
-  await expect(page.getByRole("main").getByText("医保智能审计平台")).toBeVisible();
-  await expect(page.getByText("2025 年 Q4 住院部专项审计")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "基金合规自查" })).toBeVisible();
+  await expect(page.getByRole("main").getByText("医疗AI审计平台")).toBeVisible();
+  await expect(page.getByText("Q4 住院部专项")).toBeVisible();
   await expect(page.getByRole("heading", { name: "审计口径" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入专题工作台" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "进入审查" })).toHaveAttribute(
     "href",
     "/fund-compliance/review"
   );
 
-  await page.getByRole("link", { name: "进入专题工作台" }).click();
+  await page.getByRole("link", { name: "进入审查" }).click();
   await expect(page).toHaveURL(/\/fund-compliance\/review$/);
   await expect(page.getByRole("heading", { name: "专题审计工作台" })).toBeVisible();
   await page.getByRole("tab", { name: "费用表单" }).click();
@@ -336,8 +424,9 @@ test("fund compliance topic opens a separate review workbench", async ({ page })
 test("Next-native audit chat portal is reachable", async ({ page }) => {
   await page.goto("/chat");
 
-  await expect(page.getByRole("heading", { name: "审计问答" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "进入对话" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI 问答" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "插入 @ 当前助手" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "提交问题" })).toBeVisible();
   await expect(page.getByRole("link", { name: "先检索文档" })).toHaveAttribute("href", "/documents");
 });
 
@@ -412,21 +501,21 @@ test("agent marketplace filters templates and agents enter portal chat", async (
   await page.goto("/agent-market");
 
   await expect(page.getByRole("heading", { name: "审计助手库" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /^全部132$/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^全部169$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /出国差旅核验/ }).first()).toBeVisible();
 
-  await page.getByRole("tab", { name: /^工具智能体10$/ }).click();
+  await page.getByRole("tab", { name: /^工具智能体11$/ }).click();
   await expect(page.getByRole("button", { name: /质量检查核验/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /出国差旅核验/ })).toHaveCount(0);
 
-  await page.getByRole("tab", { name: /^全部132$/ }).click();
+  await page.getByRole("tab", { name: /^全部169$/ }).click();
   await page.getByLabel("搜索审计助手").fill("合同要素");
   await expect(page.getByRole("button", { name: /合同风险核验/ }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /会议费用核验/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: /合同风险核验/ }).first().click();
   await expect(page.getByRole("dialog", { name: "合同风险核验" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "用此助手提问" })).toHaveAttribute("href", /\/chat\?agent=/);
+  await expect(page.getByRole("link", { name: "带问题去对话" })).toHaveAttribute("href", /\/chat\?question=/);
 
   await page.goto("/agents");
   await expect(page.locator("main").getByText("医保基金使用合规专项自查").first()).toBeVisible();

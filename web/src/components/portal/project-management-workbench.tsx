@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import { StatusPill } from "@/components/ui/status-pill";
-import { createProjectMember, fetchProjectMembers, fetchProjects } from "@/lib/api-client";
-import type { ProjectMemberApiItem, ProjectSummaryApiItem } from "@/lib/api-types";
+import { createProjectMember, fetchAuditFindings, fetchProjectMembers, fetchProjects } from "@/lib/api-client";
+import type { AuditFinding, AuditFindingsResponse, ProjectMemberApiItem, ProjectSummaryApiItem } from "@/lib/api-types";
 import {
   defaultProjectMembers,
   hospitalPermissionRoles,
@@ -23,6 +23,9 @@ const projectStatusTone: Record<PortalProjectSummary["status"], "neutral" | "war
   已归档: "neutral"
 };
 type StoreStatus = "loading" | "ready" | "fallback" | "saving";
+type FindingStoreStatus = "loading" | "ready" | "fallback";
+
+const unassignedOwner = "未分配";
 
 export function ProjectManagementWorkbench() {
   const auditUser = useAuditUser();
@@ -37,6 +40,8 @@ export function ProjectManagementWorkbench() {
   const [department, setDepartment] = useState("内审部");
   const [projectStoreStatus, setProjectStoreStatus] = useState<StoreStatus>("loading");
   const [memberStoreStatus, setMemberStoreStatus] = useState<StoreStatus>("loading");
+  const [findingStoreStatus, setFindingStoreStatus] = useState<FindingStoreStatus>("loading");
+  const [findingResponse, setFindingResponse] = useState<AuditFindingsResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const normalizedProjectQuery = projectQuery.trim().toLowerCase();
   const filteredProjects = projects.filter((item) => {
@@ -54,6 +59,7 @@ export function ProjectManagementWorkbench() {
   const canManageProjectMembers = auditUser.can("manage_project_members");
   const activeProjectCount = projects.filter((item) => item.status === "进行中").length;
   const pendingProjectCount = projects.filter((item) => item.status === "待启动").length;
+  const cockpit = buildAuditCockpit(findingResponse, members);
 
   useEffect(() => {
     let isMounted = true;
@@ -108,6 +114,31 @@ export function ProjectManagementWorkbench() {
       isMounted = false;
     };
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setFindingStoreStatus("loading");
+
+    fetchAuditFindings()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        setFindingResponse(response);
+        setFindingStoreStatus(response.store.ready ? "ready" : "fallback");
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setFindingResponse(null);
+        setFindingStoreStatus("fallback");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -270,6 +301,46 @@ export function ProjectManagementWorkbench() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div className="audit-panel min-w-0 p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="audit-kicker">审计驾驶舱</p>
+              <h2 className="audit-section-title mt-2">专题审计看板</h2>
+              <p className="audit-copy mt-2">面向当前审计专题，汇总疑点总量、复核状态和人员承接情况。</p>
+            </div>
+            <StatusPill tone={findingStoreStatus === "ready" ? "success" : "neutral"}>
+              {findingStoreStatus === "ready" ? "疑点已同步" : findingStoreStatus === "loading" ? "疑点同步中" : "默认统计"}
+            </StatusPill>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <CockpitMetric icon="Σ" label="总审计条数" value={String(cockpit.total)} detail="疑点与审计记录" />
+            <CockpitMetric icon="○" label="待复核" value={String(cockpit.pendingReview)} detail="需要人工判断" />
+            <CockpitMetric icon="✓" label="已关联任务" value={String(cockpit.linkedReviewTask)} detail="进入复核闭环" />
+            <CockpitMetric icon="!" label="未分配" value={String(cockpit.unassigned)} detail="待绑定负责人" />
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <section className="rounded-[var(--audit-radius-lg)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-4">
+              <h3 className="audit-card-title">状态分布</h3>
+              <div className="mt-3 grid gap-2">
+                {cockpit.statusRows.map((row) => (
+                  <StatusDistributionRow key={row.status} row={row} total={Math.max(cockpit.total, 1)} />
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[var(--audit-radius-lg)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-4">
+              <h3 className="audit-card-title">人员承接</h3>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {cockpit.memberRows.map((row) => (
+                  <MemberWorkloadCard key={row.name} row={row} />
+                ))}
+              </div>
+            </section>
           </div>
         </div>
 
@@ -480,6 +551,125 @@ function memberStoreStatusLabel(status: StoreStatus): string {
     return "成员同步中";
   }
   return "默认成员";
+}
+
+function findingOwner(finding: AuditFinding): string {
+  const candidateKeys = ["owner", "assignee", "auditor", "reviewer", "employee", "handler"];
+  for (const key of candidateKeys) {
+    const value = finding.metadata[key] ?? finding.calculation_trace[key] ?? finding.source_record_locator[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return unassignedOwner;
+}
+
+function statusLabel(response: AuditFindingsResponse | null, status: string): string {
+  return response?.review_status_options[status] ?? status;
+}
+
+function buildAuditCockpit(response: AuditFindingsResponse | null, members: readonly PortalProjectMember[]) {
+  const findings = response?.items ?? [];
+  const statusCounts = new Map<string, number>();
+  const memberCounts = new Map<string, { total: number; pending: number }>();
+  for (const member of members) {
+    memberCounts.set(member.name, { total: 0, pending: 0 });
+  }
+  for (const finding of findings) {
+    statusCounts.set(finding.review_status, (statusCounts.get(finding.review_status) ?? 0) + 1);
+    const owner = findingOwner(finding);
+    const current = memberCounts.get(owner) ?? { total: 0, pending: 0 };
+    current.total += 1;
+    if (finding.review_status === "pending-review" || finding.review_status === "needs-evidence") {
+      current.pending += 1;
+    }
+    memberCounts.set(owner, current);
+  }
+  const stats = response?.stats;
+  const total = stats?.total ?? findings.length;
+  const statusRows = Array.from(statusCounts.entries())
+    .map(([status, count]) => ({ status, label: statusLabel(response, status), count }))
+    .sort((a, b) => b.count - a.count);
+  const memberRows = Array.from(memberCounts.entries())
+    .map(([name, count]) => ({ name, ...count }))
+    .filter((row) => row.total > 0 || row.name !== unassignedOwner)
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "zh-CN"))
+    .slice(0, 8);
+  return {
+    total,
+    pendingReview: stats?.pending_review ?? (statusCounts.get("pending-review") ?? 0),
+    linkedReviewTask: stats?.linked_review_task ?? findings.filter((item) => item.review_task_id).length,
+    unassigned: memberCounts.get(unassignedOwner)?.total ?? 0,
+    statusRows: statusRows.length > 0 ? statusRows : [{ status: "empty", label: "暂无疑点", count: 0 }],
+    memberRows: memberRows.length > 0 ? memberRows : [{ name: "暂无承接人", total: 0, pending: 0 }]
+  };
+}
+
+function CockpitMetric({
+  icon,
+  label,
+  value,
+  detail
+}: {
+  readonly icon: string;
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+}) {
+  return (
+    <article className="rounded-[var(--audit-radius-lg)] border border-[var(--audit-line)] bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="audit-meta font-semibold">{label}</p>
+          <p className="audit-metric-value mt-1">{value}</p>
+        </div>
+        <span className="grid size-9 place-items-center rounded-full bg-[var(--audit-primary-soft)] text-sm font-semibold text-[var(--audit-primary)]">
+          {icon}
+        </span>
+      </div>
+      <p className="audit-meta mt-2">{detail}</p>
+    </article>
+  );
+}
+
+function StatusDistributionRow({
+  row,
+  total
+}: {
+  readonly row: { readonly status: string; readonly label: string; readonly count: number };
+  readonly total: number;
+}) {
+  const ratio = Math.round((row.count / total) * 100);
+  return (
+    <div className="rounded-[var(--audit-radius-md)] bg-white px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-[var(--audit-ink)]">{row.label}</span>
+        <span className="audit-meta">{row.count} 条</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--audit-surface-subtle)]">
+        <span className="block h-full rounded-full bg-[var(--audit-primary)]" style={{ width: `${ratio}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function MemberWorkloadCard({
+  row
+}: {
+  readonly row: { readonly name: string; readonly total: number; readonly pending: number };
+}) {
+  return (
+    <article className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line-soft)] bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">{row.name}</p>
+        <StatusPill tone={row.pending > 0 ? "warning" : "success"}>{row.pending > 0 ? "待处理" : "平稳"}</StatusPill>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <SidebarMetric label="审计条数" value={String(row.total)} />
+        <SidebarMetric label="待处理" value={String(row.pending)} />
+      </div>
+    </article>
+  );
 }
 
 function SidebarMetric({ label, value }: { readonly label: string; readonly value: string }) {

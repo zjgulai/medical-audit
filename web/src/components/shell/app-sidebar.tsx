@@ -106,7 +106,7 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
             <BrandLogo priority />
           </div>
           <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
-            <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">医保智能审计平台</p>
+            <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">医疗AI审计平台</p>
             <p className="audit-meta">基金合规审计</p>
           </div>
         </div>

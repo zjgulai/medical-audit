@@ -47,7 +47,7 @@ body {
   color: var(--audit-ink);
   font-family: var(--audit-font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.62;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -70,13 +70,13 @@ select {
 
 .audit-page-grid {
   display: grid;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .audit-workbench-main {
   width: 100%;
   min-width: 0;
-  max-width: min(72rem, 100%);
+  max-width: min(76rem, 100%);
   overflow-x: hidden;
 }
 
@@ -125,17 +125,17 @@ select {
 .audit-kicker {
   font-size: 0.8125rem;
   font-weight: 650;
-  line-height: 1.25rem;
+  line-height: 1.35rem;
   color: var(--audit-primary);
 }
 
 .audit-page-title {
-  margin-top: 0.5rem;
+  margin-top: 0.625rem;
   color: var(--audit-ink);
-  font-size: 1.5rem;
+  font-size: 1.625rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 2rem;
+  line-height: 2.25rem;
   text-wrap: balance;
 }
 
@@ -144,7 +144,7 @@ select {
   font-size: 1.125rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 1.75rem;
+  line-height: 1.875rem;
   text-wrap: balance;
 }
 
@@ -153,7 +153,7 @@ select {
   font-size: 0.9375rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 1.375rem;
+  line-height: 1.5rem;
 }
 
 .audit-compact-title {
@@ -161,26 +161,26 @@ select {
   font-size: 0.875rem;
   font-weight: 650;
   letter-spacing: 0;
-  line-height: 1.375rem;
+  line-height: 1.5rem;
 }
 
 .audit-copy {
   color: var(--audit-ink-muted);
   font-size: 0.875rem;
-  line-height: 1.5rem;
+  line-height: 1.65rem;
 }
 
 .audit-meta {
   color: var(--audit-ink-subtle);
   font-size: 0.75rem;
-  line-height: 1.125rem;
+  line-height: 1.25rem;
 }
 
 .audit-label {
   color: var(--audit-ink-muted);
   font-size: 0.875rem;
   font-weight: 650;
-  line-height: 1.25rem;
+  line-height: 1.375rem;
 }
 
 .audit-metric-value {
@@ -208,7 +208,7 @@ select {
   background: #ffffff;
   color: var(--audit-ink);
   font-size: 0.875rem;
-  line-height: 1.25rem;
+  line-height: 1.375rem;
 }
 
 .audit-input::placeholder {
@@ -217,14 +217,14 @@ select {
 
 .audit-btn {
   display: inline-flex;
-  min-height: 2.5rem;
+  min-height: 2.625rem;
   align-items: center;
   justify-content: center;
   border-radius: var(--audit-radius-md);
-  padding: 0.5rem 0.875rem;
+  padding: 0.5625rem 1rem;
   font-size: 0.875rem;
   font-weight: 650;
-  line-height: 1.25rem;
+  line-height: 1.375rem;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
@@ -294,12 +294,12 @@ select {
 }
 
 .audit-table th {
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
   font-weight: 650;
 }
 
 .audit-table td {
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
 }
 
 .audit-table tbody {
@@ -318,9 +318,9 @@ select {
   border-radius: 999px;
   background: var(--audit-surface-muted);
   color: var(--audit-ink-muted);
-  padding: 0.25rem 0.625rem;
+  padding: 0.3125rem 0.6875rem;
   font-size: 0.75rem;
-  line-height: 1rem;
+  line-height: 1.125rem;
 }
 
 .audit-chip-info {

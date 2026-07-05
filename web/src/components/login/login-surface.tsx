@@ -54,7 +54,7 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
                 <BrandLogo priority />
               </span>
               <span>
-                <span className="block text-sm font-semibold">医保智能审计平台</span>
+                <span className="block text-sm font-semibold">医疗AI审计平台</span>
                 <span className="block text-xs text-white/72">AuditScope Medical</span>
               </span>
             </div>

@@ -14,6 +14,20 @@ import type {
 import { graphNodes, graphRelations } from "@/lib/portal-data";
 
 const graphNodeKindOrder: readonly GraphWorkbenchNodeKind[] = ["项目", "知识库", "文档", "规则", "疑点", "复核", "报告", "整改"];
+const graphSolutionSteps = [
+  {
+    title: "复用现有库表",
+    detail: "以 source_documents、document_chunks、query_logs、audit_findings 和 review_tasks 生成关系，不新增图数据库。"
+  },
+  {
+    title: "后端只读聚合",
+    detail: "继续使用 /api/v1/graph/workbench 输出节点与关系，先服务展示和追溯，不做在线写图。"
+  },
+  {
+    title: "逐步补强关系",
+    detail: "先覆盖知识库到文档、规则到疑点、疑点到复核，后续再补相似文档和概念归并。"
+  }
+] as const;
 
 const staticGraphWorkbench: GraphWorkbenchResponse = {
   format: "graph-workbench-v1",
@@ -141,6 +155,30 @@ export default function GraphPage() {
               <p className="audit-meta font-semibold">{item.kind}</p>
               <p className="audit-metric-value-sm mt-1">{item.count}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="audit-panel p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="audit-kicker">技术方案</p>
+            <h2 className="audit-section-title mt-2">最小知识图谱方案</h2>
+            <p className="audit-copy mt-2 max-w-3xl">
+              第一阶段把知识图谱作为知识库上的只读关系视图：复用现有检索、疑点和复核数据，避免新增图数据库和双写链路。
+            </p>
+          </div>
+          <StatusPill tone="info">代码最小</StatusPill>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {graphSolutionSteps.map((step, index) => (
+            <article key={step.title} className="rounded-[var(--audit-radius-lg)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-4">
+              <span className="grid size-8 place-items-center rounded-full bg-white text-sm font-semibold text-[var(--audit-primary)]">
+                {index + 1}
+              </span>
+              <h3 className="audit-card-title mt-3">{step.title}</h3>
+              <p className="audit-copy mt-2">{step.detail}</p>
+            </article>
           ))}
         </div>
       </section>

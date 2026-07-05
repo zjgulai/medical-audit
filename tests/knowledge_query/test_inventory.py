@@ -94,6 +94,12 @@ def test_collection_mapping_and_medical_law_keyword_filter() -> None:
     assert classify_source_collection(Path("医保目录/catalog.pdf")) == (
         SourceCollection.MEDICAL_INSURANCE_CATALOG
     )
+    assert classify_source_collection(Path("management-general-admin/全量法律/行政管理.md")) == (
+        SourceCollection.MANAGEMENT_GENERAL_ADMIN
+    )
+    assert classify_source_collection(Path("other-agriculture-water/全量法律/水利条例.md")) == (
+        SourceCollection.OTHER_AGRICULTURE_WATER
+    )
     assert classify_source_collection(Path("全量法律/医疗机构管理条例.md")) == (
         SourceCollection.MEDICAL_INSURANCE_LAWS
     )
@@ -118,6 +124,14 @@ def test_classify_domain_taxonomy() -> None:
     assert classify_domain("中华人民共和国统计法.md", laws) == "统计"
     assert classify_domain("养犬管理条例.md", laws) == "其他"
     assert classify_domain("餐厨垃圾管理办法.md", laws) == "其他"
+    assert (
+        classify_domain("城市管理条例.md", SourceCollection.MANAGEMENT_GENERAL_ADMIN)
+        == "综合行政管理"
+    )
+    assert (
+        classify_domain("水利条例.md", SourceCollection.OTHER_AGRICULTURE_WATER)
+        == "农业农村与水利"
+    )
 
 
 def _write_text(path: Path, content: str) -> Path:

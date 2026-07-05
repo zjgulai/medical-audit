@@ -2,10 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchDocumentPermissions, fetchSearchBackendStatus } from "@/lib/api-client";
+import {
+  fetchDocumentPermissions,
+  fetchDocumentSourceCollections,
+  fetchSearchBackendStatus
+} from "@/lib/api-client";
 import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
 import { StatusPill } from "@/components/ui/status-pill";
 import type {
+  DocumentSourceCollectionCatalogResponse,
   DocumentPermissionsResponse,
   SearchBackendStatusResponse
 } from "@/lib/api-types";
@@ -16,6 +21,8 @@ type LoadStatus = "loading" | "ready" | "error";
 export default function KnowledgeBasePage() {
   const [permissions, setPermissions] = useState<DocumentPermissionsResponse | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<LoadStatus>("loading");
+  const [sourceCatalog, setSourceCatalog] = useState<DocumentSourceCollectionCatalogResponse | null>(null);
+  const [sourceCatalogStatus, setSourceCatalogStatus] = useState<LoadStatus>("loading");
   const [backend, setBackend] = useState<SearchBackendStatusResponse | null>(null);
   const [backendStatus, setBackendStatus] = useState<LoadStatus>("loading");
 
@@ -32,6 +39,19 @@ export default function KnowledgeBasePage() {
       .catch(() => {
         if (!cancelled) {
           setPermissionStatus("error");
+        }
+      });
+
+    fetchDocumentSourceCollections()
+      .then((result) => {
+        if (!cancelled) {
+          setSourceCatalog(result);
+          setSourceCatalogStatus("ready");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSourceCatalogStatus("error");
         }
       });
 
@@ -53,8 +73,11 @@ export default function KnowledgeBasePage() {
     };
   }, []);
 
-  const sourceCollections = permissions?.source_collections ?? [];
-  const matchingEmbeddingCount = backend?.details?.matching_embedding_count;
+  const sourceCollections = sourceCatalog?.items ?? permissions?.source_collections ?? [];
+  const sourceCollectionStatus = sourceCatalogStatus === "ready" ? sourceCatalogStatus : permissionStatus;
+  const matchingEmbeddingCount =
+    numericDetail(sourceCatalog?.search_backend.details.matching_embedding_count) ??
+    numericDetail(backend?.details?.matching_embedding_count);
 
   return (
     <main className="mx-auto max-w-6xl space-y-4">
@@ -71,18 +94,30 @@ export default function KnowledgeBasePage() {
         <div className="mt-5 grid gap-2 sm:grid-cols-3">
           <Metric
             label="检索服务"
-            value={backendStatus === "ready" && backend ? backend.backend : backendStatus === "error" ? "异常" : "检测中"}
+            value={
+              sourceCatalogStatus === "ready" && sourceCatalog
+                ? sourceCatalog.search_backend.backend
+                : backendStatus === "ready" && backend
+                  ? backend.backend
+                  : backendStatus === "error"
+                    ? "异常"
+                    : "检测中"
+            }
           />
           <Metric
             label="索引就绪"
             value={
-              backendStatus === "ready" && backend
-                ? backend.ready
+              sourceCatalogStatus === "ready" && sourceCatalog
+                ? sourceCatalog.search_backend.ready
                   ? "就绪"
                   : "待初始化"
-                : backendStatus === "error"
-                  ? "异常"
-                  : "检测中"
+                : backendStatus === "ready" && backend
+                  ? backend.ready
+                    ? "就绪"
+                    : "待初始化"
+                  : backendStatus === "error"
+                    ? "异常"
+                    : "检测中"
             }
           />
           <Metric
@@ -95,23 +130,23 @@ export default function KnowledgeBasePage() {
       <section className="audit-panel p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="audit-section-title">可用来源</h2>
-          <StatusPill tone={permissionStatus === "error" ? "warning" : "neutral"}>
-            {permissionStatus === "ready"
+          <StatusPill tone={sourceCollectionStatus === "error" ? "warning" : "neutral"}>
+            {sourceCollectionStatus === "ready"
               ? `${sourceCollections.length} 个来源`
-              : permissionStatus === "error"
+              : sourceCollectionStatus === "error"
                 ? "加载失败"
                 : "加载中"}
           </StatusPill>
         </div>
 
-        {permissionStatus === "loading" && <p className="audit-copy mt-4">正在读取来源集合…</p>}
-        {permissionStatus === "error" && (
+        {sourceCollectionStatus === "loading" && <p className="audit-copy mt-4">正在读取来源集合…</p>}
+        {sourceCollectionStatus === "error" && (
           <p className="audit-copy mt-4 text-amber-700">无法读取来源集合权限，请登录后刷新。</p>
         )}
-        {permissionStatus === "ready" && sourceCollections.length === 0 && (
+        {sourceCollectionStatus === "ready" && sourceCollections.length === 0 && (
           <p className="audit-copy mt-4">当前角色暂无可读来源。</p>
         )}
-        {permissionStatus === "ready" && sourceCollections.length > 0 && (
+        {sourceCollectionStatus === "ready" && sourceCollections.length > 0 && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {sourceCollections.map((item) => (
               <article key={item.source_collection} className="audit-panel-muted min-w-0 p-3">
@@ -177,4 +212,8 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
       <span className="text-sm font-semibold text-[var(--audit-ink)]">{value}</span>
     </div>
   );
+}
+
+function numericDetail(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
 }
