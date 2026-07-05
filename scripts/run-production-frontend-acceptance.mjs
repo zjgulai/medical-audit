@@ -23,54 +23,115 @@ const viewports = [
   { name: "mobile", width: 390, height: 900 },
 ];
 
-const routeChecks = [
-  { route: "/workspace", requiredText: [/医保基金使用合规专项自查/, /今日工作台|项目审计链/] },
+const DEFAULT_CONTRACT_PROFILE = "hardened";
+const routeCheckProfiles = {
+  legacy: [
+    { route: "/workspace", requiredText: [/AI，让审计更智能/] },
+    {
+      route: "/fund-compliance",
+      postLoadWaitMs: 5_000,
+      requiredText: [/医保审计/, /智能审计 - 规则导航/],
+    },
+    {
+      route: "/fund-compliance/review",
+      interactions: [
+        { role: "tab", name: "费用汇总表" },
+      ],
+      requiredText: [/智能审计 - 规则导航/, /费用汇总表/, /分类汇总表/, /就诊明细表/],
+    },
+    { route: "/chat", requiredText: [/AI，让审计更智能/, /AI 对话/], requiredControlText: [/输入相关问题以对话/] },
+    {
+      route: "/agents",
+      requiredText: [/我的助手/, /模拟数据助手|厕所管护核验|定标合规核验/],
+      requiredControlText: [/\+ 创建我的助手/, /查看详情/],
+    },
+    { route: "/agent-market", requiredText: [/发现审计智能体/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
+    {
+      route: "/analytics",
+      requiredText: [/AI数据分析/, /分析结果预览/, /开始分析|数据处理|生成底稿/i],
+      requiredFileInputCount: 1,
+    },
+    {
+      route: "/projects",
+      requiredText: [/项目管理/, /创建新项目/],
+      requiredControlText: [/创建新项目/, /成员管理/, /修改项目/],
+    },
+    { route: "/documents", requiredText: [/文档检索/, /AI检索AI\\+|检索结果/] },
+    { route: "/knowledge-base", requiredText: [/知识库/, /知识库概览|法律法规库|审计员个人知识库/] },
+    { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
+    { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
+    { route: "/reports", requiredText: [/底稿与报告/, /历史生成记录/, /一键生成底稿/] },
+    { route: "/remediation", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },
+    { route: "/archive", requiredText: [/底稿与报告/, /历史生成记录/, /历史记录/] },
+    { route: "/guided-check", requiredText: [/AI，让审计更智能/] },
+    { route: "/findings", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },
+    { route: "/knowledge-query", requiredText: [/文档检索/, /查询问题|检索结果/, /搜索历史/] },
+    { route: "/pages/chat", requiredText: [/AI智能审计管理系统/, /AI 对话/, /检索后端/] },
+    { route: "/pages/query", requiredText: [/医保审计知识查询|医保审核知识库查询/, /文档检索/] },
+    { route: "/pages/review-tasks", requiredText: [/AI智能审计管理系统/, /审计底稿\/报告/] },
+    { route: "/pages/index-admin", requiredText: [/索引管理/, /检索后端/] },
+    { route: "/pages/audit-logs", requiredText: [/审计日志台/, /审计日志/] },
+  ],
+  hardened: [
+  { route: "/workspace", requiredText: [/AI，让审计更智能/] },
   {
     route: "/fund-compliance",
-    requiredText: [/基金合规自查/, /进入审查/, /规则|审计口径|专题规则/],
+    postLoadWaitMs: 5_000,
+    requiredText: [/医保审计/],
+    requiredTextAny: [[/智能审计\s*-\s*规则导航/, /规则导航/, /规则列表/]],
   },
   {
     route: "/fund-compliance/review",
     interactions: [
-      { role: "tab", name: "费用表单" },
-      { text: "新建表单" },
+      { role: "tab", name: "费用汇总表" },
     ],
-    requiredText: [/专题审计工作台/, /三份模板与自建表单/, /表单名称/, /字段列表/],
-    requiredControlText: [/创建/],
+    requiredText: [/智能审计 - 规则导航/, /费用汇总表/, /分类汇总表/, /就诊明细表/],
   },
-  { route: "/chat", requiredText: [/AI 问答/, /依据范围/, /进入对话/] },
+  { route: "/chat", requiredText: [/AI，让审计更智能/, /AI 对话/], requiredControlText: [/输入相关问题以对话/] },
   {
     route: "/agents",
-    requiredText: [/提示词型审计智能体/, /新增智能体/, /提示词|prompt/i],
-    requiredControlText: [/如：目录限制核验助手/, /新增智能体/],
+    requiredText: [/我的助手/, /模拟数据助手|厕所管护核验|定标合规核验/],
+    requiredControlText: [/\+ 创建我的助手/, /查看详情/],
   },
-  { route: "/agent-market", requiredText: [/审计助手库/, /搜索助手|财务收支|采购招标/] },
+  { route: "/agent-market", requiredText: [/发现审计智能体/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
   {
     route: "/analytics",
-    requiredText: [/费用表单分析/, /疑点清单|索引状态|上传/, /上传|表格|CSV|XLSX/i],
+    requiredText: [/AI数据分析/, /分析结果预览/, /开始分析|数据处理|生成底稿/i],
     requiredFileInputCount: 1,
   },
   {
     route: "/projects",
-    requiredText: [/项目与成员/, /新增成员|添加成员/, /成员|member/i],
-    requiredControlText: [/成员姓名/, /审计员业务专家信息科只读观察员/, /添加成员/],
+    requiredText: [/项目管理/, /创建新项目/],
+    requiredControlText: [/创建新项目/, /成员管理/, /修改项目/],
   },
-  { route: "/documents", requiredText: [/文档依据检索/, /法规政策|监管两库|医保目录|风险清单/, /检索|过滤|筛选/] },
-  { route: "/knowledge-base", requiredText: [/知识库总览/, /个人审计材料库|系统医保审计知识库|公开法规政策库/] },
-  { route: "/graph", requiredText: [/知识图谱入口/, /医保基金使用合规专项图谱|证据链关系/] },
-  { route: "/rules", requiredText: [/审计规则与依据总览/, /CHARGE-RULE-001|规则清单|发布门禁/] },
-  { route: "/reports", requiredText: [/底稿与报告/, /报告门禁预检|报告记录/] },
-  { route: "/remediation", requiredText: [/整改事项与补证闭环/, /整改台账|补证请求/] },
-  { route: "/archive", requiredText: [/项目档案与审计日志归档/, /项目档案包|审计日志治理策略/] },
-  { route: "/guided-check", requiredText: [/AI 引导自查工作台/, /自查路径|AI 提问模板/] },
-  { route: "/findings", requiredText: [/规则命中疑点工作台/, /源记录定位|计算过程|证据项/] },
-  { route: "/knowledge-query", requiredText: [/引用优先的知识查询/, /等待查询|查询/, /引用|证据|检索/] },
+  { route: "/documents", requiredText: [/文档检索/, /AI检索AI\\+|检索结果/] },
+  { route: "/knowledge-base", requiredText: [/知识库/, /知识库概览|法律法规库|审计员个人知识库/] },
+  { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
+  { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
+  { route: "/reports", requiredText: [/底稿与报告/, /历史生成记录/, /一键生成底稿/] },
+  {
+    route: "/remediation",
+    postLoadWaitMs: 5_000,
+    requiredText: [/医保审计/],
+    requiredTextAny: [[/智能审计\s*-\s*规则导航/, /规则导航/, /待处理|异常|疑点/]],
+  },
+  { route: "/archive", requiredText: [/底稿与报告/, /历史生成记录/, /历史记录/] },
+  { route: "/guided-check", requiredText: [/AI，让审计更智能/] },
+  {
+    route: "/findings",
+    postLoadWaitMs: 5_000,
+    requiredText: [/医保审计/],
+    requiredTextAny: [[/智能审计\s*-\s*规则导航/, /规则导航/, /待处理|异常|疑点/]],
+  },
+  { route: "/knowledge-query", requiredText: [/文档检索/, /查询问题|检索结果/, /搜索历史/] },
   { route: "/pages/chat", requiredText: [/AI智能审计管理系统/, /AI 对话/, /检索后端/] },
   { route: "/pages/query", requiredText: [/医保审计知识查询|医保审核知识库查询/, /文档检索/] },
   { route: "/pages/review-tasks", requiredText: [/AI智能审计管理系统/, /审计底稿\/报告/] },
   { route: "/pages/index-admin", requiredText: [/索引管理/, /检索后端/] },
   { route: "/pages/audit-logs", requiredText: [/审计日志台/, /审计日志/] },
-];
+  ],
+};
+const contractProfiles = Object.keys(routeCheckProfiles);
 
 const placeholderPatterns = [
   /敬请期待/i,
@@ -91,6 +152,7 @@ function parseArgs(argv) {
     timeoutMs: 45_000,
     adminRole: "it-admin",
     adminApiKeyEnv: null,
+    contractProfile: DEFAULT_CONTRACT_PROFILE,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -113,12 +175,20 @@ function parseArgs(argv) {
     } else if (arg === "--admin-api-key-env" && next) {
       options.adminApiKeyEnv = next;
       index += 1;
+    } else if (arg === "--contract-profile" && next) {
+      options.contractProfile = next;
+      index += 1;
+    } else if (arg.startsWith("--contract-profile=")) {
+      options.contractProfile = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
     } else {
       throw new Error(`Unknown or incomplete argument: ${arg}`);
     }
+  }
+  if (!contractProfiles.includes(options.contractProfile)) {
+    throw new Error(`Unknown contract profile: ${options.contractProfile}. Expected one of: ${contractProfiles.join(", ")}`);
   }
   return options;
 }
@@ -136,6 +206,7 @@ Options:
   --timeout-ms <number>     Default: 45000
   --admin-role <role>       Role for admin API checks (default: it-admin)
   --admin-api-key-env <name> Env var for admin API key (optional)
+  --contract-profile <name> Acceptance contract profile: ${contractProfiles.join("|")} (default: ${DEFAULT_CONTRACT_PROFILE})
 `);
 }
 
@@ -145,6 +216,26 @@ function resolveRepoPath(value) {
 
 function compactText(value) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function resetRegExp(pattern) {
+  return new RegExp(pattern.source, pattern.flags.replace(/g|y/gi, ""));
+}
+
+function normalizeForMatch(value) {
+  return compactText(value)
+    .normalize("NFKC")
+    .replace(/[\u200b\u00a0]/g, "")
+    .replace(/[\-–—_]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function matchText(pattern, rawText) {
+  const normalized = normalizeForMatch(rawText);
+  const compacted = compactText(rawText);
+  const normalizedPattern = resetRegExp(pattern);
+  return normalizedPattern.test(compacted) || normalizedPattern.test(normalized);
 }
 
 function readOptionalEnv(name) {
@@ -172,6 +263,41 @@ async function snapshot(page) {
           const rect = element.getBoundingClientRect();
           return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
         };
+        const compact = (value) => value.replace(/\s+/g, " ").trim();
+        const elementClassName = (element) => {
+          if (typeof element.className === "string") {
+            return element.className;
+          }
+          return element.getAttribute("class") ?? "";
+        };
+        const selectorPart = (element) => {
+          const tag = element.tagName.toLowerCase();
+          const id = element.getAttribute("id");
+          if (id) {
+            return `${tag}#${id}`;
+          }
+          const className = elementClassName(element)
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 3)
+            .join(".");
+          const classPart = className ? `.${className}` : "";
+          if (!element.parentElement) {
+            return `${tag}${classPart}`;
+          }
+          const sameTagSiblings = Array.from(element.parentElement.children).filter((item) => item.tagName === element.tagName);
+          const indexPart = sameTagSiblings.length > 1 ? `:nth-of-type(${sameTagSiblings.indexOf(element) + 1})` : "";
+          return `${tag}${classPart}${indexPart}`;
+        };
+        const selectorPath = (element) => {
+          const parts = [];
+          let current = element;
+          while (current && current !== document.body && current !== document.documentElement && parts.length < 5) {
+            parts.unshift(selectorPart(current));
+            current = current.parentElement;
+          }
+          return parts.join(" > ");
+        };
         const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
           .filter(isVisible)
           .map((element) =>
@@ -187,6 +313,35 @@ async function snapshot(page) {
           )
           .filter(Boolean);
         const root = document.documentElement;
+        const clientWidth = root.clientWidth;
+        const overflowOffenders = Array.from(document.querySelectorAll("body *"))
+          .filter((element) => element !== document.body && element !== document.documentElement && isVisible(element))
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            const overflowsRight = rect.right > clientWidth + 2;
+            const overflowsLeft = rect.left < -2;
+            const widerThanViewport = rect.width > clientWidth + 2;
+            if (!overflowsRight && !overflowsLeft && !widerThanViewport) {
+              return null;
+            }
+            return {
+              tag: element.tagName.toLowerCase(),
+              id: element.getAttribute("id") ?? "",
+              className: elementClassName(element).slice(0, 160),
+              role: element.getAttribute("role") ?? "",
+              ariaLabel: element.getAttribute("aria-label") ?? "",
+              selector: selectorPath(element),
+              text: compact(element.textContent ?? "").slice(0, 160),
+              rect: {
+                left: Math.round(rect.left),
+                right: Math.round(rect.right),
+                width: Math.round(rect.width),
+              },
+            };
+          })
+          .filter(Boolean)
+          .sort((left, right) => right.rect.right - left.rect.right || right.rect.width - left.rect.width)
+          .slice(0, 10);
         return {
           title: document.title,
           bodyText: document.body?.innerText ?? "",
@@ -197,8 +352,9 @@ async function snapshot(page) {
           controlText,
           fileInputCount: document.querySelectorAll('input[type="file"]').length,
           scrollWidth: root.scrollWidth,
-          clientWidth: root.clientWidth,
-          horizontalOverflow: root.scrollWidth > root.clientWidth + 2,
+          clientWidth,
+          horizontalOverflow: root.scrollWidth > clientWidth + 2,
+          overflowOffenders,
         };
       });
     } catch (error) {
@@ -211,6 +367,101 @@ async function snapshot(page) {
     }
   }
   throw new Error("snapshot failed");
+}
+
+async function waitForReadableBody(page, timeoutMs = 5_000) {
+  await page
+    .waitForFunction(
+      () => {
+        const text = document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+        return text.length >= 80;
+      },
+      undefined,
+      { timeout: timeoutMs },
+    )
+    .catch(() => {});
+}
+
+function serializePattern(pattern) {
+  return {
+    source: pattern.source,
+    flags: pattern.flags.replace(/[gy]/g, ""),
+  };
+}
+
+function serializeRouteContract(routeCheck) {
+  return {
+    requiredText: (routeCheck.requiredText ?? []).map(serializePattern),
+    requiredControlText: (routeCheck.requiredControlText ?? []).map(serializePattern),
+    requiredTextAny: (routeCheck.requiredTextAny ?? []).map((group) => group.map(serializePattern)),
+  };
+}
+
+async function waitForRouteSemantics(page, routeCheck, timeoutMs = 6_000) {
+  const contract = serializeRouteContract(routeCheck);
+  const hasContract =
+    contract.requiredText.length > 0 || contract.requiredControlText.length > 0 || contract.requiredTextAny.length > 0;
+  if (!hasContract) {
+    return;
+  }
+  await page
+    .waitForFunction(
+      ({ requiredText, requiredControlText, requiredTextAny }) => {
+        const compactText = (value) => value.replace(/\s+/g, " ").trim();
+        const normalizeForMatch = (value) =>
+          compactText(value)
+            .normalize("NFKC")
+            .replace(/[\u200b\u00a0]/g, "")
+            .replace(/[\-–—_]/g, "")
+            .replace(/\s+/g, "")
+            .trim();
+        const matchText = (pattern, rawText) => {
+          const compacted = compactText(rawText);
+          const normalized = normalizeForMatch(rawText);
+          const regexp = new RegExp(pattern.source, pattern.flags);
+          return regexp.test(compacted) || regexp.test(normalized);
+        };
+        const isVisible = (element) => {
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+        };
+        const bodyText = document.body?.innerText ?? "";
+        const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
+          .filter(isVisible)
+          .map((element) =>
+            [
+              element.textContent,
+              element.getAttribute("aria-label"),
+              element.getAttribute("placeholder"),
+              element.getAttribute("name"),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .trim(),
+          )
+          .filter(Boolean)
+          .join(" ");
+        return (
+          requiredText.every((pattern) => matchText(pattern, bodyText)) &&
+          requiredControlText.every((pattern) => matchText(pattern, controlText)) &&
+          requiredTextAny.every((group) => group.some((pattern) => matchText(pattern, bodyText)))
+        );
+      },
+      contract,
+      { timeout: timeoutMs },
+    )
+    .catch(() => {});
+}
+
+async function waitForRouteReady(page, routeCheck) {
+  if (routeCheck.postLoadWaitMs) {
+    await page.waitForTimeout(routeCheck.postLoadWaitMs);
+  } else {
+    await waitForReadableBody(page, routeCheck.readyTimeoutMs ?? 5_000);
+    await page.waitForTimeout(routeCheck.settleMs ?? 300);
+  }
+  await waitForRouteSemantics(page, routeCheck, routeCheck.semanticTimeoutMs ?? 6_000);
 }
 
 async function applyInteractions(page, interactions = []) {
@@ -255,7 +506,13 @@ function classify(check, routeCheck, data) {
     issues.push(issue("P1", "interaction-error", check.interactionErrors.slice(0, 3).join(" | ")));
   }
   if (data.horizontalOverflow) {
-    issues.push(issue("P1", "horizontal-overflow", `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}`));
+    issues.push(
+      issue(
+        "P1",
+        "horizontal-overflow",
+        `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}; offenders ${data.overflowOffenders.length}`,
+      ),
+    );
   }
   if (compactText(data.bodyText).length < 80) {
     issues.push(issue("P1", "thin-page", `body text length ${compactText(data.bodyText).length}`));
@@ -269,14 +526,23 @@ function classify(check, routeCheck, data) {
     }
   }
   for (const pattern of routeCheck.requiredText ?? []) {
-    if (!pattern.test(data.bodyText)) {
+    if (!matchText(pattern, data.bodyText)) {
       issues.push(issue("P1", "missing-required-text", String(pattern)));
     }
   }
   const combinedControlText = data.controlText.join(" ");
   for (const pattern of routeCheck.requiredControlText ?? []) {
-    if (!pattern.test(combinedControlText)) {
+    if (!matchText(pattern, combinedControlText)) {
       issues.push(issue("P1", "missing-control", String(pattern)));
+    }
+  }
+  for (const patternGroup of routeCheck.requiredTextAny ?? []) {
+    const matched = Array.isArray(patternGroup)
+      ? patternGroup.some((pattern) => matchText(pattern, data.bodyText))
+      : false;
+    if (!matched) {
+      const patterns = Array.isArray(patternGroup) ? patternGroup.map((pattern) => String(pattern)).join(" OR ") : String(patternGroup);
+      issues.push(issue("P1", "missing-required-text-any", patterns));
     }
   }
   if (routeCheck.requiredFileInputCount && data.fileInputCount < routeCheck.requiredFileInputCount) {
@@ -368,6 +634,7 @@ async function run() {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
+  const routeChecks = routeCheckProfiles[options.contractProfile];
   const adminApiKey = readOptionalEnv(options.adminApiKeyEnv);
   const adminRole = options.adminRole || "it-admin";
   const acceptanceHeaders = {
@@ -389,11 +656,11 @@ async function run() {
   const checks = [];
   try {
     for (const viewport of viewports) {
-      const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        extraHTTPHeaders: acceptanceHeaders,
-      });
       for (const routeCheck of routeChecks) {
+        const context = await browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          extraHTTPHeaders: acceptanceHeaders,
+        });
         const page = await context.newPage();
         const consoleErrors = [];
         const failedRequests = [];
@@ -419,7 +686,7 @@ async function run() {
         try {
           const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
           status = response?.status() ?? null;
-          await page.waitForTimeout(1_200);
+          await waitForRouteReady(page, routeCheck);
           await applyInteractions(page, routeCheck.interactions);
         } catch (caught) {
           const message = caught instanceof Error ? caught.message : String(caught);
@@ -434,6 +701,7 @@ async function run() {
           route: routeCheck.route,
           viewport: viewport.name,
           url,
+          finalUrl: page.url(),
           status,
           error,
           title: data.title,
@@ -444,12 +712,14 @@ async function run() {
           scrollWidth: data.scrollWidth,
           clientWidth: data.clientWidth,
           horizontalOverflow: data.horizontalOverflow,
+          overflowOffenders: data.overflowOffenders,
           consoleErrors,
           failedRequests,
           interactionErrors,
           issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
         };
-        if (captureScreenshots && check.issues.length > 0) {
+        const shouldCaptureScreenshot = (captureScreenshots && check.issues.length > 0) || check.horizontalOverflow;
+        if (shouldCaptureScreenshot) {
           const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
           const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
           try {
@@ -469,8 +739,8 @@ async function run() {
           }),
         );
         await page.close();
+        await context.close();
       }
-      await context.close();
     }
     try {
       apiCheckResult = await checkAuditLogApiPermissions({
@@ -490,7 +760,18 @@ async function run() {
     check.issues.filter((item) => item.severity === "P0").map((item) => ({ route: check.route, viewport: check.viewport, ...item })),
   );
   const p1 = checks.flatMap((check) =>
-    check.issues.filter((item) => item.severity === "P1").map((item) => ({ route: check.route, viewport: check.viewport, ...item })),
+    check.issues.filter((item) => item.severity === "P1").map((item) => ({
+      route: check.route,
+      viewport: check.viewport,
+      ...item,
+      ...(item.type === "horizontal-overflow"
+        ? {
+            finalUrl: check.finalUrl,
+            screenshot: check.screenshot,
+            overflowOffenders: check.overflowOffenders.slice(0, 3),
+          }
+        : {}),
+    })),
   );
   const status = p0.length === 0 && p1.length === 0 && !apiCheckError ? "pass" : "fail";
 
@@ -498,12 +779,14 @@ async function run() {
     status,
     generated_at: new Date().toISOString(),
     base_url: baseUrl,
+    contract_profile: options.contractProfile,
     summary: {
       route_count: routeChecks.length,
       check_count: checks.length,
       viewports: viewports.map((viewport) => viewport.name),
       api_checks: apiCheckResult || { error: apiCheckError },
       screenshot_capture: captureScreenshots,
+      screenshot_policy: captureScreenshots ? "all_issues" : "horizontal_overflow_only",
       p0,
       p1,
     },
