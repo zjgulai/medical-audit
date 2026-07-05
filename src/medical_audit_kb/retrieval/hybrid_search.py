@@ -18,6 +18,9 @@ DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
     SourceCollection.RISK_NEGATIVE_LIST.value: 1.1,
     SourceCollection.MEDICAL_INSURANCE_LAWS.value: 1.0,
 }
+RRF_K = 60.0
+VECTOR_RANK_WEIGHT = 1.25
+BM25_RANK_WEIGHT = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,8 @@ class _MergedCandidate:
     metadata: dict[str, object]
     vector_score: float = 0.0
     bm25_score: float = 0.0
+    vector_rank: int | None = None
+    bm25_rank: int | None = None
 
     @property
     def matched_by(self) -> tuple[str, ...]:
@@ -105,8 +110,13 @@ class HybridSearchEngine:
     ) -> tuple[HybridSearchResult, ...]:
         active_filters = filters or RetrievalFilters()
         query_embedding = self._embedding_provider.embed_texts([query])[0]
-        vector_results = self._vector_index.search(query_embedding, top_k=fetch_k)
-        bm25_results = self._bm25_index.search(query, top_k=fetch_k)
+        backend_filters = _backend_filter_mapping(active_filters)
+        vector_results = self._vector_index.search(
+            query_embedding,
+            top_k=fetch_k,
+            filters=backend_filters,
+        )
+        bm25_results = self._bm25_index.search(query, top_k=fetch_k, filters=backend_filters)
 
         candidates = _merge_candidates(vector_results, bm25_results)
         candidates = {
@@ -117,14 +127,10 @@ class HybridSearchEngine:
         if not candidates:
             return ()
 
-        max_bm25_score = max(
-            (candidate.bm25_score for candidate in candidates.values()),
-            default=0.0,
-        )
         scored = [
             _to_search_result(
                 candidate,
-                base_score=_base_score(candidate, max_bm25_score)
+                base_score=_base_score(candidate)
                 * _source_weight(candidate.metadata, self._source_collection_weights),
                 rerank_score=None,
                 source_weight=_source_weight(candidate.metadata, self._source_collection_weights),
@@ -144,16 +150,17 @@ def _merge_candidates(
 ) -> dict[UUID, _MergedCandidate]:
     merged: dict[UUID, _MergedCandidate] = {}
 
-    for vector_result in vector_results:
+    for rank, vector_result in enumerate(vector_results, start=1):
         chunk_id = vector_result.record.chunk_id
         merged[chunk_id] = _MergedCandidate(
             chunk_id=chunk_id,
             text=vector_result.record.text,
             metadata=dict(vector_result.record.metadata),
             vector_score=vector_result.score,
+            vector_rank=rank,
         )
 
-    for bm25_result in bm25_results:
+    for rank, bm25_result in enumerate(bm25_results, start=1):
         chunk_id = bm25_result.document.chunk_id
         candidate = merged.get(chunk_id)
         if candidate is None:
@@ -162,21 +169,29 @@ def _merge_candidates(
                 text=bm25_result.document.text,
                 metadata=dict(bm25_result.document.metadata),
                 bm25_score=bm25_result.score,
+                bm25_rank=rank,
             )
         else:
             candidate.bm25_score = bm25_result.score
+            candidate.bm25_rank = rank
 
     return merged
 
 
-def _base_score(candidate: _MergedCandidate, max_bm25_score: float) -> float:
-    normalized_bm25 = candidate.bm25_score / max_bm25_score if max_bm25_score > 0 else 0.0
-    normalized_vector = max(candidate.vector_score, 0.0)
-    if candidate.bm25_score > 0 and candidate.vector_score > 0:
-        return (normalized_bm25 * 0.55) + (normalized_vector * 0.45)
-    if candidate.bm25_score > 0:
-        return normalized_bm25
-    return normalized_vector
+def _base_score(candidate: _MergedCandidate) -> float:
+    rank_score = _rank_component(candidate.vector_rank, VECTOR_RANK_WEIGHT) + _rank_component(
+        candidate.bm25_rank,
+        BM25_RANK_WEIGHT,
+    )
+    if rank_score > 0:
+        return rank_score
+    return max(candidate.vector_score, candidate.bm25_score, 0.0)
+
+
+def _rank_component(rank: int | None, weight: float) -> float:
+    if rank is None:
+        return 0.0
+    return weight / (RRF_K + rank)
 
 
 def _to_search_result(
@@ -242,6 +257,13 @@ def _apply_rerank(
 def _source_weight(metadata: dict[str, object], weights: dict[str, float]) -> float:
     source_collection = str(metadata.get("source_collection", ""))
     return weights.get(source_collection, 1.0)
+
+
+def _backend_filter_mapping(filters: RetrievalFilters) -> dict[str, object]:
+    mapping: dict[str, object] = {}
+    if len(filters.source_collections) == 1:
+        mapping["source_collection"] = filters.source_collections[0].value
+    return mapping
 
 
 def _metadata_dict(metadata: dict[str, object], key: str) -> dict[str, object]:

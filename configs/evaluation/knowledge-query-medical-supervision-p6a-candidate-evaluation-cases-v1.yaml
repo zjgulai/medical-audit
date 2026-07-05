@@ -1,0 +1,546 @@
+dataset_id: knowledge-query-medical-supervision-p6a-candidate-evaluation-cases-v1
+title: 监管两库 P6A candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-04'
+updated: '2026-07-04'
+owner: self
+source: supervision-rules-knowledge:full-rebuild-20260704100149:candidate-db-source-paths
+description: P6A candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6a-supervision-rules-knowledge-0001
+  question: 请检索并引用《医疗保障基金智能监管规则库、知识库（2025年版）》中与“医疗保障基金 智能监管规则库、知识库 国家医疗保障局 组织编写 中国协和医科大学出版社 北 京 （202”相关的原文依据。
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）.pdf
+      window_count: 969
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0002
+  question: '请检索并引用《10.药品限支付疗程对应知识代码表》中与““药品限支付疗程”知识点对应药品代码: “药品限支付疗程”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/10.药品限支付疗程对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品限支付疗程”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/10.药品限支付疗程对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0003
+  question: '请检索并引用《12.药品限医疗机构级别对应知识代码表》中与““药品限医疗机构级别”知识点对应药品代码: “药品限医疗机构级别”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/12.药品限医疗机构级别对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品限医疗机构级别”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/12.药品限医疗机构级别对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0004
+  question: '请检索并引用《13.药品限就医方式对应知识代码表》中与““药品限就医方式”知识点对应药品代码: “药品限就医方式”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/13.药品限就医方式对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品限就医方式”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/13.药品限就医方式对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0005
+  question: '请检索并引用《1.药品限工伤保险对应知识代码表》中与““药品限工伤保险”知识点对应药品代码: “药品限工伤保险”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/1.药品限工伤保险对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品限工伤保险”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/1.药品限工伤保险对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0006
+  question: '请检索并引用《2.药品限生育保险对应知识代码表》中与““药品限生育保险”知识点对应药品代码: “药品限生育保险”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/2.药品限生育保险对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品限生育保险”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/2.药品限生育保险对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0007
+  question: '请检索并引用《32.耗材限新生儿使用对应知识代码表》中与““耗材限新生儿使用”知识点对应耗材代码: “耗材限新生儿使用”知识点对应耗材代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/32.耗材限新生儿使用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “耗材限新生儿使用”知识点对应耗材代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/32.耗材限新生儿使用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0008
+  question: '请检索并引用《33.耗材限儿童使用对应知识代码表》中与““耗材限儿童使用”知识点对应耗材代码: “耗材限儿童使用”知识点对应耗材代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/33.耗材限儿童使用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “耗材限儿童使用”知识点对应耗材代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/33.耗材限儿童使用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0009
+  question: '请检索并引用《47.超互联网医院药品支付范围对应知识代码表》中与““超互联网医院药品支付范围”知识点对应药品代码: “超互联网医院药品支付范围”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/47.超互联网医院药品支付范围对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “超互联网医院药品支付范围”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/47.超互联网医院药品支付范围对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0010
+  question: '请检索并引用《5.药品限二线使用对应知识代码表》中与““药品限二线使用”知识点对应药品代码: “药品限二线使用”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/5.药品限二线使用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品限二线使用“规则对应知识药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/5.药品限二线使用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0011
+  question: '请检索并引用《65.药品儿童专用对应知识代码表》中与““药品儿童专用”知识点对应药品代码: “药品儿童专用”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/65.药品儿童专用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品儿童专用“规则对应知识药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/65.药品儿童专用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0012
+  question: '请检索并引用《66.药品儿童禁用对应知识代码表》中与““药品儿童禁用”知识点对应药品代码: “药品儿童禁用”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/66.药品儿童禁用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品儿童禁用“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/66.药品儿童禁用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0013
+  question: '请检索并引用《67.药品区分性别使用对应知识代码表》中与““药品区分性别使用”知识点对应药品代码: “药品区分性别使用”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/67.药品区分性别使用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “药品区分性别使用”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/67.药品区分性别使用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0014
+  question: '请检索并引用《68.超说明书用量开药对应知识代码表》中与““超说明书用量开药”知识点对应药品代码: “超说明书用量开药”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/68.超说明书用量开药对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “超说明书用量开药”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/68.超说明书用量开药对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0015
+  question: '请检索并引用《69.重复开药对应知识代码表》中与““重复开药”知识点对应药品代码: “重复开药”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/69.重复开药对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “重复开药”知识点对应药品代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/69.重复开药对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0016
+  question: '请检索并引用《70.超说明书适应症用药对应知识代码表》中与““超说明书适应症用药”知识点对应药品代码: “超说明书适应症用药”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/70.超说明书适应症用药对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"超说明书适应症用药“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/70.超说明书适应症用药对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0017
+  question: '请检索并引用《71.药品禁忌症对应知识代码表》中与““药品禁忌症”知识点对应药品代码: “药品禁忌症”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/71.药品禁忌症对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品禁忌症“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/71.药品禁忌症对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0018
+  question: '请检索并引用《72.老年人用药安全对应知识代码表》中与““老年人用药安全”知识点对应药品代码: “老年人用药安全”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/72.老年人用药安全对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"老年人用药安全“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/72.老年人用药安全对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0019
+  question: '请检索并引用《73.妊娠期及哺乳期用药安全对应知识代码表》中与““妊娠期及哺乳期用药安全”知识点对应药品代码: “妊娠期及哺乳期用药安全”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/73.妊娠期及哺乳期用药安全对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"妊娠期及哺乳期用药安全“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/73.妊娠期及哺乳期用药安全对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0020
+  question: '请检索并引用《74.药品相互作用对应知识代码表》中与““药品相互作用”知识点对应药品代码: “药品相互作用”知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/74.药品相互作用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品相互作用“知识点对应药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/74.药品相互作用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0021
+  question: '请检索并引用《87.医用耗材与性别不符对应知识代码表》中与““医用耗材与性别不符”知识点对应耗材代码: “医用耗材与性别不符”知识点对应耗材代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/87.医用耗材与性别不符对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “医用耗材与性别不符”知识点对应耗材代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/87.医用耗材与性别不符对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0022
+  question: '请检索并引用《88.医用耗材限疾病使用对应知识代码表》中与““医用耗材限疾病使用”知识点对应耗材代码: “医用耗材限疾病使用”知识点对应耗材代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/88.医用耗材限疾病使用对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “医用耗材限疾病使用”知识点对应耗材代码
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/88.医用耗材限疾病使用对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0023
+  question: '请检索并引用《8.药品限适应症对应知识代码表》中与““药品限适应症”规则知识点对应药品代码: “药品限适应症”规则知识点对应药品代码”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/8.药品限适应症对应知识代码表.xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: '"药品限适应症“规则对应知识药品代码'
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障基金智能监管规则库、知识库（2025年版）（第三部分）.rar.extracted/8.药品限适应症对应知识代码表.xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0024
+  question: 请检索并引用《医疗保障法律法规及政策汇编》中与“医疗保障协会编制 医疗保障法律法规 政策汇编 （ 2026年版） 目 录 一、法律 ..........”相关的原文依据。
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障法律法规及政策汇编.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/医疗保障法律法规及政策汇编.pdf
+      window_count: 281
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: p6a-supervision-rules-knowledge-0025
+  question: '请检索并引用《094ff52865424b4a9419bc78a3400e07 (1)》中与“第一批-5 “医疗服务项目儿童专用”规则对应知识点明细: 第一批-5 “医疗服务项目儿童专用”规则对应知”相关的原文依据。'
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/第一批/094ff52865424b4a9419bc78a3400e07 (1).xlsx
+    locator:
+      type: xlsx-row
+      row_number: 2
+      sheet_name: “医疗服务项目儿童专用”规则对应知识点明细
+      source_path: 智能监管“两库”规则和知识点/医保审核前期资料/智能监管“两库”规则和知识点/第一批/094ff52865424b4a9419bc78a3400e07 (1).xlsx
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - supervision-rules-knowledge
+  filters:
+    source_collections:
+    - supervision-rules-knowledge

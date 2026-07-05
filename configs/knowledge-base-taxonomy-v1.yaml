@@ -1,0 +1,371 @@
+version: knowledge-base-taxonomy-v1
+updated: 2026-07-02
+description: >
+  Logical namespace taxonomy for the medical audit knowledge base. Secondary
+  categories are intended to be the retrieval isolation layer while sharing the
+  same physical PostgreSQL/pgvector storage.
+
+primary_categories:
+  medical:
+    name: 医疗类
+    description: 医保审计核心业务知识，默认最高检索优先级。
+    secondary_categories:
+      medical.legal_regulations:
+        name: 法律法规
+        description: 医疗、医保、医药、卫生、医院、药品、器械、公共卫生等法规规范。
+        priority: 100
+        path_keywords: []
+        title_keywords:
+          - 医疗
+          - 医保
+          - 医疗保障
+          - 医药
+          - 医院
+          - 卫生健康
+          - 医疗卫生
+          - 公共卫生
+          - 卫生监督
+          - 药品
+          - 医疗器械
+          - 传染病
+          - 精神卫生
+          - 献血
+          - 疫苗
+          - 护士
+          - 医师
+      medical.supervision_rules:
+        name: 监管两库
+        description: 医疗保障基金智能监管规则库、知识库及批次规则材料。
+        priority: 120
+        path_keywords:
+          - 智能监管“两库”规则和知识点
+        title_keywords:
+          - 智能监管
+          - 规则库
+          - 知识库
+          - 监管规则
+          - 审核规则
+      medical.catalog_payment_codes:
+        name: 医保目录
+        description: 药品目录、DRG、DIP、ICD、手术操作编码和按病种付费资料。
+        priority: 120
+        path_keywords:
+          - 医保目录
+        title_keywords:
+          - 药品目录
+          - 医保目录
+          - DRG
+          - DIP
+          - ICD
+          - 手术与操作
+          - 按病种
+          - 付费
+          - 编码
+      medical.risk_negative_list:
+        name: 风险清单
+        description: 医保基金使用负面清单、骗保案例、违规风险和司法案例。
+        priority: 120
+        path_keywords:
+          - 风险负面清单
+        title_keywords:
+          - 负面清单
+          - 骗保
+          - 欺诈骗保
+          - 违规使用医保基金
+          - 医疗保障基金使用
+          - 医保基金使用
+
+  policy:
+    name: 政策类
+    description: 政策、规划、改革、财政价格、社会保障、营商环境和政务数据资料。
+    secondary_categories:
+      policy.general_policy:
+        name: 综合政策与规范性文件
+        description: 通知、意见、决定、批复、规范性文件等综合政策文本。
+        priority: 40
+        path_keywords: []
+        title_keywords:
+          - 通知
+          - 意见
+          - 决定
+          - 批复
+          - 政策
+          - 规范性文件
+      policy.reform_pilot:
+        name: 规划改革与试点方案
+        description: 规划、纲要、改革、试点、实施方案和专项行动方案。
+        priority: 50
+        path_keywords: []
+        title_keywords:
+          - 规划
+          - 纲要
+          - 改革
+          - 试点
+          - 实施方案
+          - 专项行动
+      policy.finance_price_procurement:
+        name: 财政价格与采购政策
+        description: 财政、税费、补助、预算、政府采购、价格、收费和成本监审。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 财政
+          - 税
+          - 补助
+          - 预算
+          - 政府采购
+          - 采购
+          - 价格
+          - 收费
+          - 成本
+      policy.social_security_livelihood:
+        name: 社会保障与民生政策
+        description: 养老、就业、救助、优抚、民政、社会保险中非医疗部分。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 社会保险
+          - 养老
+          - 就业
+          - 救助
+          - 优抚
+          - 民政
+          - 福利
+      policy.industry_business_environment:
+        name: 产业发展与营商环境
+        description: 企业、投资、营商环境、产业促进、科技创新和市场主体政策。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 产业
+          - 企业
+          - 投资
+          - 营商
+          - 市场主体
+          - 科技
+          - 创新
+      policy.data_statistics_disclosure:
+        name: 数据统计与政务公开
+        description: 统计、档案、信息公开、政务服务、数据治理和电子政务。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 统计
+          - 档案
+          - 信息公开
+          - 政务服务
+          - 数据
+          - 电子政务
+
+  management:
+    name: 管理类
+    description: 行政管理、监管执法、机构资质、市政治理、应急安全、生态资源和司法审计程序。
+    secondary_categories:
+      management.general_admin:
+        name: 综合行政管理
+        description: 各类通用管理办法、实施办法、行政机关职责和综合管理制度。
+        priority: 10
+        path_keywords: []
+        title_keywords:
+          - 管理办法
+          - 实施办法
+          - 管理规定
+          - 暂行办法
+          - 条例
+          - 规定
+      management.license_enforcement:
+        name: 行政许可与监督执法
+        description: 许可、审批、登记、备案、执法、处罚和监督检查。
+        priority: 60
+        path_keywords: []
+        title_keywords:
+          - 行政许可
+          - 审批
+          - 登记
+          - 备案
+          - 执法
+          - 处罚
+          - 监督
+          - 监管
+      management.org_personnel_qualification:
+        name: 机构人员与资质管理
+        description: 机构编制、人员资格、职业资质、培训和从业管理。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 机构
+          - 编制
+          - 人员
+          - 职工
+          - 职业
+          - 资质
+          - 资格
+          - 培训
+      management.urban_municipal:
+        name: 城乡建设与市政治理
+        description: 城市管理、市容环卫、物业、建设工程、地下空间、公园和绿化。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 城市
+          - 市容
+          - 环境卫生
+          - 垃圾
+          - 物业
+          - 建设
+          - 工程
+          - 房屋
+          - 绿化
+          - 地下空间
+      management.ecology_resources:
+        name: 生态环境与资源管理
+        description: 环境、污染、自然资源、土地、矿产、森林、水资源、河道和气象。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 生态
+          - 环境
+          - 污染
+          - 自然资源
+          - 土地
+          - 矿产
+          - 森林
+          - 水资源
+          - 河道
+          - 气象
+      management.safety_emergency:
+        name: 安全生产与应急管理
+        description: 安全生产、消防、突发事件、防灾减灾、危险品和应急处置。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 安全
+          - 应急
+          - 突发
+          - 消防
+          - 危险
+          - 灾害
+          - 防震
+          - 地震
+          - 防汛
+      management.market_quality:
+        name: 市场监管与质量管理
+        description: 产品质量、消费者保护、反垄断、知识产权和市场秩序。
+        priority: 55
+        path_keywords: []
+        title_keywords:
+          - 市场
+          - 质量
+          - 产品
+          - 消费者
+          - 反垄断
+          - 知识产权
+      management.judicial_audit_procedure:
+        name: 司法审计与程序管理
+        description: 法院、检察、诉讼、仲裁、司法解释、审计准则和程序规则。
+        priority: 60
+        path_keywords:
+          - 审计通用法律法规
+        title_keywords:
+          - 法院
+          - 检察
+          - 诉讼
+          - 仲裁
+          - 司法
+          - 审计
+          - 程序
+          - 拘留
+
+  other:
+    name: 其他类
+    description: 与当前医疗审计低相关但可保留为通用法规背景或待人工判定的资料。
+    secondary_categories:
+      other.education_research:
+        name: 教育科研
+        description: 教育、学校、教师、学生、科研和科普资料。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 教育
+          - 学校
+          - 教师
+          - 学生
+          - 幼儿园
+          - 科研
+          - 科普
+      other.culture_tourism_sports:
+        name: 文化旅游体育
+        description: 文化、文物、旅游、体育、广播影视和演出。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 文化
+          - 文物
+          - 旅游
+          - 体育
+          - 广播
+          - 电影
+          - 演出
+          - 遗产
+      other.agriculture_water:
+        name: 农业农村与水利
+        description: 农业、农村、渔业、畜牧、农田、水利和水库。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 农业
+          - 农村
+          - 渔业
+          - 畜牧
+          - 动物
+          - 种子
+          - 农田
+          - 水利
+          - 水库
+      other.transport_maritime:
+        name: 交通运输与海事
+        description: 道路、车辆、船舶、海事、航空、铁路、港口和公路。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 交通
+          - 道路
+          - 车辆
+          - 船舶
+          - 海事
+          - 航空
+          - 铁路
+          - 港口
+          - 公路
+      other.ethnic_religious_foreign:
+        name: 民族宗教外事
+        description: 民族、宗教、外事、侨务、港澳台和边境资料。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 民族
+          - 宗教
+          - 外事
+          - 侨务
+          - 香港
+          - 澳门
+          - 台湾
+          - 边境
+      other.defense_confidentiality:
+        name: 国防保密与征兵
+        description: 国防、军事、保密、征兵和退役军人资料。
+        priority: 45
+        path_keywords: []
+        title_keywords:
+          - 国防
+          - 军事
+          - 保密
+          - 征兵
+          - 军人
+          - 退役
+      other.unclassified:
+        name: 待人工判定
+        description: 系统文件、待处理格式、命名无法判断或低相关材料。
+        priority: 0
+        path_keywords: []
+        title_keywords: []

@@ -1,0 +1,319 @@
+dataset_id: knowledge-query-medical-three-libraries-active-evaluation-cases-v1
+title: 医疗三类二级库 active 聚合检索评测集 V1
+status: review
+created: '2026-07-03'
+updated: '2026-07-03'
+owner: self
+source: risk-negative-list + medical-legal-regulations-canonical + medical-supervision-rules-full
+description: 用于验证风险清单、法律法规、监管两库三类 source_collection 同时 active 后的默认 PostgreSQL active
+  聚合检索路径。当前为代表性 smoke，不等同于专家全量验收集。
+cases:
+- case_id: risk-negative-active-0001
+  question: 医疗保障基金使用监督管理举报处理暂行办法的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 17
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - combined-active
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0002
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第一条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第一条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 19
+      line_end: 19
+    required_terms:
+    - 第一条
+  acceptance_criteria:
+    required_terms:
+    - 第一条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - combined-active
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0003
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第二条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第二条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 21
+      line_end: 21
+    required_terms:
+    - 第二条
+  acceptance_criteria:
+    required_terms:
+    - 第二条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - combined-active
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0004
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第三条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第三条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 23
+      line_end: 23
+    required_terms:
+    - 第三条
+  acceptance_criteria:
+    required_terms:
+    - 第三条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - combined-active
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: legal-canonical-drug-law-safety-001
+  question: 药品管理法中制定本法的目的是什么，是否包含保障公众用药安全？
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/docx-converted/审计通用法律法规/01074_中华人民共和国药品管理法2019-08-26.md
+    article_or_rule: 第一条
+    required_terms:
+    - 药品质量
+    - 保障公众用药安全
+  acceptance_criteria:
+    required_terms:
+    - 保障公众用药安全
+    min_citations: 1
+    require_preview: true
+  tags:
+  - legal-canonical
+  - drug-law
+  - safety
+  - combined-active
+  filters:
+    source_collections:
+    - medical-insurance-laws
+- case_id: legal-canonical-nurse-license-001
+  question: 护士条例中护士执业注册和护士执业证书的要求是什么？
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/docx-converted/审计通用法律法规/01935_护士条例2020-03-27.md
+    article_or_rule: 第七条
+    required_terms:
+    - 护士执业
+    - 执业注册
+    - 护士执业证书
+  acceptance_criteria:
+    required_terms:
+    - 护士执业证书
+    min_citations: 1
+    require_preview: true
+  tags:
+  - legal-canonical
+  - nurse
+  - license
+  - combined-active
+  filters:
+    source_collections:
+    - medical-insurance-laws
+- case_id: legal-canonical-device-scope-001
+  question: 医疗器械监督管理条例适用于哪些医疗器械相关活动及监督管理？
+  expected_evidence:
+  - source_collection: medical-insurance-laws
+    source_path: 全量法律/医疗器械监督管理条例_20241206.md
+    article_or_rule: 第二条
+    required_terms:
+    - 研制
+    - 生产
+    - 经营
+    - 使用
+    - 监督管理
+  acceptance_criteria:
+    required_terms:
+    - 医疗器械
+    - 监督管理
+    min_citations: 1
+    require_preview: true
+  tags:
+  - legal-canonical
+  - device
+  - scope
+  - combined-active
+  filters:
+    source_collections:
+    - medical-insurance-laws
+- case_id: supervision-full-candidate-0001
+  question: 第一批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第一批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 21
+      line_end: 23
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  - combined-active
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0002
+  question: 第三批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第三批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第三批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 37
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  - combined-active
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0003
+  question: 第九批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第九批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第九批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 40
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  - combined-active
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0004
+  question: 第二批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第二批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第二批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 28
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  - combined-active
+  filters:
+    source_collections:
+    - supervision-rules-knowledge
+- case_id: supervision-full-candidate-0005
+  question: 第五批的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: supervision-rules-knowledge
+    source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+    locator:
+      type: paragraph
+      source_path: 智能监管“两库”规则和知识点/ocr-markdown/第五批.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 32
+      line_end: 40
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - supervision-full
+  - candidate-evaluation
+  - combined-active
+  filters:
+    source_collections:
+    - supervision-rules-knowledge

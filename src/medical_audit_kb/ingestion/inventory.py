@@ -15,6 +15,11 @@ SOURCE_COLLECTION_BY_TOP_LEVEL: Final = {
     "智能监管“两库”规则和知识点": SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
     "风险负面清单": SourceCollection.RISK_NEGATIVE_LIST,
     "全量法律": SourceCollection.MEDICAL_INSURANCE_LAWS,
+    **{
+        collection.value: collection
+        for collection in SourceCollection
+        if collection != SourceCollection.PERSONAL_MATERIALS
+    },
 }
 
 LAW_KEYWORDS: Final = (
@@ -42,6 +47,29 @@ LAW_KEYWORDS: Final = (
 # 「其他」仍入底层分类库，只是不进医保基金专题（专题切片在检索层按 domain 过滤）。关键词可逐步增减。
 DOMAIN_MEDICAL_INSURANCE: Final = "医保基金"
 DOMAIN_OTHER: Final = "其他"
+
+DOMAIN_BY_SOURCE_COLLECTION: Final[dict[SourceCollection, str]] = {
+    SourceCollection.POLICY_GENERAL_POLICY: "综合政策与规范性文件",
+    SourceCollection.POLICY_REFORM_PILOT: "规划改革与试点方案",
+    SourceCollection.POLICY_FINANCE_PRICE_PROCUREMENT: "财政价格与采购政策",
+    SourceCollection.POLICY_SOCIAL_SECURITY_LIVELIHOOD: "社会保障与民生政策",
+    SourceCollection.POLICY_INDUSTRY_BUSINESS_ENVIRONMENT: "产业发展与营商环境",
+    SourceCollection.POLICY_DATA_STATISTICS_DISCLOSURE: "数据统计与政务公开",
+    SourceCollection.MANAGEMENT_GENERAL_ADMIN: "综合行政管理",
+    SourceCollection.MANAGEMENT_LICENSE_ENFORCEMENT: "行政许可与监督执法",
+    SourceCollection.MANAGEMENT_ORG_PERSONNEL_QUALIFICATION: "机构人员与资质管理",
+    SourceCollection.MANAGEMENT_URBAN_MUNICIPAL: "城乡建设与市政治理",
+    SourceCollection.MANAGEMENT_ECOLOGY_RESOURCES: "生态环境与资源管理",
+    SourceCollection.MANAGEMENT_SAFETY_EMERGENCY: "安全生产与应急管理",
+    SourceCollection.MANAGEMENT_MARKET_QUALITY: "市场监管与质量管理",
+    SourceCollection.MANAGEMENT_JUDICIAL_AUDIT_PROCEDURE: "司法审计与程序管理",
+    SourceCollection.OTHER_EDUCATION_RESEARCH: "教育科研",
+    SourceCollection.OTHER_CULTURE_TOURISM_SPORTS: "文化旅游体育",
+    SourceCollection.OTHER_AGRICULTURE_WATER: "农业农村与水利",
+    SourceCollection.OTHER_TRANSPORT_MARITIME: "交通运输与海事",
+    SourceCollection.OTHER_ETHNIC_RELIGIOUS_FOREIGN: "民族宗教外事",
+    SourceCollection.OTHER_DEFENSE_CONFIDENTIALITY: "国防保密与征兵",
+}
 
 OTHER_DOMAIN_KEYWORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("价格", ("价格", "收费", "计价", "成本监审", "行政事业性收费")),
@@ -172,6 +200,8 @@ def classify_domain(file_name: str, source_collection: SourceCollection | None =
     """
     if source_collection in _CURATED_MEDICAL_COLLECTIONS:
         return DOMAIN_MEDICAL_INSURANCE
+    if source_collection in DOMAIN_BY_SOURCE_COLLECTION:
+        return DOMAIN_BY_SOURCE_COLLECTION[source_collection]
     if is_medical_insurance_law(file_name):
         return DOMAIN_MEDICAL_INSURANCE
     normalized = file_name.upper()

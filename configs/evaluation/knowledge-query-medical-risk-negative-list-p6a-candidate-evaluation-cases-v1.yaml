@@ -1,0 +1,112 @@
+dataset_id: knowledge-query-medical-risk-negative-list-p6a-candidate-evaluation-cases-v1
+title: 风险清单 P6A candidate 对齐检索评测集 V1
+status: review
+created: '2026-07-04'
+updated: '2026-07-04'
+owner: self
+source: risk-negative-list:full-rebuild-20260704083337:candidate-db-source-paths
+description: P6A candidate 写入后根据 PostgreSQL candidate 元数据生成的 source_path 对齐 smoke 评测集；用于验证二级库隔离后的真实 retrieval，不等同于专家全量验收集。
+cases:
+- case_id: p6a-risk-negative-list-0001
+  question: 请检索并引用《医疗保障基金使用监督管理条例_20210115》中与“(2020年12月9日国务院第117次常务会议通过 2021年1月15日中华人民共和国国务院令第735号”相关的原文依据。
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/医保审核前期资料/全量法律/医疗保障基金使用监督管理条例_20210115.md
+    locator:
+      type: paragraph
+      line_end: 3
+      line_start: 3
+      title_path: []
+      page_number: null
+      source_path: 风险负面清单/医保审核前期资料/全量法律/医疗保障基金使用监督管理条例_20210115.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - risk-negative-list
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: p6a-risk-negative-list-0002
+  question: 请检索并引用《医疗保障基金使用监督管理举报处理暂行办法》中与“> 来源压缩包：`国家规章平台文档.zip`”相关的原文依据。
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/医保审核前期资料/全量法律/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    locator:
+      type: paragraph
+      line_end: 3
+      line_start: 3
+      title_path:
+      - 医疗保障基金使用监督管理举报处理暂行办法
+      page_number: null
+      source_path: 风险负面清单/医保审核前期资料/全量法律/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - risk-negative-list
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: p6a-risk-negative-list-0003
+  question: 请检索并引用《医保负面清单整理_2024年2月》中与“周口市医疗保障局 Zhoukou Medical Security Bureau 无障碍浏览 进入适老模”相关的原文依据。
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/医保审核前期资料/风险负面清单/医保负面清单整理_2024年2月.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 风险负面清单/医保审核前期资料/风险负面清单/医保负面清单整理_2024年2月.pdf
+      window_count: 5
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - risk-negative-list
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: p6a-risk-negative-list-0004
+  question: 请检索并引用《10大类医疗保障基金使用负面清单（武汉医保局2023年整理）》中与“录 (http://oauth.hubei.gov.cn:9090/uias/mainChain.do?”相关的原文依据。
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/医保审核前期资料/风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+    locator:
+      type: paragraph
+      line_end: null
+      line_start: null
+      title_path: []
+      page_number: 1
+      source_path: 风险负面清单/医保审核前期资料/风险负面清单/10大类医疗保障基金使用负面清单（武汉医保局2023年整理）.pdf
+      window_count: 3
+      window_index: 0
+      article_number: null
+      parent_article_number: null
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - p6a-candidate-aligned
+  - risk-negative-list
+  filters:
+    source_collections:
+    - risk-negative-list

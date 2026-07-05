@@ -207,6 +207,45 @@ def test_bm25_recalls_by_policy_number_article_number_and_term() -> None:
     assert term_results[0].document.chunk_id == term_chunk_id
 
 
+def test_bm25_filtered_search_scores_against_filtered_corpus() -> None:
+    target_chunk_id = uuid4()
+    competitor_chunk_id = uuid4()
+    index = InMemoryBM25Index()
+    index.upsert(
+        [
+            BM25Document(
+                chunk_id=target_chunk_id,
+                text="needle common",
+                metadata={"source_collection": "risk-negative-list"},
+            ),
+            BM25Document(
+                chunk_id=competitor_chunk_id,
+                text="common common common common common",
+                metadata={"source_collection": "risk-negative-list"},
+            ),
+            *[
+                BM25Document(
+                    chunk_id=uuid4(),
+                    text="needle filler",
+                    metadata={"source_collection": "medical-insurance-laws"},
+                )
+                for _ in range(10)
+            ],
+        ]
+    )
+
+    results = index.search(
+        "needle common",
+        top_k=2,
+        filters={"source_collection": "risk-negative-list"},
+    )
+
+    assert [result.document.chunk_id for result in results] == [
+        target_chunk_id,
+        competitor_chunk_id,
+    ]
+
+
 def test_bm25_ranks_exact_medical_catalog_code_above_broad_code_range() -> None:
     target_chunk_id = uuid4()
     broad_range_chunk_id = uuid4()

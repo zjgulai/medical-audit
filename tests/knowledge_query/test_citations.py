@@ -118,6 +118,14 @@ def test_cross_collection_citations_are_grouped_by_basis_type() -> None:
     ]
 
 
+def test_non_medical_collection_citation_uses_reference_basis() -> None:
+    citations = build_citations((_result(SourceCollection.POLICY_GENERAL_POLICY),))
+    groups = group_citations(citations)
+
+    assert citations[0].evidence_type == EvidenceType.REFERENCE_BASIS
+    assert groups[0].title == "通用资料依据"
+
+
 def test_answer_uses_provider_output_when_it_contains_citation_marker() -> None:
     answer = build_citation_backed_answer(
         "医疗机构如何保留审核依据？",

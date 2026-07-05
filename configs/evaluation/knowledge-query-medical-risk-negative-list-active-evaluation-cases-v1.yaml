@@ -1,0 +1,121 @@
+dataset_id: knowledge-query-medical-risk-negative-list-active-evaluation-cases-v1
+title: 风险清单 active 检索评测集 V1
+status: review
+created: '2026-07-03'
+updated: '2026-07-03'
+owner: self
+source: medical-risk-negative-list-kimi-1024-localdb-20260703
+description: 用于验证风险清单 Kimi 1024 active PostgreSQL 检索链路的代表性自动材料评测集。当前为自动生成 smoke，不等同于专家全量验收集。
+cases:
+- case_id: risk-negative-active-0001
+  question: 医疗保障基金使用监督管理举报处理暂行办法的核心审核依据是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 1
+      line_end: 17
+  acceptance_criteria:
+    required_terms: []
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - risk-negative-list
+  - active-evaluation
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0002
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第一条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第一条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 19
+      line_end: 19
+    required_terms:
+    - 第一条
+  acceptance_criteria:
+    required_terms:
+    - 第一条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - risk-negative-list
+  - active-evaluation
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0003
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第二条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第二条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 21
+      line_end: 21
+    required_terms:
+    - 第二条
+  acceptance_criteria:
+    required_terms:
+    - 第二条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - risk-negative-list
+  - active-evaluation
+  filters:
+    source_collections:
+    - risk-negative-list
+- case_id: risk-negative-active-0004
+  question: 医疗保障基金使用监督管理举报处理暂行办法中第三条的审核要求是什么？
+  expected_evidence:
+  - source_collection: risk-negative-list
+    source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+    article_or_rule: 第三条
+    locator:
+      type: paragraph
+      source_path: 风险负面清单/docx-converted/国家规章平台文档/医疗保障基金使用监督管理举报处理暂行办法.md
+      title_path: []
+      article_number: null
+      page_number: null
+      line_start: 23
+      line_end: 23
+    required_terms:
+    - 第三条
+  acceptance_criteria:
+    required_terms:
+    - 第三条
+    min_citations: 1
+    require_preview: true
+  tags:
+  - auto-generated
+  - persistent-index
+  - risk-negative-list
+  - active-evaluation
+  filters:
+    source_collections:
+    - risk-negative-list

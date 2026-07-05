@@ -21,6 +21,7 @@ from medical_audit_kb.api.auth_user_store import (
     AUTH_USER_ID_PREFIX,
     SqlAlchemyAuthUserStore,
 )
+from medical_audit_kb.api.document_permissions import DOCUMENT_SOURCE_COLLECTION_LABELS
 from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
@@ -1520,10 +1521,7 @@ def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> No
     permissions_body = permissions_response.json()
     assert permissions_body["role"] == "auditor"
     assert [item["source_collection"] for item in permissions_body["source_collections"]] == [
-        "medical-insurance-laws",
-        "supervision-rules-knowledge",
-        "medical-insurance-catalog",
-        "risk-negative-list",
+        *(collection.value for collection in DOCUMENT_SOURCE_COLLECTION_LABELS),
         "personal-materials",
     ]
     assert permissions_body["source_collections"][-1]["access"] == "explicit-owner-read"
@@ -2072,6 +2070,12 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert body["citations"][0]["source_package_version_key"] == "package-v1"
     assert body["basis_groups"][0]["title"] == "法规依据"
     assert body["basis_groups"][0]["items"][0]["source_collection"] == "medical-insurance-laws"
+    assert body["effective_source_collections"] == [
+        "medical-insurance-catalog",
+        "medical-insurance-laws",
+        "risk-negative-list",
+        "supervision-rules-knowledge",
+    ]
     assert body["query_log_index"] == 0
 
     logs_response = client.get("/query/logs")
@@ -2104,6 +2108,12 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
         item["source_collection"] for item in body["citations"]
     } == {"medical-insurance-laws"}
     assert state.query_logs[-1]["filters"]["source_collections"] == []
+    assert body["effective_source_collections"] == [
+        "medical-insurance-catalog",
+        "medical-insurance-laws",
+        "risk-negative-list",
+        "supervision-rules-knowledge",
+    ]
     assert "personal-materials" not in state.query_logs[-1]["filters"][
         "effective_source_collections"
     ]
@@ -2124,6 +2134,7 @@ def test_query_endpoint_excludes_personal_materials_from_default_retrieval(
         item["source_collection"] for item in explicit_body["citations"]
     } == {"personal-materials"}
     assert state.query_logs[-1]["filters"]["source_collections"] == ["personal-materials"]
+    assert explicit_body["effective_source_collections"] == ["personal-materials"]
     assert state.query_logs[-1]["filters"]["effective_source_collections"] == [
         "personal-materials"
     ]

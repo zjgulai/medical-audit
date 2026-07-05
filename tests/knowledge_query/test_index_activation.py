@@ -31,7 +31,8 @@ def test_activate_index_version_deactivates_matching_active_versions() -> None:
     assert result.vector_model == "kimi-for-coding"
     assert result.previous_status == "candidate"
     assert result.deactivated_index_version_keys == ("active-old",)
-    assert cursor.queries[1][1] == (target_id, "openai", "kimi-for-coding")
+    assert "source_collection" in cursor.queries[1][0]
+    assert cursor.queries[1][1] == (target_id, "openai", "kimi-for-coding", target_id)
     assert cursor.queries[2][1] == (target_id,)
 
 
@@ -57,7 +58,8 @@ def test_rollback_index_version_restores_inactive_version() -> None:
     assert result.vector_model == "kimi-for-coding"
     assert result.previous_status == "inactive"
     assert result.deactivated_index_version_keys == ("active-current",)
-    assert cursor.queries[1][1] == (target_id, "openai", "kimi-for-coding")
+    assert "source_collection" in cursor.queries[1][0]
+    assert cursor.queries[1][1] == (target_id, "openai", "kimi-for-coding", target_id)
     assert cursor.queries[2][1] == (target_id,)
 
 

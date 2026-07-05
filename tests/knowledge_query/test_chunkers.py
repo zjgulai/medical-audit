@@ -53,6 +53,75 @@ def test_chunks_law_text_by_chapter_section_and_article() -> None:
     assert "审核依据" in chunks[0].text
 
 
+def test_law_preamble_can_be_excluded_from_chunks() -> None:
+    result = ExtractionResult(
+        path=Path("护士条例.md"),
+        status=ExtractionStatus.EXTRACTED,
+        media_type="text/markdown",
+        text_segments=(
+            TextSegment(
+                text=(
+                    "---\n"
+                    'title: "护士条例"\n'
+                    "---\n"
+                    "护士条例\n"
+                    "第一章 总则\n"
+                    "第一条 为了维护护士的合法权益，制定本条例。\n"
+                    "第二条 本条例所称护士，是指取得护士执业证书的人员。"
+                ),
+                line_start=1,
+                line_end=7,
+            ),
+        ),
+    )
+
+    chunks = chunk_extraction_result(
+        result,
+        source_document_id=uuid4(),
+        source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+        relative_path="全量法律/护士条例.md",
+        include_law_preamble=False,
+    )
+
+    assert [chunk.locator["type"] for chunk in chunks] == ["law-article", "law-article"]
+    assert [chunk.article_number for chunk in chunks] == ["第一条", "第二条"]
+    assert all("title:" not in chunk.text for chunk in chunks)
+
+
+def test_law_text_without_article_falls_back_to_paragraph_chunks() -> None:
+    result = ExtractionResult(
+        path=Path("legal-decision.md"),
+        status=ExtractionStatus.EXTRACTED,
+        media_type="text/markdown",
+        text_segments=(
+            TextSegment(
+                text=(
+                    "# 医疗保障决定\n"
+                    "本决定用于规范医疗保障基金监督管理。\n"
+                    "一、加强审核。\n"
+                    "二、完善整改。"
+                ),
+                line_start=1,
+                line_end=4,
+            ),
+        ),
+    )
+
+    chunks = chunk_extraction_result(
+        result,
+        source_document_id=uuid4(),
+        source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+        relative_path="全量法律/legal-decision.md",
+        include_law_preamble=False,
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].locator["type"] == "paragraph"
+    assert chunks[0].article_number is None
+    assert chunks[0].title_path == ["医疗保障决定"]
+    assert "加强审核" in chunks[0].text
+
+
 def test_chunks_ordinary_markdown_by_headings_and_paragraphs() -> None:
     result = ExtractionResult(
         path=Path("普通文档.md"),
