@@ -32,6 +32,12 @@ __pycache__/
 
 tmp/
 
+# Local evidence and browser-smoke artifacts. Keep source-of-truth summaries in
+# drafts/ or docs/ when they need to be reviewed or committed.
+output/
+web/output/
+web/web/
+
 # Deployment secrets stay on the target host, never in git.
 configs/deploy/tencent-cloud/*.env
 !configs/deploy/tencent-cloud/*.env.example
