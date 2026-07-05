@@ -20,6 +20,7 @@ function parseArgs(argv) {
     timeoutMs: null,
     adminRole: "it-admin",
     adminApiKeyEnv: null,
+    contractProfile: "hardened",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,6 +46,11 @@ function parseArgs(argv) {
     } else if (arg === "--admin-api-key-env" && next) {
       options.adminApiKeyEnv = next;
       index += 1;
+    } else if (arg === "--contract-profile" && next) {
+      options.contractProfile = next;
+      index += 1;
+    } else if (arg.startsWith("--contract-profile=")) {
+      options.contractProfile = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -69,6 +75,7 @@ Options:
   --timeout-ms <number>     Passed through to the acceptance runner.
   --admin-role <role>       Default: it-admin
   --admin-api-key-env <name> Optional env var containing admin API key.
+  --contract-profile <name> Passed through to the acceptance runner (default: hardened).
 `);
 }
 
@@ -88,6 +95,8 @@ function runAcceptance(options) {
     options.screenshotDir,
     "--admin-role",
     options.adminRole,
+    "--contract-profile",
+    options.contractProfile,
   ];
   if (options.timeoutMs) {
     args.push("--timeout-ms", options.timeoutMs);
@@ -159,6 +168,7 @@ function assertGate(report) {
     JSON.stringify(
       {
         status: "pass",
+        contract_profile: report.contract_profile,
         route_count: summary.route_count,
         check_count: summary.check_count,
         p0_count: p0.length,
