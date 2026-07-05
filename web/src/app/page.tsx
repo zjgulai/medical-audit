@@ -1,11 +1,5 @@
-import { ProjectDashboard } from "@/components/dashboard/project-dashboard";
-import { WorkspaceShell } from "@/components/shell/workspace-shell";
-import { currentSelfCheckProject } from "@/lib/projects";
+import LoginPage from "./login/page";
 
 export default function HomePage() {
-  return (
-    <WorkspaceShell>
-      <ProjectDashboard project={currentSelfCheckProject} />
-    </WorkspaceShell>
-  );
+  return <LoginPage />;
 }
