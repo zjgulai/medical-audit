@@ -1,5 +1,5 @@
-import { AuditFindingsWorkbench } from "@/components/findings/audit-findings-workbench";
+import { redirect } from "next/navigation";
 
 export default function FindingsPage() {
-  return <AuditFindingsWorkbench />;
+  redirect("/medical-audit");
 }
