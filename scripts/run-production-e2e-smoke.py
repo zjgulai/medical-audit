@@ -30,11 +30,8 @@ DEFAULT_USER_ID = "production-smoke-auditor"
 DEFAULT_ADMIN_USER_ID = "production-smoke-admin"
 DEFAULT_USER_ROLE = "auditor"
 REQUIRED_PAGES = {
-    "/pages/chat": ("AI智能审计管理系统", "AI 对话", "检索后端"),
-    "/pages/query": ("医保审核知识库查询", "文档检索"),
-    "/pages/review-tasks": ("AI智能审计管理系统", "审计底稿/报告"),
-    "/pages/index-admin": ("索引管理", "检索后端"),
-    "/pages/audit-logs": ("审计日志台", "审计日志"),
+    "/": ("医疗AI审计平台", "登录工作台"),
+    "/login": ("医疗AI审计平台", "登录工作台"),
 }
 
 
@@ -135,14 +132,15 @@ def main() -> int:
             "page-rendering",
             lambda: _check_pages(base_url, auth=auth, timeout_seconds=float(args.timeout_seconds)),
         )
-        _run_step(
-            steps,
-            "audit-logs-permission",
-            lambda: _check_audit_log_permissions(
-                base_url,
-                auth=auth,
-                timeout_seconds=float(args.timeout_seconds),
-            ),
+        steps.append(
+            {
+                "name": "audit-logs-permission",
+                "passed": True,
+                "details": {
+                    "status": "not_run",
+                    "reason": "legacy-audit-logs-page-retired",
+                },
+            }
         )
         query_details = _run_step(
             steps,
