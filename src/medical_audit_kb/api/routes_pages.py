@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -55,6 +56,25 @@ from medical_audit_kb.retrieval.filters import RetrievalFilters
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+LEGACY_PAGE_RETIRE_ENV = "MEDICAL_AUDIT_RETIRE_LEGACY_PAGES"
+LEGACY_PAGE_REDIRECTS = {
+    "/pages/chat": "/chat",
+    "/pages/query": "/documents",
+    "/pages/review-tasks": "/reports",
+    "/pages/audit-logs": "/archive",
+    "/pages/audit-findings": "/findings",
+    "/pages/index-admin": "/knowledge-base",
+}
+LEGACY_PAGE_RETIRE_ENABLED_VALUES = {"1", "true", "yes", "on"}
+
+
+def _retired_legacy_page_redirect(path: str) -> RedirectResponse | None:
+    enabled = os.getenv(LEGACY_PAGE_RETIRE_ENV, "").strip().lower()
+    if enabled not in LEGACY_PAGE_RETIRE_ENABLED_VALUES:
+        return None
+    return RedirectResponse(LEGACY_PAGE_REDIRECTS[path], status_code=302)
+
 
 DOSSIER_REVIEW_CHECKLIST = (
     "核对引用片段是否完整覆盖问题。",
@@ -280,6 +300,9 @@ def query_page(
     question: Annotated[str | None, Query()] = None,
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/query"):
+        return redirect_response
+
     selected_collections = tuple(source_collection or ())
     answer_payload, error_message = _run_page_query(
         state,
@@ -313,6 +336,9 @@ def chat_page(
     agent: Annotated[str | None, Query(max_length=128)] = None,
     project_name: Annotated[str | None, Query(max_length=256)] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/chat"):
+        return redirect_response
+
     selected_collections = tuple(source_collection or ())
     answer_payload, error_message = _run_page_query(
         state,
@@ -408,6 +434,9 @@ def review_tasks_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/review-tasks"):
+        return redirect_response
+
     review_tasks = _review_tasks(state)
     record_operation(
         state,
@@ -498,6 +527,9 @@ def audit_logs_page(
     created_to: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/audit-logs"):
+        return redirect_response
+
     filters = _audit_log_filter_context(
         action=action,
         entity_type=entity_type,
@@ -582,6 +614,9 @@ def audit_findings_page(
     state: Annotated[ApiState, Depends(get_api_state)],
     review_status: Annotated[str | None, Query()] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/audit-findings"):
+        return redirect_response
+
     if review_status is not None and review_status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
     findings = _audit_findings(state, review_status=review_status)
@@ -1090,6 +1125,9 @@ def index_admin_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/index-admin"):
+        return redirect_response
+
     postgres_status = _postgres_status_context(state)
     record_operation(
         state,

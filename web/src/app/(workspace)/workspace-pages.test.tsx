@@ -55,6 +55,17 @@ import ReportsPage from "./reports/page";
 import RulesPage from "./rules/page";
 import WorkspacePage from "./workspace/page";
 
+type PromptCatalogRow = {
+  readonly category: string;
+  readonly title: string;
+};
+
+function uniqueAgentPromptCount(): number {
+  return new Set(
+    (promptsData as readonly PromptCatalogRow[]).map((prompt) => `${prompt.category}|${prompt.title}`)
+  ).size;
+}
+
 vi.mock("@/lib/api-client", () => ({
   createAuditAgent: vi.fn(
     async (payload: {
@@ -1665,27 +1676,36 @@ describe("workspace foundation pages", () => {
     }
   });
 
-  it("exposes the dashboard sections owned by the workspace page", async () => {
+  it("renders workspace as the document search portal entry", () => {
     render(<WorkspacePage />);
 
-    expect(screen.getByRole("region", { name: "项目关键指标" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "当前阶段：形成判断" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "需要人工处理" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "项目审计链动态" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
-    });
+    expect(screen.getByRole("heading", { level: 1, name: "文档检索" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("劳动争议司法案件解释")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "检索AI+" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/chat?question=")
+    );
+    expect(screen.getByRole("heading", { name: "搜索历史" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "对话文档" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "检索结果" })).toBeInTheDocument();
+    expect(screen.getAllByText("法律法规库").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("重复收费疑点复核对话").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("医保目录限制条件资料包").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "登录工作台" })).not.toBeInTheDocument();
+    expect(screen.queryByText("今日工作台")).not.toBeInTheDocument();
   });
 
-  it("renders the current self-check project dashboard", async () => {
+  it("keeps workspace search controls close to the reference document-search layout", () => {
     render(<WorkspacePage />);
 
-    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
-    expect(screen.getByText("待处理疑点")).toBeInTheDocument();
-    expect(screen.getByText("待补证据")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getAllByText("工作台可用").length).toBeGreaterThan(0);
-    });
+    expect(screen.getByLabelText("文档检索关键词")).toBeInTheDocument();
+    expect(screen.getByLabelText("仅标题")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "搜索" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/documents?q=")
+    );
+    expect(screen.getByRole("link", { name: "查看全部文档" })).toHaveAttribute("href", "/documents");
+    expect(screen.getByText("文档库：7 类 / 3,917 份")).toBeInTheDocument();
   });
 
   it("renders the fund compliance topic as a separate portal entry", () => {
@@ -1938,12 +1958,16 @@ describe("workspace foundation pages", () => {
     expect(screen.getByRole("heading", { name: "审计助手库" })).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "审计助手分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /全部/ })).toBeInTheDocument();
-    expect(screen.getByText(`已纳入 ${(promptsData as readonly unknown[]).length} 个审计智能体，可按专题检索并安装到我的智能体。`)).toBeInTheDocument();
+    const sourcePromptCount = (promptsData as readonly unknown[]).length;
+    const uniquePromptCount = uniqueAgentPromptCount();
+    expect(
+      screen.getByText(`源提示词 ${sourcePromptCount} 条，已去重为 ${uniquePromptCount} 个审计智能体，可按专题检索并安装到我的智能体。`)
+    ).toBeInTheDocument();
 
     const agentList = document.querySelector('[aria-label="审计助手列表"]');
     expect(agentList).not.toBeNull();
     const visibleNames = Array.from(agentList?.querySelectorAll("h2") ?? []).map((node) => node.textContent ?? "");
-    expect(visibleNames.length).toBe((promptsData as readonly unknown[]).length);
+    expect(visibleNames.length).toBe(uniquePromptCount);
     for (const name of visibleNames) {
       expect(Array.from(name).length).toBeGreaterThanOrEqual(5);
       expect(Array.from(name).length).toBeLessThanOrEqual(10);

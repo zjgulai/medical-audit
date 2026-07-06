@@ -73,6 +73,31 @@ def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
     assert 'aria-current="page">AI 对话' in response.text
 
 
+def test_legacy_visible_pages_redirect_when_retired(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("MEDICAL_AUDIT_RETIRE_LEGACY_PAGES", "1")
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    cases = {
+        "/": "/chat",
+        "/pages/chat": "/chat",
+        "/pages/query": "/documents",
+        "/pages/review-tasks": "/reports",
+        "/pages/audit-logs": "/archive",
+        "/pages/audit-findings": "/findings",
+        "/pages/index-admin": "/knowledge-base",
+    }
+
+    for path, expected_location in cases.items():
+        response = client.get(
+            path,
+            headers={"X-Role": "it-admin"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 302
+        assert response.headers["location"] == expected_location
+
+
 def test_graph_workbench_api_returns_readonly_topology(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
