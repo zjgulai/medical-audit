@@ -45,7 +45,7 @@ vi.mock("./use-replica-runtime", () => ({
           name: "医保核验",
           category: "业务类",
           summary: "核验医保目录限制、结算明细和疑点依据。",
-          project: "医保基金使用合规专项自查",
+          project: "智能体广场",
           topic: "医保基金使用合规",
           initial: "医",
           tone: "blue"
@@ -73,6 +73,7 @@ describe("ReplicaAgentDirectory", () => {
           metadata: expect.objectContaining({
             source: "agent-market",
             template_id: "template-medical-fund",
+            template_project: "智能体广场",
             avatar_initial: "医"
           })
         })

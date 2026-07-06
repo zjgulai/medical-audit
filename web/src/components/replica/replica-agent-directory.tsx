@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { useReplicaAgentsData } from "./use-replica-runtime";
 import { createAuditAgent } from "@/lib/api-client";
+import { DEFAULT_AUDIT_PROJECT_NAME } from "@/lib/audit-user";
 import type { ReferenceAgentCard, ReferenceAgentCategory } from "@/lib/reference-replica-data";
 
 import {
@@ -182,13 +183,14 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
         topic: agent.topic,
         prompt: buildMarketAgentPrompt(agent),
         knowledge_base: "医保基金合规知识库",
-        project_name: agent.project,
+        project_name: DEFAULT_AUDIT_PROJECT_NAME,
         visibility_scope: "project",
         allowed_roles: ["admin", "technician", "director", "member"],
         metadata: {
           source: "agent-market",
           template_id: agent.id,
           template_summary: agent.summary,
+          template_project: agent.project,
           avatar_initial: agent.initial,
           avatar_tone: agent.tone
         }

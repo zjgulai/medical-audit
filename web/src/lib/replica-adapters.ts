@@ -8,10 +8,7 @@ import type {
   GraphWorkbenchResponse,
   ProjectsResponse,
   QueryHistoryResponse,
-  QueryRequest,
-  QueryResponse,
   ReportWorkbenchResponse,
-  SourceCollection,
   TableAnalysisUploadHistoryResponse
 } from "./api-types";
 import {
@@ -143,7 +140,6 @@ export type ReplicaKnowledgeBaseClient = {
 export type ReplicaDocumentsClient = {
   readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
   readonly fetchQueryHistory?: () => Promise<QueryHistoryResponse>;
-  readonly runKnowledgeQuery?: (request: QueryRequest) => Promise<QueryResponse>;
 };
 
 export type ReplicaAnalyticsClient = {
@@ -172,20 +168,6 @@ export type ReplicaClient = ReplicaShellClient &
   ReplicaProjectsClient;
 
 const agentTones: readonly ReferenceAgentCard["tone"][] = ["rose", "blue", "cyan", "amber", "slate"];
-
-const sourceCollectionLabels: Partial<Record<SourceCollection, string>> = {
-  "medical-insurance-laws": "医保法规库",
-  "supervision-rules-knowledge": "监督规则库",
-  "medical-insurance-catalog": "医保目录库",
-  "risk-negative-list": "风险负面清单",
-  "personal-materials": "个人材料库"
-};
-
-const defaultDocumentQuery: QueryRequest = {
-  question: "招标人违法确定中标人的定性依据",
-  top_k: 5,
-  title_only: true
-};
 
 function issue(
   surface: ReplicaSurface,
@@ -253,19 +235,6 @@ function formatDateTime(value: string | null | undefined, fallback = "未记录"
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function locatorString(locator: Record<string, unknown>, keys: readonly string[]): string | null {
-  for (const key of keys) {
-    const value = locator[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-    if (typeof value === "number") {
-      return String(value);
-    }
-  }
-  return null;
 }
 
 function makeInitial(name: string): string {
@@ -342,40 +311,6 @@ function mapDocumentCategoriesFromCatalog(
       count: item.metrics.document_count ?? item.metrics.chunk_count ?? 0
     }));
   return categories.length > 0 ? categories : referenceDocumentCategories;
-}
-
-function mapDocumentResults(response: QueryResponse): readonly ReferenceDocumentResult[] {
-  const citationResults = response.citations.map((citation, index) => {
-    const locatorTitle = locatorString(citation.locator, [
-      "title",
-      "document_title",
-      "file_name",
-      "source_title",
-      "name"
-    ]);
-    const locatorDate = locatorString(citation.locator, ["date", "published_at", "issued_at", "year"]);
-    const source = sourceCollectionLabels[citation.source_collection] ?? citation.source_collection;
-
-    return {
-      id: citation.citation_id || `query-citation-${index + 1}`,
-      title: locatorTitle ?? `${source}引用 ${index + 1}`,
-      category: normalizeText(citation.evidence_type, source),
-      excerpt: compactText(citation.snippet, 96),
-      source,
-      updatedAt: locatorDate ?? "检索命中"
-    };
-  });
-
-  const personalResults = response.personal_upload_matches.map((match, index) => ({
-    id: match.id || `personal-match-${index + 1}`,
-    title: match.name,
-    category: "个人材料",
-    excerpt: compactText(match.snippet, 96),
-    source: normalizeText(match.created_by, "个人上传"),
-    updatedAt: formatDate(match.indexed_at, "未索引")
-  }));
-
-  return [...citationResults, ...personalResults];
 }
 
 function mapAnalysisUploads(
@@ -591,7 +526,7 @@ export async function loadReplicaDocumentsData(
   const issues: ReplicaAdapterIssue[] = [];
   let searchHistory = referenceSearchHistory;
   let categories = referenceDocumentCategories;
-  let results = referenceDocumentResults;
+  const results = referenceDocumentResults;
   let apiUsed = false;
 
   const catalog = await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
@@ -604,28 +539,6 @@ export async function loadReplicaDocumentsData(
   if (history && history.items.length > 0) {
     searchHistory = history.items.map((item) => normalizeText(item.question, "未命名查询"));
     apiUsed = true;
-  }
-
-  const runKnowledgeQuery = client.runKnowledgeQuery;
-  const queryResponse = await readOptionalApi(
-    "documents",
-    issues,
-    runKnowledgeQuery ? () => runKnowledgeQuery(defaultDocumentQuery) : undefined
-  );
-  if (queryResponse) {
-    const mappedResults = mapDocumentResults(queryResponse);
-    if (mappedResults.length > 0) {
-      results = mappedResults;
-      apiUsed = true;
-    } else {
-      issues.push(
-        issue(
-          "documents",
-          "partial-schema-gap",
-          "Knowledge query returned no citations or personal upload matches for document result cards."
-        )
-      );
-    }
   }
 
   return {

@@ -11,8 +11,7 @@ import {
   fetchGraphWorkbench,
   fetchProjects,
   fetchQueryHistory,
-  fetchReportWorkbench,
-  runKnowledgeQuery
+  fetchReportWorkbench
 } from "@/lib/api-client";
 import {
   loadReplicaAgentMarketData,
@@ -79,8 +78,7 @@ function replicaReadClient(): ReplicaClient {
     fetchGraphWorkbench,
     fetchProjects,
     fetchQueryHistory,
-    fetchReportWorkbench,
-    runKnowledgeQuery
+    fetchReportWorkbench
   };
 }
 

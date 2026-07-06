@@ -4,6 +4,8 @@ import { FormEvent, useMemo, useState } from "react";
 
 import { buildReplicaLocalGateNotice, ReplicaNotice } from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
+import { runKnowledgeQuery } from "@/lib/api-client";
+import type { QueryResponse } from "@/lib/api-types";
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
 
 const documentLibraryTiles = [
@@ -88,7 +90,6 @@ type DocumentPreview = ReferenceDocumentResult & {
 export default function DocumentsPage() {
   const documentsData = useReplicaDocumentsData();
   const categories = documentsData.data.categories;
-  const documentResults = documentsData.data.results;
   const searchHistory =
     documentsData.data.searchHistory.length > 0 ? documentsData.data.searchHistory : defaultSearchHistory;
   const libraryTiles = categories.length > 0
@@ -107,8 +108,15 @@ export default function DocumentsPage() {
   const [notice, setNotice] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("doc-ledger");
   const [detailOpen, setDetailOpen] = useState(true);
+  const [liveResults, setLiveResults] = useState<readonly ReferenceDocumentResult[]>([]);
+  const [hasLiveSearch, setHasLiveSearch] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const documentResults = hasLiveSearch ? liveResults : documentsData.data.results;
 
   const filteredResults = useMemo(() => {
+    if (hasLiveSearch) {
+      return documentResults;
+    }
     const normalizedQuery = submittedQuery.trim().toLowerCase();
     return documentResults.filter((item) => {
       const categoryMatched = item.category === activeCategory || normalizedQuery.length > 0;
@@ -116,11 +124,36 @@ export default function DocumentsPage() {
       const queryMatched = normalizedQuery.length === 0 || text.toLowerCase().includes(normalizedQuery);
       return categoryMatched && queryMatched;
     });
-  }, [activeCategory, documentResults, submittedQuery, titleOnly]);
+  }, [activeCategory, documentResults, hasLiveSearch, submittedQuery, titleOnly]);
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmittedQuery(query.trim() || "劳动争议司法案件解释");
+    await runDocumentSearch(query.trim() || "劳动争议司法案件解释");
+  }
+
+  async function runDocumentSearch(nextQuery: string) {
+    setSubmittedQuery(nextQuery);
+    setSearching(true);
+    setNotice("");
+    try {
+      const response = await runKnowledgeQuery({
+        question: nextQuery,
+        top_k: 5,
+        title_only: titleOnly
+      });
+      const mappedResults = queryResponseToDocumentResults(response);
+      setLiveResults(mappedResults);
+      setHasLiveSearch(true);
+      if (mappedResults.length === 0) {
+        setNotice("已完成检索，但未返回可展示的引用文档。");
+      }
+    } catch {
+      setLiveResults([]);
+      setHasLiveSearch(true);
+      setNotice("检索未完成：请确认知识库检索服务可用后重试。");
+    } finally {
+      setSearching(false);
+    }
   }
 
   const shownFeaturedDocuments: readonly DocumentPreview[] = filteredResults.length > 0
@@ -195,19 +228,13 @@ export default function DocumentsPage() {
           </label>
           <button type="submit" className="replica-doc-search-submit">
             <span className="replica-doc-search-icon" aria-hidden="true" />
-            搜索
+            {searching ? "搜索中" : "搜索"}
           </button>
         </form>
         <button
           type="button"
           className="replica-doc-ai-button"
-          onClick={() => {
-            setSubmittedQuery(query.trim() || submittedQuery);
-            setNotice(buildReplicaLocalGateNotice({
-              action: "AI增强检索",
-              nextStep: "AI 检索编排 API"
-            }));
-          }}
+          onClick={() => void runDocumentSearch(query.trim() || submittedQuery)}
         >
           <span aria-hidden="true">AI</span>
           检索AI+
@@ -372,4 +399,45 @@ export default function DocumentsPage() {
       </section>
     </main>
   );
+}
+
+function queryResponseToDocumentResults(response: QueryResponse): readonly ReferenceDocumentResult[] {
+  const citations = response.citations.map((citation, index) => ({
+    id: citation.citation_id || `query-citation-${index + 1}`,
+    title: locatorText(citation.locator, ["title", "document_title", "file_name", "source_title", "name"]) ?? `引用文档 ${index + 1}`,
+    category: citation.evidence_type || citation.source_collection,
+    excerpt: compactDocumentText(citation.snippet, 96),
+    source: citation.source_collection,
+    updatedAt: locatorText(citation.locator, ["date", "published_at", "issued_at", "year"]) ?? "检索命中"
+  }));
+  const uploads = response.personal_upload_matches.map((match, index) => ({
+    id: match.id || `personal-match-${index + 1}`,
+    title: match.name,
+    category: "个人材料",
+    excerpt: compactDocumentText(match.snippet, 96),
+    source: match.created_by || "个人上传",
+    updatedAt: match.indexed_at?.slice(0, 10) || "未索引"
+  }));
+  return [...citations, ...uploads];
+}
+
+function locatorText(locator: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+  return null;
+}
+
+function compactDocumentText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
