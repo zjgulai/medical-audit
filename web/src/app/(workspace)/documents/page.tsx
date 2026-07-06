@@ -89,7 +89,16 @@ export default function DocumentsPage() {
   const documentsData = useReplicaDocumentsData();
   const categories = documentsData.data.categories;
   const documentResults = documentsData.data.results;
-  const searchHistory = defaultSearchHistory;
+  const searchHistory =
+    documentsData.data.searchHistory.length > 0 ? documentsData.data.searchHistory : defaultSearchHistory;
+  const libraryTiles = categories.length > 0
+    ? categories.slice(0, 7).map((category, index) => ({
+      id: category.id,
+      label: category.name,
+      count: category.count,
+      icon: documentLibraryTiles[index % documentLibraryTiles.length].icon
+    }))
+    : documentLibraryTiles;
   const [query, setQuery] = useState("劳动争议司法案件解释");
   const [submittedQuery, setSubmittedQuery] = useState("劳动争议司法案件解释");
   const [titleOnly, setTitleOnly] = useState(false);
@@ -234,7 +243,7 @@ export default function DocumentsPage() {
       </section>
 
       <section className="replica-doc-library-band" aria-label="文档库分类">
-        {documentLibraryTiles.map((tile) => (
+        {libraryTiles.map((tile) => (
           <button
             key={tile.id}
             type="button"

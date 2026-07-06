@@ -7,10 +7,12 @@ import {
   fetchAnalysisUploadHistory,
   fetchAuthSession,
   fetchDocumentPermissions,
+  fetchDocumentSourceCollections,
   fetchGraphWorkbench,
   fetchProjects,
   fetchQueryHistory,
-  fetchReportWorkbench
+  fetchReportWorkbench,
+  runKnowledgeQuery
 } from "@/lib/api-client";
 import {
   loadReplicaAgentMarketData,
@@ -60,7 +62,7 @@ export type ReplicaRuntimeResult<TData> = ReplicaAdapterResult<TData> & {
 };
 
 function replicaApiReadsEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS === "1";
+  return process.env.NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS !== "0";
 }
 
 function replicaReadClient(): ReplicaClient {
@@ -73,10 +75,12 @@ function replicaReadClient(): ReplicaClient {
     fetchAnalysisUploadHistory,
     fetchAuthSession,
     fetchDocumentPermissions,
+    fetchDocumentSourceCollections,
     fetchGraphWorkbench,
     fetchProjects,
     fetchQueryHistory,
-    fetchReportWorkbench
+    fetchReportWorkbench,
+    runKnowledgeQuery
   };
 }
 

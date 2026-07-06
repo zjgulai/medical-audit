@@ -3,6 +3,8 @@ import type {
   AuditAgentApiItem,
   AuthSessionResponse,
   DocumentPermissionsResponse,
+  DocumentSourceCollectionCatalogItem,
+  DocumentSourceCollectionCatalogResponse,
   GraphWorkbenchResponse,
   ProjectsResponse,
   QueryHistoryResponse,
@@ -139,6 +141,7 @@ export type ReplicaKnowledgeBaseClient = {
 };
 
 export type ReplicaDocumentsClient = {
+  readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
   readonly fetchQueryHistory?: () => Promise<QueryHistoryResponse>;
   readonly runKnowledgeQuery?: (request: QueryRequest) => Promise<QueryResponse>;
 };
@@ -314,6 +317,31 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
     initial: makeInitial(item.name),
     tone: agentTones[index % agentTones.length]
   };
+}
+
+function mergeAgentCatalog(
+  apiAgents: readonly ReferenceAgentCard[],
+  fixtureAgents: readonly ReferenceAgentCard[]
+): readonly ReferenceAgentCard[] {
+  const seen = new Set(apiAgents.map((agent) => agent.id));
+  return [
+    ...apiAgents,
+    ...fixtureAgents.filter((agent) => !seen.has(agent.id))
+  ];
+}
+
+function mapDocumentCategoriesFromCatalog(
+  items: readonly DocumentSourceCollectionCatalogItem[]
+): readonly ReferenceDocumentCategory[] {
+  const categories = items
+    .filter((item) => item.product_queryable || item.queryable)
+    .map((item) => ({
+      id: `source-${item.source_collection}`,
+      name: item.label,
+      description: item.description,
+      count: item.metrics.document_count ?? item.metrics.chunk_count ?? 0
+    }));
+  return categories.length > 0 ? categories : referenceDocumentCategories;
 }
 
 function mapDocumentResults(response: QueryResponse): readonly ReferenceDocumentResult[] {
@@ -499,12 +527,12 @@ export async function loadReplicaAgentMarketData(
     issue(
       "agent-market",
       "catalog-api-needed",
-      "Marketplace ownership, install, rating, and visibility contract is not available yet."
+      "Dedicated marketplace rating and ownership contract is not available yet."
     ),
     issue(
       "agent-market",
       "mutation-gated",
-      "Install, copy, publish, and lifecycle actions remain UI-only until write gates are approved."
+      "Publish, rating, and lifecycle actions remain gated; install uses the agent create API."
     )
   ];
   const agentResponse = await readOptionalApi("agent-market", issues, client.fetchAgents);
@@ -520,11 +548,12 @@ export async function loadReplicaAgentMarketData(
   const marketAgents = agentResponse.items
     .filter((item) => item.visibility_scope === "system" || item.source === "system-default")
     .map((item, index) => mapAgent(item, index, "智能体广场"));
+  const agents = mergeAgentCatalog(marketAgents, referenceMarketAgents);
 
   return {
-    source: sourceFrom(marketAgents.length > 0, marketAgents.length === 0),
+    source: sourceFrom(marketAgents.length > 0, true),
     data: {
-      agents: marketAgents.length > 0 ? marketAgents : referenceMarketAgents,
+      agents,
       categories: agentResponse.categories.map(toReferenceAgentCategory)
     },
     issues
@@ -561,8 +590,15 @@ export async function loadReplicaDocumentsData(
 ): Promise<ReplicaAdapterResult<ReplicaDocumentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
   let searchHistory = referenceSearchHistory;
+  let categories = referenceDocumentCategories;
   let results = referenceDocumentResults;
   let apiUsed = false;
+
+  const catalog = await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
+  if (catalog && catalog.items.length > 0) {
+    categories = mapDocumentCategoriesFromCatalog(catalog.items);
+    apiUsed = true;
+  }
 
   const history = await readOptionalApi("documents", issues, client.fetchQueryHistory);
   if (history && history.items.length > 0) {
@@ -594,7 +630,7 @@ export async function loadReplicaDocumentsData(
 
   return {
     source: sourceFrom(apiUsed, true),
-    data: { categories: referenceDocumentCategories, searchHistory, results },
+    data: { categories, searchHistory, results },
     issues
   };
 }
