@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { DocumentSearchHome } from "@/components/portal/document-search-home";
 
 export default function WorkspacePage() {
-  redirect("/chat");
+  return <DocumentSearchHome />;
 }

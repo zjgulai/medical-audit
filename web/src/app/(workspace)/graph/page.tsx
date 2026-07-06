@@ -1,237 +1,405 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import {
-  buildReplicaLocalGateNotice,
-  ReplicaEmptyState,
-  ReplicaFilterButton,
-  ReplicaMetric,
-  ReplicaNotice,
-  ReplicaPageHeader
-} from "@/components/replica/replica-page-kit";
-import { useReplicaGraphData } from "@/components/replica/use-replica-runtime";
-import type { ReferenceGraphNode } from "@/lib/reference-replica-data";
+import { SearchBackendStatusPill } from "@/components/portal/search-backend-status-pill";
+import { StatusPill } from "@/components/ui/status-pill";
+import { fetchGraphWorkbench } from "@/lib/api-client";
+import type {
+  GraphWorkbenchNode,
+  GraphWorkbenchNodeKind,
+  GraphWorkbenchRelation,
+  GraphWorkbenchResponse
+} from "@/lib/api-types";
+import { graphNodes, graphRelations } from "@/lib/portal-data";
 
-type GraphKind = "全部" | "项目" | "智能体" | "知识库" | "文档" | "银行" | "企业" | "政府机构" | "政策文件";
-
-const graphKinds: readonly GraphKind[] = ["全部", "项目", "智能体", "知识库", "文档", "银行", "企业", "政府机构", "政策文件"];
-const graphCards = [
+const graphNodeKindOrder: readonly GraphWorkbenchNodeKind[] = ["项目", "知识库", "文档", "规则", "疑点", "复核", "报告", "整改"];
+const graphSolutionSteps = [
   {
-    id: "graph-card-village",
-    title: "乡村振兴专项审计图谱",
-    meta: "27 文档 / 110 实体 / 54 企业",
-    status: "运行中",
-    summary: "围绕资金拨付、建设运维、主管责任和项目材料形成审计关系链。"
+    title: "复用现有库表",
+    detail: "以 source_documents、document_chunks、query_logs、audit_findings 和 review_tasks 生成关系，不新增图数据库。"
   },
   {
-    id: "graph-card-medical",
-    title: "医保基金合规审计图谱",
-    meta: "32 文档 / 86 实体 / 18 规则",
-    status: "可扩展",
-    summary: "面向医保基金支付、目录限制、智能监管规则和疑点整改的图谱模板。"
+    title: "后端只读聚合",
+    detail: "继续使用 /api/v1/graph/workbench 输出节点与关系，先服务展示和追溯，不做在线写图。"
+  },
+  {
+    title: "逐步补强关系",
+    detail: "先覆盖知识库到文档、规则到疑点、疑点到复核，后续再补相似文档和概念归并。"
   }
 ] as const;
-type GraphCardId = (typeof graphCards)[number]["id"];
+
+const staticGraphWorkbench: GraphWorkbenchResponse = {
+  format: "graph-workbench-v1",
+  generated_at: "static-fallback",
+  graph_id: "SELF-CHECK-FUND-20260607",
+  graph_title: "医保基金使用合规专项图谱",
+  graph_scope: "医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。",
+  nodes: graphNodes,
+  relations: graphRelations,
+  metrics: buildGraphMetrics(graphNodes, graphRelations),
+  evidence_grade: "static-fallback",
+  production_side_effect: "none",
+  store: { ready: false, backend: "portal-data-static-fallback" }
+};
+
+function fallbackHrefForNode(node: GraphWorkbenchNode): string {
+  if (node.kind === "复核") {
+    return "/fund-compliance/review";
+  }
+  if (node.kind === "报告") {
+    return "/reports#report-records-title";
+  }
+  if (node.kind === "整改") {
+    return "/remediation#remediation-ledger-title";
+  }
+  return "/workspace";
+}
+
+function safePortalHref(node: GraphWorkbenchNode): string {
+  const href = node.href;
+  const fallback = fallbackHrefForNode(node);
+  if (!href || href.startsWith("/pages/review-tasks") || href.startsWith("/review-tasks/")) {
+    return fallback;
+  }
+  if ((node.kind === "复核" || node.kind === "报告") && href === "/reports") {
+    return fallback;
+  }
+  if (node.kind === "整改" && href === "/remediation") {
+    return fallback;
+  }
+
+  return href;
+}
+
+function normalizeGraphWorkbench(response: GraphWorkbenchResponse): GraphWorkbenchResponse {
+  return {
+    ...response,
+    nodes: response.nodes.map((node) => ({
+      ...node,
+      href: safePortalHref(node)
+    }))
+  };
+}
 
 export default function GraphPage() {
-  const graphData = useReplicaGraphData();
-  const graphNodes = graphData.data.nodes;
-  const [query, setQuery] = useState("");
-  const [activeKind, setActiveKind] = useState<GraphKind>("全部");
-  const [notice, setNotice] = useState("");
-  const [selectedGraphId, setSelectedGraphId] = useState<GraphCardId>(graphCards[0].id);
-  const [selectedNodeId, setSelectedNodeId] = useState(graphNodes[0]?.id ?? "");
-  const [detailOpen, setDetailOpen] = useState(true);
-  const filteredNodes = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return graphNodes.filter((node) => {
-      const kindMatched = activeKind === "全部" || node.kind === activeKind;
-      const queryMatched =
-        normalizedQuery.length === 0 ||
-        `${node.label} ${node.kind} ${node.metric} ${node.status}`.toLowerCase().includes(normalizedQuery);
-      return kindMatched && queryMatched;
-    });
-  }, [activeKind, graphNodes, query]);
-  const selectedGraph = graphCards.find((card) => card.id === selectedGraphId) ?? graphCards[0];
-  const selectedNode = graphNodes.find((node) => node.id === selectedNodeId) ?? graphNodes[0];
+  const [workbench, setWorkbench] = useState<GraphWorkbenchResponse>(staticGraphWorkbench);
+  const [backendStatus, setBackendStatus] = useState<"loading" | "ready" | "fallback">("loading");
 
-  function recordGraphAction(card: typeof graphCards[number], action: string) {
-    setSelectedGraphId(card.id);
-    setDetailOpen(true);
-    setNotice(buildReplicaLocalGateNotice({
-      action: `${action}「${card.title}」`,
-      nextStep: "图谱详情 API"
-    }));
-  }
+  useEffect(() => {
+    let active = true;
 
-  function recordNodeAction(node: ReferenceGraphNode, action: string) {
-    setSelectedNodeId(node.id);
-    setDetailOpen(true);
-    setNotice(buildReplicaLocalGateNotice({
-      action: `${action}「${node.label}」`,
-      nextStep: "图谱节点 API"
-    }));
-  }
+    fetchGraphWorkbench()
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(normalizeGraphWorkbench(response));
+        setBackendStatus("ready");
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setWorkbench(staticGraphWorkbench);
+        setBackendStatus("fallback");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const nodes = workbench.nodes;
+  const relations = workbench.relations;
+  const kindStats = useMemo(
+    () =>
+      graphNodeKindOrder.map((kind) => ({
+        kind,
+        count: workbench.metrics.node_kind_counts[kind] ?? nodes.filter((node) => node.kind === kind).length
+      })),
+    [nodes, workbench.metrics.node_kind_counts]
+  );
+  const graphEdges = useMemo(() => buildGraphEdges(nodes, relations), [nodes, relations]);
+  const statusTone = backendStatus === "ready" ? "success" : backendStatus === "loading" ? "info" : "warning";
+  const statusLabel =
+    backendStatus === "ready" ? "后端已连接" : backendStatus === "loading" ? "连接中" : "本地样例兜底";
 
   return (
-    <main
-      className="replica-page"
-      data-replica-source={graphData.source}
-      data-replica-status={graphData.status}
-    >
-      <ReplicaPageHeader
-        kicker="AI知识图谱"
-        title="知识图谱"
-        description="围绕项目、智能体、知识库和审计材料展示节点关系，新增图谱保持本地门禁。"
-        actions={
-          <button type="button" className="replica-primary-button" onClick={() => setNotice(buildReplicaLocalGateNotice({
-            action: "新建图谱",
-            nextStep: "图谱创建 API"
-          }))}>
-            新建图谱
-          </button>
-        }
-      />
-
-      <section className="replica-metric-grid">
-        <ReplicaMetric label="节点数" value={`${graphNodes.length}`} />
-        <ReplicaMetric label="节点类型" value={`${graphKinds.length - 1}`} tone="green" />
-        <ReplicaMetric label="关系链" value="11" tone="amber" />
-        <ReplicaMetric label="状态" value="静态预览" tone="slate" />
-      </section>
-
-      <section className="replica-graph-card-row" aria-label="知识图谱列表">
-        {graphCards.map((card) => (
-          <button
-            key={card.id}
-            type="button"
-            className={selectedGraph.id === card.id ? "is-selected" : ""}
-            onClick={() => recordGraphAction(card, "打开")}
-          >
-            <span>{card.status}</span>
-            <strong>{card.title}</strong>
-            <em>{card.meta}</em>
-          </button>
-        ))}
-      </section>
-
-      {detailOpen ? (
-        <section className="replica-graph-detail-strip" aria-label="图谱详情预览">
-          <div>
-            <span>{selectedGraph.status}</span>
-            <h2>{selectedGraph.title}</h2>
-            <p>{selectedGraph.summary}</p>
+    <main className="space-y-5">
+      <section className="audit-panel p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="audit-kicker">知识图谱</p>
+            <h1 className="audit-page-title">知识图谱入口</h1>
           </div>
-          {selectedNode ? (
-            <dl>
-              <div>
-                <dt>当前节点</dt>
-                <dd>{selectedNode.label}</dd>
-              </div>
-              <div>
-                <dt>节点类型</dt>
-                <dd>{selectedNode.kind}</dd>
-              </div>
-              <div>
-                <dt>状态</dt>
-                <dd>{selectedNode.status}</dd>
-              </div>
-            </dl>
-          ) : null}
-          <div className="replica-graph-detail-actions">
-            {selectedNode ? (
-              <button type="button" onClick={() => recordNodeAction(selectedNode, "查看证据")}>查看证据</button>
-            ) : null}
-            <button type="button" onClick={() => setDetailOpen(false)} aria-label="关闭图谱详情">关闭</button>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="replica-panel">
-        {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
-        <div className="replica-toolbar">
-          <label className="replica-search">
-            <span aria-hidden="true">⌕</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索知识图谱"
-            />
-          </label>
-          <div className="replica-filter-group" aria-label="节点类型">
-            {graphKinds.map((kind) => (
-              <ReplicaFilterButton key={kind} value={kind} activeValue={activeKind} onSelect={setActiveKind}>
-                {kind}
-              </ReplicaFilterButton>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchBackendStatusPill />
+            <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
           </div>
         </div>
-        <div className="replica-statebar" aria-label="图谱筛选状态">
-          <span>{activeKind === "全部" ? "全部节点" : activeKind}</span>
-          <strong>{filteredNodes.length} / {graphNodes.length}</strong>
-          <span>{query.trim() ? "关键词已应用" : "全量预览"}</span>
-          <span>静态关系图</span>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <GraphMetric label="节点类型" value={`${workbench.metrics.node_kind_count} 类`} />
+          <GraphMetric label="关系链路" value={`${workbench.metrics.relation_count} 条`} />
+          <GraphMetric label="强证据关系" value={`${workbench.metrics.strong_relation_count} 条`} />
+          <GraphMetric label="待补关系" value={`${workbench.metrics.pending_relation_count} 条`} />
         </div>
       </section>
 
-      <section className="replica-graph-layout">
-        <div className="replica-panel replica-graph-map" aria-label="知识图谱关系预览">
-          <div className="replica-graph-map-summary">
-            <strong>关系预览</strong>
-            <span>节点位置为本地布局，不创建远端图谱。</span>
-          </div>
-          <div className="replica-graph-core" aria-hidden="true">
-            <span>项目</span>
-            <strong>乡村振兴专项审计</strong>
-          </div>
-          <div className="replica-graph-relation-label relation-a">引用</div>
-          <div className="replica-graph-relation-label relation-b">关联</div>
-          <div className="replica-graph-relation-label relation-c">资金链</div>
-          <div className="replica-graph-line line-a" />
-          <div className="replica-graph-line line-b" />
-          <div className="replica-graph-line line-c" />
-          {graphNodes.slice(0, 6).map((node, index) => (
-            <button
-              key={node.id}
-              type="button"
-              className={`replica-graph-node node-${index + 1} ${selectedNode?.id === node.id ? "is-selected" : ""}`}
-              aria-label={`聚焦节点：${node.label}`}
-              onClick={() => recordNodeAction(node, "聚焦节点")}
-            >
-              <span>{node.kind}</span>
-              <strong>{node.label}</strong>
-            </button>
+      <section className="audit-panel p-6">
+        <h2 className="audit-section-title">节点覆盖</h2>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+          {kindStats.map((item) => (
+            <div key={item.kind} className="rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-3 py-2">
+              <p className="audit-meta font-semibold">{item.kind}</p>
+              <p className="audit-metric-value-sm mt-1">{item.count}</p>
+            </div>
           ))}
         </div>
+      </section>
 
-        <div className="replica-panel">
-          <div className="replica-results-head">
-            <div>
-              <p className="replica-kicker">节点类型</p>
-              <h2>节点列表</h2>
-            </div>
-            <span>{filteredNodes.length} 个节点</span>
+      <section className="audit-panel p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="audit-kicker">技术方案</p>
+            <h2 className="audit-section-title mt-2">最小知识图谱方案</h2>
+            <p className="audit-copy mt-2 max-w-3xl">
+              第一阶段把知识图谱作为知识库上的只读关系视图：复用现有检索、疑点和复核数据，避免新增图数据库和双写链路。
+            </p>
           </div>
-          {filteredNodes.length === 0 ? (
-            <ReplicaEmptyState title="暂无节点" description="调整图谱关键词或节点类型后重试。" />
-          ) : (
-            <div className="replica-node-list">
-              {filteredNodes.map((node) => (
-                <article key={node.id}>
-                  <div>
-                    <span>{node.kind}</span>
-                    <h3>{node.label}</h3>
-                  </div>
-                  <p>{node.metric}</p>
-                  <strong>{node.status}</strong>
-                  <button type="button" onClick={() => recordNodeAction(node, "聚焦节点")}>聚焦</button>
-                </article>
-              ))}
-            </div>
-          )}
+          <StatusPill tone="info">代码最小</StatusPill>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {graphSolutionSteps.map((step, index) => (
+            <article key={step.title} className="rounded-[var(--audit-radius-lg)] border border-[var(--audit-line-soft)] bg-[var(--audit-surface-muted)] p-4">
+              <span className="grid size-8 place-items-center rounded-full bg-white text-sm font-semibold text-[var(--audit-primary)]">
+                {index + 1}
+              </span>
+              <h3 className="audit-card-title mt-3">{step.title}</h3>
+              <p className="audit-copy mt-2">{step.detail}</p>
+            </article>
+          ))}
         </div>
       </section>
+
+      <section className="audit-panel p-6" aria-labelledby="graph-preview-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 id="graph-preview-title" className="audit-section-title">{workbench.graph_title}</h2>
+            <p className="audit-meta mt-1">
+              {workbench.graph_id} · {backendStatus === "ready" ? "API 只读预览" : "证据链静态预览"}
+            </p>
+          </div>
+          <StatusPill tone="success">证据链覆盖</StatusPill>
+        </div>
+        <div className="audit-table-shell mt-4 bg-white">
+          <svg
+            className="h-[32rem] w-full text-slate-700"
+            role="img"
+            aria-label="审计知识图谱静态关系预览"
+            viewBox="0 0 920 500"
+          >
+            <defs>
+              <marker id="graph-arrow" markerHeight="10" markerWidth="10" orient="auto" refX="8" refY="5">
+                <path d="M 0 0 L 10 5 L 0 10 z" className="fill-blue-400" />
+              </marker>
+            </defs>
+
+            {graphEdges.map(({ relation, source, target }) => (
+              <line
+                key={relation.id}
+                x1={source.x}
+                y1={source.y}
+                x2={target.x}
+                y2={target.y}
+                className={relation.strength === "待补" ? "stroke-amber-300" : "stroke-blue-300"}
+                markerEnd="url(#graph-arrow)"
+                strokeDasharray={relation.strength === "待补" ? "7 6" : undefined}
+                strokeLinecap="round"
+                strokeWidth="2"
+              />
+            ))}
+
+            {nodes.map((node) => (
+              <GraphSvgNode key={node.id} node={node} />
+            ))}
+          </svg>
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <section className="audit-panel p-6" aria-labelledby="graph-relations-title">
+          <h2 id="graph-relations-title" className="audit-section-title">证据链关系</h2>
+          <div className="mt-4 grid gap-3">
+            {relations.map((relation) => (
+              <RelationCard key={relation.id} relation={relation} />
+            ))}
+          </div>
+        </section>
+        <section className="audit-panel p-6">
+          <h2 className="audit-section-title">节点证据</h2>
+          <div className="mt-4 grid gap-3">
+            {nodes.map((node) => (
+              <a id={node.id} key={node.id} className="audit-focus-ring block scroll-mt-24 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] p-3 hover:bg-[var(--audit-primary-soft)]" href={node.href}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="audit-compact-title">{node.label}</p>
+                    <p className="audit-meta mt-1">
+                      {node.kind} / {node.metric}
+                    </p>
+                  </div>
+                  <StatusPill tone={getNodeStatusTone(node.status)}>{node.status}</StatusPill>
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <a className="audit-focus-ring audit-action-card p-5" href="/documents">
+        <p className="audit-kicker">文档检索</p>
+        <h2 className="audit-section-title mt-2">核验证据来源</h2>
+      </a>
     </main>
   );
 }
+
+function buildGraphMetrics(
+  nodes: readonly GraphWorkbenchNode[],
+  relations: readonly GraphWorkbenchRelation[]
+): GraphWorkbenchResponse["metrics"] {
+  const nodeKindCounts = Object.fromEntries(
+    graphNodeKindOrder.map((kind) => [kind, nodes.filter((node) => node.kind === kind).length])
+  ) as Record<GraphWorkbenchNodeKind, number>;
+
+  return {
+    node_count: nodes.length,
+    node_kind_count: graphNodeKindOrder.length,
+    node_kind_counts: nodeKindCounts,
+    relation_count: relations.length,
+    strong_relation_count: relations.filter((relation) => relation.strength === "强").length,
+    pending_relation_count: relations.filter((relation) => relation.strength === "待补").length
+  };
+}
+
+function buildGraphEdges(
+  nodes: readonly GraphWorkbenchNode[],
+  relations: readonly GraphWorkbenchRelation[]
+) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return relations.flatMap((relation) => {
+    const source = nodeById.get(relation.sourceId);
+    const target = nodeById.get(relation.targetId);
+
+    if (!source || !target) {
+      return [];
+    }
+
+    return [{ relation, source, target }];
+  });
+}
+
+function GraphMetric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="audit-panel-muted p-4">
+      <p className="audit-label">{label}</p>
+      <p className="audit-metric-value mt-2">{value}</p>
+    </div>
+  );
+}
+
+function GraphSvgNode({ node }: { readonly node: GraphWorkbenchNode }) {
+  const style = graphNodeStyleByKind[node.kind];
+
+  return (
+    <g transform={`translate(${node.x} ${node.y})`}>
+      <title>{`${node.kind}：${node.label}，${node.description}`}</title>
+      <rect x="-68" y="-30" width="136" height="60" rx="15" className={`stroke-[1.5] ${style.rect}`} />
+      <circle cx="-44" cy="-9" r="8" className={style.dot} />
+      <text x="-28" y="-5" className="fill-slate-500 text-[11px] font-semibold">
+        {node.kind}
+      </text>
+      <text x="0" y="16" textAnchor="middle" className="fill-slate-950 text-[13px] font-semibold">
+        {node.label}
+      </text>
+    </g>
+  );
+}
+
+function RelationCard({ relation }: { readonly relation: GraphWorkbenchRelation }) {
+  return (
+    <article className="audit-panel-muted p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="audit-compact-title">{relation.source}</p>
+          <p className="audit-meta mt-1">{relation.evidence}</p>
+        </div>
+        <StatusPill tone={getRelationTone(relation.strength)}>{relation.strength}</StatusPill>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <span className="audit-chip audit-chip-info">{relation.relation}</span>
+        <span className="font-semibold text-[var(--audit-ink)]">{relation.target}</span>
+      </div>
+    </article>
+  );
+}
+
+function getNodeStatusTone(status: GraphWorkbenchNode["status"]) {
+  if (status === "可引用" || status === "已归集") {
+    return "success";
+  }
+
+  if (status === "待复核" || status === "门禁中") {
+    return "warning";
+  }
+
+  return "info";
+}
+
+function getRelationTone(strength: GraphWorkbenchRelation["strength"]) {
+  if (strength === "强") {
+    return "success";
+  }
+
+  if (strength === "中") {
+    return "info";
+  }
+
+  return "warning";
+}
+
+const graphNodeStyleByKind: Record<GraphWorkbenchNodeKind, { readonly rect: string; readonly dot: string }> = {
+  项目: {
+    rect: "fill-blue-50 stroke-blue-200",
+    dot: "fill-blue-600"
+  },
+  知识库: {
+    rect: "fill-emerald-50 stroke-emerald-200",
+    dot: "fill-emerald-600"
+  },
+  文档: {
+    rect: "fill-cyan-50 stroke-cyan-200",
+    dot: "fill-cyan-600"
+  },
+  规则: {
+    rect: "fill-indigo-50 stroke-indigo-200",
+    dot: "fill-indigo-600"
+  },
+  疑点: {
+    rect: "fill-amber-50 stroke-amber-200",
+    dot: "fill-amber-600"
+  },
+  复核: {
+    rect: "fill-orange-50 stroke-orange-200",
+    dot: "fill-orange-600"
+  },
+  报告: {
+    rect: "fill-slate-50 stroke-slate-300",
+    dot: "fill-slate-600"
+  },
+  整改: {
+    rect: "fill-rose-50 stroke-rose-200",
+    dot: "fill-rose-600"
+  }
+};

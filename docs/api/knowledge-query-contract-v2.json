@@ -1,299 +1,209 @@
 {
-  "contract_id": "knowledge-query-contract-v2",
-  "project": "medical_audit",
-  "status": "backend-expanded-draft",
-  "created_at": "2026-07-04T15:36:00+08:00",
-  "evidence_grade": "L1-local-backend-contract-tests",
-  "purpose": "Backend-only expanded SourceCollection contract for P6 full-corpus second-level library completion. Frontend remains on v1 until P6 active coverage is complete.",
-  "source_collections": {
-    "allowed": [
-      "management-ecology-resources",
-      "management-general-admin",
-      "management-judicial-audit-procedure",
-      "management-license-enforcement",
-      "management-market-quality",
-      "management-org-personnel-qualification",
-      "management-safety-emergency",
-      "management-urban-municipal",
-      "medical-insurance-catalog",
-      "medical-insurance-laws",
-      "other-agriculture-water",
-      "other-culture-tourism-sports",
-      "other-defense-confidentiality",
-      "other-education-research",
-      "other-ethnic-religious-foreign",
-      "other-transport-maritime",
-      "personal-materials",
-      "policy-data-statistics-disclosure",
-      "policy-finance-price-procurement",
-      "policy-general-policy",
-      "policy-industry-business-environment",
-      "policy-reform-pilot",
-      "policy-social-security-livelihood",
-      "risk-negative-list",
-      "supervision-rules-knowledge"
-    ],
-    "medical_second_level": [
-      "medical-insurance-catalog",
-      "medical-insurance-laws",
-      "risk-negative-list",
-      "supervision-rules-knowledge"
-    ],
-    "policy_second_level": [
-      "policy-general-policy",
-      "policy-reform-pilot",
-      "policy-finance-price-procurement",
-      "policy-social-security-livelihood",
-      "policy-industry-business-environment",
-      "policy-data-statistics-disclosure"
-    ],
-    "management_second_level": [
-      "management-general-admin",
-      "management-license-enforcement",
-      "management-org-personnel-qualification",
-      "management-urban-municipal",
-      "management-ecology-resources",
-      "management-safety-emergency",
-      "management-market-quality",
-      "management-judicial-audit-procedure"
-    ],
-    "other_second_level": [
-      "other-education-research",
-      "other-culture-tourism-sports",
-      "other-agriculture-water",
-      "other-transport-maritime",
-      "other-ethnic-religious-foreign",
-      "other-defense-confidentiality"
-    ],
-    "default_member_effective": [
-      "medical-insurance-catalog",
-      "medical-insurance-laws",
-      "risk-negative-list",
-      "supervision-rules-knowledge"
-    ],
-    "explicit_only": [
-      "personal-materials"
-    ],
-    "frontend_binding_status": "blocked_until_p6_completion_audit"
-  },
-  "endpoints": {
-    "post_query": {
-      "method": "POST",
-      "backend_path": "/query",
-      "frontend_proxy_path": "/api/v1/query",
-      "request": {
-        "content_type": "application/json",
-        "required": [
-          "question"
-        ],
-        "fields": {
-          "question": {
-            "type": "string",
-            "required": true,
-            "constraints": {
-              "min_length": 1
-            }
-          },
-          "top_k": {
-            "type": "integer",
-            "required": false,
-            "default": 5,
-            "constraints": {
-              "minimum": 1,
-              "maximum": 20
-            }
-          },
-          "source_collections": {
-            "type": "array",
-            "required": false,
-            "items": "SourceCollection",
-            "default": []
-          },
-          "years": {
-            "type": "array",
-            "required": false,
-            "items": "integer",
-            "default": []
-          },
-          "regions": {
-            "type": "array",
-            "required": false,
-            "items": "string",
-            "default": []
-          },
-          "document_types": {
-            "type": "array",
-            "required": false,
-            "items": "string",
-            "default": []
-          },
-          "business_topics": {
-            "type": "array",
-            "required": false,
-            "items": "string",
-            "default": []
-          },
-          "topic": {
-            "type": "string|null",
-            "required": false,
-            "constraints": {
-              "max_length": 64
-            }
-          },
-          "title_only": {
-            "type": "boolean",
-            "required": false,
-            "default": false
-          },
-          "agent": {
-            "type": "string|null",
-            "required": false,
-            "constraints": {
-              "max_length": 128
-            }
-          }
-        }
-      },
-      "response": {
-        "content_type": "application/json",
-        "required": [
-          "question",
-          "answer",
-          "confidence",
-          "fallback_used",
-          "effective_source_collections",
-          "basis_groups",
-          "citations",
-          "personal_upload_matches",
-          "query_log_index",
-          "query_log_id",
-          "agent_invocation_id"
-        ],
-        "fields": {
-          "question": "string",
-          "answer": "string",
-          "confidence": "string",
-          "fallback_used": "boolean",
-          "effective_source_collections": "SourceCollection[]",
-          "basis_groups": "QueryBasisGroup[]",
-          "citations": "QueryCitation[]",
-          "personal_upload_matches": "PersonalUploadMatch[]",
-          "query_log_index": "integer",
-          "query_log_id": "string|null",
-          "agent_invocation_id": "string|null"
-        },
-        "nested_required": {
-          "basis_groups.items": [
-            "citation_id",
-            "chunk_id",
-            "source_collection",
-            "snippet",
-            "locator",
-            "index_version_key",
-            "source_package_version_key"
-          ],
-          "citations.items": [
-            "citation_id",
-            "marker",
-            "chunk_id",
-            "evidence_type",
-            "source_collection",
-            "snippet",
-            "locator",
-            "index_version_key",
-            "source_package_version_key"
-          ],
-          "personal_upload_matches.items": [
-            "id",
-            "upload_id",
-            "name",
-            "extension",
-            "created_by",
-            "indexed_at",
-            "chunk_index",
-            "snippet",
-            "score",
-            "locator"
-          ]
-        }
-      },
-      "error_contract": [
-        {
-          "status": 400,
-          "backend_detail_prefix": "unknown topic",
-          "frontend_code": "unknown-topic",
-          "frontend_state": "unknown-topic"
-        },
-        {
-          "status": 403,
-          "backend_detail_prefix": "source collection access denied",
-          "frontend_code": "source-collection-denied",
-          "frontend_state": "source-collection-denied"
-        },
-        {
-          "status": 404,
-          "backend_detail_prefix": "no cited evidence found",
-          "frontend_code": "no-cited-evidence",
-          "frontend_state": "no-cited-evidence"
-        },
-        {
-          "status": 409,
-          "backend_detail_prefix": "search engine is not initialized",
-          "frontend_code": "search-engine-not-initialized",
-          "frontend_state": "search-engine-not-initialized"
-        }
-      ]
-    },
-    "get_query_logs": {
-      "method": "GET",
-      "backend_path": "/query/logs",
-      "frontend_proxy_path": "/api/v1/query/logs",
-      "query_parameters": {
-        "limit": {
-          "type": "integer",
-          "default": 20,
-          "minimum": 1,
-          "maximum": 100,
-          "frontend_default": 8
-        }
-      },
-      "response": {
-        "required": [
-          "items",
-          "store"
-        ],
-        "store_required": [
-          "ready",
-          "backend"
-        ]
-      }
-    }
-  },
-  "frontend_freeze_points": [
-    "Use /api/v1/query and /api/v1/query/logs through the Next proxy.",
-    "Render effective_source_collections rather than echoing requested source_collections.",
-    "Render citations and basis_groups source_collection fields as the evidence source of record.",
-    "Treat query_log_id as nullable; no-history and query-history-store failure modes are valid.",
-    "Treat agent_invocation_id as nullable; it is present only when agent selection is active.",
-    "Classify 400, 403, 404, and 409 into typed frontend states.",
-    "Frontend remains on knowledge-query-contract-v1 until P6F completion audit accepts all active second-level libraries.",
-    "knowledge-query-contract-v2 is backend-expanded only in P6-BACKEND-SOURCE-COLLECTION-EXPANSION."
-  ],
-  "unsupported_claims": [
-    "This contract does not prove live backend write-path behavior.",
-    "This contract does not prove production behavior.",
-    "This contract does not prove answer-provider behavior."
-  ],
-  "boundary": {
+  "contract_version": "knowledge-query-contract-v2",
+  "evidence_grade": "L1-local-contract",
+  "boundaries": {
     "provider_call": false,
     "database_write": false,
     "index_activation": false,
     "production_probe": false,
-    "push": false,
-    "merge": false,
-    "deploy": false,
-    "write_path_smoke": false,
-    "frontend_code_changed": false,
-    "production_changed": false
-  }
+    "frontend_business_change": false
+  },
+  "source_collections": [
+    {
+      "value": "medical-insurance-laws",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "legal",
+      "product_queryable": true
+    },
+    {
+      "value": "supervision-rules-knowledge",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "rule",
+      "product_queryable": true
+    },
+    {
+      "value": "medical-insurance-catalog",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "catalog",
+      "product_queryable": true
+    },
+    {
+      "value": "risk-negative-list",
+      "phase": "P6A-medical-current-library-completion",
+      "domain": "medical",
+      "evidence_group": "risk",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-general-policy",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-finance-price-procurement",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-data-statistics-disclosure",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-reform-pilot",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-social-security-livelihood",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "policy-industry-business-environment",
+      "phase": "P6B-policy-library-buildout",
+      "domain": "policy",
+      "evidence_group": "policy",
+      "product_queryable": true
+    },
+    {
+      "value": "management-org-personnel-qualification",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-market-quality",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-license-enforcement",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-safety-emergency",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-judicial-audit-procedure",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-ecology-resources",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-urban-municipal",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "management-general-admin",
+      "phase": "P6C-management-library-buildout",
+      "domain": "management",
+      "evidence_group": "management",
+      "product_queryable": true
+    },
+    {
+      "value": "other-agriculture-water",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-culture-tourism-sports",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-defense-confidentiality",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-education-research",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-ethnic-religious-foreign",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "other-transport-maritime",
+      "phase": "P6E-other-library-buildout",
+      "domain": "other",
+      "evidence_group": "other",
+      "product_queryable": true
+    },
+    {
+      "value": "personal-materials",
+      "phase": "personal-materials",
+      "domain": "personal",
+      "evidence_group": "personal",
+      "product_queryable": true
+    }
+  ],
+  "excluded_collections": [
+    {
+      "value": "other-unclassified",
+      "phase": "P6D-manual-classification-before-ingestion",
+      "domain": "manual-review",
+      "product_queryable": false,
+      "reason": "P6D is a manual classification pool and must be reclassified or excluded before product query exposure."
+    }
+  ],
+  "query_response_required_fields": [
+    "contract_version",
+    "effective_source_collections",
+    "question",
+    "answer",
+    "confidence",
+    "fallback_used",
+    "basis_groups",
+    "citations",
+    "personal_upload_matches",
+    "query_log_index"
+  ]
 }

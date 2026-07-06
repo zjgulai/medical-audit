@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -40,6 +41,9 @@ from medical_audit_kb.api.review_task_store import (
     ReviewTaskStore,
 )
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import (
+    SOURCE_COLLECTION_DEFINITIONS,
+)
 from medical_audit_kb.generation.answer_builder import (
     AnswerBasisGroup,
     AnswerBasisItem,
@@ -52,6 +56,25 @@ from medical_audit_kb.retrieval.filters import RetrievalFilters
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+LEGACY_PAGE_RETIRE_ENV = "MEDICAL_AUDIT_RETIRE_LEGACY_PAGES"
+LEGACY_PAGE_REDIRECTS = {
+    "/pages/chat": "/chat",
+    "/pages/query": "/documents",
+    "/pages/review-tasks": "/reports",
+    "/pages/audit-logs": "/archive",
+    "/pages/audit-findings": "/findings",
+    "/pages/index-admin": "/knowledge-base",
+}
+LEGACY_PAGE_RETIRE_ENABLED_VALUES = {"1", "true", "yes", "on"}
+
+
+def _retired_legacy_page_redirect(path: str) -> RedirectResponse | None:
+    enabled = os.getenv(LEGACY_PAGE_RETIRE_ENV, "").strip().lower()
+    if enabled not in LEGACY_PAGE_RETIRE_ENABLED_VALUES:
+        return None
+    return RedirectResponse(LEGACY_PAGE_REDIRECTS[path], status_code=302)
+
 
 DOSSIER_REVIEW_CHECKLIST = (
     "核对引用片段是否完整覆盖问题。",
@@ -103,31 +126,12 @@ REVIEW_TASK_ATTACHMENT_DIR = "review-task-attachments"
 REVIEW_TASK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
 SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
-    SourceCollection.MEDICAL_INSURANCE_LAWS: {
-        "title": "法规政策",
-        "description": "医保、医疗、药品、基金监管相关法律政策。",
-        "audit_hint": "用于判断制度依据和监管边界。",
-    },
-    SourceCollection.SUPERVISION_RULES_KNOWLEDGE: {
-        "title": "监管两库",
-        "description": "智能监管规则库、知识库和知识点明细。",
-        "audit_hint": "用于定位规则口径和疑点类型。",
-    },
-    SourceCollection.MEDICAL_INSURANCE_CATALOG: {
-        "title": "医保目录",
-        "description": "药品、诊疗项目、编码、支付范围和限制条件。",
-        "audit_hint": "用于核验目录编码、剂型、支付限制。",
-    },
-    SourceCollection.RISK_NEGATIVE_LIST: {
-        "title": "风险清单",
-        "description": "高风险负面清单、案例和风险线索。",
-        "audit_hint": "用于辅助排查异常模式。",
-    },
-    SourceCollection.PERSONAL_MATERIALS: {
-        "title": "个人材料",
-        "description": "用户上传的院内材料、台账和复核附件。",
-        "audit_hint": "用于补充院内证据，需先完成材料治理。",
-    },
+    definition.collection: {
+        "title": definition.label,
+        "description": definition.description,
+        "audit_hint": definition.audit_hint,
+    }
+    for definition in SOURCE_COLLECTION_DEFINITIONS
 }
 
 WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
@@ -296,6 +300,9 @@ def query_page(
     question: Annotated[str | None, Query()] = None,
     source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/query"):
+        return redirect_response
+
     selected_collections = tuple(source_collection or ())
     answer_payload, error_message = _run_page_query(
         state,
@@ -329,6 +336,9 @@ def chat_page(
     agent: Annotated[str | None, Query(max_length=128)] = None,
     project_name: Annotated[str | None, Query(max_length=256)] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/chat"):
+        return redirect_response
+
     selected_collections = tuple(source_collection or ())
     answer_payload, error_message = _run_page_query(
         state,
@@ -424,6 +434,9 @@ def review_tasks_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/review-tasks"):
+        return redirect_response
+
     review_tasks = _review_tasks(state)
     record_operation(
         state,
@@ -514,6 +527,9 @@ def audit_logs_page(
     created_to: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/audit-logs"):
+        return redirect_response
+
     filters = _audit_log_filter_context(
         action=action,
         entity_type=entity_type,
@@ -598,6 +614,9 @@ def audit_findings_page(
     state: Annotated[ApiState, Depends(get_api_state)],
     review_status: Annotated[str | None, Query()] = None,
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/audit-findings"):
+        return redirect_response
+
     if review_status is not None and review_status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
     findings = _audit_findings(state, review_status=review_status)
@@ -1106,6 +1125,9 @@ def index_admin_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> object:
+    if redirect_response := _retired_legacy_page_redirect("/pages/index-admin"):
+        return redirect_response
+
     postgres_status = _postgres_status_context(state)
     record_operation(
         state,

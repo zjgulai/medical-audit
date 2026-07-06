@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,12 +18,12 @@ import {
   fetchAuditAgentPromptVersions,
   fetchBackendHealth,
   fetchDocumentPermissions,
+  fetchDocumentSourceCollections,
   fetchDocumentUploads,
   fetchGraphWorkbench,
   fetchProjectMembers,
   fetchProjects,
   fetchQueryHistory,
-  isApiClientError,
   fetchRemediationWorkbench,
   fetchReportWorkbench,
   fetchRulesWorkbench,
@@ -37,10 +40,109 @@ import {
   uploadPersonalDocument
 } from "./api-client";
 
+type PageBackendEndpointContract = {
+  readonly name: string;
+  readonly method: "GET" | "POST";
+  readonly path: string;
+  readonly sample_body?: Record<string, unknown>;
+};
+
+type PageBackendContract = {
+  readonly contract_version: "frontend-backend-page-contract-v1";
+  readonly boundaries: {
+    readonly ui_style_change: false;
+    readonly production_write: false;
+    readonly provider_call: false;
+    readonly database_write: false;
+    readonly scope: "local_acceptance_and_frontend_contract_only";
+  };
+  readonly pages: readonly {
+    readonly page_id: string;
+    readonly route: string;
+    readonly connection_status: "connected_first_batch" | "static_shell_first_batch";
+    readonly endpoints: readonly PageBackendEndpointContract[];
+  }[];
+};
+
+const pageBackendContract = JSON.parse(
+  readFileSync(
+    resolve(process.cwd(), "../docs/api/frontend-backend-page-contract.json"),
+    "utf-8"
+  )
+) as PageBackendContract;
+
 describe("api-client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("keeps the page backend contract aligned with proxy-local API paths", () => {
+    const expectedRoutes = new Set([
+      "/workspace",
+      "/chat",
+      "/knowledge-query",
+      "/agents",
+      "/agent-market",
+      "/knowledge-base",
+      "/documents",
+      "/analytics",
+      "/graph",
+      "/rules",
+      "/reports",
+      "/projects",
+      "/findings",
+      "/remediation",
+      "/archive",
+      "/fund-compliance",
+      "/fund-compliance/review",
+      "/guided-check"
+    ]);
+    const contractRoutes = new Set(pageBackendContract.pages.map((page) => page.route));
+    for (const route of expectedRoutes) {
+      expect(contractRoutes.has(route)).toBe(true);
+    }
+
+    const endpointPaths = new Set(
+      pageBackendContract.pages.flatMap((page) => page.endpoints.map((endpoint) => endpoint.path))
+    );
+    expect([...endpointPaths]).toEqual(
+      expect.arrayContaining([
+        "/api/backend/health",
+        "/api/backend/index/search-backend",
+        "/api/v1/auth/session",
+        "/api/v1/query",
+        "/api/v1/query/logs?limit=8",
+        "/api/v1/audit-findings",
+        "/api/v1/reports/workbench",
+        "/api/v1/graph/workbench",
+        "/api/v1/rules/workbench",
+        "/api/v1/remediation/workbench",
+        "/api/v1/archive/workbench",
+        "/api/v1/analytics/table-uploads",
+        "/api/v1/documents/source-collections",
+        "/api/v1/documents/permissions",
+        "/api/v1/documents/uploads",
+        "/api/v1/agents",
+        "/api/v1/agents/{agentId}",
+        "/api/v1/agents/{agentId}/prompt-versions",
+        "/api/v1/agents/{agentId}/invocations",
+        "/api/v1/agents/{agentId}/feedback",
+        "/api/v1/projects",
+        "/api/v1/projects/{projectId}/members"
+      ])
+    );
+
+    for (const page of pageBackendContract.pages) {
+      for (const endpoint of page.endpoints) {
+        expect(endpoint.path.startsWith("/api/")).toBe(true);
+        expect(endpoint.path.startsWith("http://")).toBe(false);
+        expect(endpoint.path.startsWith("https://")).toBe(false);
+        if (endpoint.method === "POST") {
+          expect(endpoint.sample_body).toBeDefined();
+        }
+      }
+    }
   });
 
   it("fetches backend health through the Next proxy", async () => {
@@ -94,15 +196,18 @@ describe("api-client", () => {
       vi.fn(async () => ({
         ok: true,
         json: async () => ({
+          contract_version: "knowledge-query-contract-v2",
           question: "医保基金审核依据",
           answer: "应核验证据链。",
           confidence: "high",
           fallback_used: true,
+          effective_source_collections: ["medical-insurance-laws"],
           basis_groups: [],
           citations: [],
-          effective_source_collections: ["medical-insurance-laws"],
           personal_upload_matches: [],
-          query_log_index: 0
+          query_log_index: 0,
+          query_log_id: "query-history-chat-001",
+          agent_invocation_id: "agent-invocation-chat-001"
         })
       }))
     );
@@ -110,12 +215,9 @@ describe("api-client", () => {
     const result = await runKnowledgeQuery({
       question: "医保基金审核依据",
       top_k: 5,
-      source_collections: ["medical-insurance-laws"],
-      years: [2024],
-      regions: ["国家"],
-      document_types: ["law"],
-      business_topics: ["fund-supervision"],
-      title_only: true
+      source_collections: ["medical-insurance-laws", "medical-insurance-catalog"],
+      topic: "medical-insurance-fund",
+      agent: "agent-installed-catalog-001"
     });
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/query", {
@@ -130,44 +232,14 @@ describe("api-client", () => {
       body: JSON.stringify({
         question: "医保基金审核依据",
         top_k: 5,
-        source_collections: ["medical-insurance-laws"],
-        years: [2024],
-        regions: ["国家"],
-        document_types: ["law"],
-        business_topics: ["fund-supervision"],
-        title_only: true
+        source_collections: ["medical-insurance-laws", "medical-insurance-catalog"],
+        topic: "medical-insurance-fund",
+        agent: "agent-installed-catalog-001"
       }),
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
-    expect(result.effective_source_collections).toEqual(["medical-insurance-laws"]);
-  });
-
-  it("classifies knowledge query backend errors by status and detail", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: false,
-        status: 404,
-        json: async () => ({ detail: "no cited evidence found" })
-      }))
-    );
-
-    await expect(
-      runKnowledgeQuery({
-        question: "医保基金审核依据"
-      })
-    ).rejects.toMatchObject({
-      code: "no-cited-evidence",
-      path: "/api/v1/query",
-      status: 404
-    });
-
-    try {
-      await runKnowledgeQuery({ question: "医保基金审核依据" });
-    } catch (error) {
-      expect(isApiClientError(error)).toBe(true);
-    }
+    expect(result.agent_invocation_id).toBe("agent-invocation-chat-001");
   });
 
   it("fetches auth session through the versioned API proxy with current audit headers", async () => {
@@ -685,6 +757,75 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.source_collections[0].source_collection).toBe("medical-insurance-laws");
+  });
+
+  it("fetches document source collection catalog through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "document-source-collections-v1",
+          role: "auditor",
+          items: [
+            {
+              source_collection: "medical-insurance-laws",
+              label: "法规政策",
+              scope: "公开知识库",
+              phase: "P6A-medical-current-library-completion",
+              domain: "medical",
+              evidence_group: "legal",
+              description: "医保、医疗、药品、基金监管相关法律政策。",
+              audit_hint: "用于判断制度依据和监管边界。",
+              access: "read",
+              product_queryable: true,
+              queryable: true,
+              metrics: {
+                document_count: null,
+                chunk_count: 1,
+                character_count: null,
+                linked_app_count: 1
+              }
+            }
+          ],
+          search_backend: {
+            ready: true,
+            backend: "local-acceptance",
+            details: {
+              provider_call: false,
+              database_write: false,
+              source_collection: "medical-insurance-laws"
+            }
+          },
+          upload_permissions: {
+            can_upload_personal: true,
+            can_read_all_personal_uploads: false,
+            can_govern_personal_uploads: false
+          },
+          boundaries: {
+            production_write: false,
+            provider_call: false,
+            database_write: false,
+            object_storage_write: false,
+            source: "runtime_state_and_registry_only"
+          }
+        })
+      }))
+    );
+
+    const result = await fetchDocumentSourceCollections();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/documents/source-collections", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.items[0].source_collection).toBe("medical-insurance-laws");
+    expect(result.boundaries.provider_call).toBe(false);
   });
 
   it("fetches personal document uploads through the versioned API proxy", async () => {

@@ -118,12 +118,27 @@ def test_cross_collection_citations_are_grouped_by_basis_type() -> None:
     ]
 
 
-def test_non_medical_collection_citation_uses_reference_basis() -> None:
-    citations = build_citations((_result(SourceCollection.POLICY_GENERAL_POLICY),))
+def test_contract_v2_collections_are_grouped_by_public_basis_type() -> None:
+    citations = build_citations(
+        (
+            _result(SourceCollection.POLICY_GENERAL_POLICY),
+            _result(SourceCollection.MANAGEMENT_LICENSE_ENFORCEMENT),
+            _result(SourceCollection.OTHER_EDUCATION_RESEARCH),
+        )
+    )
+
     groups = group_citations(citations)
 
-    assert citations[0].evidence_type == EvidenceType.REFERENCE_BASIS
-    assert groups[0].title == "通用资料依据"
+    assert [group.evidence_type for group in groups] == [
+        EvidenceType.POLICY_BASIS,
+        EvidenceType.MANAGEMENT_BASIS,
+        EvidenceType.OTHER_PUBLIC_BASIS,
+    ]
+    assert [group.title for group in groups] == [
+        "政策依据",
+        "管理依据",
+        "其他公开依据",
+    ]
 
 
 def test_answer_uses_provider_output_when_it_contains_citation_marker() -> None:

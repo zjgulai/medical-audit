@@ -28,6 +28,7 @@ from medical_audit_kb.api.document_upload_ingestion import (
 )
 from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
 
 router = APIRouter(prefix="/documents")
 
@@ -109,6 +110,61 @@ class DocumentPermissionsResponse(BaseModel):
     role: str
     source_collections: list[DocumentSourcePermissionItem]
     upload_permissions: DocumentUploadPermissions
+
+
+class DocumentSourceCollectionMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_count: int | None = None
+    chunk_count: int | None = None
+    character_count: int | None = None
+    linked_app_count: int | None = None
+
+
+class DocumentSourceCollectionCatalogItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_collection: SourceCollection
+    label: str
+    scope: str
+    phase: str
+    domain: str
+    evidence_group: str
+    description: str
+    audit_hint: str
+    access: Literal["read", "explicit-owner-read", "explicit-read-all"]
+    product_queryable: bool
+    queryable: bool
+    metrics: DocumentSourceCollectionMetrics
+
+
+class DocumentSourceCollectionSearchBackend(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ready: bool
+    backend: str
+    details: dict[str, object]
+
+
+class DocumentSourceCollectionCatalogBoundaries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production_write: bool
+    provider_call: bool
+    database_write: bool
+    object_storage_write: bool
+    source: Literal["runtime_state_and_registry_only"]
+
+
+class DocumentSourceCollectionCatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["document-source-collections-v1"]
+    role: str
+    items: list[DocumentSourceCollectionCatalogItem]
+    search_backend: DocumentSourceCollectionSearchBackend
+    upload_permissions: DocumentUploadPermissions
+    boundaries: DocumentSourceCollectionCatalogBoundaries
 
 
 class DocumentUploadItem(BaseModel):
@@ -311,6 +367,22 @@ def document_permissions(
     )
     role = user.legacy_api_role
     return _permissions_response(role)
+
+
+@router.get("/source-collections", response_model=DocumentSourceCollectionCatalogResponse)
+def document_source_collections(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentSourceCollectionCatalogResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    return _source_collection_catalog_response(state=state, role=role)
 
 
 @router.get("/governance/status", response_model=DocumentGovernanceReadonlyStatusResponse)
@@ -1092,6 +1164,79 @@ def _permissions_response(role: str) -> DocumentPermissionsResponse:
         ],
         upload_permissions=_upload_permissions(role),
     )
+
+
+def _source_collection_catalog_response(
+    *,
+    state: ApiState,
+    role: str,
+) -> DocumentSourceCollectionCatalogResponse:
+    permissions = {
+        permission.source_collection: permission
+        for permission in document_permissions_for_role(role)
+    }
+    items: list[DocumentSourceCollectionCatalogItem] = []
+    for definition in SOURCE_COLLECTION_DEFINITIONS:
+        permission = permissions.get(definition.collection)
+        if permission is None:
+            continue
+        items.append(
+            DocumentSourceCollectionCatalogItem(
+                source_collection=definition.collection,
+                label=definition.label,
+                scope=definition.scope,
+                phase=definition.phase,
+                domain=definition.domain,
+                evidence_group=definition.evidence_group,
+                description=definition.description,
+                audit_hint=definition.audit_hint,
+                access=permission.access,
+                product_queryable=definition.product_queryable,
+                queryable=definition.product_queryable and state.search_engine is not None,
+                metrics=_source_collection_metrics(definition.collection, state),
+            )
+        )
+    return DocumentSourceCollectionCatalogResponse(
+        contract_version="document-source-collections-v1",
+        role=role,
+        items=items,
+        search_backend=DocumentSourceCollectionSearchBackend(
+            ready=state.search_engine is not None,
+            backend=state.search_backend,
+            details=state.search_backend_details,
+        ),
+        upload_permissions=_upload_permissions(role),
+        boundaries=DocumentSourceCollectionCatalogBoundaries(
+            production_write=False,
+            provider_call=False,
+            database_write=False,
+            object_storage_write=False,
+            source="runtime_state_and_registry_only",
+        ),
+    )
+
+
+def _source_collection_metrics(
+    collection: SourceCollection,
+    state: ApiState,
+) -> DocumentSourceCollectionMetrics:
+    details = state.search_backend_details
+    detail_collection = details.get("source_collection")
+    chunk_count = _int_or_none(details.get("matching_embedding_count"))
+    if detail_collection != collection.value:
+        chunk_count = None
+    return DocumentSourceCollectionMetrics(
+        chunk_count=chunk_count,
+        linked_app_count=1,
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
 
 
 def _upload_permissions(role: str) -> DocumentUploadPermissions:

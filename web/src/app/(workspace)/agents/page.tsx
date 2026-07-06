@@ -1,5 +1,5 @@
-import { ReplicaAgentDirectory } from "@/components/replica/replica-agent-directory";
+import { AgentWorkspace } from "@/components/portal/agent-workspace";
 
 export default function AgentsPage() {
-  return <ReplicaAgentDirectory mode="mine" />;
+  return <AgentWorkspace />;
 }

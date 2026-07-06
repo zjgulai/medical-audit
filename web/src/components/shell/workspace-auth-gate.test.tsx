@@ -18,8 +18,21 @@ describe("WorkspaceAuthGate", () => {
       </WorkspaceAuthGate>
     );
 
-    expect(screen.getByRole("heading", { name: "欢迎登录" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
     expect(screen.queryByText("审计助手内容")).not.toBeInTheDocument();
+  });
+
+  it("keeps the workspace document-search entry behind the login surface", () => {
+    window.history.replaceState(null, "", "/workspace");
+
+    render(
+      <WorkspaceAuthGate>
+        <main>文档检索入口内容</main>
+      </WorkspaceAuthGate>
+    );
+
+    expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
+    expect(screen.queryByText("文档检索入口内容")).not.toBeInTheDocument();
   });
 
   it("renders protected workspace content when a local audit session exists", async () => {
@@ -34,6 +47,6 @@ describe("WorkspaceAuthGate", () => {
     await waitFor(() => {
       expect(screen.getByText("审计助手内容")).toBeInTheDocument();
     });
-    expect(screen.queryByRole("heading", { name: "欢迎登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "登录工作台" })).not.toBeInTheDocument();
   });
 });

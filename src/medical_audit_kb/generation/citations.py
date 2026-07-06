@@ -7,6 +7,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.source_collection_registry import source_collection_definition
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
 
 DEFAULT_SNIPPET_CHARS = 240
@@ -17,7 +18,9 @@ class EvidenceType(StrEnum):
     RULE_BASIS = "rule_basis"
     CATALOG_BASIS = "catalog_basis"
     RISK_CASE_BASIS = "risk_case_basis"
-    REFERENCE_BASIS = "reference_basis"
+    POLICY_BASIS = "policy_basis"
+    MANAGEMENT_BASIS = "management_basis"
+    OTHER_PUBLIC_BASIS = "other_public_basis"
     PERSONAL_MATERIAL_BASIS = "personal_material_basis"
 
 
@@ -26,7 +29,9 @@ EVIDENCE_TITLES: dict[EvidenceType, str] = {
     EvidenceType.RULE_BASIS: "规则依据",
     EvidenceType.CATALOG_BASIS: "目录依据",
     EvidenceType.RISK_CASE_BASIS: "风险案例依据",
-    EvidenceType.REFERENCE_BASIS: "通用资料依据",
+    EvidenceType.POLICY_BASIS: "政策依据",
+    EvidenceType.MANAGEMENT_BASIS: "管理依据",
+    EvidenceType.OTHER_PUBLIC_BASIS: "其他公开依据",
     EvidenceType.PERSONAL_MATERIAL_BASIS: "个人材料依据",
 }
 
@@ -35,9 +40,22 @@ EVIDENCE_ORDER: tuple[EvidenceType, ...] = (
     EvidenceType.RULE_BASIS,
     EvidenceType.CATALOG_BASIS,
     EvidenceType.RISK_CASE_BASIS,
-    EvidenceType.REFERENCE_BASIS,
+    EvidenceType.POLICY_BASIS,
+    EvidenceType.MANAGEMENT_BASIS,
+    EvidenceType.OTHER_PUBLIC_BASIS,
     EvidenceType.PERSONAL_MATERIAL_BASIS,
 )
+
+EVIDENCE_TYPE_BY_GROUP: dict[str, EvidenceType] = {
+    "legal": EvidenceType.LEGAL_BASIS,
+    "rule": EvidenceType.RULE_BASIS,
+    "catalog": EvidenceType.CATALOG_BASIS,
+    "risk": EvidenceType.RISK_CASE_BASIS,
+    "policy": EvidenceType.POLICY_BASIS,
+    "management": EvidenceType.MANAGEMENT_BASIS,
+    "other": EvidenceType.OTHER_PUBLIC_BASIS,
+    "personal": EvidenceType.PERSONAL_MATERIAL_BASIS,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,17 +132,8 @@ def group_citations(citations: tuple[Citation, ...]) -> tuple[CitationGroup, ...
 
 
 def evidence_type_for_source_collection(source_collection: SourceCollection) -> EvidenceType:
-    if source_collection == SourceCollection.MEDICAL_INSURANCE_LAWS:
-        return EvidenceType.LEGAL_BASIS
-    if source_collection == SourceCollection.SUPERVISION_RULES_KNOWLEDGE:
-        return EvidenceType.RULE_BASIS
-    if source_collection == SourceCollection.MEDICAL_INSURANCE_CATALOG:
-        return EvidenceType.CATALOG_BASIS
-    if source_collection == SourceCollection.RISK_NEGATIVE_LIST:
-        return EvidenceType.RISK_CASE_BASIS
-    if source_collection == SourceCollection.PERSONAL_MATERIALS:
-        return EvidenceType.PERSONAL_MATERIAL_BASIS
-    return EvidenceType.REFERENCE_BASIS
+    definition = source_collection_definition(source_collection)
+    return EVIDENCE_TYPE_BY_GROUP[definition.evidence_group]
 
 
 def _source_collection_from_metadata(metadata: dict[str, object]) -> SourceCollection:
