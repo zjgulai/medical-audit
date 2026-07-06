@@ -34,10 +34,12 @@ vi.mock("@/lib/api-client", () => ({
   fetchAnalysisUploadHistory: vi.fn(),
   fetchAuthSession: vi.fn(),
   fetchDocumentPermissions: vi.fn(),
+  fetchDocumentSourceCollections: vi.fn(),
   fetchGraphWorkbench: vi.fn(),
   fetchProjects: vi.fn(),
   fetchQueryHistory: vi.fn(),
-  fetchReportWorkbench: vi.fn()
+  fetchReportWorkbench: vi.fn(),
+  runKnowledgeQuery: vi.fn()
 }));
 
 function AgentsRuntimeProbe() {
@@ -61,7 +63,19 @@ describe("use-replica-runtime", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps replica API reads disabled by default", async () => {
+  it("uses replica API reads by default", async () => {
+    render(<AgentsRuntimeProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByText("运行时只读助手")).toBeInTheDocument();
+    });
+    expect(screen.getByText("运行时只读助手").parentElement).toHaveAttribute("data-source", "api");
+    expect(fetchAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it("can explicitly disable replica API reads", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+
     render(<AgentsRuntimeProbe />);
 
     expect(screen.getByText("模拟数据助手")).toBeInTheDocument();
@@ -72,20 +86,7 @@ describe("use-replica-runtime", () => {
     expect(fetchAgents).not.toHaveBeenCalled();
   });
 
-  it("uses injected read APIs only when explicitly enabled", async () => {
-    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "1");
-
-    render(<AgentsRuntimeProbe />);
-
-    await waitFor(() => {
-      expect(screen.getByText("运行时只读助手")).toBeInTheDocument();
-    });
-    expect(screen.getByText("运行时只读助手").parentElement).toHaveAttribute("data-source", "api");
-    expect(fetchAgents).toHaveBeenCalledTimes(1);
-  });
-
   it("falls back to fixture data when an enabled read API fails", async () => {
-    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "1");
     vi.mocked(fetchAgents).mockRejectedValueOnce(new Error("read unavailable"));
 
     render(<AgentsRuntimeProbe />);

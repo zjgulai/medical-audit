@@ -21,6 +21,7 @@ import {
   fetchDocumentSourceCollections,
   fetchDocumentUploads,
   fetchGraphWorkbench,
+  fetchProjectDashboard,
   fetchProjectMembers,
   fetchProjects,
   fetchQueryHistory,
@@ -129,6 +130,7 @@ describe("api-client", () => {
         "/api/v1/agents/{agentId}/invocations",
         "/api/v1/agents/{agentId}/feedback",
         "/api/v1/projects",
+        "/api/v1/projects/{projectId}/dashboard",
         "/api/v1/projects/{projectId}/members"
       ])
     );
@@ -1666,6 +1668,66 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("member-auditor");
+  });
+
+  it("fetches project dashboard through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "project-dashboard-v1",
+          project: {
+            id: "SELF-CHECK-FUND-20260607",
+            name: "医保基金使用合规专项自查",
+            audit_topic: "医保基金使用合规",
+            organization_name: "单院医保内审试运行",
+            member_count: 3,
+            creator: "项目负责人",
+            created_at: "2026-06-07",
+            status: "进行中",
+            operation_label: "进入项目",
+            source: "system-default"
+          },
+          metrics: [
+            {
+              key: "open_findings",
+              label: "待处理疑点",
+              value: "2",
+              helper: "来自审计疑点库",
+              tone: "danger"
+            }
+          ],
+          queue: [],
+          activities: [],
+          status_distribution: [],
+          member_workloads: [],
+          evidence_grade: "live-db-connected",
+          production_side_effect: "none",
+          store: {
+            ready: true,
+            backend: {
+              project_members: "SqlAlchemyProjectMemberStore",
+              audit_findings: "SqlAlchemyAuditFindingStore"
+            }
+          }
+        })
+      }))
+    );
+
+    const result = await fetchProjectDashboard("SELF-CHECK-FUND-20260607");
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects/SELF-CHECK-FUND-20260607/dashboard", {
+      headers: {
+        Accept: "application/json",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.metrics[0].value).toBe("2");
   });
 
   it("creates project members through the versioned API proxy", async () => {

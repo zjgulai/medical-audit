@@ -993,6 +993,64 @@ export type ProjectsResponse = {
   };
 };
 
+export type ProjectDashboardMetricApiItem = {
+  readonly key: "open_findings" | "missing_evidence" | "rule_cards" | "backend_status";
+  readonly label: string;
+  readonly value: string;
+  readonly helper: string;
+  readonly tone: "neutral" | "info" | "warning" | "danger" | "success";
+};
+
+export type ProjectDashboardQueueApiItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly owner: string;
+  readonly dueLabel: string;
+  readonly status: "open" | "blocked" | "closed";
+  readonly risk: "high" | "medium" | "low";
+};
+
+export type ProjectDashboardActivityApiItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly timeLabel: string;
+};
+
+export type ProjectDashboardStatusDistributionApiItem = {
+  readonly status: string;
+  readonly label: string;
+  readonly count: number;
+};
+
+export type ProjectDashboardMemberWorkloadApiItem = {
+  readonly name: string;
+  readonly role: string;
+  readonly department: string;
+  readonly total: number;
+  readonly pending: number;
+  readonly closed: number;
+};
+
+export type ProjectDashboardResponse = {
+  readonly format: "project-dashboard-v1";
+  readonly project: ProjectSummaryApiItem;
+  readonly metrics: readonly ProjectDashboardMetricApiItem[];
+  readonly queue: readonly ProjectDashboardQueueApiItem[];
+  readonly activities: readonly ProjectDashboardActivityApiItem[];
+  readonly status_distribution: readonly ProjectDashboardStatusDistributionApiItem[];
+  readonly member_workloads: readonly ProjectDashboardMemberWorkloadApiItem[];
+  readonly evidence_grade: string;
+  readonly production_side_effect: "none" | string;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: {
+      readonly project_members: string;
+      readonly audit_findings: string;
+    };
+  };
+};
+
 export type ProjectMembersResponse = {
   readonly items: readonly ProjectMemberApiItem[];
   readonly project_key: string;

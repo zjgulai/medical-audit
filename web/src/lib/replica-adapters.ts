@@ -3,13 +3,12 @@ import type {
   AuditAgentApiItem,
   AuthSessionResponse,
   DocumentPermissionsResponse,
+  DocumentSourceCollectionCatalogItem,
+  DocumentSourceCollectionCatalogResponse,
   GraphWorkbenchResponse,
   ProjectsResponse,
   QueryHistoryResponse,
-  QueryRequest,
-  QueryResponse,
   ReportWorkbenchResponse,
-  SourceCollection,
   TableAnalysisUploadHistoryResponse
 } from "./api-types";
 import {
@@ -139,8 +138,8 @@ export type ReplicaKnowledgeBaseClient = {
 };
 
 export type ReplicaDocumentsClient = {
+  readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
   readonly fetchQueryHistory?: () => Promise<QueryHistoryResponse>;
-  readonly runKnowledgeQuery?: (request: QueryRequest) => Promise<QueryResponse>;
 };
 
 export type ReplicaAnalyticsClient = {
@@ -169,20 +168,6 @@ export type ReplicaClient = ReplicaShellClient &
   ReplicaProjectsClient;
 
 const agentTones: readonly ReferenceAgentCard["tone"][] = ["rose", "blue", "cyan", "amber", "slate"];
-
-const sourceCollectionLabels: Partial<Record<SourceCollection, string>> = {
-  "medical-insurance-laws": "医保法规库",
-  "supervision-rules-knowledge": "监督规则库",
-  "medical-insurance-catalog": "医保目录库",
-  "risk-negative-list": "风险负面清单",
-  "personal-materials": "个人材料库"
-};
-
-const defaultDocumentQuery: QueryRequest = {
-  question: "招标人违法确定中标人的定性依据",
-  top_k: 5,
-  title_only: true
-};
 
 function issue(
   surface: ReplicaSurface,
@@ -252,19 +237,6 @@ function metadataString(metadata: Record<string, unknown>, key: string): string 
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function locatorString(locator: Record<string, unknown>, keys: readonly string[]): string | null {
-  for (const key of keys) {
-    const value = locator[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-    if (typeof value === "number") {
-      return String(value);
-    }
-  }
-  return null;
-}
-
 function makeInitial(name: string): string {
   const chars = Array.from(name.trim());
   if (chars.length === 0) {
@@ -316,38 +288,29 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
   };
 }
 
-function mapDocumentResults(response: QueryResponse): readonly ReferenceDocumentResult[] {
-  const citationResults = response.citations.map((citation, index) => {
-    const locatorTitle = locatorString(citation.locator, [
-      "title",
-      "document_title",
-      "file_name",
-      "source_title",
-      "name"
-    ]);
-    const locatorDate = locatorString(citation.locator, ["date", "published_at", "issued_at", "year"]);
-    const source = sourceCollectionLabels[citation.source_collection] ?? citation.source_collection;
+function mergeAgentCatalog(
+  apiAgents: readonly ReferenceAgentCard[],
+  fixtureAgents: readonly ReferenceAgentCard[]
+): readonly ReferenceAgentCard[] {
+  const seen = new Set(apiAgents.map((agent) => agent.id));
+  return [
+    ...apiAgents,
+    ...fixtureAgents.filter((agent) => !seen.has(agent.id))
+  ];
+}
 
-    return {
-      id: citation.citation_id || `query-citation-${index + 1}`,
-      title: locatorTitle ?? `${source}引用 ${index + 1}`,
-      category: normalizeText(citation.evidence_type, source),
-      excerpt: compactText(citation.snippet, 96),
-      source,
-      updatedAt: locatorDate ?? "检索命中"
-    };
-  });
-
-  const personalResults = response.personal_upload_matches.map((match, index) => ({
-    id: match.id || `personal-match-${index + 1}`,
-    title: match.name,
-    category: "个人材料",
-    excerpt: compactText(match.snippet, 96),
-    source: normalizeText(match.created_by, "个人上传"),
-    updatedAt: formatDate(match.indexed_at, "未索引")
-  }));
-
-  return [...citationResults, ...personalResults];
+function mapDocumentCategoriesFromCatalog(
+  items: readonly DocumentSourceCollectionCatalogItem[]
+): readonly ReferenceDocumentCategory[] {
+  const categories = items
+    .filter((item) => item.product_queryable || item.queryable)
+    .map((item) => ({
+      id: `source-${item.source_collection}`,
+      name: item.label,
+      description: item.description,
+      count: item.metrics.document_count ?? item.metrics.chunk_count ?? 0
+    }));
+  return categories.length > 0 ? categories : referenceDocumentCategories;
 }
 
 function mapAnalysisUploads(
@@ -499,12 +462,12 @@ export async function loadReplicaAgentMarketData(
     issue(
       "agent-market",
       "catalog-api-needed",
-      "Marketplace ownership, install, rating, and visibility contract is not available yet."
+      "Dedicated marketplace rating and ownership contract is not available yet."
     ),
     issue(
       "agent-market",
       "mutation-gated",
-      "Install, copy, publish, and lifecycle actions remain UI-only until write gates are approved."
+      "Publish, rating, and lifecycle actions remain gated; install uses the agent create API."
     )
   ];
   const agentResponse = await readOptionalApi("agent-market", issues, client.fetchAgents);
@@ -520,11 +483,12 @@ export async function loadReplicaAgentMarketData(
   const marketAgents = agentResponse.items
     .filter((item) => item.visibility_scope === "system" || item.source === "system-default")
     .map((item, index) => mapAgent(item, index, "智能体广场"));
+  const agents = mergeAgentCatalog(marketAgents, referenceMarketAgents);
 
   return {
-    source: sourceFrom(marketAgents.length > 0, marketAgents.length === 0),
+    source: sourceFrom(marketAgents.length > 0, true),
     data: {
-      agents: marketAgents.length > 0 ? marketAgents : referenceMarketAgents,
+      agents,
       categories: agentResponse.categories.map(toReferenceAgentCategory)
     },
     issues
@@ -561,8 +525,15 @@ export async function loadReplicaDocumentsData(
 ): Promise<ReplicaAdapterResult<ReplicaDocumentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
   let searchHistory = referenceSearchHistory;
-  let results = referenceDocumentResults;
+  let categories = referenceDocumentCategories;
+  const results = referenceDocumentResults;
   let apiUsed = false;
+
+  const catalog = await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
+  if (catalog && catalog.items.length > 0) {
+    categories = mapDocumentCategoriesFromCatalog(catalog.items);
+    apiUsed = true;
+  }
 
   const history = await readOptionalApi("documents", issues, client.fetchQueryHistory);
   if (history && history.items.length > 0) {
@@ -570,31 +541,9 @@ export async function loadReplicaDocumentsData(
     apiUsed = true;
   }
 
-  const runKnowledgeQuery = client.runKnowledgeQuery;
-  const queryResponse = await readOptionalApi(
-    "documents",
-    issues,
-    runKnowledgeQuery ? () => runKnowledgeQuery(defaultDocumentQuery) : undefined
-  );
-  if (queryResponse) {
-    const mappedResults = mapDocumentResults(queryResponse);
-    if (mappedResults.length > 0) {
-      results = mappedResults;
-      apiUsed = true;
-    } else {
-      issues.push(
-        issue(
-          "documents",
-          "partial-schema-gap",
-          "Knowledge query returned no citations or personal upload matches for document result cards."
-        )
-      );
-    }
-  }
-
   return {
     source: sourceFrom(apiUsed, true),
-    data: { categories: referenceDocumentCategories, searchHistory, results },
+    data: { categories, searchHistory, results },
     issues
   };
 }

@@ -26,6 +26,7 @@ import type {
   GraphWorkbenchResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
+  ProjectDashboardResponse,
   ProjectMembersResponse,
   ProjectsResponse,
   QueryHistoryResponse,
@@ -341,6 +342,13 @@ export function fetchProjects(): Promise<ProjectsResponse> {
 export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
   return getJsonWithAuditHeaders<ProjectMembersResponse>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
+    auditProjectClientHeaders(projectId)
+  );
+}
+
+export function fetchProjectDashboard(projectId: string): Promise<ProjectDashboardResponse> {
+  return getJsonWithAuditHeaders<ProjectDashboardResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/dashboard`,
     auditProjectClientHeaders(projectId)
   );
 }

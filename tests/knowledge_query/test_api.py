@@ -1245,6 +1245,18 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
     assert projects_body["items"][0]["member_count"] == 3
 
+    dashboard_response = client.get("/projects/SELF-CHECK-FUND-20260607/dashboard")
+
+    assert dashboard_response.status_code == 200
+    dashboard_body = dashboard_response.json()
+    assert dashboard_body["format"] == "project-dashboard-v1"
+    assert dashboard_body["project"]["id"] == "SELF-CHECK-FUND-20260607"
+    assert dashboard_body["metrics"][0]["key"] == "open_findings"
+    assert dashboard_body["queue"][0]["id"] == "QUEUE-BACKEND-001"
+    assert dashboard_body["store"]["backend"]["project_members"] == "SqlAlchemyProjectMemberStore"
+    assert dashboard_body["store"]["backend"]["audit_findings"] == "unavailable"
+    assert dashboard_body["production_side_effect"] == "none"
+
     members_response = client.get("/projects/CATALOG-LIMIT-202606/members")
 
     assert members_response.status_code == 200
