@@ -129,11 +129,13 @@ const mineAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
   issues: []
 };
 
+const marketAgentCategories = Array.from(new Set(referenceMarketAgents.map((agent) => agent.category)));
+
 const marketAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
   source: "fixture",
   data: {
     agents: referenceMarketAgents,
-    categories: ["业务类", "效率类", "研究类"]
+    categories: marketAgentCategories
   },
   issues: [
     {

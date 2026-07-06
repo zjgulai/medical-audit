@@ -304,17 +304,6 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
   };
 }
 
-function mergeAgentCatalog(
-  apiAgents: readonly ReferenceAgentCard[],
-  fixtureAgents: readonly ReferenceAgentCard[]
-): readonly ReferenceAgentCard[] {
-  const seen = new Set(apiAgents.map((agent) => agent.id));
-  return [
-    ...apiAgents,
-    ...fixtureAgents.filter((agent) => !seen.has(agent.id))
-  ];
-}
-
 function mapDocumentCategoriesFromCatalog(
   items: readonly DocumentSourceCollectionCatalogItem[]
 ): readonly ReferenceDocumentCategory[] {
@@ -571,30 +560,13 @@ export async function loadReplicaAgentMarketData(
       "Publish, rating, and lifecycle actions remain gated; install uses the agent create API."
     )
   ];
-  const agentResponse = await readOptionalApi("agent-market", issues, client.fetchAgents);
-
-  if (!agentResponse || agentResponse.items.length === 0) {
-    return {
-      source: "fixture",
-      data: { agents: referenceMarketAgents, categories: uniqueAgentCategories(referenceMarketAgents) },
-      issues
-    };
-  }
-
-  const marketAgents = agentResponse.items
-    .filter((item) => item.visibility_scope === "system" || item.source === "system-default")
-    .map((item, index) => mapAgent(item, index, "智能体广场"));
-  const agents = mergeAgentCatalog(marketAgents, referenceMarketAgents);
-  const categories = Array.from(new Set<ReferenceAgentCategory>([
-    ...agentResponse.categories.map(toReferenceAgentCategory),
-    ...uniqueAgentCategories(referenceMarketAgents)
-  ]));
+  await readOptionalApi("agent-market", issues, client.fetchAgents);
 
   return {
-    source: sourceFrom(marketAgents.length > 0, true),
+    source: "fixture",
     data: {
-      agents,
-      categories
+      agents: referenceMarketAgents,
+      categories: uniqueAgentCategories(referenceMarketAgents)
     },
     issues
   };
