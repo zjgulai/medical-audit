@@ -204,6 +204,7 @@ describe("ChatPortalPage", () => {
     });
     expect(await screen.findByText(/应核验医保基金审核依据/)).toBeInTheDocument();
     expect(screen.getByText(/智能体调用已记录/)).toBeInTheDocument();
+    expect(apiMocks.fetchQueryModels).toHaveBeenCalledTimes(1);
   });
 
   it("uploads an attachment through the chat analysis endpoint", async () => {

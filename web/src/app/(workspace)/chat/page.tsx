@@ -140,23 +140,23 @@ function ChatPortalContent() {
   }, [chatData.data.agents, commandQuery]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(MODEL_STORAGE_KEY);
-    if (stored === "kimi-2.7" || stored === "deepseek-v4-pro") {
-      setSelectedModel(stored);
-    }
-  }, []);
-
-  useEffect(() => {
     let mounted = true;
+    const stored = window.localStorage.getItem(MODEL_STORAGE_KEY);
+    const preferredModel: ChatModelAlias =
+      stored === "kimi-2.7" || stored === "deepseek-v4-pro" ? stored : DEFAULT_MODEL;
+    if (preferredModel !== DEFAULT_MODEL) {
+      setSelectedModel(preferredModel);
+    }
     void fetchQueryModels()
       .then((catalog) => {
         if (!mounted) {
           return;
         }
-        setModelOptions(catalog.items);
-        const hasStoredModel = catalog.items.some((item) => item.alias === selectedModel);
-        const defaultOption = catalog.items.find((item) => item.default) ?? catalog.items[0];
-        if (!hasStoredModel && defaultOption) {
+        const options = catalog.items.length > 0 ? catalog.items : DEFAULT_MODEL_OPTIONS;
+        setModelOptions(options);
+        const hasPreferredModel = options.some((item) => item.alias === preferredModel);
+        const defaultOption = options.find((item) => item.default) ?? options[0];
+        if (!hasPreferredModel && defaultOption) {
           setSelectedModel(defaultOption.alias);
         }
       })
@@ -168,7 +168,7 @@ function ChatPortalContent() {
     return () => {
       mounted = false;
     };
-  }, [selectedModel]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
