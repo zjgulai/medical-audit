@@ -28,6 +28,13 @@ from medical_audit_kb.api.auth import (
     require_permission,
     resolve_authenticated_user,
 )
+from medical_audit_kb.api.chat_models import (
+    ChatModelAlias,
+    ChatModelCatalogResponse,
+    ChatModelUnavailableError,
+    answer_generation_provider_for_alias,
+    chat_model_catalog_response,
+)
 from medical_audit_kb.api.document_permissions import (
     allowed_source_collections,
     can_read_all_personal_uploads,
@@ -69,6 +76,12 @@ class QueryRequest(BaseModel):
     topic: str | None = Field(default=None, max_length=64)
     title_only: bool = False
     agent: str | None = Field(default=None, max_length=128)
+    model: ChatModelAlias | None = None
+
+
+@router.get("/query/models", response_model=ChatModelCatalogResponse)
+def query_models() -> ChatModelCatalogResponse:
+    return chat_model_catalog_response()
 
 
 @router.post("/query")
@@ -103,6 +116,22 @@ def query(
             request_project_name=x_project_name,
             attempted_action="query-agent-select",
         )
+    generation_provider = state.answer_generation_provider
+    model_alias = payload.model.value if payload.model is not None else None
+    model_status = "default_provider" if generation_provider is not None else "default_fallback"
+    if payload.model is not None:
+        try:
+            generation_provider = answer_generation_provider_for_alias(payload.model)
+        except ChatModelUnavailableError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "chat_model_unavailable",
+                    "model": exc.alias.value,
+                    "reason": exc.reason,
+                },
+            ) from exc
+        model_status = "selected_provider"
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search engine is not initialized")
 
@@ -135,7 +164,7 @@ def query(
         answer = build_citation_backed_answer(
             payload.question,
             results,
-            generation_provider=state.answer_generation_provider,
+            generation_provider=generation_provider,
         )
     except NoCitedEvidenceError as exc:
         raise HTTPException(status_code=404, detail="no cited evidence found") from exc
@@ -166,6 +195,8 @@ def query(
         "auth_source": user.auth_source,
         "question": payload.question,
         "agent_id": agent_key,
+        "model": model_alias,
+        "model_status": model_status,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
         "citation_count": len(answer.citations),
@@ -207,6 +238,8 @@ def query(
             "auth_source": user.auth_source,
             "agent_id": agent_key,
             "agent_invocation_id": agent_invocation_id,
+            "model": model_alias,
+            "model_status": model_status,
             "query_log_id": persisted_log.get("id") if persisted_log else None,
             "query_history_error": query_history_error,
             "filters": filter_payload,
@@ -220,6 +253,8 @@ def query(
         "answer": answer.answer,
         "confidence": answer.confidence.value,
         "fallback_used": answer.fallback_used,
+        "model_alias": model_alias,
+        "model_status": model_status,
         "effective_source_collections": [item.value for item in effective_source_collections],
         "basis_groups": [
             {
@@ -329,6 +364,7 @@ def _query_filter_payload(
         "topic": payload.topic,
         "title_only": payload.title_only,
         "agent": _normalize_agent_key(payload.agent),
+        "model": payload.model.value if payload.model is not None else None,
     }
 
 

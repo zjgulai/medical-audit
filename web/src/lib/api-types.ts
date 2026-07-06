@@ -424,6 +424,29 @@ export type SourceCollection =
   | "other-transport-maritime"
   | "personal-materials";
 
+export type ChatModelAlias = "kimi-2.7" | "deepseek-v4-pro";
+
+export type ChatModelCatalogItem = {
+  readonly alias: ChatModelAlias;
+  readonly label: string;
+  readonly provider: string | null;
+  readonly available: boolean;
+  readonly default: boolean;
+  readonly unavailable_reason?: string | null;
+};
+
+export type ChatModelCatalogResponse = {
+  readonly contract_version: "chat-model-catalog-v1";
+  readonly default_model: ChatModelAlias;
+  readonly items: readonly ChatModelCatalogItem[];
+  readonly boundaries: {
+    readonly production_write: false;
+    readonly provider_call: false;
+    readonly secret_values_reported: false;
+    readonly source: "environment_capability_probe_only";
+  };
+};
+
 export type DocumentSourcePermissionItem = {
   readonly source_collection: SourceCollection;
   readonly label: string;
@@ -544,6 +567,7 @@ export type QueryRequest = {
   readonly title_only?: boolean;
   readonly agent?: string | null;
   readonly topic?: string;
+  readonly model?: ChatModelAlias | null;
 };
 
 export type QueryBasisItem = {
@@ -593,6 +617,8 @@ export type QueryResponse = {
   readonly answer: string;
   readonly confidence: string;
   readonly fallback_used: boolean;
+  readonly model_alias?: ChatModelAlias | null;
+  readonly model_status?: string | null;
   readonly effective_source_collections: readonly SourceCollection[];
   readonly basis_groups: readonly QueryBasisGroup[];
   readonly citations: readonly QueryCitation[];
@@ -600,6 +626,26 @@ export type QueryResponse = {
   readonly query_log_index: number;
   readonly query_log_id?: string | null;
   readonly agent_invocation_id?: string | null;
+};
+
+export type ChatAttachmentAnalyzeMode = "auto" | "table-analysis" | "document-summary";
+
+export type ChatAttachmentAnalysisResponse = {
+  readonly contract_version: "chat-attachment-analysis-v1";
+  readonly file_name: string;
+  readonly extension: string;
+  readonly mode: "table-analysis" | "document-summary";
+  readonly model_alias: ChatModelAlias;
+  readonly model_status: "selected_provider";
+  readonly answer: string;
+  readonly extracted_preview: string;
+  readonly summary_items: readonly string[];
+  readonly boundaries: {
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly index_write: false;
+    readonly provider_call: true;
+  };
 };
 
 export type QueryHistoryItem = {

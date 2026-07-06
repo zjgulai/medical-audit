@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -33,6 +34,20 @@ DEFAULT_LOCAL_ACCEPTANCE_ROOT = Path("tmp/local-acceptance-api")
 LOCAL_ACCEPTANCE_DATABASE_URL = (
     "postgresql+psycopg://local:local@127.0.0.1:5433/local_acceptance"
 )
+LOCAL_ACCEPTANCE_CHAT_MODEL_ENV: dict[str, str] = {
+    "MEDICAL_AUDIT_KB_ALLOW_FAKE_CHAT_MODELS": "1",
+    "MEDICAL_AUDIT_LOCAL_ACCEPTANCE_FAKE_KEY": "local-acceptance-placeholder",
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV": (
+        "MEDICAL_AUDIT_LOCAL_ACCEPTANCE_FAKE_KEY"
+    ),
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_PROVIDER": "fake",
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MODEL": "local-acceptance-kimi",
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_API_KEY_ENV": (
+        "MEDICAL_AUDIT_LOCAL_ACCEPTANCE_FAKE_KEY"
+    ),
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_PROVIDER": "fake",
+    "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_MODEL": "local-acceptance-deepseek",
+}
 
 
 class LocalAcceptanceAnswerProvider:
@@ -58,6 +73,7 @@ def create_local_acceptance_app(state_root: Path | str | None = None) -> FastAPI
 
 
 def create_local_acceptance_state(state_root: Path | str | None = None) -> ApiState:
+    configure_local_acceptance_chat_models()
     root = Path(state_root or DEFAULT_LOCAL_ACCEPTANCE_ROOT)
     source_root = root / "data"
     index_root = root / "index"
@@ -111,6 +127,11 @@ def create_local_acceptance_state(state_root: Path | str | None = None) -> ApiSt
         auth_user_store=InMemoryAuthUserStore(),
         answer_generation_provider=LocalAcceptanceAnswerProvider(),
     )
+
+
+def configure_local_acceptance_chat_models() -> None:
+    for name, value in LOCAL_ACCEPTANCE_CHAT_MODEL_ENV.items():
+        os.environ.setdefault(name, value)
 
 
 def _write_local_acceptance_source(source_root: Path) -> Path:

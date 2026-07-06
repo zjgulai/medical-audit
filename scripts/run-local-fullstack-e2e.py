@@ -21,6 +21,7 @@ import uvicorn
 from medical_audit_kb.api.analytics_upload_store import InMemoryAnalyticsUploadStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.document_upload_store import InMemoryDocumentUploadStore
+from medical_audit_kb.api.local_acceptance import LOCAL_ACCEPTANCE_CHAT_MODEL_ENV
 from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
 from medical_audit_kb.core.config import (
     KnowledgeQuerySettings,
@@ -58,6 +59,7 @@ def _run_in_memory_e2e(args: argparse.Namespace, *, repo_root: Path, pnpm: str) 
     with TemporaryDirectory(prefix="medical-audit-fullstack-e2e-") as temp_dir:
         temp_root = Path(temp_dir)
         context = multiprocessing.get_context("spawn")
+        previous_chat_model_env = _set_local_acceptance_chat_model_env()
         backend = context.Process(
             target=_serve_in_memory_backend,
             args=(temp_root, args.backend_host, args.backend_port),
@@ -76,6 +78,7 @@ def _run_in_memory_e2e(args: argparse.Namespace, *, repo_root: Path, pnpm: str) 
             result = subprocess.run(command, cwd=repo_root, env=env, check=False)
             return result.returncode
         finally:
+            _restore_env(previous_chat_model_env)
             if backend.is_alive():
                 backend.terminate()
                 backend.join(timeout=5)
@@ -164,6 +167,20 @@ def _parse_args() -> argparse.Namespace:
 def _serve_in_memory_backend(temp_root: Path, host: str, port: int) -> None:
     app = create_app(_api_state(temp_root), enforce_controlled_api_auth=True)
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _set_local_acceptance_chat_model_env() -> dict[str, str | None]:
+    previous = {name: os.environ.get(name) for name in LOCAL_ACCEPTANCE_CHAT_MODEL_ENV}
+    os.environ.update(LOCAL_ACCEPTANCE_CHAT_MODEL_ENV)
+    return previous
+
+
+def _restore_env(previous: dict[str, str | None]) -> None:
+    for name, value in previous.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
 
 def _serve_configured_backend(config: str | None, host: str, port: int) -> None:

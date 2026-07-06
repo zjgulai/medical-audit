@@ -2501,6 +2501,185 @@ def test_query_endpoint_uses_configured_answer_generation_provider(
     assert body["answer"] == "生成模型回答：应核验医保基金审核依据 [C1]。"
 
 
+def test_query_models_reports_alias_availability_without_secret_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV", "TEST_KIMI_CHAT_KEY")
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MODEL", "moonshot-test-model")
+    monkeypatch.setenv("TEST_KIMI_CHAT_KEY", "secret-value-not-in-response")
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.get("/query/models")
+
+    assert response.status_code == 200
+    body = response.json()
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert body["contract_version"] == "chat-model-catalog-v1"
+    assert body["default_model"] == "kimi-2.7"
+    kimi = next(item for item in body["items"] if item["alias"] == "kimi-2.7")
+    deepseek = next(item for item in body["items"] if item["alias"] == "deepseek-v4-pro")
+    assert kimi["available"] is True
+    assert kimi["provider"] == "kimi"
+    assert deepseek["available"] is False
+    assert "secret-value-not-in-response" not in serialized
+
+
+def test_query_models_fake_provider_requires_explicit_local_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV", "TEST_KIMI_CHAT_KEY")
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_PROVIDER", "fake")
+    monkeypatch.setenv("TEST_KIMI_CHAT_KEY", "local-fake-key")
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    blocked_response = client.get("/query/models")
+
+    blocked_kimi = next(
+        item for item in blocked_response.json()["items"] if item["alias"] == "kimi-2.7"
+    )
+    assert blocked_kimi["available"] is False
+    assert blocked_kimi["unavailable_reason"] == "fake_provider_not_allowed"
+
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_ALLOW_FAKE_CHAT_MODELS", "1")
+    allowed_response = client.post(
+        "/query",
+        headers={"X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "kimi-2.7"},
+    )
+
+    assert allowed_response.status_code == 200
+    body = allowed_response.json()
+    assert body["model_alias"] == "kimi-2.7"
+    assert body["model_status"] == "selected_provider"
+    assert body["answer"].startswith("本地验收模型回答")
+
+
+def test_query_endpoint_rejects_unconfigured_selected_model_before_logging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "kimi-2.7"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "chat_model_unavailable",
+        "model": "kimi-2.7",
+        "reason": "missing_api_key_env",
+    }
+    assert state.query_logs == []
+
+
+def test_query_endpoint_uses_selected_chat_model_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_query.answer_generation_provider_for_alias",
+        lambda _alias: StaticApiAnswerProvider(),
+        raising=False,
+    )
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "model": "kimi-2.7",
+            "source_collections": ["medical-insurance-laws"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model_alias"] == "kimi-2.7"
+    assert body["model_status"] == "selected_provider"
+    assert body["fallback_used"] is False
+    assert state.query_logs[-1]["filters"]["model"] == "kimi-2.7"
+    assert state.operation_logs[-1]["payload"]["model"] == "kimi-2.7"
+
+
+def test_chat_attachment_analyzes_table_with_selected_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_chat.answer_generation_provider_for_alias",
+        lambda _alias: StaticApiAnswerProvider(),
+        raising=False,
+    )
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"model": "kimi-2.7", "mode": "auto"},
+        files={
+            "file": (
+                "charge-sample.csv",
+                "patient_id,charge_amount\nP001,120\nP002,80\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "chat-attachment-analysis-v1"
+    assert body["mode"] == "table-analysis"
+    assert body["model_alias"] == "kimi-2.7"
+    assert "行数：2" in body["summary_items"]
+    assert "patient_id" in body["extracted_preview"]
+    assert body["answer"] == "生成模型回答：应核验医保基金审核依据 [C1]。"
+    assert body["boundaries"]["object_storage_write"] is False
+    assert state.operation_logs[-1]["action"] == "chat-attachment-analyze"
+
+
+def test_chat_attachment_analyzes_text_document_with_selected_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_chat.answer_generation_provider_for_alias",
+        lambda _alias: StaticApiAnswerProvider(),
+        raising=False,
+    )
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"model": "deepseek-v4-pro", "mode": "document-summary"},
+        files={
+            "file": (
+                "meeting-summary.txt",
+                "医保基金审计会议纪要：要求复核高频收费项目和异常结算。",
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "document-summary"
+    assert body["model_alias"] == "deepseek-v4-pro"
+    assert "字符数" in body["summary_items"][2]
+    assert "医保基金审计会议纪要" in body["extracted_preview"]
+
+
 def test_query_endpoint_blocks_unknown_role(tmp_path: Path) -> None:
     client = TestClient(create_app(_api_state(tmp_path)))
 
@@ -3283,6 +3462,23 @@ def _search_engine_with_personal_materials(
 
 def _chunk_id() -> UUID:
     return uuid4()
+
+
+def _clear_chat_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    aliases = ("KIMI_2_7", "DEEPSEEK_V4_PRO")
+    suffixes = (
+        "PROVIDER",
+        "API_KEY_ENV",
+        "MODEL",
+        "BASE_URL",
+        "MAX_OUTPUT_TOKENS",
+        "TEMPERATURE",
+    )
+    for alias in aliases:
+        for suffix in suffixes:
+            monkeypatch.delenv(f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias}_{suffix}", raising=False)
+    monkeypatch.delenv("TEST_KIMI_CHAT_KEY", raising=False)
+    monkeypatch.delenv("MEDICAL_AUDIT_KB_ALLOW_FAKE_CHAT_MODELS", raising=False)
 
 
 class StaticApiAnswerProvider:

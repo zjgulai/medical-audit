@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  analyzeChatAttachment,
   createAuditAgent,
   createAuditAgentPromptVersion,
   createProjectMember,
@@ -24,6 +25,7 @@ import {
   fetchProjectDashboard,
   fetchProjectMembers,
   fetchProjects,
+  fetchQueryModels,
   fetchQueryHistory,
   fetchRemediationWorkbench,
   fetchReportWorkbench,
@@ -113,7 +115,9 @@ describe("api-client", () => {
         "/api/backend/index/search-backend",
         "/api/v1/auth/session",
         "/api/v1/query",
+        "/api/v1/query/models",
         "/api/v1/query/logs?limit=8",
+        "/api/v1/chat/attachments/analyze",
         "/api/v1/audit-findings",
         "/api/v1/reports/workbench",
         "/api/v1/graph/workbench",
@@ -219,7 +223,8 @@ describe("api-client", () => {
       top_k: 5,
       source_collections: ["medical-insurance-laws", "medical-insurance-catalog"],
       topic: "medical-insurance-fund",
-      agent: "agent-installed-catalog-001"
+      agent: "agent-installed-catalog-001",
+      model: "kimi-2.7"
     });
 
     expect(fetch).toHaveBeenCalledWith("/api/v1/query", {
@@ -236,12 +241,110 @@ describe("api-client", () => {
         top_k: 5,
         source_collections: ["medical-insurance-laws", "medical-insurance-catalog"],
         topic: "medical-insurance-fund",
-        agent: "agent-installed-catalog-001"
+        agent: "agent-installed-catalog-001",
+        model: "kimi-2.7"
       }),
       cache: "no-store"
     });
     expect(result.answer).toBe("应核验证据链。");
     expect(result.agent_invocation_id).toBe("agent-invocation-chat-001");
+  });
+
+  it("fetches chat model catalog through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "chat-model-catalog-v1",
+          default_model: "kimi-2.7",
+          items: [
+            {
+              alias: "kimi-2.7",
+              label: "Kimi 2.7",
+              provider: "kimi",
+              available: true,
+              default: true,
+              unavailable_reason: null
+            },
+            {
+              alias: "deepseek-v4-pro",
+              label: "DeepSeek V4 Pro",
+              provider: null,
+              available: false,
+              default: false,
+              unavailable_reason: "missing_api_key_env"
+            }
+          ],
+          boundaries: {
+            production_write: false,
+            provider_call: false,
+            secret_values_reported: false,
+            source: "environment_capability_probe_only"
+          }
+        })
+      }))
+    );
+
+    const result = await fetchQueryModels();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/query/models", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.default_model).toBe("kimi-2.7");
+    expect(result.items[0].available).toBe(true);
+  });
+
+  it("posts chat attachment analysis through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "chat-attachment-analysis-v1",
+          file_name: "charges.csv",
+          extension: "csv",
+          mode: "table-analysis",
+          model_alias: "kimi-2.7",
+          model_status: "selected_provider",
+          answer: "已完成分析 [C1]。",
+          extracted_preview: "字段：charge_amount",
+          summary_items: ["行数：2"],
+          boundaries: {
+            database_write: false,
+            object_storage_write: false,
+            index_write: false,
+            provider_call: true
+          }
+        })
+      }))
+    );
+    const file = new File(["charge_amount\n100"], "charges.csv", { type: "text/csv" });
+
+    const result = await analyzeChatAttachment(file, { model: "kimi-2.7", mode: "auto" });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/chat/attachments/analyze", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: expect.any(FormData),
+      cache: "no-store"
+    });
+    const formData = vi.mocked(fetch).mock.calls[0]?.[1]?.body as FormData;
+    expect(formData.get("file")).toBe(file);
+    expect(formData.get("model")).toBe("kimi-2.7");
+    expect(formData.get("mode")).toBe("auto");
+    expect(result.mode).toBe("table-analysis");
   });
 
   it("fetches auth session through the versioned API proxy with current audit headers", async () => {

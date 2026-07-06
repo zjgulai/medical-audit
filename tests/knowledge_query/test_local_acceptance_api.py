@@ -195,6 +195,23 @@ def test_local_acceptance_api_satisfies_frontend_backend_page_contract(tmp_path:
             method = str(endpoint["method"])
             if method == "GET":
                 response = client.get(path, headers=LOCAL_ACCEPTANCE_HEADERS)
+            elif endpoint.get("sample_body", {}).get("multipart") is True:
+                sample_body = endpoint["sample_body"]
+                response = client.post(
+                    path,
+                    headers=LOCAL_ACCEPTANCE_HEADERS,
+                    data={
+                        "model": str(sample_body["model"]),
+                        "mode": str(sample_body.get("mode", "auto")),
+                    },
+                    files={
+                        "file": (
+                            str(sample_body.get("file", "sample.csv")),
+                            "patient_id,charge_amount\nP001,120\nP002,80\n",
+                            "text/csv",
+                        )
+                    },
+                )
             else:
                 response = client.post(
                     path,
