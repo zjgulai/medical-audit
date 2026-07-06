@@ -239,10 +239,7 @@ function ChatPortalContent() {
     if (!value || submitting) {
       return;
     }
-    if (!selectedModelOption?.available) {
-      setNotice(`当前模型「${selectedModel}」未完成后端配置，暂不能发起模型问答。`);
-      return;
-    }
+    const queryModel = selectedModelOption?.available ? selectedModel : null;
 
     const userMessage: LocalMessage = {
       id: `user-${Date.now()}`,
@@ -258,7 +255,7 @@ function ChatPortalContent() {
       const response = await runKnowledgeQuery({
         question: value,
         top_k: 5,
-        model: selectedModel,
+        model: queryModel,
         source_collections: selectedSources.length > 0 ? selectedSources : undefined,
         agent: selectedAgent?.id ?? null
       });
@@ -267,7 +264,7 @@ function ChatPortalContent() {
         role: "assistant",
         text: response.answer,
         meta: [
-          `模型：${response.model_alias ?? selectedModel}`,
+          `模型：${response.model_alias ?? queryModel ?? "默认知识库问答"}`,
           `知识库：${selectedSourceLabel}`,
           response.agent_invocation_id ? `智能体调用已记录` : null,
           response.query_log_id ? `查询记录：${response.query_log_id}` : null

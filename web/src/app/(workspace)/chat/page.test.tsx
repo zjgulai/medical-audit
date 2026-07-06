@@ -207,6 +207,72 @@ describe("ChatPortalPage", () => {
     expect(apiMocks.fetchQueryModels).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to the default knowledge query path when chat model aliases are unavailable", async () => {
+    apiMocks.fetchQueryModels.mockResolvedValue({
+      contract_version: "chat-model-catalog-v1",
+      default_model: "kimi-2.7",
+      items: [
+        {
+          alias: "kimi-2.7",
+          label: "Kimi 2.7",
+          provider: null,
+          available: false,
+          default: true,
+          unavailable_reason: "missing_api_key_env"
+        },
+        {
+          alias: "deepseek-v4-pro",
+          label: "DeepSeek V4 Pro",
+          provider: null,
+          available: false,
+          default: false,
+          unavailable_reason: "missing_api_key_env"
+        }
+      ],
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        secret_values_reported: false,
+        source: "environment_capability_probe_only"
+      }
+    });
+    apiMocks.runKnowledgeQuery.mockResolvedValue({
+      contract_version: "knowledge-query-contract-v2",
+      question: "医保基金审核依据",
+      answer: "默认知识库回答。",
+      confidence: "medium",
+      fallback_used: true,
+      model_alias: null,
+      model_status: "default_fallback",
+      effective_source_collections: ["medical-insurance-laws"],
+      basis_groups: [],
+      citations: [],
+      personal_upload_matches: [],
+      query_log_index: 0,
+      query_log_id: "query-history-default",
+      agent_invocation_id: null
+    });
+    render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi 2.7（未配置）" });
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "医保基金审核依据" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: "医保基金审核依据",
+          model: null,
+          agent: null
+        })
+      );
+    });
+    expect(await screen.findByText("默认知识库回答。")).toBeInTheDocument();
+    expect(screen.getByText(/模型：默认知识库问答/)).toBeInTheDocument();
+  });
+
   it("uploads an attachment through the chat analysis endpoint", async () => {
     const { container } = render(<ChatPortalPage />);
 
