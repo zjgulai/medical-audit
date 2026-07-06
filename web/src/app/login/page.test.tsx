@@ -10,6 +10,10 @@ describe("LoginPage", () => {
     expect(screen.getByRole("heading", { name: "面向医院内审的医保审计工作台" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
     expect(screen.getByText("医疗AI审计平台")).toBeInTheDocument();
+    const loginHero = screen.getByLabelText("医疗AI审计平台入口介绍");
+    expect(loginHero).toHaveClass("audit-login-hero");
+    expect(loginHero.className).not.toContain("bg-white/10");
+    expect(loginHero.className).not.toContain("text-white");
     expect(screen.queryByText("AuditScope Medical")).not.toBeInTheDocument();
     expect(screen.getByLabelText("账号 / 工号")).toBeRequired();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
