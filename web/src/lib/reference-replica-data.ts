@@ -1,3 +1,5 @@
+import { auditAgentCatalog } from "./audit-agent-catalog";
+
 export type ReferenceNavigationItem = {
   readonly id: string;
   readonly label: string;
@@ -31,6 +33,10 @@ export type ReferenceAgentCard = {
   readonly topic: string;
   readonly initial: string;
   readonly tone: "blue" | "cyan" | "rose" | "amber" | "slate";
+  readonly prompt?: string;
+  readonly sourceFile?: string;
+  readonly avatarSeed?: string;
+  readonly templateKey?: string;
 };
 
 export type ReferenceKnowledgeBase = {
@@ -76,6 +82,17 @@ export type ReferenceGraphNode = {
   readonly kind: string;
   readonly metric: string;
   readonly status: string;
+};
+
+export type ReferenceGraphRelation = {
+  readonly id: string;
+  readonly sourceId?: string;
+  readonly targetId?: string;
+  readonly source: string;
+  readonly relation: string;
+  readonly target: string;
+  readonly evidence: string;
+  readonly strength: "强" | "中" | "待补";
 };
 
 export type ReferenceReportRecord = {
@@ -279,68 +296,7 @@ export const referenceAgents: readonly ReferenceAgentCard[] = [
   }
 ];
 
-export const referenceMarketAgents: readonly ReferenceAgentCard[] = [
-  {
-    id: "market-bidding",
-    name: "招标流程核验",
-    category: "业务类",
-    summary: "围绕招标公告、资格审查、评标结果和定标流程识别违法违规风险。",
-    project: "智能体广场",
-    topic: "财政审计",
-    initial: "招",
-    tone: "blue"
-  },
-  {
-    id: "market-policy",
-    name: "政策依据速查",
-    category: "研究类",
-    summary: "按问题提取法规条款、执行口径和审计引用依据，辅助形成问题定性。",
-    project: "智能体广场",
-    topic: "法律法规库",
-    initial: "法",
-    tone: "slate"
-  },
-  {
-    id: "market-finance",
-    name: "凭证异常识别",
-    category: "业务类",
-    summary: "识别大额频繁支付、摘要异常、同户多笔和跨期列支等财务凭证线索。",
-    project: "智能体广场",
-    topic: "财务审计",
-    initial: "财",
-    tone: "cyan"
-  },
-  {
-    id: "market-summary",
-    name: "纪要结构提取",
-    category: "效率类",
-    summary: "从会议材料中提取参会人、议题、决议、责任部门和后续事项。",
-    project: "智能体广场",
-    topic: "办公效率",
-    initial: "纪",
-    tone: "amber"
-  },
-  {
-    id: "market-healthcare",
-    name: "医保支付核验",
-    category: "业务类",
-    summary: "核验超目录支付、重复收费、限制条件不满足和报销口径执行问题。",
-    project: "智能体广场",
-    topic: "社会保障审计",
-    initial: "医",
-    tone: "rose"
-  },
-  {
-    id: "market-company",
-    name: "国企指标分析",
-    category: "研究类",
-    summary: "结合资产负债、利润、现金流和经营指标识别国企经营风险。",
-    project: "智能体广场",
-    topic: "国有企业审计",
-    initial: "企",
-    tone: "blue"
-  }
-];
+export const referenceMarketAgents: readonly ReferenceAgentCard[] = auditAgentCatalog;
 
 export const referenceKnowledgeBases: readonly ReferenceKnowledgeBase[] = [
   {
@@ -472,6 +428,59 @@ export const referenceGraphNodes: readonly ReferenceGraphNode[] = [
   { id: "graph-company", label: "建设运维单位", kind: "企业", metric: "5 个合同", status: "已关联" },
   { id: "graph-gov", label: "主管部门", kind: "政府机构", metric: "7 个责任事项", status: "已关联" },
   { id: "graph-policy", label: "专项资金管理办法", kind: "政策文件", metric: "9 条引用", status: "可引用" }
+];
+
+export const referenceGraphRelations: readonly ReferenceGraphRelation[] = [
+  {
+    id: "relation-project-kb",
+    sourceId: "graph-project",
+    targetId: "graph-kb",
+    source: "乡村振兴专项审计",
+    relation: "调用知识库",
+    target: "乡村振兴项目知识库",
+    evidence: "项目问答和文档检索均需先限定知识库范围。",
+    strength: "强"
+  },
+  {
+    id: "relation-project-doc",
+    sourceId: "graph-project",
+    targetId: "graph-doc",
+    source: "乡村振兴专项审计",
+    relation: "归集材料",
+    target: "管护资金拨付台账",
+    evidence: "台账提供拨付时间、金额、对象和凭证编号。",
+    strength: "强"
+  },
+  {
+    id: "relation-doc-bank",
+    sourceId: "graph-doc",
+    targetId: "graph-bank",
+    source: "管护资金拨付台账",
+    relation: "指向账户",
+    target: "县级财政专户",
+    evidence: "资金链核验需要与银行流水逐笔对齐。",
+    strength: "中"
+  },
+  {
+    id: "relation-doc-company",
+    sourceId: "graph-doc",
+    targetId: "graph-company",
+    source: "管护资金拨付台账",
+    relation: "关联合同主体",
+    target: "建设运维单位",
+    evidence: "合同主体、付款对象和验收记录需要一致性核验。",
+    strength: "中"
+  },
+  {
+    id: "relation-policy-project",
+    sourceId: "graph-policy",
+    targetId: "graph-project",
+    source: "专项资金管理办法",
+    relation: "提供定性依据",
+    target: "乡村振兴专项审计",
+    evidence: "图谱只展示可追溯依据，不直接生成处理决定。",
+    strength: "待补"
+  }
 ];
 
 export const referenceReportRecords: readonly ReferenceReportRecord[] = [

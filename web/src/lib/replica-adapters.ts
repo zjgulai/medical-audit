@@ -17,6 +17,7 @@ import {
   referenceDocumentCategories,
   referenceDocumentResults,
   referenceGraphNodes,
+  referenceGraphRelations,
   referenceHistoryItems,
   referenceKnowledgeBases,
   referenceMarketAgents,
@@ -32,12 +33,18 @@ import type {
   ReferenceDocumentCategory,
   ReferenceDocumentResult,
   ReferenceGraphNode,
+  ReferenceGraphRelation,
   ReferenceHistoryItem,
   ReferenceKnowledgeBase,
   ReferenceNavigationItem,
   ReferenceProject,
   ReferenceReportRecord
 } from "./reference-replica-data";
+import {
+  FALLBACK_SOURCE_COLLECTION_GROUPS,
+  sourceCollectionCatalogToGroups,
+  type SourceCollectionGroup
+} from "./source-collection-catalog";
 
 export type ReplicaDataSource = "fixture" | "api" | "hybrid";
 
@@ -98,6 +105,7 @@ export type ReplicaAgentsData = {
 
 export type ReplicaKnowledgeBaseData = {
   readonly knowledgeBases: readonly ReferenceKnowledgeBase[];
+  readonly sourceGroups: readonly SourceCollectionGroup[];
   readonly readableSourceCollections: readonly string[];
   readonly canUploadPersonal: boolean;
 };
@@ -113,7 +121,17 @@ export type ReplicaAnalyticsData = {
 };
 
 export type ReplicaGraphData = {
+  readonly title: string;
+  readonly scope: string;
   readonly nodes: readonly ReferenceGraphNode[];
+  readonly relations: readonly ReferenceGraphRelation[];
+  readonly metrics: {
+    readonly nodeCount: number;
+    readonly nodeKindCount: number;
+    readonly relationCount: number;
+    readonly strongRelationCount: number;
+    readonly pendingRelationCount: number;
+  };
 };
 
 export type ReplicaReportsData = {
@@ -135,6 +153,7 @@ export type ReplicaAgentClient = {
 
 export type ReplicaKnowledgeBaseClient = {
   readonly fetchDocumentPermissions?: () => Promise<DocumentPermissionsResponse>;
+  readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
 };
 
 export type ReplicaDocumentsClient = {
@@ -313,6 +332,54 @@ function mapDocumentCategoriesFromCatalog(
   return categories.length > 0 ? categories : referenceDocumentCategories;
 }
 
+function toKnowledgeBaseScope(scope: string): ReferenceKnowledgeBase["scope"] {
+  if (scope === "个人知识库" || scope === "公开知识库" || scope === "系统知识库" || scope === "项目知识库") {
+    return scope;
+  }
+  if (scope.includes("个人")) {
+    return "个人知识库";
+  }
+  if (scope.includes("公开")) {
+    return "公开知识库";
+  }
+  if (scope.includes("项目")) {
+    return "项目知识库";
+  }
+  return "系统知识库";
+}
+
+function mapKnowledgeBasesFromSourceGroups(
+  groups: readonly SourceCollectionGroup[],
+  catalogItems: readonly DocumentSourceCollectionCatalogItem[] | null | undefined
+): readonly ReferenceKnowledgeBase[] {
+  const itemBySource = new Map(
+    (catalogItems ?? []).map((item) => [item.source_collection, item])
+  );
+
+  return groups.flatMap((group) =>
+    group.options.map((option) => {
+      const item = itemBySource.get(option.value);
+      const documentCount = item?.metrics.document_count ?? item?.metrics.chunk_count ?? 0;
+      const appCount = item?.metrics.linked_app_count ?? 0;
+      return {
+        id: `kb-${option.value}`,
+        name: option.label,
+        scope: toKnowledgeBaseScope(option.scope),
+        owner: option.scope.includes("个人") ? "审计员" : "系统",
+        documentCount,
+        appCount,
+        updatedAt: item?.phase ?? (option.queryable ? "可检索" : "待接入"),
+        description: item?.audit_hint || option.description,
+        tags: [
+          group.title,
+          option.queryable ? "可检索" : "待接入",
+          item?.evidence_group || option.scope
+        ].filter(Boolean)
+      };
+    })
+  );
+}
+
 function mapAnalysisUploads(
   response: TableAnalysisUploadHistoryResponse
 ): readonly ReferenceAnalysisDataset[] {
@@ -328,14 +395,51 @@ function mapAnalysisUploads(
   }));
 }
 
-function mapGraphWorkbench(response: GraphWorkbenchResponse): readonly ReferenceGraphNode[] {
-  return response.nodes.map((node) => ({
-    id: node.id,
-    label: node.label,
-    kind: node.kind,
-    metric: node.metric,
-    status: node.status
-  }));
+function graphDataFallback(): ReplicaGraphData {
+  return {
+    title: "审计知识图谱",
+    scope: "项目、知识库、文档、规则与疑点的只读关系视图",
+    nodes: referenceGraphNodes,
+    relations: referenceGraphRelations,
+    metrics: {
+      nodeCount: referenceGraphNodes.length,
+      nodeKindCount: new Set(referenceGraphNodes.map((node) => node.kind)).size,
+      relationCount: referenceGraphRelations.length,
+      strongRelationCount: referenceGraphRelations.filter((relation) => relation.strength === "强").length,
+      pendingRelationCount: referenceGraphRelations.filter((relation) => relation.strength === "待补").length
+    }
+  };
+}
+
+function mapGraphWorkbench(response: GraphWorkbenchResponse): ReplicaGraphData {
+  return {
+    title: response.graph_title,
+    scope: response.graph_scope,
+    nodes: response.nodes.map((node) => ({
+      id: node.id,
+      label: node.label,
+      kind: node.kind,
+      metric: node.metric,
+      status: node.status
+    })),
+    relations: response.relations.map((relation) => ({
+      id: relation.id,
+      sourceId: relation.sourceId,
+      targetId: relation.targetId,
+      source: relation.source,
+      relation: relation.relation,
+      target: relation.target,
+      evidence: relation.evidence,
+      strength: relation.strength
+    })),
+    metrics: {
+      nodeCount: response.metrics.node_count,
+      nodeKindCount: response.metrics.node_kind_count,
+      relationCount: response.metrics.relation_count,
+      strongRelationCount: response.metrics.strong_relation_count,
+      pendingRelationCount: response.metrics.pending_relation_count
+    }
+  };
 }
 
 function mapReportWorkbench(response: ReportWorkbenchResponse): readonly ReferenceReportRecord[] {
@@ -484,12 +588,18 @@ export async function loadReplicaAgentMarketData(
     .filter((item) => item.visibility_scope === "system" || item.source === "system-default")
     .map((item, index) => mapAgent(item, index, "智能体广场"));
   const agents = mergeAgentCatalog(marketAgents, referenceMarketAgents);
+  const categories = Array.from(new Set<ReferenceAgentCategory>([
+    ...agentResponse.categories.map(toReferenceAgentCategory),
+    "业务类",
+    "效率类",
+    "研究类"
+  ]));
 
   return {
     source: sourceFrom(marketAgents.length > 0, true),
     data: {
       agents,
-      categories: agentResponse.categories.map(toReferenceAgentCategory)
+      categories
     },
     issues
   };
@@ -498,23 +608,25 @@ export async function loadReplicaAgentMarketData(
 export async function loadReplicaKnowledgeBaseData(
   client: ReplicaKnowledgeBaseClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaKnowledgeBaseData>> {
-  const issues: ReplicaAdapterIssue[] = [
-    issue(
-      "knowledge-base",
-      "catalog-api-needed",
-      "Knowledge-base card catalog, document counts, app counts, and ownership contract is not available yet."
-    )
-  ];
+  const issues: ReplicaAdapterIssue[] = [];
   const permissions = await readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions);
+  const catalog = await readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections);
+  const sourceGroups = sourceCollectionCatalogToGroups(catalog?.items);
+  const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
 
   return {
-    source: sourceFrom(Boolean(permissions), true),
+    source: sourceFrom(Boolean(permissions || catalog), true),
     data: {
-      knowledgeBases: referenceKnowledgeBases,
+      knowledgeBases: knowledgeBases.length > 0 ? knowledgeBases : referenceKnowledgeBases,
+      sourceGroups,
       readableSourceCollections:
+        catalog?.items.filter((item) => item.queryable || item.product_queryable).map((item) => item.label) ??
         permissions?.source_collections.map((item) => item.label) ??
-        referenceKnowledgeBases.map((item) => item.name),
-      canUploadPersonal: permissions?.upload_permissions.can_upload_personal ?? true
+        FALLBACK_SOURCE_COLLECTION_GROUPS.flatMap((group) => group.options.map((item) => item.label)),
+      canUploadPersonal:
+        catalog?.upload_permissions.can_upload_personal ??
+        permissions?.upload_permissions.can_upload_personal ??
+        true
     },
     issues
   };
@@ -578,10 +690,10 @@ export async function loadReplicaGraphData(
   const graph = await readOptionalApi("graph", issues, client.fetchGraphWorkbench);
 
   if (!graph || graph.nodes.length === 0) {
-    return { source: "fixture", data: { nodes: referenceGraphNodes }, issues };
+    return { source: "fixture", data: graphDataFallback(), issues };
   }
 
-  return { source: "api", data: { nodes: mapGraphWorkbench(graph) }, issues };
+  return { source: "api", data: mapGraphWorkbench(graph), issues };
 }
 
 export async function loadReplicaReportsData(

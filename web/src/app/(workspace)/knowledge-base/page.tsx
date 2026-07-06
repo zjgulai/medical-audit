@@ -13,7 +13,7 @@ import {
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
 import type { ReferenceKnowledgeBase } from "@/lib/reference-replica-data";
 
-type KnowledgeScope = "全部知识库" | ReferenceKnowledgeBase["scope"];
+type KnowledgeGroup = "全部分类" | string;
 type KnowledgeAction = "查看" | "创建知识库" | "打开目录" | "关联智能体" | "权限设置";
 type KnowledgeActionPanel = {
   readonly title: string;
@@ -24,19 +24,6 @@ type KnowledgeActionPanel = {
   }[];
 };
 
-const knowledgeScopes: readonly KnowledgeScope[] = [
-  "全部知识库",
-  "个人知识库",
-  "公开知识库",
-  "系统知识库",
-  "项目知识库"
-];
-const knowledgeHighlights = [
-  { label: "法规政策", value: "1,362", detail: "法律、规章、政策依据" },
-  { label: "监管两库", value: "12,840", detail: "药品、诊疗和限制规则" },
-  { label: "医保目录", value: "18,266", detail: "目录、限定支付与编码" },
-  { label: "项目材料", value: "156", detail: "台账、底稿、现场记录" }
-] as const;
 const knowledgeWorkflow = [
   { label: "归集材料", detail: "按来源和主题入库" },
   { label: "配置权限", detail: "区分个人、系统、项目" },
@@ -91,9 +78,9 @@ const knowledgeActionPanels: Record<KnowledgeAction, KnowledgeActionPanel> = {
   }
 };
 
-function matchesKnowledgeBase(item: ReferenceKnowledgeBase, scope: KnowledgeScope, query: string) {
+function matchesKnowledgeBase(item: ReferenceKnowledgeBase, scope: KnowledgeGroup, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
-  const scopeMatched = scope === "全部知识库" || item.scope === scope;
+  const scopeMatched = scope === "全部分类" || item.tags.includes(scope) || item.scope === scope;
   const queryMatched =
     normalizedQuery.length === 0 ||
     `${item.name} ${item.scope} ${item.owner} ${item.description} ${item.tags.join(" ")}`.toLowerCase().includes(normalizedQuery);
@@ -103,13 +90,26 @@ function matchesKnowledgeBase(item: ReferenceKnowledgeBase, scope: KnowledgeScop
 
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
-  const [activeScope, setActiveScope] = useState<KnowledgeScope>("全部知识库");
+  const [activeScope, setActiveScope] = useState<KnowledgeGroup>("全部分类");
   const [notice, setNotice] = useState("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [detailOpen, setDetailOpen] = useState(true);
   const [activeAction, setActiveAction] = useState<KnowledgeAction>("查看");
   const knowledgeBaseData = useReplicaKnowledgeBaseData();
   const knowledgeBases = knowledgeBaseData.data.knowledgeBases;
+  const sourceGroups = knowledgeBaseData.data.sourceGroups;
+  const knowledgeScopes: readonly KnowledgeGroup[] = useMemo(
+    () => ["全部分类", ...sourceGroups.map((group) => group.title)],
+    [sourceGroups]
+  );
+  const knowledgeHighlights = useMemo(
+    () => sourceGroups.map((group) => ({
+      label: group.title,
+      value: `${group.options.length}`,
+      detail: group.options.slice(0, 3).map((item) => item.label).join(" / ")
+    })),
+    [sourceGroups]
+  );
   const filteredKnowledgeBases = useMemo(
     () => knowledgeBases.filter((item) => matchesKnowledgeBase(item, activeScope, query)),
     [activeScope, knowledgeBases, query]
@@ -140,16 +140,16 @@ export default function KnowledgeBasePage() {
     >
       <ReplicaPageHeader
         kicker="知识库"
-        title="知识库"
-        description="按个人、公开、系统和项目知识库组织审计材料，创建和查看入口保持本地门禁。"
+        title="知识库分类"
+        description="按一级专题和二级知识库组织当前项目材料，优先展示可被问答、检索和智能体调用的来源。"
         actions={
           <>
             <button
               type="button"
               className="replica-secondary-button"
-              onClick={() => setActiveScope("全部知识库")}
+              onClick={() => setActiveScope("全部分类")}
             >
-              全部标签
+              全部分类
             </button>
             <button
               type="button"
@@ -173,7 +173,7 @@ export default function KnowledgeBasePage() {
         <ReplicaMetric label="知识库" value={`${knowledgeBases.length}`} />
         <ReplicaMetric label="文档数" value={totalDocuments.toLocaleString()} tone="green" />
         <ReplicaMetric label="应用数" value={`${totalApps}`} tone="amber" />
-        <ReplicaMetric label="当前用户" value="审计员" tone="slate" />
+        <ReplicaMetric label="一级分类" value={`${sourceGroups.length}`} tone="slate" />
       </section>
 
       <section className="replica-kb-overview-band" aria-label="知识来源概览">
@@ -206,7 +206,7 @@ export default function KnowledgeBasePage() {
               placeholder="搜索知识库"
             />
           </label>
-          <div className="replica-filter-group" aria-label="知识库范围">
+          <div className="replica-filter-group" aria-label="知识库一级分类">
             {knowledgeScopes.map((scope) => (
               <ReplicaFilterButton key={scope} value={scope} activeValue={activeScope} onSelect={setActiveScope}>
                 {scope}
@@ -219,7 +219,7 @@ export default function KnowledgeBasePage() {
           <span>{activeScope}</span>
           <strong>{filteredKnowledgeBases.length} / {knowledgeBases.length}</strong>
           <span>{query.trim() ? `关键词：${query.trim()}` : "全量目录"}</span>
-          <span>本地门禁</span>
+          <span>{knowledgeBaseData.source === "api" ? "生产目录" : "本地目录"}</span>
         </div>
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
