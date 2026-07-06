@@ -2649,6 +2649,34 @@ def test_chat_attachment_analyzes_table_with_selected_model(
     assert state.operation_logs[-1]["action"] == "chat-attachment-analyze"
 
 
+def test_chat_attachment_falls_back_without_selected_model(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"mode": "auto"},
+        files={
+            "file": (
+                "charge-sample.csv",
+                "patient_id,charge_amount\nP001,120\nP002,80\n",
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "chat-attachment-analysis-v1"
+    assert body["mode"] == "table-analysis"
+    assert body["model_alias"] is None
+    assert body["model_status"] == "default_fallback"
+    assert body["boundaries"]["provider_call"] is False
+    assert "未调用外部模型" in body["answer"]
+    assert "行数：2" in body["summary_items"]
+    assert state.operation_logs[-1]["payload"]["provider_call"] is False
+
+
 def test_chat_attachment_analyzes_text_document_with_selected_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

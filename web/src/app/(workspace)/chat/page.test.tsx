@@ -287,4 +287,66 @@ describe("ChatPortalPage", () => {
     });
     expect(await screen.findByText(/表格存在高频收费线索/)).toBeInTheDocument();
   });
+
+  it("uploads an attachment through the default parser when model aliases are unavailable", async () => {
+    apiMocks.fetchQueryModels.mockResolvedValue({
+      contract_version: "chat-model-catalog-v1",
+      default_model: "kimi-2.7",
+      items: [
+        {
+          alias: "kimi-2.7",
+          label: "Kimi 2.7",
+          provider: null,
+          available: false,
+          default: true,
+          unavailable_reason: "missing_api_key_env"
+        },
+        {
+          alias: "deepseek-v4-pro",
+          label: "DeepSeek V4 Pro",
+          provider: null,
+          available: false,
+          default: false,
+          unavailable_reason: "missing_api_key_env"
+        }
+      ],
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        secret_values_reported: false,
+        source: "environment_capability_probe_only"
+      }
+    });
+    apiMocks.analyzeChatAttachment.mockResolvedValue({
+      contract_version: "chat-attachment-analysis-v1",
+      file_name: "charges.csv",
+      extension: "csv",
+      mode: "table-analysis",
+      model_alias: null,
+      model_status: "default_fallback",
+      answer: "已用默认附件解析完成。",
+      extracted_preview: "charge_amount",
+      summary_items: ["行数：2", "字段数：1"],
+      boundaries: {
+        database_write: false,
+        object_storage_write: false,
+        index_write: false,
+        provider_call: false
+      }
+    });
+    const { container } = render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi 2.7（未配置）" });
+    fireEvent.click(screen.getByRole("button", { name: "上传附件" }));
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["charge_amount\n100"], "charges.csv", { type: "text/csv" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(apiMocks.analyzeChatAttachment).toHaveBeenCalledWith(file, { model: null });
+    });
+    expect(await screen.findByText(/已用默认附件解析完成/)).toBeInTheDocument();
+    expect(screen.getByText(/模型：默认附件解析/)).toBeInTheDocument();
+    expect(screen.getByText(/未调用外部模型/)).toBeInTheDocument();
+  });
 });

@@ -635,8 +635,8 @@ export type ChatAttachmentAnalysisResponse = {
   readonly file_name: string;
   readonly extension: string;
   readonly mode: "table-analysis" | "document-summary";
-  readonly model_alias: ChatModelAlias;
-  readonly model_status: "selected_provider";
+  readonly model_alias: ChatModelAlias | null;
+  readonly model_status: "selected_provider" | "default_fallback";
   readonly answer: string;
   readonly extracted_preview: string;
   readonly summary_items: readonly string[];
@@ -644,7 +644,7 @@ export type ChatAttachmentAnalysisResponse = {
     readonly database_write: false;
     readonly object_storage_write: false;
     readonly index_write: false;
-    readonly provider_call: true;
+    readonly provider_call: boolean;
   };
 };
 

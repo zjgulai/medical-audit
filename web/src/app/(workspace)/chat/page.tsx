@@ -290,10 +290,7 @@ function ChatPortalContent() {
     if (!file || uploading) {
       return;
     }
-    if (!selectedModelOption?.available) {
-      setNotice(`当前模型「${selectedModel}」未完成后端配置，暂不能分析附件。`);
-      return;
-    }
+    const attachmentModel = selectedModelOption?.available ? selectedModel : null;
     setUploading(true);
     setNotice("");
     setMessages((current) => [
@@ -305,7 +302,7 @@ function ChatPortalContent() {
       }
     ]);
     try {
-      const response = await analyzeChatAttachment(file, { model: selectedModel });
+      const response = await analyzeChatAttachment(file, { model: attachmentModel });
       setMessages((current) => [...current, attachmentMessage(response)]);
     } catch (error) {
       setMessages((current) => [
@@ -516,7 +513,8 @@ function attachmentMessage(response: ChatAttachmentAnalysisResponse): LocalMessa
     meta: [
       `附件：${response.file_name}`,
       response.mode === "table-analysis" ? "数据分析" : "文档总结",
-      `模型：${response.model_alias}`,
+      `模型：${response.model_alias ?? "默认附件解析"}`,
+      response.boundaries.provider_call ? "模型调用已执行" : "未调用外部模型",
       ...response.summary_items.slice(0, 2)
     ].join(" · ")
   };

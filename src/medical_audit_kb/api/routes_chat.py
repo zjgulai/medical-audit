@@ -46,8 +46,8 @@ class ChatAttachmentAnalysisResponse(BaseModel):
     file_name: str
     extension: str
     mode: Literal["table-analysis", "document-summary"]
-    model_alias: ChatModelAlias
-    model_status: Literal["selected_provider"]
+    model_alias: ChatModelAlias | None
+    model_status: Literal["selected_provider", "default_fallback"]
     answer: str
     extracted_preview: str
     summary_items: list[str]
@@ -58,7 +58,7 @@ class ChatAttachmentAnalysisResponse(BaseModel):
 async def analyze_chat_attachment(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
-    model: Annotated[ChatModelAlias, Form()] = ChatModelAlias.KIMI_2_7,
+    model: Annotated[ChatModelAlias | None, Form()] = None,
     mode: Annotated[Literal["auto", "table-analysis", "document-summary"], Form()] = "auto",
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
 ) -> ChatAttachmentAnalysisResponse:
@@ -71,17 +71,19 @@ async def analyze_chat_attachment(
     if len(content) > MAX_TABLE_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="uploaded file is too large")
 
-    try:
-        provider = answer_generation_provider_for_alias(model)
-    except ChatModelUnavailableError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "chat_model_unavailable",
-                "model": exc.alias.value,
-                "reason": exc.reason,
-            },
-        ) from exc
+    provider = None
+    if model is not None:
+        try:
+            provider = answer_generation_provider_for_alias(model)
+        except ChatModelUnavailableError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "chat_model_unavailable",
+                    "model": exc.alias.value,
+                    "reason": exc.reason,
+                },
+            ) from exc
 
     if resolved_mode == "table-analysis":
         context, summary_items = _table_context(
@@ -102,10 +104,20 @@ async def analyze_chat_attachment(
         context=context,
     )
     prompt = _attachment_prompt(mode=resolved_mode, file_name=file_name)
-    try:
-        answer = provider.generate_answer(prompt, [citation])
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail="chat attachment model call failed") from exc
+    if provider is None:
+        answer = _fallback_attachment_answer(
+            mode=resolved_mode,
+            file_name=file_name,
+            summary_items=summary_items,
+            context=context,
+        )
+        model_status: Literal["selected_provider", "default_fallback"] = "default_fallback"
+    else:
+        try:
+            answer = provider.generate_answer(prompt, [citation])
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="chat attachment model call failed") from exc
+        model_status = "selected_provider"
 
     record_operation(
         state,
@@ -114,10 +126,11 @@ async def analyze_chat_attachment(
             "file_name": file_name,
             "extension": extension,
             "mode": resolved_mode,
-            "model": model.value,
+            "model": model.value if model is not None else None,
+            "model_status": model_status,
             "created_by": x_user_id,
             "size_bytes": len(content),
-            "provider_call": True,
+            "provider_call": provider is not None,
         },
     )
     return ChatAttachmentAnalysisResponse(
@@ -125,7 +138,7 @@ async def analyze_chat_attachment(
         extension=extension,
         mode=resolved_mode,
         model_alias=model,
-        model_status="selected_provider",
+        model_status=model_status,
         answer=answer,
         extracted_preview=_truncate(context, 800),
         summary_items=summary_items,
@@ -133,7 +146,7 @@ async def analyze_chat_attachment(
             "database_write": False,
             "object_storage_write": False,
             "index_write": False,
-            "provider_call": True,
+            "provider_call": provider is not None,
         },
     )
 
@@ -244,6 +257,23 @@ def _attachment_prompt(
     return (
         f"请对用户上传的文档《{file_name}》做审计口径总结。"
         "输出核心内容、可引用事项、疑点线索和下一步核验建议，并在关键判断后保留引用标记 [C1]。"
+    )
+
+
+def _fallback_attachment_answer(
+    *,
+    mode: Literal["table-analysis", "document-summary"],
+    file_name: str,
+    summary_items: list[str],
+    context: str,
+) -> str:
+    headline = "数据分析" if mode == "table-analysis" else "文档总结"
+    summary = "；".join(summary_items[:4])
+    preview = _truncate(context, 360)
+    return (
+        f"{headline}已基于后端解析器完成，当前未调用外部模型。"
+        f"文件《{file_name}》的结构摘要：{summary}。\n\n"
+        f"可先参考以下摘录继续追问：\n{preview}"
     )
 
 

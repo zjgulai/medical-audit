@@ -347,6 +347,42 @@ describe("api-client", () => {
     expect(result.mode).toBe("table-analysis");
   });
 
+  it("omits the chat attachment model when the selected alias is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "chat-attachment-analysis-v1",
+          file_name: "charges.csv",
+          extension: "csv",
+          mode: "table-analysis",
+          model_alias: null,
+          model_status: "default_fallback",
+          answer: "已用默认附件解析完成。",
+          extracted_preview: "字段：charge_amount",
+          summary_items: ["行数：2"],
+          boundaries: {
+            database_write: false,
+            object_storage_write: false,
+            index_write: false,
+            provider_call: false
+          }
+        })
+      }))
+    );
+    const file = new File(["charge_amount\n100"], "charges.csv", { type: "text/csv" });
+
+    const result = await analyzeChatAttachment(file, { model: null, mode: "auto" });
+
+    const formData = vi.mocked(fetch).mock.calls[0]?.[1]?.body as FormData;
+    expect(formData.get("file")).toBe(file);
+    expect(formData.has("model")).toBe(false);
+    expect(formData.get("mode")).toBe("auto");
+    expect(result.model_alias).toBeNull();
+    expect(result.boundaries.provider_call).toBe(false);
+  });
+
   it("fetches auth session through the versioned API proxy with current audit headers", async () => {
     vi.stubGlobal(
       "fetch",
