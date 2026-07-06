@@ -30,6 +30,8 @@
       "connection_status": "connected_first_batch",
       "endpoints": [
         { "name": "agents-list", "method": "GET", "path": "/api/v1/agents" },
+        { "name": "query-models", "method": "GET", "path": "/api/v1/query/models" },
+        { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
         {
           "name": "knowledge-query",
           "method": "POST",
@@ -39,7 +41,19 @@
             "top_k": 2,
             "source_collections": ["medical-insurance-laws"],
             "topic": "medical-insurance-fund",
-            "agent": "agent-citation-check"
+            "agent": "agent-citation-check",
+            "model": "kimi-2.7"
+          }
+        },
+        {
+          "name": "chat-attachment-analyze",
+          "method": "POST",
+          "path": "/api/v1/chat/attachments/analyze",
+          "sample_body": {
+            "multipart": true,
+            "file": "sample.csv",
+            "model": "kimi-2.7",
+            "mode": "auto"
           }
         }
       ]

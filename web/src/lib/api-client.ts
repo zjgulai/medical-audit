@@ -18,6 +18,10 @@ import type {
   AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
+  ChatAttachmentAnalysisResponse,
+  ChatAttachmentAnalyzeMode,
+  ChatModelAlias,
+  ChatModelCatalogResponse,
   DocumentSourceCollectionCatalogResponse,
   DocumentUploadGovernanceRequest,
   DocumentPermissionsResponse,
@@ -149,8 +153,26 @@ export function runKnowledgeQuery(payload: QueryRequest): Promise<QueryResponse>
   return postJson<QueryResponse>("/api/v1/query", payload);
 }
 
+export function fetchQueryModels(): Promise<ChatModelCatalogResponse> {
+  return getJsonWithAuditHeaders<ChatModelCatalogResponse>("/api/v1/query/models");
+}
+
 export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
   return getJsonWithAuditHeaders<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
+}
+
+export function analyzeChatAttachment(
+  file: File,
+  options: {
+    readonly model: ChatModelAlias;
+    readonly mode?: ChatAttachmentAnalyzeMode;
+  }
+): Promise<ChatAttachmentAnalysisResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("model", options.model);
+  formData.append("mode", options.mode ?? "auto");
+  return postForm<ChatAttachmentAnalysisResponse>("/api/v1/chat/attachments/analyze", formData);
 }
 
 export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {

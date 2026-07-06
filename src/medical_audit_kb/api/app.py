@@ -403,6 +403,7 @@ def create_app(
     from medical_audit_kb.api.routes_agents import router as agents_router
     from medical_audit_kb.api.routes_analytics import router as analytics_router
     from medical_audit_kb.api.routes_auth import router as auth_router
+    from medical_audit_kb.api.routes_chat import router as chat_router
     from medical_audit_kb.api.routes_documents import router as documents_router
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_pages import router as pages_router
@@ -419,6 +420,7 @@ def create_app(
     routers = (
         pages_router,
         query_router,
+        chat_router,
         workbench_router,
         auth_router,
         agents_router,
