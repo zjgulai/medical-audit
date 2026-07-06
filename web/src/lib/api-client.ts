@@ -164,13 +164,15 @@ export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
 export function analyzeChatAttachment(
   file: File,
   options: {
-    readonly model: ChatModelAlias;
+    readonly model?: ChatModelAlias | null;
     readonly mode?: ChatAttachmentAnalyzeMode;
   }
 ): Promise<ChatAttachmentAnalysisResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("model", options.model);
+  if (options.model) {
+    formData.append("model", options.model);
+  }
   formData.append("mode", options.mode ?? "auto");
   return postForm<ChatAttachmentAnalysisResponse>("/api/v1/chat/attachments/analyze", formData);
 }
