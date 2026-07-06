@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useReplicaAgentsData } from "./use-replica-runtime";
+import { createAuditAgent } from "@/lib/api-client";
 import type { ReferenceAgentCard, ReferenceAgentCategory } from "@/lib/reference-replica-data";
 
 import {
@@ -94,8 +95,8 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   历史版本: {
     title: "模板版本",
-    description: "展示官方模板迭代记录，当前不读取远端版本库。",
-    items: ["官方模板", "审计场景适配", "等待安装接口"]
+    description: "展示官方模板迭代记录，安装后由我的智能体维护版本。",
+    items: ["官方模板", "审计场景适配", "安装后进入版本管理"]
   },
   删除: {
     title: "广场模板不可删除",
@@ -104,8 +105,8 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   创建副本: {
     title: "复制副本",
-    description: "将模板复制到我的智能体后再绑定项目和知识库。",
-    items: ["生成个人副本", "保留模板能力", "等待安装 API"]
+    description: "将模板通过智能体创建接口复制到我的智能体后再绑定项目和知识库。",
+    items: ["生成个人副本", "保留模板能力", "写入智能体 store"]
   },
   立即使用: {
     title: "试用路径",
@@ -141,6 +142,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [detailOpen, setDetailOpen] = useState(true);
   const [activeAction, setActiveAction] = useState<AgentAction>("查看详情");
+  const [installingAgentId, setInstallingAgentId] = useState("");
   const agentData = useReplicaAgentsData(mode);
   const sourceAgents = agentData.data.agents;
   const filteredAgents = useMemo(
@@ -166,6 +168,39 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     }));
   }
 
+  async function installMarketAgent(agent: ReferenceAgentCard) {
+    setSelectedAgentId(agent.id);
+    setDetailOpen(true);
+    setActiveAction("创建副本");
+    setInstallingAgentId(agent.id);
+    setNotice("");
+
+    try {
+      const response = await createAuditAgent({
+        name: agent.name,
+        category: agent.category,
+        topic: agent.topic,
+        prompt: buildMarketAgentPrompt(agent),
+        knowledge_base: "医保基金合规知识库",
+        project_name: agent.project,
+        visibility_scope: "project",
+        allowed_roles: ["admin", "technician", "director", "member"],
+        metadata: {
+          source: "agent-market",
+          template_id: agent.id,
+          template_summary: agent.summary,
+          avatar_initial: agent.initial,
+          avatar_tone: agent.tone
+        }
+      });
+      setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
+    } catch {
+      setNotice("安装未完成：智能体创建接口暂不可用，请稍后重试。");
+    } finally {
+      setInstallingAgentId("");
+    }
+  }
+
   const activeScopeLabel = activeFilter === "全部" ? "全部分类" : activeFilter;
   const pageDescription = isMine
     ? "管理审计工作中常用的个人智能体，所有编辑、删除和版本入口保持本地门禁。"
@@ -186,12 +221,19 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            onClick={() => setNotice(buildReplicaLocalGateNotice({
-              action: isMine ? "创建我的助手" : "复制到我的空间",
-              nextStep: isMine ? "智能体创建 API" : "智能体市场安装 API"
-            }))}
+            disabled={!isMine && selectedAgent ? installingAgentId === selectedAgent.id : false}
+            onClick={() => {
+              if (isMine || !selectedAgent) {
+                setNotice(buildReplicaLocalGateNotice({
+                  action: isMine ? "创建我的助手" : "复制到我的空间",
+                  nextStep: isMine ? "智能体创建 API" : "智能体市场安装 API"
+                }));
+                return;
+              }
+              void installMarketAgent(selectedAgent);
+            }}
           >
-            {isMine ? "+ 创建我的助手" : "复制到我的空间"}
+            {isMine ? "+ 创建我的助手" : installingAgentId === selectedAgent?.id ? "安装中" : "复制到我的空间"}
           </button>
         }
       />
@@ -303,9 +345,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                         <button
                           type="button"
                           aria-label={`创建副本：${agent.name}`}
-                          onClick={() => recordAction(agent, "创建副本")}
+                          disabled={installingAgentId === agent.id}
+                          onClick={() => void installMarketAgent(agent)}
                         >
-                          创建副本
+                          {installingAgentId === agent.id ? "安装中" : "创建副本"}
                         </button>
                       )}
                     </div>
@@ -347,8 +390,18 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                   </ul>
                 </section>
                 <div className="replica-agent-detail-actions">
-                  <button type="button" onClick={() => recordAction(selectedAgent, isMine ? "立即使用" : "创建副本")}>
-                    {isMine ? "立即使用" : "创建副本"}
+                  <button
+                    type="button"
+                    disabled={!isMine && installingAgentId === selectedAgent.id}
+                    onClick={() => {
+                      if (isMine) {
+                        recordAction(selectedAgent, "立即使用");
+                        return;
+                      }
+                      void installMarketAgent(selectedAgent);
+                    }}
+                  >
+                    {isMine ? "立即使用" : installingAgentId === selectedAgent.id ? "安装中" : "创建副本"}
                   </button>
                   <button type="button" onClick={() => recordAction(selectedAgent, "配置知识")}>配置知识</button>
                   <button type="button" onClick={() => recordAction(selectedAgent, "查看调用")}>调用记录</button>
@@ -360,4 +413,14 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       </section>
     </main>
   );
+}
+
+function buildMarketAgentPrompt(agent: ReferenceAgentCard): string {
+  return [
+    `你是「${agent.name}」，服务于「${agent.project}」。`,
+    `审计主题：${agent.topic}。`,
+    `能力摘要：${agent.summary}。`,
+    "回答时必须先说明依据范围，只引用已接入知识库、项目材料和审计记录；若证据不足，应列出需要补充的材料清单，不直接下结论。",
+    "输出应包含：风险判断、证据依据、待补材料、下一步建议。"
+  ].join("\n");
 }
