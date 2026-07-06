@@ -22,7 +22,7 @@ export type ReferenceHistoryMessage = {
   readonly text: string;
 };
 
-export type ReferenceAgentCategory = "业务类" | "效率类" | "研究类";
+export type ReferenceAgentCategory = string;
 
 export type ReferenceAgentCard = {
   readonly id: string;

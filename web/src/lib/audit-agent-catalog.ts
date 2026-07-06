@@ -1,6 +1,6 @@
 import rawAgentPrompts from "@/data/audit-agent-prompts.json";
 
-import type { ReferenceAgentCard, ReferenceAgentCategory } from "./reference-replica-data";
+import type { ReferenceAgentCard } from "./reference-replica-data";
 
 type RawAuditAgentPrompt = {
   readonly category: string;
@@ -13,11 +13,6 @@ type RawAuditAgentPrompt = {
 };
 
 const agentTones: readonly ReferenceAgentCard["tone"][] = ["blue", "cyan", "rose", "amber", "slate"];
-
-const categoryMap: Record<string, ReferenceAgentCategory> = {
-  工具智能体: "效率类",
-  审计科研: "研究类"
-};
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "")
@@ -96,10 +91,6 @@ function makeStableKey(row: RawAuditAgentPrompt): string {
   return `${normalizeText(row.category)}::${normalizeText(row.title)}`;
 }
 
-function toReferenceCategory(category: string): ReferenceAgentCategory {
-  return categoryMap[category] ?? "业务类";
-}
-
 function makeUniqueAgentName(
   name: string,
   row: RawAuditAgentPrompt,
@@ -147,7 +138,7 @@ export const auditAgentCatalog: readonly ReferenceAgentCard[] = (() => {
     return [{
       id: templateKey,
       name,
-      category: toReferenceCategory(row.category),
+      category: normalizeText(row.category) || "其他分类",
       summary: makeSummary(row),
       project: "智能体广场",
       topic: normalizeText(row.category),
