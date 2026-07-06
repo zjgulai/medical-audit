@@ -265,10 +265,7 @@ function makeInitial(name: string): string {
 }
 
 function toReferenceAgentCategory(category: string): ReferenceAgentCategory {
-  if (category === "效率类" || category === "业务类" || category === "研究类") {
-    return category;
-  }
-  return "业务类";
+  return normalizeText(category, "业务类");
 }
 
 function mapQueryHistoryItems(history: QueryHistoryResponse): readonly ReferenceHistoryItem[] {
@@ -544,7 +541,7 @@ export async function loadReplicaAgentsData(
   if (!agentResponse || agentResponse.items.length === 0) {
     return {
       source: "fixture",
-      data: { agents: referenceAgents, categories: ["业务类", "效率类", "研究类"] },
+      data: { agents: referenceAgents, categories: uniqueAgentCategories(referenceAgents) },
       issues
     };
   }
@@ -579,7 +576,7 @@ export async function loadReplicaAgentMarketData(
   if (!agentResponse || agentResponse.items.length === 0) {
     return {
       source: "fixture",
-      data: { agents: referenceMarketAgents, categories: ["业务类", "效率类", "研究类"] },
+      data: { agents: referenceMarketAgents, categories: uniqueAgentCategories(referenceMarketAgents) },
       issues
     };
   }
@@ -590,9 +587,7 @@ export async function loadReplicaAgentMarketData(
   const agents = mergeAgentCatalog(marketAgents, referenceMarketAgents);
   const categories = Array.from(new Set<ReferenceAgentCategory>([
     ...agentResponse.categories.map(toReferenceAgentCategory),
-    "业务类",
-    "效率类",
-    "研究类"
+    ...uniqueAgentCategories(referenceMarketAgents)
   ]));
 
   return {
@@ -603,6 +598,10 @@ export async function loadReplicaAgentMarketData(
     },
     issues
   };
+}
+
+function uniqueAgentCategories(agents: readonly ReferenceAgentCard[]): readonly ReferenceAgentCategory[] {
+  return Array.from(new Set(agents.map((agent) => agent.category).filter(Boolean)));
 }
 
 export async function loadReplicaKnowledgeBaseData(
