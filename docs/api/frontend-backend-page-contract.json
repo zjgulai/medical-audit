@@ -164,6 +164,17 @@
       ]
     },
     {
+      "page_id": "medical-audit",
+      "route": "/medical-audit",
+      "connection_status": "static_shell_first_batch",
+      "endpoints": [
+        { "name": "medical-audit-project", "method": "GET", "path": "/api/v1/projects/{projectId}" },
+        { "name": "medical-audit-findings", "method": "GET", "path": "/api/v1/audit-findings?project_key={projectId}" },
+        { "name": "medical-audit-query", "method": "POST", "path": "/api/v1/query" }
+      ],
+      "notes": "当前页面使用重构 UI 静态数据呈现医保审计专题；下一阶段只接入专题项目、疑点任务和知识库问答数据，不改变 UI 风格。"
+    },
+    {
       "page_id": "findings",
       "route": "/findings",
       "connection_status": "connected_first_batch",

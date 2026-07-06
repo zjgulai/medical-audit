@@ -24,6 +24,8 @@ web/test-results/
 web/playwright-report/
 .vercel/
 .superpowers/
+.playwright-cli/
+.playwright-mcp/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
