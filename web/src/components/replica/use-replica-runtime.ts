@@ -44,6 +44,7 @@ import {
   referenceDocumentCategories,
   referenceDocumentResults,
   referenceGraphNodes,
+  referenceGraphRelations,
   referenceHistoryItems,
   referenceKnowledgeBases,
   referenceMarketAgents,
@@ -52,6 +53,7 @@ import {
   referenceReportRecords,
   referenceSearchHistory
 } from "@/lib/reference-replica-data";
+import { FALLBACK_SOURCE_COLLECTION_GROUPS } from "@/lib/source-collection-catalog";
 
 export type ReplicaRuntimeStatus = "loading" | "ready";
 
@@ -151,6 +153,7 @@ const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
   source: "fixture",
   data: {
     knowledgeBases: referenceKnowledgeBases,
+    sourceGroups: FALLBACK_SOURCE_COLLECTION_GROUPS,
     readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
     canUploadPersonal: true
   },
@@ -190,7 +193,17 @@ const analyticsFallback: ReplicaAdapterResult<ReplicaAnalyticsData> = {
 const graphFallback: ReplicaAdapterResult<ReplicaGraphData> = {
   source: "fixture",
   data: {
-    nodes: referenceGraphNodes
+    title: "审计知识图谱",
+    scope: "项目、知识库、文档、规则与疑点的只读关系视图",
+    nodes: referenceGraphNodes,
+    relations: referenceGraphRelations,
+    metrics: {
+      nodeCount: referenceGraphNodes.length,
+      nodeKindCount: new Set(referenceGraphNodes.map((node) => node.kind)).size,
+      relationCount: referenceGraphRelations.length,
+      strongRelationCount: referenceGraphRelations.filter((relation) => relation.strength === "强").length,
+      pendingRelationCount: referenceGraphRelations.filter((relation) => relation.strength === "待补").length
+    }
   },
   issues: []
 };

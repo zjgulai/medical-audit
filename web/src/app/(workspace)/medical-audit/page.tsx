@@ -110,6 +110,14 @@ const ruleTabs: readonly { id: RuleFilter; label: string }[] = [
   { id: "price", label: "价格合规" }
 ];
 
+const toolRuleFilters: Partial<Record<ToolId, RuleFilter>> = {
+  audit: "all",
+  dip: "dip",
+  code: "code",
+  price: "price",
+  rule: "all"
+};
+
 const riskOptions: readonly RiskFilter[] = ["全部风险", "高风险", "中风险", "低风险"];
 const deptOptions: readonly DeptFilter[] = ["全部科室", "内科", "外科", "骨科", "儿科", "妇产科", "心内科"];
 const statusOptions: readonly StatusFilter[] = ["全部状态", "待初审", "待复核", "已确认违规", "已整改", "已驳回"];
@@ -384,6 +392,21 @@ const ruleGroups = [
     children: ["诊疗项目重复收费", "诊疗项目超标准收费", "耗材超量使用", "诊疗项目与诊断不符"]
   },
   {
+    title: "DIP/DRG规则",
+    filter: "dip" as const,
+    children: ["DIP分值偏高", "DIP分值偏低", "病组高套", "入组异常"]
+  },
+  {
+    title: "编码质量规则",
+    filter: "code" as const,
+    children: ["诊断编码不一致", "手术编码不完整", "项目编码串换", "医保编码缺失"]
+  },
+  {
+    title: "价格合规规则",
+    filter: "price" as const,
+    children: ["超标准收费", "重复收费", "分解收费", "耗材加价异常"]
+  },
+  {
     title: "审计状态",
     filter: "all" as const,
     children: ["待初审", "待复核", "已确认违规", "已整改"]
@@ -508,6 +531,7 @@ function MedicalStatusRail({
         >
           {tool.badge ? <em>{tool.badge}</em> : null}
           <span aria-hidden="true">{tool.symbol}</span>
+          <strong>{tool.label}</strong>
         </button>
       ))}
     </aside>
@@ -553,7 +577,15 @@ function RuleNavigator({
               </button>
               <div>
                 {visibleChildren.map((child) => (
-                  <button key={child} type="button" onClick={() => onRuleSearch(child)}>
+                  <button
+                    key={child}
+                    type="button"
+                    className={ruleSearch === child ? "is-active" : ""}
+                    onClick={() => {
+                      onRuleChange(group.filter);
+                      onRuleSearch(child);
+                    }}
+                  >
                     {child}
                   </button>
                 ))}
@@ -1377,6 +1409,8 @@ export default function MedicalAuditPage() {
   function handleToolChange(tool: ToolId) {
     setActiveTool(tool);
     setActiveView("audit");
+    setActiveRule(toolRuleFilters[tool] ?? "all");
+    setRuleSearch("");
     setAssistantDrawerOpen(false);
     resetAuditPage();
     setNotice(`${toolModules.find((item) => item.id === tool)?.label ?? "工具"}已切换为当前本地筛选视图。`);
@@ -1384,6 +1418,7 @@ export default function MedicalAuditPage() {
 
   function handleRuleChange(rule: RuleFilter) {
     setActiveRule(rule);
+    setRuleSearch("");
     resetAuditPage();
   }
 
@@ -1459,7 +1494,7 @@ export default function MedicalAuditPage() {
               setActiveView(view);
               setDrawerFindingId(null);
               setAssistantDrawerOpen(false);
-      setNotice(`${viewTabs.find((item) => item.id === view)?.label ?? "子页面"}已切换。`);
+              setNotice(`${viewTabs.find((item) => item.id === view)?.label ?? "子页面"}已切换。`);
             }}
           />
           <LocalActionNotice text={notice} />

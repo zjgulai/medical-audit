@@ -11,66 +11,72 @@ import {
   ReplicaPageHeader
 } from "@/components/replica/replica-page-kit";
 import { useReplicaGraphData } from "@/components/replica/use-replica-runtime";
-import type { ReferenceGraphNode } from "@/lib/reference-replica-data";
+import type { ReferenceGraphNode, ReferenceGraphRelation } from "@/lib/reference-replica-data";
 
-type GraphKind = "全部" | "项目" | "智能体" | "知识库" | "文档" | "银行" | "企业" | "政府机构" | "政策文件";
+type GraphKind = "全部" | string;
 
-const graphKinds: readonly GraphKind[] = ["全部", "项目", "智能体", "知识库", "文档", "银行", "企业", "政府机构", "政策文件"];
-const graphCards = [
-  {
-    id: "graph-card-village",
-    title: "乡村振兴专项审计图谱",
-    meta: "27 文档 / 110 实体 / 54 企业",
-    status: "运行中",
-    summary: "围绕资金拨付、建设运维、主管责任和项目材料形成审计关系链。"
-  },
-  {
-    id: "graph-card-medical",
-    title: "医保基金合规审计图谱",
-    meta: "32 文档 / 86 实体 / 18 规则",
-    status: "可扩展",
-    summary: "面向医保基金支付、目录限制、智能监管规则和疑点整改的图谱模板。"
+function matchesNode(node: ReferenceGraphNode, activeKind: GraphKind, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const kindMatched = activeKind === "全部" || node.kind === activeKind;
+  const queryMatched =
+    normalizedQuery.length === 0 ||
+    `${node.label} ${node.kind} ${node.metric} ${node.status}`.toLowerCase().includes(normalizedQuery);
+  return kindMatched && queryMatched;
+}
+
+function matchesRelation(relation: ReferenceGraphRelation, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
   }
-] as const;
-type GraphCardId = (typeof graphCards)[number]["id"];
+  return `${relation.source} ${relation.relation} ${relation.target} ${relation.evidence} ${relation.strength}`
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
 
 export default function GraphPage() {
   const graphData = useReplicaGraphData();
-  const graphNodes = graphData.data.nodes;
+  const { nodes, relations, metrics, title, scope } = graphData.data;
   const [query, setQuery] = useState("");
   const [activeKind, setActiveKind] = useState<GraphKind>("全部");
   const [notice, setNotice] = useState("");
-  const [selectedGraphId, setSelectedGraphId] = useState<GraphCardId>(graphCards[0].id);
-  const [selectedNodeId, setSelectedNodeId] = useState(graphNodes[0]?.id ?? "");
+  const [selectedNodeId, setSelectedNodeId] = useState(nodes[0]?.id ?? "");
+  const [selectedRelationId, setSelectedRelationId] = useState(relations[0]?.id ?? "");
   const [detailOpen, setDetailOpen] = useState(true);
-  const filteredNodes = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return graphNodes.filter((node) => {
-      const kindMatched = activeKind === "全部" || node.kind === activeKind;
-      const queryMatched =
-        normalizedQuery.length === 0 ||
-        `${node.label} ${node.kind} ${node.metric} ${node.status}`.toLowerCase().includes(normalizedQuery);
-      return kindMatched && queryMatched;
-    });
-  }, [activeKind, graphNodes, query]);
-  const selectedGraph = graphCards.find((card) => card.id === selectedGraphId) ?? graphCards[0];
-  const selectedNode = graphNodes.find((node) => node.id === selectedNodeId) ?? graphNodes[0];
 
-  function recordGraphAction(card: typeof graphCards[number], action: string) {
-    setSelectedGraphId(card.id);
-    setDetailOpen(true);
-    setNotice(buildReplicaLocalGateNotice({
-      action: `${action}「${card.title}」`,
-      nextStep: "图谱详情 API"
-    }));
-  }
+  const graphKinds = useMemo<readonly GraphKind[]>(
+    () => ["全部", ...Array.from(new Set(nodes.map((node) => node.kind)))],
+    [nodes]
+  );
+  const filteredNodes = useMemo(
+    () => nodes.filter((node) => matchesNode(node, activeKind, query)),
+    [activeKind, nodes, query]
+  );
+  const filteredRelations = useMemo(
+    () => relations.filter((relation) => matchesRelation(relation, query)),
+    [query, relations]
+  );
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? filteredNodes[0] ?? nodes[0];
+  const selectedRelation =
+    relations.find((relation) => relation.id === selectedRelationId) ??
+    filteredRelations[0] ??
+    relations[0];
 
   function recordNodeAction(node: ReferenceGraphNode, action: string) {
     setSelectedNodeId(node.id);
     setDetailOpen(true);
     setNotice(buildReplicaLocalGateNotice({
       action: `${action}「${node.label}」`,
-      nextStep: "图谱节点 API"
+      nextStep: "图谱节点证据 API"
+    }));
+  }
+
+  function recordRelationAction(relation: ReferenceGraphRelation, action: string) {
+    setSelectedRelationId(relation.id);
+    setDetailOpen(true);
+    setNotice(buildReplicaLocalGateNotice({
+      action: `${action}「${relation.source} -> ${relation.target}」`,
+      nextStep: "图谱关系证据 API"
     }));
   }
 
@@ -83,7 +89,7 @@ export default function GraphPage() {
       <ReplicaPageHeader
         kicker="AI知识图谱"
         title="知识图谱"
-        description="围绕项目、智能体、知识库和审计材料展示节点关系，新增图谱保持本地门禁。"
+        description="以知识库、文档、规则、疑点和复核记录为基础，先做最小只读关系视图，不引入额外图数据库。"
         actions={
           <button type="button" className="replica-primary-button" onClick={() => setNotice(buildReplicaLocalGateNotice({
             action: "新建图谱",
@@ -95,33 +101,40 @@ export default function GraphPage() {
       />
 
       <section className="replica-metric-grid">
-        <ReplicaMetric label="节点数" value={`${graphNodes.length}`} />
-        <ReplicaMetric label="节点类型" value={`${graphKinds.length - 1}`} tone="green" />
-        <ReplicaMetric label="关系链" value="11" tone="amber" />
-        <ReplicaMetric label="状态" value="静态预览" tone="slate" />
+        <ReplicaMetric label="节点数" value={`${metrics.nodeCount}`} />
+        <ReplicaMetric label="节点类型" value={`${metrics.nodeKindCount}`} tone="green" />
+        <ReplicaMetric label="关系链" value={`${metrics.relationCount}`} tone="amber" />
+        <ReplicaMetric label="待补关系" value={`${metrics.pendingRelationCount}`} tone="slate" />
       </section>
 
-      <section className="replica-graph-card-row" aria-label="知识图谱列表">
-        {graphCards.map((card) => (
-          <button
-            key={card.id}
-            type="button"
-            className={selectedGraph.id === card.id ? "is-selected" : ""}
-            onClick={() => recordGraphAction(card, "打开")}
-          >
-            <span>{card.status}</span>
-            <strong>{card.title}</strong>
-            <em>{card.meta}</em>
-          </button>
-        ))}
+      <section className="replica-graph-summary-card" aria-label="知识图谱方案概览">
+        <div>
+          <p className="replica-kicker">最小知识图谱方案</p>
+          <h2>{title}</h2>
+          <p>{scope}</p>
+        </div>
+        <dl>
+          <div>
+            <dt>数据来源</dt>
+            <dd>{graphData.source === "api" ? "后端工作台" : "本地完整方案"}</dd>
+          </div>
+          <div>
+            <dt>强关系</dt>
+            <dd>{metrics.strongRelationCount}</dd>
+          </div>
+          <div>
+            <dt>接入策略</dt>
+            <dd>复用现有库表</dd>
+          </div>
+        </dl>
       </section>
 
       {detailOpen ? (
         <section className="replica-graph-detail-strip" aria-label="图谱详情预览">
           <div>
-            <span>{selectedGraph.status}</span>
-            <h2>{selectedGraph.title}</h2>
-            <p>{selectedGraph.summary}</p>
+            <span>{selectedRelation?.strength ?? selectedNode?.status ?? "只读"}</span>
+            <h2>{selectedRelation ? `${selectedRelation.source} -> ${selectedRelation.target}` : selectedNode?.label}</h2>
+            <p>{selectedRelation?.evidence ?? selectedNode?.metric ?? "选择节点或关系后查看证据范围。"}</p>
           </div>
           {selectedNode ? (
             <dl>
@@ -156,7 +169,7 @@ export default function GraphPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索知识图谱"
+              placeholder="搜索节点、关系或证据"
             />
           </label>
           <div className="replica-filter-group" aria-label="节点类型">
@@ -169,40 +182,48 @@ export default function GraphPage() {
         </div>
         <div className="replica-statebar" aria-label="图谱筛选状态">
           <span>{activeKind === "全部" ? "全部节点" : activeKind}</span>
-          <strong>{filteredNodes.length} / {graphNodes.length}</strong>
-          <span>{query.trim() ? "关键词已应用" : "全量预览"}</span>
-          <span>静态关系图</span>
+          <strong>{filteredNodes.length} / {nodes.length}</strong>
+          <span>{filteredRelations.length} 条关系</span>
+          <span>{query.trim() ? `关键词：${query.trim()}` : "全量关系视图"}</span>
         </div>
       </section>
 
-      <section className="replica-graph-layout">
-        <div className="replica-panel replica-graph-map" aria-label="知识图谱关系预览">
-          <div className="replica-graph-map-summary">
-            <strong>关系预览</strong>
-            <span>节点位置为本地布局，不创建远端图谱。</span>
+      <section className="replica-graph-workbench">
+        <article className="replica-graph-focus-card" aria-label="当前图谱焦点">
+          <p className="replica-kicker">当前焦点</p>
+          <h2>{selectedNode?.label ?? "暂无节点"}</h2>
+          <p>{selectedNode ? `${selectedNode.kind}｜${selectedNode.metric}` : "等待后端返回图谱节点。"}</p>
+          {selectedNode ? <strong>{selectedNode.status}</strong> : null}
+        </article>
+
+        <div className="replica-panel replica-graph-relation-panel">
+          <div className="replica-results-head">
+            <div>
+              <p className="replica-kicker">关系链</p>
+              <h2>证据关系</h2>
+            </div>
+            <span>{filteredRelations.length} 条</span>
           </div>
-          <div className="replica-graph-core" aria-hidden="true">
-            <span>项目</span>
-            <strong>乡村振兴专项审计</strong>
-          </div>
-          <div className="replica-graph-relation-label relation-a">引用</div>
-          <div className="replica-graph-relation-label relation-b">关联</div>
-          <div className="replica-graph-relation-label relation-c">资金链</div>
-          <div className="replica-graph-line line-a" />
-          <div className="replica-graph-line line-b" />
-          <div className="replica-graph-line line-c" />
-          {graphNodes.slice(0, 6).map((node, index) => (
-            <button
-              key={node.id}
-              type="button"
-              className={`replica-graph-node node-${index + 1} ${selectedNode?.id === node.id ? "is-selected" : ""}`}
-              aria-label={`聚焦节点：${node.label}`}
-              onClick={() => recordNodeAction(node, "聚焦节点")}
-            >
-              <span>{node.kind}</span>
-              <strong>{node.label}</strong>
-            </button>
-          ))}
+          {filteredRelations.length === 0 ? (
+            <ReplicaEmptyState title="暂无关系" description="调整关键词后重试。" />
+          ) : (
+            <div className="replica-graph-relation-list">
+              {filteredRelations.map((relation) => (
+                <button
+                  key={relation.id}
+                  type="button"
+                  className={selectedRelation?.id === relation.id ? "is-selected" : ""}
+                  onClick={() => recordRelationAction(relation, "聚焦关系")}
+                >
+                  <span>{relation.strength}</span>
+                  <strong>{relation.source}</strong>
+                  <em>{relation.relation}</em>
+                  <strong>{relation.target}</strong>
+                  <p>{relation.evidence}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="replica-panel">

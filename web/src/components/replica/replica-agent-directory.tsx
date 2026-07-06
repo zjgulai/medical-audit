@@ -136,6 +136,32 @@ function matchesAgent(agent: ReferenceAgentCard, query: string, activeFilter: Ag
   return matchesFilter && matchesQuery;
 }
 
+function DigitalHumanAvatar({
+  agent,
+  size = "default"
+}: {
+  readonly agent: ReferenceAgentCard;
+  readonly size?: "default" | "large";
+}) {
+  return (
+    <span
+      className={`replica-digital-avatar tone-${agent.tone} ${size === "large" ? "is-large" : ""}`}
+      aria-label={`${agent.name}数字人头像`}
+      role="img"
+      title={agent.name}
+    >
+      <span className="replica-digital-avatar-halo" />
+      <span className="replica-digital-avatar-head" />
+      <span className="replica-digital-avatar-face">
+        <i />
+        <i />
+      </span>
+      <span className="replica-digital-avatar-body" />
+      <span className="replica-digital-avatar-chip" />
+    </span>
+  );
+}
+
 export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<AgentFilter>("全部");
@@ -192,7 +218,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_summary: agent.summary,
           template_project: agent.project,
           avatar_initial: agent.initial,
-          avatar_tone: agent.tone
+          avatar_tone: agent.tone,
+          avatar_kind: "digital-human",
+          template_key: agent.templateKey,
+          template_source_file: agent.sourceFile
         }
       });
       setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
@@ -294,7 +323,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                   key={agent.id}
                   className={`replica-directory-card ${selectedAgent?.id === agent.id ? "is-selected" : ""}`}
                 >
-                  <div className={`replica-agent-initial tone-${agent.tone}`}>{agent.initial}</div>
+                  <DigitalHumanAvatar agent={agent} />
                   <div className="replica-directory-body">
                     <div className="replica-directory-title">
                       <h2>{agent.name}</h2>
@@ -365,7 +394,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                   <span>{activeAction}</span>
                   <button type="button" aria-label="关闭智能体详情" onClick={() => setDetailOpen(false)}>×</button>
                 </div>
-                <div className={`replica-agent-detail-icon tone-${selectedAgent.tone}`}>{selectedAgent.initial}</div>
+                <DigitalHumanAvatar agent={selectedAgent} size="large" />
                 <h2>{selectedAgent.name}</h2>
                 <p>{selectedAgent.summary}</p>
                 <dl>
@@ -418,6 +447,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
 }
 
 function buildMarketAgentPrompt(agent: ReferenceAgentCard): string {
+  if (agent.prompt?.trim()) {
+    return agent.prompt;
+  }
+
   return [
     `你是「${agent.name}」，服务于「${agent.project}」。`,
     `审计主题：${agent.topic}。`,
