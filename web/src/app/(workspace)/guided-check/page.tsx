@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { GuidedCheckWorkbench } from "@/components/replica/compatibility-workbenches";
 
 export default function GuidedCheckPage() {
-  redirect("/chat");
+  return <GuidedCheckWorkbench />;
 }

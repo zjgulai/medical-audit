@@ -369,21 +369,31 @@ test("all restored sidebar pages expose their current product skeleton", async (
   }
 });
 
-test("workspace and legacy routes redirect to the restored replica destinations", async ({ page }) => {
+test("workspace keeps its redirect while compatibility routes render current product pages", async ({ page }) => {
   const redirects = [
     { from: "/workspace", to: /\/chat$/ },
     { from: "/knowledge-query", to: /\/documents$/ },
-    { from: "/fund-compliance", to: /\/medical-audit$/ },
-    { from: "/fund-compliance/review", to: /\/medical-audit$/ },
     { from: "/findings", to: /\/medical-audit$/ },
-    { from: "/remediation", to: /\/medical-audit$/ },
-    { from: "/archive", to: /\/reports$/ },
-    { from: "/guided-check", to: /\/chat$/ }
+    { from: "/remediation", to: /\/medical-audit$/ }
   ] as const;
 
   for (const redirect of redirects) {
     await page.goto(redirect.from);
     await expect(page).toHaveURL(redirect.to);
+  }
+
+  const compatibilityPages = [
+    { href: "/fund-compliance", heading: "医保基金使用合规", text: "医保审计" },
+    { href: "/fund-compliance/review", heading: "医保基金复核表单", text: "费用汇总表" },
+    { href: "/archive", heading: "项目档案归档", text: "归档包" },
+    { href: "/guided-check", heading: "引导式核查", text: "核查步骤" }
+  ] as const;
+
+  for (const route of compatibilityPages) {
+    await page.goto(route.href);
+    await expect(page).toHaveURL(new RegExp(`${route.href.replace(/\//g, "\\/")}$`));
+    await expect(page.getByRole("heading", { name: route.heading, exact: true })).toBeVisible();
+    await expect(page.getByText(route.text).first()).toBeVisible();
   }
 });
 
