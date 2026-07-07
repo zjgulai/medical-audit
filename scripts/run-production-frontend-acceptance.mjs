@@ -17,6 +17,9 @@ const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-l
 const DEFAULT_TENANT_ID = "hospital-demo";
 const DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
 const DEFAULT_ADMIN_USER_ID = "frontend-acceptance-admin";
+const AUDIT_AUTH_STORAGE_KEY = "medical-audit-authenticated";
+const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
+const DEFAULT_AUDIT_ROLE = "admin";
 
 const viewports = [
   { name: "desktop", width: 1440, height: 1100 },
@@ -474,6 +477,20 @@ async function applyInteractions(page, interactions = []) {
   }
 }
 
+async function seedWorkspaceSession(context) {
+  await context.addInitScript(
+    ({ authStorageKey, roleStorageKey, role }) => {
+      window.localStorage.setItem(authStorageKey, "authenticated");
+      window.localStorage.setItem(roleStorageKey, role);
+    },
+    {
+      authStorageKey: AUDIT_AUTH_STORAGE_KEY,
+      roleStorageKey: AUDIT_ROLE_STORAGE_KEY,
+      role: DEFAULT_AUDIT_ROLE,
+    },
+  );
+}
+
 function issue(severity, type, message) {
   return { severity, type, message };
 }
@@ -655,6 +672,7 @@ async function run() {
           viewport: { width: viewport.width, height: viewport.height },
           extraHTTPHeaders: acceptanceHeaders,
         });
+        await seedWorkspaceSession(context);
         const page = await context.newPage();
         const consoleErrors = [];
         const failedRequests = [];
