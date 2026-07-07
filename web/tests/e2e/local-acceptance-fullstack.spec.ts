@@ -52,18 +52,18 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await expect(page.getByText(/本地验收模型回答/).last()).toBeVisible();
   });
 
-  test("documents reaches local source catalog and query API", async ({ page }) => {
+  test("documents reaches local source catalog and document search API", async ({ page }) => {
     await page.goto("/documents");
 
     await expect(page.getByRole("heading", { name: "文档检索" })).toBeVisible();
     await expect(page.getByText("法律法规库").first()).toBeVisible();
 
-    const queryRequestPromise = page.waitForRequest(
-      (request) => request.url().includes("/api/v1/query") && request.method() === "POST"
+    const searchRequestPromise = page.waitForRequest(
+      (request) => request.url().includes("/api/v1/documents/search") && request.method() === "GET"
     );
     await page.getByLabel("检索关键词").fill("医保基金审核依据是什么？");
     await page.getByRole("button", { name: "搜索", exact: true }).click();
-    await queryRequestPromise;
+    await searchRequestPromise;
 
     await expect(page.getByText("1 条匹配").first()).toBeVisible();
     await expect(page.getByText("medical-insurance-laws").first()).toBeVisible();
@@ -79,7 +79,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await page.goto("/agent-market");
     await expect(page.getByRole("heading", { name: "发现审计智能体" })).toBeVisible();
     await expect(page.getByText("广场助手")).toBeVisible();
-    await expect(page.getByRole("button", { name: "查看详情" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /详情/ }).first()).toBeVisible();
   });
 
   test("analytics, graph, reports, projects and medical audit remain interactive", async ({ page }) => {
@@ -95,8 +95,8 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await expect(page.getByText(/结果预览已生成预览/)).toBeVisible();
 
     await page.goto("/graph");
-    await expect(page.getByRole("heading", { name: "知识图谱" })).toBeVisible();
-    await page.getByRole("button", { name: /乡村振兴专项审计图谱/ }).click();
+    await expect(page.getByRole("heading", { name: "知识图谱", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "聚焦" }).first().click();
     await expect(page.getByLabel("图谱详情预览")).toBeVisible();
     await page.getByRole("button", { name: "关闭图谱详情" }).click();
 
@@ -121,14 +121,28 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     const redirects = [
       { from: "/workspace", to: /\/chat$/ },
       { from: "/knowledge-query", to: /\/documents$/ },
-      { from: "/fund-compliance", to: /\/medical-audit$/ },
       { from: "/findings", to: /\/medical-audit$/ },
-      { from: "/archive", to: /\/reports$/ }
+      { from: "/remediation", to: /\/medical-audit$/ }
     ] as const;
 
     for (const redirect of redirects) {
       await page.goto(redirect.from);
       await expect(page).toHaveURL(redirect.to);
+      await expect(page.getByRole("link", { name: "医疗AI审计平台" })).toBeVisible();
+    }
+
+    const compatibilityPages = [
+      { route: "/fund-compliance", heading: "医保基金使用合规", marker: "医保审计" },
+      { route: "/fund-compliance/review", heading: "医保基金复核表单", marker: "费用汇总表" },
+      { route: "/archive", heading: "项目档案归档", marker: "归档包" },
+      { route: "/guided-check", heading: "引导式核查", marker: "核查步骤" }
+    ] as const;
+
+    for (const compatibilityPage of compatibilityPages) {
+      await page.goto(compatibilityPage.route);
+      await expect(page).toHaveURL(new RegExp(`${compatibilityPage.route.replace(/\//g, "\\/")}$`));
+      await expect(page.getByRole("heading", { name: compatibilityPage.heading })).toBeVisible();
+      await expect(page.getByText(compatibilityPage.marker).first()).toBeVisible();
       await expect(page.getByRole("link", { name: "医疗AI审计平台" })).toBeVisible();
     }
   });

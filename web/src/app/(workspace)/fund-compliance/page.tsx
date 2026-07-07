@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { FundComplianceWorkbench } from "@/components/replica/compatibility-workbenches";
 
 export default function FundCompliancePage() {
-  redirect("/medical-audit");
+  return <FundComplianceWorkbench />;
 }

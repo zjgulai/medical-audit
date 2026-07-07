@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ArchiveWorkbench } from "@/components/replica/compatibility-workbenches";
 
 export default function ArchivePage() {
-  redirect("/reports");
+  return <ArchiveWorkbench />;
 }
