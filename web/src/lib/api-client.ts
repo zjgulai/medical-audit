@@ -23,11 +23,13 @@ import type {
   ChatModelAlias,
   ChatModelCatalogResponse,
   DocumentSourceCollectionCatalogResponse,
+  DocumentSearchResponse,
   DocumentUploadGovernanceRequest,
   DocumentPermissionsResponse,
   DocumentUploadListResponse,
   DocumentUploadResponse,
   GraphWorkbenchResponse,
+  KnowledgeBaseCatalogResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectDashboardResponse,
@@ -225,6 +227,32 @@ export function fetchDocumentPermissions(): Promise<DocumentPermissionsResponse>
 export function fetchDocumentSourceCollections(): Promise<DocumentSourceCollectionCatalogResponse> {
   return getJsonWithAuditHeaders<DocumentSourceCollectionCatalogResponse>(
     "/api/v1/documents/source-collections"
+  );
+}
+
+export function fetchKnowledgeBaseCatalog(): Promise<KnowledgeBaseCatalogResponse> {
+  return getJsonWithAuditHeaders<KnowledgeBaseCatalogResponse>("/api/v1/knowledge-base/catalog");
+}
+
+export function searchDocuments(options: {
+  readonly query: string;
+  readonly sourceCollections?: readonly string[];
+  readonly titleOnly?: boolean;
+  readonly limit?: number;
+}): Promise<DocumentSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("q", options.query);
+  for (const sourceCollection of options.sourceCollections ?? []) {
+    params.append("source_collection", sourceCollection);
+  }
+  if (options.titleOnly) {
+    params.set("title_only", "true");
+  }
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  return getJsonWithAuditHeaders<DocumentSearchResponse>(
+    `/api/v1/documents/search?${params.toString()}`
   );
 }
 

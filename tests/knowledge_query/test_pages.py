@@ -5,6 +5,7 @@ from typing import cast
 from uuid import UUID
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from medical_audit_kb.api.agent_store import SqlAlchemyAgentStore
@@ -73,7 +74,10 @@ def test_root_path_renders_chat_workbench(tmp_path: Path) -> None:
     assert 'aria-current="page">AI 对话' in response.text
 
 
-def test_legacy_visible_pages_redirect_when_retired(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_visible_pages_redirect_when_retired(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("MEDICAL_AUDIT_RETIRE_LEGACY_PAGES", "1")
     client = TestClient(create_app(_api_state(tmp_path)))
 
@@ -108,12 +112,11 @@ def test_graph_workbench_api_returns_readonly_topology(tmp_path: Path) -> None:
     body = response.json()
     assert body["format"] == "graph-workbench-v1"
     assert body["graph_id"] == "SELF-CHECK-FUND-20260607"
-    assert body["metrics"]["node_count"] == 8
-    assert body["metrics"]["relation_count"] == 8
-    assert body["metrics"]["strong_relation_count"] == 4
-    assert body["metrics"]["pending_relation_count"] == 2
+    assert body["metrics"]["node_count"] >= 26
+    assert body["metrics"]["relation_count"] >= 25
+    assert body["metrics"]["node_kind_counts"]["知识库"] >= 25
     assert body["production_side_effect"] == "none"
-    assert body["store"] == {"ready": True, "backend": "ReadonlyGraphWorkbenchSeed"}
+    assert body["store"] == {"ready": True, "backend": "KnowledgeCatalogGraphBuilder"}
     assert body["nodes"][0]["kind"] == "项目"
     assert body["relations"][0]["sourceId"] == "graph-node-project"
     assert state.operation_logs[-1]["action"] == "graph-workbench-view"

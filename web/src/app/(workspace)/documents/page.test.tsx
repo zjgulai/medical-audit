@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { runKnowledgeQuery } from "@/lib/api-client";
+import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
 
 import DocumentsPage from "./page";
 
@@ -35,10 +35,12 @@ vi.mock("@/components/replica/use-replica-runtime", () => ({
 }));
 
 vi.mock("@/lib/api-client", () => ({
-  runKnowledgeQuery: vi.fn()
+  runKnowledgeQuery: vi.fn(),
+  searchDocuments: vi.fn()
 }));
 
 const runKnowledgeQueryMock = vi.mocked(runKnowledgeQuery);
+const searchDocumentsMock = vi.mocked(searchDocuments);
 
 describe("DocumentsPage", () => {
   afterEach(() => {
@@ -50,34 +52,38 @@ describe("DocumentsPage", () => {
 
     expect(screen.getByRole("heading", { name: "文档检索" })).toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
+    expect(searchDocumentsMock).not.toHaveBeenCalled();
   });
 
-  it("runs knowledge query after an explicit search action", async () => {
-    runKnowledgeQueryMock.mockResolvedValue({
-      contract_version: "knowledge-query-contract-v2",
-      question: "医保支付",
-      answer: "命中医保支付政策。",
-      confidence: "medium",
-      fallback_used: false,
+  it("runs read-only document search after an explicit search action", async () => {
+    searchDocumentsMock.mockResolvedValue({
+      contract_version: "document-search-v1",
+      query: "劳动争议司法案件解释",
       effective_source_collections: ["medical-insurance-laws"],
-      basis_groups: [],
-      citations: [
+      items: [
         {
-          citation_id: "citation-1",
-          marker: "[1]",
+          id: "chunk-1",
           chunk_id: "chunk-1",
-          evidence_type: "医保法规库",
+          title: "医保支付政策",
           source_collection: "medical-insurance-laws",
+          source_label: "医保法规库",
           snippet: "医保支付政策引用片段。",
           locator: { title: "医保支付政策", date: "2026-07-06" },
-          index_version_key: null,
-          source_package_version_key: null
+          score: 1,
+          matched_by: ["bm25"],
+          index_version_key: "index-v1",
+          source_package_version_key: "package-v1",
+          preview_url: "/api/v1/preview/chunk-1"
         }
       ],
-      personal_upload_matches: [],
-      query_log_index: 1,
-      query_log_id: "query-log-1",
-      agent_invocation_id: null
+      store: { ready: true, backend: "unit-test" },
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
     });
 
     render(<DocumentsPage />);
@@ -85,12 +91,14 @@ describe("DocumentsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "搜索" }));
 
     await waitFor(() => {
-      expect(runKnowledgeQueryMock).toHaveBeenCalledWith({
-        question: "劳动争议司法案件解释",
-        top_k: 5,
-        title_only: false
+      expect(searchDocumentsMock).toHaveBeenCalledWith({
+        query: "劳动争议司法案件解释",
+        limit: 10,
+        titleOnly: false,
+        sourceCollections: []
       });
     });
     expect(await screen.findAllByText("医保支付政策")).toHaveLength(2);
+    expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
   });
 });

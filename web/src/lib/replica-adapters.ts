@@ -5,7 +5,9 @@ import type {
   DocumentPermissionsResponse,
   DocumentSourceCollectionCatalogItem,
   DocumentSourceCollectionCatalogResponse,
+  DocumentSearchResponse,
   GraphWorkbenchResponse,
+  KnowledgeBaseCatalogResponse,
   ProjectsResponse,
   QueryHistoryResponse,
   ReportWorkbenchResponse,
@@ -154,10 +156,18 @@ export type ReplicaAgentClient = {
 export type ReplicaKnowledgeBaseClient = {
   readonly fetchDocumentPermissions?: () => Promise<DocumentPermissionsResponse>;
   readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
+  readonly fetchKnowledgeBaseCatalog?: () => Promise<KnowledgeBaseCatalogResponse>;
 };
 
 export type ReplicaDocumentsClient = {
   readonly fetchDocumentSourceCollections?: () => Promise<DocumentSourceCollectionCatalogResponse>;
+  readonly fetchKnowledgeBaseCatalog?: () => Promise<KnowledgeBaseCatalogResponse>;
+  readonly searchDocuments?: (options: {
+    readonly query: string;
+    readonly sourceCollections?: readonly string[];
+    readonly titleOnly?: boolean;
+    readonly limit?: number;
+  }) => Promise<DocumentSearchResponse>;
   readonly fetchQueryHistory?: () => Promise<QueryHistoryResponse>;
 };
 
@@ -346,6 +356,7 @@ function mapKnowledgeBasesFromSourceGroups(
     group.options.map((option) => {
       const item = itemBySource.get(option.value);
       const documentCount = item?.metrics.document_count ?? item?.metrics.chunk_count ?? 0;
+      const chunkCount = item?.metrics.chunk_count ?? 0;
       const appCount = item?.metrics.linked_app_count ?? 0;
       return {
         id: `kb-${option.value}`,
@@ -359,7 +370,8 @@ function mapKnowledgeBasesFromSourceGroups(
         tags: [
           group.title,
           option.queryable ? "可检索" : "待接入",
-          item?.evidence_group || option.scope
+          item?.evidence_group || option.scope,
+          chunkCount > 0 ? `${chunkCount.toLocaleString("zh-CN")} chunks` : ""
         ].filter(Boolean)
       };
     })
@@ -581,9 +593,15 @@ export async function loadReplicaKnowledgeBaseData(
 ): Promise<ReplicaAdapterResult<ReplicaKnowledgeBaseData>> {
   const issues: ReplicaAdapterIssue[] = [];
   const permissions = await readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions);
-  const catalog = await readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections);
+  const knowledgeCatalog = await readOptionalApi("knowledge-base", issues, client.fetchKnowledgeBaseCatalog);
+  const catalog =
+    knowledgeCatalog ??
+    await readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections);
   const sourceGroups = sourceCollectionCatalogToGroups(catalog?.items);
   const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
+  const documentCatalogUploadPermissions = catalog && "upload_permissions" in catalog
+    ? catalog.upload_permissions
+    : null;
 
   return {
     source: sourceFrom(Boolean(permissions || catalog), true),
@@ -595,7 +613,7 @@ export async function loadReplicaKnowledgeBaseData(
         permissions?.source_collections.map((item) => item.label) ??
         FALLBACK_SOURCE_COLLECTION_GROUPS.flatMap((group) => group.options.map((item) => item.label)),
       canUploadPersonal:
-        catalog?.upload_permissions.can_upload_personal ??
+        documentCatalogUploadPermissions?.can_upload_personal ??
         permissions?.upload_permissions.can_upload_personal ??
         true
     },
@@ -612,7 +630,10 @@ export async function loadReplicaDocumentsData(
   const results = referenceDocumentResults;
   let apiUsed = false;
 
-  const catalog = await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
+  const knowledgeCatalog = await readOptionalApi("documents", issues, client.fetchKnowledgeBaseCatalog);
+  const catalog =
+    knowledgeCatalog ??
+    await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
   if (catalog && catalog.items.length > 0) {
     categories = mapDocumentCategoriesFromCatalog(catalog.items);
     apiUsed = true;

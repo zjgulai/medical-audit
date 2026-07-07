@@ -63,6 +63,203 @@ async function mockReplicaBackend(page: Page) {
       can_govern_personal_uploads: true
     }
   });
+  await mockJson(page, "**/api/v1/knowledge-base/catalog", {
+    contract_version: "knowledge-base-catalog-v1",
+    role: "admin",
+    summary: {
+      source_collection_count: 2,
+      queryable_collection_count: 2,
+      total_document_count: 13452,
+      total_chunk_count: 49051,
+      total_embedding_count: 49051,
+      current_search_embedding_count: 49051,
+      candidate_chunk_count: 0,
+      domain_counts: { medical: 1, policy: 1 }
+    },
+    items: [
+      {
+        source_collection: "medical-insurance-laws",
+        label: "法规政策",
+        scope: "公开知识库",
+        phase: "active",
+        domain: "medical",
+        evidence_group: "legal",
+        description: "医保基金监管与支付依据。",
+        audit_hint: "用于判断制度依据和监管边界。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: 612,
+          chunk_count: 49051,
+          embedding_count: 49051,
+          active_embedding_count: 49051,
+          candidate_chunk_count: 0,
+          character_count: 123456,
+          linked_app_count: 1
+        },
+        index: {
+          latest_version_key: "active-index",
+          latest_status: "active",
+          search_backend_ready: true,
+          queryable: true
+        },
+        actions: {
+          documents: "/documents?source_collection=medical-insurance-laws",
+          chat: "/chat?source_collection=medical-insurance-laws",
+          graph: "/graph?source_collection=medical-insurance-laws"
+        }
+      },
+      {
+        source_collection: "supervision-rules-knowledge",
+        label: "监管两库",
+        scope: "系统知识库",
+        phase: "active",
+        domain: "policy",
+        evidence_group: "supervision",
+        description: "监管规则、医保目录限制和审核口径。",
+        audit_hint: "用于核验监管规则和审核边界。",
+        access: "read",
+        product_queryable: true,
+        queryable: true,
+        metrics: {
+          document_count: 12840,
+          chunk_count: 18000,
+          embedding_count: 18000,
+          active_embedding_count: 18000,
+          candidate_chunk_count: 0,
+          character_count: 65432,
+          linked_app_count: 1
+        },
+        index: {
+          latest_version_key: "active-index",
+          latest_status: "active",
+          search_backend_ready: true,
+          queryable: true
+        },
+        actions: {
+          documents: "/documents?source_collection=supervision-rules-knowledge",
+          chat: "/chat?source_collection=supervision-rules-knowledge",
+          graph: "/graph?source_collection=supervision-rules-knowledge"
+        }
+      }
+    ],
+    search_backend: { ready: true, backend: "playwright-fixture", details: {} },
+    store: { ready: true, backend: "runtime_state_and_postgres_catalog" },
+    boundaries: {
+      production_write: false,
+      provider_call: false,
+      database_write: false,
+      object_storage_write: false,
+      query_history_write: false,
+      source: "runtime_state_and_postgres_catalog"
+    }
+  });
+  await mockJson(page, "**/api/v1/documents/search**", {
+    contract_version: "document-search-v1",
+    query: "医保基金审核依据是什么？",
+    effective_source_collections: ["medical-insurance-laws"],
+    items: [
+      {
+        id: "chunk-e2e-001",
+        chunk_id: "chunk-e2e-001",
+        title: "医保基金审核依据",
+        source_collection: "medical-insurance-laws",
+        source_label: "法规政策",
+        snippet: "医保基金使用应遵循目录限制条件、支付范围和监管规则。",
+        locator: { title: "医保基金审核依据" },
+        score: 1,
+        matched_by: ["vector"],
+        index_version_key: "active",
+        source_package_version_key: "fixture",
+        preview_url: "/api/v1/preview/chunk-e2e-001"
+      }
+    ],
+    store: { ready: true, backend: "playwright-fixture" },
+    boundaries: {
+      production_write: false,
+      provider_call: false,
+      database_write: false,
+      object_storage_write: false,
+      query_history_write: false
+    }
+  });
+  await mockJson(page, "**/api/v1/graph/workbench", {
+    format: "graph-workbench-v1",
+    graph_id: "SELF-CHECK-FUND-20260607",
+    graph_title: "医保基金使用合规专项图谱",
+    graph_scope: "基于当前可查询知识库目录，将医疗医保和政策知识组织成可审证关系图。",
+    nodes: [
+      {
+        id: "graph-node-project",
+        label: "医疗审计知识工程",
+        kind: "项目",
+        status: "已归集",
+        description: "当前生产知识库目录、文档检索和审计问答共同使用的知识底座。",
+        metric: "2 类知识库",
+        href: "/projects",
+        x: 100,
+        y: 250
+      },
+      {
+        id: "graph-domain-medical",
+        label: "医疗医保知识",
+        kind: "一级分类",
+        status: "可引用",
+        description: "医疗医保知识下共有 1 个知识库。",
+        metric: "49,051 chunks",
+        href: "/knowledge-base?domain=medical",
+        x: 280,
+        y: 120
+      },
+      {
+        id: "graph-source-medical-insurance-laws",
+        label: "法规政策",
+        kind: "知识库",
+        status: "可引用",
+        description: "医保基金监管与支付依据。",
+        metric: "612 文档 / 49,051 chunks",
+        href: "/documents?source_collection=medical-insurance-laws",
+        x: 220,
+        y: 520,
+        sourceCollection: "medical-insurance-laws",
+        domain: "medical"
+      }
+    ],
+    relations: [
+      {
+        id: "graph-project-medical",
+        sourceId: "graph-node-project",
+        targetId: "graph-domain-medical",
+        source: "医疗审计知识工程",
+        relation: "组织",
+        target: "医疗医保知识",
+        evidence: "1 个一级知识库分类",
+        strength: "强"
+      },
+      {
+        id: "graph-medical-medical-insurance-laws",
+        sourceId: "graph-domain-medical",
+        targetId: "graph-source-medical-insurance-laws",
+        source: "医疗医保知识",
+        relation: "包含",
+        target: "法规政策",
+        evidence: "49,051 active embeddings",
+        strength: "强"
+      }
+    ],
+    metrics: {
+      node_count: 3,
+      node_kind_count: 3,
+      node_kind_counts: { 项目: 1, 一级分类: 1, 知识库: 1 },
+      relation_count: 2,
+      strong_relation_count: 2,
+      pending_relation_count: 0
+    },
+    evidence_grade: "local-readonly-api",
+    production_side_effect: "none",
+    store: { ready: true, backend: "KnowledgeCatalogGraphBuilder" }
+  });
   await mockJson(page, "**/api/v1/agents", {
     items: [
       {
@@ -125,7 +322,7 @@ const sidebarRoutes = [
   { href: "/chat", label: "AI 对话", heading: "AI，让审计更智能" },
   { href: "/agents", label: "我的智能体", heading: "我的助手" },
   { href: "/agent-market", label: "智能体广场", heading: "发现审计智能体" },
-  { href: "/knowledge-base", label: "知识库", heading: "知识库" },
+  { href: "/knowledge-base", label: "知识库", heading: "知识库分类" },
   { href: "/documents", label: "文档检索", heading: "文档检索" },
   { href: "/analytics", label: "AI数据分析", heading: "AI数据分析" },
   { href: "/graph", label: "知识图谱", heading: "知识图谱" },
@@ -208,7 +405,7 @@ test("document search, analytics, graph, reports, projects and medical audit kee
   await expect(page.getByText(/结果预览已生成预览/)).toBeVisible();
 
   await page.goto("/graph");
-  await page.getByRole("button", { name: /乡村振兴专项审计图谱/ }).click();
+  await page.getByRole("button", { name: /医疗审计知识工程/ }).click();
   await expect(page.getByLabel("图谱详情预览")).toBeVisible();
   await page.getByRole("button", { name: "关闭图谱详情" }).click();
 

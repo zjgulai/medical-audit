@@ -14,13 +14,13 @@ export type SearchBackendStatusResponse = {
   readonly details?: SearchBackendDetails;
 };
 
-export type GraphWorkbenchNodeKind = "项目" | "知识库" | "文档" | "规则" | "疑点" | "复核" | "报告" | "整改";
+export type GraphWorkbenchNodeKind = "项目" | "一级分类" | "知识库" | "文档" | "规则" | "疑点" | "复核" | "报告" | "整改";
 
 export type GraphWorkbenchNode = {
   readonly id: string;
   readonly label: string;
   readonly kind: GraphWorkbenchNodeKind;
-  readonly status: "已归集" | "可引用" | "待复核" | "门禁中" | "跟踪中";
+  readonly status: "已归集" | "可引用" | "待复核" | "门禁中" | "跟踪中" | "待接入";
   readonly description: string;
   readonly metric: string;
   readonly href: string;
@@ -504,6 +504,97 @@ export type DocumentSourceCollectionCatalogResponse = {
     readonly database_write: false;
     readonly object_storage_write: false;
     readonly source: "runtime_state_and_registry_only";
+  };
+};
+
+export type KnowledgeBaseCatalogMetrics = {
+  readonly document_count: number;
+  readonly chunk_count: number;
+  readonly embedding_count: number;
+  readonly active_embedding_count: number;
+  readonly candidate_chunk_count: number;
+  readonly character_count: number;
+  readonly linked_app_count: number;
+};
+
+export type KnowledgeBaseCatalogItem = Omit<DocumentSourceCollectionCatalogItem, "metrics"> & {
+  readonly metrics: KnowledgeBaseCatalogMetrics;
+  readonly index: {
+    readonly latest_version_key: string | null;
+    readonly latest_status: string | null;
+    readonly search_backend_ready: boolean;
+    readonly queryable: boolean;
+  };
+  readonly actions: {
+    readonly documents: string;
+    readonly chat: string;
+    readonly graph: string;
+  };
+};
+
+export type KnowledgeBaseCatalogResponse = {
+  readonly contract_version: "knowledge-base-catalog-v1";
+  readonly role: string;
+  readonly summary: {
+    readonly source_collection_count: number;
+    readonly queryable_collection_count: number;
+    readonly total_document_count: number;
+    readonly total_chunk_count: number;
+    readonly total_embedding_count: number;
+    readonly current_search_embedding_count: number;
+    readonly candidate_chunk_count: number;
+    readonly domain_counts: Record<string, number>;
+  };
+  readonly items: readonly KnowledgeBaseCatalogItem[];
+  readonly search_backend: {
+    readonly ready: boolean;
+    readonly backend: string;
+    readonly details: Record<string, unknown>;
+  };
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly boundaries: {
+    readonly production_write: false;
+    readonly provider_call: false;
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly query_history_write: false;
+    readonly source: "runtime_state_and_postgres_catalog" | "runtime_state_and_registry_only";
+  };
+};
+
+export type DocumentSearchItem = {
+  readonly id: string;
+  readonly chunk_id: string;
+  readonly title: string;
+  readonly source_collection: SourceCollection;
+  readonly source_label: string;
+  readonly snippet: string;
+  readonly locator: Record<string, unknown>;
+  readonly score: number;
+  readonly matched_by: readonly string[];
+  readonly index_version_key: string;
+  readonly source_package_version_key: string;
+  readonly preview_url: string;
+};
+
+export type DocumentSearchResponse = {
+  readonly contract_version: "document-search-v1";
+  readonly query: string;
+  readonly effective_source_collections: readonly SourceCollection[];
+  readonly items: readonly DocumentSearchItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly boundaries: {
+    readonly production_write: false;
+    readonly provider_call: boolean;
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly query_history_write: false;
   };
 };
 

@@ -7,7 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
 from medical_audit_kb.api.auth import (
     HospitalRole,
     Permission,
@@ -29,6 +29,8 @@ from medical_audit_kb.api.document_upload_ingestion import (
 from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
+from medical_audit_kb.retrieval.filters import RetrievalFilters
+from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
 
 router = APIRouter(prefix="/documents")
 
@@ -165,6 +167,44 @@ class DocumentSourceCollectionCatalogResponse(BaseModel):
     search_backend: DocumentSourceCollectionSearchBackend
     upload_permissions: DocumentUploadPermissions
     boundaries: DocumentSourceCollectionCatalogBoundaries
+
+
+class DocumentSearchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    chunk_id: str
+    title: str
+    source_collection: SourceCollection
+    source_label: str
+    snippet: str
+    locator: dict[str, object]
+    score: float
+    matched_by: list[str]
+    index_version_key: str
+    source_package_version_key: str
+    preview_url: str
+
+
+class DocumentSearchBoundaries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production_write: bool
+    provider_call: bool
+    database_write: bool
+    object_storage_write: bool
+    query_history_write: bool
+
+
+class DocumentSearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["document-search-v1"]
+    query: str
+    effective_source_collections: list[SourceCollection]
+    items: list[DocumentSearchItem]
+    store: dict[str, object]
+    boundaries: DocumentSearchBoundaries
 
 
 class DocumentUploadItem(BaseModel):
@@ -383,6 +423,83 @@ def document_source_collections(
     )
     role = user.legacy_api_role
     return _source_collection_catalog_response(state=state, role=role)
+
+
+@router.get("/search", response_model=DocumentSearchResponse)
+def document_search(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    q: Annotated[str, Query(min_length=1, max_length=500)],
+    source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
+    title_only: bool = False,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentSearchResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    role = user.legacy_api_role
+    if state.search_engine is None:
+        raise HTTPException(status_code=409, detail="search engine is not initialized")
+
+    effective_source_collections = _effective_document_search_collections(
+        role=role,
+        requested=tuple(source_collection or ()),
+    )
+    if not effective_source_collections:
+        return DocumentSearchResponse(
+            contract_version="document-search-v1",
+            query=q,
+            effective_source_collections=[],
+            items=[],
+            store={
+                "ready": True,
+                "backend": state.search_backend or state.search_engine.__class__.__name__,
+            },
+            boundaries=DocumentSearchBoundaries(
+                production_write=False,
+                provider_call=False,
+                database_write=False,
+                object_storage_write=False,
+                query_history_write=False,
+            ),
+        )
+    filters = RetrievalFilters(
+        source_collections=effective_source_collections,
+        title_only=title_only,
+        title_query=q if title_only else "",
+        personal_material_created_by=(
+            user.user_identifier
+            if SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            else ""
+        ),
+        personal_material_include_all=(
+            SourceCollection.PERSONAL_MATERIALS in effective_source_collections
+            and can_read_all_personal_uploads(role)
+        ),
+    )
+    results = state.search_engine.search(q, filters=filters, top_k=limit)
+    items = [_document_search_item(state, result) for result in results]
+    return DocumentSearchResponse(
+        contract_version="document-search-v1",
+        query=q,
+        effective_source_collections=list(effective_source_collections),
+        items=items,
+        store={
+            "ready": True,
+            "backend": state.search_backend or state.search_engine.__class__.__name__,
+        },
+        boundaries=DocumentSearchBoundaries(
+            production_write=False,
+            provider_call=_document_search_provider_call(state),
+            database_write=False,
+            object_storage_write=False,
+            query_history_write=False,
+        ),
+    )
 
 
 @router.get("/governance/status", response_model=DocumentGovernanceReadonlyStatusResponse)
@@ -1164,6 +1281,92 @@ def _permissions_response(role: str) -> DocumentPermissionsResponse:
         ],
         upload_permissions=_upload_permissions(role),
     )
+
+
+def _effective_document_search_collections(
+    *,
+    role: str,
+    requested: tuple[SourceCollection, ...],
+) -> tuple[SourceCollection, ...]:
+    allowed = {
+        permission.source_collection
+        for permission in document_permissions_for_role(role)
+    }
+    if requested:
+        return tuple(collection for collection in requested if collection in allowed)
+    return tuple(sorted(allowed, key=lambda item: item.value))
+
+
+def _document_search_item(
+    state: ApiState,
+    result: HybridSearchResult,
+) -> DocumentSearchItem:
+    collection = _source_collection_from_result(result)
+    title = _document_result_title(result)
+    snippet = _document_result_snippet(result.chunk.text)
+    state.preview_references[result.chunk.chunk_id] = PreviewReference(
+        locator=result.chunk.locator,
+        citation_text=snippet,
+    )
+    return DocumentSearchItem(
+        id=str(result.chunk.chunk_id),
+        chunk_id=str(result.chunk.chunk_id),
+        title=title,
+        source_collection=collection,
+        source_label=_source_collection_label(collection),
+        snippet=snippet,
+        locator=result.chunk.locator,
+        score=round(result.score, 6),
+        matched_by=list(result.matched_by),
+        index_version_key=result.chunk.index_version_key,
+        source_package_version_key=result.chunk.source_package_version_key,
+        preview_url=f"/api/v1/preview/{result.chunk.chunk_id}",
+    )
+
+
+def _source_collection_from_result(result: HybridSearchResult) -> SourceCollection:
+    value = result.chunk.metadata.get("source_collection")
+    if isinstance(value, str):
+        try:
+            return SourceCollection(value)
+        except ValueError:
+            pass
+    return SourceCollection.MEDICAL_INSURANCE_LAWS
+
+
+def _source_collection_label(collection: SourceCollection) -> str:
+    for definition in SOURCE_COLLECTION_DEFINITIONS:
+        if definition.collection == collection:
+            return definition.label
+    return collection.value
+
+
+def _document_result_title(result: HybridSearchResult) -> str:
+    for key in ("title", "document_title", "file_name"):
+        value = result.chunk.metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    title_path = result.chunk.metadata.get("title_path")
+    if isinstance(title_path, list):
+        for value in reversed(title_path):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    source_path = result.chunk.metadata.get("source_path")
+    if isinstance(source_path, str) and source_path.strip():
+        return source_path.rsplit("/", 1)[-1]
+    return "未命名文档"
+
+
+def _document_result_snippet(text: str) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= 180:
+        return compact
+    return f"{compact[:180]}..."
+
+
+def _document_search_provider_call(state: ApiState) -> bool:
+    provider = state.search_backend_details.get("embedding_provider")
+    return isinstance(provider, str) and provider not in {"", "fake", "deterministic-fake"}
 
 
 def _source_collection_catalog_response(

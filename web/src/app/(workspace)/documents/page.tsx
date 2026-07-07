@@ -4,8 +4,8 @@ import { FormEvent, useMemo, useState } from "react";
 
 import { buildReplicaLocalGateNotice, ReplicaNotice } from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
-import { runKnowledgeQuery } from "@/lib/api-client";
-import type { QueryResponse } from "@/lib/api-types";
+import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
+import type { DocumentSearchResponse, QueryResponse } from "@/lib/api-types";
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
 
 const documentLibraryTiles = [
@@ -85,6 +85,8 @@ const defaultSearchHistory = ["投标", "招标投标法", "集中采购目录",
 
 type DocumentPreview = ReferenceDocumentResult & {
   readonly previewType: "对话文档" | "检索命中";
+  readonly previewUrl?: string;
+  readonly sourceCollection?: string;
 };
 
 export default function DocumentsPage() {
@@ -108,7 +110,7 @@ export default function DocumentsPage() {
   const [notice, setNotice] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("doc-ledger");
   const [detailOpen, setDetailOpen] = useState(true);
-  const [liveResults, setLiveResults] = useState<readonly ReferenceDocumentResult[]>([]);
+  const [liveResults, setLiveResults] = useState<readonly DocumentPreview[]>([]);
   const [hasLiveSearch, setHasLiveSearch] = useState(false);
   const [searching, setSearching] = useState(false);
   const documentResults = hasLiveSearch ? liveResults : documentsData.data.results;
@@ -136,12 +138,14 @@ export default function DocumentsPage() {
     setSearching(true);
     setNotice("");
     try {
-      const response = await runKnowledgeQuery({
-        question: nextQuery,
-        top_k: 5,
-        title_only: titleOnly
+      const activeSourceCollection = activeCategorySourceCollection(categories, activeCategory);
+      const response = await searchDocuments({
+        query: nextQuery,
+        limit: 10,
+        titleOnly,
+        sourceCollections: activeSourceCollection ? [activeSourceCollection] : []
       });
-      const mappedResults = queryResponseToDocumentResults(response);
+      const mappedResults = documentSearchResponseToDocumentResults(response);
       setLiveResults(mappedResults);
       setHasLiveSearch(true);
       if (mappedResults.length === 0) {
@@ -151,6 +155,31 @@ export default function DocumentsPage() {
       setLiveResults([]);
       setHasLiveSearch(true);
       setNotice("检索未完成：请确认知识库检索服务可用后重试。");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function runAiDocumentSearch(nextQuery: string) {
+    setSubmittedQuery(nextQuery);
+    setSearching(true);
+    setNotice("");
+    try {
+      const response = await runKnowledgeQuery({
+        question: nextQuery,
+        top_k: 5,
+        title_only: titleOnly
+      });
+      const mappedResults = queryResponseToDocumentResults(response);
+      setLiveResults(mappedResults);
+      setHasLiveSearch(true);
+      if (mappedResults.length === 0) {
+        setNotice("AI+ 已完成审证，但未返回可展示的引用文档。");
+      }
+    } catch {
+      setLiveResults([]);
+      setHasLiveSearch(true);
+      setNotice("AI+ 审证未完成：请确认问答服务可用后重试。");
     } finally {
       setSearching(false);
     }
@@ -166,6 +195,8 @@ export default function DocumentsPage() {
         excerpt: item.excerpt,
         source: item.source,
         updatedAt: item.updatedAt,
+        previewUrl: (item as DocumentPreview).previewUrl,
+        sourceCollection: (item as DocumentPreview).sourceCollection,
         previewType: "检索命中" as const
       }))
     ].slice(0, 10) as readonly DocumentPreview[])
@@ -183,6 +214,19 @@ export default function DocumentsPage() {
   function recordDocumentAction(item: DocumentPreview, action: string) {
     setSelectedDocumentId(item.id);
     setDetailOpen(true);
+    if (action === "打开文档" && item.previewUrl) {
+      window.location.assign(item.previewUrl);
+      return;
+    }
+    if (action === "加入对话") {
+      const params = new URLSearchParams();
+      params.set("question", submittedQuery || item.title);
+      if (item.sourceCollection) {
+        params.set("source_collection", item.sourceCollection);
+      }
+      window.location.assign(`/chat?${params.toString()}`);
+      return;
+    }
     setNotice(buildReplicaLocalGateNotice({
       action: `${action}「${item.title}」`,
       nextStep: "文档详情 API"
@@ -234,7 +278,7 @@ export default function DocumentsPage() {
         <button
           type="button"
           className="replica-doc-ai-button"
-          onClick={() => void runDocumentSearch(query.trim() || submittedQuery)}
+          onClick={() => void runAiDocumentSearch(query.trim() || submittedQuery)}
         >
           <span aria-hidden="true">AI</span>
           检索AI+
@@ -401,14 +445,44 @@ export default function DocumentsPage() {
   );
 }
 
-function queryResponseToDocumentResults(response: QueryResponse): readonly ReferenceDocumentResult[] {
+function activeCategorySourceCollection(
+  categories: readonly { readonly id: string; readonly name: string }[],
+  activeCategory: string
+): string | null {
+  const category = categories.find((item) => item.name === activeCategory);
+  if (!category?.id.startsWith("source-")) {
+    return null;
+  }
+  return category.id.slice("source-".length);
+}
+
+function documentSearchResponseToDocumentResults(
+  response: DocumentSearchResponse
+): readonly DocumentPreview[] {
+  return response.items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    category: item.source_label,
+    excerpt: compactDocumentText(item.snippet, 120),
+    source: item.source_collection,
+    updatedAt: item.index_version_key || "检索命中",
+    previewType: "检索命中",
+    previewUrl: item.preview_url,
+    sourceCollection: item.source_collection
+  }));
+}
+
+function queryResponseToDocumentResults(response: QueryResponse): readonly DocumentPreview[] {
   const citations = response.citations.map((citation, index) => ({
     id: citation.citation_id || `query-citation-${index + 1}`,
     title: locatorText(citation.locator, ["title", "document_title", "file_name", "source_title", "name"]) ?? `引用文档 ${index + 1}`,
     category: citation.evidence_type || citation.source_collection,
     excerpt: compactDocumentText(citation.snippet, 96),
     source: citation.source_collection,
-    updatedAt: locatorText(citation.locator, ["date", "published_at", "issued_at", "year"]) ?? "检索命中"
+    updatedAt: locatorText(citation.locator, ["date", "published_at", "issued_at", "year"]) ?? "检索命中",
+    previewType: "检索命中" as const,
+    previewUrl: `/api/v1/preview/${citation.chunk_id}`,
+    sourceCollection: citation.source_collection
   }));
   const uploads = response.personal_upload_matches.map((match, index) => ({
     id: match.id || `personal-match-${index + 1}`,
@@ -416,7 +490,9 @@ function queryResponseToDocumentResults(response: QueryResponse): readonly Refer
     category: "个人材料",
     excerpt: compactDocumentText(match.snippet, 96),
     source: match.created_by || "个人上传",
-    updatedAt: match.indexed_at?.slice(0, 10) || "未索引"
+    updatedAt: match.indexed_at?.slice(0, 10) || "未索引",
+    previewType: "检索命中" as const,
+    sourceCollection: "personal-materials"
   }));
   return [...citations, ...uploads];
 }

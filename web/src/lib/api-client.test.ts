@@ -22,6 +22,7 @@ import {
   fetchDocumentSourceCollections,
   fetchDocumentUploads,
   fetchGraphWorkbench,
+  fetchKnowledgeBaseCatalog,
   fetchProjectDashboard,
   fetchProjectMembers,
   fetchProjects,
@@ -36,6 +37,7 @@ import {
   recordAuditAgentInvocation,
   reviewAuditAgentPromptVersion,
   runKnowledgeQuery,
+  searchDocuments,
   submitAuditAgentFeedback,
   updateAuditAgentLifecycle,
   updateDocumentUploadGovernance,
@@ -125,6 +127,7 @@ describe("api-client", () => {
         "/api/v1/remediation/workbench",
         "/api/v1/archive/workbench",
         "/api/v1/analytics/table-uploads",
+        "/api/v1/knowledge-base/catalog",
         "/api/v1/documents/source-collections",
         "/api/v1/documents/permissions",
         "/api/v1/documents/uploads",
@@ -138,6 +141,9 @@ describe("api-client", () => {
         "/api/v1/projects/{projectId}/members"
       ])
     );
+    expect([...endpointPaths].some((path) => (
+      path.startsWith("/api/v1/documents/search?") && path.includes("q=")
+    ))).toBe(true);
 
     for (const page of pageBackendContract.pages) {
       for (const endpoint of page.endpoints) {
@@ -569,7 +575,7 @@ describe("api-client", () => {
           },
           evidence_grade: "local-readonly-api",
           production_side_effect: "none",
-          store: { ready: true, backend: "ReadonlyGraphWorkbenchSeed" }
+          store: { ready: true, backend: "KnowledgeCatalogGraphBuilder" }
         })
       }))
     );
@@ -967,6 +973,148 @@ describe("api-client", () => {
     });
     expect(result.items[0].source_collection).toBe("medical-insurance-laws");
     expect(result.boundaries.provider_call).toBe(false);
+  });
+
+  it("fetches knowledge base catalog through the versioned API proxy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "knowledge-base-catalog-v1",
+          role: "auditor",
+          summary: {
+            source_collection_count: 25,
+            queryable_collection_count: 25,
+            total_document_count: 20054,
+            total_chunk_count: 923288,
+            total_embedding_count: 923288,
+            current_search_embedding_count: 49051,
+            candidate_chunk_count: 727214,
+            domain_counts: { medical: 4, policy: 6 }
+          },
+          items: [
+            {
+              source_collection: "medical-insurance-laws",
+              label: "法规政策",
+              scope: "公开知识库",
+              phase: "P6A-medical-current-library-completion",
+              domain: "medical",
+              evidence_group: "legal",
+              description: "医保、医疗、药品、基金监管相关法律政策。",
+              audit_hint: "用于判断制度依据和监管边界。",
+              access: "read",
+              product_queryable: true,
+              queryable: true,
+              metrics: {
+                document_count: 503,
+                chunk_count: 49051,
+                embedding_count: 49051,
+                active_embedding_count: 49051,
+                candidate_chunk_count: 727214,
+                character_count: 123456,
+                linked_app_count: 1
+              },
+              index: {
+                latest_version_key: "incremental-20260615",
+                latest_status: "active",
+                search_backend_ready: true,
+                queryable: true
+              },
+              actions: {
+                documents: "/documents?source_collection=medical-insurance-laws",
+                chat: "/chat?source_collection=medical-insurance-laws",
+                graph: "/graph?source_collection=medical-insurance-laws"
+              }
+            }
+          ],
+          search_backend: { ready: true, backend: "postgres", details: {} },
+          store: { ready: true, backend: "runtime_state_and_postgres_catalog" },
+          boundaries: {
+            production_write: false,
+            provider_call: false,
+            database_write: false,
+            object_storage_write: false,
+            query_history_write: false,
+            source: "runtime_state_and_postgres_catalog"
+          }
+        })
+      }))
+    );
+
+    const result = await fetchKnowledgeBaseCatalog();
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/knowledge-base/catalog", {
+      headers: {
+        Accept: "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      cache: "no-store"
+    });
+    expect(result.summary.total_document_count).toBe(20054);
+    expect(result.items[0].metrics.active_embedding_count).toBe(49051);
+  });
+
+  it("searches documents through the read-only document search endpoint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "document-search-v1",
+          query: "医保基金审核依据",
+          effective_source_collections: ["medical-insurance-laws"],
+          items: [
+            {
+              id: "chunk-001",
+              chunk_id: "chunk-001",
+              title: "医保基金审核依据",
+              source_collection: "medical-insurance-laws",
+              source_label: "法规政策",
+              snippet: "医疗机构应当保留医保基金审核依据。",
+              locator: { source_path: "全量法律/law.md" },
+              score: 1,
+              matched_by: ["bm25"],
+              index_version_key: "index-v1",
+              source_package_version_key: "package-v1",
+              preview_url: "/api/v1/preview/chunk-001"
+            }
+          ],
+          store: { ready: true, backend: "postgres" },
+          boundaries: {
+            production_write: false,
+            provider_call: true,
+            database_write: false,
+            object_storage_write: false,
+            query_history_write: false
+          }
+        })
+      }))
+    );
+
+    const result = await searchDocuments({
+      query: "医保基金审核依据",
+      sourceCollections: ["medical-insurance-laws"],
+      titleOnly: true,
+      limit: 3
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/documents/search?q=%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E5%AE%A1%E6%A0%B8%E4%BE%9D%E6%8D%AE&source_collection=medical-insurance-laws&title_only=true&limit=3",
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Role": "admin",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-admin"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.boundaries.query_history_write).toBe(false);
+    expect(result.items[0].preview_url).toBe("/api/v1/preview/chunk-001");
   });
 
   it("fetches personal document uploads through the versioned API proxy", async () => {
