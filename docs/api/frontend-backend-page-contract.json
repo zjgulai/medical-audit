@@ -120,6 +120,7 @@
       "route": "/knowledge-base",
       "connection_status": "connected_first_batch",
       "endpoints": [
+        { "name": "knowledge-base-catalog", "method": "GET", "path": "/api/v1/knowledge-base/catalog" },
         { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
         { "name": "document-permissions", "method": "GET", "path": "/api/v1/documents/permissions" },
         { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
@@ -130,6 +131,8 @@
       "route": "/documents",
       "connection_status": "connected_first_batch",
       "endpoints": [
+        { "name": "document-search", "method": "GET", "path": "/api/v1/documents/search" },
+        { "name": "knowledge-base-catalog", "method": "GET", "path": "/api/v1/knowledge-base/catalog" },
         { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
         { "name": "document-permissions", "method": "GET", "path": "/api/v1/documents/permissions" },
         { "name": "document-uploads", "method": "GET", "path": "/api/v1/documents/uploads" },

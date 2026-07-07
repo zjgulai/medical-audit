@@ -4,11 +4,23 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.auth import HospitalRole, resolve_authenticated_user
+from medical_audit_kb.api.routes_knowledge_base import build_knowledge_base_catalog_response
 
 router = APIRouter()
+
+DOMAIN_LABELS: dict[str, str] = {
+    "medical": "医疗医保知识",
+    "policy": "综合政策知识",
+    "management": "管理治理知识",
+    "other": "公共专题知识",
+    "personal": "个人材料",
+}
+
+DOMAIN_ORDER: tuple[str, ...] = ("medical", "policy", "management", "other", "personal")
 
 
 GRAPH_NODES: tuple[dict[str, object], ...] = (
@@ -722,8 +734,17 @@ ARCHIVE_TIMELINE: tuple[dict[str, object], ...] = (
 @router.get("/graph/workbench")
 def graph_workbench(
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    metrics = _graph_metrics()
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    graph = _knowledge_catalog_graph(state=state, role=user.legacy_api_role)
+    metrics = _graph_metrics(graph["nodes"], graph["relations"])
     record_operation(
         state,
         "graph-workbench-view",
@@ -740,14 +761,14 @@ def graph_workbench(
         "graph_id": "SELF-CHECK-FUND-20260607",
         "graph_title": "医保基金使用合规专项图谱",
         "graph_scope": (
-            "医保基金使用合规专项自查的项目、知识、规则、疑点、复核、报告和整改关系预览。"
+            "基于当前可查询知识库目录，将医疗医保、政策、管理和公共专题知识组织成可审证关系图。"
         ),
-        "nodes": GRAPH_NODES,
-        "relations": GRAPH_RELATIONS,
+        "nodes": graph["nodes"],
+        "relations": graph["relations"],
         "metrics": metrics,
         "evidence_grade": "local-readonly-api",
         "production_side_effect": "none",
-        "store": {"ready": True, "backend": "ReadonlyGraphWorkbenchSeed"},
+        "store": {"ready": True, "backend": "KnowledgeCatalogGraphBuilder"},
     }
 
 
@@ -854,18 +875,114 @@ def archive_workbench(
     }
 
 
-def _graph_metrics() -> dict[str, object]:
-    node_kind_counts = Counter(str(node["kind"]) for node in GRAPH_NODES)
+def _knowledge_catalog_graph(*, state: ApiState, role: str) -> dict[str, list[dict[str, object]]]:
+    catalog = build_knowledge_base_catalog_response(state=state, role=role)
+    items = catalog.items
+    nodes: list[dict[str, object]] = [
+        {
+            "id": "graph-node-project",
+            "label": "医疗审计知识工程",
+            "kind": "项目",
+            "status": "已归集",
+            "description": "当前生产知识库目录、文档检索和审计问答共同使用的知识底座。",
+            "metric": f"{catalog.summary.source_collection_count} 类知识库",
+            "href": "/projects",
+            "x": 100,
+            "y": 250,
+        }
+    ]
+    relations: list[dict[str, object]] = []
+    grouped_domains = [
+        domain
+        for domain in DOMAIN_ORDER
+        if any(item.domain == domain for item in items)
+    ]
+    for domain_index, domain in enumerate(grouped_domains):
+        domain_items = [item for item in items if item.domain == domain]
+        domain_id = f"graph-domain-{domain}"
+        domain_x = 280 + (domain_index * 180)
+        domain_y = 120 + ((domain_index % 2) * 260)
+        domain_chunk_count = sum(item.metrics.chunk_count for item in domain_items)
+        nodes.append(
+            {
+                "id": domain_id,
+                "label": DOMAIN_LABELS.get(domain, domain),
+                "kind": "一级分类",
+                "status": "可引用" if any(item.queryable for item in domain_items) else "待接入",
+                "description": (
+                    f"{DOMAIN_LABELS.get(domain, domain)}下共有 {len(domain_items)} 个知识库。"
+                ),
+                "metric": f"{domain_chunk_count:,} chunks",
+                "href": f"/knowledge-base?domain={domain}",
+                "x": domain_x,
+                "y": domain_y,
+            }
+        )
+        relations.append(
+            {
+                "id": f"graph-project-{domain}",
+                "sourceId": "graph-node-project",
+                "targetId": domain_id,
+                "source": "医疗审计知识工程",
+                "relation": "组织",
+                "target": DOMAIN_LABELS.get(domain, domain),
+                "evidence": f"{len(domain_items)} 个一级知识库分类",
+                "strength": "强",
+            }
+        )
+        for item_index, item in enumerate(domain_items):
+            node_id = f"graph-source-{item.source_collection.value}"
+            node_x = 220 + ((item_index % 5) * 170)
+            node_y = 520 + (domain_index * 170) + ((item_index // 5) * 90)
+            active_count = item.metrics.active_embedding_count or item.metrics.embedding_count
+            nodes.append(
+                {
+                    "id": node_id,
+                    "label": item.label,
+                    "kind": "知识库",
+                    "status": "可引用" if item.queryable else "待接入",
+                    "description": item.audit_hint or item.description,
+                    "metric": (
+                        f"{item.metrics.document_count:,} 文档 / "
+                        f"{item.metrics.chunk_count:,} chunks"
+                    ),
+                    "href": item.actions["documents"],
+                    "x": node_x,
+                    "y": node_y,
+                    "sourceCollection": item.source_collection.value,
+                    "domain": item.domain,
+                }
+            )
+            relations.append(
+                {
+                    "id": f"graph-{domain}-{item.source_collection.value}",
+                    "sourceId": domain_id,
+                    "targetId": node_id,
+                    "source": DOMAIN_LABELS.get(domain, domain),
+                    "relation": "包含",
+                    "target": item.label,
+                    "evidence": f"{active_count:,} active embeddings",
+                    "strength": "强" if active_count else "待补",
+                }
+            )
+    return {"nodes": nodes, "relations": relations}
+
+
+def _graph_metrics(
+    nodes: list[dict[str, object]],
+    relations: list[dict[str, object]],
+) -> dict[str, object]:
+    node_kind_counts = Counter(str(node["kind"]) for node in nodes)
     return {
-        "node_count": len(GRAPH_NODES),
+        "node_count": len(nodes),
         "node_kind_count": len(node_kind_counts),
         "node_kind_counts": dict(node_kind_counts),
-        "relation_count": len(GRAPH_RELATIONS),
+        "relation_count": len(relations),
         "strong_relation_count": sum(
-            1 for relation in GRAPH_RELATIONS if relation["strength"] == "强"
+            1 for relation in relations if relation["strength"] == "强"
         ),
         "pending_relation_count": sum(
-            1 for relation in GRAPH_RELATIONS if relation["strength"] == "待补"
+            1 for relation in relations if relation["strength"] == "待补"
         ),
     }
 

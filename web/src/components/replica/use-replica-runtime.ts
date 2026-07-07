@@ -9,6 +9,7 @@ import {
   fetchDocumentPermissions,
   fetchDocumentSourceCollections,
   fetchGraphWorkbench,
+  fetchKnowledgeBaseCatalog,
   fetchProjects,
   fetchQueryHistory,
   fetchReportWorkbench
@@ -78,6 +79,7 @@ function replicaReadClient(): ReplicaClient {
     fetchDocumentPermissions,
     fetchDocumentSourceCollections,
     fetchGraphWorkbench,
+    fetchKnowledgeBaseCatalog,
     fetchProjects,
     fetchQueryHistory,
     fetchReportWorkbench

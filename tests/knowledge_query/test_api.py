@@ -1579,6 +1579,82 @@ def test_documents_governance_status_is_redacted_get_only(
         assert hidden not in serialized
 
 
+def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.search_backend = "postgres"
+    state.search_backend_details = {
+        "embedding_provider": "openai",
+        "embedding_model": "kimi-for-coding",
+        "matching_embedding_count": 49051,
+        "collection_metrics": {
+            "medical-insurance-laws": {
+                "document_count": 503,
+                "chunk_count": 49051,
+                "embedding_count": 49051,
+                "active_embedding_count": 49051,
+                "candidate_chunk_count": 727214,
+                "latest_index_version_key": "incremental-20260615",
+                "latest_index_status": "active",
+            }
+        },
+        "postgres_totals": {
+            "source_documents": 20054,
+            "document_chunks": 923288,
+            "chunk_embeddings": 923288,
+        },
+    }
+    client = TestClient(create_app(state))
+
+    response = client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contract_version"] == "knowledge-base-catalog-v1"
+    assert body["summary"]["source_collection_count"] == 25
+    assert body["summary"]["total_document_count"] == 20054
+    assert body["summary"]["total_chunk_count"] == 923288
+    assert body["summary"]["current_search_embedding_count"] == 49051
+    assert body["summary"]["candidate_chunk_count"] == 727214
+    assert body["boundaries"]["production_write"] is False
+    assert body["boundaries"]["database_write"] is False
+    assert body["store"]["backend"] in {
+        "runtime_state_and_postgres_catalog",
+        "runtime_state_and_registry_only",
+    }
+    law_item = next(
+        item for item in body["items"] if item["source_collection"] == "medical-insurance-laws"
+    )
+    assert law_item["metrics"]["document_count"] == 503
+    assert law_item["metrics"]["active_embedding_count"] == 49051
+    assert law_item["metrics"]["candidate_chunk_count"] == 727214
+    assert law_item["index"]["latest_status"] == "active"
+
+
+def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/documents/search",
+        headers={"X-Role": "it-admin", "X-User-Id": "auditor-1"},
+        params={
+            "q": "医保基金审核依据",
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "limit": 3,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contract_version"] == "document-search-v1"
+    assert body["query"] == "医保基金审核依据"
+    assert body["effective_source_collections"] == [SourceCollection.MEDICAL_INSURANCE_LAWS.value]
+    assert body["boundaries"]["query_history_write"] is False
+    assert body["items"][0]["source_collection"] == SourceCollection.MEDICAL_INSURANCE_LAWS.value
+    assert body["items"][0]["preview_url"].startswith("/api/v1/preview/")
+    assert state.query_history_store.list_queries() == []
+
+
 def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'document-uploads.db'}"
     upload_root = tmp_path / "document-uploads"

@@ -126,6 +126,15 @@ export default function KnowledgeBasePage() {
     setSelectedKnowledgeBaseId(item.id);
     setDetailOpen(true);
     setActiveAction(action);
+    const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
+    if (action === "打开目录" && sourceCollection) {
+      window.location.assign(`/documents?source_collection=${encodeURIComponent(sourceCollection)}`);
+      return;
+    }
+    if (action === "关联智能体" && sourceCollection) {
+      window.location.assign(`/chat?source_collection=${encodeURIComponent(sourceCollection)}`);
+      return;
+    }
     setNotice(buildReplicaLocalGateNotice({
       action: `${action}「${item.name}」`,
       nextStep: "知识库目录读取 API"
@@ -219,7 +228,7 @@ export default function KnowledgeBasePage() {
           <span>{activeScope}</span>
           <strong>{filteredKnowledgeBases.length} / {knowledgeBases.length}</strong>
           <span>{query.trim() ? `关键词：${query.trim()}` : "全量目录"}</span>
-          <span>{knowledgeBaseData.source === "api" ? "生产目录" : "本地目录"}</span>
+          <span>{knowledgeBaseData.source === "fixture" ? "本地目录" : "生产目录"}</span>
         </div>
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
@@ -326,4 +335,11 @@ export default function KnowledgeBasePage() {
       </section>
     </main>
   );
+}
+
+function sourceCollectionFromKnowledgeBaseId(id: string): string | null {
+  if (!id.startsWith("kb-")) {
+    return null;
+  }
+  return id.slice("kb-".length);
 }

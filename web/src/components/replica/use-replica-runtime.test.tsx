@@ -36,6 +36,7 @@ vi.mock("@/lib/api-client", () => ({
   fetchDocumentPermissions: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
   fetchGraphWorkbench: vi.fn(),
+  fetchKnowledgeBaseCatalog: vi.fn(),
   fetchProjects: vi.fn(),
   fetchQueryHistory: vi.fn(),
   fetchReportWorkbench: vi.fn(),
