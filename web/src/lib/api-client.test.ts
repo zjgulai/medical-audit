@@ -128,7 +128,6 @@ describe("api-client", () => {
         "/api/v1/archive/workbench",
         "/api/v1/analytics/table-uploads",
         "/api/v1/knowledge-base/catalog",
-        "/api/v1/documents/search",
         "/api/v1/documents/source-collections",
         "/api/v1/documents/permissions",
         "/api/v1/documents/uploads",
@@ -142,6 +141,9 @@ describe("api-client", () => {
         "/api/v1/projects/{projectId}/members"
       ])
     );
+    expect([...endpointPaths].some((path) => (
+      path.startsWith("/api/v1/documents/search?") && path.includes("q=")
+    ))).toBe(true);
 
     for (const page of pageBackendContract.pages) {
       for (const endpoint of page.endpoints) {

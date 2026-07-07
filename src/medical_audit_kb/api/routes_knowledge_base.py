@@ -322,15 +322,16 @@ def _metrics_from_postgres(
 
         cursor.execute(
             """
-            SELECT collection, COALESCE(SUM(chunk_count), 0)::bigint AS candidate_chunk_count
-            FROM (
-              SELECT DISTINCT sd.source_collection AS collection, iv.id, iv.chunk_count
-              FROM index_versions iv
-              JOIN source_documents sd
-                ON sd.source_package_version_id = iv.source_package_version_id
-              WHERE iv.status = 'candidate'
-            ) candidate_versions
-            GROUP BY collection
+            SELECT
+              sd.source_collection AS collection,
+              COUNT(DISTINCT dc.id)::bigint AS candidate_chunk_count
+            FROM index_versions iv
+            JOIN source_documents sd
+              ON sd.source_package_version_id = iv.source_package_version_id
+            JOIN document_chunks dc
+              ON dc.source_document_id = sd.id
+            WHERE iv.status = 'candidate'
+            GROUP BY sd.source_collection
             """
         )
         for row in cursor.fetchall():

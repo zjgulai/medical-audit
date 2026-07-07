@@ -177,6 +177,8 @@ export default function DocumentsPage() {
         setNotice("AI+ 已完成审证，但未返回可展示的引用文档。");
       }
     } catch {
+      setLiveResults([]);
+      setHasLiveSearch(true);
       setNotice("AI+ 审证未完成：请确认问答服务可用后重试。");
     } finally {
       setSearching(false);

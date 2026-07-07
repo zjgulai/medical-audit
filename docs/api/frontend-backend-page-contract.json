@@ -131,7 +131,7 @@
       "route": "/documents",
       "connection_status": "connected_first_batch",
       "endpoints": [
-        { "name": "document-search", "method": "GET", "path": "/api/v1/documents/search" },
+        { "name": "document-search", "method": "GET", "path": "/api/v1/documents/search?q=%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E5%AE%A1%E6%A0%B8%E4%BE%9D%E6%8D%AE&source_collection=medical-insurance-laws&limit=2" },
         { "name": "knowledge-base-catalog", "method": "GET", "path": "/api/v1/knowledge-base/catalog" },
         { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
         { "name": "document-permissions", "method": "GET", "path": "/api/v1/documents/permissions" },
