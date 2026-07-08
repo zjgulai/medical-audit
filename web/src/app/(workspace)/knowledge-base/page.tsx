@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   buildReplicaLocalGateNotice,
@@ -127,15 +128,6 @@ export default function KnowledgeBasePage() {
     setSelectedKnowledgeBaseId(item.id);
     setDetailOpen(true);
     setActiveAction(action);
-    const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
-    if (action === "打开目录" && sourceCollection) {
-      window.location.assign(`/documents?source_collection=${encodeURIComponent(sourceCollection)}`);
-      return;
-    }
-    if (action === "关联智能体" && sourceCollection) {
-      window.location.assign(`/chat?source_collection=${encodeURIComponent(sourceCollection)}`);
-      return;
-    }
     setNotice(buildReplicaLocalGateNotice({
       action: `${action}「${item.name}」`,
       nextStep: "知识库目录读取 API"
@@ -313,10 +305,10 @@ export default function KnowledgeBasePage() {
                   </div>
                 </dl>
 	                <div className="replica-kb-tags">
-	                  {selectedKnowledgeBase.tags.map((tag) => (
-	                    <span key={tag}>{tag}</span>
-	                  ))}
-	                </div>
+                  {selectedKnowledgeBase.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
 	                <section className="replica-kb-next-panel" aria-label="知识库后续操作预览">
 	                  <h3>{actionPanel.title}</h3>
 	                  <p>{actionPanel.description}</p>
@@ -330,8 +322,16 @@ export default function KnowledgeBasePage() {
 	                  </div>
 	                </section>
 	                <div className="replica-kb-detail-actions">
-	                  <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
-                  <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "关联智能体")}>关联智能体</button>
+	                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
+	                    <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>打开目录</Link>
+	                  ) : (
+	                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
+	                  )}
+                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
+                    <Link href={knowledgeBaseChatHref(selectedKnowledgeBase)}>关联智能体</Link>
+                  ) : (
+                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "关联智能体")}>关联智能体</button>
+                  )}
                   <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "权限设置")}>权限设置</button>
                 </div>
               </aside>
@@ -348,4 +348,19 @@ function sourceCollectionFromKnowledgeBaseId(id: string): string | null {
     return null;
   }
   return id.slice("kb-".length);
+}
+
+function knowledgeBaseDocumentsHref(item: ReferenceKnowledgeBase): string {
+  const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
+  return sourceCollection ? `/documents?source_collection=${encodeURIComponent(sourceCollection)}` : "/documents";
+}
+
+function knowledgeBaseChatHref(item: ReferenceKnowledgeBase): string {
+  const params = new URLSearchParams();
+  params.set("question", `请基于「${item.name}」回答审计问题`);
+  const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
+  if (sourceCollection) {
+    params.set("source_collection", sourceCollection);
+  }
+  return `/chat?${params.toString()}`;
 }

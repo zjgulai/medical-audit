@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
 
 import {
   buildReplicaLocalGateNotice,
@@ -152,6 +153,10 @@ export default function DocumentsPage() {
       const mappedResults = documentSearchResponseToDocumentResults(response);
       setLiveResults(mappedResults);
       setHasLiveSearch(true);
+      if (mappedResults.length > 0) {
+        setSelectedDocumentId(mappedResults[0].id);
+        setDetailOpen(true);
+      }
       if (mappedResults.length === 0) {
         setNotice("已完成检索，但未返回可展示的引用文档。");
       }
@@ -177,6 +182,10 @@ export default function DocumentsPage() {
       const mappedResults = queryResponseToDocumentResults(response);
       setLiveResults(mappedResults);
       setHasLiveSearch(true);
+      if (mappedResults.length > 0) {
+        setSelectedDocumentId(mappedResults[0].id);
+        setDetailOpen(true);
+      }
       if (mappedResults.length === 0) {
         setNotice("AI+ 已完成审证，但未返回可展示的引用文档。");
       }
@@ -220,15 +229,6 @@ export default function DocumentsPage() {
     setDetailOpen(true);
     if (action === "打开文档" && item.previewUrl) {
       window.location.assign(item.previewUrl);
-      return;
-    }
-    if (action === "加入对话") {
-      const params = new URLSearchParams();
-      params.set("question", submittedQuery || item.title);
-      if (item.sourceCollection) {
-        params.set("source_collection", item.sourceCollection);
-      }
-      window.location.assign(`/chat?${params.toString()}`);
       return;
     }
     setNotice(buildReplicaLocalGateNotice({
@@ -394,7 +394,7 @@ export default function DocumentsPage() {
               </dl>
               <div className="replica-doc-detail-actions">
                 <button type="button" onClick={() => recordDocumentAction(selectedDocument, "打开文档")}>打开文档</button>
-                <button type="button" onClick={() => recordDocumentAction(selectedDocument, "加入对话")}>加入对话</button>
+                <Link href={documentChatHref(selectedDocument, submittedQuery)}>加入对话</Link>
               </div>
             </aside>
           ) : null}
@@ -465,6 +465,15 @@ function activeCategorySourceCollection(
     return null;
   }
   return category.id.slice("source-".length);
+}
+
+function documentChatHref(item: DocumentPreview, submittedQuery: string): string {
+  const params = new URLSearchParams();
+  params.set("question", submittedQuery || item.title);
+  if (item.sourceCollection) {
+    params.set("source_collection", item.sourceCollection);
+  }
+  return `/chat?${params.toString()}`;
 }
 
 function documentSearchResponseToDocumentResults(
