@@ -1,8 +1,108 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentsResponse } from "./api-types";
-import { loadReplicaAgentMarketData } from "./replica-adapters";
+import type {
+  AgentsResponse,
+  DocumentSourceCollectionCatalogResponse,
+  KnowledgeBaseCatalogItem,
+  KnowledgeBaseCatalogResponse
+} from "./api-types";
+import {
+  loadReplicaAgentMarketData,
+  loadReplicaDocumentsData,
+  loadReplicaKnowledgeBaseData
+} from "./replica-adapters";
 import { referenceMarketAgents } from "./reference-replica-data";
+
+const catalogItem: KnowledgeBaseCatalogItem = {
+  source_collection: "medical-insurance-laws",
+  label: "医保法规库",
+  scope: "系统",
+  phase: "active",
+  domain: "医保",
+  evidence_group: "法规政策",
+  description: "医保法规政策。",
+  audit_hint: "用于医保审计依据核验。",
+  access: "read",
+  product_queryable: true,
+  queryable: true,
+  metrics: {
+    document_count: 12,
+    chunk_count: 120,
+    character_count: 24000,
+    linked_app_count: 2,
+    embedding_count: 120,
+    active_embedding_count: 120,
+    candidate_chunk_count: 0
+  },
+  index: {
+    latest_version_key: "medical-legal@v1",
+    latest_status: "active",
+    search_backend_ready: true,
+    queryable: true
+  },
+  actions: {
+    documents: "/documents",
+    chat: "/chat",
+    graph: "/graph"
+  }
+};
+
+const sourceCollectionCatalogItem: DocumentSourceCollectionCatalogResponse["items"][number] = {
+  ...catalogItem,
+  metrics: {
+    document_count: catalogItem.metrics.document_count,
+    chunk_count: catalogItem.metrics.chunk_count,
+    character_count: catalogItem.metrics.character_count,
+    linked_app_count: catalogItem.metrics.linked_app_count
+  }
+};
+
+const uploadPermissions = {
+  can_upload_personal: true,
+  can_read_all_personal_uploads: true,
+  can_govern_personal_uploads: true
+} as const;
+
+const knowledgeBaseCatalog: KnowledgeBaseCatalogResponse = {
+  contract_version: "knowledge-base-catalog-v1",
+  role: "admin",
+  summary: {
+    source_collection_count: 1,
+    queryable_collection_count: 1,
+    total_document_count: 12,
+    total_chunk_count: 120,
+    total_embedding_count: 120,
+    current_search_embedding_count: 120,
+    candidate_chunk_count: 0,
+    domain_counts: { 医保: 1 }
+  },
+  items: [catalogItem],
+  search_backend: { ready: true, backend: "postgres", details: {} },
+  store: { ready: true, backend: "runtime_state_and_postgres_catalog" },
+  boundaries: {
+    production_write: false,
+    provider_call: false,
+    database_write: false,
+    object_storage_write: false,
+    query_history_write: false,
+    source: "runtime_state_and_registry_only"
+  }
+};
+
+const sourceCollectionCatalog: DocumentSourceCollectionCatalogResponse = {
+  contract_version: "document-source-collections-v1",
+  role: "admin",
+  items: [sourceCollectionCatalogItem],
+  search_backend: { ready: true, backend: "postgres", details: {} },
+  upload_permissions: uploadPermissions,
+  boundaries: {
+    production_write: false,
+    provider_call: false,
+    database_write: false,
+    object_storage_write: false,
+    source: "runtime_state_and_registry_only"
+  }
+};
 
 describe("loadReplicaAgentMarketData", () => {
   it("keeps the market catalog on prompt-source categories when the API returns old seed agents", async () => {
@@ -46,5 +146,69 @@ describe("loadReplicaAgentMarketData", () => {
     ]);
     expect(result.data.categories).not.toContain("业务类");
     expect(result.data.agents.some((agent) => agent.id === "seed-legacy-business")).toBe(false);
+  });
+});
+
+describe("replica backend read adapters", () => {
+  it("starts knowledge-base permissions and both catalog reads in the same load pass", async () => {
+    const fetchDocumentPermissions = vi.fn(async () => ({
+      role: "admin",
+      source_collections: [
+        {
+          source_collection: "medical-insurance-laws" as const,
+          label: "医保法规库",
+          scope: "系统",
+          access: "read" as const
+        }
+      ],
+      upload_permissions: uploadPermissions
+    }));
+    const fetchKnowledgeBaseCatalog = vi.fn(async () => knowledgeBaseCatalog);
+    const fetchDocumentSourceCollections = vi.fn(async () => sourceCollectionCatalog);
+
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchDocumentPermissions,
+      fetchKnowledgeBaseCatalog,
+      fetchDocumentSourceCollections
+    });
+
+    expect(result.source).toBe("hybrid");
+    expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
+    expect(fetchDocumentPermissions).toHaveBeenCalledTimes(1);
+    expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts document catalog and query history reads in the same load pass", async () => {
+    const fetchKnowledgeBaseCatalog = vi.fn(async () => knowledgeBaseCatalog);
+    const fetchDocumentSourceCollections = vi.fn(async () => sourceCollectionCatalog);
+    const fetchQueryHistory = vi.fn(async () => ({
+      items: [
+        {
+          id: "query-1",
+          user_identifier: "auditor",
+          question: "医保法规查询",
+          filters: {},
+          answer_summary: null,
+          retrieved_chunk_ids: [],
+          citation_count: 0,
+          created_at: "2026-07-08T00:00:00Z"
+        }
+      ],
+      store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
+    }));
+
+    const result = await loadReplicaDocumentsData({
+      fetchKnowledgeBaseCatalog,
+      fetchDocumentSourceCollections,
+      fetchQueryHistory
+    });
+
+    expect(result.source).toBe("hybrid");
+    expect(result.data.categories[0]?.name).toBe("医保法规库");
+    expect(result.data.searchHistory).toContain("医保法规查询");
+    expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);
+    expect(fetchQueryHistory).toHaveBeenCalledTimes(1);
   });
 });

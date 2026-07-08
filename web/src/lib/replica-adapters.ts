@@ -597,11 +597,14 @@ export async function loadReplicaKnowledgeBaseData(
   client: ReplicaKnowledgeBaseClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaKnowledgeBaseData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const permissions = await readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions);
-  const knowledgeCatalog = await readOptionalApi("knowledge-base", issues, client.fetchKnowledgeBaseCatalog);
+  const [permissions, knowledgeCatalog, sourceCollectionCatalog] = await Promise.all([
+    readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions),
+    readOptionalApi("knowledge-base", issues, client.fetchKnowledgeBaseCatalog),
+    readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections)
+  ]);
   const catalog =
     knowledgeCatalog ??
-    await readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections);
+    sourceCollectionCatalog;
   const sourceGroups = sourceCollectionCatalogToGroups(catalog?.items);
   const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
   const documentCatalogUploadPermissions = catalog && "upload_permissions" in catalog
@@ -635,16 +638,19 @@ export async function loadReplicaDocumentsData(
   const results = referenceDocumentResults;
   let apiUsed = false;
 
-  const knowledgeCatalog = await readOptionalApi("documents", issues, client.fetchKnowledgeBaseCatalog);
+  const [knowledgeCatalog, sourceCollectionCatalog, history] = await Promise.all([
+    readOptionalApi("documents", issues, client.fetchKnowledgeBaseCatalog),
+    readOptionalApi("documents", issues, client.fetchDocumentSourceCollections),
+    readOptionalApi("documents", issues, client.fetchQueryHistory)
+  ]);
   const catalog =
     knowledgeCatalog ??
-    await readOptionalApi("documents", issues, client.fetchDocumentSourceCollections);
+    sourceCollectionCatalog;
   if (catalog && catalog.items.length > 0) {
     categories = mapDocumentCategoriesFromCatalog(catalog.items);
     apiUsed = true;
   }
 
-  const history = await readOptionalApi("documents", issues, client.fetchQueryHistory);
   if (history && history.items.length > 0) {
     searchHistory = history.items.map((item) => normalizeText(item.question, "未命名查询"));
     apiUsed = true;
