@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { useReplicaAgentsData } from "./use-replica-runtime";
 import { createAuditAgent } from "@/lib/api-client";
@@ -244,6 +245,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [detailOpen, setDetailOpen] = useState(() => mode === "mine");
   const [activeAction, setActiveAction] = useState<AgentAction>("查看详情");
   const [installingAgentId, setInstallingAgentId] = useState("");
+  const [installedAgentId, setInstalledAgentId] = useState("");
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
@@ -341,6 +343,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     setDetailOpen(true);
     setActiveAction("创建副本");
     setInstallingAgentId(agent.id);
+    setInstalledAgentId("");
     setNotice("");
 
     try {
@@ -366,6 +369,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_source_file: agent.sourceFile
         }
       });
+      setInstalledAgentId(response.item.id);
       setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
     } catch {
       setNotice("安装未完成：智能体创建接口暂不可用，请稍后重试。");
@@ -461,7 +465,16 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <span>{isMine ? "本地管理门禁" : "本地复制门禁"}</span>
         </div>
 
-        {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
+        {notice && (
+          <ReplicaNotice>
+            {notice}
+            {!isMine && installedAgentId ? (
+              <Link className="replica-card-detail-button mt-3 inline-flex" href={`/chat?agent=${encodeURIComponent(installedAgentId)}`}>
+                进入 AI 对话
+              </Link>
+            ) : null}
+          </ReplicaNotice>
+        )}
 
         {filteredAgents.length === 0 ? (
           <ReplicaEmptyState title="未找到智能体" description="调整关键词或分类后重试。" />

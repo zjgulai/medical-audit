@@ -119,5 +119,9 @@ describe("ReplicaAgentDirectory", () => {
       );
     });
     expect(await screen.findByText(/已安装「医保核验」/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+      "href",
+      "/chat?agent=agent-installed-001"
+    );
   });
 });
