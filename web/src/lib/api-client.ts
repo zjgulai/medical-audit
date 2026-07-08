@@ -30,6 +30,12 @@ import type {
   DocumentUploadResponse,
   GraphWorkbenchResponse,
   KnowledgeBaseCatalogResponse,
+  MedicalAuditImportPreflightRequest,
+  MedicalAuditReportEntryRequest,
+  MedicalAuditReviewStatusRequest,
+  MedicalAuditReviewTaskRequest,
+  MedicalAuditSupplementRequest,
+  MedicalAuditWorkflowActionResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectDashboardResponse,
@@ -187,6 +193,55 @@ export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindings
   const queryString = params.toString();
   return getJsonWithAuditHeaders<AuditFindingsResponse>(
     `/api/v1/audit-findings${queryString ? `?${queryString}` : ""}`
+  );
+}
+
+export function recordMedicalAuditImportPreflight(
+  payload: MedicalAuditImportPreflightRequest
+): Promise<MedicalAuditWorkflowActionResponse> {
+  return postJson<MedicalAuditWorkflowActionResponse>(
+    "/api/v1/audit-findings/import-preflight",
+    payload
+  );
+}
+
+export function createMedicalAuditReviewTask(
+  findingKey: string,
+  payload: MedicalAuditReviewTaskRequest = {}
+): Promise<MedicalAuditWorkflowActionResponse> {
+  return postJson<MedicalAuditWorkflowActionResponse>(
+    `/api/v1/audit-findings/${encodeURIComponent(findingKey)}/review-task`,
+    payload
+  );
+}
+
+export function updateMedicalAuditReviewStatus(
+  findingKey: string,
+  payload: MedicalAuditReviewStatusRequest
+): Promise<MedicalAuditWorkflowActionResponse> {
+  return postJson<MedicalAuditWorkflowActionResponse>(
+    `/api/v1/audit-findings/${encodeURIComponent(findingKey)}/review-status`,
+    payload
+  );
+}
+
+export function registerMedicalAuditSupplement(
+  findingKey: string,
+  payload: MedicalAuditSupplementRequest
+): Promise<MedicalAuditWorkflowActionResponse> {
+  return postJson<MedicalAuditWorkflowActionResponse>(
+    `/api/v1/audit-findings/${encodeURIComponent(findingKey)}/supplemental-material`,
+    payload
+  );
+}
+
+export function addMedicalAuditFindingToReport(
+  findingKey: string,
+  payload: MedicalAuditReportEntryRequest = {}
+): Promise<MedicalAuditWorkflowActionResponse> {
+  return postJson<MedicalAuditWorkflowActionResponse>(
+    `/api/v1/audit-findings/${encodeURIComponent(findingKey)}/report-entry`,
+    payload
   );
 }
 

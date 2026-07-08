@@ -2,27 +2,43 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  addMedicalAuditFindingToReport,
+  createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
-  fetchReportWorkbench
+  fetchReportWorkbench,
+  recordMedicalAuditImportPreflight,
+  registerMedicalAuditSupplement,
+  updateMedicalAuditReviewStatus
 } from "@/lib/api-client";
 import type {
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogResponse,
+  MedicalAuditWorkflowActionResponse,
   ReportWorkbenchResponse
 } from "@/lib/api-types";
 
 import MedicalAuditPage from "./page";
 
 vi.mock("@/lib/api-client", () => ({
+  addMedicalAuditFindingToReport: vi.fn(),
+  createMedicalAuditReviewTask: vi.fn(),
   fetchAuditFindings: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
-  fetchReportWorkbench: vi.fn()
+  fetchReportWorkbench: vi.fn(),
+  recordMedicalAuditImportPreflight: vi.fn(),
+  registerMedicalAuditSupplement: vi.fn(),
+  updateMedicalAuditReviewStatus: vi.fn()
 }));
 
+const addMedicalAuditFindingToReportMock = vi.mocked(addMedicalAuditFindingToReport);
+const createMedicalAuditReviewTaskMock = vi.mocked(createMedicalAuditReviewTask);
 const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
 const fetchDocumentSourceCollectionsMock = vi.mocked(fetchDocumentSourceCollections);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
+const recordMedicalAuditImportPreflightMock = vi.mocked(recordMedicalAuditImportPreflight);
+const registerMedicalAuditSupplementMock = vi.mocked(registerMedicalAuditSupplement);
+const updateMedicalAuditReviewStatusMock = vi.mocked(updateMedicalAuditReviewStatus);
 
 const auditFindingsResponse: AuditFindingsResponse = {
   items: [
@@ -147,10 +163,59 @@ const reportWorkbenchResponse: ReportWorkbenchResponse = {
   store: { ready: true, backend: "SqlAlchemyReviewTaskStore" }
 };
 
+const workflowResponse: MedicalAuditWorkflowActionResponse = {
+  format: "medical-audit-workflow-action-v1",
+  action: "review-task-create",
+  status: "created",
+  processed_at: "2026-07-08T09:00:00Z",
+  actor: {
+    user_identifier: "next-admin",
+    role: "it-admin",
+    auth_source: "header"
+  },
+  task: {
+    task_id: "review-task-0010",
+    status: "pending-review",
+    status_label: "待复核",
+    question: "复核疑点 finding-f044ebd309b659dc",
+    citation_count: 1,
+    review_gate: "疑点已绑定规则版本、计算过程和证据链，进入人工复核。",
+    confidence_label: "中",
+    fallback_label: "规则命中",
+    reviewer_note: "",
+    conclusion: "",
+    assigned_to: "",
+    source: "medical-audit-workflow",
+    dossier: {}
+  }
+};
+
 function mockApis() {
   fetchAuditFindingsMock.mockResolvedValue(auditFindingsResponse);
   fetchDocumentSourceCollectionsMock.mockResolvedValue(sourceCollectionsResponse);
   fetchReportWorkbenchMock.mockResolvedValue(reportWorkbenchResponse);
+  addMedicalAuditFindingToReportMock.mockResolvedValue({
+    ...workflowResponse,
+    action: "report-entry-add",
+    status: "added"
+  });
+  createMedicalAuditReviewTaskMock.mockResolvedValue(workflowResponse);
+  recordMedicalAuditImportPreflightMock.mockResolvedValue({
+    ...workflowResponse,
+    action: "import-preflight",
+    status: "preflight_recorded",
+    task: undefined
+  });
+  registerMedicalAuditSupplementMock.mockResolvedValue({
+    ...workflowResponse,
+    action: "supplemental-material-register",
+    status: "registered"
+  });
+  updateMedicalAuditReviewStatusMock.mockResolvedValue({
+    ...workflowResponse,
+    action: "review-status-update",
+    status: "updated"
+  });
 }
 
 describe("MedicalAuditPage", () => {
@@ -193,19 +258,36 @@ describe("MedicalAuditPage", () => {
     );
   });
 
-  it("keeps create and import actions behind explicit production-write gates", async () => {
+  it("submits create and import actions through backend workflow contracts", async () => {
     mockApis();
 
     render(<MedicalAuditPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: "新建审计任务" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("创建审计任务草稿");
-    expect(screen.getByRole("dialog")).toHaveTextContent("当前按钮只打开受控入口");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "创建复核任务" }));
+
+    await waitFor(() => {
+      expect(createMedicalAuditReviewTaskMock).toHaveBeenCalledWith("finding-f044ebd309b659dc", {
+        note: "从医保审计工作台创建复核任务"
+      });
+    });
+    expect(screen.getByRole("dialog")).toHaveTextContent("复核任务已关联：review-task-0010");
 
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
     fireEvent.click(screen.getByRole("button", { name: "批量导入" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("批量导入费用表");
-    expect(screen.getByRole("dialog")).toHaveTextContent("本批次不自动创建、导入、复核或归档真实生产数据");
+    expect(screen.getByRole("dialog")).toHaveTextContent("批量导入预检");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "记录导入预检" }));
+
+    await waitFor(() => {
+      expect(recordMedicalAuditImportPreflightMock).toHaveBeenCalledWith({
+        template_id: "table1",
+        template_name: "医保费用汇总表",
+        file_name: null,
+        row_count: null,
+        note: "医保审计页面触发导入预检，等待上传与字段映射。"
+      });
+    });
   });
 
   it("uses report workbench templates for the fee summary tab instead of fake rows", async () => {

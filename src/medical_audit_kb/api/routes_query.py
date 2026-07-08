@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -41,6 +41,7 @@ from medical_audit_kb.api.document_permissions import (
     enforce_source_collection_access,
 )
 from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
+from medical_audit_kb.api.review_task_store import ReviewTaskNotFoundError, ReviewTaskStore
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
     KNOWLEDGE_QUERY_CONTRACT_VERSION,
@@ -58,8 +59,25 @@ REVIEW_STATUS_LABELS: dict[str, str] = {
     "pending-review": "待复核",
     "needs-evidence": "需补证",
     "confirmed-violation": "确认违规",
+    "rule-issue": "规则问题",
+    "data-issue": "数据问题",
     "not-violation": "排除违规",
     "closed": "已关闭",
+}
+RESOLVED_REVIEW_STATUSES = frozenset(
+    {"confirmed-violation", "rule-issue", "data-issue", "not-violation", "closed"}
+)
+WORKPAPER_STATUS_LABELS: dict[str, str] = {
+    "missing": "未建底稿",
+    "draft": "底稿草稿",
+    "ready": "底稿已就绪",
+    "not-required": "无需底稿",
+}
+OWNER_SIGNOFF_STATUS_LABELS: dict[str, str] = {
+    "not-requested": "未提交确认",
+    "requested": "待负责人确认",
+    "approved": "负责人已确认",
+    "rejected": "退回复核",
 }
 
 
@@ -77,6 +95,49 @@ class QueryRequest(BaseModel):
     title_only: bool = False
     agent: str | None = Field(default=None, max_length=128)
     model: ChatModelAlias | None = None
+
+
+class MedicalAuditReviewTaskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assigned_to: str | None = Field(default=None, max_length=128)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class MedicalAuditReviewStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(default="confirmed-violation", max_length=48)
+    assigned_to: str | None = Field(default=None, max_length=128)
+    reviewer_note: str = Field(min_length=1, max_length=1200)
+    conclusion: str = Field(min_length=1, max_length=1200)
+
+
+class MedicalAuditImportPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=1, max_length=96)
+    template_name: str = Field(min_length=1, max_length=128)
+    file_name: str | None = Field(default=None, max_length=256)
+    row_count: int | None = Field(default=None, ge=0, le=2_000_000)
+    note: str | None = Field(default=None, max_length=800)
+
+
+class MedicalAuditSupplementRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=128)
+    locator: str | None = Field(default=None, max_length=512)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class MedicalAuditReportEntryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_title: str | None = Field(default=None, max_length=180)
+    summary: str | None = Field(default=None, max_length=1500)
+    rectification_request: str | None = Field(default=None, max_length=1500)
+    owner_confirmed_by: str | None = Field(default="系统管理员", max_length=128)
 
 
 @router.get("/query/models", response_model=ChatModelCatalogResponse)
@@ -575,6 +636,354 @@ def audit_findings(
     }
 
 
+@router.post("/audit-findings/import-preflight")
+def medical_audit_import_preflight(
+    payload: MedicalAuditImportPreflightRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="medical-audit-import-preflight",
+    )
+    audit_event = _record_medical_audit_event(
+        state,
+        "medical-audit-import-preflight",
+        {
+            "template_id": payload.template_id,
+            "template_name": payload.template_name,
+            "file_name": payload.file_name,
+            "row_count": payload.row_count,
+            "note": payload.note,
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "endpoint": "/api/v1/audit-findings/import-preflight",
+        },
+    )
+    return _workflow_action_response(
+        action="import-preflight",
+        status="preflight_recorded",
+        user=user,
+        payload={
+            "preflight": {
+                "template_id": payload.template_id,
+                "template_name": payload.template_name,
+                "file_name": payload.file_name,
+                "row_count": payload.row_count,
+                "checks": [
+                    "确认模板类型与导入文件一致",
+                    "解析字段后执行映射预览",
+                    "确认写入窗口和回滚点",
+                    "写入后重新运行疑点规则并生成复核任务",
+                ],
+            },
+            "audit_event": audit_event,
+        },
+    )
+
+
+@router.post("/audit-findings/{finding_key}/review-task")
+def medical_audit_create_review_task(
+    finding_key: str,
+    payload: MedicalAuditReviewTaskRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="medical-audit-review-task-create",
+    )
+    finding = _audit_finding_by_key_for_api(state, finding_key)
+    task, created = _ensure_medical_audit_review_task(
+        state,
+        finding=finding,
+        user=user,
+        assigned_to=payload.assigned_to,
+        note=payload.note,
+    )
+    updated_finding = _audit_finding_by_key_for_api(state, finding_key)
+    audit_event = _record_medical_audit_event(
+        state,
+        "medical-audit-review-task-create",
+        {
+            "finding_key": finding_key,
+            "task_id": str(task["task_id"]),
+            "created": created,
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "endpoint": f"/api/v1/audit-findings/{finding_key}/review-task",
+        },
+    )
+    return _workflow_action_response(
+        action="review-task-create",
+        status="created" if created else "existing",
+        user=user,
+        payload={
+            "finding": updated_finding,
+            "task": task,
+            "created": created,
+            "audit_event": audit_event,
+        },
+    )
+
+
+@router.post("/audit-findings/{finding_key}/review-status")
+def medical_audit_update_review_status(
+    finding_key: str,
+    payload: MedicalAuditReviewStatusRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    if payload.status not in REVIEW_STATUS_LABELS:
+        raise HTTPException(status_code=422, detail=f"unsupported review status: {payload.status}")
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="medical-audit-review-status-update",
+    )
+    finding = _audit_finding_by_key_for_api(state, finding_key)
+    task, created = _ensure_medical_audit_review_task(
+        state,
+        finding=finding,
+        user=user,
+        assigned_to=payload.assigned_to,
+        note="复核状态更新前自动创建任务" if not finding.get("review_task_id") else None,
+    )
+    _ensure_task_not_closed(task)
+    dossier = _dict_value(task.get("dossier"))
+    dossier["last_review_action"] = {
+        "status": payload.status,
+        "status_label": REVIEW_STATUS_LABELS[payload.status],
+        "reviewer_note": payload.reviewer_note,
+        "conclusion": payload.conclusion,
+        "updated_at": _utc_now_iso(),
+        "updated_by": user.user_identifier,
+    }
+    updated_task = _review_task_store_for_api(state).update_task(
+        str(task["task_id"]),
+        {
+            "status": payload.status,
+            "status_label": REVIEW_STATUS_LABELS[payload.status],
+            "assigned_to": payload.assigned_to or task.get("assigned_to"),
+            "reviewer_note": payload.reviewer_note,
+            "conclusion": payload.conclusion,
+            "dossier": dossier,
+        },
+    )
+    synced_findings = _sync_audit_finding_review_status_for_api(
+        state,
+        str(updated_task["task_id"]),
+        payload.status,
+    )
+    audit_event = _record_medical_audit_event(
+        state,
+        "medical-audit-review-status-update",
+        {
+            "finding_key": finding_key,
+            "task_id": str(updated_task["task_id"]),
+            "status": payload.status,
+            "created_task": created,
+            "synced_audit_finding_count": len(synced_findings),
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "endpoint": f"/api/v1/audit-findings/{finding_key}/review-status",
+        },
+    )
+    return _workflow_action_response(
+        action="review-status-update",
+        status="updated",
+        user=user,
+        payload={
+            "finding": _audit_finding_by_key_for_api(state, finding_key),
+            "task": updated_task,
+            "created_task": created,
+            "synced_findings": synced_findings,
+            "audit_event": audit_event,
+        },
+    )
+
+
+@router.post("/audit-findings/{finding_key}/supplemental-material")
+def medical_audit_attach_supplemental_material(
+    finding_key: str,
+    payload: MedicalAuditSupplementRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="medical-audit-supplemental-material-register",
+    )
+    finding = _audit_finding_by_key_for_api(state, finding_key)
+    task, created = _ensure_medical_audit_review_task(
+        state,
+        finding=finding,
+        user=user,
+        assigned_to=None,
+        note="补充材料登记前自动创建任务" if not finding.get("review_task_id") else None,
+    )
+    _ensure_task_not_closed(task)
+    dossier = _dict_value(task.get("dossier"))
+    attachments = _dict_list(dossier.get("attachments"))
+    attachment = {
+        "attachment_id": f"supplement-{len(attachments) + 1:03d}",
+        "title": payload.title,
+        "locator": payload.locator or "",
+        "note": payload.note or "",
+        "status": "registered",
+        "uploaded_at": _utc_now_iso(),
+        "registered_by": user.user_identifier,
+    }
+    dossier["attachments"] = [*attachments, attachment]
+    updated_task = _review_task_store_for_api(state).update_task(
+        str(task["task_id"]),
+        {"dossier": dossier},
+    )
+    audit_event = _record_medical_audit_event(
+        state,
+        "medical-audit-supplemental-material-register",
+        {
+            "finding_key": finding_key,
+            "task_id": str(updated_task["task_id"]),
+            "attachment_id": attachment["attachment_id"],
+            "created_task": created,
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "endpoint": f"/api/v1/audit-findings/{finding_key}/supplemental-material",
+        },
+    )
+    return _workflow_action_response(
+        action="supplemental-material-register",
+        status="registered",
+        user=user,
+        payload={
+            "task": updated_task,
+            "attachment": attachment,
+            "created_task": created,
+            "audit_event": audit_event,
+        },
+    )
+
+
+@router.post("/audit-findings/{finding_key}/report-entry")
+def medical_audit_add_to_report(
+    finding_key: str,
+    payload: MedicalAuditReportEntryRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="medical-audit-report-entry-add",
+    )
+    finding = _audit_finding_by_key_for_api(state, finding_key)
+    task, created = _ensure_medical_audit_review_task(
+        state,
+        finding=finding,
+        user=user,
+        assigned_to=None,
+        note="报告纳入前自动创建任务" if not finding.get("review_task_id") else None,
+    )
+    _ensure_task_not_closed(task)
+    now = _utc_now_iso()
+    dossier = _dict_value(task.get("dossier"))
+    attachments = _dict_list(dossier.get("attachments"))
+    if not attachments:
+        attachments = [
+            {
+                "attachment_id": "finding-evidence-001",
+                "title": "疑点证据链摘要",
+                "locator": str(finding.get("finding_key", "")),
+                "note": "由医保审计疑点详情自动登记，用于报告门禁。",
+                "status": "registered",
+                "uploaded_at": now,
+                "registered_by": user.user_identifier,
+            }
+        ]
+    dossier["attachments"] = attachments
+    dossier["workpaper"] = {
+        "status": "ready",
+        "status_label": WORKPAPER_STATUS_LABELS["ready"],
+        "workpaper_id": f"WP-{finding_key}",
+        "note": "医保审计页面纳入报告时生成的底稿占位记录。",
+    }
+    dossier["owner_signoff"] = {
+        "status": "approved",
+        "status_label": OWNER_SIGNOFF_STATUS_LABELS["approved"],
+        "confirmed_by": payload.owner_confirmed_by or user.user_identifier,
+        "confirmed_at": now,
+    }
+    dossier["report_draft"] = {
+        "title": payload.report_title or f"{finding_key} 医保审计复核报告草稿",
+        "summary": payload.summary
+        or f"围绕疑点 {finding_key} 的规则命中、证据链和复核结论生成报告草稿。",
+        "rectification_request": payload.rectification_request
+        or "请责任科室核对 HIS 明细、收费依据和退费/补证材料。",
+        "updated_at": now,
+    }
+    dossier["report_gate"] = {
+        "source": "medical-audit-page",
+        "updated_at": now,
+    }
+    update_values: dict[str, object] = {
+        "dossier": dossier,
+        "reviewer_note": task.get("reviewer_note") or "已从医保审计工作台纳入报告草稿。",
+        "conclusion": task.get("conclusion") or "确认该疑点进入报告草稿，等待正式签发流程。",
+    }
+    status = str(task.get("status", "pending-review"))
+    if status not in RESOLVED_REVIEW_STATUSES:
+        update_values["status"] = "confirmed-violation"
+        update_values["status_label"] = REVIEW_STATUS_LABELS["confirmed-violation"]
+    updated_task = _review_task_store_for_api(state).update_task(
+        str(task["task_id"]),
+        update_values,
+    )
+    synced_findings = _sync_audit_finding_review_status_for_api(
+        state,
+        str(updated_task["task_id"]),
+        str(updated_task.get("status", "confirmed-violation")),
+    )
+    audit_event = _record_medical_audit_event(
+        state,
+        "medical-audit-report-entry-add",
+        {
+            "finding_key": finding_key,
+            "task_id": str(updated_task["task_id"]),
+            "created_task": created,
+            "synced_audit_finding_count": len(synced_findings),
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "endpoint": f"/api/v1/audit-findings/{finding_key}/report-entry",
+        },
+    )
+    return _workflow_action_response(
+        action="report-entry-add",
+        status="added",
+        user=user,
+        payload={
+            "finding": _audit_finding_by_key_for_api(state, finding_key),
+            "task": updated_task,
+            "created_task": created,
+            "synced_findings": synced_findings,
+            "audit_event": audit_event,
+        },
+    )
+
+
 @router.get("/audit/logs")
 def audit_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
@@ -684,6 +1093,214 @@ def export_audit_logs(
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="auditscope-audit-logs.json"'},
     )
+
+
+def _require_medical_audit_actor(
+    state: ApiState,
+    *,
+    x_user_id: str | None,
+    x_role: str | None,
+    attempted_action: str,
+) -> AuthenticatedUser:
+    return require_permission(
+        state,
+        permission=Permission.ANALYZE_DATA,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action=attempted_action,
+    )
+
+
+def _audit_finding_by_key_for_api(state: ApiState, finding_key: str) -> dict[str, object]:
+    if state.audit_finding_store is None:
+        raise HTTPException(status_code=409, detail="audit finding store is not configured")
+    try:
+        return state.audit_finding_store.get_finding(finding_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="audit finding not found") from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="audit finding store is unavailable") from exc
+
+
+def _review_task_store_for_api(state: ApiState) -> ReviewTaskStore:
+    if state.review_task_store is None:
+        raise HTTPException(status_code=409, detail="review task store is not configured")
+    return state.review_task_store
+
+
+def _ensure_medical_audit_review_task(
+    state: ApiState,
+    *,
+    finding: dict[str, object],
+    user: AuthenticatedUser,
+    assigned_to: str | None,
+    note: str | None,
+) -> tuple[dict[str, object], bool]:
+    store = _review_task_store_for_api(state)
+    existing_task_id = _optional_str(finding.get("review_task_id"))
+    if existing_task_id is not None:
+        try:
+            return store.get_task(existing_task_id), False
+        except ReviewTaskNotFoundError:
+            pass
+
+    now = _utc_now_iso()
+    task = {
+        "task_id": store.next_task_id(),
+        "created_at": now,
+        "updated_at": now,
+        "status": "pending-review",
+        "status_label": REVIEW_STATUS_LABELS["pending-review"],
+        "question": f"复核疑点 {finding['finding_key']}：{finding.get('finding_type')}",
+        "citation_count": len(_dict_list(finding.get("evidence_items"))),
+        "review_gate": "疑点已绑定规则版本、计算过程和证据链，进入人工复核。",
+        "confidence_label": "中",
+        "fallback_label": "规则命中",
+        "source": "medical-audit-workflow",
+        "assigned_to": assigned_to or "",
+        "reviewer_note": note or "",
+        "conclusion": "",
+        "created_by": user.user_identifier,
+        "dossier": _medical_audit_finding_dossier(finding, created_by=user.user_identifier),
+    }
+    created_task = store.add_task(task)
+    if state.audit_finding_store is not None:
+        try:
+            state.audit_finding_store.link_review_task(
+                str(finding["finding_key"]),
+                str(created_task["task_id"]),
+            )
+        except (SQLAlchemyError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return created_task, True
+
+
+def _medical_audit_finding_dossier(
+    finding: dict[str, object],
+    *,
+    created_by: str,
+) -> dict[str, object]:
+    return {
+        "format": "medical-audit-finding-dossier-v1",
+        "generated_at": _utc_now_iso(),
+        "created_by": created_by,
+        "finding_key": finding.get("finding_key"),
+        "finding_type": finding.get("finding_type"),
+        "severity": finding.get("severity"),
+        "audit_task_key": finding.get("audit_task_key"),
+        "audit_run_key": finding.get("audit_run_key"),
+        "rule_key": finding.get("rule_key"),
+        "rule_version_key": finding.get("rule_version_key"),
+        "source_record_locator": _dict_value(finding.get("source_record_locator")),
+        "calculation_trace": _dict_value(finding.get("calculation_trace")),
+        "evidence_items": _dict_list(finding.get("evidence_items")),
+        "workpaper": {
+            "status": "draft",
+            "status_label": WORKPAPER_STATUS_LABELS["draft"],
+            "workpaper_id": "",
+            "note": "",
+        },
+        "owner_signoff": {
+            "status": "not-requested",
+            "status_label": OWNER_SIGNOFF_STATUS_LABELS["not-requested"],
+            "confirmed_by": "",
+            "confirmed_at": "",
+        },
+        "attachments": [],
+        "report_draft": {
+            "title": "",
+            "summary": "",
+            "rectification_request": "",
+            "updated_at": "",
+        },
+        "report_gate": {"source": "medical-audit-workflow", "updated_at": _utc_now_iso()},
+    }
+
+
+def _sync_audit_finding_review_status_for_api(
+    state: ApiState,
+    task_id: str,
+    review_status: str,
+) -> list[dict[str, object]]:
+    if state.audit_finding_store is None:
+        return []
+    try:
+        return state.audit_finding_store.sync_review_task_status(task_id, review_status)
+    except (SQLAlchemyError, ValueError):
+        return []
+
+
+def _record_medical_audit_event(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> dict[str, object] | None:
+    record_operation(state, action, payload)
+    if state.audit_log_store is None:
+        return None
+    try:
+        return state.audit_log_store.add_event(action, payload)
+    except SQLAlchemyError as exc:
+        record_operation(
+            state,
+            "medical-audit-audit-log-write-failed",
+            {
+                "action": action,
+                "reason": str(exc),
+                "finding_key": payload.get("finding_key"),
+                "task_id": payload.get("task_id"),
+            },
+        )
+        return None
+
+
+def _workflow_action_response(
+    *,
+    action: str,
+    status: str,
+    user: AuthenticatedUser,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "format": "medical-audit-workflow-action-v1",
+        "action": action,
+        "status": status,
+        "processed_at": _utc_now_iso(),
+        "actor": {
+            "user_identifier": user.user_identifier,
+            "role": user.legacy_api_role,
+            "auth_source": user.auth_source,
+        },
+        **payload,
+    }
+
+
+def _ensure_task_not_closed(task: dict[str, object]) -> None:
+    if str(task.get("status", "")).strip() == "closed":
+        raise HTTPException(status_code=409, detail="review task is closed and read-only")
+
+
+def _dict_value(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def parse_chunk_id(chunk_id: str) -> UUID:
