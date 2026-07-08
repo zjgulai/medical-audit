@@ -207,6 +207,34 @@ describe("ChatPortalPage", () => {
     expect(apiMocks.fetchQueryModels).toHaveBeenCalledTimes(1);
   });
 
+  it("hydrates question, knowledge base, and agent from chat URL params", async () => {
+    useSearchParamsMock.mockReturnValue(
+      new URLSearchParams(
+        "question=%E5%8C%BB%E4%BF%9D%E5%9F%BA%E9%87%91%E5%AE%A1%E6%A0%B8%E4%BE%9D%E6%8D%AE&source_collection=medical-insurance-laws&agent=agent-fund-helper"
+      )
+    );
+
+    render(<ChatPortalPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("输入相关问题以对话")).toHaveValue("医保基金审核依据");
+    });
+    expect(await screen.findByRole("button", { name: /1 个知识库/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /基金问答助手/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith({
+        question: "医保基金审核依据",
+        top_k: 5,
+        model: "kimi-2.7",
+        source_collections: ["medical-insurance-laws"],
+        agent: "agent-fund-helper"
+      });
+    });
+  });
+
   it("falls back to the default knowledge query path when chat model aliases are unavailable", async () => {
     apiMocks.fetchQueryModels.mockResolvedValue({
       contract_version: "chat-model-catalog-v1",
