@@ -19,39 +19,32 @@ describe("LoginPage", () => {
   it("renders the hospital audit login surface with role entry points", () => {
     render(<LoginPage />);
 
-    expect(screen.getByRole("heading", { name: "面向医院内审的医保审计工作台" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
-    expect(screen.getByText("医疗AI审计平台")).toBeInTheDocument();
-    const loginHero = screen.getByLabelText("医疗AI审计平台入口介绍");
-    expect(loginHero).toHaveClass("audit-login-hero");
-    expect(loginHero.className).not.toContain("bg-white/10");
-    expect(loginHero.className).not.toContain("text-white");
+    expect(screen.getByText("AI审计一体化协作平台")).toBeInTheDocument();
+    const loginSurface = screen.getByLabelText("AI审计一体化协作平台登录入口");
+    expect(loginSurface).toHaveClass("audit-login-center-stack");
     expect(screen.queryByText("AuditScope Medical")).not.toBeInTheDocument();
     expect(screen.getByLabelText("账号 / 工号")).toBeRequired();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
-    expect(screen.getByRole("button", { name: "进入系统" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看当前工作台" })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByText("医院名称与 Logo 可在部署时配置")).toBeInTheDocument();
 
     for (const role of ["管理员", "技术人员", "主任", "普通成员"]) {
       expect(screen.getByText(role)).toBeInTheDocument();
     }
   });
 
-  it("keeps the hero surface dark and legible without a grey-white overlay", () => {
-    const heroRule = cssRuleFor(".audit-login-hero");
-    expect(heroRule).toContain("#092a59");
-    expect(heroRule).toContain("#0e5598");
-    expect(heroRule).toContain("#0b6f88");
-    expect(heroRule).toContain("color: #ffffff");
+  it("uses the compact card layout requested by the PPT feedback", () => {
+    const shellRule = cssRuleFor(".audit-login-shell-compact");
+    expect(shellRule).toContain("#f7fafc");
+    expect(shellRule).toContain("Inter");
 
-    const gridRule = cssRuleFor(".audit-login-hero::before");
-    expect(gridRule).toContain("opacity: 0.22");
-    expect(gridRule).not.toContain("opacity: 0.48");
-    expect(gridRule).not.toContain("rgb(255 255 255 / 0.075)");
+    const cardRule = cssRuleFor(".audit-login-card-compact");
+    expect(cardRule).toContain("420px");
+    expect(cardRule).toContain("border-radius: 18px");
 
-    const overlayRule = cssRuleFor(".audit-login-hero::after");
-    expect(overlayRule).toContain("rgb(2 12 27 / 0.16)");
-    expect(overlayRule).not.toContain("rgb(255 255 255 / 0.2)");
-    expect(overlayRule).not.toContain("rgb(255 255 255 / 0.14)");
+    const orgRule = cssRuleFor(".audit-login-org-panel");
+    expect(orgRule).toContain("grid-template-columns: 32px minmax(0, 1fr)");
   });
 });

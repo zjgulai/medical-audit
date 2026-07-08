@@ -13,7 +13,6 @@ import {
   buildReplicaLocalGateNotice,
   ReplicaEmptyState,
   ReplicaFilterButton,
-  ReplicaMetric,
   ReplicaNotice,
   ReplicaPageHeader
 } from "./replica-page-kit";
@@ -39,47 +38,35 @@ const marketCategoryOrder = [
   "工具智能体",
   "审计科研"
 ] as const;
-const filterTones: readonly NonNullable<Parameters<typeof ReplicaMetric>[0]["tone"]>[] = ["green", "amber", "rose", "slate", "blue"];
-const minePathway = [
-  { label: "选择助手", detail: "按审计主题筛选" },
-  { label: "配置知识", detail: "关联项目和知识库" },
-  { label: "进入审计", detail: "在对话或工作台调用" }
-] as const;
-const marketPathway = [
-  { label: "发现模板", detail: "查看官方模板能力" },
-  { label: "复制副本", detail: "进入我的智能体管理" },
-  { label: "接入项目", detail: "绑定审计主题和知识库" }
-] as const;
-
 const mineActionPanels: Record<AgentAction, AgentActionPanel> = {
   查看详情: {
-    title: "助手概览",
-    description: "展示该助手的审计主题、适用材料和当前接入状态。",
+    title: "智能体概览",
+    description: "展示该智能体适合处理的审计任务、材料范围和调用入口。",
     items: ["审计主题已识别", "知识库待确认", "可从 AI 对话调用"]
   },
   编辑: {
-    title: "编辑预览",
-    description: "编辑入口停留在本地，正式保存需接入智能体生命周期 API。",
+    title: "编辑智能体",
+    description: "调整名称、说明、提示词和可见范围。",
     items: ["名称与说明", "审计提示词", "启用范围"]
   },
   历史版本: {
     title: "版本记录",
-    description: "展示提示词版本和审核状态，不执行回滚或发布动作。",
+    description: "查看提示词版本、更新时间和适用范围。",
     items: ["v3 当前版本", "v2 已归档", "v1 初始版本"]
   },
   删除: {
     title: "停用确认",
-    description: "删除只生成本地预览，避免误停用正在演示的助手。",
+    description: "停用前请确认该智能体不再被项目和对话调用。",
     items: ["先从项目解绑", "保留调用记录", "等待管理员确认"]
   },
   创建副本: {
-    title: "副本预览",
-    description: "从当前助手生成个人副本，正式创建仍需后端接口。",
+    title: "创建副本",
+    description: "从当前智能体生成一个个人可维护版本。",
     items: ["复制基础信息", "复用知识库", "重置调用统计"]
   },
   立即使用: {
     title: "使用路径",
-    description: "进入 AI 对话或专题工作台后调用该助手。",
+    description: "进入 AI 对话或专题工作台后调用该智能体。",
     items: ["选择项目", "确认知识库", "开始审计对话"]
   },
   配置知识: {
@@ -89,12 +76,12 @@ const mineActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   查看调用: {
     title: "调用记录",
-    description: "查看最近调用场景和产出类型，当前为本地摘要。",
+    description: "查看最近调用场景、产出类型和项目来源。",
     items: ["AI 对话 12 次", "底稿生成 3 次", "项目检索 7 次"]
   },
   收藏: {
     title: "收藏记录",
-    description: "收藏状态先保存在本地演示态，后续可接入个人收藏接口。",
+    description: "收藏后可更快找到常用智能体。",
     items: ["加入常用模板", "保留提示词", "等待后端收藏接口"]
   }
 };
@@ -107,7 +94,7 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   编辑: {
     title: "模板不可直接编辑",
-    description: "广场模板需要先创建副本，再进入我的智能体维护。",
+    description: "广场模板需要先加入我的智能体，再维护个人版本。",
     items: ["先复制模板", "再绑定知识库", "再进入项目调用"]
   },
   历史版本: {
@@ -117,17 +104,17 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   删除: {
     title: "广场模板不可删除",
-    description: "市场模板由系统维护，本地只展示不可删除的提示。",
+    description: "广场模板由系统维护，个人只管理已加入的智能体。",
     items: ["保留官方模板", "个人副本可停用", "操作需管理员"]
   },
   创建副本: {
-    title: "复制副本",
-    description: "将模板通过智能体创建接口复制到我的智能体后再绑定项目和知识库。",
+    title: "加入我的智能体",
+    description: "加入后可以在 AI 对话中通过 @ 或 / 调用。",
     items: ["生成个人副本", "保留模板能力", "写入智能体 store"]
   },
   立即使用: {
     title: "试用路径",
-    description: "先创建副本，再从 AI 对话选择该助手。",
+    description: "先加入我的智能体，再从 AI 对话选择调用。",
     items: ["创建副本", "选择项目", "进入 AI 对话"]
   },
   配置知识: {
@@ -142,7 +129,7 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
   },
   收藏: {
     title: "收藏模板",
-    description: "把该模板加入本地收藏清单，方便后续进入我的智能体创建副本。",
+    description: "收藏后可在广场中快速回访。",
     items: ["记录模板", "保留完整提示词", "后续同步个人收藏"]
   }
 };
@@ -267,16 +254,11 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const pageStartIndex = (safePage - 1) * pageSize;
   const pageEndIndex = Math.min(filteredAgents.length, pageStartIndex + pageSize);
   const visibleAgents = filteredAgents.slice(pageStartIndex, pageEndIndex);
-  const marketCategoryMetrics = useMemo(
-    () => agentFilters.filter((filter) => filter !== allAgentsFilter).slice(0, 3),
-    [agentFilters]
-  );
   const selectedAgent =
     sourceAgents.find((agent) => agent.id === selectedAgentId) ??
     visibleAgents[0] ??
     filteredAgents[0] ??
     sourceAgents[0];
-  const pathway = isMine ? minePathway : marketPathway;
   const actionPanel = (isMine ? mineActionPanels : marketActionPanels)[activeAction];
   const isSelectedAgentFavorite = selectedAgent ? favoriteAgentIds.has(selectedAgent.id) : false;
 
@@ -381,9 +363,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const activeScopeLabel = activeFilter === "全部" ? "全部分类" : activeFilter;
   const pageRangeLabel = filteredAgents.length === 0 ? "0 / 0" : `${pageStartIndex + 1}-${pageEndIndex} / ${filteredAgents.length}`;
   const pageDescription = isMine
-    ? "管理审计工作中常用的个人智能体，所有编辑、删除和版本入口保持本地门禁。"
-    : "浏览可复用的审计智能体模板，复制和安装入口保持本地副本态。";
-  const pageTitle = isMine ? "我的助手" : "发现审计智能体";
+    ? "管理审计工作中常用的个人智能体，可在 AI 对话和专题工作台中调用。"
+    : "浏览可复用的审计智能体模板，按场景分类查看并加入我的智能体。";
+  const pageTitle = isMine ? "我的智能体" : "智能体广场";
 
   return (
     <main
@@ -403,7 +385,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             onClick={() => {
               if (isMine || !selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
-                  action: isMine ? "创建我的助手" : "复制到我的空间",
+                  action: isMine ? "创建智能体" : "加入我的智能体",
                   nextStep: isMine ? "智能体创建 API" : "智能体市场安装 API"
                 }));
                 return;
@@ -411,32 +393,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
               void installMarketAgent(selectedAgent);
             }}
           >
-            {isMine ? "+ 创建我的助手" : installingAgentId === selectedAgent?.id ? "安装中" : "复制到我的空间"}
+            {isMine ? "+ 创建智能体" : installingAgentId === selectedAgent?.id ? "加入中" : "加入我的智能体"}
           </button>
         }
       />
-
-      <section className="replica-metric-grid">
-        <ReplicaMetric label={isMine ? "我的助手" : "广场助手"} value={`${sourceAgents.length}`} />
-        {marketCategoryMetrics.map((category, index) => (
-          <ReplicaMetric
-            key={category}
-            label={category}
-            value={`${categoryCounts.get(category) ?? 0}`}
-            tone={filterTones[index % filterTones.length]}
-          />
-        ))}
-      </section>
-
-      <section className="replica-agent-pathway" aria-label={isMine ? "我的智能体使用路径" : "智能体广场复制路径"}>
-        {pathway.map((item, index) => (
-          <article key={item.label}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <strong>{item.label}</strong>
-            <p>{item.detail}</p>
-          </article>
-        ))}
-      </section>
 
       <section className="replica-panel">
         <div className="replica-toolbar">
@@ -445,7 +405,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={isMine ? "搜索我的助手" : "搜索AI智能体"}
+              placeholder={isMine ? "搜索我的智能体" : "搜索 AI 智能体"}
             />
           </label>
           <div className="replica-filter-group" aria-label="智能体分类">
@@ -462,7 +422,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <span>{activeScopeLabel}</span>
           <strong>{pageRangeLabel}</strong>
           <span>第 {safePage} / {pageCount} 页</span>
-          <span>{isMine ? "本地管理门禁" : "本地复制门禁"}</span>
+          <span>{isMine ? "可在 AI 对话调用" : "可加入我的智能体"}</span>
         </div>
 
         {notice && (
@@ -479,7 +439,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
         {filteredAgents.length === 0 ? (
           <ReplicaEmptyState title="未找到智能体" description="调整关键词或分类后重试。" />
         ) : (
-          <div className={`replica-agent-workbench ${isMine ? "" : "is-market-grid"}`}>
+          <div className={`replica-agent-workbench ${isMine ? "is-mine-list" : "is-market-grid"}`}>
             <div className="replica-directory-grid">
               {visibleAgents.map((agent) => (
                 <article

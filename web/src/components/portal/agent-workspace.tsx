@@ -505,7 +505,7 @@ export function AgentWorkspace() {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <PromptMetric label="知识库" value={selectedAgent.knowledgeBase} />
-            <PromptMetric label="项目空间" value={selectedAgent.projectName} />
+            <PromptMetric label="关联项目" value={selectedAgent.projectName} />
             <PromptMetric label="提示词版本" value={`v${selectedAgent.promptVersion ?? 1}`} />
             <PromptMetric
               label="待审版本"
