@@ -37,9 +37,26 @@ source: local-clean-worktree
 - `corepack pnpm build`：通过，生成 24 个静态页面。
 - 本地浏览器验收：登录后 `/knowledge-base`、`/documents`、`/graph` 均显示页面主体和 `本地样例` 标签。
 
+## 2026-07-08 复核记录
+
+- PR 状态：#199 `Expose replica data source evidence`，`OPEN / CLEAN`，base 为 `main`，head 为 `codex/frontend-backend-evidence-gate-20260708`。
+- 本地验证：
+  - `corepack pnpm web:test`：19 files / 95 tests passed。
+  - `corepack pnpm web:typecheck`：通过。
+  - `corepack pnpm web:lint`：通过。
+  - `corepack pnpm web:build:static`：通过，生成 24 个静态页面。
+- 本地浏览器验收模式：`frontend-only-next-start`，服务地址 `http://localhost:3030`，通过 localStorage 注入项目自身的登录态。
+- 页面证据：
+  - `/knowledge-base`：进入工作区页面，主标题为 `知识库分类`，可见 `本地样例` 标签，badge 为 `本地样例3 项待接入`。
+  - `/documents`：进入工作区页面，主标题为 `文档检索`，可见 `本地样例` 标签，badge 为 `本地样例3 项待接入`。
+  - `/graph`：进入工作区页面，主标题为 `知识图谱`，可见 `本地样例` 标签，badge 为 `本地样例1 项待接入`。
+- 边界说明：本轮浏览器验收只启动 Next 预览，未启动 8021 后端；本地 API 代理噪声按 `backend_absent_transport_noise` 归类，不作为生产联通结论。
+
 ## 下一步 TODO
 
-- [ ] 推送分支并创建 PR。
+- [x] 推送分支并创建 PR。
+- [x] 复跑 PR 分支前端测试、类型检查、lint、静态构建。
+- [x] 在认证态下完成本地浏览器验收。
 - [ ] PR 合并前确认 CI 与 review。
 - [ ] 合并到 `main` 后从干净 `main` 执行生产部署。
 - [ ] 生产浏览器验收 `/knowledge-base`、`/documents`、`/graph` 的数据来源标签。
