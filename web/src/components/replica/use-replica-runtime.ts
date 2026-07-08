@@ -245,11 +245,10 @@ function useReplicaLoader<TData>(
   load: (client: ReplicaClient) => Promise<ReplicaAdapterResult<TData>>
 ): ReplicaRuntimeResult<TData> {
   const [result, setResult] = useState<ReplicaAdapterResult<TData>>(fallback);
-  const [status, setStatus] = useState<ReplicaRuntimeStatus>("loading");
+  const [status, setStatus] = useState<ReplicaRuntimeStatus>("ready");
 
   useEffect(() => {
     let mounted = true;
-    setStatus("loading");
 
     void load(replicaReadClient())
       .then((nextResult) => {
