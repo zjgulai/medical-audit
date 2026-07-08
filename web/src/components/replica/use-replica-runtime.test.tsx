@@ -112,6 +112,15 @@ describe("use-replica-runtime", () => {
     expect(screen.getByText("api-read-failed")).toBeInTheDocument();
   });
 
+  it("keeps fixture evidence ready while an enabled read API is still pending", () => {
+    vi.mocked(fetchGraphWorkbench).mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<GraphRuntimeProbe />);
+
+    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-source", "fixture");
+    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-status", "ready");
+  });
+
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {
     vi.mocked(fetchGraphWorkbench).mockResolvedValueOnce({
       format: "graph-workbench-v1",
