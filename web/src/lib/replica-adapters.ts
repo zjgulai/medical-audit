@@ -612,7 +612,9 @@ export async function loadReplicaKnowledgeBaseData(
     : null;
 
   return {
-    source: sourceFrom(Boolean(permissions || catalog), true),
+    source: knowledgeBases.length > 0
+      ? "api"
+      : sourceFrom(Boolean(permissions || catalog), true),
     data: {
       knowledgeBases: knowledgeBases.length > 0 ? knowledgeBases : referenceKnowledgeBases,
       sourceGroups,

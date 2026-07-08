@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AgentsResponse,
   DocumentSourceCollectionCatalogResponse,
+  GraphWorkbenchResponse,
   KnowledgeBaseCatalogItem,
   KnowledgeBaseCatalogResponse
 } from "./api-types";
 import {
   loadReplicaAgentMarketData,
   loadReplicaDocumentsData,
+  loadReplicaGraphData,
   loadReplicaKnowledgeBaseData
 } from "./replica-adapters";
 import { referenceMarketAgents } from "./reference-replica-data";
@@ -104,6 +106,71 @@ const sourceCollectionCatalog: DocumentSourceCollectionCatalogResponse = {
   }
 };
 
+const graphWorkbench: GraphWorkbenchResponse = {
+  format: "graph-workbench-v1",
+  generated_at: "2026-07-08T08:00:00Z",
+  graph_id: "medical-audit-knowledge-catalog",
+  graph_title: "医疗审计知识工程",
+  graph_scope: "生产知识库目录、文档检索和审计问答共同使用的知识底座。",
+  nodes: [
+    {
+      id: "graph-node-project",
+      label: "医疗审计知识工程",
+      kind: "项目",
+      status: "已归集",
+      description: "当前生产知识库目录、文档检索和审计问答共同使用的知识底座。",
+      metric: "25 类知识库",
+      href: "/projects",
+      x: 100,
+      y: 250
+    },
+    {
+      id: "graph-domain-medical",
+      label: "医疗医保知识",
+      kind: "一级分类",
+      status: "已归集",
+      description: "医保基金、监管规则、医保目录和风险清单。",
+      metric: "4 个知识库",
+      href: "/knowledge-base",
+      x: 320,
+      y: 120
+    }
+  ],
+  relations: [
+    {
+      id: "graph-project-medical",
+      sourceId: "graph-node-project",
+      targetId: "graph-domain-medical",
+      source: "医疗审计知识工程",
+      relation: "组织",
+      target: "医疗医保知识",
+      evidence: "4 个一级知识库分类",
+      strength: "强"
+    }
+  ],
+  metrics: {
+    node_count: 2,
+    node_kind_count: 2,
+    node_kind_counts: {
+      项目: 1,
+      一级分类: 1,
+      知识库: 0,
+      文档: 0,
+      规则: 0,
+      疑点: 0,
+      复核: 0,
+      报告: 0,
+      整改: 0
+    },
+    relation_count: 1,
+    strong_relation_count: 1,
+    pending_relation_count: 0
+  },
+  evidence_grade: "production-readonly",
+  production_side_effect: "none",
+  store: { ready: true, backend: "KnowledgeCatalogGraphBuilder" }
+};
+
 describe("loadReplicaAgentMarketData", () => {
   it("keeps the market catalog on prompt-source categories when the API returns old seed agents", async () => {
     const fetchAgents = vi.fn(async (): Promise<AgentsResponse> => ({
@@ -172,7 +239,7 @@ describe("replica backend read adapters", () => {
       fetchDocumentSourceCollections
     });
 
-    expect(result.source).toBe("hybrid");
+    expect(result.source).toBe("api");
     expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
     expect(fetchDocumentPermissions).toHaveBeenCalledTimes(1);
     expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
@@ -210,5 +277,19 @@ describe("replica backend read adapters", () => {
     expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
     expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);
     expect(fetchQueryHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps graph workbench API nodes instead of falling back to the old fixture graph", async () => {
+    const fetchGraphWorkbench = vi.fn(async () => graphWorkbench);
+
+    const result = await loadReplicaGraphData({ fetchGraphWorkbench });
+
+    expect(result.source).toBe("api");
+    expect(result.data.title).toBe("医疗审计知识工程");
+    expect(result.data.nodes).toHaveLength(2);
+    expect(result.data.nodes[0]?.label).toBe("医疗审计知识工程");
+    expect(result.data.relations[0]?.target).toBe("医疗医保知识");
+    expect(result.issues).toEqual([]);
+    expect(fetchGraphWorkbench).toHaveBeenCalledTimes(1);
   });
 });
