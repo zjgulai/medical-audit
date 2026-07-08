@@ -1,12 +1,26 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import {
   ReplicaMetric,
   ReplicaNotice,
-  ReplicaPageHeader
+  ReplicaPageHeader,
+  ReplicaRuntimeBadge
 } from "@/components/replica/replica-page-kit";
+import {
+  fetchAuditFindings,
+  fetchReportWorkbench,
+  fetchRulesWorkbench,
+  fetchSearchBackendStatus
+} from "@/lib/api-client";
+import type {
+  AuditFindingsResponse,
+  ReportWorkbenchResponse,
+  RulesWorkbenchResponse,
+  SearchBackendStatusResponse
+} from "@/lib/api-types";
 import {
   archiveAuditRuns,
   archivePackages,
@@ -21,22 +35,325 @@ import {
   guidedCheckTimeline
 } from "@/lib/portal-data";
 
+type RuntimeStatus = "loading" | "ready" | "fallback";
+
+type CompatibilityRuntime = {
+  readonly findings: AuditFindingsResponse | null;
+  readonly rules: RulesWorkbenchResponse | null;
+  readonly reports: ReportWorkbenchResponse | null;
+  readonly search: SearchBackendStatusResponse | null;
+  readonly statuses: {
+    readonly findings: RuntimeStatus;
+    readonly rules: RuntimeStatus;
+    readonly reports: RuntimeStatus;
+    readonly search: RuntimeStatus;
+  };
+};
+
+type RuntimeSummary = {
+  readonly source: "fixture" | "api" | "hybrid";
+  readonly status: "loading" | "ready";
+  readonly hasSeedData: boolean;
+  readonly issueCount: number;
+  readonly backendLabel: string;
+};
+
+type MetricTone = "blue" | "green" | "amber" | "rose" | "slate";
+
+type DynamicMetric = {
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: MetricTone;
+};
+
+type DynamicCard = {
+  readonly id: string;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly value?: string;
+  readonly href: string;
+};
+
+function useMedicalAuditCompatibilityRuntime(): CompatibilityRuntime {
+  const [findings, setFindings] = useState<AuditFindingsResponse | null>(null);
+  const [rules, setRules] = useState<RulesWorkbenchResponse | null>(null);
+  const [reports, setReports] = useState<ReportWorkbenchResponse | null>(null);
+  const [search, setSearch] = useState<SearchBackendStatusResponse | null>(null);
+  const [statuses, setStatuses] = useState<CompatibilityRuntime["statuses"]>({
+    findings: "loading",
+    rules: "loading",
+    reports: "loading",
+    search: "loading"
+  });
+
+  useEffect(() => {
+    let mounted = true;
+
+    fetchAuditFindings("pending-review")
+      .then((response) => {
+        if (!mounted) return;
+        setFindings(response);
+        setStatuses((current) => ({ ...current, findings: "ready" }));
+      })
+      .catch(() => {
+        if (mounted) setStatuses((current) => ({ ...current, findings: "fallback" }));
+      });
+
+    fetchRulesWorkbench()
+      .then((response) => {
+        if (!mounted) return;
+        setRules(response);
+        setStatuses((current) => ({ ...current, rules: "ready" }));
+      })
+      .catch(() => {
+        if (mounted) setStatuses((current) => ({ ...current, rules: "fallback" }));
+      });
+
+    fetchReportWorkbench()
+      .then((response) => {
+        if (!mounted) return;
+        setReports(response);
+        setStatuses((current) => ({ ...current, reports: "ready" }));
+      })
+      .catch(() => {
+        if (mounted) setStatuses((current) => ({ ...current, reports: "fallback" }));
+      });
+
+    fetchSearchBackendStatus()
+      .then((response) => {
+        if (!mounted) return;
+        setSearch(response);
+        setStatuses((current) => ({ ...current, search: "ready" }));
+      })
+      .catch(() => {
+        if (mounted) setStatuses((current) => ({ ...current, search: "fallback" }));
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return { findings, rules, reports, search, statuses };
+}
+
+function buildRuntimeSummary(runtime: CompatibilityRuntime): RuntimeSummary {
+  const statuses = Object.values(runtime.statuses);
+  const readyCount = statuses.filter((status) => status === "ready").length;
+  const fallbackCount = statuses.filter((status) => status === "fallback").length;
+  const loadingCount = statuses.filter((status) => status === "loading").length;
+  const backends = [
+    runtime.findings?.store.backend,
+    runtime.rules?.store.backend,
+    runtime.reports?.store.backend,
+    runtime.search?.backend
+  ].filter(Boolean);
+  const hasSeedData = backends.some((backend) => isSeedBackend(backend));
+
+  return {
+    source: readyCount > 0 ? (fallbackCount > 0 ? "hybrid" : "api") : "fixture",
+    status: loadingCount > 0 && readyCount === 0 ? "loading" : "ready",
+    hasSeedData,
+    issueCount: fallbackCount + Number(hasSeedData),
+    backendLabel: backends.length > 0 ? backends.join(" / ") : "本地样例"
+  };
+}
+
+function isSeedBackend(backend: string | undefined): boolean {
+  return Boolean(backend && (backend.startsWith("Readonly") || backend.endsWith("Seed")));
+}
+
+function formatNumber(value: number | undefined, fallback: number): string {
+  return `${value ?? fallback}`;
+}
+
+function runtimeActions(summary: RuntimeSummary, primaryHref: string, primaryLabel: string) {
+  return (
+    <>
+      <ReplicaRuntimeBadge
+        source={summary.source}
+        status={summary.status}
+        hasSeedData={summary.hasSeedData}
+        issueCount={summary.issueCount}
+      />
+      <Link className="replica-primary-button" href={primaryHref}>{primaryLabel}</Link>
+    </>
+  );
+}
+
+function buildComplianceMetrics(runtime: CompatibilityRuntime): readonly DynamicMetric[] {
+  return [
+    {
+      label: "待复核疑点",
+      value: formatNumber(runtime.findings?.stats.pending_review, guidedCheckRiskSignals.length),
+      tone: "rose"
+    },
+    {
+      label: "规则命中",
+      value: formatNumber(runtime.rules?.metrics.total_finding_count, guidedCheckRiskSignals.length),
+      tone: "amber"
+    },
+    {
+      label: "已关联任务",
+      value: formatNumber(runtime.findings?.stats.linked_review_task, archivePackages.length),
+      tone: "green"
+    },
+    {
+      label: "底稿条目",
+      value: formatNumber(runtime.reports?.metrics.report_count, auditTableTemplates.length),
+      tone: "slate"
+    }
+  ];
+}
+
+function buildComplianceRiskCards(runtime: CompatibilityRuntime): readonly DynamicCard[] {
+  const findings = runtime.findings?.items.slice(0, 4).map((item) => ({
+    id: item.finding_key,
+    eyebrow: item.review_status,
+    title: item.finding_key,
+    detail: `${item.finding_type} · ${item.severity} · ${item.rule_key ?? "待绑定规则"}`,
+    value: item.status,
+    href: "/findings"
+  }));
+
+  if (findings && findings.length > 0) {
+    return findings;
+  }
+
+  return guidedCheckRiskSignals.map((signal) => ({
+    id: signal.id,
+    eyebrow: signal.status,
+    title: signal.label,
+    detail: signal.detail,
+    value: signal.value,
+    href: signal.href
+  }));
+}
+
+function buildReviewMetrics(runtime: CompatibilityRuntime): readonly DynamicMetric[] {
+  return [
+    {
+      label: "表单样式",
+      value: formatNumber(runtime.reports?.workpaper_templates.length, auditTableTemplates.length)
+    },
+    {
+      label: "疑点总数",
+      value: formatNumber(runtime.findings?.stats.total, 0),
+      tone: "rose"
+    },
+    {
+      label: "规则数量",
+      value: formatNumber(runtime.rules?.metrics.enabled_rule_count, 0),
+      tone: "green"
+    },
+    {
+      label: "阻断底稿",
+      value: formatNumber(runtime.reports?.metrics.blocked_report_count, 0),
+      tone: "amber"
+    }
+  ];
+}
+
+function buildGuidedMetrics(runtime: CompatibilityRuntime): readonly DynamicMetric[] {
+  return [
+    {
+      label: "核查步骤",
+      value: `${guidedCheckSteps.length}`
+    },
+    {
+      label: "待补门禁",
+      value: formatNumber(
+        runtime.findings?.generation_readiness.blocking_reasons.length,
+        guidedCheckEvidenceItems.filter((item) => item.status !== "已就绪").length
+      ),
+      tone: "amber"
+    },
+    {
+      label: "规则阻断",
+      value: formatNumber(runtime.rules?.metrics.blocked_gate_count, 0),
+      tone: "rose"
+    },
+    {
+      label: "检索状态",
+      value: runtime.search?.ready ? "就绪" : "待接入",
+      tone: runtime.search?.ready ? "green" : "slate"
+    }
+  ];
+}
+
+function buildGuidedEvidence(runtime: CompatibilityRuntime): readonly DynamicCard[] {
+  const cards: DynamicCard[] = [];
+
+  for (const prerequisite of runtime.findings?.generation_readiness.prerequisites ?? []) {
+    cards.push({
+      id: `prerequisite-${prerequisite.key}`,
+      eyebrow: prerequisite.ready ? "已就绪" : "待补证",
+      title: prerequisite.label,
+      detail: `当前 ${prerequisite.count} 条，${prerequisite.required ? "必需" : "可选"}材料。`,
+      value: prerequisite.ready ? "通过" : "待处理",
+      href: "/findings"
+    });
+  }
+
+  for (const gate of runtime.rules?.control_gates ?? []) {
+    cards.push({
+      id: `gate-${gate.id}`,
+      eyebrow: gate.status,
+      title: gate.label,
+      detail: gate.detail,
+      value: gate.owner,
+      href: "/rules"
+    });
+  }
+
+  for (const entry of runtime.reports?.report_entries.slice(0, 4) ?? []) {
+    cards.push({
+      id: `report-${entry.id}`,
+      eyebrow: entry.status,
+      title: entry.title,
+      detail: entry.gate_summary,
+      value: entry.report_no,
+      href: "/reports"
+    });
+  }
+
+  if (cards.length > 0) {
+    return cards.slice(0, 8);
+  }
+
+  return guidedCheckEvidenceItems.map((item) => ({
+    id: item.id,
+    eyebrow: item.source,
+    title: item.title,
+    detail: item.blocker,
+    value: item.status,
+    href: item.href
+  }));
+}
+
 export function FundComplianceWorkbench() {
+  const runtime = useMedicalAuditCompatibilityRuntime();
+  const summary = buildRuntimeSummary(runtime);
+  const metrics = useMemo(() => buildComplianceMetrics(runtime), [runtime]);
+  const riskCards = useMemo(() => buildComplianceRiskCards(runtime), [runtime]);
+
   return (
     <main className="replica-page" data-replica-source="compatibility-route" data-replica-status="ready">
       <ReplicaPageHeader
         kicker="医保审计"
         title="医保基金使用合规"
         description="旧基金合规入口保留为专题首页，聚合医保审计、三张费用表单、引导核查和底稿归档入口。"
-        actions={<Link className="replica-primary-button" href="/medical-audit">进入医保审计</Link>}
+        actions={runtimeActions(summary, "/medical-audit", "进入医保审计")}
       />
 
       <section className="replica-metric-grid" aria-label="医保基金使用合规概览">
-        <ReplicaMetric label="费用表单" value={`${auditTableTemplates.length}`} />
-        <ReplicaMetric label="核查步骤" value={`${guidedCheckSteps.length}`} tone="green" />
-        <ReplicaMetric label="风险信号" value={`${guidedCheckRiskSignals.length}`} tone="amber" />
-        <ReplicaMetric label="归档包" value={`${archivePackages.length}`} tone="slate" />
+        {metrics.map((metric) => (
+          <ReplicaMetric key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
+        ))}
       </section>
+
+      <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
 
       <section className="replica-report-layout">
         <div className="replica-panel">
@@ -102,16 +419,19 @@ export function FundComplianceWorkbench() {
           <span>{guidedCheckRiskSignals.length} 项</span>
         </div>
         <div className="replica-kb-grid">
-          {guidedCheckRiskSignals.map((signal) => (
+          {riskCards.map((signal) => (
             <article key={signal.id} className="replica-kb-card">
               <div className="replica-kb-card-head">
                 <div>
-                  <span>{signal.status}</span>
-                  <h2>{signal.label}</h2>
+                  <span>{signal.eyebrow}</span>
+                  <h2>{signal.title}</h2>
                 </div>
                 <strong>{signal.value}</strong>
               </div>
               <p>{signal.detail}</p>
+              <div className="replica-card-actions">
+                <Link className="replica-card-detail-button" href={signal.href}>查看</Link>
+              </div>
             </article>
           ))}
         </div>
@@ -121,21 +441,26 @@ export function FundComplianceWorkbench() {
 }
 
 export function FundComplianceReviewWorkbench() {
+  const runtime = useMedicalAuditCompatibilityRuntime();
+  const summary = buildRuntimeSummary(runtime);
+  const metrics = useMemo(() => buildReviewMetrics(runtime), [runtime]);
+
   return (
     <main className="replica-page" data-replica-source="compatibility-route" data-replica-status="ready">
       <ReplicaPageHeader
         kicker="医保基金使用合规"
         title="医保基金复核表单"
         description="保留三类费用模板的产品入口，后续上传和分析继续在 AI 数据分析、医保审计工作台中完成。"
-        actions={<Link className="replica-primary-button" href="/medical-audit">返回医保审计</Link>}
+        actions={runtimeActions(summary, "/medical-audit", "返回医保审计")}
       />
 
       <section className="replica-metric-grid" aria-label="医保基金复核表单概览">
-        <ReplicaMetric label="表单样式" value={`${auditTableTemplates.length}`} />
-        <ReplicaMetric label="明细列数" value={`${auditTableTemplates.reduce((sum, item) => sum + item.expectedColumns.length, 0)}`} tone="green" />
-        <ReplicaMetric label="分析入口" value="AI数据分析" tone="amber" />
-        <ReplicaMetric label="底稿入口" value="报告" tone="slate" />
+        {metrics.map((metric) => (
+          <ReplicaMetric key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
+        ))}
       </section>
+
+      <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
 
       <section className="replica-kb-grid" aria-label="医保基金复核表单列表">
         {auditTableTemplates.map((template) => (
@@ -177,21 +502,27 @@ export function FundComplianceReviewWorkbench() {
 }
 
 export function GuidedCheckWorkbench() {
+  const runtime = useMedicalAuditCompatibilityRuntime();
+  const summary = buildRuntimeSummary(runtime);
+  const metrics = useMemo(() => buildGuidedMetrics(runtime), [runtime]);
+  const guidedEvidence = useMemo(() => buildGuidedEvidence(runtime), [runtime]);
+
   return (
     <main className="replica-page" data-replica-source="compatibility-route" data-replica-status="ready">
       <ReplicaPageHeader
         kicker="引导自查"
         title="引导式核查"
         description="按医保基金使用合规专题的真实工作顺序，把数据、规则、AI 审证、底稿和归档串成可执行路径。"
-        actions={<Link className="replica-primary-button" href="/chat">进入 AI 对话</Link>}
+        actions={runtimeActions(summary, "/chat", "进入 AI 对话")}
       />
 
       <section className="replica-metric-grid" aria-label="引导式核查概览">
-        <ReplicaMetric label="核查步骤" value={`${guidedCheckSteps.length}`} />
-        <ReplicaMetric label="审证问题" value={`${guidedCheckQuestions.length}`} tone="green" />
-        <ReplicaMetric label="证据材料" value={`${guidedCheckEvidenceItems.length}`} tone="amber" />
-        <ReplicaMetric label="风险信号" value={`${guidedCheckRiskSignals.length}`} tone="rose" />
+        {metrics.map((metric) => (
+          <ReplicaMetric key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
+        ))}
       </section>
+
+      <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
 
       <section className="replica-report-layout">
         <div className="replica-panel">
@@ -251,19 +582,19 @@ export function GuidedCheckWorkbench() {
             <p className="replica-kicker">证据与风险</p>
             <h2>材料准备状态</h2>
           </div>
-          <span>{guidedCheckEvidenceItems.length} 项材料</span>
+          <span>{guidedEvidence.length} 项材料</span>
         </div>
         <div className="replica-kb-grid">
-          {guidedCheckEvidenceItems.map((item) => (
+          {guidedEvidence.map((item) => (
             <article key={item.id} className="replica-kb-card">
               <div className="replica-kb-card-head">
                 <div>
-                  <span>{item.source}</span>
+                  <span>{item.eyebrow}</span>
                   <h2>{item.title}</h2>
                 </div>
-                <strong>{item.status}</strong>
+                <strong>{item.value}</strong>
               </div>
-              <p>{item.blocker}</p>
+              <p>{item.detail}</p>
               <div className="replica-card-actions">
                 <Link className="replica-card-detail-button" href={item.href}>查看</Link>
               </div>
