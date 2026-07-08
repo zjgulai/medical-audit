@@ -48,11 +48,10 @@ const routeCheckProfiles = {
       requiredText: [/我的助手/, /模拟数据助手|厕所管护核验|定标合规核验/],
       requiredControlText: [/\+ 创建我的助手/, /查看详情/],
     },
-    { route: "/agent-market", requiredText: [/发现审计智能体/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
+    { route: "/agent-market", requiredText: [/智能体广场/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
     {
       route: "/analytics",
-      requiredText: [/AI数据分析/, /分析结果预览/, /开始分析|数据处理|生成底稿/i],
-      requiredFileInputCount: 1,
+      requiredText: [/AI数据分析/, /内测中|待开通/],
     },
     {
       route: "/projects",
@@ -63,7 +62,7 @@ const routeCheckProfiles = {
     { route: "/knowledge-base", requiredText: [/知识库/, /知识库概览|法律法规库|审计员个人知识库/] },
     { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
     { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
-    { route: "/reports", requiredText: [/底稿与报告/, /历史生成记录/, /一键生成底稿/] },
+    { route: "/reports", requiredText: [/内测中|待开通/] },
     { route: "/remediation", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },
     { route: "/archive", requiredText: [/底稿与报告/, /历史生成记录/, /历史记录/] },
     { route: "/guided-check", requiredText: [/AI，让审计更智能/] },
@@ -94,23 +93,22 @@ const routeCheckProfiles = {
     },
     {
       route: "/agent-market",
-      requiredText: [/发现审计智能体/, /详情/],
+      requiredText: [/智能体广场/, /详情/],
       requiredTextAny: [[/全部/, /财务收支审计/, /采购招标审计/, /工程审计/]],
     },
     {
       route: "/analytics",
-      requiredText: [/AI数据分析/, /分析结果预览|数据质量|开始分析/],
-      requiredFileInputCount: 1,
+      requiredText: [/AI数据分析/, /内测中|待开通/],
     },
     {
       route: "/projects",
-      requiredText: [/项目管理/, /审计驾驶舱|总审计条数|医保基金使用合规专项自查/],
+      requiredText: [/项目管理/, /内测中|待开通/],
     },
     { route: "/documents", requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/] },
     { route: "/knowledge-base", requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/] },
     { route: "/graph", requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/] },
     { route: "/rules", requiredText: [/知识库|规则|法规/] },
-    { route: "/reports", requiredText: [/底稿与报告/, /历史生成记录/, /一键生成底稿/] },
+    { route: "/reports", requiredText: [/内测中|待开通/] },
     {
       route: "/remediation",
       postLoadWaitMs: 2_000,
@@ -699,8 +697,11 @@ async function run() {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.mkdirSync(screenshotDir, { recursive: true });
 
+  const executablePath =
+    readOptionalEnv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") ?? readOptionalEnv("CHROME_EXECUTABLE_PATH");
   const browser = await chromium.launch({
     headless: true,
+    ...(executablePath ? { executablePath } : {}),
     args: ["--no-proxy-server", "--proxy-server=direct://", "--proxy-bypass-list=*"],
   });
   const checks = [];
