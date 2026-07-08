@@ -1232,7 +1232,7 @@ export const graphNodes: readonly GraphNode[] = [
     label: "报告草稿",
     kind: "报告",
     status: "门禁中",
-    description: "从已复核疑点和引用材料生成的底稿与报告记录。",
+    description: "从已复核疑点和引用材料生成的审计底稿/报告记录。",
     metric: "1 份草稿",
     href: "/reports#report-records-title",
     x: 430,

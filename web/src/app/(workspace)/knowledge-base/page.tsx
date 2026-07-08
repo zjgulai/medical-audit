@@ -4,10 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import {
-  buildReplicaLocalGateNotice,
   ReplicaEmptyState,
   ReplicaFilterButton,
-  ReplicaMetric,
   ReplicaNotice,
   ReplicaPageHeader,
   ReplicaRuntimeBadge
@@ -15,135 +13,163 @@ import {
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
 import type { ReferenceKnowledgeBase } from "@/lib/reference-replica-data";
 
-type KnowledgeGroup = "全部分类" | string;
-type KnowledgeAction = "查看" | "创建知识库" | "打开目录" | "关联智能体" | "权限设置";
-type KnowledgeActionPanel = {
+type ProductKnowledgeCategoryId =
+  | "all"
+  | "my"
+  | "national"
+  | "audit-laws"
+  | "medical-laws"
+  | "insurance-rules"
+  | "risk-list";
+
+type ProductKnowledgeCategory = {
+  readonly id: ProductKnowledgeCategoryId;
   readonly title: string;
   readonly description: string;
-  readonly rows: readonly {
-    readonly label: string;
-    readonly value: string;
-  }[];
+  readonly tone: "blue" | "green" | "amber" | "rose" | "slate" | "cyan";
+  readonly items: readonly ReferenceKnowledgeBase[];
 };
 
-const knowledgeWorkflow = [
-  { label: "归集材料", detail: "按来源和主题入库" },
-  { label: "配置权限", detail: "区分个人、系统、项目" },
-  { label: "服务智能体", detail: "为问答和审计提供依据" }
-] as const;
-
-const knowledgeActionPanels: Record<KnowledgeAction, KnowledgeActionPanel> = {
-  查看: {
-    title: "知识库概览",
-    description: "展示当前知识库的材料范围、责任人和可调用状态。",
-    rows: [
-      { label: "目录", value: "按主题分层" },
-      { label: "权限", value: "按角色读取" },
-      { label: "状态", value: "本地预览" }
-    ]
+const productCategoryMeta: readonly Omit<ProductKnowledgeCategory, "items">[] = [
+  {
+    id: "my",
+    title: "我的知识库",
+    description: "个人上传材料、院内台账、访谈记录和仅本人可见的审计资料。",
+    tone: "blue"
   },
-  创建知识库: {
-    title: "创建预览",
-    description: "创建动作仅生成本地预览，正式写入需目录管理 API。",
-    rows: [
-      { label: "命名", value: "待填写" },
-      { label: "来源", value: "待选择" },
-      { label: "审批", value: "管理员确认" }
-    ]
+  {
+    id: "national",
+    title: "国家制度文档",
+    description: "国家政策、综合制度、财政采购、公开披露和行业管理文件。",
+    tone: "green"
   },
-  打开目录: {
-    title: "目录预览",
-    description: "按材料类型展示目录结构，不读取远端文档明细。",
-    rows: [
-      { label: "法规政策", value: "条款与政策" },
-      { label: "项目材料", value: "台账与底稿" },
-      { label: "风险线索", value: "疑点与清单" }
-    ]
+  {
+    id: "audit-laws",
+    title: "审计通用法律法规",
+    description: "审计程序、监督执法、项目复核和通用定性依据。",
+    tone: "slate"
   },
-  关联智能体: {
-    title: "关联智能体",
-    description: "将知识库绑定到审计助手，用于问答、检索和底稿生成。",
-    rows: [
-      { label: "推荐", value: "医保政策核验" },
-      { label: "推荐", value: "政策依据速查" },
-      { label: "推荐", value: "定标合规核验" }
-    ]
+  {
+    id: "medical-laws",
+    title: "医疗领域法律法规",
+    description: "医疗、医保、药品和基金监管相关法律政策。",
+    tone: "cyan"
   },
-  权限设置: {
-    title: "权限设置",
-    description: "按角色控制可见范围，当前只显示本地权限草案。",
-    rows: [
-      { label: "管理员", value: "管理与授权" },
-      { label: "主任", value: "复核与签发" },
-      { label: "成员", value: "检索与引用" }
-    ]
+  {
+    id: "insurance-rules",
+    title: "医保相关规则制度",
+    description: "监管两库、医保目录、诊疗项目、支付限制和规则口径。",
+    tone: "amber"
+  },
+  {
+    id: "risk-list",
+    title: "医疗风险负面清单",
+    description: "高风险问题、异常模式、案例线索和负面清单。",
+    tone: "rose"
   }
-};
+];
 
-function matchesKnowledgeBase(item: ReferenceKnowledgeBase, scope: KnowledgeGroup, query: string) {
+const allCategory = "all" as const;
+
+function categoryForKnowledgeBase(item: ReferenceKnowledgeBase): ProductKnowledgeCategoryId {
+  const source = sourceCollectionFromKnowledgeBaseId(item.id) ?? item.id;
+  const text = `${source} ${item.name} ${item.scope} ${item.description} ${item.tags.join(" ")}`;
+
+  if (source === "personal-materials" || item.scope === "个人知识库" || text.includes("个人")) {
+    return "my";
+  }
+  if (source === "risk-negative-list" || text.includes("风险清单") || text.includes("负面清单")) {
+    return "risk-list";
+  }
+  if (source === "supervision-rules-knowledge" || source === "medical-insurance-catalog" || text.includes("监管两库") || text.includes("医保目录")) {
+    return "insurance-rules";
+  }
+  if (source === "medical-insurance-laws" || text.includes("医疗") || text.includes("医保")) {
+    return "medical-laws";
+  }
+  if (source === "management-judicial-audit-procedure" || text.includes("审计程序") || text.includes("司法审计")) {
+    return "audit-laws";
+  }
+  return "national";
+}
+
+function buildProductCategories(items: readonly ReferenceKnowledgeBase[]): readonly ProductKnowledgeCategory[] {
+  return productCategoryMeta.map((category) => ({
+    ...category,
+    items: items.filter((item) => categoryForKnowledgeBase(item) === category.id)
+  }));
+}
+
+function matchesKnowledgeBase(item: ReferenceKnowledgeBase, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
-  const scopeMatched = scope === "全部分类" || item.tags.includes(scope) || item.scope === scope;
-  const queryMatched =
-    normalizedQuery.length === 0 ||
+  return normalizedQuery.length === 0 ||
     `${item.name} ${item.scope} ${item.owner} ${item.description} ${item.tags.join(" ")}`.toLowerCase().includes(normalizedQuery);
+}
 
-  return scopeMatched && queryMatched;
+function chunkCountForItem(item: ReferenceKnowledgeBase): number {
+  const chunkTag = item.tags.find((tag) => tag.endsWith(" chunks"));
+  if (!chunkTag) {
+    return 0;
+  }
+  const value = Number.parseInt(chunkTag.replace(/[^\d]/g, ""), 10);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function sumDocuments(items: readonly ReferenceKnowledgeBase[]) {
+  return items.reduce((sum, item) => sum + item.documentCount, 0);
+}
+
+function sumChunks(items: readonly ReferenceKnowledgeBase[]) {
+  return items.reduce((sum, item) => sum + chunkCountForItem(item), 0);
+}
+
+function newestUpdatedAt(items: readonly ReferenceKnowledgeBase[]) {
+  return items.find((item) => item.documentCount > 0)?.updatedAt ?? "待同步";
 }
 
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
-  const [activeScope, setActiveScope] = useState<KnowledgeGroup>("全部分类");
+  const [activeCategory, setActiveCategory] = useState<ProductKnowledgeCategoryId>(allCategory);
   const [notice, setNotice] = useState("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [detailOpen, setDetailOpen] = useState(true);
-  const [activeAction, setActiveAction] = useState<KnowledgeAction>("查看");
   const knowledgeBaseData = useReplicaKnowledgeBaseData();
   const knowledgeBases = knowledgeBaseData.data.knowledgeBases;
-  const sourceGroups = knowledgeBaseData.data.sourceGroups;
-  const knowledgeScopes: readonly KnowledgeGroup[] = useMemo(
-    () => ["全部分类", ...sourceGroups.map((group) => group.title)],
-    [sourceGroups]
-  );
-  const knowledgeHighlights = useMemo(
-    () => sourceGroups.map((group) => ({
-      label: group.title,
-      value: `${group.options.length}`,
-      detail: group.options.slice(0, 3).map((item) => item.label).join(" / ")
-    })),
-    [sourceGroups]
-  );
-  const filteredKnowledgeBases = useMemo(
-    () => knowledgeBases.filter((item) => matchesKnowledgeBase(item, activeScope, query)),
-    [activeScope, knowledgeBases, query]
-  );
-  const totalDocuments = knowledgeBases.reduce((sum, item) => sum + item.documentCount, 0);
-  const totalApps = knowledgeBases.reduce((sum, item) => sum + item.appCount, 0);
+
+  const productCategories = useMemo(() => buildProductCategories(knowledgeBases), [knowledgeBases]);
+  const activeItems = useMemo(() => {
+    const scopedItems = activeCategory === allCategory
+      ? knowledgeBases
+      : productCategories.find((category) => category.id === activeCategory)?.items ?? [];
+    return scopedItems.filter((item) => matchesKnowledgeBase(item, query));
+  }, [activeCategory, knowledgeBases, productCategories, query]);
+
+  const totalDocuments = sumDocuments(knowledgeBases);
+  const totalChunks = sumChunks(knowledgeBases);
   const selectedKnowledgeBase =
     knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ??
-    filteredKnowledgeBases[0] ??
+    activeItems[0] ??
     knowledgeBases[0];
-  const actionPanel = knowledgeActionPanels[activeAction];
+  const selectedCategory = selectedKnowledgeBase
+    ? productCategories.find((category) => category.id === categoryForKnowledgeBase(selectedKnowledgeBase))
+    : undefined;
 
-  function recordKnowledgeBaseAction(item: ReferenceKnowledgeBase, action: KnowledgeAction) {
+  function recordKnowledgeBaseAction(item: ReferenceKnowledgeBase, action: string) {
     setSelectedKnowledgeBaseId(item.id);
     setDetailOpen(true);
-    setActiveAction(action);
-    setNotice(buildReplicaLocalGateNotice({
-      action: `${action}「${item.name}」`,
-      nextStep: "知识库目录读取 API"
-    }));
+    setNotice(`${action}「${item.name}」已准备好，请在右侧查看分类、权限和可调用入口。`);
   }
 
   return (
     <main
-      className="replica-page"
+      className="replica-page replica-page-standard"
       data-replica-source={knowledgeBaseData.source}
       data-replica-status={knowledgeBaseData.status}
     >
       <ReplicaPageHeader
         kicker="知识库"
         title="知识库分类"
-        description="按一级专题和二级知识库组织当前项目材料，优先展示可被问答、检索和智能体调用的来源。"
+        description="按医院审计人员可理解的业务类别组织知识库，隐藏内部来源字段，只保留可检索、可引用、可授权的内容入口。"
         actions={
           <>
             <ReplicaRuntimeBadge
@@ -151,56 +177,34 @@ export default function KnowledgeBasePage() {
               status={knowledgeBaseData.status}
               issueCount={knowledgeBaseData.issues.length}
             />
-            <button
-              type="button"
-              className="replica-secondary-button"
-              onClick={() => setActiveScope("全部分类")}
-            >
-              全部分类
-            </button>
-            <button
-              type="button"
-	              className="replica-primary-button"
-	              onClick={() => {
-	                setActiveAction("创建知识库");
-	                setDetailOpen(true);
-	                setNotice(buildReplicaLocalGateNotice({
-	                  action: "创建知识库",
-	                  nextStep: "知识库目录写入 API"
-	                }));
-	              }}
-	            >
-              + 创建知识库
+            <button type="button" className="replica-primary-button" onClick={() => setActiveCategory("my")}>
+              我的知识库
             </button>
           </>
         }
       />
 
-      <section className="replica-metric-grid">
-        <ReplicaMetric label="知识库" value={`${knowledgeBases.length}`} />
-        <ReplicaMetric label="文档数" value={totalDocuments.toLocaleString()} tone="green" />
-        <ReplicaMetric label="应用数" value={`${totalApps}`} tone="amber" />
-        <ReplicaMetric label="一级分类" value={`${sourceGroups.length}`} tone="slate" />
-      </section>
-
-      <section className="replica-kb-overview-band" aria-label="知识来源概览">
-        {knowledgeHighlights.map((item) => (
-          <article key={item.label}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            <p>{item.detail}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="replica-kb-workflow" aria-label="知识库工作流">
-        {knowledgeWorkflow.map((item, index) => (
-          <article key={item.label}>
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            <strong>{item.label}</strong>
-            <p>{item.detail}</p>
-          </article>
-        ))}
+      <section className="replica-kb-summary-band" aria-label="知识库数据口径">
+        <article>
+          <span>一级分类</span>
+          <strong>{productCategories.length}</strong>
+          <p>5 类公共知识库 + 我的知识库</p>
+        </article>
+        <article>
+          <span>文档数</span>
+          <strong>{totalDocuments.toLocaleString()}</strong>
+          <p>来自当前后端目录或本地样例</p>
+        </article>
+        <article>
+          <span>知识片段</span>
+          <strong>{totalChunks > 0 ? totalChunks.toLocaleString() : "待同步"}</strong>
+          <p>有索引片段时按后端返回展示</p>
+        </article>
+        <article>
+          <span>数据来源</span>
+          <strong>{knowledgeBaseData.source === "fixture" ? "样例" : "后端"}</strong>
+          <p>页面仅展示，不执行生产写入</p>
+        </article>
       </section>
 
       <section className="replica-panel">
@@ -210,66 +214,78 @@ export default function KnowledgeBasePage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索知识库"
+              placeholder="搜索知识库、规则或材料"
             />
           </label>
-          <div className="replica-filter-group" aria-label="知识库一级分类">
-            {knowledgeScopes.map((scope) => (
-              <ReplicaFilterButton key={scope} value={scope} activeValue={activeScope} onSelect={setActiveScope}>
-                {scope}
+          <div className="replica-filter-group" aria-label="知识库分类">
+            <ReplicaFilterButton value={allCategory} activeValue={activeCategory} onSelect={setActiveCategory}>
+              <span>全部</span>
+              <em>{knowledgeBases.length}</em>
+            </ReplicaFilterButton>
+            {productCategories.map((category) => (
+              <ReplicaFilterButton key={category.id} value={category.id} activeValue={activeCategory} onSelect={setActiveCategory}>
+                <span>{category.title}</span>
+                <em>{category.items.length}</em>
               </ReplicaFilterButton>
             ))}
           </div>
         </div>
 
+        <div className="replica-kb-category-grid" aria-label="知识库分类卡片">
+          {productCategories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`replica-kb-category-card tone-${category.tone} ${activeCategory === category.id ? "is-active" : ""}`}
+              onClick={() => setActiveCategory(category.id)}
+            >
+              <span>{category.title}</span>
+              <strong>{category.items.length}</strong>
+              <p>{category.description}</p>
+              <small>{sumDocuments(category.items).toLocaleString()} 份文档 · {sumChunks(category.items).toLocaleString()} 个片段</small>
+            </button>
+          ))}
+        </div>
+
         <div className="replica-statebar" aria-label="知识库列表状态">
-          <span>{activeScope}</span>
-          <strong>{filteredKnowledgeBases.length} / {knowledgeBases.length}</strong>
-          <span>{query.trim() ? `关键词：${query.trim()}` : "全量目录"}</span>
-          <span>{knowledgeBaseData.source === "fixture" ? "本地目录" : "生产目录"}</span>
+          <span>{activeCategory === allCategory ? "全部知识库" : productCategories.find((item) => item.id === activeCategory)?.title}</span>
+          <strong>{activeItems.length} / {knowledgeBases.length}</strong>
+          <span>{query.trim() ? `关键词：${query.trim()}` : "按产品分类展示"}</span>
+          <span>{knowledgeBaseData.data.canUploadPersonal ? "支持我的知识库" : "个人上传待开通"}</span>
         </div>
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
 
-        {filteredKnowledgeBases.length === 0 ? (
-          <ReplicaEmptyState title="未找到知识库" description="调整关键词或知识库范围后重试。" />
+        {activeItems.length === 0 ? (
+          <ReplicaEmptyState title="未找到知识库" description="调整关键词或切换分类后重试。" />
         ) : (
           <div className="replica-kb-workbench">
             <div className="replica-kb-grid">
-              {filteredKnowledgeBases.map((item) => (
+              {activeItems.map((item) => (
                 <article
                   key={item.id}
                   className={`replica-kb-card ${selectedKnowledgeBase?.id === item.id ? "is-selected" : ""}`}
                 >
                   <div className="replica-kb-card-head">
-                    <span>{item.scope}</span>
-                    <button
-                      type="button"
-                      aria-label={`查看知识库：${item.name}`}
-                      onClick={() => recordKnowledgeBaseAction(item, "查看")}
-                    >
+                    <span>{productCategories.find((category) => category.id === categoryForKnowledgeBase(item))?.title ?? item.scope}</span>
+                    <button type="button" aria-label={`查看知识库：${item.name}`} onClick={() => recordKnowledgeBaseAction(item, "查看")}>
                       查看
                     </button>
                   </div>
                   <h2>{item.name}</h2>
-                  <div className="replica-kb-owner">负责人：{item.owner}</div>
+                  <div className="replica-kb-owner">权限：{item.scope === "个人知识库" ? "仅本人" : "按项目角色"}</div>
                   <p>{item.description}</p>
-                  <div className="replica-kb-tags">
-                    {item.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
                   <dl className="replica-kb-stats">
                     <div>
                       <dt>文档数</dt>
                       <dd>{item.documentCount.toLocaleString()}</dd>
                     </div>
                     <div>
-                      <dt>应用数</dt>
-                      <dd>{item.appCount}</dd>
+                      <dt>知识片段</dt>
+                      <dd>{chunkCountForItem(item).toLocaleString()}</dd>
                     </div>
                     <div>
-                      <dt>更新</dt>
+                      <dt>同步</dt>
                       <dd>{item.updatedAt}</dd>
                     </div>
                   </dl>
@@ -278,59 +294,55 @@ export default function KnowledgeBasePage() {
             </div>
 
             {selectedKnowledgeBase && detailOpen ? (
-	              <aside className="replica-kb-detail" aria-label="知识库详情预览">
-	                <div className="replica-detail-head">
-	                  <span>{activeAction}</span>
-	                  <button type="button" aria-label="关闭知识库详情" onClick={() => setDetailOpen(false)}>×</button>
-	                </div>
-	                <div className="replica-kb-scope-pill">{selectedKnowledgeBase.scope}</div>
-	                <h2>{selectedKnowledgeBase.name}</h2>
-	                <p>{selectedKnowledgeBase.description}</p>
+              <aside className="replica-kb-detail" aria-label="知识库详情">
+                <div className="replica-detail-head">
+                  <span>{selectedCategory?.title ?? selectedKnowledgeBase.scope}</span>
+                  <button type="button" aria-label="关闭知识库详情" onClick={() => setDetailOpen(false)}>×</button>
+                </div>
+                <div className="replica-kb-scope-pill">{selectedKnowledgeBase.scope}</div>
+                <h2>{selectedKnowledgeBase.name}</h2>
+                <p>{selectedKnowledgeBase.description}</p>
                 <dl>
                   <div>
-                    <dt>负责人</dt>
-                    <dd>{selectedKnowledgeBase.owner}</dd>
+                    <dt>权限</dt>
+                    <dd>{selectedKnowledgeBase.scope === "个人知识库" ? "仅限本人" : "按角色读取"}</dd>
                   </div>
                   <div>
                     <dt>文档数</dt>
                     <dd>{selectedKnowledgeBase.documentCount.toLocaleString()}</dd>
                   </div>
                   <div>
-                    <dt>应用数</dt>
-                    <dd>{selectedKnowledgeBase.appCount}</dd>
+                    <dt>知识片段</dt>
+                    <dd>{chunkCountForItem(selectedKnowledgeBase).toLocaleString()}</dd>
                   </div>
                   <div>
-                    <dt>更新日期</dt>
-                    <dd>{selectedKnowledgeBase.updatedAt}</dd>
+                    <dt>最后同步</dt>
+                    <dd>{newestUpdatedAt([selectedKnowledgeBase])}</dd>
                   </div>
                 </dl>
-	                <div className="replica-kb-tags">
-                  {selectedKnowledgeBase.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
+                <div className="replica-kb-tags">
+                  {selectedKnowledgeBase.tags.slice(0, 4).map((tag) => (
+                    <span key={tag}>{tag.replace(" chunks", " 片段")}</span>
                   ))}
                 </div>
-	                <section className="replica-kb-next-panel" aria-label="知识库后续操作预览">
-	                  <h3>{actionPanel.title}</h3>
-	                  <p>{actionPanel.description}</p>
-	                  <div>
-	                    {actionPanel.rows.map((row) => (
-	                      <article key={`${row.label}-${row.value}`}>
-	                        <span>{row.label}</span>
-	                        <strong>{row.value}</strong>
-	                      </article>
-	                    ))}
-	                  </div>
-	                </section>
-	                <div className="replica-kb-detail-actions">
-	                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
-	                    <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>打开目录</Link>
-	                  ) : (
-	                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
-	                  )}
+                <section className="replica-kb-next-panel" aria-label="知识库权限说明">
+                  <h3>{selectedKnowledgeBase.scope === "个人知识库" ? "我的知识库权限" : "可调用入口"}</h3>
+                  <p>
+                    {selectedKnowledgeBase.scope === "个人知识库"
+                      ? "个人知识库仅本人可见；需要纳入项目共享时，由管理员配置范围。"
+                      : "该知识库可用于文档检索、AI 对话和审计专题核验。"}
+                  </p>
+                </section>
+                <div className="replica-kb-detail-actions">
                   {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
-                    <Link href={knowledgeBaseChatHref(selectedKnowledgeBase)}>关联智能体</Link>
+                    <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>打开目录</Link>
                   ) : (
-                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "关联智能体")}>关联智能体</button>
+                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
+                  )}
+                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
+                    <Link href={knowledgeBaseChatHref(selectedKnowledgeBase)}>进入 AI 对话</Link>
+                  ) : (
+                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "进入 AI 对话")}>进入 AI 对话</button>
                   )}
                   <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "权限设置")}>权限设置</button>
                 </div>

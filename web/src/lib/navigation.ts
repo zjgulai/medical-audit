@@ -29,10 +29,10 @@ export const workspaceHomeNavigation: NavigationItem = {
 
 export const fundComplianceNavigation: NavigationItem = {
   id: "fund-compliance",
-  label: "基金合规",
-  href: "/fund-compliance",
+  label: "医保审计专题",
+  href: "/medical-audit",
   symbol: "专",
-  description: "打开医保基金使用合规专题工作台，查看规则、表单和待复核单据。",
+  description: "打开医保审计专题工作台，查看规则、表单和待复核单据。",
   emphasis: "primary",
   target: "workspace"
 };
@@ -49,7 +49,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "my-agents",
-    label: "我的助手",
+    label: "我的智能体",
     href: "/agents",
     symbol: "智",
     description: "管理个人常用审计提示词和场景助手。",
@@ -58,7 +58,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "agent-market",
-    label: "助手库",
+    label: "智能体广场",
     href: "/agent-market",
     symbol: "库",
     description: "查看医疗和医保审计场景模板。",
@@ -67,7 +67,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "knowledge-base",
-    label: "依据库",
+    label: "知识库",
     href: "/knowledge-base",
     symbol: "库",
     description: "查看个人、系统、公开知识库和索引状态。",
@@ -76,7 +76,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "documents",
-    label: "文档依据",
+    label: "文档检索",
     href: "/documents",
     symbol: "检",
     description: "检索材料、知识库文档、引用片段和原文入口。",
@@ -85,7 +85,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "analytics",
-    label: "数据分析",
+    label: "AI数据分析",
     href: "/analytics",
     symbol: "数",
     description: "上传表格并查看审计数据分析线索。",
@@ -94,7 +94,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "graph",
-    label: "关系图谱",
+    label: "知识图谱",
     href: "/graph",
     symbol: "图",
     description: "查看项目、文档、规则、疑点和复核关系。",
@@ -103,7 +103,7 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "reports",
-    label: "底稿生成",
+    label: "审计底稿/报告",
     href: "/reports",
     symbol: "稿",
     description: "按提示词模板生成底稿草稿，并衔接报告签发和整改导出。",
@@ -112,10 +112,10 @@ export const primaryNavigation: readonly NavigationItem[] = [
   },
   {
     id: "projects",
-    label: "项目空间",
+    label: "项目管理",
     href: "/projects",
     symbol: "项",
-    description: "管理审计项目、成员、角色和项目空间。",
+    description: "管理审计项目、成员、角色和任务流转。",
     emphasis: "standard",
     target: "workspace"
   }

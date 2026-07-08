@@ -41,9 +41,14 @@ describe("ReplicaShell", () => {
       </ReplicaShell>
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "打开历史对话" }));
+
     expect(screen.getByRole("link", { name: "打开历史对话：中标候选人名单表" })).toHaveAttribute(
       "href",
       "/chat?history=history-1"
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭历史对话" }));
+    expect(screen.queryByRole("link", { name: "打开历史对话：中标候选人名单表" })).not.toBeInTheDocument();
   });
 });

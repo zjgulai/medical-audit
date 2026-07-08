@@ -193,7 +193,7 @@ export function ProjectManagementWorkbench() {
       <section className="audit-panel-rail min-w-0 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="audit-kicker">项目空间</p>
+            <p className="audit-kicker">项目管理</p>
             <h2 className="audit-section-title mt-1">切换审计项目</h2>
           </div>
           <StatusPill tone={projectStoreStatus === "ready" ? "success" : "neutral"}>
@@ -307,7 +307,7 @@ export function ProjectManagementWorkbench() {
         <div className="audit-panel min-w-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="audit-kicker">审计驾驶舱</p>
+              <p className="audit-kicker">项目状态看板</p>
               <h2 className="audit-section-title mt-2">专题审计看板</h2>
               <p className="audit-copy mt-2">面向当前审计专题，汇总疑点总量、复核状态和人员承接情况。</p>
             </div>
@@ -317,7 +317,7 @@ export function ProjectManagementWorkbench() {
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CockpitMetric icon="Σ" label="总审计条数" value={String(cockpit.total)} detail="疑点与审计记录" />
+            <CockpitMetric icon="Σ" label="审计记录" value={String(cockpit.total)} detail="疑点与审计记录" />
             <CockpitMetric icon="○" label="待复核" value={String(cockpit.pendingReview)} detail="需要人工判断" />
             <CockpitMetric icon="✓" label="已关联任务" value={String(cockpit.linkedReviewTask)} detail="进入复核闭环" />
             <CockpitMetric icon="!" label="未分配" value={String(cockpit.unassigned)} detail="待绑定负责人" />

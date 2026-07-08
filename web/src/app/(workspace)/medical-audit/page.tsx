@@ -1268,7 +1268,7 @@ function TemplateWorkbookView({
   const template = templateForView(view, templates);
   const columns = template?.expected_columns.length ? template.expected_columns : config.fallbackColumns;
   return (
-    <section className="replica-medical-table-page">
+    <section className="replica-medical-table-page" aria-label={config.title}>
       <header className="replica-medical-table-head">
         <div>
           <h2>{config.title}</h2>

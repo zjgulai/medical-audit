@@ -8,6 +8,7 @@ import {
   visiblePrimaryNavigation,
   type NavigationItem
 } from "@/lib/navigation";
+import { AUDIT_PLATFORM_NAME, AUDIT_PLATFORM_SUBTITLE } from "@/lib/brand";
 
 import { BrandLogo } from "./brand-logo";
 
@@ -106,8 +107,8 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
             <BrandLogo priority />
           </div>
           <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
-            <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">医疗AI审计平台</p>
-            <p className="audit-meta">基金合规审计</p>
+            <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">{AUDIT_PLATFORM_NAME}</p>
+            <p className="audit-meta">{AUDIT_PLATFORM_SUBTITLE}</p>
           </div>
         </div>
       </Link>

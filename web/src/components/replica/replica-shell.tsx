@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { BrandLogo } from "@/components/shell/brand-logo";
+import { AUDIT_PLATFORM_NAME, AUDIT_PLATFORM_SUBTITLE } from "@/lib/brand";
 import { useReplicaShellData } from "./use-replica-runtime";
 import type { ReferenceNavigationItem } from "@/lib/reference-replica-data";
 
@@ -25,6 +26,7 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [closedTagPath, setClosedTagPath] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const shellData = useReplicaShellData();
   const activeItem = shellData.data.navigation.find((item) => isActivePath(pathname, item.href));
   const activeTagLabel = activeItem?.id === "chat" ? "新对话" : activeItem?.label ?? "新对话";
@@ -37,12 +39,15 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
       data-replica-source={shellData.source}
       data-replica-status={shellData.status}
     >
-      <aside className="replica-sidebar" aria-label="医疗AI审计平台导航">
-        <Link href="/chat" className="replica-brand" aria-label="医疗AI审计平台">
+      <aside className="replica-sidebar" aria-label={`${AUDIT_PLATFORM_NAME}导航`}>
+        <Link href="/chat" className="replica-brand" aria-label={AUDIT_PLATFORM_NAME}>
           <span className="replica-brand-mark">
             <BrandLogo height={28} priority width={28} />
           </span>
-          <span className="replica-brand-text">医疗AI审计平台</span>
+          <span className="replica-brand-copy">
+            <span className="replica-brand-text">{AUDIT_PLATFORM_NAME}</span>
+            <span>{AUDIT_PLATFORM_SUBTITLE}</span>
+          </span>
         </Link>
 
         <nav className="replica-main-nav" aria-label="主导航">
@@ -62,25 +67,10 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
           })}
         </nav>
 
-        <section className="replica-history" aria-labelledby="replica-history-title">
-          <div className="replica-history-header">
-            <h2 id="replica-history-title">历史对话</h2>
-            <span aria-hidden="true">◷</span>
-          </div>
-          <div className="replica-history-list">
-            {shellData.data.historyItems.map((item) => (
-              <Link
-                key={item.id}
-                className="replica-history-item"
-                href={`/chat?history=${encodeURIComponent(item.id)}`}
-                aria-label={`打开历史对话：${item.title}`}
-              >
-                <span aria-hidden="true" className="replica-history-dot">✦</span>
-                <span>{item.title}</span>
-              </Link>
-            ))}
-          </div>
-        </section>
+        <Link className="replica-topic-entry" href="/medical-audit" aria-label="打开医保审计专题">
+          <span aria-hidden="true">专</span>
+          <strong>医保审计专题</strong>
+        </Link>
       </aside>
 
       <div className="replica-workspace">
@@ -123,6 +113,37 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
 
         <div className="replica-page-scroll">{children}</div>
       </div>
+      <button
+        type="button"
+        className="replica-history-fab"
+        aria-expanded={historyOpen}
+        aria-label="打开历史对话"
+        onClick={() => setHistoryOpen((open) => !open)}
+      >
+        ◷
+      </button>
+      {historyOpen ? (
+        <section className="replica-history-drawer" aria-labelledby="replica-history-title">
+          <div className="replica-history-header">
+            <h2 id="replica-history-title">历史对话</h2>
+            <button type="button" aria-label="关闭历史对话" onClick={() => setHistoryOpen(false)}>×</button>
+          </div>
+          <div className="replica-history-list">
+            {shellData.data.historyItems.map((item) => (
+              <Link
+                key={item.id}
+                className="replica-history-item"
+                href={`/chat?history=${encodeURIComponent(item.id)}`}
+                aria-label={`打开历史对话：${item.title}`}
+                onClick={() => setHistoryOpen(false)}
+              >
+                <span aria-hidden="true" className="replica-history-dot">✦</span>
+                <span>{item.title}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

@@ -35,7 +35,7 @@ describe("primaryNavigation", () => {
     const documents = primaryNavigation.find((item) => item.id === "documents");
 
     expect(documents).toMatchObject({
-      label: "文档依据",
+      label: "文档检索",
       href: "/documents",
       target: "workspace"
     });
@@ -46,12 +46,12 @@ describe("primaryNavigation", () => {
     const projects = primaryNavigation.find((item) => item.id === "projects");
 
     expect(analytics).toMatchObject({
-      label: "数据分析",
+      label: "AI数据分析",
       href: "/analytics",
       target: "workspace"
     });
     expect(projects).toMatchObject({
-      label: "项目空间",
+      label: "项目管理",
       href: "/projects",
       target: "workspace"
     });
@@ -84,7 +84,7 @@ describe("primaryNavigation", () => {
   it("keeps the sidebar visible layer to five common entries", () => {
     expect(visiblePrimaryNavigation.map((item) => item.href)).toEqual([
       "/workspace",
-      "/fund-compliance",
+      "/medical-audit",
       "/chat",
       "/documents",
       "/archive"
@@ -106,7 +106,7 @@ describe("primaryNavigation", () => {
     ]);
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
       "/workspace",
-      "/fund-compliance",
+      "/medical-audit",
       "/chat",
       "/documents",
       "/archive"

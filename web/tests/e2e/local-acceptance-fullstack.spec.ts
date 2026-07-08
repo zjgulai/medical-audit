@@ -71,45 +71,34 @@ test.describe("local fullstack acceptance for restored replica product", () => {
 
   test("agent directories expose mine and market pages with local backend data", async ({ page }) => {
     await page.goto("/agents");
-    await expect(page.getByRole("heading", { name: "我的助手" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "我的智能体" })).toBeVisible();
     await expect(page.getByText("引用依据核验助手").first()).toBeVisible();
     await page.getByRole("button", { name: "查看详情" }).first().click();
     await expect(page.getByLabel("我的智能体详情")).toBeVisible();
 
     await page.goto("/agent-market");
-    await expect(page.getByRole("heading", { name: "发现审计智能体" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "智能体广场" })).toBeVisible();
     await expect(page.getByText("广场助手")).toBeVisible();
     await expect(page.getByRole("button", { name: /详情/ }).first()).toBeVisible();
   });
 
-  test("analytics, graph, reports, projects and medical audit remain interactive", async ({ page }) => {
+  test("preview modules are clear and medical audit remains interactive", async ({ page }) => {
     await page.goto("/analytics");
     await expect(page.getByRole("heading", { name: "AI数据分析" })).toBeVisible();
-    await page.locator('input[type="file"]').setInputFiles({
-      name: "charge-sample.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from("patient_id,charge_amount\nP001,120\n")
-    });
-    await expect(page.getByText("charge-sample.csv", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "开始分析" }).click();
-    await expect(page.getByText(/结果预览已生成预览/)).toBeVisible();
+    await expect(page.getByLabel("AI数据分析开通说明")).toBeVisible();
+    await expect(page.getByText("内测中")).toBeVisible();
 
     await page.goto("/graph");
     await expect(page.getByRole("heading", { name: "知识图谱", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "聚焦" }).first().click();
-    await expect(page.getByLabel("图谱详情预览")).toBeVisible();
-    await page.getByRole("button", { name: "关闭图谱详情" }).click();
+    await expect(page.getByLabel("知识图谱开通说明")).toBeVisible();
 
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "底稿与报告" })).toBeVisible();
-    await page.getByRole("button", { name: "查看底稿" }).first().click();
-    await expect(page.getByLabel("报告详情预览")).toBeVisible();
-    await page.getByRole("button", { name: "关闭报告详情" }).click();
+    await expect(page.getByRole("heading", { name: "审计底稿/报告" })).toBeVisible();
+    await expect(page.getByLabel("审计底稿/报告开通说明")).toBeVisible();
 
     await page.goto("/projects");
     await expect(page.getByRole("heading", { name: "项目管理" })).toBeVisible();
-    await expect(page.getByLabel("审计驾驶舱")).toBeVisible();
-    await expect(page.getByText("总审计条数")).toBeVisible();
+    await expect(page.getByLabel("项目管理开通说明")).toBeVisible();
 
     await page.goto("/medical-audit");
     await expect(page.getByRole("heading", { name: "医保审计" })).toBeVisible();
@@ -128,7 +117,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     for (const redirect of redirects) {
       await page.goto(redirect.from);
       await expect(page).toHaveURL(redirect.to);
-      await expect(page.getByRole("link", { name: "医疗AI审计平台" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
     }
 
     const compatibilityPages = [
@@ -143,7 +132,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       await expect(page).toHaveURL(new RegExp(`${compatibilityPage.route.replace(/\//g, "\\/")}$`));
       await expect(page.getByRole("heading", { name: compatibilityPage.heading })).toBeVisible();
       await expect(page.getByText(compatibilityPage.marker).first()).toBeVisible();
-      await expect(page.getByRole("link", { name: "医疗AI审计平台" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
     }
   });
 });

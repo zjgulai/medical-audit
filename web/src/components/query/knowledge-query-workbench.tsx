@@ -162,7 +162,7 @@ export function KnowledgeQueryWorkbench() {
               className="audit-focus-ring audit-btn audit-btn-neutral"
               href="/documents"
             >
-              回到文档依据
+              回到文档检索
             </a>
           </div>
         </form>
