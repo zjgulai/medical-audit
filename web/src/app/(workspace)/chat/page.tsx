@@ -109,7 +109,14 @@ function ChatPortalContent() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const appliedUrlQuestionRef = useRef("");
+  const appliedUrlSourcesRef = useRef("");
   const searchParams = useSearchParams();
+  const requestedQuestion = searchParams.get("question")?.trim() ?? "";
+  const requestedSourceCollections = searchParams.getAll("source_collection")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const requestedSourceKey = requestedSourceCollections.join("|");
   const chatData = useReplicaChatData();
   const activeHistoryId = searchParams.get("history");
   const requestedAgentId = searchParams.get("agent");
@@ -197,6 +204,29 @@ function ChatPortalContent() {
       setSelectedAgent(matched);
     }
   }, [chatData.data.agents, requestedAgentId, selectedAgent]);
+
+  useEffect(() => {
+    if (!requestedQuestion || appliedUrlQuestionRef.current === requestedQuestion) {
+      return;
+    }
+    setQuestion((current) => current.trim() ? current : requestedQuestion);
+    appliedUrlQuestionRef.current = requestedQuestion;
+  }, [requestedQuestion]);
+
+  useEffect(() => {
+    if (!requestedSourceKey || queryableSources.length === 0 || appliedUrlSourcesRef.current === requestedSourceKey) {
+      return;
+    }
+    const requestedSources = new Set(requestedSourceCollections);
+    const matchedSources = queryableSources
+      .map((source) => source.source_collection)
+      .filter((source) => requestedSources.has(source));
+    if (matchedSources.length === 0) {
+      return;
+    }
+    setSelectedSources(matchedSources);
+    appliedUrlSourcesRef.current = requestedSourceKey;
+  }, [queryableSources, requestedSourceCollections, requestedSourceKey]);
 
   function updateQuestion(value: string) {
     setQuestion(value);
