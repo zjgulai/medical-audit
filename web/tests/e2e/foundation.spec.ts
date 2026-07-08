@@ -397,6 +397,23 @@ test("workspace keeps its redirect while compatibility routes render current pro
   }
 });
 
+test("compatibility route CTAs keep the medical audit workflow reachable", async ({ page }) => {
+  await page.goto("/fund-compliance");
+  await page.getByRole("link", { name: "进入医保审计" }).click();
+  await expect(page).toHaveURL(/\/medical-audit$/);
+  await expect(page.getByRole("heading", { name: "医保审计" })).toBeVisible();
+
+  await page.goto("/fund-compliance/review");
+  await page.getByRole("link", { name: "进入分析" }).first().click();
+  await expect(page).toHaveURL(/\/analytics\?template=medical-expense-summary$/);
+  await expect(page.getByRole("heading", { name: "数据分析" })).toBeVisible();
+
+  await page.goto("/guided-check");
+  await page.getByRole("link", { name: "进入 AI 对话" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("heading", { name: "AI，让审计更智能" })).toBeVisible();
+});
+
 test("document search, analytics, graph, reports, projects and medical audit keep core interactions reachable", async ({ page }) => {
   await page.goto("/documents");
   await page.getByLabel("检索关键词").fill("医保基金审核依据是什么？");
