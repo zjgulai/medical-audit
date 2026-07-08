@@ -8,7 +8,8 @@ import {
   ReplicaFilterButton,
   ReplicaMetric,
   ReplicaNotice,
-  ReplicaPageHeader
+  ReplicaPageHeader,
+  ReplicaRuntimeBadge
 } from "@/components/replica/replica-page-kit";
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
 import type { ReferenceKnowledgeBase } from "@/lib/reference-replica-data";
@@ -153,6 +154,11 @@ export default function KnowledgeBasePage() {
         description="按一级专题和二级知识库组织当前项目材料，优先展示可被问答、检索和智能体调用的来源。"
         actions={
           <>
+            <ReplicaRuntimeBadge
+              source={knowledgeBaseData.source}
+              status={knowledgeBaseData.status}
+              issueCount={knowledgeBaseData.issues.length}
+            />
             <button
               type="button"
               className="replica-secondary-button"

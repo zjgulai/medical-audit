@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchAgents } from "@/lib/api-client";
+import { fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
 
-import { useReplicaAgentsData } from "./use-replica-runtime";
+import { useReplicaAgentsData, useReplicaGraphData } from "./use-replica-runtime";
 
 vi.mock("@/lib/api-client", () => ({
   fetchAgents: vi.fn(async () => ({
@@ -58,6 +58,19 @@ function AgentsRuntimeProbe() {
   );
 }
 
+function GraphRuntimeProbe() {
+  const result = useReplicaGraphData();
+
+  return (
+    <div data-source={result.source} data-status={result.status}>
+      <span>{result.data.title}</span>
+      {result.issues.map((issue) => (
+        <em key={`${issue.surface}-${issue.code}`}>{issue.code}</em>
+      ))}
+    </div>
+  );
+}
+
 describe("use-replica-runtime", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -97,5 +110,58 @@ describe("use-replica-runtime", () => {
     });
     expect(screen.getByText("模拟数据助手").parentElement).toHaveAttribute("data-source", "fixture");
     expect(screen.getByText("api-read-failed")).toBeInTheDocument();
+  });
+
+  it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {
+    vi.mocked(fetchGraphWorkbench).mockResolvedValueOnce({
+      format: "graph-workbench-v1",
+      generated_at: "2026-07-08T00:00:00Z",
+      graph_id: "graph-seed-test",
+      graph_title: "种子图谱",
+      graph_scope: "只读种子拓扑",
+      nodes: [
+        {
+          id: "node-project",
+          label: "医保审计项目",
+          kind: "项目",
+          description: "用于测试后端种子图谱分类。",
+          metric: "1 个专题",
+          status: "待接入",
+          href: "/projects",
+          x: 50,
+          y: 50
+        }
+      ],
+      relations: [],
+      metrics: {
+        node_count: 1,
+        node_kind_count: 1,
+        node_kind_counts: {
+          项目: 1,
+          一级分类: 0,
+          知识库: 0,
+          文档: 0,
+          规则: 0,
+          疑点: 0,
+          复核: 0,
+          报告: 0,
+          整改: 0
+        },
+        relation_count: 0,
+        strong_relation_count: 0,
+        pending_relation_count: 0
+      },
+      evidence_grade: "local-readonly-api",
+      production_side_effect: "none",
+      store: { ready: true, backend: "ReadonlyGraphWorkbenchSeed" }
+    });
+
+    render(<GraphRuntimeProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByText("种子图谱")).toBeInTheDocument();
+    });
+    expect(screen.getByText("种子图谱").parentElement).toHaveAttribute("data-source", "api");
+    expect(screen.getByText("backend-seed-data")).toBeInTheDocument();
   });
 });

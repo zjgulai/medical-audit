@@ -1751,6 +1751,50 @@ select {
   gap: 10px;
 }
 
+.replica-runtime-badge {
+  display: inline-flex;
+  min-height: 36px;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid #d6e0ee;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 22px rgba(15, 46, 82, 0.06);
+  padding: 6px 10px;
+  color: #31506f;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.replica-runtime-badge strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.replica-runtime-badge em {
+  margin-top: 2px;
+  color: #6f7785;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.replica-runtime-badge.source-api {
+  border-color: rgba(47, 111, 178, 0.24);
+  color: #1f5d9f;
+}
+
+.replica-runtime-badge.source-hybrid {
+  border-color: rgba(178, 121, 47, 0.28);
+  color: #8a5a16;
+}
+
+.replica-runtime-badge.source-seed,
+.replica-runtime-badge.source-fixture {
+  border-color: rgba(178, 121, 47, 0.32);
+  background: #fffaf0;
+  color: #8a5a16;
+}
+
 .replica-primary-button,
 .replica-secondary-button {
   display: inline-flex;

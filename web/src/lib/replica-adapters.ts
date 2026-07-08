@@ -66,6 +66,7 @@ export type ReplicaAdapterIssueCode =
   | "api-read-failed"
   | "fixture-fallback"
   | "partial-schema-gap"
+  | "backend-seed-data"
   | "catalog-api-needed"
   | "mutation-gated";
 
@@ -211,6 +212,10 @@ function sourceFrom(apiUsed: boolean, fixtureUsed: boolean): ReplicaDataSource {
     return "fixture";
   }
   return fixtureUsed ? "hybrid" : "api";
+}
+
+function isReadonlySeedBackend(backend: string): boolean {
+  return backend.startsWith("Readonly") && backend.endsWith("Seed");
 }
 
 async function readOptionalApi<TResponse>(
@@ -683,6 +688,14 @@ export async function loadReplicaGraphData(
 
   if (!graph || graph.nodes.length === 0) {
     return { source: "fixture", data: graphDataFallback(), issues };
+  }
+
+  if (isReadonlySeedBackend(graph.store.backend)) {
+    issues.push(issue(
+      "graph",
+      "backend-seed-data",
+      `Graph workbench is served by ${graph.store.backend}; treat it as seed data until persistent relations are available.`
+    ));
   }
 
   return { source: "api", data: mapGraphWorkbench(graph), issues };
