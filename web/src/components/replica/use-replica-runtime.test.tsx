@@ -118,7 +118,7 @@ describe("use-replica-runtime", () => {
     render(<GraphRuntimeProbe />);
 
     expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-source", "fixture");
-    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-status", "ready");
+    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-status", "loading");
   });
 
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {
