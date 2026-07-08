@@ -1,0 +1,225 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  fetchAuditFindings,
+  fetchDocumentSourceCollections,
+  fetchReportWorkbench
+} from "@/lib/api-client";
+import type {
+  AuditFindingsResponse,
+  DocumentSourceCollectionCatalogResponse,
+  ReportWorkbenchResponse
+} from "@/lib/api-types";
+
+import MedicalAuditPage from "./page";
+
+vi.mock("@/lib/api-client", () => ({
+  fetchAuditFindings: vi.fn(),
+  fetchDocumentSourceCollections: vi.fn(),
+  fetchReportWorkbench: vi.fn()
+}));
+
+const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
+const fetchDocumentSourceCollectionsMock = vi.mocked(fetchDocumentSourceCollections);
+const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
+
+const auditFindingsResponse: AuditFindingsResponse = {
+  items: [
+    {
+      finding_key: "finding-f044ebd309b659dc",
+      status: "open",
+      finding_type: "medical-insurance-policy",
+      severity: "medium",
+      review_status: "confirmed-violation",
+      review_task_id: "review-task-0007",
+      source_record_locator: { source_table: "visit_charge_detail", visit_id: "VISIT-0001" },
+      calculation_trace: { total_amount: 1280.5, matched_rule: "policy-drug-scope" },
+      metadata: {
+        department: "骨科",
+        subject: "医保目录限制药品"
+      },
+      created_at: "2026-07-07T01:00:00Z",
+      updated_at: "2026-07-07T02:00:00Z",
+      audit_run_key: "run-20260707",
+      audit_task_key: "task-medical-audit",
+      rule_key: "policy-drug-scope",
+      rule_version_key: "policy-drug-scope@2026-07",
+      evidence_items: [
+        {
+          evidence_type: "knowledge-citation",
+          chunk_id: "chunk-001",
+          source_package_version_key: "package-v1",
+          index_version_key: "index-v1",
+          citation_id: "CIT-001",
+          locator: { title: "医保基金监管政策" },
+          snippet: "限定支付范围应结合诊断和医保目录核验。",
+          metadata: {},
+          created_at: "2026-07-07T02:00:00Z"
+        }
+      ]
+    }
+  ],
+  stats: { total: 1, open: 1, pending_review: 0, linked_review_task: 1 },
+  filters: { review_status: null, limit: 20 },
+  review_status_options: { "confirmed-violation": "确认违规", "pending-review": "待复核" },
+  generation_readiness: {
+    status: "generated",
+    ready: true,
+    has_findings: true,
+    table_counts: { audit_findings: 1 },
+    prerequisites: [],
+    blocking_reasons: [],
+    next_actions: ["从疑点清单创建人工复核任务。"]
+  },
+  store: { ready: true, backend: "SqlAlchemyAuditFindingStore" }
+};
+
+const sourceCollectionsResponse: DocumentSourceCollectionCatalogResponse = {
+  contract_version: "document-source-collections-v1",
+  role: "auditor",
+  items: [
+    {
+      source_collection: "medical-insurance-laws",
+      label: "医保法规库",
+      scope: "tenant",
+      phase: "active",
+      domain: "medical-audit",
+      evidence_group: "policy",
+      description: "医保基金监管政策、目录与处罚依据。",
+      audit_hint: "用于医保审计规则解释。",
+      access: "read",
+      product_queryable: true,
+      queryable: true,
+      metrics: {
+        document_count: 300,
+        chunk_count: 1200,
+        character_count: 900000,
+        linked_app_count: 4
+      }
+    }
+  ],
+  search_backend: { ready: true, backend: "postgres-bm25", details: {} },
+  upload_permissions: {
+    can_upload_personal: true,
+    can_read_all_personal_uploads: true,
+    can_govern_personal_uploads: true
+  },
+  boundaries: {
+    production_write: false,
+    provider_call: false,
+    database_write: false,
+    object_storage_write: false,
+    source: "runtime_state_and_registry_only"
+  }
+};
+
+const reportWorkbenchResponse: ReportWorkbenchResponse = {
+  format: "report-workbench-v1",
+  generated_at: "2026-07-07T02:30:00Z",
+  template_registry_status: "active",
+  workpaper_templates: [
+    {
+      id: "template-fee-summary",
+      name: "医保费用汇总表",
+      source_template_id: "table1",
+      source_table: "fee_summary",
+      source_file_name: "表1_医保费用汇总表.xlsx",
+      sheet_name: "费用汇总",
+      output_type: "底稿草稿",
+      registry_status: "active",
+      expected_columns: ["机构编码", "机构名称", "就诊人次", "总费用", "基金支付"],
+      key_checks: [],
+      evidence_bindings: [],
+      prompt: "生成医保费用汇总表底稿。",
+      chat_href: "/chat?question=医保费用汇总表"
+    }
+  ],
+  report_entries: [],
+  report_evidence_sources: [],
+  metrics: {
+    report_count: 2,
+    signed_report_count: 0,
+    blocked_report_count: 1,
+    included_finding_count: 1,
+    docx_download_count: 0
+  },
+  store: { ready: true, backend: "SqlAlchemyReviewTaskStore" }
+};
+
+function mockApis() {
+  fetchAuditFindingsMock.mockResolvedValue(auditFindingsResponse);
+  fetchDocumentSourceCollectionsMock.mockResolvedValue(sourceCollectionsResponse);
+  fetchReportWorkbenchMock.mockResolvedValue(reportWorkbenchResponse);
+}
+
+describe("MedicalAuditPage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders production audit findings and removes the old static metric baseline", async () => {
+    mockApis();
+
+    render(<MedicalAuditPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("finding-f044ebd309b659dc").length).toBeGreaterThanOrEqual(1);
+    });
+
+    expect(fetchAuditFindingsMock).toHaveBeenCalledWith(undefined);
+    expect(fetchDocumentSourceCollectionsMock).toHaveBeenCalled();
+    expect(fetchReportWorkbenchMock).toHaveBeenCalled();
+    expect(screen.getByText(/SqlAlchemyAuditFindingStore/)).toBeInTheDocument();
+    expect(screen.getByText("医保法规库")).toBeInTheDocument();
+    expect(screen.queryByText("207")).not.toBeInTheDocument();
+    expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
+  });
+
+  it("opens a backend-backed finding drawer and links context into chat", async () => {
+    mockApis();
+
+    render(<MedicalAuditPage />);
+
+    const findingButton = await screen.findByRole("button", { name: "finding-f044ebd309b659dc" });
+    fireEvent.click(findingButton);
+
+    const drawer = screen.getByLabelText("疑点详情");
+    expect(within(drawer).getByText("policy-drug-scope@2026-07")).toBeInTheDocument();
+    expect(within(drawer).getByText("限定支付范围应结合诊断和医保目录核验。")).toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "AI 分析" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/chat?question=")
+    );
+  });
+
+  it("keeps create and import actions behind explicit production-write gates", async () => {
+    mockApis();
+
+    render(<MedicalAuditPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建审计任务" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("创建审计任务草稿");
+    expect(screen.getByRole("dialog")).toHaveTextContent("当前按钮只打开受控入口");
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "批量导入" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("批量导入费用表");
+    expect(screen.getByRole("dialog")).toHaveTextContent("本批次不自动创建、导入、复核或归档真实生产数据");
+  });
+
+  it("uses report workbench templates for the fee summary tab instead of fake rows", async () => {
+    mockApis();
+
+    render(<MedicalAuditPage />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "费用汇总表" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("后端模板已注册")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText("医保费用汇总表").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("机构编码").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("导入后由后端解析回填")).toBeInTheDocument();
+  });
+});

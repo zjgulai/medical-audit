@@ -1,96 +1,52 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { buildReplicaLocalGateNotice } from "@/components/replica/replica-page-kit";
+import {
+  fetchAuditFindings,
+  fetchDocumentSourceCollections,
+  fetchReportWorkbench
+} from "@/lib/api-client";
+import type {
+  AuditFinding as BackendAuditFinding,
+  AuditFindingsResponse,
+  DocumentSourceCollectionCatalogItem,
+  DocumentSourceCollectionCatalogResponse,
+  ReportWorkbenchResponse,
+  WorkpaperTemplateRegistryItem
+} from "@/lib/api-types";
 
 type AuditView = "audit" | "table1" | "table2" | "table3";
 type ToolId = "audit" | "dip" | "code" | "price" | "rule" | "setting";
 type RuleFilter = "all" | "policy" | "manage" | "medical" | "dip" | "code" | "price";
-type RiskLevel = "高风险" | "中风险" | "低风险";
-type RiskFilter = "全部风险" | RiskLevel;
-type DeptFilter = "全部科室" | "内科" | "外科" | "骨科" | "儿科" | "妇产科" | "心内科";
-type StatusFilter = "全部状态" | "待初审" | "待复核" | "已确认违规" | "已整改" | "已驳回";
-type AssistantRole = "assistant" | "user";
+type RiskFilter = "全部风险" | "高风险" | "中风险" | "低风险";
+type WorkflowKind = "new-task" | "import" | "review" | "report" | "settings";
 
-type AuditFinding = {
-  readonly id: string;
-  readonly patient: string;
-  readonly gender: string;
-  readonly age: number;
-  readonly department: Exclude<DeptFilter, "全部科室">;
-  readonly doctor: string;
-  readonly dimension: string;
-  readonly rule: string;
-  readonly amount: number;
-  readonly risk: RiskLevel;
-  readonly status: Exclude<StatusFilter, "全部状态">;
-  readonly date: string;
-  readonly diagnosis: string;
-  readonly subject: string;
-  readonly evidence: string;
-  readonly knowledge: string;
-  readonly code: string;
-  readonly toolIds: readonly ToolId[];
+type LoadState<T> =
+  | { readonly status: "loading" }
+  | { readonly status: "ready"; readonly data: T }
+  | { readonly status: "error"; readonly message: string };
+
+type WorkflowDialog = {
+  readonly kind: WorkflowKind;
+  readonly finding?: BackendAuditFinding | null;
 };
 
-type AssistantMessage = {
-  readonly id: string;
-  readonly role: AssistantRole;
-  readonly text: string;
+type TemplateConfig = {
+  readonly id: AuditView;
+  readonly title: string;
+  readonly description: string;
+  readonly keywords: readonly string[];
+  readonly fallbackColumns: readonly string[];
 };
 
-type AssistantContext = {
-  readonly finding: AuditFinding | null;
-  readonly activeView: AuditView;
-  readonly activeRule: RuleFilter;
-  readonly riskFilter: RiskFilter;
-  readonly deptFilter: DeptFilter;
-  readonly statusFilter: StatusFilter;
-  readonly filteredCount: number;
-  readonly selectedCount: number;
-};
-
-type FeeCategoryRow = {
-  readonly category: string;
-  readonly visits: string;
-  readonly people: string;
-  readonly validVisits: string;
-  readonly validPeople: string;
-  readonly averageFee: string;
-  readonly totalFee: string;
-  readonly cashPay: string;
-  readonly accountPay: string;
-  readonly poolPay: string;
-  readonly largePay: string;
-  readonly civilPay: string;
-  readonly medicalAid: string;
-  readonly totalLedger: string;
-  readonly ratio: number;
-};
-
-type VisitDetailRow = {
-  readonly seq: number;
-  readonly staffType: "在职职工" | "退休人员" | "灵活就业";
-  readonly recordNo: string;
-  readonly name: string;
-  readonly idNo: string;
-  readonly diagnosis: string;
-  readonly totalFee: string;
-  readonly selfPay: string;
-  readonly poolPay: string;
-  readonly civilPay: string;
-  readonly largePay: string;
-  readonly accountPay: string;
-};
-
-const toolModules: readonly { id: ToolId; label: string; badge?: string; symbol: string }[] = [
-  { id: "audit", label: "智能审计", badge: "89", symbol: "审" },
-  { id: "dip", label: "DIP/DRG审计", badge: "34", symbol: "分" },
-  { id: "code", label: "编码质量", badge: "12", symbol: "码" },
-  { id: "price", label: "价格合规", badge: "45", symbol: "费" },
+const toolModules: readonly { id: ToolId; label: string; symbol: string }[] = [
+  { id: "audit", label: "智能审计", symbol: "审" },
+  { id: "dip", label: "DIP/DRG审计", symbol: "分" },
+  { id: "code", label: "编码质量", symbol: "码" },
+  { id: "price", label: "价格合规", symbol: "费" },
   { id: "rule", label: "两库规则", symbol: "库" },
-  { id: "setting", label: "系统配置", symbol: "设" }
+  { id: "setting", label: "任务配置", symbol: "设" }
 ];
 
 const viewTabs: readonly { id: AuditView; label: string }[] = [
@@ -119,419 +75,556 @@ const toolRuleFilters: Partial<Record<ToolId, RuleFilter>> = {
 };
 
 const riskOptions: readonly RiskFilter[] = ["全部风险", "高风险", "中风险", "低风险"];
-const deptOptions: readonly DeptFilter[] = ["全部科室", "内科", "外科", "骨科", "儿科", "妇产科", "心内科"];
-const statusOptions: readonly StatusFilter[] = ["全部状态", "待初审", "待复核", "已确认违规", "已整改", "已驳回"];
 
-const assistantQuickActions = [
-  "分析当前疑点",
-  "生成复核意见",
-  "汇总高风险原因",
-  "起草整改通知"
-] as const;
+const statusLabelFallback: Record<string, string> = {
+  "pending-review": "待复核",
+  "needs-evidence": "需补证",
+  "confirmed-violation": "确认违规",
+  "not-violation": "排除违规",
+  closed: "已关闭"
+};
 
-const initialAssistantMessages: readonly AssistantMessage[] = [
-  {
-    id: "assistant-welcome",
-    role: "assistant",
-    text: "我已进入医保审计工作台，可基于当前疑点、规则维度、筛选条件和费用表格生成本地分析建议。"
+const readinessStatusLabels: Record<string, string> = {
+  blocked: "疑点生成链路未就绪",
+  "ready-to-run": "规则运行待执行",
+  generated: "疑点已生成"
+};
+
+const templateConfigs: Record<Exclude<AuditView, "audit">, TemplateConfig> = {
+  table1: {
+    id: "table1",
+    title: "医保费用汇总表",
+    description: "用于承接医保费用总量、基金支付和个人支付的批量导入结果。",
+    keywords: ["费用汇总", "summary", "table1", "表1"],
+    fallbackColumns: ["机构编码", "机构名称", "就诊人次", "总费用", "基金支付", "个人支付", "结算月份"]
+  },
+  table2: {
+    id: "table2",
+    title: "医保费用分类汇总表",
+    description: "用于按费用类型、项目类别和支付类型归集导入后的分类统计。",
+    keywords: ["分类汇总", "category", "table2", "表2"],
+    fallbackColumns: ["费用类别", "项目数量", "总费用", "统筹支付", "账户支付", "现金支付", "占比"]
+  },
+  table3: {
+    id: "table3",
+    title: "就诊费用明细表",
+    description: "用于承接逐人逐次就诊费用明细，后续疑点规则从明细表生成。",
+    keywords: ["就诊费用", "明细", "detail", "table3", "表3"],
+    fallbackColumns: ["就诊流水号", "姓名", "证件号", "诊断", "项目名称", "医保编码", "数量", "金额"]
   }
-] as const;
+};
 
-const metricCards = [
-  {
-    label: "本月疑点总数",
-    value: "207",
-    tone: "blue",
-    change: "▲ 12.5% 较上月",
-    changeTone: "up",
-    sub: "高风险 89 | 中风险 68 | 低风险 50"
-  },
-  {
-    label: "涉及金额（元）",
-    value: "¥128,450",
-    tone: "blue",
-    change: "▲ 8.3% 较上月",
-    changeTone: "up",
-    sub: "药品类 ¥68,200 | 项目类 ¥34,150 | 其他 ¥26,100"
-  },
-  {
-    label: "DIP分值异常",
-    value: "34",
-    tone: "blue",
-    change: "▲ 5.7% 较上月",
-    changeTone: "up",
-    sub: "高套嫌疑 12 | 低套嫌疑 8 | 分值偏差 14"
-  },
-  {
-    label: "已整改 / 整改率",
-    value: "28 / 13.5%",
-    tone: "green",
-    change: "▼ 2.1% 较上月",
-    changeTone: "down",
-    sub: "待复核 34 | 逾期 6"
+function formatCurrency(amount: number | null): string {
+  if (amount == null || Number.isNaN(amount)) {
+    return "-";
   }
-] as const;
-
-const auditFindings: readonly AuditFinding[] = [
-  {
-    id: "20251203001",
-    patient: "王**",
-    gender: "男",
-    age: 52,
-    department: "骨科",
-    doctor: "赵医生",
-    amount: 1240,
-    rule: "药品区分性别使用",
-    dimension: "政策类-药品",
-    knowledge: "枸橼酸他莫昔芬片限女性使用",
-    code: "XB01AAT012A001010203485",
-    diagnosis: "骨质疏松",
-    subject: "枸橼酸他莫昔芬片 10mg*60片",
-    evidence: "患者性别为男，药品限定性别为女。无乳腺癌相关诊断。",
-    risk: "高风险",
-    status: "待初审",
-    date: "2025-12-03",
-    toolIds: ["audit", "rule"]
-  },
-  {
-    id: "20251203005",
-    patient: "李**",
-    gender: "女",
-    age: 34,
-    department: "内科",
-    doctor: "钱医生",
-    amount: 8600,
-    rule: "药品限适应症",
-    dimension: "政策类-药品",
-    knowledge: "注射用阿替普酶限急性缺血性脑卒中发病 4.5 小时内",
-    code: "XB01AAD021A001010203491",
-    diagnosis: "高血压",
-    subject: "注射用阿替普酶 20mg",
-    evidence: "患者诊断仅为高血压，无急性缺血性脑卒中相关诊断及发病时间记录。",
-    risk: "高风险",
-    status: "待初审",
-    date: "2025-12-03",
-    toolIds: ["audit", "rule"]
-  },
-  {
-    id: "20251202018",
-    patient: "张**",
-    gender: "男",
-    age: 67,
-    department: "心内科",
-    doctor: "孙医生",
-    amount: 320,
-    rule: "药品限工伤保险",
-    dimension: "政策类-药品",
-    knowledge: "工伤保险药品目录范围外使用",
-    code: "XB01AAG034A001010203512",
-    diagnosis: "冠心病",
-    subject: "丹参酮IIA磺酸钠注射液",
-    evidence: "患者参保类型为职工医保，非工伤保险。该药品限定支付范围为限工伤保险。",
-    risk: "中风险",
-    status: "待复核",
-    date: "2025-12-02",
-    toolIds: ["audit", "rule"]
-  },
-  {
-    id: "20251201015",
-    patient: "刘**",
-    gender: "女",
-    age: 56,
-    department: "骨科",
-    doctor: "吴医生",
-    amount: 2340,
-    rule: "药品限适应症",
-    dimension: "政策类-药品",
-    knowledge: "利伐沙班限髋关节或膝关节置换术后",
-    code: "XB01AAD067A001010203556",
-    diagnosis: "腰椎间盘突出",
-    subject: "利伐沙班片 15mg*7片",
-    evidence: "患者诊断为腰椎间盘突出，未行髋关节或膝关节置换手术。",
-    risk: "高风险",
-    status: "待初审",
-    date: "2025-12-01",
-    toolIds: ["audit", "rule"]
-  },
-  {
-    id: "20251201042",
-    patient: "周**",
-    gender: "男",
-    age: 72,
-    department: "内科",
-    doctor: "周医生",
-    amount: 12500,
-    rule: "DIP分值高套",
-    dimension: "DIP/DRG",
-    knowledge: "DIP 病种分值与主要诊断、费用结构应保持一致",
-    code: "DIP-A02.0",
-    diagnosis: "沙门菌肠炎",
-    subject: "医保申报分值 480.50",
-    evidence: "病案首页主要诊断应得分值 351.94，医保申报分值偏差 36.5%。",
-    risk: "高风险",
-    status: "待复核",
-    date: "2025-12-01",
-    toolIds: ["audit", "dip"]
-  },
-  {
-    id: "20251201058",
-    patient: "吴**",
-    gender: "女",
-    age: 45,
-    department: "妇产科",
-    doctor: "冯医生",
-    amount: 2800,
-    rule: "DRG分组错误",
-    dimension: "DIP/DRG",
-    knowledge: "DRG 分组需与主要诊断、手术编码和并发症保持一致",
-    code: "DRG-O01",
-    diagnosis: "子宫肌瘤",
-    subject: "DRG 组别异常",
-    evidence: "主要诊断与手术编码组合无法支持当前分组，需复核病案首页。",
-    risk: "高风险",
-    status: "待初审",
-    date: "2025-12-01",
-    toolIds: ["audit", "dip", "code"]
-  },
-  {
-    id: "20251130031",
-    patient: "孙**",
-    gender: "男",
-    age: 38,
-    department: "内科",
-    doctor: "郑医生",
-    amount: 5200,
-    rule: "信息数据篡改",
-    dimension: "管理类",
-    knowledge: "入院、结算、收费时间应可追溯且一致",
-    code: "MGMT-TIME-078",
-    diagnosis: "肺炎",
-    subject: "HIS 入院时间与医保结算时间不一致",
-    evidence: "HIS 显示入院时间为 2025-11-28 09:30，医保结算接口记录为 2025-11-27 22:00。",
-    risk: "高风险",
-    status: "待复核",
-    date: "2025-11-30",
-    toolIds: ["audit", "code"]
-  },
-  {
-    id: "20251129012",
-    patient: "马**",
-    gender: "女",
-    age: 61,
-    department: "外科",
-    doctor: "陈医生",
-    amount: 85,
-    rule: "诊疗项目超标准收费",
-    dimension: "价格合规",
-    knowledge: "河南省医疗服务价格项目规范",
-    code: "PRICE-DRESSING-056",
-    diagnosis: "术后伤口护理",
-    subject: "小换药收费",
-    evidence: "服务目录标准为小换药 15 元/次，实际收取 25 元/次。",
-    risk: "低风险",
-    status: "已驳回",
-    date: "2025-11-29",
-    toolIds: ["audit", "price"]
-  },
-  {
-    id: "20251128045",
-    patient: "郑**",
-    gender: "男",
-    age: 55,
-    department: "骨科",
-    doctor: "刘医生",
-    amount: 3400,
-    rule: "ICD-10编码不完整",
-    dimension: "编码质量",
-    knowledge: "病案首页主要诊断需编码到规则要求粒度",
-    code: "ICD10-S72.0",
-    diagnosis: "股骨颈骨折",
-    subject: "主要诊断编码 S72.0",
-    evidence: "主要诊断未编码到细目，影响 DIP 分组准确性。",
-    risk: "中风险",
-    status: "待初审",
-    date: "2025-11-28",
-    toolIds: ["audit", "code", "dip"]
-  },
-  {
-    id: "20251127019",
-    patient: "赵**",
-    gender: "女",
-    age: 29,
-    department: "儿科",
-    doctor: "韩医生",
-    amount: 1260,
-    rule: "药品儿童专用",
-    dimension: "政策类-药品",
-    knowledge: "儿童专用药品不得用于成人医保结算",
-    code: "XB01AAP044A001010203577",
-    diagnosis: "急性支气管炎",
-    subject: "儿童复方制剂",
-    evidence: "参保人年龄 29 岁，药品限定儿童适用，未见特殊说明。",
-    risk: "中风险",
-    status: "已确认违规",
-    date: "2025-11-27",
-    toolIds: ["audit", "rule"]
-  }
-];
-
-const ruleGroups = [
-  {
-    title: "政策类规则",
-    filter: "policy" as const,
-    children: ["药品区分性别使用", "药品儿童专用", "药品限工伤保险", "药品限生育保险", "药品限适应症", "药品限疗程", "药品限就医方式"]
-  },
-  {
-    title: "管理类规则",
-    filter: "manage" as const,
-    children: ["信息数据篡改", "虚假病历", "超量开药", "分解收费", "串换项目"]
-  },
-  {
-    title: "医疗类规则",
-    filter: "medical" as const,
-    children: ["诊疗项目重复收费", "诊疗项目超标准收费", "耗材超量使用", "诊疗项目与诊断不符"]
-  },
-  {
-    title: "DIP/DRG规则",
-    filter: "dip" as const,
-    children: ["DIP分值偏高", "DIP分值偏低", "病组高套", "入组异常"]
-  },
-  {
-    title: "编码质量规则",
-    filter: "code" as const,
-    children: ["诊断编码不一致", "手术编码不完整", "项目编码串换", "医保编码缺失"]
-  },
-  {
-    title: "价格合规规则",
-    filter: "price" as const,
-    children: ["超标准收费", "重复收费", "分解收费", "耗材加价异常"]
-  },
-  {
-    title: "审计状态",
-    filter: "all" as const,
-    children: ["待初审", "待复核", "已确认违规", "已整改"]
-  }
-];
-
-const feeCategoryRows: readonly FeeCategoryRow[] = [
-  { category: "普通门诊", visits: "3,256", people: "1,890", validVisits: "3,120", validPeople: "1,820", averageFee: "¥286", totalFee: "¥931,216", cashPay: "¥186,243", accountPay: "¥279,365", poolPay: "¥372,486", largePay: "¥0", civilPay: "¥46,561", medicalAid: "¥0", totalLedger: "¥744,973", ratio: 2.3 },
-  { category: "门诊慢性病", visits: "1,286", people: "456", validVisits: "1,250", validPeople: "440", averageFee: "¥1,568", totalFee: "¥2,016,448", cashPay: "¥403,289", accountPay: "¥604,934", poolPay: "¥806,579", largePay: "¥40,329", civilPay: "¥50,412", medicalAid: "¥40,329", totalLedger: "¥1,613,159", ratio: 4.9 },
-  { category: "重特大疾病门诊", visits: "234", people: "89", validVisits: "228", validPeople: "86", averageFee: "¥8,520", totalFee: "¥1,993,680", cashPay: "¥598,104", accountPay: "¥498,420", poolPay: "¥598,104", largePay: "¥199,368", civilPay: "¥49,842", medicalAid: "¥49,842", totalLedger: "¥1,395,576", ratio: 4.8 },
-  { category: "特药门诊", visits: "156", people: "67", validVisits: "150", validPeople: "65", averageFee: "¥12,860", totalFee: "¥2,006,160", cashPay: "¥601,848", accountPay: "¥501,540", poolPay: "¥601,848", largePay: "¥200,616", civilPay: "¥50,154", medicalAid: "¥50,154", totalLedger: "¥1,404,312", ratio: 4.9 },
-  { category: "普通住院", visits: "892", people: "823", validVisits: "870", validPeople: "810", averageFee: "¥12,568", totalFee: "¥11,214,656", cashPay: "¥3,364,397", accountPay: "¥2,242,931", poolPay: "¥3,364,397", largePay: "¥1,121,466", civilPay: "¥280,866", medicalAid: "¥224,293", totalLedger: "¥7,850,262", ratio: 27.3 },
-  { category: "重大疾病住院", visits: "123", people: "118", validVisits: "120", validPeople: "116", averageFee: "¥42,580", totalFee: "¥5,237,340", cashPay: "¥1,571,202", accountPay: "¥1,047,468", poolPay: "¥1,571,202", largePay: "¥523,734", civilPay: "¥130,933", medicalAid: "¥261,867", totalLedger: "¥3,666,138", ratio: 12.7 },
-  { category: "单病种住院", visits: "345", people: "340", validVisits: "340", validPeople: "338", averageFee: "¥9,850", totalFee: "¥3,398,250", cashPay: "¥1,019,475", accountPay: "¥679,650", poolPay: "¥1,019,475", largePay: "¥339,825", civilPay: "¥84,956", medicalAid: "¥169,912", totalLedger: "¥2,378,775", ratio: 8.3 },
-  { category: "生育住院", visits: "89", people: "89", validVisits: "89", validPeople: "89", averageFee: "¥6,520", totalFee: "¥580,280", cashPay: "¥174,084", accountPay: "¥116,056", poolPay: "¥174,084", largePay: "¥0", civilPay: "¥0", medicalAid: "¥0", totalLedger: "¥406,196", ratio: 1.4 },
-  { category: "计划生育手术", visits: "45", people: "45", validVisits: "45", validPeople: "45", averageFee: "¥1,860", totalFee: "¥83,700", cashPay: "¥25,110", accountPay: "¥16,740", poolPay: "¥25,110", largePay: "¥0", civilPay: "¥0", medicalAid: "¥0", totalLedger: "¥58,590", ratio: 0.2 },
-  { category: "辅助生殖门诊", visits: "67", people: "34", validVisits: "64", validPeople: "33", averageFee: "¥15,680", totalFee: "¥1,050,560", cashPay: "¥315,168", accountPay: "¥210,112", poolPay: "¥315,168", largePay: "¥0", civilPay: "¥52,528", medicalAid: "¥0", totalLedger: "¥735,392", ratio: 2.6 },
-  { category: "日间手术", visits: "234", people: "231", validVisits: "230", validPeople: "229", averageFee: "¥6,850", totalFee: "¥1,602,900", cashPay: "¥480,870", accountPay: "¥320,580", poolPay: "¥480,870", largePay: "¥80,145", civilPay: "¥80,145", medicalAid: "¥0", totalLedger: "¥1,122,030", ratio: 3.9 },
-  { category: "透析治疗", visits: "890", people: "156", validVisits: "880", validPeople: "154", averageFee: "¥5,680", totalFee: "¥5,056,320", cashPay: "¥1,516,896", accountPay: "¥1,011,264", poolPay: "¥1,516,896", largePay: "¥505,632", civilPay: "¥50,563", medicalAid: "¥101,126", totalLedger: "¥3,539,424", ratio: 12.3 },
-  { category: "体检", visits: "2,560", people: "2,450", validVisits: "2,500", validPeople: "2,400", averageFee: "¥860", totalFee: "¥2,201,600", cashPay: "¥1,320,960", accountPay: "¥440,320", poolPay: "¥0", largePay: "¥0", civilPay: "¥0", medicalAid: "¥0", totalLedger: "¥0", ratio: 5.3 }
-];
-
-const visitRows: readonly VisitDetailRow[] = [
-  { seq: 1, staffType: "在职职工", recordNo: "MZ20251203001", name: "王建国", idNo: "41010519780512****", diagnosis: "腰椎间盘突出", totalFee: "¥3,260", selfPay: "¥978", poolPay: "¥1,304", civilPay: "¥326", largePay: "¥0", accountPay: "¥652" },
-  { seq: 2, staffType: "在职职工", recordNo: "MZ20251203002", name: "李秀芳", idNo: "41010519820324****", diagnosis: "2型糖尿病", totalFee: "¥1,856", selfPay: "¥557", poolPay: "¥742", civilPay: "¥186", largePay: "¥0", accountPay: "¥371" },
-  { seq: 3, staffType: "退休人员", recordNo: "MZ20251203003", name: "张德明", idNo: "41010519560918****", diagnosis: "高血压病III级", totalFee: "¥2,450", selfPay: "¥735", poolPay: "¥980", civilPay: "¥245", largePay: "¥0", accountPay: "¥490" },
-  { seq: 4, staffType: "在职职工", recordNo: "MZ20251203004", name: "刘美华", idNo: "41010519900506****", diagnosis: "急性上呼吸道感染", totalFee: "¥580", selfPay: "¥174", poolPay: "¥232", civilPay: "¥58", largePay: "¥0", accountPay: "¥116" },
-  { seq: 5, staffType: "在职职工", recordNo: "ZY20251203005", name: "陈志强", idNo: "41010519871123****", diagnosis: "冠心病-心绞痛", totalFee: "¥28,650", selfPay: "¥8,595", poolPay: "¥11,460", civilPay: "¥2,865", largePay: "¥2,865", accountPay: "¥2,865" },
-  { seq: 6, staffType: "退休人员", recordNo: "ZY20251203006", name: "赵秀英", idNo: "41010519530214****", diagnosis: "脑梗死恢复期", totalFee: "¥35,680", selfPay: "¥10,704", poolPay: "¥14,272", civilPay: "¥3,568", largePay: "¥3,568", accountPay: "¥3,568" },
-  { seq: 7, staffType: "在职职工", recordNo: "MZ20251203007", name: "孙伟强", idNo: "41010519920815****", diagnosis: "慢性胃炎", totalFee: "¥1,280", selfPay: "¥384", poolPay: "¥512", civilPay: "¥128", largePay: "¥0", accountPay: "¥256" },
-  { seq: 8, staffType: "在职职工", recordNo: "MZ20251203008", name: "周晓燕", idNo: "41010519891007****", diagnosis: "甲状腺结节", totalFee: "¥2,680", selfPay: "¥804", poolPay: "¥1,072", civilPay: "¥268", largePay: "¥0", accountPay: "¥536" },
-  { seq: 9, staffType: "灵活就业", recordNo: "MZ20251203009", name: "吴国强", idNo: "41010519741203****", diagnosis: "慢性支气管炎", totalFee: "¥1,850", selfPay: "¥555", poolPay: "¥740", civilPay: "¥185", largePay: "¥0", accountPay: "¥370" },
-  { seq: 10, staffType: "在职职工", recordNo: "ZY20251203010", name: "郑小玲", idNo: "41010519960318****", diagnosis: "剖宫产术后", totalFee: "¥9,850", selfPay: "¥2,955", poolPay: "¥3,940", civilPay: "¥0", largePay: "¥0", accountPay: "¥2,955" },
-  { seq: 11, staffType: "退休人员", recordNo: "MZ20251203011", name: "黄志华", idNo: "41010519580522****", diagnosis: "骨质疏松症", totalFee: "¥1,560", selfPay: "¥468", poolPay: "¥624", civilPay: "¥156", largePay: "¥0", accountPay: "¥312" },
-  { seq: 12, staffType: "在职职工", recordNo: "MZ20251203012", name: "马丽娟", idNo: "41010519840109****", diagnosis: "乳腺纤维瘤", totalFee: "¥3,280", selfPay: "¥984", poolPay: "¥1,312", civilPay: "¥328", largePay: "¥0", accountPay: "¥656" },
-  { seq: 13, staffType: "在职职工", recordNo: "ZY20251203013", name: "林建华", idNo: "41010519720328****", diagnosis: "肺恶性肿瘤化疗", totalFee: "¥45,680", selfPay: "¥13,704", poolPay: "¥18,272", civilPay: "¥4,568", largePay: "¥4,568", accountPay: "¥4,568" },
-  { seq: 14, staffType: "退休人员", recordNo: "MZ20251203014", name: "谢淑芬", idNo: "41010519541106****", diagnosis: "类风湿关节炎", totalFee: "¥2,180", selfPay: "¥654", poolPay: "¥872", civilPay: "¥218", largePay: "¥0", accountPay: "¥436" },
-  { seq: 15, staffType: "在职职工", recordNo: "MZ20251203015", name: "高明辉", idNo: "41010519860814****", diagnosis: "急性阑尾炎术后", totalFee: "¥8,650", selfPay: "¥2,595", poolPay: "¥3,460", civilPay: "¥865", largePay: "¥0", accountPay: "¥1,730" },
-  { seq: 16, staffType: "在职职工", recordNo: "MZ20251203016", name: "何晓峰", idNo: "41010519910520****", diagnosis: "痛风性关节炎", totalFee: "¥1,420", selfPay: "¥426", poolPay: "¥568", civilPay: "¥142", largePay: "¥0", accountPay: "¥284" },
-  { seq: 17, staffType: "退休人员", recordNo: "ZY20251203017", name: "罗秀兰", idNo: "41010519490730****", diagnosis: "股骨颈骨折术后", totalFee: "¥42,360", selfPay: "¥12,708", poolPay: "¥16,944", civilPay: "¥4,236", largePay: "¥4,236", accountPay: "¥4,236" },
-  { seq: 18, staffType: "在职职工", recordNo: "MZ20251203018", name: "梁志强", idNo: "41010519831217****", diagnosis: "青光眼", totalFee: "¥2,560", selfPay: "¥768", poolPay: "¥1,024", civilPay: "¥256", largePay: "¥0", accountPay: "¥512" },
-  { seq: 19, staffType: "灵活就业", recordNo: "MZ20251203019", name: "宋美琳", idNo: "41010519760908****", diagnosis: "宫颈上皮内瘤变", totalFee: "¥4,860", selfPay: "¥1,458", poolPay: "¥1,944", civilPay: "¥486", largePay: "¥0", accountPay: "¥972" },
-  { seq: 20, staffType: "在职职工", recordNo: "ZY20251203020", name: "曹建军", idNo: "41010519940211****", diagnosis: "胫骨平台骨折", totalFee: "¥32,560", selfPay: "¥9,768", poolPay: "¥13,024", civilPay: "¥3,256", largePay: "¥3,256", accountPay: "¥3,256" },
-  { seq: 21, staffType: "在职职工", recordNo: "MZ20251203021", name: "彭小雪", idNo: "41010519850725****", diagnosis: "妊娠期糖尿病", totalFee: "¥3,680", selfPay: "¥1,104", poolPay: "¥1,472", civilPay: "¥0", largePay: "¥0", accountPay: "¥1,104" },
-  { seq: 22, staffType: "退休人员", recordNo: "MZ20251203022", name: "杜国安", idNo: "41010519520102****", diagnosis: "慢性阻塞性肺疾病", totalFee: "¥6,240", selfPay: "¥1,872", poolPay: "¥2,496", civilPay: "¥624", largePay: "¥0", accountPay: "¥1,248" },
-  { seq: 23, staffType: "在职职工", recordNo: "MZ20251203023", name: "邵丽", idNo: "41010519930823****", diagnosis: "胆囊结石", totalFee: "¥7,930", selfPay: "¥2,379", poolPay: "¥3,172", civilPay: "¥793", largePay: "¥0", accountPay: "¥1,586" },
-  { seq: 24, staffType: "灵活就业", recordNo: "MZ20251203024", name: "孟繁强", idNo: "41010519770519****", diagnosis: "椎间盘突出", totalFee: "¥2,740", selfPay: "¥822", poolPay: "¥1,096", civilPay: "¥274", largePay: "¥0", accountPay: "¥548" },
-  { seq: 25, staffType: "在职职工", recordNo: "ZY20251203025", name: "丁晓敏", idNo: "41010519891029****", diagnosis: "甲状腺癌术后", totalFee: "¥29,860", selfPay: "¥8,958", poolPay: "¥11,944", civilPay: "¥2,986", largePay: "¥2,986", accountPay: "¥2,986" }
-];
-
-function formatCurrency(amount: number) {
-  return `¥${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `¥${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-function riskClass(risk: RiskLevel) {
-  if (risk === "高风险") return "is-high";
-  if (risk === "中风险") return "is-medium";
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString("zh-CN");
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+}
+
+function stringifyShort(value: unknown): string {
+  const text = asString(value);
+  if (text) {
+    return text;
+  }
+  if (value == null) {
+    return "-";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function firstRecordValue(record: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = asString(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function humanizeKey(value: string | null | undefined): string {
+  if (!value) {
+    return "未标注";
+  }
+  return value.replaceAll("_", " ").replaceAll("-", " ");
+}
+
+function findingTitle(finding: BackendAuditFinding): string {
+  return (
+    firstRecordValue(finding.metadata, ["title", "display_name", "rule_name", "description"]) ??
+    humanizeKey(finding.rule_key ?? finding.finding_type)
+  );
+}
+
+function findingSubject(finding: BackendAuditFinding): string {
+  return (
+    firstRecordValue(finding.metadata, ["subject", "item_name", "patient_name", "hospital_name"]) ??
+    firstRecordValue(finding.source_record_locator, ["source_table", "table", "record_no", "visit_id"]) ??
+    finding.finding_key
+  );
+}
+
+function findingDepartment(finding: BackendAuditFinding): string {
+  return (
+    firstRecordValue(finding.metadata, ["department", "dept_name", "org_name", "institution_name"]) ??
+    "待映射"
+  );
+}
+
+function findingAmount(finding: BackendAuditFinding): number | null {
+  const keys = ["amount", "total_amount", "fee_amount", "violation_amount", "claim_amount"];
+  for (const key of keys) {
+    const raw = finding.calculation_trace[key] ?? finding.metadata[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return raw;
+    }
+    if (typeof raw === "string") {
+      const parsed = Number(raw.replaceAll(",", ""));
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function riskLabelFromSeverity(severity: string): Exclude<RiskFilter, "全部风险"> {
+  if (severity === "critical" || severity === "high") {
+    return "高风险";
+  }
+  if (severity === "medium") {
+    return "中风险";
+  }
+  return "低风险";
+}
+
+function riskClassFromSeverity(severity: string): string {
+  if (severity === "critical" || severity === "high") {
+    return "is-high";
+  }
+  if (severity === "medium") {
+    return "is-medium";
+  }
   return "is-low";
 }
 
-function statusClass(status: Exclude<StatusFilter, "全部状态">) {
-  if (status === "待初审") return "is-blue";
-  if (status === "待复核") return "is-medium";
-  if (status === "已确认违规") return "is-danger";
-  if (status === "已整改") return "is-low";
+function statusClassFromReviewStatus(status: string): string {
+  if (status === "confirmed-violation") {
+    return "is-danger";
+  }
+  if (status === "pending-review" || status === "needs-evidence") {
+    return "is-medium";
+  }
+  if (status === "closed") {
+    return "is-low";
+  }
   return "is-muted";
 }
 
-function ruleMatchesFilter(item: AuditFinding, activeRule: RuleFilter) {
-  if (activeRule === "all") return true;
-  if (activeRule === "policy") return item.dimension.startsWith("政策");
-  if (activeRule === "manage") return item.dimension.startsWith("管理");
-  if (activeRule === "medical") return item.dimension.startsWith("医疗");
-  if (activeRule === "dip") return item.dimension.includes("DIP") || item.dimension.includes("DRG");
-  if (activeRule === "code") return item.dimension.includes("编码");
-  return item.dimension.includes("价格");
+function statusLabel(options: Record<string, string>, status: string): string {
+  return options[status] ?? statusLabelFallback[status] ?? humanizeKey(status);
 }
 
-function buildAssistantReply(prompt: string, context: AssistantContext) {
-  const filterText = [
-    context.riskFilter,
-    context.deptFilter,
-    context.statusFilter,
-    ruleTabs.find((tab) => tab.id === context.activeRule)?.label ?? "全部疑点"
-  ].join(" / ");
+function ruleMatchesFilter(finding: BackendAuditFinding, activeRule: RuleFilter): boolean {
+  if (activeRule === "all") {
+    return true;
+  }
+  const haystack = [
+    finding.finding_type,
+    finding.rule_key,
+    finding.rule_version_key,
+    stringifyShort(finding.metadata),
+    stringifyShort(finding.calculation_trace)
+  ]
+    .join(" ")
+    .toLowerCase();
 
-  if (context.finding) {
-    const finding = context.finding;
-    if (prompt.includes("整改")) {
-      return `整改建议：围绕 ${finding.id} 的「${finding.rule}」先补齐诊断、医嘱、医保目录限制和收费明细四类证据；责任科室为${finding.department}，建议整改时限 3 个工作日，整改后由医保办复核 ${formatCurrency(finding.amount)} 涉及金额。`;
+  if (activeRule === "policy") {
+    return /policy|目录|医保|药品|支付|限制/.test(haystack);
+  }
+  if (activeRule === "manage") {
+    return /manage|management|管理|篡改|虚假|分解/.test(haystack);
+  }
+  if (activeRule === "medical") {
+    return /medical|诊疗|耗材|诊断|手术|护理/.test(haystack);
+  }
+  if (activeRule === "dip") {
+    return /dip|drg|分值|病组|入组/.test(haystack);
+  }
+  if (activeRule === "code") {
+    return /code|编码|icd|医保编码/.test(haystack);
+  }
+  return /price|价格|收费|费用|金额/.test(haystack);
+}
+
+function searchMatches(finding: BackendAuditFinding, query: string): boolean {
+  if (!query.trim()) {
+    return true;
+  }
+  const text = [
+    finding.finding_key,
+    finding.finding_type,
+    finding.rule_key,
+    findingSubject(finding),
+    findingTitle(finding),
+    stringifyShort(finding.source_record_locator),
+    stringifyShort(finding.metadata)
+  ]
+    .join(" ")
+    .toLowerCase();
+  return text.includes(query.trim().toLowerCase());
+}
+
+function sourceCollectionsForMedical(
+  response: DocumentSourceCollectionCatalogResponse | null
+): readonly DocumentSourceCollectionCatalogItem[] {
+  return (response?.items ?? [])
+    .filter((item) => item.queryable || item.product_queryable)
+    .filter((item) => /medical|医保|审计|监管|目录|政策/.test(`${item.domain} ${item.label} ${item.description}`));
+}
+
+function metricValueFromState<T>(state: LoadState<T>, selector: (data: T) => number | string): string {
+  if (state.status === "loading") {
+    return "...";
+  }
+  if (state.status === "error") {
+    return "异常";
+  }
+  return String(selector(state.data));
+}
+
+function templateForView(
+  view: Exclude<AuditView, "audit">,
+  templates: readonly WorkpaperTemplateRegistryItem[]
+): WorkpaperTemplateRegistryItem | null {
+  const config = templateConfigs[view];
+  return (
+    templates.find((template) => {
+      const haystack = [
+        template.name,
+        template.source_template_id,
+        template.source_table,
+        template.source_file_name,
+        template.sheet_name
+      ]
+        .join(" ")
+        .toLowerCase();
+      return config.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
+    }) ?? null
+  );
+}
+
+function buildChatHref(finding: BackendAuditFinding | null, sourceCollections: readonly string[]): string {
+  const params = new URLSearchParams();
+  const question = finding
+    ? `请基于医保审计知识库，分析疑点 ${finding.finding_key}：${findingTitle(finding)}，并给出复核建议。`
+    : "请基于医保审计知识库，分析当前审计疑点并给出下一步复核建议。";
+  params.set("question", question);
+  for (const sourceCollection of sourceCollections.slice(0, 5)) {
+    params.append("source_collection", sourceCollection);
+  }
+  return `/chat?${params.toString()}`;
+}
+
+export default function MedicalAuditPage() {
+  const [activeTool, setActiveTool] = useState<ToolId>("audit");
+  const [activeView, setActiveView] = useState<AuditView>("audit");
+  const [activeRule, setActiveRule] = useState<RuleFilter>("all");
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("全部风险");
+  const [reviewStatus, setReviewStatus] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
+  const [selectedFindingKey, setSelectedFindingKey] = useState<string | null>(null);
+  const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialog | null>(null);
+  const [isAiOpen, setIsAiOpen] = useState(false);
+
+  const [auditState, setAuditState] = useState<LoadState<AuditFindingsResponse>>({
+    status: "loading"
+  });
+  const [sourceState, setSourceState] = useState<LoadState<DocumentSourceCollectionCatalogResponse>>({
+    status: "loading"
+  });
+  const [reportState, setReportState] = useState<LoadState<ReportWorkbenchResponse>>({
+    status: "loading"
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuditState({ status: "loading" });
+    fetchAuditFindings(reviewStatus || undefined)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        setAuditState({ status: "ready", data });
+        setSelectedFindingKey((current) => current ?? data.items[0]?.finding_key ?? null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setAuditState({
+            status: "error",
+            message: error instanceof Error ? error.message : "医保审计疑点接口读取异常"
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDocumentSourceCollections()
+      .then((data) => {
+        if (!cancelled) {
+          setSourceState({ status: "ready", data });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSourceState({
+            status: "error",
+            message: error instanceof Error ? error.message : "知识库分类接口读取异常"
+          });
+        }
+      });
+
+    fetchReportWorkbench()
+      .then((data) => {
+        if (!cancelled) {
+          setReportState({ status: "ready", data });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setReportState({
+            status: "error",
+            message: error instanceof Error ? error.message : "报告工作台接口读取异常"
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const auditData = auditState.status === "ready" ? auditState.data : null;
+  const sourceData = sourceState.status === "ready" ? sourceState.data : null;
+  const statusOptions = auditData?.review_status_options ?? statusLabelFallback;
+  const medicalSources = useMemo(() => sourceCollectionsForMedical(sourceData), [sourceData]);
+  const sourceKeys = useMemo(
+    () => medicalSources.map((source) => source.source_collection),
+    [medicalSources]
+  );
+
+  const filteredFindings = useMemo(() => {
+    const items = auditData?.items ?? [];
+    return items.filter((finding) => {
+      if (!ruleMatchesFilter(finding, activeRule)) {
+        return false;
+      }
+      if (riskFilter !== "全部风险" && riskLabelFromSeverity(finding.severity) !== riskFilter) {
+        return false;
+      }
+      if (!searchMatches(finding, searchQuery)) {
+        return false;
+      }
+      return true;
+    });
+  }, [activeRule, auditData, riskFilter, searchQuery]);
+
+  const selectedFinding = useMemo(
+    () =>
+      filteredFindings.find((finding) => finding.finding_key === selectedFindingKey) ??
+      filteredFindings[0] ??
+      null,
+    [filteredFindings, selectedFindingKey]
+  );
+
+  const toolBadges = useMemo(() => {
+    const items = auditData?.items ?? [];
+    const badges: Record<ToolId, string> = {
+      audit: String(auditData?.stats.total ?? 0),
+      dip: String(items.filter((finding) => ruleMatchesFilter(finding, "dip")).length),
+      code: String(items.filter((finding) => ruleMatchesFilter(finding, "code")).length),
+      price: String(items.filter((finding) => ruleMatchesFilter(finding, "price")).length),
+      rule: String(medicalSources.length),
+      setting: ""
+    };
+    return badges;
+  }, [auditData, medicalSources.length]);
+
+  const selectedCount = selectedKeys.size;
+
+  function updateTool(tool: ToolId) {
+    setActiveTool(tool);
+    const nextRule = toolRuleFilters[tool];
+    if (nextRule) {
+      setActiveRule(nextRule);
     }
-    if (prompt.includes("复核")) {
-      return `复核意见草稿：${finding.patient} ${finding.diagnosis} 与「${finding.knowledge}」存在不一致，当前证据显示 ${finding.evidence} 建议维持${finding.risk}，进入${finding.status}队列并要求科室补证。`;
+    if (tool === "setting") {
+      setWorkflowDialog({ kind: "settings" });
     }
-    return `已基于当前疑点生成分析：单据 ${finding.id} 命中「${finding.rule}」，涉及 ${formatCurrency(finding.amount)}，风险等级为${finding.risk}。优先核对医保编码 ${finding.code}、诊断 ${finding.diagnosis}、项目 ${finding.subject} 与知识点依据的一致性。`;
   }
 
-  if (prompt.includes("高风险")) {
-    return `当前筛选条件为 ${filterText}，命中 ${context.filteredCount} 条疑点。高风险排查建议按金额、规则类别、科室集中度排序，优先处理药品限制、DIP/DRG 分值偏差和信息数据篡改三类。`;
+  function toggleFinding(key: string) {
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
-  return `当前处于「${viewTabs.find((view) => view.id === context.activeView)?.label ?? "智能审计"}」视图，筛选条件为 ${filterText}，表内共有 ${context.filteredCount} 条疑点，已勾选 ${context.selectedCount} 条。建议先核对高风险规则、金额异常和证据链完整性，再形成复核意见。`;
+  return (
+    <div className="replica-medical-page">
+      <h1 className="replica-medical-sr-title">医保审计</h1>
+      <MedicalStatusRail
+        activeTool={activeTool}
+        badges={toolBadges}
+        onToolChange={updateTool}
+      />
+      <RuleNavigator
+        activeRule={activeRule}
+        medicalSources={medicalSources}
+        searchQuery={searchQuery}
+        sourceState={sourceState}
+        onRuleChange={setActiveRule}
+        onSearchChange={setSearchQuery}
+      />
+      <section
+        className={`replica-medical-content ${selectedFinding && activeView === "audit" ? "has-drawer" : ""} ${isAiOpen ? "has-drawer" : ""}`}
+      >
+        <main className="replica-medical-main">
+          <div className="replica-medical-tabs" role="tablist" aria-label="医保审计视图">
+            {viewTabs.map((tab) => (
+              <button
+                aria-selected={activeView === tab.id}
+                className={activeView === tab.id ? "is-active" : ""}
+                key={tab.id}
+                role="tab"
+                type="button"
+                onClick={() => setActiveView(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="replica-medical-notice">
+            数据源：疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
+            <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
+            <code>/api/v1/reports/workbench</code>。本批次只做生产流程入口和只读联通，写入类动作进入确认门禁。
+          </div>
+          {activeView === "audit" ? (
+            <SmartAuditView
+              activeRule={activeRule}
+              auditState={auditState}
+              filteredFindings={filteredFindings}
+              reportState={reportState}
+              riskFilter={riskFilter}
+              selectedFindingKey={selectedFinding?.finding_key ?? null}
+              selectedKeys={selectedKeys}
+              sourceState={sourceState}
+              statusOptions={statusOptions}
+              reviewStatus={reviewStatus}
+              onDialog={setWorkflowDialog}
+              onRiskFilterChange={setRiskFilter}
+              onReviewStatusChange={setReviewStatus}
+              onRuleChange={setActiveRule}
+              onSelectFinding={setSelectedFindingKey}
+              onToggleFinding={toggleFinding}
+            />
+          ) : (
+            <TemplateWorkbookView
+              reportState={reportState}
+              view={activeView}
+              onDialog={(kind) => setWorkflowDialog({ kind })}
+            />
+          )}
+        </main>
+        {activeView === "audit" && selectedFinding && !isAiOpen ? (
+          <FindingDrawer
+            finding={selectedFinding}
+            sourceKeys={sourceKeys}
+            statusOptions={statusOptions}
+            onDialog={(kind, finding) => setWorkflowDialog({ kind, finding })}
+            onClose={() => setSelectedFindingKey(null)}
+          />
+        ) : null}
+        {isAiOpen ? (
+          <MedicalAiDrawer
+            finding={selectedFinding}
+            filteredCount={filteredFindings.length}
+            selectedCount={selectedCount}
+            sourceKeys={sourceKeys}
+            onClose={() => setIsAiOpen(false)}
+          />
+        ) : null}
+      </section>
+      <button
+        className={`replica-medical-ai-fab ${isAiOpen ? "is-open is-shifted" : selectedFinding ? "is-shifted" : ""}`}
+        type="button"
+        onClick={() => setIsAiOpen((current) => !current)}
+      >
+        <span>AI</span>
+        <strong>审计助手</strong>
+      </button>
+      <WorkflowGateDialog dialog={workflowDialog} onClose={() => setWorkflowDialog(null)} />
+    </div>
+  );
 }
 
 function MedicalStatusRail({
   activeTool,
+  badges,
   onToolChange
 }: {
   readonly activeTool: ToolId;
+  readonly badges: Record<ToolId, string>;
   readonly onToolChange: (tool: ToolId) => void;
 }) {
   return (
-    <aside className="replica-medical-iconrail" aria-label="医保审计工具栏">
-      {toolModules.map((tool) => (
+    <aside className="replica-medical-iconrail" aria-label="医保审计工具">
+      {toolModules.map((module) => (
         <button
-          key={tool.id}
+          aria-label={module.label}
+          className={activeTool === module.id ? "is-active" : ""}
+          key={module.id}
+          title={module.label}
           type="button"
-          aria-label={tool.label}
-          aria-pressed={activeTool === tool.id}
-          className={activeTool === tool.id ? "is-active" : ""}
-          onClick={() => onToolChange(tool.id)}
+          onClick={() => onToolChange(module.id)}
         >
-          {tool.badge ? <em>{tool.badge}</em> : null}
-          <span aria-hidden="true">{tool.symbol}</span>
-          <strong>{tool.label}</strong>
+          {module.symbol}
+          {badges[module.id] ? <em>{badges[module.id]}</em> : null}
         </button>
       ))}
     </aside>
@@ -540,493 +633,115 @@ function MedicalStatusRail({
 
 function RuleNavigator({
   activeRule,
-  ruleSearch,
+  medicalSources,
+  searchQuery,
+  sourceState,
   onRuleChange,
-  onRuleSearch
+  onSearchChange
 }: {
   readonly activeRule: RuleFilter;
-  readonly ruleSearch: string;
-  readonly onRuleChange: (filter: RuleFilter) => void;
-  readonly onRuleSearch: (value: string) => void;
+  readonly medicalSources: readonly DocumentSourceCollectionCatalogItem[];
+  readonly searchQuery: string;
+  readonly sourceState: LoadState<DocumentSourceCollectionCatalogResponse>;
+  readonly onRuleChange: (rule: RuleFilter) => void;
+  readonly onSearchChange: (query: string) => void;
 }) {
-  const normalized = ruleSearch.trim().toLowerCase();
-
   return (
-    <aside className="replica-medical-rules" aria-label="智能审计规则导航">
-      <h2>智能审计 - 规则导航</h2>
+    <aside className="replica-medical-rules">
+      <h2>审计规则与知识范围</h2>
       <label className="replica-medical-search">
-        <span aria-hidden="true">⌕</span>
+        <span>搜</span>
         <input
-          value={ruleSearch}
-          onChange={(event) => onRuleSearch(event.target.value)}
-          placeholder="搜索规则/知识点/编码..."
+          aria-label="搜索疑点、规则或源记录"
+          placeholder="搜索疑点、规则、源记录"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
         />
       </label>
-      <nav>
-        {ruleGroups.map((group) => {
-          const visibleChildren = group.children.filter((child) => child.toLowerCase().includes(normalized));
-          if (normalized && visibleChildren.length === 0) return null;
-          return (
-            <section key={group.title}>
+      <nav aria-label="规则分类">
+        <section>
+          <button className="is-active" type="button">
+            规则维度
+          </button>
+          <div>
+            {ruleTabs.map((tab) => (
               <button
+                className={activeRule === tab.id ? "is-active" : ""}
+                key={tab.id}
                 type="button"
-                className={activeRule === group.filter ? "is-active" : ""}
-                onClick={() => onRuleChange(group.filter)}
+                onClick={() => onRuleChange(tab.id)}
               >
-                {group.title}
+                {tab.label}
               </button>
-              <div>
-                {visibleChildren.map((child) => (
-                  <button
-                    key={child}
-                    type="button"
-                    className={ruleSearch === child ? "is-active" : ""}
-                    onClick={() => {
-                      onRuleChange(group.filter);
-                      onRuleSearch(child);
-                    }}
-                  >
-                    {child}
-                  </button>
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </nav>
-    </aside>
-  );
-}
-
-function MedicalMetricCards() {
-  return (
-    <section className="replica-medical-metrics" aria-label="医保审计指标">
-      {metricCards.map((metric) => (
-        <article key={metric.label} className={`tone-${metric.tone}`}>
-          <span>{metric.label}</span>
-          <strong>{metric.value}</strong>
-          <em className={metric.changeTone === "up" ? "is-up" : "is-down"}>{metric.change}</em>
-          <p>{metric.sub}</p>
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function LocalActionNotice({ text }: { readonly text: string }) {
-  return (
-    <div className="replica-medical-notice" role="status">
-      {text}
-    </div>
-  );
-}
-
-function MedicalAuditPageTabs({
-  activeView,
-  onViewChange
-}: {
-  readonly activeView: AuditView;
-  readonly onViewChange: (view: AuditView) => void;
-}) {
-  return (
-    <div className="replica-medical-tabs" role="tablist" aria-label="医保审计子页面">
-      {viewTabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={activeView === tab.id}
-          className={activeView === tab.id ? "is-active" : ""}
-          onClick={() => onViewChange(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SelectFilter<T extends string>({
-  label,
-  value,
-  options,
-  onChange
-}: {
-  readonly label: string;
-  readonly value: T;
-  readonly options: readonly T[];
-  readonly onChange: (value: T) => void;
-}) {
-  return (
-    <label className="replica-medical-select">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value as T)}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function AuditTable({
-  rows,
-  selectedIds,
-  page,
-  totalPages,
-  selectedFindingId,
-  onToggleRow,
-  onTogglePage,
-  onOpenFinding,
-  onPageChange
-}: {
-  readonly rows: readonly AuditFinding[];
-  readonly selectedIds: ReadonlySet<string>;
-  readonly page: number;
-  readonly totalPages: number;
-  readonly selectedFindingId: string | null;
-  readonly onToggleRow: (id: string) => void;
-  readonly onTogglePage: () => void;
-  readonly onOpenFinding: (id: string) => void;
-  readonly onPageChange: (page: number) => void;
-}) {
-  const isPageSelected = rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
-
-  return (
-    <>
-      <div className="replica-medical-data-table is-audit-list">
-        <table>
-          <thead>
-            <tr>
-              <th>
-                <input
-                  type="checkbox"
-                  aria-label="选择当前页"
-                  checked={isPageSelected}
-                  onChange={onTogglePage}
-                />
-              </th>
-              <th>单据号</th>
-              <th>患者</th>
-              <th>科室</th>
-              <th>维度</th>
-              <th>命中规则</th>
-              <th>涉及金额</th>
-              <th>风险</th>
-              <th>状态</th>
-              <th>日期</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className={selectedFindingId === row.id ? "is-active" : ""}>
-                <td data-label="选择">
-                  <input
-                    type="checkbox"
-                    aria-label={`选择${row.id}`}
-                    checked={selectedIds.has(row.id)}
-                    onChange={() => onToggleRow(row.id)}
-                  />
-                </td>
-                <td data-label="单据号">
-                  <button type="button" onClick={() => onOpenFinding(row.id)}>
-                    {row.id}
-                  </button>
-                </td>
-                <td data-label="患者">{row.patient}（{row.gender}，{row.age}岁）</td>
-                <td data-label="科室">{row.department}</td>
-                <td data-label="维度">
-                  <span className="replica-medical-dimension">{row.dimension}</span>
-                </td>
-                <td data-label="命中规则">{row.rule}</td>
-                <td data-label="涉及金额" className="is-number">{formatCurrency(row.amount)}</td>
-                <td data-label="风险">
-                  <span className={`replica-medical-tag ${riskClass(row.risk)}`}>{row.risk}</span>
-                </td>
-                <td data-label="状态">
-                  <span className={`replica-medical-tag ${statusClass(row.status)}`}>{row.status}</span>
-                </td>
-                <td data-label="日期">{row.date}</td>
-              </tr>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="replica-medical-pagination">
-        <button type="button" disabled={page === 1} onClick={() => onPageChange(page - 1)}>
-          上一页
-        </button>
-        {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
-          <button
-            key={pageNumber}
-            type="button"
-            className={pageNumber === page ? "is-active" : ""}
-            onClick={() => onPageChange(pageNumber)}
-          >
-            {pageNumber}
-          </button>
-        ))}
-        <button type="button" disabled={page === totalPages} onClick={() => onPageChange(page + 1)}>
-          下一页
-        </button>
-        <span>共 {auditFindings.length} 条</span>
-      </div>
-    </>
-  );
-}
-
-function FindingDrawer({
-  finding,
-  onClose,
-  onLocalAction
-}: {
-  readonly finding: AuditFinding | null;
-  readonly onClose: () => void;
-  readonly onLocalAction: (action: string) => void;
-}) {
-  if (!finding) return null;
-
-  return (
-    <aside className="replica-medical-drawer" aria-label="疑点详情">
-      <div className="replica-medical-drawer-head">
-        <button type="button" onClick={onClose}>
-          收起
-        </button>
-        <button type="button" aria-label="关闭疑点详情" onClick={onClose}>
-          ×
-        </button>
-      </div>
-      <section>
-        <h2>疑点详情</h2>
-        <h3>基本信息</h3>
-        <dl>
-          <div><dt>单据号</dt><dd>{finding.id}</dd></div>
-          <div><dt>患者</dt><dd>{finding.patient}（{finding.gender}，{finding.age}岁）</dd></div>
-          <div><dt>科室</dt><dd>{finding.department}</dd></div>
-          <div><dt>医师</dt><dd>{finding.doctor}</dd></div>
-          <div><dt>诊断</dt><dd>{finding.diagnosis}</dd></div>
-          <div><dt>涉及药品/项目</dt><dd>{finding.subject}</dd></div>
-          <div><dt>涉及金额</dt><dd>{formatCurrency(finding.amount)}</dd></div>
-          <div><dt>发生时间</dt><dd>{finding.date}</dd></div>
-          <div><dt>风险等级</dt><dd><span className={`replica-medical-tag ${riskClass(finding.risk)}`}>{finding.risk}</span></dd></div>
-          <div><dt>当前状态</dt><dd>{finding.status}</dd></div>
-        </dl>
-      </section>
-      <section>
-        <h3>规则命中</h3>
-        <article className="replica-medical-evidence is-danger">
-          <strong>{finding.rule}</strong>
-          <p>医保编码 <code>{finding.code}</code></p>
-        </article>
-        <article className="replica-medical-evidence is-blue">
-          <strong>知识点依据</strong>
-          <p>{finding.knowledge}</p>
-          <a href="/knowledge-query">查看原文</a>
-        </article>
-      </section>
-      <section>
-        <h3>审计证据</h3>
-        <article className="replica-medical-evidence">
-          <p>{finding.evidence}</p>
-        </article>
-      </section>
-      <section>
-        <h3>关联单据</h3>
-        <ul className="replica-medical-related">
-          <li><span>同患者近30天其他单据</span><strong>3 条</strong></li>
-          <li><span>同科室同规则其他单据</span><strong>7 条</strong></li>
-          <li><span>同医师其他违规</span><strong>1 条</strong></li>
-        </ul>
-      </section>
-      <section>
-        <h3>法规原文</h3>
-        <p className="replica-medical-source">医疗保障基金智能监管规则库、知识库（2025年版）· 第三部分</p>
-        <p className="replica-medical-source">国家基本医疗保险药品目录（2025年）· 西药部分</p>
-        <p className="replica-medical-source">河南省医疗服务价格项目规范（20260201版）</p>
-      </section>
-      <div className="replica-medical-drawer-actions">
-        <button type="button" onClick={() => onLocalAction("通过")}>通过</button>
-        <button type="button" className="is-primary" onClick={() => onLocalAction("确认违规")}>确认违规</button>
-        <button type="button" onClick={() => onLocalAction("转整改")}>转整改</button>
-        <button type="button" onClick={() => onLocalAction("更多")}>更多</button>
-      </div>
-    </aside>
-  );
-}
-
-function MedicalAiAssistantButton({
-  isOpen,
-  isShifted,
-  onClick
-}: {
-  readonly isOpen: boolean;
-  readonly isShifted: boolean;
-  readonly onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`replica-medical-ai-fab ${isOpen ? "is-open" : ""} ${isShifted ? "is-shifted" : ""}`}
-      aria-label={isOpen ? "收起AI审计助手" : "打开AI审计助手"}
-      onClick={onClick}
-    >
-      <span>AI</span>
-      <strong>审计助手</strong>
-    </button>
-  );
-}
-
-function MedicalAiDrawer({
-  context,
-  messages,
-  draft,
-  onDraftChange,
-  onQuickAction,
-  onSubmit,
-  onClose,
-  onLocalAction
-}: {
-  readonly context: AssistantContext;
-  readonly messages: readonly AssistantMessage[];
-  readonly draft: string;
-  readonly onDraftChange: (value: string) => void;
-  readonly onQuickAction: (prompt: string) => void;
-  readonly onSubmit: () => void;
-  readonly onClose: () => void;
-  readonly onLocalAction: (action: string) => void;
-}) {
-  const activeViewLabel = viewTabs.find((view) => view.id === context.activeView)?.label ?? "智能审计";
-  const activeRuleLabel = ruleTabs.find((tab) => tab.id === context.activeRule)?.label ?? "全部疑点";
-
-  return (
-    <aside className="replica-medical-ai-drawer" aria-label="AI审计助手抽屉">
-      <header className="replica-medical-ai-head">
-        <div>
-          <span>AI 审计助手</span>
-          <h2>医保疑点联审</h2>
-        </div>
-        <button type="button" aria-label="关闭AI审计助手" onClick={onClose}>
-          ×
-        </button>
-      </header>
-      <section className="replica-medical-ai-context" aria-label="当前上下文">
-        <div>
-          <span>当前上下文</span>
-          <strong>{context.finding ? context.finding.id : activeViewLabel}</strong>
-        </div>
-        {context.finding ? (
-          <p>
-            {context.finding.patient} · {context.finding.department} · {context.finding.rule} · {formatCurrency(context.finding.amount)}
-          </p>
-        ) : (
-          <p>
-            {activeRuleLabel} / {context.riskFilter} / {context.deptFilter} / {context.statusFilter}，共 {context.filteredCount} 条疑点。
-          </p>
-        )}
-        <dl>
-          <div><dt>审计模式</dt><dd>安全预览</dd></div>
-          <div><dt>已选疑点</dt><dd>{context.selectedCount} 条</dd></div>
-          <div><dt>筛选结果</dt><dd>{context.filteredCount} 条</dd></div>
-        </dl>
-      </section>
-      <section className="replica-medical-ai-shortcuts" aria-label="AI快捷指令">
-        {assistantQuickActions.map((action) => (
-          <button key={action} type="button" onClick={() => onQuickAction(action)}>
-            {action}
-          </button>
-        ))}
-      </section>
-      <section className="replica-medical-ai-thread" aria-label="AI对话记录">
-        {messages.map((message) => (
-          <article key={message.id} className={`replica-medical-ai-message is-${message.role}`}>
-            <span>{message.role === "assistant" ? "AI" : "我"}</span>
-            <p>{message.text}</p>
-          </article>
-        ))}
-      </section>
-      <form
-        className="replica-medical-ai-compose"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
-        }}
-      >
-        <label>
-          <span>输入 AI 指令</span>
-          <textarea
-            value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            placeholder="询问当前疑点、复核意见或整改建议..."
-          />
-        </label>
-        <div>
-          <button type="button" onClick={() => onLocalAction("引用知识库依据")}>
-            引用依据
-          </button>
-          <button type="submit" className="is-primary">
-            发送
-          </button>
-        </div>
-      </form>
+          </div>
+        </section>
+        <section>
+          <button type="button">一级知识库</button>
+          <div>
+            {sourceState.status === "loading" ? <button type="button">正在加载知识库</button> : null}
+            {sourceState.status === "error" ? <button type="button">知识库分类读取异常</button> : null}
+            {medicalSources.slice(0, 9).map((source) => (
+              <button key={source.source_collection} title={source.description} type="button">
+                {source.label}
+              </button>
+            ))}
+            {medicalSources.length > 9 ? <button type="button">其余 {medicalSources.length - 9} 个</button> : null}
+          </div>
+        </section>
+      </nav>
     </aside>
   );
 }
 
 function SmartAuditView({
   activeRule,
+  auditState,
+  filteredFindings,
+  reportState,
   riskFilter,
-  deptFilter,
-  statusFilter,
-  rows,
-  pagedRows,
-  page,
-  totalPages,
-  selectedIds,
-  selectedFindingId,
-  onRuleTabChange,
-  onRiskChange,
-  onDeptChange,
-  onStatusChange,
-  onToggleRow,
-  onTogglePage,
-  onOpenFinding,
-  onPageChange,
-  onLocalAction
+  selectedFindingKey,
+  selectedKeys,
+  sourceState,
+  statusOptions,
+  reviewStatus,
+  onDialog,
+  onRiskFilterChange,
+  onReviewStatusChange,
+  onRuleChange,
+  onSelectFinding,
+  onToggleFinding
 }: {
   readonly activeRule: RuleFilter;
+  readonly auditState: LoadState<AuditFindingsResponse>;
+  readonly filteredFindings: readonly BackendAuditFinding[];
+  readonly reportState: LoadState<ReportWorkbenchResponse>;
   readonly riskFilter: RiskFilter;
-  readonly deptFilter: DeptFilter;
-  readonly statusFilter: StatusFilter;
-  readonly rows: readonly AuditFinding[];
-  readonly pagedRows: readonly AuditFinding[];
-  readonly page: number;
-  readonly totalPages: number;
-  readonly selectedIds: ReadonlySet<string>;
-  readonly selectedFindingId: string | null;
-  readonly onRuleTabChange: (tab: RuleFilter) => void;
-  readonly onRiskChange: (value: RiskFilter) => void;
-  readonly onDeptChange: (value: DeptFilter) => void;
-  readonly onStatusChange: (value: StatusFilter) => void;
-  readonly onToggleRow: (id: string) => void;
-  readonly onTogglePage: () => void;
-  readonly onOpenFinding: (id: string) => void;
-  readonly onPageChange: (page: number) => void;
-  readonly onLocalAction: (action: string) => void;
+  readonly selectedFindingKey: string | null;
+  readonly selectedKeys: ReadonlySet<string>;
+  readonly sourceState: LoadState<DocumentSourceCollectionCatalogResponse>;
+  readonly statusOptions: Record<string, string>;
+  readonly reviewStatus: string;
+  readonly onDialog: (dialog: WorkflowDialog) => void;
+  readonly onRiskFilterChange: (risk: RiskFilter) => void;
+  readonly onReviewStatusChange: (status: string) => void;
+  readonly onRuleChange: (rule: RuleFilter) => void;
+  readonly onSelectFinding: (key: string) => void;
+  readonly onToggleFinding: (key: string) => void;
 }) {
+  const auditData = auditState.status === "ready" ? auditState.data : null;
   return (
     <>
-      <MedicalMetricCards />
-      <div className="replica-medical-rule-tabs" role="tablist" aria-label="疑点分类">
+      <MetricCards auditState={auditState} sourceState={sourceState} reportState={reportState} />
+      <div className="replica-medical-rule-tabs" role="tablist" aria-label="规则筛选">
         {ruleTabs.map((tab) => (
           <button
-            key={tab.id}
-            type="button"
-            role="tab"
             aria-selected={activeRule === tab.id}
             className={activeRule === tab.id ? "is-active" : ""}
-            onClick={() => onRuleTabChange(tab.id)}
+            key={tab.id}
+            role="tab"
+            type="button"
+            onClick={() => onRuleChange(tab.id)}
           >
             {tab.label}
           </button>
@@ -1034,533 +749,573 @@ function SmartAuditView({
       </div>
       <div className="replica-medical-toolbar">
         <div>
-          <button type="button" className="replica-primary-button" onClick={() => onLocalAction("新建审计任务")}>
-            新建审计任务
-          </button>
-          <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("批量导入")}>
-            批量导入
-          </button>
-          <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("导出报告")}>
-            导出报告
-          </button>
-          <button type="button" className="replica-danger-button" onClick={() => onLocalAction("确认违规")}>
-            确认违规
-          </button>
+          <label className="replica-medical-select">
+            <span>风险</span>
+            <select value={riskFilter} onChange={(event) => onRiskFilterChange(event.target.value as RiskFilter)}>
+              {riskOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="replica-medical-select">
+            <span>复核状态</span>
+            <select value={reviewStatus} onChange={(event) => onReviewStatusChange(event.target.value)}>
+              <option value="">全部状态</option>
+              {Object.entries(statusOptions).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="replica-medical-tag is-blue">当前 {filteredFindings.length} 条</span>
         </div>
         <div>
-          <SelectFilter label="风险" value={riskFilter} options={riskOptions} onChange={onRiskChange} />
-          <SelectFilter label="科室" value={deptFilter} options={deptOptions} onChange={onDeptChange} />
-          <SelectFilter label="状态" value={statusFilter} options={statusOptions} onChange={onStatusChange} />
+          <button
+            className="replica-secondary-button"
+            type="button"
+            onClick={() => onDialog({ kind: "new-task" })}
+          >
+            新建审计任务
+          </button>
+          <button className="replica-primary-button" type="button" onClick={() => onDialog({ kind: "import" })}>
+            批量导入
+          </button>
+          <button className="replica-danger-button" type="button" onClick={() => onDialog({ kind: "review" })}>
+            批量复核
+          </button>
         </div>
       </div>
-      <AuditTable
-        rows={pagedRows}
-        selectedIds={selectedIds}
-        page={page}
-        totalPages={totalPages}
-        selectedFindingId={selectedFindingId}
-        onToggleRow={onToggleRow}
-        onTogglePage={onTogglePage}
-        onOpenFinding={onOpenFinding}
-        onPageChange={onPageChange}
-      />
-      {rows.length === 0 ? <div className="replica-medical-empty">当前筛选条件下暂无疑点。</div> : null}
+      {auditState.status === "loading" ? (
+        <section className="replica-medical-evidence is-blue">
+          <strong>正在读取生产疑点</strong>
+          <p>正在从审计疑点接口加载规则命中记录。</p>
+        </section>
+      ) : null}
+      {auditState.status === "error" ? (
+        <section className="replica-medical-evidence is-danger">
+          <strong>疑点接口读取异常</strong>
+          <p>{auditState.message}</p>
+        </section>
+      ) : null}
+      {auditData && auditData.items.length === 0 ? (
+        <EmptyReadinessPanel readiness={auditData.generation_readiness} onDialog={onDialog} />
+      ) : null}
+      {auditData && auditData.items.length > 0 ? (
+        <FindingsTable
+          findings={filteredFindings}
+          selectedFindingKey={selectedFindingKey}
+          selectedKeys={selectedKeys}
+          statusOptions={statusOptions}
+          onDialog={onDialog}
+          onSelectFinding={onSelectFinding}
+          onToggleFinding={onToggleFinding}
+        />
+      ) : null}
     </>
   );
 }
 
-function TablePageHeader({
-  title,
-  badge,
-  extra,
-  onLocalAction
+function MetricCards({
+  auditState,
+  sourceState,
+  reportState
 }: {
-  readonly title: string;
-  readonly badge: string;
-  readonly extra?: string;
-  readonly onLocalAction: (action: string) => void;
+  readonly auditState: LoadState<AuditFindingsResponse>;
+  readonly sourceState: LoadState<DocumentSourceCollectionCatalogResponse>;
+  readonly reportState: LoadState<ReportWorkbenchResponse>;
 }) {
+  const auditData = auditState.status === "ready" ? auditState.data : null;
+  const sourceData = sourceState.status === "ready" ? sourceState.data : null;
+  const medicalSources = sourceCollectionsForMedical(sourceData);
+  const readiness = auditData?.generation_readiness;
+  const cards = [
+    {
+      label: "生产疑点总数",
+      value: metricValueFromState(auditState, (data) => data.stats.total),
+      tone: "blue",
+      change: readinessStatusLabels[readiness?.status ?? ""] ?? readiness?.status ?? "等待接口",
+      changeTone: readiness?.ready ? "down" : "up",
+      sub: auditData ? `后端：${auditData.store.backend}` : "读取 /api/v1/audit-findings"
+    },
+    {
+      label: "待处理疑点",
+      value: metricValueFromState(auditState, (data) => data.stats.open),
+      tone: "blue",
+      change: `${auditData?.stats.pending_review ?? "-"} 待复核`,
+      changeTone: "up",
+      sub: `${auditData?.stats.linked_review_task ?? "-"} 条已关联任务`
+    },
+    {
+      label: "一级知识库",
+      value: metricValueFromState(sourceState, () => medicalSources.length),
+      tone: "green",
+      change: sourceData?.search_backend.ready ? "检索后端可用" : "检索后端待确认",
+      changeTone: sourceData?.search_backend.ready ? "down" : "up",
+      sub: sourceData ? `后端：${sourceData.search_backend.backend}` : "读取知识库分类"
+    },
+    {
+      label: "报告工作台",
+      value: metricValueFromState(reportState, (data) => data.metrics.report_count),
+      tone: "green",
+      change: reportState.status === "ready" ? `${reportState.data.metrics.included_finding_count} 条疑点已纳入` : "读取中",
+      changeTone: "down",
+      sub: reportState.status === "ready" ? `后端：${reportState.data.store.backend}` : "读取报告模板与底稿"
+    }
+  ];
   return (
-    <header className="replica-medical-table-head">
-      <div>
-        <h2>{title}</h2>
-        <span>{badge}</span>
-        {extra ? <em>{extra}</em> : null}
-      </div>
-      <div>
-        <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("新建表单")}>
-          新建表单
-        </button>
-        <button type="button" className="replica-secondary-button" onClick={() => onLocalAction("打印")}>
-          打印
-        </button>
-        <button type="button" className="replica-primary-button" onClick={() => onLocalAction("导出Excel")}>
-          导出Excel
-        </button>
-      </div>
-    </header>
-  );
-}
-
-function MedicalTableMeta({ mode }: { readonly mode: "summary" | "detail" }) {
-  return (
-    <div className="replica-medical-table-meta">
-      <span>定点医疗机构：<strong>河南省人民医院</strong></span>
-      {mode === "summary" ? (
-        <span>统计日期：2025年12月01日 至 2025年12月31日</span>
-      ) : (
-        <span>统计日期：2025年12月01日 00:00:00 至 2025年12月31日 23:59:59</span>
-      )}
-      <span>单位：元</span>
-    </div>
-  );
-}
-
-function FeeSummaryTable({ onLocalAction }: { readonly onLocalAction: (action: string) => void }) {
-  return (
-    <section className="replica-medical-table-page" aria-label="医保费用汇总表">
-      <TablePageHeader title="医保费用汇总表" badge="表1" onLocalAction={onLocalAction} />
-      <MedicalTableMeta mode="summary" />
-      <div className="replica-medical-data-table is-wide">
-        <table>
-          <thead>
-            <tr>
-              <th>费用分类</th>
-              <th>人次</th>
-              <th>人数</th>
-              <th>有效人次</th>
-              <th>有效人数</th>
-              <th>平均费用</th>
-              <th>医疗总费用</th>
-              <th>现金支付</th>
-              <th>账户支付</th>
-              <th>统筹支付</th>
-              <th>大额记账</th>
-              <th>公务员补助</th>
-              <th>医疗救助</th>
-              <th>记账合计</th>
-            </tr>
-          </thead>
-          <tbody>
-            {feeCategoryRows.map((row) => (
-              <tr key={row.category}>
-                <td>{row.category}</td>
-                <td>{row.visits}</td>
-                <td>{row.people}</td>
-                <td>{row.validVisits}</td>
-                <td>{row.validPeople}</td>
-                <td>{row.averageFee}</td>
-                <td className="is-link-number">{row.totalFee}</td>
-                <td>{row.cashPay}</td>
-                <td>{row.accountPay}</td>
-                <td>{row.poolPay}</td>
-                <td>{row.largePay}</td>
-                <td>{row.civilPay}</td>
-                <td>{row.medicalAid}</td>
-                <td>{row.totalLedger}</td>
-              </tr>
-            ))}
-            <tr className="is-total">
-              <td>合计</td>
-              <td>13,448</td>
-              <td>9,325</td>
-              <td>13,057</td>
-              <td>9,093</td>
-              <td>¥3,152</td>
-              <td>¥41,153,790</td>
-              <td>¥12,557,945</td>
-              <td>¥8,879,421</td>
-              <td>¥12,134,328</td>
-              <td>¥3,011,115</td>
-              <td>¥1,058,585</td>
-              <td>¥912,343</td>
-              <td>¥27,714,083</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div className="replica-medical-signatures">
-        <span>主管领导：__________</span>
-        <span>医保办负责人：__________</span>
-        <span>制表人：__________</span>
-      </div>
+    <section className="replica-medical-metrics" aria-label="医保审计生产指标">
+      {cards.map((card) => (
+        <article className={`tone-${card.tone}`} key={card.label}>
+          <span>{card.label}</span>
+          <strong>{card.value}</strong>
+          <em className={card.changeTone === "down" ? "is-down" : "is-up"}>{card.change}</em>
+          <p>{card.sub}</p>
+        </article>
+      ))}
     </section>
   );
 }
 
-function FeeCategoryTable({ onLocalAction }: { readonly onLocalAction: (action: string) => void }) {
+function FindingsTable({
+  findings,
+  selectedFindingKey,
+  selectedKeys,
+  statusOptions,
+  onDialog,
+  onSelectFinding,
+  onToggleFinding
+}: {
+  readonly findings: readonly BackendAuditFinding[];
+  readonly selectedFindingKey: string | null;
+  readonly selectedKeys: ReadonlySet<string>;
+  readonly statusOptions: Record<string, string>;
+  readonly onDialog: (dialog: WorkflowDialog) => void;
+  readonly onSelectFinding: (key: string) => void;
+  readonly onToggleFinding: (key: string) => void;
+}) {
+  if (findings.length === 0) {
+    return (
+      <section className="replica-medical-evidence is-blue">
+        <strong>当前筛选无疑点</strong>
+        <p>请调整风险、状态或规则分类筛选条件。</p>
+      </section>
+    );
+  }
   return (
-    <section className="replica-medical-table-page" aria-label="医保费用分类汇总表">
-      <TablePageHeader title="医保费用分类汇总表" badge="表2" onLocalAction={onLocalAction} />
-      <MedicalTableMeta mode="summary" />
-      <div className="replica-medical-summary-cards">
-        <article><span>医疗总费用</span><strong>¥41,153,790</strong></article>
-        <article className="is-green"><span>统筹支付</span><strong>¥12,134,328</strong></article>
-        <article className="is-amber"><span>现金支付</span><strong>¥12,557,945</strong></article>
-        <article className="is-cyan"><span>账户支付</span><strong>¥8,879,421</strong></article>
-      </div>
+    <>
       <div className="replica-medical-data-table">
         <table>
           <thead>
             <tr>
-              <th>费用分类</th>
-              <th>人次</th>
-              <th>医疗总费用</th>
-              <th>统筹支付</th>
-              <th>现金支付</th>
-              <th>占比</th>
-              <th>趋势</th>
+              <th aria-label="选择">选择</th>
+              <th>疑点键</th>
+              <th>规则/类型</th>
+              <th>源记录</th>
+              <th>科室/机构</th>
+              <th>涉及金额</th>
+              <th>风险</th>
+              <th>复核状态</th>
+              <th>证据</th>
+              <th>更新日期</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            {feeCategoryRows.map((row) => (
-              <tr key={row.category}>
-                <td>{row.category}</td>
-                <td>{row.visits}</td>
-                <td className="is-link-number">{row.totalFee}</td>
-                <td>{row.poolPay}</td>
-                <td>{row.cashPay}</td>
-                <td>{row.ratio.toFixed(1)}%</td>
+            {findings.map((finding) => (
+              <tr className={selectedFindingKey === finding.finding_key ? "is-active" : ""} key={finding.finding_key}>
                 <td>
-                  <span className="replica-medical-bar">
-                    <span style={{ width: `${Math.max(row.ratio, 1.2)}%` }} />
+                  <input
+                    aria-label={`选择 ${finding.finding_key}`}
+                    checked={selectedKeys.has(finding.finding_key)}
+                    type="checkbox"
+                    onChange={() => onToggleFinding(finding.finding_key)}
+                  />
+                </td>
+                <td>
+                  <button className="is-link-number" type="button" onClick={() => onSelectFinding(finding.finding_key)}>
+                    {finding.finding_key}
+                  </button>
+                </td>
+                <td>
+                  <span className="replica-medical-dimension">{findingTitle(finding)}</span>
+                </td>
+                <td>{findingSubject(finding)}</td>
+                <td>{findingDepartment(finding)}</td>
+                <td className="is-number">{formatCurrency(findingAmount(finding))}</td>
+                <td>
+                  <span className={`replica-medical-tag ${riskClassFromSeverity(finding.severity)}`}>
+                    {riskLabelFromSeverity(finding.severity)}
                   </span>
+                </td>
+                <td>
+                  <span className={`replica-medical-tag ${statusClassFromReviewStatus(finding.review_status)}`}>
+                    {statusLabel(statusOptions, finding.review_status)}
+                  </span>
+                </td>
+                <td>{finding.evidence_items.length} 条</td>
+                <td>{formatDate(finding.updated_at)}</td>
+                <td>
+                  <button type="button" onClick={() => onDialog({ kind: "review", finding })}>
+                    复核
+                  </button>
                 </td>
               </tr>
             ))}
-            <tr className="is-total">
-              <td>合计</td>
-              <td>13,448</td>
-              <td>¥41,153,790</td>
-              <td>¥12,134,328</td>
-              <td>¥12,557,945</td>
-              <td>100%</td>
-              <td><span className="replica-medical-bar"><span style={{ width: "100%" }} /></span></td>
-            </tr>
           </tbody>
         </table>
+      </div>
+      <div className="replica-medical-pagination">
+        <span>当前展示 {findings.length} 条生产疑点，分页由后端查询合同下一批接入。</span>
+        <button className="is-active" type="button">
+          1
+        </button>
+      </div>
+    </>
+  );
+}
+
+function FindingDrawer({
+  finding,
+  sourceKeys,
+  statusOptions,
+  onClose,
+  onDialog
+}: {
+  readonly finding: BackendAuditFinding;
+  readonly sourceKeys: readonly string[];
+  readonly statusOptions: Record<string, string>;
+  readonly onClose: () => void;
+  readonly onDialog: (kind: WorkflowKind, finding?: BackendAuditFinding | null) => void;
+}) {
+  const evidence = finding.evidence_items[0];
+  return (
+    <aside className="replica-medical-drawer" aria-label="疑点详情">
+      <div className="replica-medical-drawer-head">
+        <button type="button" onClick={onClose}>
+          关闭
+        </button>
+      </div>
+      <h2>{finding.finding_key}</h2>
+      <dl>
+        <div>
+          <dt>疑点名称</dt>
+          <dd>{findingTitle(finding)}</dd>
+        </div>
+        <div>
+          <dt>源记录</dt>
+          <dd>{findingSubject(finding)}</dd>
+        </div>
+        <div>
+          <dt>复核状态</dt>
+          <dd>{statusLabel(statusOptions, finding.review_status)}</dd>
+        </div>
+        <div>
+          <dt>任务</dt>
+          <dd>{finding.review_task_id ?? "尚未关联复核任务"}</dd>
+        </div>
+        <div>
+          <dt>规则版本</dt>
+          <dd>{finding.rule_version_key ?? finding.rule_key ?? "待映射"}</dd>
+        </div>
+        <div>
+          <dt>审计运行</dt>
+          <dd>{finding.audit_run_key ?? "待映射"}</dd>
+        </div>
+      </dl>
+      <h3>证据链</h3>
+      <div className="replica-medical-evidence is-blue">
+        <strong>{evidence?.citation_id ?? evidence?.evidence_type ?? "结构化证据"}</strong>
+        <p>{evidence?.snippet ?? "后端已返回疑点，但暂未附带文本证据片段。"}</p>
+        <p>
+          chunk: <code>{evidence?.chunk_id ?? "未关联"}</code>
+        </p>
+      </div>
+      <h3>源记录定位</h3>
+      <div className="replica-medical-evidence">
+        <p>{stringifyShort(finding.source_record_locator)}</p>
+      </div>
+      <h3>计算过程</h3>
+      <div className="replica-medical-evidence">
+        <p>{stringifyShort(finding.calculation_trace)}</p>
+      </div>
+      <h3>生产流转</h3>
+      <ul className="replica-medical-related">
+        <li>
+          <span>复核任务</span>
+          <strong>{finding.review_task_id ? "已关联" : "待创建"}</strong>
+        </li>
+        <li>
+          <span>证据条目</span>
+          <strong>{finding.evidence_items.length}</strong>
+        </li>
+        <li>
+          <span>知识库范围</span>
+          <strong>{sourceKeys.length}</strong>
+        </li>
+      </ul>
+      <p className="replica-medical-source">更新时间：{formatDate(finding.updated_at)}</p>
+      <div className="replica-medical-drawer-actions">
+        <button className="is-primary" type="button" onClick={() => onDialog("review", finding)}>
+          进入复核
+        </button>
+        <a className="replica-secondary-button" href={buildChatHref(finding, sourceKeys)}>
+          AI 分析
+        </a>
+        <button type="button" onClick={() => onDialog("report", finding)}>
+          加入报告
+        </button>
+        <button type="button" onClick={() => onDialog("import", finding)}>
+          补充材料
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function EmptyReadinessPanel({
+  readiness,
+  onDialog
+}: {
+  readonly readiness: AuditFindingsResponse["generation_readiness"];
+  readonly onDialog: (dialog: WorkflowDialog) => void;
+}) {
+  return (
+    <section className="replica-medical-evidence is-blue">
+      <strong>{readinessStatusLabels[readiness.status] ?? readiness.status}</strong>
+      <p>当前没有可展示疑点。请按导入费用表、核验知识库、运行规则、生成复核任务的顺序推进。</p>
+      <ul className="replica-medical-related">
+        {readiness.prerequisites.map((item) => (
+          <li key={item.key}>
+            <span>{item.label}</span>
+            <strong>{item.ready ? "就绪" : `${item.count} 条`}</strong>
+          </li>
+        ))}
+      </ul>
+      <div className="replica-medical-drawer-actions" style={{ position: "static", margin: "14px 0 0" }}>
+        <button className="is-primary" type="button" onClick={() => onDialog({ kind: "import" })}>
+          导入表格
+        </button>
+        <button type="button" onClick={() => onDialog({ kind: "new-task" })}>
+          创建任务
+        </button>
       </div>
     </section>
   );
 }
 
-function VisitDetailTable({
-  search,
-  onSearch,
-  onLocalAction
+function TemplateWorkbookView({
+  reportState,
+  view,
+  onDialog
 }: {
-  readonly search: string;
-  readonly onSearch: (value: string) => void;
-  readonly onLocalAction: (action: string) => void;
+  readonly reportState: LoadState<ReportWorkbenchResponse>;
+  readonly view: AuditView;
+  readonly onDialog: (kind: WorkflowKind) => void;
 }) {
-  const filteredRows = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    if (!normalized) return visitRows;
-    return visitRows.filter((row) =>
-      [row.name, row.diagnosis, row.recordNo, row.staffType].join(" ").toLowerCase().includes(normalized)
-    );
-  }, [search]);
-
+  if (view === "audit") {
+    return null;
+  }
+  const config = templateConfigs[view];
+  const templates = reportState.status === "ready" ? reportState.data.workpaper_templates : [];
+  const template = templateForView(view, templates);
+  const columns = template?.expected_columns.length ? template.expected_columns : config.fallbackColumns;
   return (
-    <section className="replica-medical-table-page" aria-label="就诊费用明细表">
-      <TablePageHeader title="就诊费用明细表" badge="表3" extra={`共 ${visitRows.length} 条记录`} onLocalAction={onLocalAction} />
-      <div className="replica-medical-detail-toolbar">
-        <MedicalTableMeta mode="detail" />
-        <label className="replica-medical-search">
-          <span aria-hidden="true">⌕</span>
-          <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="搜索姓名/诊断..." />
-        </label>
+    <section className="replica-medical-table-page">
+      <header className="replica-medical-table-head">
+        <div>
+          <h2>{config.title}</h2>
+          <span>{template ? "后端模板已注册" : "等待后端模板映射"}</span>
+        </div>
+        <div>
+          <button className="replica-secondary-button" type="button" onClick={() => onDialog("new-task")}>
+            创建审计任务
+          </button>
+          <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
+            导入模板文件
+          </button>
+        </div>
+      </header>
+      <div className="replica-medical-table-meta">
+        <span>
+          数据状态：<strong>{reportState.status === "ready" ? reportState.data.store.backend : "读取中"}</strong>
+        </span>
+        <span>
+          模板：<strong>{template?.name ?? config.title}</strong>
+        </span>
+        <span>
+          输出：<strong>{template?.output_type ?? "导入后生成审计底稿"}</strong>
+        </span>
       </div>
-      <div className="replica-medical-total-strip">
-        <span>合计：25 人次</span>
-        <span>医疗费用总额：<strong>¥299,556</strong></span>
-        <span>自费金额：¥89,867</span>
-        <span>统筹支付：¥119,822</span>
-        <span>公务员补助：¥28,603</span>
-        <span>大额支付：¥22,358</span>
-        <span>账户支付：¥38,906</span>
+      <div className="replica-medical-summary-cards">
+        <article>
+          <span>导入目标</span>
+          <strong>{config.title}</strong>
+          <p>{config.description}</p>
+        </article>
+        <article>
+          <span>字段数量</span>
+          <strong>{columns.length}</strong>
+          <p>字段来自后端模板注册表或本地模板合同。</p>
+        </article>
+        <article>
+          <span>生产动作</span>
+          <strong>确认后执行</strong>
+          <p>本页面先进入导入门禁，不直接写入生产。</p>
+        </article>
       </div>
       <div className="replica-medical-data-table is-wide">
         <table>
           <thead>
             <tr>
-              <th>序号</th>
-              <th>职工类型</th>
-              <th>就诊记录号</th>
-              <th>姓名</th>
-              <th>身份证号码</th>
-              <th>入院诊断</th>
-              <th>医疗费用总额</th>
-              <th>自费金额</th>
-              <th>统筹支付</th>
-              <th>公务员补助</th>
-              <th>大额支付</th>
-              <th>账户支付</th>
+              {columns.map((column) => (
+                <th key={column}>{column}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((row) => (
-              <tr key={row.seq}>
-                <td>{row.seq}</td>
-                <td><span className="replica-medical-tag is-blue">{row.staffType}</span></td>
-                <td className="is-link-number">{row.recordNo}</td>
-                <td>{row.name}</td>
-                <td>{row.idNo}</td>
-                <td>{row.diagnosis}</td>
-                <td className="is-link-number">{row.totalFee}</td>
-                <td>{row.selfPay}</td>
-                <td>{row.poolPay}</td>
-                <td>{row.civilPay}</td>
-                <td>{row.largePay}</td>
-                <td>{row.accountPay}</td>
-              </tr>
-            ))}
+            <tr>
+              {columns.map((column, index) => (
+                <td key={column}>{index === 0 ? "导入后由后端解析回填" : "待导入"}</td>
+              ))}
+            </tr>
           </tbody>
         </table>
-      </div>
-      <div className="replica-medical-signatures">
-        <span>主管领导：__________</span>
-        <span>医保办负责人：__________</span>
-        <span>制表人：__________</span>
       </div>
     </section>
   );
 }
 
-export default function MedicalAuditPage() {
-  const [activeView, setActiveView] = useState<AuditView>("audit");
-  const [activeTool, setActiveTool] = useState<ToolId>("audit");
-  const [activeRule, setActiveRule] = useState<RuleFilter>("all");
-  const [ruleSearch, setRuleSearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState<RiskFilter>("全部风险");
-  const [deptFilter, setDeptFilter] = useState<DeptFilter>("全部科室");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("全部状态");
-  const [page, setPage] = useState(1);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [drawerFindingId, setDrawerFindingId] = useState<string | null>(null);
-  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
-  const [assistantContextFindingId, setAssistantContextFindingId] = useState<string | null>(null);
-  const [assistantDraft, setAssistantDraft] = useState("");
-  const [assistantMessages, setAssistantMessages] = useState<readonly AssistantMessage[]>(initialAssistantMessages);
-  const [visitSearch, setVisitSearch] = useState("");
-  const [notice, setNotice] = useState(buildReplicaLocalGateNotice({
-    action: "打开医保审计页面",
-    nextStep: "医保审计后端 API"
-  }));
-
-  const filteredFindings = useMemo(() => {
-    return auditFindings.filter((finding) => {
-      const toolMatched = activeTool === "audit" || activeTool === "rule" || finding.toolIds.includes(activeTool);
-      const ruleMatched = ruleMatchesFilter(finding, activeRule);
-      const riskMatched = riskFilter === "全部风险" || finding.risk === riskFilter;
-      const deptMatched = deptFilter === "全部科室" || finding.department === deptFilter;
-      const statusMatched = statusFilter === "全部状态" || finding.status === statusFilter;
-      const searchText = ruleSearch.trim().toLowerCase();
-      const searchMatched =
-        !searchText ||
-        [finding.id, finding.patient, finding.department, finding.rule, finding.dimension, finding.code, finding.knowledge]
-          .join(" ")
-          .toLowerCase()
-          .includes(searchText);
-      return toolMatched && ruleMatched && riskMatched && deptMatched && statusMatched && searchMatched;
-    });
-  }, [activeRule, activeTool, deptFilter, riskFilter, ruleSearch, statusFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredFindings.length / 8));
-  const currentPage = Math.min(page, totalPages);
-  const pagedFindings = filteredFindings.slice((currentPage - 1) * 8, currentPage * 8);
-  const drawerFinding = auditFindings.find((finding) => finding.id === drawerFindingId) ?? null;
-  const assistantContextFinding =
-    auditFindings.find((finding) => finding.id === assistantContextFindingId) ?? drawerFinding ?? null;
-  const assistantContext = useMemo<AssistantContext>(() => ({
-    finding: assistantContextFinding,
-    activeView,
-    activeRule,
-    riskFilter,
-    deptFilter,
-    statusFilter,
-    filteredCount: filteredFindings.length,
-    selectedCount: selectedIds.size
-  }), [
-    activeRule,
-    activeView,
-    assistantContextFinding,
-    deptFilter,
-    filteredFindings.length,
-    riskFilter,
-    selectedIds.size,
-    statusFilter
-  ]);
-
-  function recordLocalAction(action: string) {
-    setNotice(buildReplicaLocalGateNotice({
-      action,
-      nextStep: "医保审计后端 API"
-    }));
-  }
-
-  function resetAuditPage() {
-    setDrawerFindingId(null);
-    setAssistantContextFindingId(null);
-    setSelectedIds(new Set());
-    setPage(1);
-  }
-
-  function handleToolChange(tool: ToolId) {
-    setActiveTool(tool);
-    setActiveView("audit");
-    setActiveRule(toolRuleFilters[tool] ?? "all");
-    setRuleSearch("");
-    setAssistantDrawerOpen(false);
-    resetAuditPage();
-    setNotice(`${toolModules.find((item) => item.id === tool)?.label ?? "工具"}已切换为当前本地筛选视图。`);
-  }
-
-  function handleRuleChange(rule: RuleFilter) {
-    setActiveRule(rule);
-    setRuleSearch("");
-    resetAuditPage();
-  }
-
-  function handleOpenAssistant() {
-    if (assistantDrawerOpen) {
-      setAssistantDrawerOpen(false);
-      return;
-    }
-    const selectedId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
-    setAssistantContextFindingId(drawerFindingId ?? selectedId);
-    setDrawerFindingId(null);
-    setAssistantDrawerOpen(true);
-    setNotice(buildReplicaLocalGateNotice({
-      action: "打开 AI 审计助手",
-      nextStep: "医保审计后端与 AI provider 授权"
-    }));
-  }
-
-  function submitAssistantPrompt(prompt: string) {
-    const text = prompt.trim();
-    if (!text) return;
-    const reply = buildAssistantReply(text, assistantContext);
-    setAssistantMessages((current) => [
-      ...current,
-      { id: `user-${current.length + 1}`, role: "user", text },
-      { id: `assistant-${current.length + 2}`, role: "assistant", text: reply }
-    ]);
-    setAssistantDraft("");
-    setNotice(buildReplicaLocalGateNotice({
-      action: "生成 AI 审计建议",
-      nextStep: "医保审计后端与 AI provider 授权"
-    }));
-  }
-
-  function handleToggleRow(id: string) {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function handleTogglePage() {
-    setSelectedIds((current) => {
-      const ids = pagedFindings.map((finding) => finding.id);
-      const allSelected = ids.length > 0 && ids.every((id) => current.has(id));
-      const next = new Set(current);
-      if (allSelected) ids.forEach((id) => next.delete(id));
-      else ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }
-
+function MedicalAiDrawer({
+  finding,
+  filteredCount,
+  selectedCount,
+  sourceKeys,
+  onClose
+}: {
+  readonly finding: BackendAuditFinding | null;
+  readonly filteredCount: number;
+  readonly selectedCount: number;
+  readonly sourceKeys: readonly string[];
+  readonly onClose: () => void;
+}) {
+  const chatHref = buildChatHref(finding, sourceKeys);
   return (
-    <main className="replica-medical-page" aria-label="医保审计工作台">
-      <h1 className="replica-medical-sr-title">医保审计</h1>
-      <MedicalStatusRail activeTool={activeTool} onToolChange={handleToolChange} />
-      <RuleNavigator
-        activeRule={activeRule}
-        ruleSearch={ruleSearch}
-        onRuleChange={handleRuleChange}
-        onRuleSearch={(value) => {
-          setRuleSearch(value);
-          setPage(1);
-        }}
-      />
-      <section className={`replica-medical-content ${drawerFinding || assistantDrawerOpen ? "has-drawer" : ""}`}>
-        <div className="replica-medical-main">
-          <MedicalAuditPageTabs
-            activeView={activeView}
-            onViewChange={(view) => {
-              setActiveView(view);
-              setDrawerFindingId(null);
-              setAssistantDrawerOpen(false);
-              setNotice(`${viewTabs.find((item) => item.id === view)?.label ?? "子页面"}已切换。`);
-            }}
-          />
-          <LocalActionNotice text={notice} />
-          {activeView === "audit" ? (
-            <SmartAuditView
-              activeRule={activeRule}
-              riskFilter={riskFilter}
-              deptFilter={deptFilter}
-              statusFilter={statusFilter}
-              rows={filteredFindings}
-              pagedRows={pagedFindings}
-              page={currentPage}
-              totalPages={totalPages}
-              selectedIds={selectedIds}
-              selectedFindingId={drawerFindingId}
-              onRuleTabChange={handleRuleChange}
-              onRiskChange={(value) => {
-                setRiskFilter(value);
-                resetAuditPage();
-              }}
-              onDeptChange={(value) => {
-                setDeptFilter(value);
-                resetAuditPage();
-              }}
-              onStatusChange={(value) => {
-                setStatusFilter(value);
-                resetAuditPage();
-              }}
-              onToggleRow={handleToggleRow}
-              onTogglePage={handleTogglePage}
-              onOpenFinding={(id) => {
-                setDrawerFindingId(id);
-                setAssistantContextFindingId(id);
-                setAssistantDrawerOpen(false);
-              }}
-              onPageChange={setPage}
-              onLocalAction={recordLocalAction}
-            />
-          ) : null}
-          {activeView === "table1" ? <FeeSummaryTable onLocalAction={recordLocalAction} /> : null}
-          {activeView === "table2" ? <FeeCategoryTable onLocalAction={recordLocalAction} /> : null}
-          {activeView === "table3" ? (
-            <VisitDetailTable search={visitSearch} onSearch={setVisitSearch} onLocalAction={recordLocalAction} />
-          ) : null}
+    <aside className="replica-medical-ai-drawer" aria-label="医保审计 AI 助手">
+      <header className="replica-medical-ai-head">
+        <div>
+          <span>真实问答入口</span>
+          <h2>医保审计助手</h2>
         </div>
-        {drawerFinding ? (
-          <FindingDrawer finding={drawerFinding} onClose={() => setDrawerFindingId(null)} onLocalAction={recordLocalAction} />
-        ) : null}
-        {assistantDrawerOpen ? (
-          <MedicalAiDrawer
-            context={assistantContext}
-            messages={assistantMessages}
-            draft={assistantDraft}
-            onDraftChange={setAssistantDraft}
-            onQuickAction={submitAssistantPrompt}
-            onSubmit={() => submitAssistantPrompt(assistantDraft)}
-            onClose={() => setAssistantDrawerOpen(false)}
-            onLocalAction={recordLocalAction}
-          />
-        ) : null}
-        <MedicalAiAssistantButton
-          isOpen={assistantDrawerOpen}
-          isShifted={Boolean(drawerFinding || assistantDrawerOpen)}
-          onClick={handleOpenAssistant}
-        />
+        <button aria-label="关闭 AI 助手" type="button" onClick={onClose}>
+          ×
+        </button>
+      </header>
+      <div className="replica-medical-ai-context">
+        <div>
+          <span>当前上下文</span>
+          <strong>{finding?.finding_key ?? "全局审计"}</strong>
+        </div>
+        <p>
+          本抽屉不再生成本地假回答。点击下方按钮会带上疑点键和知识库范围进入 AI 对话页，由后端知识库问答链路处理。
+        </p>
+        <dl>
+          <div>
+            <dt>筛选疑点</dt>
+            <dd>{filteredCount}</dd>
+          </div>
+          <div>
+            <dt>已选疑点</dt>
+            <dd>{selectedCount}</dd>
+          </div>
+          <div>
+            <dt>知识库</dt>
+            <dd>{sourceKeys.length}</dd>
+          </div>
+        </dl>
+      </div>
+      <div className="replica-medical-ai-shortcuts">
+        <a className="replica-primary-button" href={chatHref}>
+          进入 AI 分析
+        </a>
+        <button className="replica-secondary-button" type="button" onClick={onClose}>
+          返回工作台
+        </button>
+      </div>
+      <div className="replica-medical-ai-thread">
+        <div className="replica-medical-ai-message">
+          <span>AI</span>
+          <p>已准备好当前医保审计上下文。后续真实回答将在 AI 对话页通过知识库查询接口产生。</p>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function WorkflowGateDialog({
+  dialog,
+  onClose
+}: {
+  readonly dialog: WorkflowDialog | null;
+  readonly onClose: () => void;
+}) {
+  if (!dialog) {
+    return null;
+  }
+  const copy = {
+    "new-task": {
+      title: "创建审计任务草稿",
+      body: "下一步应接入任务创建 API，将审计期间、导入批次、知识库范围和规则集写入后端。当前按钮只打开受控入口，避免未确认写入生产。",
+      primary: "确认入口已检查"
+    },
+    import: {
+      title: "批量导入费用表",
+      body: "导入流程需要选择三类费用模板、上传文件、解析预览、字段映射、确认写入。当前入口用于建立流程闭环，真实写入将在导入 API 合同冻结后开启。",
+      primary: "确认导入门禁"
+    },
+    review: {
+      title: "疑点复核动作",
+      body: dialog.finding
+        ? `疑点 ${dialog.finding.finding_key} 已选中。复核写入需要状态变更、意见、责任人和审计日志，当前不直接变更生产状态。`
+        : "批量复核需要先确认已选疑点、目标状态、复核意见和审计日志，当前不直接变更生产状态。",
+      primary: "确认复核门禁"
+    },
+    report: {
+      title: "加入报告与底稿",
+      body: "报告工作台已经读取后端模板注册表。把疑点写入报告需要报告 ID、底稿模板和附件证据合同，当前先保持受控入口。",
+      primary: "确认报告门禁"
+    },
+    settings: {
+      title: "审计任务配置",
+      body: "任务配置将承接规则集、知识库范围、费用模板和复核人员。第一批先用现有生产接口展示真实状态，配置写入进入下一批。",
+      primary: "确认配置门禁"
+    }
+  }[dialog.kind];
+  return (
+    <div className="replica-modal-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-modal="true"
+        className="replica-modal"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2>{copy.title}</h2>
+        <p>{copy.body}</p>
+        <div className="replica-medical-evidence is-blue">
+          <strong>生产写入边界</strong>
+          <p>本批次不自动创建、导入、复核或归档真实生产数据。下一批需要后端写入合同和审计日志一起落地。</p>
+        </div>
+        <div className="replica-modal-actions">
+          <button className="replica-secondary-button" type="button" onClick={onClose}>
+            关闭
+          </button>
+          <button className="replica-primary-button" type="button" onClick={onClose}>
+            {copy.primary}
+          </button>
+        </div>
       </section>
-    </main>
+    </div>
   );
 }
