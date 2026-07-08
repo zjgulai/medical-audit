@@ -2,7 +2,11 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
-import { buildReplicaLocalGateNotice, ReplicaNotice } from "@/components/replica/replica-page-kit";
+import {
+  buildReplicaLocalGateNotice,
+  ReplicaNotice,
+  ReplicaRuntimeBadge
+} from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
 import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
 import type { DocumentSearchResponse, QueryResponse } from "@/lib/api-types";
@@ -244,6 +248,13 @@ export default function DocumentsPage() {
           <p className="replica-kicker">文档检索</p>
           <h1 id="replica-doc-title">文档检索</h1>
           <p>快速检索系统内的相关文档</p>
+          <div className="mt-3">
+            <ReplicaRuntimeBadge
+              source={documentsData.source}
+              status={documentsData.status}
+              issueCount={documentsData.issues.length}
+            />
+          </div>
         </div>
         <div className="replica-doc-illustration" aria-hidden="true">
           <span className="replica-doc-illustration-shelf" />

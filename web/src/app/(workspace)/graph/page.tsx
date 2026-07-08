@@ -8,7 +8,8 @@ import {
   ReplicaFilterButton,
   ReplicaMetric,
   ReplicaNotice,
-  ReplicaPageHeader
+  ReplicaPageHeader,
+  ReplicaRuntimeBadge
 } from "@/components/replica/replica-page-kit";
 import { useReplicaGraphData } from "@/components/replica/use-replica-runtime";
 import type { ReferenceGraphNode, ReferenceGraphRelation } from "@/lib/reference-replica-data";
@@ -37,6 +38,7 @@ function matchesRelation(relation: ReferenceGraphRelation, query: string) {
 export default function GraphPage() {
   const graphData = useReplicaGraphData();
   const { nodes, relations, metrics, title, scope } = graphData.data;
+  const hasSeedGraphData = graphData.issues.some((issue) => issue.code === "backend-seed-data");
   const [query, setQuery] = useState("");
   const [activeKind, setActiveKind] = useState<GraphKind>("全部");
   const [notice, setNotice] = useState("");
@@ -91,12 +93,20 @@ export default function GraphPage() {
         title="知识图谱"
         description="以知识库、文档、规则、疑点和复核记录为基础，先做最小只读关系视图，不引入额外图数据库。"
         actions={
-          <button type="button" className="replica-primary-button" onClick={() => setNotice(buildReplicaLocalGateNotice({
-            action: "新建图谱",
-            nextStep: "图谱创建 API"
-          }))}>
-            新建图谱
-          </button>
+          <>
+            <ReplicaRuntimeBadge
+              source={graphData.source}
+              status={graphData.status}
+              hasSeedData={hasSeedGraphData}
+              issueCount={graphData.issues.length}
+            />
+            <button type="button" className="replica-primary-button" onClick={() => setNotice(buildReplicaLocalGateNotice({
+              action: "新建图谱",
+              nextStep: "图谱创建 API"
+            }))}>
+              新建图谱
+            </button>
+          </>
         }
       />
 
@@ -116,7 +126,7 @@ export default function GraphPage() {
         <dl>
           <div>
             <dt>数据来源</dt>
-            <dd>{graphData.source === "api" ? "后端工作台" : "本地完整方案"}</dd>
+            <dd>{hasSeedGraphData ? "后端种子数据" : graphData.source === "api" ? "后端工作台" : "本地完整方案"}</dd>
           </div>
           <div>
             <dt>强关系</dt>
@@ -128,6 +138,10 @@ export default function GraphPage() {
           </div>
         </dl>
       </section>
+
+      {hasSeedGraphData ? (
+        <ReplicaNotice>当前图谱来自后端种子工作台，尚未证明为持久业务关系。进入生产审计前需要接入知识库、引用、疑点、整改和报告关系 API。</ReplicaNotice>
+      ) : null}
 
       {detailOpen ? (
         <section className="replica-graph-detail-strip" aria-label="图谱详情预览">

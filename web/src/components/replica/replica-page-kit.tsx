@@ -13,6 +13,13 @@ type ReplicaMetricProps = {
   readonly tone?: "blue" | "green" | "amber" | "rose" | "slate";
 };
 
+type ReplicaRuntimeBadgeProps = {
+  readonly source: "fixture" | "api" | "hybrid";
+  readonly status: "loading" | "ready";
+  readonly hasSeedData?: boolean;
+  readonly issueCount?: number;
+};
+
 type ReplicaFilterButtonProps<T extends string> = {
   readonly value: T;
   readonly activeValue: T;
@@ -49,6 +56,39 @@ export function ReplicaMetric({ label, value, tone = "blue" }: ReplicaMetricProp
       <strong>{value}</strong>
     </article>
   );
+}
+
+export function ReplicaRuntimeBadge({
+  source,
+  status,
+  hasSeedData = false,
+  issueCount = 0
+}: ReplicaRuntimeBadgeProps) {
+  const label = runtimeBadgeLabel(source, status, hasSeedData);
+  const detail = issueCount > 0 ? `${issueCount} 项待接入` : "接口已校验";
+
+  return (
+    <span className={`replica-runtime-badge source-${hasSeedData ? "seed" : source}`} aria-label={`数据来源：${label}`}>
+      <strong>{label}</strong>
+      <em>{detail}</em>
+    </span>
+  );
+}
+
+function runtimeBadgeLabel(source: ReplicaRuntimeBadgeProps["source"], status: ReplicaRuntimeBadgeProps["status"], hasSeedData: boolean) {
+  if (status === "loading") {
+    return "数据加载中";
+  }
+  if (hasSeedData) {
+    return "后端种子数据";
+  }
+  if (source === "api") {
+    return "后端数据";
+  }
+  if (source === "hybrid") {
+    return "后端+本地";
+  }
+  return "本地样例";
 }
 
 export function ReplicaFilterButton<T extends string>({
