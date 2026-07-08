@@ -673,6 +673,11 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
               >
                 {installingAgentId === selectedAgent.id ? "安装中" : "加入我的智能体"}
               </button>
+              {installedAgentId ? (
+                <Link className="replica-card-detail-button" href={`/chat?agent=${encodeURIComponent(installedAgentId)}`}>
+                  进入 AI 对话
+                </Link>
+              ) : null}
               <button type="button" aria-label={`收藏：${selectedAgent.name}`} onClick={() => toggleFavorite(selectedAgent)}>
                 {isSelectedAgentFavorite ? "取消收藏" : "收藏"}
               </button>
