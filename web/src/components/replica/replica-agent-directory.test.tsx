@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { createAuditAgent } from "@/lib/api-client";
@@ -119,7 +119,10 @@ describe("ReplicaAgentDirectory", () => {
       );
     });
     expect(await screen.findByText(/已安装「医保核验」/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "进入 AI 对话" }).map((item) => item.getAttribute("href"))).toContain(
+      "/chat?agent=agent-installed-001"
+    );
+    expect(within(screen.getByRole("dialog", { name: "医保核验" })).getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
       "href",
       "/chat?agent=agent-installed-001"
     );
