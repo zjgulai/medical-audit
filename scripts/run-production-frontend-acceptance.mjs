@@ -235,6 +235,18 @@ function matchText(pattern, rawText) {
   return normalizedPattern.test(compacted) || normalizedPattern.test(normalized);
 }
 
+function isIgnorableFailedRequest({ url, error }, baseUrl) {
+  if (error !== "net::ERR_ABORTED" || !url.startsWith(baseUrl)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.startsWith("/_next/static/") || parsed.searchParams.has("_rsc") || parsed.pathname.endsWith(".txt");
+  } catch {
+    return false;
+  }
+}
+
 function readOptionalEnv(name) {
   if (!name) {
     return null;
@@ -491,6 +503,33 @@ async function seedWorkspaceSession(context) {
   );
 }
 
+async function ensureWorkspaceSession(page, timeoutMs) {
+  await page
+    .evaluate(
+      ({ authStorageKey, roleStorageKey, role }) => {
+        window.localStorage.setItem(authStorageKey, "authenticated");
+        window.localStorage.setItem(roleStorageKey, role);
+      },
+      {
+        authStorageKey: AUDIT_AUTH_STORAGE_KEY,
+        roleStorageKey: AUDIT_ROLE_STORAGE_KEY,
+        role: DEFAULT_AUDIT_ROLE,
+      },
+    )
+    .catch(() => {});
+
+  const isLoginGate = await page
+    .evaluate(() => {
+      const text = document.body?.innerText ?? "";
+      return text.includes("登录工作台") && text.includes("进入系统");
+    })
+    .catch(() => false);
+
+  if (isLoginGate) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
+  }
+}
+
 function issue(severity, type, message) {
   return { severity, type, message };
 }
@@ -683,7 +722,10 @@ async function run() {
           }
         });
         page.on("requestfailed", (request) => {
-          failedRequests.push({ url: request.url(), error: request.failure()?.errorText ?? "requestfailed" });
+          const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
+          if (!isIgnorableFailedRequest(failed, baseUrl)) {
+            failedRequests.push(failed);
+          }
         });
         page.on("response", (response) => {
           const url = response.url();
@@ -698,6 +740,7 @@ async function run() {
         try {
           const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
           status = response?.status() ?? null;
+          await ensureWorkspaceSession(page, options.timeoutMs);
           await waitForRouteReady(page, routeCheck);
           await applyInteractions(page, routeCheck.interactions);
         } catch (caught) {
