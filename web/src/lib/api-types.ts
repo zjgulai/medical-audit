@@ -838,6 +838,91 @@ export type AuditFindingsResponse = {
   };
 };
 
+export type MedicalAuditReviewTask = {
+  readonly task_id: string;
+  readonly created_at?: string;
+  readonly updated_at?: string;
+  readonly status: string;
+  readonly status_label: string;
+  readonly question: string;
+  readonly citation_count: number;
+  readonly review_gate: string;
+  readonly confidence_label: string;
+  readonly fallback_label: string;
+  readonly reviewer_note: string;
+  readonly conclusion: string;
+  readonly assigned_to: string | null;
+  readonly source: string;
+  readonly dossier: Record<string, unknown>;
+};
+
+export type MedicalAuditImportPreflightRequest = {
+  readonly template_id: string;
+  readonly template_name: string;
+  readonly file_name?: string | null;
+  readonly row_count?: number | null;
+  readonly note?: string | null;
+};
+
+export type MedicalAuditReviewTaskRequest = {
+  readonly assigned_to?: string | null;
+  readonly note?: string | null;
+};
+
+export type MedicalAuditReviewStatusRequest = {
+  readonly status: string;
+  readonly assigned_to?: string | null;
+  readonly reviewer_note: string;
+  readonly conclusion: string;
+};
+
+export type MedicalAuditSupplementRequest = {
+  readonly title: string;
+  readonly locator?: string | null;
+  readonly note?: string | null;
+};
+
+export type MedicalAuditReportEntryRequest = {
+  readonly report_title?: string | null;
+  readonly summary?: string | null;
+  readonly rectification_request?: string | null;
+  readonly owner_confirmed_by?: string | null;
+};
+
+export type MedicalAuditWorkflowActionResponse = {
+  readonly format: "medical-audit-workflow-action-v1";
+  readonly action: string;
+  readonly status: string;
+  readonly processed_at: string;
+  readonly actor: {
+    readonly user_identifier: string;
+    readonly role: string;
+    readonly auth_source: string;
+  };
+  readonly finding?: AuditFinding;
+  readonly task?: MedicalAuditReviewTask;
+  readonly created?: boolean;
+  readonly created_task?: boolean;
+  readonly synced_findings?: readonly AuditFinding[];
+  readonly preflight?: {
+    readonly template_id: string;
+    readonly template_name: string;
+    readonly file_name?: string | null;
+    readonly row_count?: number | null;
+    readonly checks: readonly string[];
+  };
+  readonly attachment?: {
+    readonly attachment_id: string;
+    readonly title: string;
+    readonly locator: string;
+    readonly note: string;
+    readonly status: string;
+    readonly uploaded_at: string;
+    readonly registered_by: string;
+  };
+  readonly audit_event?: Record<string, unknown> | null;
+};
+
 export type WorkpaperTemplateRegistryItem = {
   readonly id: string;
   readonly name: string;

@@ -3,15 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  addMedicalAuditFindingToReport,
+  createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
-  fetchReportWorkbench
+  fetchReportWorkbench,
+  recordMedicalAuditImportPreflight,
+  registerMedicalAuditSupplement,
+  updateMedicalAuditReviewStatus
 } from "@/lib/api-client";
 import type {
   AuditFinding as BackendAuditFinding,
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogItem,
   DocumentSourceCollectionCatalogResponse,
+  MedicalAuditWorkflowActionResponse,
   ReportWorkbenchResponse,
   WorkpaperTemplateRegistryItem
 } from "@/lib/api-types";
@@ -31,6 +37,12 @@ type WorkflowDialog = {
   readonly kind: WorkflowKind;
   readonly finding?: BackendAuditFinding | null;
 };
+
+type WorkflowActionState =
+  | { readonly status: "idle" }
+  | { readonly status: "running"; readonly message: string }
+  | { readonly status: "success"; readonly message: string; readonly response?: MedicalAuditWorkflowActionResponse }
+  | { readonly status: "error"; readonly message: string };
 
 type TemplateConfig = {
   readonly id: AuditView;
@@ -351,6 +363,26 @@ function buildChatHref(finding: BackendAuditFinding | null, sourceCollections: r
   return `/chat?${params.toString()}`;
 }
 
+function workflowSuccessMessage(
+  dialog: WorkflowDialog,
+  response: MedicalAuditWorkflowActionResponse | undefined
+): string {
+  const taskId = response?.task?.task_id;
+  if (dialog.kind === "new-task") {
+    return taskId ? `复核任务已关联：${taskId}` : "复核任务已提交。";
+  }
+  if (dialog.kind === "import") {
+    return dialog.finding ? "补充材料登记已写入任务 dossier。" : "导入预检已记录，等待正式上传解析。";
+  }
+  if (dialog.kind === "review") {
+    return taskId ? `复核状态已更新：${taskId}` : "复核状态已更新。";
+  }
+  if (dialog.kind === "report") {
+    return taskId ? `疑点已纳入报告草稿：${taskId}` : "疑点已纳入报告草稿。";
+  }
+  return "配置入口检查已记录。";
+}
+
 export default function MedicalAuditPage() {
   const [activeTool, setActiveTool] = useState<ToolId>("audit");
   const [activeView, setActiveView] = useState<AuditView>("audit");
@@ -361,6 +393,7 @@ export default function MedicalAuditPage() {
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
   const [selectedFindingKey, setSelectedFindingKey] = useState<string | null>(null);
   const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialog | null>(null);
+  const [workflowActionState, setWorkflowActionState] = useState<WorkflowActionState>({ status: "idle" });
   const [isAiOpen, setIsAiOpen] = useState(false);
 
   const [auditState, setAuditState] = useState<LoadState<AuditFindingsResponse>>({
@@ -482,6 +515,110 @@ export default function MedicalAuditPage() {
 
   const selectedCount = selectedKeys.size;
 
+  async function refreshWorkflowData() {
+    const [audit, report] = await Promise.all([
+      fetchAuditFindings(reviewStatus || undefined),
+      fetchReportWorkbench()
+    ]);
+    setAuditState({ status: "ready", data: audit });
+    setReportState({ status: "ready", data: report });
+    setSelectedFindingKey((current) => current ?? audit.items[0]?.finding_key ?? null);
+  }
+
+  function findingKeysForDialog(dialog: WorkflowDialog): readonly string[] {
+    if (dialog.finding) {
+      return [dialog.finding.finding_key];
+    }
+    const selected = Array.from(selectedKeys);
+    if (selected.length > 0) {
+      return selected;
+    }
+    return selectedFinding ? [selectedFinding.finding_key] : [];
+  }
+
+  async function handleWorkflowConfirm(dialog: WorkflowDialog) {
+    setWorkflowActionState({ status: "running", message: "正在提交到后端流程..." });
+    try {
+      let response: MedicalAuditWorkflowActionResponse | undefined;
+      if (dialog.kind === "new-task") {
+        const target = dialog.finding ?? selectedFinding;
+        if (!target) {
+          throw new Error("请先选择一个疑点，再创建复核任务。");
+        }
+        response = await createMedicalAuditReviewTask(target.finding_key, {
+          note: "从医保审计工作台创建复核任务"
+        });
+      } else if (dialog.kind === "import") {
+        if (dialog.finding) {
+          response = await registerMedicalAuditSupplement(dialog.finding.finding_key, {
+            title: "补充材料登记",
+            locator: stringifyShort(dialog.finding.source_record_locator),
+            note: "从医保审计详情页登记补充材料入口，等待正式文件上传。"
+          });
+        } else {
+          const template = activeView === "audit" ? templateConfigs.table1 : templateConfigs[activeView];
+          response = await recordMedicalAuditImportPreflight({
+            template_id: template.id,
+            template_name: template.title,
+            file_name: null,
+            row_count: null,
+            note: "医保审计页面触发导入预检，等待上传与字段映射。"
+          });
+        }
+      } else if (dialog.kind === "review") {
+        const keys = findingKeysForDialog(dialog);
+        if (keys.length === 0) {
+          throw new Error("请先选择疑点，再执行复核动作。");
+        }
+        const responses = await Promise.all(
+          keys.map((key) =>
+            updateMedicalAuditReviewStatus(key, {
+              status: "confirmed-violation",
+              reviewer_note: "已通过医保审计工作台完成初步复核，证据链进入报告准备。",
+              conclusion: "确认该疑点需纳入后续底稿或报告流程。"
+            })
+          )
+        );
+        response = responses[responses.length - 1];
+      } else if (dialog.kind === "report") {
+        const keys = findingKeysForDialog(dialog);
+        if (keys.length === 0) {
+          throw new Error("请先选择疑点，再加入报告。");
+        }
+        const responses = await Promise.all(
+          keys.map((key) =>
+            addMedicalAuditFindingToReport(key, {
+              report_title: `${key} 医保审计复核报告草稿`,
+              summary: "由医保审计工作台纳入报告草稿，后续进入正式签发流程。",
+              rectification_request: "请责任科室核对收费依据、HIS 明细和补证材料。"
+            })
+          )
+        );
+        response = responses[responses.length - 1];
+      } else {
+        response = await recordMedicalAuditImportPreflight({
+          template_id: "medical-audit-settings",
+          template_name: "医保审计任务配置",
+          note: "配置入口已检查，等待规则集和人员配置写入合同。"
+        });
+      }
+      await refreshWorkflowData();
+      setWorkflowActionState({
+        status: "success",
+        message: workflowSuccessMessage(dialog, response),
+        response
+      });
+      if (dialog.kind === "review" || dialog.kind === "report") {
+        setSelectedKeys(new Set());
+      }
+    } catch (error) {
+      setWorkflowActionState({
+        status: "error",
+        message: error instanceof Error ? error.message : "后端流程提交异常"
+      });
+    }
+  }
+
   function updateTool(tool: ToolId) {
     setActiveTool(tool);
     const nextRule = toolRuleFilters[tool];
@@ -598,7 +735,15 @@ export default function MedicalAuditPage() {
         <span>AI</span>
         <strong>审计助手</strong>
       </button>
-      <WorkflowGateDialog dialog={workflowDialog} onClose={() => setWorkflowDialog(null)} />
+      <WorkflowGateDialog
+        actionState={workflowActionState}
+        dialog={workflowDialog}
+        onClose={() => {
+          setWorkflowDialog(null);
+          setWorkflowActionState({ status: "idle" });
+        }}
+        onConfirm={handleWorkflowConfirm}
+      />
     </div>
   );
 }
@@ -1255,11 +1400,15 @@ function MedicalAiDrawer({
 }
 
 function WorkflowGateDialog({
+  actionState,
   dialog,
-  onClose
+  onClose,
+  onConfirm
 }: {
+  readonly actionState: WorkflowActionState;
   readonly dialog: WorkflowDialog | null;
   readonly onClose: () => void;
+  readonly onConfirm: (dialog: WorkflowDialog) => void;
 }) {
   if (!dialog) {
     return null;
@@ -1267,32 +1416,35 @@ function WorkflowGateDialog({
   const copy = {
     "new-task": {
       title: "创建审计任务草稿",
-      body: "下一步应接入任务创建 API，将审计期间、导入批次、知识库范围和规则集写入后端。当前按钮只打开受控入口，避免未确认写入生产。",
-      primary: "确认入口已检查"
+      body: "将当前疑点写入复核任务，并与后端疑点记录建立关联。该动作会写入复核任务和审计事件。",
+      primary: "创建复核任务"
     },
     import: {
-      title: "批量导入费用表",
-      body: "导入流程需要选择三类费用模板、上传文件、解析预览、字段映射、确认写入。当前入口用于建立流程闭环，真实写入将在导入 API 合同冻结后开启。",
-      primary: "确认导入门禁"
+      title: dialog.finding ? "登记补充材料" : "批量导入预检",
+      body: dialog.finding
+        ? `将为疑点 ${dialog.finding.finding_key} 登记一条补充材料占位记录，后续可接入正式文件上传。`
+        : "先登记导入预检，明确模板、文件和映射检查项；正式文件解析和入库仍由下一层导入合同处理。",
+      primary: dialog.finding ? "登记补充材料" : "记录导入预检"
     },
     review: {
       title: "疑点复核动作",
       body: dialog.finding
-        ? `疑点 ${dialog.finding.finding_key} 已选中。复核写入需要状态变更、意见、责任人和审计日志，当前不直接变更生产状态。`
-        : "批量复核需要先确认已选疑点、目标状态、复核意见和审计日志，当前不直接变更生产状态。",
-      primary: "确认复核门禁"
+        ? `疑点 ${dialog.finding.finding_key} 已选中。确认后会写入复核状态、意见、结论和审计事件。`
+        : "批量复核会对已选疑点写入复核状态、意见、结论和审计事件。",
+      primary: "确认违规并写入"
     },
     report: {
       title: "加入报告与底稿",
-      body: "报告工作台已经读取后端模板注册表。把疑点写入报告需要报告 ID、底稿模板和附件证据合同，当前先保持受控入口。",
-      primary: "确认报告门禁"
+      body: "将疑点纳入复核任务 dossier，生成底稿占位、负责人确认和报告草稿字段，供报告工作台读取。",
+      primary: "加入报告草稿"
     },
     settings: {
       title: "审计任务配置",
-      body: "任务配置将承接规则集、知识库范围、费用模板和复核人员。第一批先用现有生产接口展示真实状态，配置写入进入下一批。",
-      primary: "确认配置门禁"
+      body: "记录配置入口检查，后续接入规则集、知识库范围、费用模板和复核人员的正式配置合同。",
+      primary: "记录配置检查"
     }
   }[dialog.kind];
+  const isRunning = actionState.status === "running";
   return (
     <div className="replica-modal-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -1305,14 +1457,30 @@ function WorkflowGateDialog({
         <p>{copy.body}</p>
         <div className="replica-medical-evidence is-blue">
           <strong>生产写入边界</strong>
-          <p>本批次不自动创建、导入、复核或归档真实生产数据。下一批需要后端写入合同和审计日志一起落地。</p>
+          <p>该动作只写入复核任务、dossier 或审计事件；正式报告签发、文件入库解析和归档仍需单独流程。</p>
         </div>
+        {actionState.status !== "idle" ? (
+          <div
+            className={`replica-medical-evidence ${
+              actionState.status === "error" ? "is-danger" : "is-blue"
+            }`}
+          >
+            <strong>
+              {actionState.status === "running"
+                ? "正在处理"
+                : actionState.status === "success"
+                  ? "后端已确认"
+                  : "提交异常"}
+            </strong>
+            <p>{actionState.message}</p>
+          </div>
+        ) : null}
         <div className="replica-modal-actions">
-          <button className="replica-secondary-button" type="button" onClick={onClose}>
+          <button className="replica-secondary-button" disabled={isRunning} type="button" onClick={onClose}>
             关闭
           </button>
-          <button className="replica-primary-button" type="button" onClick={onClose}>
-            {copy.primary}
+          <button className="replica-primary-button" disabled={isRunning} type="button" onClick={() => onConfirm(dialog)}>
+            {isRunning ? "提交中..." : copy.primary}
           </button>
         </div>
       </section>
