@@ -87,9 +87,10 @@ const featuredDocuments = [
 ] as const;
 
 const defaultSearchHistory = ["投标", "招标投标法", "集中采购目录", "审计", "智能科技的CEO是谁"];
+const ALL_DOCUMENTS_CATEGORY = "全部文档";
 
 type DocumentPreview = ReferenceDocumentResult & {
-  readonly previewType: "对话文档" | "检索命中";
+  readonly previewType: "对话文档" | "检索命中" | "知识库目录";
   readonly previewUrl?: string;
   readonly sourceCollection?: string;
 };
@@ -100,17 +101,25 @@ export default function DocumentsPage() {
   const searchHistory =
     documentsData.data.searchHistory.length > 0 ? documentsData.data.searchHistory : defaultSearchHistory;
   const libraryTiles = categories.length > 0
-    ? categories.slice(0, 7).map((category, index) => ({
-      id: category.id,
-      label: category.name,
-      count: category.count,
-      icon: documentLibraryTiles[index % documentLibraryTiles.length].icon
-    }))
+    ? [
+      {
+        id: "all-documents",
+        label: ALL_DOCUMENTS_CATEGORY,
+        count: categories.reduce((sum, item) => sum + item.count, 0),
+        icon: "archive"
+      },
+      ...categories.slice(0, 6).map((category, index) => ({
+        id: category.id,
+        label: category.name,
+        count: category.count,
+        icon: documentLibraryTiles[index % documentLibraryTiles.length].icon
+      }))
+    ]
     : documentLibraryTiles;
   const [query, setQuery] = useState("劳动争议司法案件解释");
   const [submittedQuery, setSubmittedQuery] = useState("劳动争议司法案件解释");
   const [titleOnly, setTitleOnly] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("法律法规库");
+  const [activeCategory, setActiveCategory] = useState(ALL_DOCUMENTS_CATEGORY);
   const [historyVisible, setHistoryVisible] = useState(true);
   const [notice, setNotice] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("doc-ledger");
@@ -126,7 +135,10 @@ export default function DocumentsPage() {
     }
     const normalizedQuery = submittedQuery.trim().toLowerCase();
     return documentResults.filter((item) => {
-      const categoryMatched = item.category === activeCategory || normalizedQuery.length > 0;
+      const categoryMatched =
+        activeCategory === ALL_DOCUMENTS_CATEGORY ||
+        item.category === activeCategory ||
+        normalizedQuery.length > 0;
       const text = titleOnly ? item.title : `${item.title} ${item.excerpt} ${item.source}`;
       const queryMatched = normalizedQuery.length === 0 || text.toLowerCase().includes(normalizedQuery);
       return categoryMatched && queryMatched;
@@ -198,10 +210,18 @@ export default function DocumentsPage() {
     }
   }
 
-  const shownFeaturedDocuments: readonly DocumentPreview[] = filteredResults.length > 0
-    ? ([
-      ...featuredDocuments.slice(0, 5),
-      ...filteredResults.map((item) => ({
+  const apiDirectoryDocuments = useMemo(
+    () => categories.slice(0, 10).map((category) => categoryToDirectoryPreview(category)),
+    [categories]
+  );
+  const shouldShowApiDirectory =
+    !hasLiveSearch &&
+    documentsData.source !== "fixture" &&
+    apiDirectoryDocuments.length > 0;
+  const shownFeaturedDocuments: readonly DocumentPreview[] = shouldShowApiDirectory
+    ? apiDirectoryDocuments
+    : filteredResults.length > 0
+      ? (filteredResults.map((item) => ({
         id: item.id,
         title: item.title,
         category: item.category,
@@ -211,9 +231,8 @@ export default function DocumentsPage() {
         previewUrl: (item as DocumentPreview).previewUrl,
         sourceCollection: (item as DocumentPreview).sourceCollection,
         previewType: "检索命中" as const
-      }))
-    ].slice(0, 10) as readonly DocumentPreview[])
-    : featuredDocuments.map((item) => ({
+      })).slice(0, 10) as readonly DocumentPreview[])
+      : featuredDocuments.map((item) => ({
       ...item,
       category: "对话文档",
       excerpt: "来自历史对话和项目材料，可继续进入证据核验或加入 AI 对话上下文。",
@@ -460,11 +479,33 @@ function activeCategorySourceCollection(
   categories: readonly { readonly id: string; readonly name: string }[],
   activeCategory: string
 ): string | null {
+  if (activeCategory === ALL_DOCUMENTS_CATEGORY) {
+    return null;
+  }
   const category = categories.find((item) => item.name === activeCategory);
   if (!category?.id.startsWith("source-")) {
     return null;
   }
   return category.id.slice("source-".length);
+}
+
+function categoryToDirectoryPreview(
+  category: { readonly id: string; readonly name: string; readonly description: string; readonly count: number }
+): DocumentPreview {
+  const sourceCollection = category.id.startsWith("source-")
+    ? category.id.slice("source-".length)
+    : undefined;
+
+  return {
+    id: `directory-${category.id}`,
+    title: `${category.name} 文档目录`,
+    category: category.name,
+    excerpt: category.description,
+    source: `${category.count.toLocaleString()} 份文档`,
+    updatedAt: "生产目录",
+    previewType: "知识库目录",
+    sourceCollection
+  };
 }
 
 function documentChatHref(item: DocumentPreview, submittedQuery: string): string {
