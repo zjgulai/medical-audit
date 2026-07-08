@@ -30,8 +30,8 @@ DEFAULT_USER_ID = "production-smoke-auditor"
 DEFAULT_ADMIN_USER_ID = "production-smoke-admin"
 DEFAULT_USER_ROLE = "auditor"
 REQUIRED_PAGES = {
-    "/": ("医疗AI审计平台", "登录工作台"),
-    "/login": ("医疗AI审计平台", "登录工作台"),
+    "/": ("AI审计一体化协作平台", "登录工作台"),
+    "/login": ("AI审计一体化协作平台", "登录工作台"),
 }
 
 
