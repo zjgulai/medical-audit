@@ -26,6 +26,8 @@ export type GraphWorkbenchNode = {
   readonly href: string;
   readonly x: number;
   readonly y: number;
+  readonly sourceCollection?: SourceCollection;
+  readonly domain?: string;
 };
 
 export type GraphWorkbenchRelation = {

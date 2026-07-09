@@ -82,6 +82,12 @@ export type ReferenceGraphNode = {
   readonly kind: string;
   readonly metric: string;
   readonly status: string;
+  readonly description?: string;
+  readonly href?: string;
+  readonly sourceCollection?: string;
+  readonly domain?: string;
+  readonly x?: number;
+  readonly y?: number;
 };
 
 export type ReferenceGraphRelation = {

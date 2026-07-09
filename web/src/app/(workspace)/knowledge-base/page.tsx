@@ -188,6 +188,7 @@ export default function KnowledgeBasePage() {
     : productCategories.find((category) => category.id === activeCategory)?.items ?? [];
   const activeCategorySourceCollections = sourceCollectionsFromKnowledgeBases(activeCategoryItems);
   const activeCategoryDocumentsHref = knowledgeBaseCategoryDocumentsHref(activeCategorySourceCollections);
+  const activeCategoryGraphHref = knowledgeBaseCategoryGraphHref(activeCategorySourceCollections);
 
   function recordKnowledgeBaseAction(item: ReferenceKnowledgeBase, action: string) {
     setSelectedKnowledgeBaseId(item.id);
@@ -290,6 +291,9 @@ export default function KnowledgeBasePage() {
           <Link href={activeCategoryDocumentsHref}>
             {activeCategory === allCategory ? "检索全部目录" : "检索当前分类"}
           </Link>
+          <Link href={activeCategoryGraphHref}>
+            {activeCategory === allCategory ? "查看全部图谱" : "查看当前图谱"}
+          </Link>
         </div>
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
@@ -382,6 +386,11 @@ export default function KnowledgeBasePage() {
                   ) : (
                     <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "进入 AI 对话")}>进入 AI 对话</button>
                   )}
+                  {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
+                    <Link href={knowledgeBaseGraphHref(selectedKnowledgeBase)}>查看图谱</Link>
+                  ) : (
+                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "查看图谱")}>查看图谱</button>
+                  )}
                   <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "权限设置")}>权限设置</button>
                 </div>
               </aside>
@@ -407,14 +416,26 @@ function knowledgeBaseDocumentsHref(item: ReferenceKnowledgeBase): string {
 }
 
 function knowledgeBaseCategoryDocumentsHref(sourceCollections: readonly SourceCollection[]): string {
+  return routeWithSourceCollections("/documents", sourceCollections);
+}
+
+function knowledgeBaseGraphHref(item: ReferenceKnowledgeBase): string {
+  return knowledgeBaseCategoryGraphHref(sourceCollectionsFromKnowledgeBaseId(item.id));
+}
+
+function knowledgeBaseCategoryGraphHref(sourceCollections: readonly SourceCollection[]): string {
+  return routeWithSourceCollections("/graph", sourceCollections);
+}
+
+function routeWithSourceCollections(route: "/documents" | "/graph", sourceCollections: readonly SourceCollection[]): string {
   if (sourceCollections.length === 0) {
-    return "/documents";
+    return route;
   }
   const params = new URLSearchParams();
   for (const sourceCollection of sourceCollections) {
     params.append("source_collection", sourceCollection);
   }
-  return `/documents?${params.toString()}`;
+  return `${route}?${params.toString()}`;
 }
 
 function knowledgeBaseChatHref(item: ReferenceKnowledgeBase): string {

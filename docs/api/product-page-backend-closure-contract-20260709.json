@@ -112,7 +112,7 @@
     {
       "route": "/graph",
       "goal": "不引入图数据库，复用现有知识库、规则、疑点、报告数据生成只读关系图。",
-      "current_grade": "backend_workbench_or_seed_pending_verification",
+      "current_grade": "connected_readonly_graph_workbench_with_source_scope",
       "target_grade": "live_readonly_relation_view",
       "read_apis": [
         "GET /api/v1/graph/workbench",
@@ -125,6 +125,12 @@
         "edge has relation type",
         "click node shows source document/rule/finding",
         "filters do not require mock data"
+      ],
+      "implemented_first_batch": [
+        "render GET /api/v1/graph/workbench through the replica graph adapter when available",
+        "preserve node href, description, sourceCollection and domain from graph workbench responses",
+        "accept source_collection URL context from /knowledge-base and keep it in /documents and /chat downstream links",
+        "show backend seed/fallback state through the runtime badge instead of hiding data provenance"
       ]
     },
     {
