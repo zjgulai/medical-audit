@@ -641,16 +641,18 @@ set -euo pipefail
 job_pid={shlex.quote(remote_pid)}
 job_log={shlex.quote(remote_log)}
 if bash -lc {shlex.quote(completion_check_script)}; then
+  echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=complete"
   exit 0
 fi
 pid="$(cat "$job_pid" 2>/dev/null || true)"
 if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-  echo "remote job still running"
-  exit 10
+  echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=running"
+  exit 0
 fi
-echo "remote job exited before completion marker" >&2
-tail -n 80 "$job_log" >&2 || true
-exit 20
+echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=failed"
+echo "remote job exited before completion marker"
+tail -n 80 "$job_log" || true
+exit 0
 """
     while True:
         completed = subprocess.run(
@@ -661,17 +663,28 @@ exit 20
             capture_output=True,
             timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
         )
-        if completed.returncode == 0:
+        detail = "\n".join(
+            part.strip()
+            for part in (completed.stdout, completed.stderr)
+            if part.strip()
+        )
+        if completed.returncode != 0:
+            raise DeployError(
+                f"{timeout_description} poll command failed"
+                + (f":\n{detail}" if detail else ""),
+            )
+        status = _extract_remote_job_status(completed.stdout)
+        if status == "complete":
             print(f"{timeout_description} completed remotely", flush=True)
             return
-        if completed.returncode != 10:
-            detail = "\n".join(
-                part.strip()
-                for part in (completed.stdout, completed.stderr)
-                if part.strip()
-            )
+        if status == "failed":
             raise DeployError(
                 f"{timeout_description} failed before completion marker"
+                + (f":\n{detail}" if detail else ""),
+            )
+        if status != "running":
+            raise DeployError(
+                f"{timeout_description} returned unknown poll status"
                 + (f":\n{detail}" if detail else ""),
             )
         if time.monotonic() >= deadline:
@@ -681,6 +694,14 @@ exit 20
         if completed.stdout.strip():
             print(completed.stdout.strip(), flush=True)
         time.sleep(REMOTE_COMPLETION_POLL_SECONDS)
+
+
+def _extract_remote_job_status(stdout: str) -> str | None:
+    prefix = "MEDICAL_AUDIT_REMOTE_JOB_STATUS="
+    for line in stdout.splitlines():
+        if line.startswith(prefix):
+            return line.removeprefix(prefix).strip()
+    return None
 
 
 def _safe_remote_job_name(job_name: str) -> str:
