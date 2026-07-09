@@ -1,0 +1,371 @@
+{
+  "created_at": "2026-07-09T13:36:35+0800",
+  "task": "medical_audit_p0_governance_manifest_20260709",
+  "evidence_grade": "L3-production-read-only + local-git-inventory",
+  "boundaries": {
+    "business_code_changed": false,
+    "production_write": false,
+    "database_write": false,
+    "backup_deleted": false,
+    "worktree_removed": false,
+    "docker_resource_deleted": false,
+    "pr186_closed_or_merged": false
+  },
+  "production": {
+    "host": "101.34.52.232",
+    "deploy_sha": "d6ae4c191453b0e5619d451cb26b41e3aeb68bee",
+    "state_audit_status": "pass",
+    "state_audit_issues": [],
+    "state_audit_warnings": [],
+    "containers": {
+      "medical_audit_app": {
+        "running": true,
+        "health": "healthy",
+        "compose_project": "medical-audit",
+        "compose_service": "app"
+      },
+      "medical_audit_pg": {
+        "running": true,
+        "health": "healthy",
+        "compose_project": "medical-audit",
+        "compose_service": "postgres"
+      },
+      "medical_audit_clamav": {
+        "running": true,
+        "health": "healthy",
+        "compose_project": "medical-audit",
+        "compose_service": "clamav"
+      },
+      "ai_video_nginx": {
+        "running": true,
+        "health": null,
+        "compose_project": "lighthouse",
+        "compose_service": "nginx"
+      }
+    },
+    "disk": [
+      {
+        "path": "/",
+        "total_bytes": 285230424064,
+        "used_bytes": 258239188992,
+        "free_bytes": 15271452672,
+        "used_pct": 90.54
+      },
+      {
+        "path": "/opt/medical-audit",
+        "total_bytes": 285230424064,
+        "used_bytes": 258239188992,
+        "free_bytes": 15271452672,
+        "used_pct": 90.54
+      },
+      {
+        "path": "/opt/medical-audit/backups",
+        "total_bytes": 285230424064,
+        "used_bytes": 258239188992,
+        "free_bytes": 15271452672,
+        "used_pct": 90.54
+      },
+      {
+        "path": "/var/www/audit",
+        "total_bytes": 285230424064,
+        "used_bytes": 258239188992,
+        "free_bytes": 15271452672,
+        "used_pct": 90.54
+      }
+    ],
+    "backup_root": "/opt/medical-audit/backups",
+    "backup_totals": {
+      "file_count": 132,
+      "total_bytes": 125908896663,
+      "older_than_3_days_count": 40,
+      "older_than_3_days_bytes": 35345615098
+    },
+    "backup_categories": {
+      "agent-cleanup": {
+        "file_count": 1,
+        "total_bytes": 1938785,
+        "older_than_3_days_count": 1,
+        "older_than_3_days_bytes": 1938785,
+        "newest_path": "/opt/medical-audit/backups/agent-cleanup/audit_agents_pre_archive_20260706T022840+0800.sql",
+        "newest_mtime": "2026-07-06T02:28:40+0800",
+        "oldest_path": "/opt/medical-audit/backups/agent-cleanup/audit_agents_pre_archive_20260706T022840+0800.sql",
+        "oldest_mtime": "2026-07-06T02:28:40+0800"
+      },
+      "app": {
+        "file_count": 27,
+        "total_bytes": 5016564661,
+        "older_than_3_days_count": 8,
+        "older_than_3_days_bytes": 1494550888,
+        "newest_path": "/opt/medical-audit/backups/app/pre-deploy-final-main-d6ae4c1-20260709.tar.gz",
+        "newest_mtime": "2026-07-09T12:27:53+0800",
+        "oldest_path": "/opt/medical-audit/backups/app/pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+        "oldest_mtime": "2026-07-05T17:53:38+0800"
+      },
+      "db": {
+        "file_count": 25,
+        "total_bytes": 120875149130,
+        "older_than_3_days_count": 7,
+        "older_than_3_days_bytes": 33844778728,
+        "newest_path": "/opt/medical-audit/backups/db/pre-deploy-final-main-d6ae4c1-20260709.sql.gz",
+        "newest_mtime": "2026-07-09T12:43:28+0800",
+        "oldest_path": "/opt/medical-audit/backups/db/pre-deploy-postmerge-main-a7a81da6-20260705.sql.gz",
+        "oldest_mtime": "2026-07-05T18:09:07+0800"
+      },
+      "env": {
+        "file_count": 27,
+        "total_bytes": 69552,
+        "older_than_3_days_count": 8,
+        "older_than_3_days_bytes": 20608,
+        "newest_path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-final-main-d6ae4c1-20260709",
+        "newest_mtime": "2026-07-09T12:27:53+0800",
+        "oldest_path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-postmerge-main-a7a81da6-20260705",
+        "oldest_mtime": "2026-07-05T17:53:38+0800"
+      },
+      "nginx": {
+        "file_count": 27,
+        "total_bytes": 928893,
+        "older_than_3_days_count": 9,
+        "older_than_3_days_bytes": 298123,
+        "newest_path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-final-main-d6ae4c1-20260709",
+        "newest_mtime": "2026-07-09T12:43:28+0800",
+        "oldest_path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-postmerge-main-a7a81da6-20260705",
+        "oldest_mtime": "2026-07-05T18:09:07+0800"
+      },
+      "web": {
+        "file_count": 25,
+        "total_bytes": 14245642,
+        "older_than_3_days_count": 7,
+        "older_than_3_days_bytes": 4027966,
+        "newest_path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-final-main-d6ae4c1-20260709.tar.gz",
+        "newest_mtime": "2026-07-09T12:43:28+0800",
+        "oldest_path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+        "oldest_mtime": "2026-07-05T18:09:07+0800"
+      }
+    },
+    "cleanup_policy": {
+      "executed_delete": false,
+      "default_keep_window_days": 3,
+      "keep_latest_successful_deploy_backup": true,
+      "delete_requires_separate_authorization": true
+    }
+  },
+  "local_root_dirty_tree": {
+    "repo_root": "/Users/pray/project/medical_audit",
+    "branch": "main",
+    "head": "6429b34278cf6d35e3477edc6bc3e5032df652f2",
+    "origin_main": "32884d71ece3b8e3b31dae1a8fe75bff8ac07247",
+    "ahead_behind_head_vs_origin_main": "0\t83",
+    "total_dirty_entries": 367,
+    "groups": {
+      ".kiro-plan": {
+        "count": 20,
+        "modified": 3,
+        "untracked": 17,
+        "paths_sample": [
+          ".kiro/plan/findings.md",
+          ".kiro/plan/progress.md",
+          ".kiro/plan/task_plan.md",
+          ".kiro/plan/frontend_ai_replica_api_integration_plan_20260704.md",
+          ".kiro/plan/frontend_ai_replica_loop1_fidelity_freeze_20260704.md",
+          ".kiro/plan/frontend_ai_replica_loop2_route_contract_matrix_20260704.md",
+          ".kiro/plan/frontend_ai_replica_loop3_adapters_20260704.md",
+          ".kiro/plan/frontend_ai_replica_loop4_5_runtime_wiring_20260704.md"
+        ]
+      },
+      "drafts-analysis": {
+        "count": 298,
+        "modified": 1,
+        "untracked": 297,
+        "paths_sample": [
+          "drafts/analysis/branch-consolidation-and-frontend-backend-separation-todo-draft-20260702.md",
+          "drafts/analysis/frontend-adversarial-uiux-audit-refinement-plan-draft-20260704.md",
+          "drafts/analysis/frontend-ai-replica-api-integration-loop-engineering-plan-draft-20260704.md",
+          "drafts/analysis/frontend-ai-replica-loop-engineering-todo-draft-20260703.md",
+          "drafts/analysis/frontend-ai-replica-loop1-fidelity-freeze-report-draft-20260704.md",
+          "drafts/analysis/frontend-ai-replica-loop3-adapter-implementation-draft-20260704.md",
+          "drafts/analysis/frontend-ai-replica-loop4-5-runtime-wiring-staging-manifest-draft-20260704.md",
+          "drafts/analysis/frontend-ai-replica-loop7-atomic-delivery-plan-draft-20260704.md"
+        ]
+      },
+      "repo-config": {
+        "count": 3,
+        "modified": 2,
+        "untracked": 1,
+        "paths_sample": [
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "AGENTS.md"
+        ]
+      },
+      "scripts": {
+        "count": 5,
+        "modified": 1,
+        "untracked": 4,
+        "paths_sample": [
+          "scripts/deploy-tencent-cloud-production.py",
+          "scripts/build-p6d-confirmed-decision-manifest.py",
+          "scripts/build-p6d-deferred-review-pack.py",
+          "scripts/build-p6d-human-review-decision-manifest.py",
+          "scripts/build-p6d-residual-decision-manifest.py"
+        ]
+      },
+      "src-backend": {
+        "count": 9,
+        "modified": 9,
+        "untracked": 0,
+        "paths_sample": [
+          "src/medical_audit_kb/api/document_permissions.py",
+          "src/medical_audit_kb/api/routes_pages.py",
+          "src/medical_audit_kb/domain/constants.py",
+          "src/medical_audit_kb/generation/citations.py",
+          "src/medical_audit_kb/indexing/embeddings.py",
+          "src/medical_audit_kb/indexing/incremental_plan.py",
+          "src/medical_audit_kb/indexing/index_activation.py",
+          "src/medical_audit_kb/indexing/persistent_index.py"
+        ]
+      },
+      "tests": {
+        "count": 7,
+        "modified": 7,
+        "untracked": 0,
+        "paths_sample": [
+          "tests/knowledge_query/test_api.py",
+          "tests/knowledge_query/test_citations.py",
+          "tests/knowledge_query/test_incremental_plan.py",
+          "tests/knowledge_query/test_index_activation.py",
+          "tests/knowledge_query/test_index_backends.py",
+          "tests/knowledge_query/test_persistent_index.py",
+          "tests/knowledge_query/test_scripts.py"
+        ]
+      },
+      "web-frontend": {
+        "count": 19,
+        "modified": 15,
+        "untracked": 4,
+        "paths_sample": [
+          "web/src/app/(workspace)/agent-market/page.tsx",
+          "web/src/app/(workspace)/archive/page.tsx",
+          "web/src/app/(workspace)/documents/page.tsx",
+          "web/src/app/(workspace)/fund-compliance/page.tsx",
+          "web/src/app/(workspace)/fund-compliance/review/page.tsx",
+          "web/src/app/(workspace)/graph/page.tsx",
+          "web/src/app/(workspace)/guided-check/page.tsx",
+          "web/src/app/(workspace)/knowledge-base/page.tsx"
+        ]
+      },
+      "other": {
+        "count": 1,
+        "modified": 0,
+        "untracked": 1,
+        "paths_sample": [
+          ".playwright-cli/"
+        ]
+      },
+      "docs": {
+        "count": 4,
+        "modified": 0,
+        "untracked": 4,
+        "paths_sample": [
+          "docs/api/frontend-backend-page-contract.json",
+          "docs/api/knowledge-query-contract-v2.json",
+          "docs/api/knowledge-query-contract-v2.md",
+          "docs/superpowers/"
+        ]
+      },
+      "output-generated": {
+        "count": 1,
+        "modified": 0,
+        "untracked": 1,
+        "paths_sample": [
+          "output/"
+        ]
+      }
+    },
+    "safe_to_develop_here": false
+  },
+  "worktrees": {
+    "total_worktrees": 44,
+    "counts": {
+      "prunable": 4,
+      "detached": 15,
+      "branch": 29,
+      "dirty_existing": 2
+    },
+    "recommendation_counts": {
+      "keep_root_but_do_not_develop_until_clean": 1,
+      "prune_metadata_candidate": 4,
+      "review_branch_status_then_remove_candidate": 25,
+      "remove_candidate_after_owner_approval": 11,
+      "keep_recent_governance_reference_until_current_pr_merged": 1,
+      "keep_active_current_batch": 1,
+      "inspect_before_any_action": 1
+    },
+    "dirty_existing_worktrees": [
+      {
+        "path": "/Users/pray/project/medical_audit",
+        "dirty_count": 367,
+        "recommendation": "keep_root_but_do_not_develop_until_clean",
+        "dirty_sample": [
+          ".kiro/plan/findings.md",
+          ".kiro/plan/progress.md",
+          ".kiro/plan/task_plan.md",
+          "drafts/analysis/branch-consolidation-and-frontend-backend-separation-todo-draft-20260702.md",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          "scripts/deploy-tencent-cloud-production.py",
+          "src/medical_audit_kb/api/document_permissions.py"
+        ]
+      },
+      {
+        "path": "/Users/pray/project/medical_audit-prod-clean-b5ad9fce",
+        "dirty_count": 1,
+        "recommendation": "inspect_before_any_action",
+        "dirty_sample": [
+          "docs/superpowers/"
+        ]
+      }
+    ],
+    "prunable_paths": [
+      {
+        "path": "/private/tmp/medical-audit-login-gate-579d3983-20260705195621",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-prod-release-6178cff1",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-replica-frontend-readonly",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-replica-mainline-readonly",
+        "reason": "gitdir file points to non-existent location"
+      }
+    ]
+  },
+  "github_pr_186": {
+    "number": 186,
+    "state": "OPEN",
+    "title": "docs: add medical_audit governance manifests",
+    "head_ref": "codex/project-governance-20260706",
+    "head_oid": "af719e3f0f4ac87dc35a3bcf9e3447ce0a2c8da5",
+    "base_ref": "main",
+    "url": "https://github.com/zjgulai/medical-audit/pull/186",
+    "files": [
+      ".gitignore",
+      "archive/generated-artifacts/20260706/generated-artifacts-manifest.md",
+      "archive/worktree-manifests/medical-audit-production-and-docker-manifest-20260706.md",
+      "archive/worktree-manifests/medical-audit-worktree-manifest-20260706.md",
+      "docs/api/frontend-backend-page-contract.json",
+      "docs/workflows/medical-audit-project-governance-20260706.md"
+    ],
+    "recommendation": "do_not_merge_as_is; supersede or close after owner confirmation because facts are older than current production/governance state"
+  },
+  "next_batch_recommendation": [
+    "Ask for explicit deletion authorization before removing older production backups; current older-than-3-days candidate bytes are listed but not deleted.",
+    "Prune only git metadata for 4 prunable worktrees after confirmation; then review clean detached worktrees for removal.",
+    "Classify root dirty groups into keep/archive/migrate/discard-candidate before any staging.",
+    "Close or supersede PR #186 after confirming no unique contract content is still needed."
+  ]
+}

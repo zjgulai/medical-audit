@@ -113,10 +113,17 @@ source: production-readonly+local-git-inventory
 ### 第一批：治理和安全收口
 
 - [x] 建立当前项目未完成任务与治理方案文档。
-- [ ] 生成生产备份 manifest 和磁盘占用报告。
-- [ ] 生成根目录脏树 manifest。
-- [ ] 生成 worktree 保留/移除建议。
-- [ ] Review PR #186，给出合并、重写或关闭建议。
+- [x] 生成生产备份 manifest 和磁盘占用报告。
+- [x] 生成根目录脏树 manifest。
+- [x] 生成 worktree 保留/移除建议。
+- [x] Review PR #186，给出合并、重写或关闭建议。
+
+执行记录：
+
+- 汇总 manifest：`docs/workflows/manifests/medical-audit-p0-governance-manifest-20260709.json`。
+- 执行说明：`docs/workflows/workflow-p0-governance-execution-20260709.md`。
+- 当前只完成只读建账和建议，不删除生产备份、不移除 worktree、不关闭 PR #186。
+- 备份删除、worktree 移除、PR #186 关闭都需要单独授权。
 
 ### 第二批：核心产品闭环
 
