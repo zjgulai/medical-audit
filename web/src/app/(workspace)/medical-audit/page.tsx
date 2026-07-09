@@ -7,17 +7,23 @@ import {
   createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
+  fetchProjectDashboard,
+  fetchProjects,
   fetchReportWorkbench,
   recordMedicalAuditImportPreflight,
   registerMedicalAuditSupplement,
   updateMedicalAuditReviewStatus
 } from "@/lib/api-client";
+import { DEFAULT_AUDIT_PROJECT_KEY } from "@/lib/audit-user";
 import type {
   AuditFinding as BackendAuditFinding,
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogItem,
   DocumentSourceCollectionCatalogResponse,
   MedicalAuditWorkflowActionResponse,
+  ProjectDashboardResponse,
+  ProjectSummaryApiItem,
+  ProjectsResponse,
   ReportWorkbenchResponse,
   WorkpaperTemplateRegistryItem
 } from "@/lib/api-types";
@@ -320,6 +326,15 @@ function sourceCollectionsForMedical(
     .filter((item) => /medical|医保|审计|监管|目录|政策/.test(`${item.domain} ${item.label} ${item.description}`));
 }
 
+function selectMedicalAuditProject(projects: readonly ProjectSummaryApiItem[]): ProjectSummaryApiItem | null {
+  return (
+    projects.find((project) => project.id === DEFAULT_AUDIT_PROJECT_KEY) ??
+    projects.find((project) => /医保|医疗|基金/.test(`${project.name} ${project.audit_topic}`)) ??
+    projects[0] ??
+    null
+  );
+}
+
 function metricValueFromState<T>(state: LoadState<T>, selector: (data: T) => number | string): string {
   if (state.status === "loading") {
     return "...";
@@ -405,6 +420,12 @@ export default function MedicalAuditPage() {
   const [reportState, setReportState] = useState<LoadState<ReportWorkbenchResponse>>({
     status: "loading"
   });
+  const [projectState, setProjectState] = useState<LoadState<ProjectsResponse>>({
+    status: "loading"
+  });
+  const [dashboardState, setDashboardState] = useState<LoadState<ProjectDashboardResponse>>({
+    status: "loading"
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -467,9 +488,56 @@ export default function MedicalAuditPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setProjectState({ status: "loading" });
+    setDashboardState({ status: "loading" });
+    fetchProjects()
+      .then((projects) => {
+        if (cancelled) {
+          return;
+        }
+        setProjectState({ status: "ready", data: projects });
+        const project = selectMedicalAuditProject(projects.items);
+        if (!project) {
+          setDashboardState({
+            status: "error",
+            message: "当前没有可关联的审计专题项目"
+          });
+          return;
+        }
+        return fetchProjectDashboard(project.id)
+          .then((dashboard) => {
+            if (!cancelled) {
+              setDashboardState({ status: "ready", data: dashboard });
+            }
+          })
+          .catch((error: unknown) => {
+            if (!cancelled) {
+              setDashboardState({
+                status: "error",
+                message: error instanceof Error ? error.message : "专题驾驶舱接口读取异常"
+              });
+            }
+          });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "审计专题项目接口读取异常";
+          setProjectState({ status: "error", message });
+          setDashboardState({ status: "error", message: "专题驾驶舱等待项目接口恢复" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const auditData = auditState.status === "ready" ? auditState.data : null;
   const sourceData = sourceState.status === "ready" ? sourceState.data : null;
   const statusOptions = auditData?.review_status_options ?? statusLabelFallback;
+  const activeProject =
+    projectState.status === "ready" ? selectMedicalAuditProject(projectState.data.items) : null;
   const medicalSources = useMemo(() => sourceCollectionsForMedical(sourceData), [sourceData]);
   const sourceKeys = useMemo(
     () => medicalSources.map((source) => source.source_collection),
@@ -679,13 +747,17 @@ export default function MedicalAuditPage() {
           <div className="replica-medical-notice">
             数据源：疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
             <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
-            <code>/api/v1/reports/workbench</code>。本批次只做生产流程入口和只读联通，写入类动作进入确认门禁。
+            <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
+            <code>/api/v1/projects/:id/dashboard</code>。本批次只做生产流程入口和只读联通，写入类动作进入确认门禁。
           </div>
           {activeView === "audit" ? (
             <SmartAuditView
               activeRule={activeRule}
               auditState={auditState}
+              activeProject={activeProject}
+              dashboardState={dashboardState}
               filteredFindings={filteredFindings}
+              projectState={projectState}
               reportState={reportState}
               riskFilter={riskFilter}
               selectedFindingKey={selectedFinding?.finding_key ?? null}
@@ -842,7 +914,10 @@ function RuleNavigator({
 function SmartAuditView({
   activeRule,
   auditState,
+  activeProject,
+  dashboardState,
   filteredFindings,
+  projectState,
   reportState,
   riskFilter,
   selectedFindingKey,
@@ -859,7 +934,10 @@ function SmartAuditView({
 }: {
   readonly activeRule: RuleFilter;
   readonly auditState: LoadState<AuditFindingsResponse>;
+  readonly activeProject: ProjectSummaryApiItem | null;
+  readonly dashboardState: LoadState<ProjectDashboardResponse>;
   readonly filteredFindings: readonly BackendAuditFinding[];
+  readonly projectState: LoadState<ProjectsResponse>;
   readonly reportState: LoadState<ReportWorkbenchResponse>;
   readonly riskFilter: RiskFilter;
   readonly selectedFindingKey: string | null;
@@ -877,6 +955,12 @@ function SmartAuditView({
   const auditData = auditState.status === "ready" ? auditState.data : null;
   return (
     <>
+      <ProjectFlowPanel
+        activeProject={activeProject}
+        auditState={auditState}
+        dashboardState={dashboardState}
+        projectState={projectState}
+      />
       <MetricCards auditState={auditState} sourceState={sourceState} reportState={reportState} />
       <div className="replica-medical-rule-tabs" role="tablist" aria-label="规则筛选">
         {ruleTabs.map((tab) => (
@@ -960,6 +1044,114 @@ function SmartAuditView({
         />
       ) : null}
     </>
+  );
+}
+
+function ProjectFlowPanel({
+  activeProject,
+  auditState,
+  dashboardState,
+  projectState
+}: {
+  readonly activeProject: ProjectSummaryApiItem | null;
+  readonly auditState: LoadState<AuditFindingsResponse>;
+  readonly dashboardState: LoadState<ProjectDashboardResponse>;
+  readonly projectState: LoadState<ProjectsResponse>;
+}) {
+  const auditData = auditState.status === "ready" ? auditState.data : null;
+  const dashboardData = dashboardState.status === "ready" ? dashboardState.data : null;
+  const projectStatus =
+    projectState.status === "loading"
+      ? "正在读取专题"
+      : projectState.status === "error"
+        ? "专题接口暂不可用"
+        : activeProject?.status ?? "未选择专题";
+  const dashboardStatus =
+    dashboardState.status === "loading"
+      ? "正在读取驾驶舱"
+      : dashboardState.status === "error"
+        ? "驾驶舱暂不可用"
+        : dashboardState.data.evidence_grade;
+  const projectName =
+    activeProject?.name ?? (projectState.status === "error" ? "专题项目待恢复" : "医保审计专题");
+  const queueItems = dashboardData?.queue.slice(0, 3) ?? [];
+  const workloads = dashboardData?.member_workloads.slice(0, 3) ?? [];
+  return (
+    <section className="replica-medical-project-panel" aria-label="医保审计专题项目流程">
+      <div className="replica-medical-project-head">
+        <div>
+          <span>专题项目</span>
+          <h2>{projectName}</h2>
+          <p>
+            {activeProject?.organization_name ?? "项目接口恢复后显示机构范围"} ·{" "}
+            {activeProject?.audit_topic ?? "医保审计"}
+          </p>
+        </div>
+        <div className="replica-medical-project-status">
+          <strong>{projectStatus}</strong>
+          <span>{dashboardStatus}</span>
+        </div>
+      </div>
+      <div className="replica-medical-project-flow">
+        <article>
+          <span>1</span>
+          <strong>表格导入</strong>
+          <p>{auditData?.generation_readiness.table_counts.fee_summary ?? 0} 条汇总表记录</p>
+        </article>
+        <article>
+          <span>2</span>
+          <strong>规则命中</strong>
+          <p>{auditData?.stats.total ?? 0} 条生产疑点</p>
+        </article>
+        <article>
+          <span>3</span>
+          <strong>人工复核</strong>
+          <p>{auditData?.stats.pending_review ?? 0} 条待复核</p>
+        </article>
+        <article>
+          <span>4</span>
+          <strong>底稿报告</strong>
+          <p>{auditData?.stats.linked_review_task ?? 0} 条已关联任务</p>
+        </article>
+      </div>
+      <div className="replica-medical-project-grid">
+        <div>
+          <h3>待办队列</h3>
+          {dashboardState.status === "error" ? <p>{dashboardState.message}</p> : null}
+          {queueItems.length > 0 ? (
+            <ul>
+              {queueItems.map((item) => (
+                <li key={item.id}>
+                  <span>{item.owner}</span>
+                  <strong>{item.title}</strong>
+                  <em>{item.dueLabel}</em>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{dashboardState.status === "loading" ? "正在同步队列..." : "暂无待办队列"}</p>
+          )}
+        </div>
+        <div>
+          <h3>人员承接</h3>
+          {workloads.length > 0 ? (
+            <ul>
+              {workloads.map((item) => (
+                <li key={`${item.name}-${item.role}`}>
+                  <span>{item.role}</span>
+                  <strong>{item.name}</strong>
+                  <em>
+                    {item.pending} 待处理 / {item.closed} 已闭环
+                  </em>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{dashboardState.status === "loading" ? "正在同步人员..." : "暂无人员承接数据"}</p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

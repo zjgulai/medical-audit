@@ -3868,6 +3868,206 @@ select {
   padding: 9px 12px;
 }
 
+.replica-medical-project-panel {
+  display: grid;
+  gap: 16px;
+  margin: 16px 16px 0;
+  border: 1px solid #dfe7f1;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgb(246 250 255 / 0.96), rgb(255 255 255 / 0.98)),
+    repeating-linear-gradient(90deg, rgb(43 112 204 / 0.06) 0 1px, transparent 1px 18px);
+  box-shadow: 0 10px 26px rgb(16 24 40 / 0.08);
+  padding: 18px;
+}
+
+.replica-medical-project-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.replica-medical-project-head span,
+.replica-medical-project-grid h3,
+.replica-medical-project-grid li span {
+  color: #7c899c;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.replica-medical-project-head h2 {
+  margin: 5px 0 0;
+  color: #172033;
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.replica-medical-project-head p {
+  margin: 7px 0 0;
+  color: #5e6c82;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.replica-medical-project-status {
+  min-width: 180px;
+  border: 1px solid #d8e7fb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+  text-align: right;
+}
+
+.replica-medical-project-status strong,
+.replica-medical-project-status span {
+  display: block;
+}
+
+.replica-medical-project-status strong {
+  color: var(--replica-primary);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.replica-medical-project-status span {
+  margin-top: 4px;
+  color: #7c899c;
+  font-size: 12px;
+}
+
+.replica-medical-project-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.replica-medical-project-flow article {
+  min-width: 0;
+  border: 1px solid #dde8f6;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.replica-medical-project-flow span {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: var(--replica-primary);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.replica-medical-project-flow strong {
+  display: block;
+  margin-top: 10px;
+  color: #172033;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.replica-medical-project-flow p {
+  margin: 6px 0 0;
+  color: #69778b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.replica-medical-project-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.replica-medical-project-grid > div {
+  min-width: 0;
+  border: 1px solid #dde8f6;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.replica-medical-project-grid h3 {
+  margin: 0 0 10px;
+}
+
+.replica-medical-project-grid ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replica-medical-project-grid li {
+  display: grid;
+  grid-template-columns: minmax(68px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  background: #f7faff;
+  padding: 10px;
+}
+
+.replica-medical-project-grid li strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replica-medical-project-grid li em,
+.replica-medical-project-grid p {
+  margin: 0;
+  color: #69778b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+@media (max-width: 1120px) {
+  .replica-medical-project-head {
+    flex-direction: column;
+  }
+
+  .replica-medical-project-status {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .replica-medical-project-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .replica-medical-project-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .replica-medical-project-panel {
+    margin-inline: 12px;
+    padding: 14px;
+  }
+
+  .replica-medical-project-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .replica-medical-project-grid li {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+
 .replica-medical-metrics {
   display: grid;
   flex: none;
