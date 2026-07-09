@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: answer-provider-production-gate
 status: stable
 created: 2026-06-15
-updated: 2026-06-29
+updated: 2026-07-10
 owner: self
 source: human+ai
 ---
@@ -13,7 +13,40 @@ source: human+ai
 # 真实生成模型 Provider 生产门禁（F2）
 
 > 本文件由 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 定稿。
-> 工具链就绪：`audit-answer-provider-gate-readiness.py`、`answer-provider-smoke`、`evaluate-answers`、答案预检与生产 `--require-generated-answer` E2E 闸均已实现。
+> 工具链就绪：`audit-answer-provider-gate-readiness.py`、`run-production-chat-model-catalog-readonly-probe.py`、`answer-provider-smoke`、`evaluate-answers`、答案预检与生产 `--require-generated-answer` E2E 闸均已实现。
+
+## 0. 2026-07-10 chat model catalog 只读门禁补充（最新）
+
+`/chat` 现使用模型别名合同，生产判断需要分成两层：
+
+1. **目录合同可观测**：`/api/v1/query/models` 可通过 GET 返回 `kimi-2.7` 与 `deepseek-v4-pro`，且响应显式声明 `production_write=false`、`provider_call=false`、`secret_values_reported=false`。这只证明前端可读取模型目录。
+2. **模型启用门禁**：至少一个模型别名返回 `available=true`，才允许继续进入最小 provider smoke。若 `available_model_aliases=[]`，即使目录接口可达，也不能宣称 `/chat` 已具备真实模型回答能力。
+
+标准命令：
+
+```bash
+pnpm production:chat-model-catalog-readonly
+```
+
+用于生产只读目录合同观测。该命令只发 GET，不写生产环境变量，不重启容器，不调用外部 provider。
+
+```bash
+pnpm production:chat-model-ready
+```
+
+用于生产模型启用门禁。该命令会在没有可用模型别名时返回非零退出码；这代表继续 provider smoke 的前置条件未满足，而非业务代码需要回滚。
+
+2026-07-10 PR #225 分支只读证据：
+
+- `production:chat-model-catalog-readonly` 对当前生产返回 `status=pass`，`contract_version=chat-model-catalog-v1`，`model_aliases=["kimi-2.7","deepseek-v4-pro"]`。
+- 当前生产 `available_model_aliases=[]`，两个别名均为 `missing_api_key_env`。
+- 生产容器 readiness 交叉复核仍为 `blocked`，`ready_chat_model_aliases=[]`，`provider_call_status=not_called`，`production_env_write=false`。
+
+边界：
+
+- `KIMI_API_KEY=SET` 只说明 embedding runtime 已配置；它不能自动等同于 `kimi-2.7` 聊天模型可用。
+- `MOONSHOT_API_KEY` 或 `DEEPSEEK_API_KEY` 写入生产 env、容器重启、provider smoke、真实 `/chat` 提问都必须作为后续单独授权动作执行。
+- provider smoke 通过前，产品状态仍应表述为“模型目录可见，真实生成能力待启用”。
 
 ## 0. 2026-06-29 main@a78bf8e5 最新 UI/UX 生产基线后只读复核结论（最新）
 

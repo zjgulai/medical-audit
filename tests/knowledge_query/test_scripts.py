@@ -361,6 +361,174 @@ def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> 
     assert report["boundaries"]["production_env_write"] is False
 
 
+def test_run_production_chat_model_catalog_readonly_probe_script_is_valid() -> None:
+    script_path = Path("scripts/run-production-chat-model-catalog-readonly-probe.py")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(script_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    script_text = script_path.read_text(encoding="utf-8")
+    assert "sk-" not in script_text
+    assert "provider_call" in script_text
+    assert "production_env_write" in script_text
+    assert "secret_values_reported" in script_text
+    assert "require-ready-model" in script_text
+
+
+def test_run_production_chat_model_catalog_readonly_probe_allows_catalog_only() -> None:
+    module = _load_script_module(
+        "run_production_chat_model_catalog_readonly_catalog_only",
+        Path("scripts/run-production-chat-model-catalog-readonly-probe.py"),
+    )
+
+    def fake_http_get(
+        url: str,
+        _headers: dict[str, str],
+        _timeout_seconds: float,
+    ) -> object:
+        if url.endswith("/api/v1/deployment/metadata"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_deployment_metadata_payload()).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/v1/query/models"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "contract_version": "chat-model-catalog-v1",
+                        "default_model": "kimi-2.7",
+                        "items": [
+                            {
+                                "alias": "kimi-2.7",
+                                "label": "Kimi 2.7",
+                                "provider": None,
+                                "available": False,
+                                "default": True,
+                                "unavailable_reason": "missing_api_key_env",
+                            },
+                            {
+                                "alias": "deepseek-v4-pro",
+                                "label": "DeepSeek V4 Pro",
+                                "provider": None,
+                                "available": False,
+                                "default": False,
+                                "unavailable_reason": "missing_api_key_env",
+                            },
+                        ],
+                        "boundaries": {
+                            "production_write": False,
+                            "provider_call": False,
+                            "secret_values_reported": False,
+                            "source": "environment_capability_probe_only",
+                        },
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        require_ready_model=False,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "pass"
+    assert report["summary"]["ready_model_count"] == 0
+    assert report["summary"]["available_model_aliases"] == []
+    assert report["boundaries"]["provider_call"] is False
+    assert report["boundaries"]["production_env_write"] is False
+    assert report["boundaries"]["secret_values_reported"] is False
+
+
+def test_run_production_chat_model_catalog_readonly_probe_can_require_ready_model() -> None:
+    module = _load_script_module(
+        "run_production_chat_model_catalog_readonly_require_ready",
+        Path("scripts/run-production-chat-model-catalog-readonly-probe.py"),
+    )
+
+    def fake_http_get(
+        url: str,
+        _headers: dict[str, str],
+        _timeout_seconds: float,
+    ) -> object:
+        if url.endswith("/api/v1/deployment/metadata"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(_deployment_metadata_payload()).encode(),
+                headers={"content-type": "application/json"},
+            )
+        if url.endswith("/api/v1/query/models"):
+            return module.HttpResponse(
+                status=200,
+                url=url,
+                content=json.dumps(
+                    {
+                        "contract_version": "chat-model-catalog-v1",
+                        "default_model": "kimi-2.7",
+                        "items": [
+                            {
+                                "alias": "kimi-2.7",
+                                "label": "Kimi 2.7",
+                                "provider": None,
+                                "available": False,
+                                "default": True,
+                                "unavailable_reason": "missing_api_key_env",
+                            },
+                            {
+                                "alias": "deepseek-v4-pro",
+                                "label": "DeepSeek V4 Pro",
+                                "provider": None,
+                                "available": False,
+                                "default": False,
+                                "unavailable_reason": "missing_api_key_env",
+                            },
+                        ],
+                        "boundaries": {
+                            "production_write": False,
+                            "provider_call": False,
+                            "secret_values_reported": False,
+                            "source": "environment_capability_probe_only",
+                        },
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+            )
+        raise AssertionError(url)
+
+    report = module._run_probe(
+        base_url="https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        user_id="readonly-probe",
+        role="auditor",
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        require_ready_model=True,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "fail"
+    query_models_step = next(
+        step for step in report["steps"] if step["name"] == "query-models-catalog"
+    )
+    assert query_models_step["details"]["error"] == "no chat model alias is available"
+
+
 def test_audit_auth_sso_contract_readiness_script_is_valid_and_sanitized() -> None:
     script_path = Path("scripts/audit-auth-sso-contract-readiness.py")
 
