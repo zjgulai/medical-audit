@@ -11,7 +11,9 @@ import {
   ReplicaRuntimeBadge
 } from "@/components/replica/replica-page-kit";
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
+import type { SourceCollection } from "@/lib/api-types";
 import type { ReferenceKnowledgeBase } from "@/lib/reference-replica-data";
+import { isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
 type ProductKnowledgeCategoryId =
   | "all"
@@ -70,24 +72,43 @@ const productCategoryMeta: readonly Omit<ProductKnowledgeCategory, "items">[] = 
 ];
 
 const allCategory = "all" as const;
+const knowledgeBaseSourceCollectionMap: Record<string, readonly SourceCollection[]> = {
+  "kb-personal": ["personal-materials"],
+  "kb-public-policy": [
+    "policy-general-policy",
+    "policy-finance-price-procurement",
+    "policy-data-statistics-disclosure",
+    "policy-reform-pilot",
+    "policy-social-security-livelihood",
+    "policy-industry-business-environment"
+  ],
+  "kb-system-medical-fund": [
+    "medical-insurance-laws",
+    "supervision-rules-knowledge",
+    "medical-insurance-catalog",
+    "risk-negative-list"
+  ],
+  "kb-system-audit": ["management-judicial-audit-procedure"],
+  "kb-project-village": ["other-agriculture-water"]
+};
 
 function categoryForKnowledgeBase(item: ReferenceKnowledgeBase): ProductKnowledgeCategoryId {
-  const source = sourceCollectionFromKnowledgeBaseId(item.id) ?? item.id;
-  const text = `${source} ${item.name} ${item.scope} ${item.description} ${item.tags.join(" ")}`;
+  const sources = sourceCollectionsFromKnowledgeBaseId(item.id);
+  const text = `${sources.join(" ")} ${item.id} ${item.name} ${item.scope} ${item.description} ${item.tags.join(" ")}`;
 
-  if (source === "personal-materials" || item.scope === "个人知识库" || text.includes("个人")) {
+  if (sources.includes("personal-materials") || item.scope === "个人知识库" || text.includes("个人")) {
     return "my";
   }
-  if (source === "risk-negative-list" || text.includes("风险清单") || text.includes("负面清单")) {
+  if (sources.includes("risk-negative-list") || text.includes("风险清单") || text.includes("负面清单")) {
     return "risk-list";
   }
-  if (source === "supervision-rules-knowledge" || source === "medical-insurance-catalog" || text.includes("监管两库") || text.includes("医保目录")) {
+  if (sources.includes("supervision-rules-knowledge") || sources.includes("medical-insurance-catalog") || text.includes("监管两库") || text.includes("医保目录")) {
     return "insurance-rules";
   }
-  if (source === "medical-insurance-laws" || text.includes("医疗") || text.includes("医保")) {
+  if (sources.includes("medical-insurance-laws") || text.includes("医疗") || text.includes("医保")) {
     return "medical-laws";
   }
-  if (source === "management-judicial-audit-procedure" || text.includes("审计程序") || text.includes("司法审计")) {
+  if (sources.includes("management-judicial-audit-procedure") || text.includes("审计程序") || text.includes("司法审计")) {
     return "audit-laws";
   }
   return "national";
@@ -127,6 +148,15 @@ function newestUpdatedAt(items: readonly ReferenceKnowledgeBase[]) {
   return items.find((item) => item.documentCount > 0)?.updatedAt ?? "待同步";
 }
 
+function sourceCollectionsFromKnowledgeBases(items: readonly ReferenceKnowledgeBase[]): readonly SourceCollection[] {
+  return Array.from(
+    new Set(
+      items
+        .flatMap((item) => sourceCollectionsFromKnowledgeBaseId(item.id))
+    )
+  );
+}
+
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<ProductKnowledgeCategoryId>(allCategory);
@@ -153,6 +183,11 @@ export default function KnowledgeBasePage() {
   const selectedCategory = selectedKnowledgeBase
     ? productCategories.find((category) => category.id === categoryForKnowledgeBase(selectedKnowledgeBase))
     : undefined;
+  const activeCategoryItems = activeCategory === allCategory
+    ? knowledgeBases
+    : productCategories.find((category) => category.id === activeCategory)?.items ?? [];
+  const activeCategorySourceCollections = sourceCollectionsFromKnowledgeBases(activeCategoryItems);
+  const activeCategoryDocumentsHref = knowledgeBaseCategoryDocumentsHref(activeCategorySourceCollections);
 
   function recordKnowledgeBaseAction(item: ReferenceKnowledgeBase, action: string) {
     setSelectedKnowledgeBaseId(item.id);
@@ -252,6 +287,9 @@ export default function KnowledgeBasePage() {
           <strong>{activeItems.length} / {knowledgeBases.length}</strong>
           <span>{query.trim() ? `关键词：${query.trim()}` : "按产品分类展示"}</span>
           <span>{knowledgeBaseData.data.canUploadPersonal ? "支持我的知识库" : "个人上传待开通"}</span>
+          <Link href={activeCategoryDocumentsHref}>
+            {activeCategory === allCategory ? "检索全部目录" : "检索当前分类"}
+          </Link>
         </div>
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
@@ -334,12 +372,12 @@ export default function KnowledgeBasePage() {
                   </p>
                 </section>
                 <div className="replica-kb-detail-actions">
-                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
+                  {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
                     <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>打开目录</Link>
                   ) : (
                     <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
                   )}
-                  {sourceCollectionFromKnowledgeBaseId(selectedKnowledgeBase.id) ? (
+                  {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
                     <Link href={knowledgeBaseChatHref(selectedKnowledgeBase)}>进入 AI 对话</Link>
                   ) : (
                     <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "进入 AI 对话")}>进入 AI 对话</button>
@@ -355,24 +393,35 @@ export default function KnowledgeBasePage() {
   );
 }
 
-function sourceCollectionFromKnowledgeBaseId(id: string): string | null {
-  if (!id.startsWith("kb-")) {
-    return null;
+function sourceCollectionsFromKnowledgeBaseId(id: string): readonly SourceCollection[] {
+  const mappedSources = knowledgeBaseSourceCollectionMap[id];
+  if (mappedSources) {
+    return mappedSources;
   }
-  return id.slice("kb-".length);
+  const sourceCollection = id.startsWith("kb-") ? id.slice("kb-".length) : "";
+  return isSourceCollectionValue(sourceCollection) ? [sourceCollection] : [];
 }
 
 function knowledgeBaseDocumentsHref(item: ReferenceKnowledgeBase): string {
-  const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
-  return sourceCollection ? `/documents?source_collection=${encodeURIComponent(sourceCollection)}` : "/documents";
+  return knowledgeBaseCategoryDocumentsHref(sourceCollectionsFromKnowledgeBaseId(item.id));
+}
+
+function knowledgeBaseCategoryDocumentsHref(sourceCollections: readonly SourceCollection[]): string {
+  if (sourceCollections.length === 0) {
+    return "/documents";
+  }
+  const params = new URLSearchParams();
+  for (const sourceCollection of sourceCollections) {
+    params.append("source_collection", sourceCollection);
+  }
+  return `/documents?${params.toString()}`;
 }
 
 function knowledgeBaseChatHref(item: ReferenceKnowledgeBase): string {
   const params = new URLSearchParams();
   params.set("question", `请基于「${item.name}」回答审计问题`);
-  const sourceCollection = sourceCollectionFromKnowledgeBaseId(item.id);
-  if (sourceCollection) {
-    params.set("source_collection", sourceCollection);
+  for (const sourceCollection of sourceCollectionsFromKnowledgeBaseId(item.id)) {
+    params.append("source_collection", sourceCollection);
   }
   return `/chat?${params.toString()}`;
 }

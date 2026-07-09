@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -10,8 +10,9 @@ import {
 } from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
 import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
-import type { DocumentSearchResponse, QueryResponse } from "@/lib/api-types";
+import type { DocumentSearchResponse, QueryResponse, SourceCollection } from "@/lib/api-types";
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
+import { FALLBACK_SOURCE_COLLECTION_GROUPS, isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
 const documentLibraryTiles = [
   { id: "law", label: "法律法规库", count: 3833, icon: "gavel" },
@@ -85,6 +86,11 @@ const featuredDocuments = [
     updatedAt: "2026-05-13 10:55:56"
   }
 ] as const;
+const sourceCollectionFallbackLabelByValue = new Map<SourceCollection, string>(
+  FALLBACK_SOURCE_COLLECTION_GROUPS.flatMap((group) =>
+    group.options.map((option) => [option.value, option.label] as const)
+  )
+);
 
 const defaultSearchHistory = ["投标", "招标投标法", "集中采购目录", "审计", "智能科技的CEO是谁"];
 const ALL_DOCUMENTS_CATEGORY = "全部文档";
@@ -127,7 +133,37 @@ export default function DocumentsPage() {
   const [liveResults, setLiveResults] = useState<readonly DocumentPreview[]>([]);
   const [hasLiveSearch, setHasLiveSearch] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [urlSourceCollections, setUrlSourceCollections] = useState<readonly SourceCollection[]>([]);
   const documentResults = hasLiveSearch ? liveResults : documentsData.data.results;
+  const activeSourceCollections = useMemo(
+    () => selectedSourceCollections(categories, activeCategory, urlSourceCollections),
+    [activeCategory, categories, urlSourceCollections]
+  );
+  const activeScopeLabel = sourceCollectionScopeLabel(categories, activeSourceCollections);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const scopedCollections = normalizeSourceCollectionParams(params.getAll("source_collection"));
+    if (scopedCollections.length > 0) {
+      setUrlSourceCollections((current) =>
+        sameSourceCollections(current, scopedCollections) ? current : scopedCollections
+      );
+      if (scopedCollections.length === 1) {
+        const matchedCategory = categories.find((category) => category.id === `source-${scopedCollections[0]}`);
+        if (matchedCategory) {
+          setActiveCategory((current) => (current === matchedCategory.name ? current : matchedCategory.name));
+        }
+      }
+    }
+    const initialQuery = params.get("query") ?? params.get("question");
+    if (initialQuery?.trim()) {
+      setQuery(initialQuery.trim());
+      setSubmittedQuery(initialQuery.trim());
+    }
+  }, [categories]);
 
   const filteredResults = useMemo(() => {
     if (hasLiveSearch) {
@@ -155,12 +191,11 @@ export default function DocumentsPage() {
     setSearching(true);
     setNotice("");
     try {
-      const activeSourceCollection = activeCategorySourceCollection(categories, activeCategory);
       const response = await searchDocuments({
         query: nextQuery,
         limit: 10,
         titleOnly,
-        sourceCollections: activeSourceCollection ? [activeSourceCollection] : []
+        sourceCollections: activeSourceCollections
       });
       const mappedResults = documentSearchResponseToDocumentResults(response);
       setLiveResults(mappedResults);
@@ -189,7 +224,8 @@ export default function DocumentsPage() {
       const response = await runKnowledgeQuery({
         question: nextQuery,
         top_k: 5,
-        title_only: titleOnly
+        title_only: titleOnly,
+        source_collections: activeSourceCollections
       });
       const mappedResults = queryResponseToDocumentResults(response);
       setLiveResults(mappedResults);
@@ -349,7 +385,10 @@ export default function DocumentsPage() {
             key={tile.id}
             type="button"
             className={activeCategory === tile.label ? "is-active" : ""}
-            onClick={() => setActiveCategory(tile.label)}
+            onClick={() => {
+              setActiveCategory(tile.label);
+              setUrlSourceCollections([]);
+            }}
           >
             <span className={`replica-doc-library-icon icon-${tile.icon}`} aria-hidden="true" />
             <strong>{tile.label}</strong>
@@ -425,6 +464,7 @@ export default function DocumentsPage() {
         <strong>{filteredResults.length} 条匹配</strong>
         <span>{titleOnly ? "仅标题" : "全文检索"}</span>
         <span>关键词：{submittedQuery}</span>
+        <span>范围：{activeScopeLabel}</span>
         <span>文档库：{categories.length} 类 / {categories.reduce((sum, item) => sum + item.count, 0).toLocaleString()} 份</span>
       </section>
 
@@ -435,7 +475,10 @@ export default function DocumentsPage() {
               key={category.id}
               type="button"
               className={activeCategory === category.name ? "is-active" : ""}
-              onClick={() => setActiveCategory(category.name)}
+              onClick={() => {
+                setActiveCategory(category.name);
+                setUrlSourceCollections([]);
+              }}
             >
               <strong>{category.name}</strong>
               <span>{category.description}</span>
@@ -475,18 +518,48 @@ export default function DocumentsPage() {
   );
 }
 
-function activeCategorySourceCollection(
+function selectedSourceCollections(
   categories: readonly { readonly id: string; readonly name: string }[],
-  activeCategory: string
-): string | null {
-  if (activeCategory === ALL_DOCUMENTS_CATEGORY) {
-    return null;
-  }
+  activeCategory: string,
+  urlSourceCollections: readonly SourceCollection[]
+): readonly SourceCollection[] {
   const category = categories.find((item) => item.name === activeCategory);
-  if (!category?.id.startsWith("source-")) {
-    return null;
+  if (category?.id.startsWith("source-")) {
+    return [category.id.slice("source-".length) as SourceCollection];
   }
-  return category.id.slice("source-".length);
+  return activeCategory === ALL_DOCUMENTS_CATEGORY ? urlSourceCollections : [];
+}
+
+function normalizeSourceCollectionParams(values: readonly string[]): readonly SourceCollection[] {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter(isSourceCollectionValue)
+    )
+  );
+}
+
+function sameSourceCollections(
+  left: readonly SourceCollection[],
+  right: readonly SourceCollection[]
+): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function sourceCollectionScopeLabel(
+  categories: readonly { readonly id: string; readonly name: string }[],
+  sourceCollections: readonly SourceCollection[]
+): string {
+  if (sourceCollections.length === 0) {
+    return "全部可检索知识库";
+  }
+  const names = sourceCollections.map((sourceCollection) => {
+    const category = categories.find((item) => item.id === `source-${sourceCollection}`);
+    return category?.name ?? sourceCollectionFallbackLabelByValue.get(sourceCollection) ?? sourceCollection;
+  });
+  return names.slice(0, 2).join("、") + (names.length > 2 ? ` 等 ${names.length} 个` : "");
 }
 
 function categoryToDirectoryPreview(

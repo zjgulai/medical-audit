@@ -45,6 +45,7 @@ const searchDocumentsMock = vi.mocked(searchDocuments);
 describe("DocumentsPage", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    window.history.pushState({}, "", "/documents");
   });
 
   it("keeps the first render read-only for knowledge query side effects", () => {
@@ -143,5 +144,66 @@ describe("DocumentsPage", () => {
       "/chat?question=%E5%8A%B3%E5%8A%A8%E4%BA%89%E8%AE%AE%E5%8F%B8%E6%B3%95%E6%A1%88%E4%BB%B6%E8%A7%A3%E9%87%8A&source_collection=medical-insurance-laws"
     );
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps source collection scope from the knowledge base entry through search and AI+ query", async () => {
+    window.history.pushState({}, "", "/documents?source_collection=medical-insurance-laws&query=医保支付");
+    searchDocumentsMock.mockResolvedValue({
+      contract_version: "document-search-v1",
+      query: "医保支付",
+      effective_source_collections: ["medical-insurance-laws"],
+      items: [],
+      store: { ready: true, backend: "unit-test" },
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
+    });
+    runKnowledgeQueryMock.mockResolvedValue({
+      contract_version: "knowledge-query-contract-v2",
+      question: "医保支付",
+      answer: "应核验医保基金支付依据。",
+      confidence: "medium",
+      fallback_used: false,
+      model_alias: "kimi-2.7",
+      model_status: "selected_provider",
+      effective_source_collections: ["medical-insurance-laws"],
+      basis_groups: [],
+      citations: [],
+      personal_upload_matches: [],
+      query_log_index: 1,
+      query_log_id: "query-log-1",
+      agent_invocation_id: null
+    });
+
+    render(<DocumentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("范围：医保法规库")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+
+    await waitFor(() => {
+      expect(searchDocumentsMock).toHaveBeenCalledWith({
+        query: "医保支付",
+        limit: 10,
+        titleOnly: false,
+        sourceCollections: ["medical-insurance-laws"]
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /检索AI\+/ }));
+
+    await waitFor(() => {
+      expect(runKnowledgeQueryMock).toHaveBeenCalledWith({
+        question: "医保支付",
+        top_k: 5,
+        title_only: false,
+        source_collections: ["medical-insurance-laws"]
+      });
+    });
   });
 });
