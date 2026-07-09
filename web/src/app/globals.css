@@ -7411,10 +7411,16 @@ select {
 }
 
 .replica-doc-detail-actions button,
+.replica-doc-detail-actions a,
 .replica-dataset-actions button,
+.replica-dataset-actions a,
 .replica-graph-detail-actions button,
+.replica-graph-detail-actions a,
 .replica-node-list button {
+  display: inline-flex;
   min-height: 38px;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #cfe0f5;
   border-radius: 9px;
   background: #ffffff;
@@ -7425,10 +7431,43 @@ select {
 }
 
 .replica-doc-detail-actions button:first-child,
+.replica-doc-detail-actions a:first-child,
+.replica-dataset-actions a:first-child,
 .replica-graph-detail-actions button:first-child {
   border-color: var(--replica-primary);
   background: var(--replica-primary);
   color: #ffffff;
+}
+
+.replica-graph-detail-actions a:first-child {
+  border-color: var(--replica-primary);
+  background: var(--replica-primary);
+  color: #ffffff;
+}
+
+.replica-graph-detail-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.replica-graph-detail-list div {
+  border: 1px solid #dfe8f4;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.replica-graph-detail-list dt {
+  color: #91a0b5;
+  font-size: 12px;
+}
+
+.replica-graph-detail-list dd {
+  margin: 4px 0 0;
+  color: #25324a;
+  font-size: 13px;
+  font-weight: 740;
 }
 
 .replica-analysis-track {

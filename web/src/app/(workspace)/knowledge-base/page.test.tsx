@@ -55,9 +55,17 @@ describe("KnowledgeBasePage", () => {
       "href",
       "/chat?question=%E8%AF%B7%E5%9F%BA%E4%BA%8E%E3%80%8C%E5%8C%BB%E4%BF%9D%E6%B3%95%E8%A7%84%E5%BA%93%E3%80%8D%E5%9B%9E%E7%AD%94%E5%AE%A1%E8%AE%A1%E9%97%AE%E9%A2%98&source_collection=medical-insurance-laws"
     );
+    expect(screen.getByRole("link", { name: "查看图谱" })).toHaveAttribute(
+      "href",
+      "/graph?source_collection=medical-insurance-laws"
+    );
     expect(screen.getByRole("link", { name: "检索全部目录" })).toHaveAttribute(
       "href",
       "/documents?source_collection=medical-insurance-laws"
+    );
+    expect(screen.getByRole("link", { name: "查看全部图谱" })).toHaveAttribute(
+      "href",
+      "/graph?source_collection=medical-insurance-laws"
     );
   });
 });

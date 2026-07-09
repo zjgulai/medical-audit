@@ -423,7 +423,13 @@ function mapGraphWorkbench(response: GraphWorkbenchResponse): ReplicaGraphData {
       label: node.label,
       kind: node.kind,
       metric: node.metric,
-      status: node.status
+      status: node.status,
+      description: node.description,
+      href: node.href,
+      sourceCollection: node.sourceCollection,
+      domain: node.domain,
+      x: node.x,
+      y: node.y
     })),
     relations: response.relations.map((relation) => ({
       id: relation.id,

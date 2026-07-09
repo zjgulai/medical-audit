@@ -123,7 +123,17 @@
       "endpoints": [
         { "name": "medical-audit-project", "method": "GET", "path": "/api/v1/projects/{projectId}" },
         { "name": "medical-audit-findings", "method": "GET", "path": "/api/v1/audit-findings?project_key={projectId}" },
-        { "name": "medical-audit-query", "method": "POST", "path": "/api/v1/query" }
+        {
+          "name": "medical-audit-query",
+          "method": "POST",
+          "path": "/api/v1/query",
+          "sample_body": {
+            "question": "请基于医保基金监管依据解释该疑点的复核口径。",
+            "top_k": 5,
+            "source_collections": ["medical-insurance-laws", "supervision-rules-knowledge"],
+            "topic": "medical-insurance-fund"
+          }
+        }
       ],
       "notes": "当前页面优先保持重构 UI；下一阶段接入专题项目、疑点任务和知识库问答数据，形成最小审计流程闭环。"
     },
