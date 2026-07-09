@@ -1651,11 +1651,16 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     poll_results = [
         subprocess.CompletedProcess(
             args=["ssh"],
-            returncode=10,
-            stdout="remote job still running\n",
+            returncode=0,
+            stdout="MEDICAL_AUDIT_REMOTE_JOB_STATUS=running\n",
             stderr="",
         ),
-        subprocess.CompletedProcess(args=["ssh"], returncode=0, stdout="", stderr=""),
+        subprocess.CompletedProcess(
+            args=["ssh"],
+            returncode=0,
+            stdout="MEDICAL_AUDIT_REMOTE_JOB_STATUS=complete\n",
+            stderr="",
+        ),
     ]
 
     def fake_run(
@@ -1704,6 +1709,60 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     assert calls[1]["check"] is False
     assert calls[2]["capture_output"] is True
     assert calls[2]["check"] is False
+    assert not poll_results
+
+
+def test_deploy_tencent_cloud_background_completion_reports_failed_status(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_background_completion_failed_status",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+    poll_results = [
+        subprocess.CompletedProcess(
+            args=["ssh"],
+            returncode=0,
+            stdout=(
+                "MEDICAL_AUDIT_REMOTE_JOB_STATUS=failed\n"
+                "remote job exited before completion marker\n"
+            ),
+            stderr="",
+        ),
+    ]
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        timeout: int,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd, check, text, timeout
+        if capture_output:
+            return poll_results.pop(0)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    with pytest.raises(module.DeployError, match="failed before completion marker"):
+        module._ssh_background_with_completion(
+            config,
+            "exit 1",
+            "test -s /tmp/marker",
+            timeout_seconds=5,
+            timeout_description="remote backups",
+            job_name="deploy-backups-test",
+        )
+
     assert not poll_results
 
 
