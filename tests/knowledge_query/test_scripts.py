@@ -303,6 +303,40 @@ def test_audit_answer_provider_gate_readiness_never_reports_secret_values() -> N
     assert report["boundaries"]["provider_call_status"] == "not_called"
 
 
+def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_secret() -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_chat_model_values",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV": "MOONSHOT_API_KEY",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_PROVIDER": "kimi",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MODEL": "moonshot-v1-8k",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_BASE_URL": (
+                "https://api.moonshot.cn/v1"
+            ),
+            "MOONSHOT_API_KEY": "do-not-print-this-moonshot-secret",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    report = module._build_report([scope])
+    serialized = json.dumps(report, ensure_ascii=False)
+
+    assert report["status"] == "ready_for_smoke"
+    assert scope["ready_chat_model_aliases"] == ["kimi-2.7"]
+    kimi_runtime = next(
+        item for item in scope["chat_model_runtime"] if item["alias"] == "kimi-2.7"
+    )
+    assert kimi_runtime["status"] == "configured_with_key"
+    assert kimi_runtime["api_key_env"] == "MOONSHOT_API_KEY"
+    assert kimi_runtime["api_key_status"] == "SET"
+    assert "do-not-print-this-moonshot-secret" not in serialized
+    assert report["boundaries"]["secret_values_reported"] is False
+    assert report["boundaries"]["provider_call_status"] == "not_called"
+
+
 def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> None:
     module = _load_script_module(
         "audit_answer_provider_gate_readiness_blocks",
@@ -320,8 +354,9 @@ def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> 
     report = module._build_report([scope])
 
     assert report["status"] == "blocked"
-    assert report["blockers"] == ["no-provider-api-key-env-set"]
+    assert report["blockers"] == ["no-provider-or-chat-model-api-key-env-set"]
     assert scope["answer_runtime"]["status"] == "fallback_or_unset"
+    assert scope["ready_chat_model_aliases"] == []
     assert scope["ready_provider_candidates"] == []
     assert report["boundaries"]["production_env_write"] is False
 
