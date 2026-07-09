@@ -2308,6 +2308,19 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+.replica-statebar a {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--replica-primary);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 0 10px;
+  text-decoration: none;
+}
+
 .replica-notice {
   margin-top: 12px;
   border: 1px solid #d9e8ff;

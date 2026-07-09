@@ -62,7 +62,7 @@
     {
       "route": "/knowledge-base",
       "goal": "把所有一级/二级知识库分类、文档数、片段数、最后同步和数据来源口径讲清楚。",
-      "current_grade": "live_api_plus_registry_metrics",
+      "current_grade": "live_api_plus_registry_metrics_with_document_scope_link",
       "target_grade": "live_db_connected_with_metric_lineage",
       "read_apis": [
         "GET /api/v1/documents/source-collections",
@@ -75,12 +75,17 @@
         "metrics show document count and chunk count",
         "empty state explains missing source",
         "category click scopes document search"
+      ],
+      "implemented_first_batch": [
+        "individual knowledge base detail links pass source_collection to /documents and /chat",
+        "active product category exposes a /documents link with all mapped source_collection parameters",
+        "document and chunk metric line remains read-only"
       ]
     },
     {
       "route": "/documents",
       "goal": "完成检索、引用预览、上传治理和索引状态的用户闭环。",
-      "current_grade": "connected_first_batch",
+      "current_grade": "connected_first_batch_with_source_scope",
       "target_grade": "live_search_upload_governance_loop",
       "read_apis": [
         "GET /api/v1/documents/source-collections",
@@ -96,6 +101,12 @@
         "citation opens source context",
         "upload appears in history",
         "governance/index status is visible"
+      ],
+      "implemented_first_batch": [
+        "read source_collection from URL when opened from /knowledge-base",
+        "show current search scope in the document search status line",
+        "pass sourceCollections to document search and source_collections to AI+ query",
+        "selected citation keeps source_collection when joining /chat"
       ]
     },
     {
