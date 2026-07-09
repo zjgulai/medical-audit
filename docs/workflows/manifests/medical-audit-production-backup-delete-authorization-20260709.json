@@ -1,0 +1,361 @@
+{
+  "created_at": "2026-07-09T14:54:00+0800",
+  "scope": "production-backup-delete-authorization-package",
+  "host": "101.34.52.232",
+  "backup_root": "/opt/medical-audit/backups",
+  "side_effect": "none",
+  "delete_executed": false,
+  "authorization_required_before_delete": true,
+  "policy": {
+    "keep_window_days": 3,
+    "protect_newest_per_category": true,
+    "protect_current_deploy_backup": true
+  },
+  "disk_before": {
+    "path": "/",
+    "total_bytes": 285230424064,
+    "used_bytes": 258258423808,
+    "free_bytes": 15252217856,
+    "used_pct": 90.54
+  },
+  "totals": {
+    "all_file_count": 132,
+    "all_bytes": 125908896663,
+    "recent_keep_count": 85,
+    "recent_keep_bytes": 85357199396,
+    "candidate_count": 46,
+    "candidate_bytes": 40549758482
+  },
+  "newest_by_category": {
+    "db": "/opt/medical-audit/backups/db/pre-deploy-final-main-d6ae4c1-20260709.sql.gz",
+    "web": "/opt/medical-audit/backups/web/audit-web-pre-deploy-final-main-d6ae4c1-20260709.tar.gz",
+    "nginx": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-final-main-d6ae4c1-20260709",
+    "app": "/opt/medical-audit/backups/app/pre-deploy-final-main-d6ae4c1-20260709.tar.gz",
+    "env": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-final-main-d6ae4c1-20260709",
+    "agent-cleanup": "/opt/medical-audit/backups/agent-cleanup/audit_agents_pre_archive_20260706T022840+0800.sql"
+  },
+  "delete_candidates_if_explicitly_authorized": [
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+      "category": "app",
+      "size_bytes": 185231566,
+      "mtime": "2026-07-05T17:53:38+0800",
+      "age_days": 3.88
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-postmerge-main-a7a81da6-20260705",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-05T17:53:38+0800",
+      "age_days": 3.88
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-postmerge-main-a7a81da6-20260705.sql.gz",
+      "category": "db",
+      "size_bytes": 4834954411,
+      "mtime": "2026-07-05T18:09:07+0800",
+      "age_days": 3.86
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+      "category": "web",
+      "size_bytes": 643150,
+      "mtime": "2026-07-05T18:09:07+0800",
+      "age_days": 3.86
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-postmerge-main-a7a81da6-20260705",
+      "category": "nginx",
+      "size_bytes": 33029,
+      "mtime": "2026-07-05T18:09:07+0800",
+      "age_days": 3.86
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-login-gate-579d3983-20260705T1958.tar.gz",
+      "category": "app",
+      "size_bytes": 198434728,
+      "mtime": "2026-07-05T19:58:41+0800",
+      "age_days": 3.79
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-login-gate-579d3983-20260705T1958",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-05T19:58:41+0800",
+      "age_days": 3.79
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-login-gate-579d3983-20260705T1958.sql.gz",
+      "category": "db",
+      "size_bytes": 4834957770,
+      "mtime": "2026-07-05T20:14:15+0800",
+      "age_days": 3.78
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-login-gate-579d3983-20260705T1958.tar.gz",
+      "category": "web",
+      "size_bytes": 432289,
+      "mtime": "2026-07-05T20:14:15+0800",
+      "age_days": 3.78
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-login-gate-579d3983-20260705T1958",
+      "category": "nginx",
+      "size_bytes": 33029,
+      "mtime": "2026-07-05T20:14:15+0800",
+      "age_days": 3.78
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-main-65a7ca61-login-gate-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185131923,
+      "mtime": "2026-07-06T00:59:06+0800",
+      "age_days": 3.58
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-65a7ca61-login-gate-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T00:59:06+0800",
+      "age_days": 3.58
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-main-65a7ca61-login-gate-20260706.sql.gz",
+      "category": "db",
+      "size_bytes": 4834962238,
+      "mtime": "2026-07-06T01:14:39+0800",
+      "age_days": 3.57
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-65a7ca61-login-gate-20260706.tar.gz",
+      "category": "web",
+      "size_bytes": 550366,
+      "mtime": "2026-07-06T01:14:39+0800",
+      "age_days": 3.57
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-65a7ca61-login-gate-20260706",
+      "category": "nginx",
+      "size_bytes": 33029,
+      "mtime": "2026-07-06T01:14:39+0800",
+      "age_days": 3.57
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-api-v1-prefix-2adee6e4-20260706T022056+0800",
+      "category": "nginx",
+      "size_bytes": 33029,
+      "mtime": "2026-07-06T02:20:56+0800",
+      "age_days": 3.52
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.tar.gz",
+      "category": "app",
+      "size_bytes": 184818184,
+      "mtime": "2026-07-06T03:06:38+0800",
+      "age_days": 3.49
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T03:06:38+0800",
+      "age_days": 3.49
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.sql.gz",
+      "category": "db",
+      "size_bytes": 4834973471,
+      "mtime": "2026-07-06T03:22:13+0800",
+      "age_days": 3.48
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.tar.gz",
+      "category": "web",
+      "size_bytes": 637092,
+      "mtime": "2026-07-06T03:22:13+0800",
+      "age_days": 3.48
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-legacy-page-retire-nginx-b5ad9fce-20260706T032743+0800",
+      "category": "nginx",
+      "size_bytes": 33028,
+      "mtime": "2026-07-06T03:27:43+0800",
+      "age_days": 3.48
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800",
+      "category": "nginx",
+      "size_bytes": 33028,
+      "mtime": "2026-07-06T03:22:13+0800",
+      "age_days": 3.48
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.tar.gz",
+      "category": "app",
+      "size_bytes": 185292269,
+      "mtime": "2026-07-06T04:18:26+0800",
+      "age_days": 3.44
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-65a7ca61-replica-recovery-20260706T0415",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T04:18:26+0800",
+      "age_days": 3.44
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.sql.gz",
+      "category": "db",
+      "size_bytes": 4834972882,
+      "mtime": "2026-07-06T04:33:58+0800",
+      "age_days": 3.43
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.tar.gz",
+      "category": "web",
+      "size_bytes": 629222,
+      "mtime": "2026-07-06T04:33:58+0800",
+      "age_days": 3.43
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-65a7ca61-replica-recovery-20260706T0415",
+      "category": "nginx",
+      "size_bytes": 33317,
+      "mtime": "2026-07-06T04:33:58+0800",
+      "age_days": 3.43
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-release-6178cff1-restore-ui-agents-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185038253,
+      "mtime": "2026-07-06T05:14:17+0800",
+      "age_days": 3.4
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-release-6178cff1-restore-ui-agents-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T05:14:17+0800",
+      "age_days": 3.4
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185328289,
+      "mtime": "2026-07-06T09:40:18+0800",
+      "age_days": 3.22
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-replica-workspace-recovery-f3c34ff3-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T09:40:18+0800",
+      "age_days": 3.22
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.sql.gz",
+      "category": "db",
+      "size_bytes": 4834978447,
+      "mtime": "2026-07-06T09:55:50+0800",
+      "age_days": 3.21
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.tar.gz",
+      "category": "web",
+      "size_bytes": 631593,
+      "mtime": "2026-07-06T09:55:50+0800",
+      "age_days": 3.21
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-replica-workspace-recovery-f3c34ff3-20260706",
+      "category": "nginx",
+      "size_bytes": 33317,
+      "mtime": "2026-07-06T09:55:50+0800",
+      "age_days": 3.21
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-main-edae4567-replica-governance-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185275676,
+      "mtime": "2026-07-06T10:58:25+0800",
+      "age_days": 3.16
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-edae4567-replica-governance-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T10:58:25+0800",
+      "age_days": 3.16
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-main-edae4567-replica-governance-20260706.sql.gz",
+      "category": "db",
+      "size_bytes": 4834979509,
+      "mtime": "2026-07-06T11:13:55+0800",
+      "age_days": 3.15
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-edae4567-replica-governance-20260706.tar.gz",
+      "category": "web",
+      "size_bytes": 504254,
+      "mtime": "2026-07-06T11:13:55+0800",
+      "age_days": 3.15
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-edae4567-replica-governance-20260706",
+      "category": "nginx",
+      "size_bytes": 33317,
+      "mtime": "2026-07-06T11:13:55+0800",
+      "age_days": 3.15
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-main-9a73d3b7-backend-connectivity-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185273153,
+      "mtime": "2026-07-06T14:00:35+0800",
+      "age_days": 3.04
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-9a73d3b7-backend-connectivity-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T14:00:35+0800",
+      "age_days": 3.04
+    },
+    {
+      "path": "/opt/medical-audit/backups/db/pre-deploy-main-9a73d3b7-backend-connectivity-20260706.sql.gz",
+      "category": "db",
+      "size_bytes": 4834984288,
+      "mtime": "2026-07-06T14:16:13+0800",
+      "age_days": 3.03
+    },
+    {
+      "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-9a73d3b7-backend-connectivity-20260706.tar.gz",
+      "category": "web",
+      "size_bytes": 504749,
+      "mtime": "2026-07-06T14:16:13+0800",
+      "age_days": 3.03
+    },
+    {
+      "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-9a73d3b7-backend-connectivity-20260706",
+      "category": "nginx",
+      "size_bytes": 33317,
+      "mtime": "2026-07-06T14:16:13+0800",
+      "age_days": 3.03
+    },
+    {
+      "path": "/opt/medical-audit/backups/app/pre-deploy-main-58258277-projects-cockpit-20260706.tar.gz",
+      "category": "app",
+      "size_bytes": 185281510,
+      "mtime": "2026-07-06T14:33:53+0800",
+      "age_days": 3.01
+    },
+    {
+      "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-58258277-projects-cockpit-20260706",
+      "category": "env",
+      "size_bytes": 2576,
+      "mtime": "2026-07-06T14:33:53+0800",
+      "age_days": 3.01
+    }
+  ]
+}

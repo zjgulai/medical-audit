@@ -1,0 +1,2769 @@
+{
+  "created_at": "2026-07-09T14:55:14+0800",
+  "scope": "root dirty tree decision manifest",
+  "repo_root": "/Users/pray/project/medical_audit",
+  "branch": "main",
+  "head": "6429b34278cf6d35e3477edc6bc3e5032df652f2",
+  "origin_main": "2b1aba94d68cdd88cad0a04546101b389c61c9ec",
+  "ahead_behind_head_vs_origin_main": "0\t85",
+  "total_dirty_entries": 367,
+  "safe_to_develop_here": false,
+  "action_taken": "manifest_only_no_file_changes_in_root",
+  "groups": {
+    ".kiro-plan": {
+      "count": 20,
+      "modified": 3,
+      "untracked": 17,
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone",
+      "sample_paths": [
+        ".kiro/plan/findings.md",
+        ".kiro/plan/progress.md",
+        ".kiro/plan/task_plan.md",
+        ".kiro/plan/frontend_ai_replica_api_integration_plan_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop1_fidelity_freeze_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop2_route_contract_matrix_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop3_adapters_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop4_5_runtime_wiring_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop6_page_microtuning_acceptance_20260704.md",
+        ".kiro/plan/frontend_ai_replica_loop7_delivery_closure_20260704.md",
+        ".kiro/plan/frontend_ai_replica_microtuning_plan_20260704.md",
+        ".kiro/plan/frontend_ai_replica_remaining_work_inventory_20260704.md",
+        ".kiro/plan/knowledge_base_data_coverage_reconcile_plan_20260704.md",
+        ".kiro/plan/knowledge_base_p3_coverage_query_plan_20260704.md",
+        ".kiro/plan/knowledge_base_p4_visibility_acceptance_plan_20260704.md",
+        ".kiro/plan/knowledge_base_p5_contract_freeze_plan_20260704.md",
+        ".kiro/plan/knowledge_base_p6_full_corpus_completion_plan_20260704.md",
+        ".kiro/plan/knowledge_base_p6_state_reconcile_and_contract_v2_plan_20260705.md",
+        ".kiro/plan/knowledge_base_p6c_ecology_resume_slice_plan_20260705.md",
+        ".kiro/plan/knowledge_base_p6c_resume_preflight_plan_20260705.md"
+      ]
+    },
+    "drafts-analysis": {
+      "count": 298,
+      "modified": 1,
+      "untracked": 297,
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs",
+      "sample_paths": [
+        "drafts/analysis/branch-consolidation-and-frontend-backend-separation-todo-draft-20260702.md",
+        "drafts/analysis/frontend-adversarial-uiux-audit-refinement-plan-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-api-integration-loop-engineering-plan-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-loop-engineering-todo-draft-20260703.md",
+        "drafts/analysis/frontend-ai-replica-loop1-fidelity-freeze-report-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-loop3-adapter-implementation-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-loop4-5-runtime-wiring-staging-manifest-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-loop7-atomic-delivery-plan-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-next-stage-solution-and-execution-plan-draft-20260705.md",
+        "drafts/analysis/frontend-ai-replica-page-microtuning-execution-plan-draft-20260704.md",
+        "drafts/analysis/frontend-ai-replica-route-contract-matrix-draft-20260704.md",
+        "drafts/analysis/frontend-backend-adversarial-audit-execution-plan-draft-20260708.md",
+        "drafts/analysis/frontend-backend-api-contract-gap-draft-20260702.md",
+        "drafts/analysis/frontend-backend-separation-execution-plan-draft-20260702.md",
+        "drafts/analysis/frontend-interaction-gap-audit-and-remediation-plan-draft-20260704.md",
+        "drafts/analysis/knowledge-base-data-coverage-reconcile-draft-20260704.md",
+        "drafts/analysis/knowledge-base-full-data-ingestion-execution-plan-draft-20260705.md",
+        "drafts/analysis/knowledge-base-full-data-ingestion-execution-todo-draft-20260705.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-docx-conversion-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-docx-converted-pgvector-plan-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-first30-pgvector-plan-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-normalized-pgvector-plan-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-ready202-pgvector-plan-draft-20260703.md",
+        "drafts/analysis/knowledge-base-ingestion-batch-medical-risk-negative-list-docx-conversion-draft-20260703.md"
+      ]
+    },
+    "repo-config": {
+      "count": 3,
+      "modified": 2,
+      "untracked": 1,
+      "decision": "manual-review-high-risk",
+      "next_action": "inspect exact diff; do not bundle with feature work",
+      "sample_paths": [
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "AGENTS.md"
+      ]
+    },
+    "scripts": {
+      "count": 5,
+      "modified": 1,
+      "untracked": 4,
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant",
+      "sample_paths": [
+        "scripts/deploy-tencent-cloud-production.py",
+        "scripts/build-p6d-confirmed-decision-manifest.py",
+        "scripts/build-p6d-deferred-review-pack.py",
+        "scripts/build-p6d-human-review-decision-manifest.py",
+        "scripts/build-p6d-residual-decision-manifest.py"
+      ]
+    },
+    "src-backend": {
+      "count": 9,
+      "modified": 9,
+      "untracked": 0,
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates",
+      "sample_paths": [
+        "src/medical_audit_kb/api/document_permissions.py",
+        "src/medical_audit_kb/api/routes_pages.py",
+        "src/medical_audit_kb/domain/constants.py",
+        "src/medical_audit_kb/generation/citations.py",
+        "src/medical_audit_kb/indexing/embeddings.py",
+        "src/medical_audit_kb/indexing/incremental_plan.py",
+        "src/medical_audit_kb/indexing/index_activation.py",
+        "src/medical_audit_kb/indexing/persistent_index.py",
+        "src/medical_audit_kb/ingestion/inventory.py"
+      ]
+    },
+    "tests": {
+      "count": 7,
+      "modified": 7,
+      "untracked": 0,
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes",
+      "sample_paths": [
+        "tests/knowledge_query/test_api.py",
+        "tests/knowledge_query/test_citations.py",
+        "tests/knowledge_query/test_incremental_plan.py",
+        "tests/knowledge_query/test_index_activation.py",
+        "tests/knowledge_query/test_index_backends.py",
+        "tests/knowledge_query/test_persistent_index.py",
+        "tests/knowledge_query/test_scripts.py"
+      ]
+    },
+    "web-frontend": {
+      "count": 19,
+      "modified": 15,
+      "untracked": 4,
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding",
+      "sample_paths": [
+        "web/src/app/(workspace)/agent-market/page.tsx",
+        "web/src/app/(workspace)/archive/page.tsx",
+        "web/src/app/(workspace)/documents/page.tsx",
+        "web/src/app/(workspace)/fund-compliance/page.tsx",
+        "web/src/app/(workspace)/fund-compliance/review/page.tsx",
+        "web/src/app/(workspace)/graph/page.tsx",
+        "web/src/app/(workspace)/guided-check/page.tsx",
+        "web/src/app/(workspace)/knowledge-base/page.tsx",
+        "web/src/app/(workspace)/remediation/page.tsx",
+        "web/src/app/(workspace)/rules/page.tsx",
+        "web/src/app/(workspace)/workspace-pages.test.tsx",
+        "web/src/components/query/knowledge-query-workbench.test.tsx",
+        "web/src/components/query/knowledge-query-workbench.tsx",
+        "web/src/lib/api-types.ts",
+        "web/src/lib/portal-data.ts",
+        "web/output/",
+        "web/src/lib/workbench-evidence.test.ts",
+        "web/src/lib/workbench-evidence.ts",
+        "web/web/"
+      ]
+    },
+    "other": {
+      "count": 1,
+      "modified": 0,
+      "untracked": 1,
+      "decision": "manual-review",
+      "next_action": "inspect before any action",
+      "sample_paths": [
+        ".playwright-cli/"
+      ]
+    },
+    "docs": {
+      "count": 4,
+      "modified": 0,
+      "untracked": 4,
+      "decision": "review-for-promote",
+      "next_action": "compare with current docs/workflows and docs/api before staging",
+      "sample_paths": [
+        "docs/api/frontend-backend-page-contract.json",
+        "docs/api/knowledge-query-contract-v2.json",
+        "docs/api/knowledge-query-contract-v2.md",
+        "docs/superpowers/"
+      ]
+    },
+    "output-generated": {
+      "count": 1,
+      "modified": 0,
+      "untracked": 1,
+      "decision": "discard-candidate",
+      "next_action": "ignore or archive generated output, do not commit raw output",
+      "sample_paths": [
+        "output/"
+      ]
+    }
+  },
+  "items": [
+    {
+      "status": " M",
+      "path": ".kiro/plan/findings.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": " M",
+      "path": ".kiro/plan/progress.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": " M",
+      "path": ".kiro/plan/task_plan.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": " M",
+      "path": "drafts/analysis/branch-consolidation-and-frontend-backend-separation-todo-draft-20260702.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": " M",
+      "path": "pnpm-lock.yaml",
+      "group": "repo-config",
+      "decision": "manual-review-high-risk",
+      "next_action": "inspect exact diff; do not bundle with feature work"
+    },
+    {
+      "status": " M",
+      "path": "pnpm-workspace.yaml",
+      "group": "repo-config",
+      "decision": "manual-review-high-risk",
+      "next_action": "inspect exact diff; do not bundle with feature work"
+    },
+    {
+      "status": " M",
+      "path": "scripts/deploy-tencent-cloud-production.py",
+      "group": "scripts",
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/api/document_permissions.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/api/routes_pages.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/domain/constants.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/generation/citations.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/indexing/embeddings.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/indexing/incremental_plan.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/indexing/index_activation.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/indexing/persistent_index.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "src/medical_audit_kb/ingestion/inventory.py",
+      "group": "src-backend",
+      "decision": "defer-code-review",
+      "next_action": "separate backend/KB PR with pytest gates"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_api.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_citations.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_incremental_plan.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_index_activation.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_index_backends.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_persistent_index.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "tests/knowledge_query/test_scripts.py",
+      "group": "tests",
+      "decision": "pair-with-source-change",
+      "next_action": "stage only with corresponding src/web changes"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/agent-market/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/archive/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/documents/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/fund-compliance/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/fund-compliance/review/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/graph/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/guided-check/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/knowledge-base/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/remediation/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/rules/page.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/app/(workspace)/workspace-pages.test.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/components/query/knowledge-query-workbench.test.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/components/query/knowledge-query-workbench.tsx",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/lib/api-types.ts",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": " M",
+      "path": "web/src/lib/portal-data.ts",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_api_integration_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop1_fidelity_freeze_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop2_route_contract_matrix_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop3_adapters_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop4_5_runtime_wiring_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop6_page_microtuning_acceptance_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_loop7_delivery_closure_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_microtuning_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/frontend_ai_replica_remaining_work_inventory_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_data_coverage_reconcile_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p3_coverage_query_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p4_visibility_acceptance_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p5_contract_freeze_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p6_full_corpus_completion_plan_20260704.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p6_state_reconcile_and_contract_v2_plan_20260705.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p6c_ecology_resume_slice_plan_20260705.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".kiro/plan/knowledge_base_p6c_resume_preflight_plan_20260705.md",
+      "group": ".kiro-plan",
+      "decision": "keep-active-plan-state",
+      "next_action": "review and promote only active plan entries after product milestone"
+    },
+    {
+      "status": "??",
+      "path": ".playwright-cli/",
+      "group": "other",
+      "decision": "manual-review",
+      "next_action": "inspect before any action"
+    },
+    {
+      "status": "??",
+      "path": "AGENTS.md",
+      "group": "repo-config",
+      "decision": "manual-review-high-risk",
+      "next_action": "inspect exact diff; do not bundle with feature work"
+    },
+    {
+      "status": "??",
+      "path": "docs/api/frontend-backend-page-contract.json",
+      "group": "docs",
+      "decision": "review-for-promote",
+      "next_action": "compare with current docs/workflows and docs/api before staging"
+    },
+    {
+      "status": "??",
+      "path": "docs/api/knowledge-query-contract-v2.json",
+      "group": "docs",
+      "decision": "review-for-promote",
+      "next_action": "compare with current docs/workflows and docs/api before staging"
+    },
+    {
+      "status": "??",
+      "path": "docs/api/knowledge-query-contract-v2.md",
+      "group": "docs",
+      "decision": "review-for-promote",
+      "next_action": "compare with current docs/workflows and docs/api before staging"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/",
+      "group": "docs",
+      "decision": "review-for-promote",
+      "next_action": "compare with current docs/workflows and docs/api before staging"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-adversarial-uiux-audit-refinement-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-api-integration-loop-engineering-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-loop-engineering-todo-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-loop1-fidelity-freeze-report-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-loop3-adapter-implementation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-loop4-5-runtime-wiring-staging-manifest-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-loop7-atomic-delivery-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-next-stage-solution-and-execution-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-page-microtuning-execution-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-ai-replica-route-contract-matrix-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-backend-adversarial-audit-execution-plan-draft-20260708.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-backend-api-contract-gap-draft-20260702.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-backend-separation-execution-plan-draft-20260702.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/frontend-interaction-gap-audit-and-remediation-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-data-coverage-reconcile-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-full-data-ingestion-execution-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-full-data-ingestion-execution-todo-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-docx-conversion-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-docx-converted-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-first30-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-normalized-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-legal-regulations-ready202-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-risk-negative-list-docx-conversion-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-risk-negative-list-docx-converted-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-risk-negative-list-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-risk-negative-list-normalized-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-supervision-rules-conversion-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-supervision-rules-converted-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-supervision-rules-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-ingestion-batch-medical-supervision-rules-normalized-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-medical-ingestion-local-candidate-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-medical-legal-regulations-canonical-root-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-medical-normalized-source-roots-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-execution-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-legal-canonical-kimi-candidate-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-legal-canonical-kimi-index-activate-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-legal-canonical-kimi-pgvector-import-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-legal-canonical-kimi-pgvector-import-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-legal-canonical-kimi-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-risk-kimi-active-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-risk-kimi-index-rollback-activate-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-active-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b01-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b02-complete-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b02-partial-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b03-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b04-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b05-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b06-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b07-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b08-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b09-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b10-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-b11-index-build-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-batch-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-candidate-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-index-activate-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-pgvector-import-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-pgvector-import-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-full-retrieval-smoke-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-sample-2000-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-supervision-kimi-sample-2000-retrieval-smoke-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-three-libraries-active-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-next-stage-three-libraries-active-expert-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-candidate-evaluation-decision-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-candidate-evaluation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-candidate-evaluation-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-candidate-evaluation-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-current-active-gate-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-index-activate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-index-gate-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-kimi-build-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-kimi-build-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-catalog-source-root-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p3-medical-coverage-audit-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-acceptance-report-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-api-query-contract-gate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-backend-reload-local-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-frontend-contract-smoke-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-local-readonly-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p4-query-smoke-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p5-contract-freeze-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6-backend-expansion-and-medical-fake-index-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6-full-corpus-completion-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6-next-stage-execution-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6-state-reconcile-and-contract-v2-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-activation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-candidate-evaluation-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-candidate-evaluation-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-candidate-evaluation-result-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-index-build-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-index-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-catalog-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-catalog-pgvector-import-dry-run-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-catalog-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-laws-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-laws-pgvector-import-dry-run-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-medical-insurance-laws-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-risk-negative-list-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-risk-negative-list-pgvector-import-dry-run-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-risk-negative-list-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-supervision-rules-knowledge-candidate-write-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-supervision-rules-knowledge-pgvector-import-dry-run-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-kimi-supervision-rules-knowledge-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-gap-and-backend-expansion-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-catalog-candidate-evaluation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-catalog-candidate-evaluation-p6a-aligned-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-catalog-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-catalog-index-activate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-laws-candidate-evaluation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-laws-candidate-evaluation-p6a-aligned-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-laws-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-medical-insurance-laws-index-activate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-pending-resolution-and-resolved-fake-index-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-resolved-medical-insurance-catalog-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-resolved-medical-insurance-laws-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-resolved-risk-negative-list-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-resolved-supervision-rules-knowledge-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-risk-negative-list-candidate-evaluation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-risk-negative-list-candidate-evaluation-p6a-aligned-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-risk-negative-list-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-risk-negative-list-index-activate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-supervision-rules-knowledge-candidate-evaluation-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-supervision-rules-knowledge-candidate-evaluation-p6a-aligned-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-supervision-rules-knowledge-fake-pgvector-import-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6a-supervision-rules-knowledge-index-activate-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-activation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-candidate-evaluation-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-candidate-evaluation-preflight-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-candidate-evaluation-result-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-index-build-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-index-preflight-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-data-statistics-disclosure-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-finance-price-procurement-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-general-policy-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-industry-business-environment-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-reform-pilot-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-kimi-policy-social-security-livelihood-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-data-statistics-disclosure-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-data-statistics-disclosure-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-data-statistics-disclosure-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-finance-price-procurement-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-finance-price-procurement-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-finance-price-procurement-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-general-policy-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-general-policy-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-general-policy-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-industry-business-environment-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-industry-business-environment-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-industry-business-environment-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-pending-resolution-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-ready-fake-index-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-ready-source-root-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-reform-pilot-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-reform-pilot-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-reform-pilot-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-resolved-fake-index-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-social-security-livelihood-candidate-evaluation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-social-security-livelihood-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6b-policy-social-security-livelihood-ingestion-batch-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-activation-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ecology-rebuild-restore-partial-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ecology-rebuild-restore-resume-quota-gate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ecology-rebuild-restore-resume-rotated-key-probe-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ecology-resume-incident-and-recovery-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ecology-resume-slice-preflight-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-index-build-partial-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-index-preflight-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-ecology-resources-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-judicial-audit-procedure-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-judicial-audit-procedure-pgvector-import-dry-run-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-judicial-audit-procedure-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-license-enforcement-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-license-enforcement-pgvector-import-dry-run-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-license-enforcement-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-market-quality-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-market-quality-pgvector-import-dry-run-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-market-quality-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-org-personnel-qualification-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-org-personnel-qualification-pgvector-import-dry-run-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-org-personnel-qualification-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-safety-emergency-candidate-write-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-safety-emergency-pgvector-import-dry-run-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-safety-emergency-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-management-urban-municipal-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-quota-probe-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-remaining-capacity-cleanup-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-kimi-resume-remaining-status-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-capacity-budget-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-ecology-resources-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-ecology-resources-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-ecology-resources-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-execution-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-general-admin-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-general-admin-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-general-admin-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-judicial-audit-procedure-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-judicial-audit-procedure-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-judicial-audit-procedure-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-judicial-audit-procedure-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-license-enforcement-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-license-enforcement-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-license-enforcement-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-license-enforcement-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-manual-resolution-execution-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-market-quality-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-market-quality-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-market-quality-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-market-quality-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-org-personnel-qualification-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-org-personnel-qualification-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-org-personnel-qualification-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-org-personnel-qualification-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-pending-resolution-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-ready-fake-index-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-ready-source-root-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-resolved-fake-capacity-budget-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-resolved-fake-capacity-budget-post-cleanup-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-resolved-fake-index-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-safety-emergency-index-activate-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-safety-emergency-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-safety-emergency-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-safety-emergency-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-urban-municipal-ingestion-batch-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-urban-municipal-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-management-urban-municipal-resolved-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-postgres-space-check-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-ready-fake-cleanup-manifest-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-resolved-fake-cleanup-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6c-resume-preflight-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6d-other-unclassified-review-pack-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-agriculture-water-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-culture-tourism-sports-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-defense-confidentiality-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-education-research-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-ethnic-religious-foreign-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-kimi-other-transport-maritime-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-agriculture-water-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-culture-tourism-sports-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-defense-confidentiality-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-education-research-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-ethnic-religious-foreign-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-ready-source-root-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-other-transport-maritime-ready-fake-pgvector-import-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-provider-quota-breakpoint-and-next-actions-draft-20260706.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-p6e-ready-fake-index-summary-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-authorization-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-execution-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-canonical-fake-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-canonical-kimi-build-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-1024-localdb-pgvector-import-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-1024-localdb-pgvector-import-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-1024-localdb-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-candidate-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-candidate-evaluation-rank-fusion-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-kimi-candidate-evaluation-rank-fusion-no-rerank-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-legal-retrieval-gate-diagnosis-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-p1-precondition-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-fake-1024-localdb-pgvector-import-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-fake-1024-localdb-pgvector-import-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-fake-1024-localdb-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-incremental-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-1024-localdb-pgvector-import-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-1024-localdb-pgvector-import-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-1024-localdb-pgvector-plan-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-active-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-candidate-evaluation-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-localdb-execution-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-real-gate-risk-kimi-localdb-index-activate-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-secondary-classification-current-status-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-secondary-classification-execution-plan-and-p0-result-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-active-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-active-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-candidate-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-candidate-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-dry-run-audit-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-inactive-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-backfill-inactive-execute-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-data-coverage-audit-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-db-matched-backfill-enhanced-preflight-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-db-matched-backfill-preflight-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-manifest-report-draft-20260702.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/knowledge-base-taxonomy-p0-backfill-dry-run-draft-20260703.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/original-vs-replica-interaction-audit-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/production-backend-connectivity-audit-draft-20260706.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-50-loop-execution-plan-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-loop2-three-page-refinement-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-loop3-agents-kb-refinement-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-loop4-docs-analytics-graph-refinement-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-loop5-agents-market-kb-refinement-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-replica-loop6-reports-projects-archive-refinement-plan-draft-20260705.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "drafts/analysis/reference-vs-replica-common-nav-diff-loop1-draft-20260704.md",
+      "group": "drafts-analysis",
+      "decision": "archive-or-supersede-by-topic",
+      "next_action": "batch by date/topic; promote only latest summary docs"
+    },
+    {
+      "status": "??",
+      "path": "output/",
+      "group": "output-generated",
+      "decision": "discard-candidate",
+      "next_action": "ignore or archive generated output, do not commit raw output"
+    },
+    {
+      "status": "??",
+      "path": "scripts/build-p6d-confirmed-decision-manifest.py",
+      "group": "scripts",
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant"
+    },
+    {
+      "status": "??",
+      "path": "scripts/build-p6d-deferred-review-pack.py",
+      "group": "scripts",
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant"
+    },
+    {
+      "status": "??",
+      "path": "scripts/build-p6d-human-review-decision-manifest.py",
+      "group": "scripts",
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant"
+    },
+    {
+      "status": "??",
+      "path": "scripts/build-p6d-residual-decision-manifest.py",
+      "group": "scripts",
+      "decision": "defer-code-review",
+      "next_action": "separate PR with tests if still relevant"
+    },
+    {
+      "status": "??",
+      "path": "web/output/",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": "??",
+      "path": "web/src/lib/workbench-evidence.test.ts",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": "??",
+      "path": "web/src/lib/workbench-evidence.ts",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    },
+    {
+      "status": "??",
+      "path": "web/web/",
+      "group": "web-frontend",
+      "decision": "defer-ui-review",
+      "next_action": "compare against current production UI before deciding"
+    }
+  ]
+}

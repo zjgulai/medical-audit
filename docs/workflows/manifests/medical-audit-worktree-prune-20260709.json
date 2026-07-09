@@ -1,0 +1,44 @@
+{
+  "created_at": "2026-07-09T14:54:34+0800",
+  "scope": "local git worktree prune metadata",
+  "repo_root": "/Users/pray/project/medical_audit",
+  "side_effect": "local_git_metadata_only",
+  "deleted_existing_directory": false,
+  "force_used": false,
+  "before": {
+    "total": 44,
+    "prunable": 4,
+    "prunable_paths": [
+      {
+        "path": "/private/tmp/medical-audit-login-gate-579d3983-20260705195621",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-prod-release-6178cff1",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-replica-frontend-readonly",
+        "reason": "gitdir file points to non-existent location"
+      },
+      {
+        "path": "/private/tmp/medical-audit-replica-mainline-readonly",
+        "reason": "gitdir file points to non-existent location"
+      }
+    ]
+  },
+  "dry_run": {
+    "returncode": 0,
+    "stdout": "",
+    "stderr": "Removing worktrees/medical-audit-replica-frontend-readonly: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-prod-release-6178cff1: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-login-gate-579d3983-20260705195621: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-replica-mainline-readonly: gitdir file points to non-existent location\n"
+  },
+  "prune": {
+    "returncode": 0,
+    "stdout": "",
+    "stderr": "Removing worktrees/medical-audit-replica-frontend-readonly: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-prod-release-6178cff1: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-login-gate-579d3983-20260705195621: gitdir file points to non-existent location\nRemoving worktrees/medical-audit-replica-mainline-readonly: gitdir file points to non-existent location\n"
+  },
+  "after": {
+    "total": 40,
+    "prunable": 0
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "created_at": "2026-07-09T14:56:56+0800",
+  "contract_version": "2026-07-09-p1-product-backend-closure",
+  "scope": "P1 product feature backend closure for core navigation pages",
+  "boundaries": {
+    "ui_style_change": false,
+    "production_write": false,
+    "database_write": false,
+    "provider_call": false,
+    "deployment": false
+  },
+  "page_order": [
+    "/medical-audit",
+    "/knowledge-base",
+    "/documents",
+    "/graph",
+    "/chat"
+  ],
+  "pages": [
+    {
+      "route": "/medical-audit",
+      "goal": "让用户从医保审计专题进入生产流程：项目选择、数据导入、规则运行、疑点复核、归档和整改。",
+      "current_grade": "static_shell_first_batch",
+      "target_grade": "live_workflow_minimum_case",
+      "entities": [
+        "audit_project",
+        "import_batch",
+        "rule_run",
+        "finding",
+        "review_task",
+        "dossier_report",
+        "remediation_task"
+      ],
+      "read_apis": [
+        "GET /api/v1/projects",
+        "GET /api/v1/projects/{projectId}",
+        "GET /api/v1/audit-findings?project_key={projectId}"
+      ],
+      "write_apis_to_design": [
+        "POST /api/v1/medical-audit/import-batches",
+        "POST /api/v1/medical-audit/rule-runs",
+        "PATCH /api/v1/audit-findings/{findingId}/review",
+        "POST /api/v1/reports",
+        "POST /api/v1/remediation/tasks"
+      ],
+      "acceptance": [
+        "create or select one audit project",
+        "see findings grouped by status",
+        "open one finding and review it",
+        "generate one dossier/report draft",
+        "create one remediation task"
+      ]
+    },
+    {
+      "route": "/knowledge-base",
+      "goal": "把所有一级/二级知识库分类、文档数、片段数、最后同步和数据来源口径讲清楚。",
+      "current_grade": "live_api_plus_registry_metrics",
+      "target_grade": "live_db_connected_with_metric_lineage",
+      "read_apis": [
+        "GET /api/v1/documents/source-collections",
+        "GET /api/backend/index/search-backend",
+        "GET /api/v1/documents/permissions"
+      ],
+      "write_apis_to_design": [],
+      "acceptance": [
+        "every product category maps to source_collection",
+        "metrics show document count and chunk count",
+        "empty state explains missing source",
+        "category click scopes document search"
+      ]
+    },
+    {
+      "route": "/documents",
+      "goal": "完成检索、引用预览、上传治理和索引状态的用户闭环。",
+      "current_grade": "connected_first_batch",
+      "target_grade": "live_search_upload_governance_loop",
+      "read_apis": [
+        "GET /api/v1/documents/source-collections",
+        "GET /api/v1/documents/uploads",
+        "GET /api/v1/query/logs?limit=8"
+      ],
+      "write_apis_to_design": [
+        "POST /api/v1/documents/uploads",
+        "POST /api/v1/query"
+      ],
+      "acceptance": [
+        "search returns citations",
+        "citation opens source context",
+        "upload appears in history",
+        "governance/index status is visible"
+      ]
+    },
+    {
+      "route": "/graph",
+      "goal": "不引入图数据库，复用现有知识库、规则、疑点、报告数据生成只读关系图。",
+      "current_grade": "backend_workbench_or_seed_pending_verification",
+      "target_grade": "live_readonly_relation_view",
+      "read_apis": [
+        "GET /api/v1/graph/workbench",
+        "GET /api/v1/audit-findings",
+        "GET /api/v1/rules/workbench"
+      ],
+      "write_apis_to_design": [],
+      "acceptance": [
+        "node has source type",
+        "edge has relation type",
+        "click node shows source document/rule/finding",
+        "filters do not require mock data"
+      ]
+    },
+    {
+      "route": "/chat",
+      "goal": "模型、知识库范围、附件和智能体上下文进入同一个 query payload，并返回引用与调用状态。",
+      "current_grade": "live_query_api_with_provider_availability_gate",
+      "target_grade": "live_contextual_ai_entry",
+      "read_apis": [
+        "GET /api/v1/query/models",
+        "GET /api/v1/documents/source-collections",
+        "GET /api/v1/agents"
+      ],
+      "write_apis_to_design": [
+        "POST /api/v1/query",
+        "POST /api/v1/chat/attachments/analyze"
+      ],
+      "acceptance": [
+        "model unavailable returns clear status without history write",
+        "source_collections scopes query",
+        "agent param is preserved",
+        "attachments produce analysis or summary result"
+      ]
+    }
+  ],
+  "execution_batches": [
+    {
+      "batch": "P1-A",
+      "focus": "/medical-audit read-only project and findings wiring",
+      "verification": [
+        "frontend tests",
+        "backend API smoke",
+        "browser route acceptance"
+      ]
+    },
+    {
+      "batch": "P1-B",
+      "focus": "knowledge-base and documents metric/citation/upload governance",
+      "verification": [
+        "contract tests",
+        "production read-only smoke"
+      ]
+    },
+    {
+      "batch": "P1-C",
+      "focus": "graph readonly relation view and chat contextual payload",
+      "verification": [
+        "API tests",
+        "Playwright interaction smoke"
+      ]
+    }
+  ]
+}

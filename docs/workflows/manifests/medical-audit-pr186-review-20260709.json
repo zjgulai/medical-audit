@@ -1,0 +1,68 @@
+{
+  "pr": {
+    "number": 186,
+    "state": "OPEN",
+    "title": "docs: add medical_audit governance manifests",
+    "mergeStateStatus": "UNKNOWN",
+    "isDraft": false,
+    "headRefName": "codex/project-governance-20260706",
+    "headRefOid": "af719e3f0f4ac87dc35a3bcf9e3447ce0a2c8da5",
+    "baseRefName": "main",
+    "url": "https://github.com/zjgulai/medical-audit/pull/186"
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "exists_in_origin_main": true,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": ".gitignore | 2 ++\n 1 file changed, 2 insertions(+)"
+    },
+    {
+      "path": "archive/generated-artifacts/20260706/generated-artifacts-manifest.md",
+      "exists_in_origin_main": false,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": ".../20260706/generated-artifacts-manifest.md       | 29 ++++++++++++++++++++++\n 1 file changed, 29 insertions(+)"
+    },
+    {
+      "path": "archive/worktree-manifests/medical-audit-production-and-docker-manifest-20260706.md",
+      "exists_in_origin_main": false,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": "...udit-production-and-docker-manifest-20260706.md | 62 ++++++++++++++++++++++\n 1 file changed, 62 insertions(+)"
+    },
+    {
+      "path": "archive/worktree-manifests/medical-audit-worktree-manifest-20260706.md",
+      "exists_in_origin_main": false,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": ".../medical-audit-worktree-manifest-20260706.md    | 29 ++++++++++++++++++++++\n 1 file changed, 29 insertions(+)"
+    },
+    {
+      "path": "docs/api/frontend-backend-page-contract.json",
+      "exists_in_origin_main": true,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": "docs/api/frontend-backend-page-contract.json | 11 +++++++++++\n 1 file changed, 11 insertions(+)"
+    },
+    {
+      "path": "docs/workflows/medical-audit-project-governance-20260706.md",
+      "exists_in_origin_main": false,
+      "exists_in_pr": true,
+      "same_content": false,
+      "diffstat": ".../medical-audit-project-governance-20260706.md   | 54 ++++++++++++++++++++++\n 1 file changed, 54 insertions(+)"
+    }
+  ],
+  "recommendation": "close_as_superseded_after_comment",
+  "reasoning": [
+    "The PR is based on 2026-07-06 governance facts and predates current production and P0 governance manifests.",
+    "Current main now contains docs/workflows/workflow-project-backlog-governance-20260709.md and P0 manifests from PR #216/#217.",
+    "Any still-useful API contract content should be rebuilt against current product and production facts instead of merging the stale branch as-is."
+  ],
+  "action_boundary": {
+    "close_pr": "allowed_by_user_current_batch",
+    "merge_pr": false,
+    "production_write": false
+  }
+}
