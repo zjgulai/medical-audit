@@ -1651,7 +1651,7 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     poll_results = [
         subprocess.CompletedProcess(
             args=["ssh"],
-            returncode=0,
+            returncode=255,
             stdout="MEDICAL_AUDIT_REMOTE_JOB_STATUS=running\n",
             stderr="",
         ),

@@ -668,11 +668,6 @@ exit 0
             for part in (completed.stdout, completed.stderr)
             if part.strip()
         )
-        if completed.returncode != 0:
-            raise DeployError(
-                f"{timeout_description} poll command failed"
-                + (f":\n{detail}" if detail else ""),
-            )
         status = _extract_remote_job_status(completed.stdout)
         if status == "complete":
             print(f"{timeout_description} completed remotely", flush=True)
@@ -683,6 +678,11 @@ exit 0
                 + (f":\n{detail}" if detail else ""),
             )
         if status != "running":
+            if completed.returncode != 0:
+                raise DeployError(
+                    f"{timeout_description} poll command failed"
+                    + (f":\n{detail}" if detail else ""),
+                )
             raise DeployError(
                 f"{timeout_description} returned unknown poll status"
                 + (f":\n{detail}" if detail else ""),
