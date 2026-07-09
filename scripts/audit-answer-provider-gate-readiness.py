@@ -33,6 +33,36 @@ EMBEDDING_CONFIG_KEYS = (
     "KIMI_EMBEDDING_BASE_URL",
     "KIMI_EMBEDDING_BATCH_SIZE",
 )
+CHAT_MODEL_ALIASES = (
+    {
+        "alias": "kimi-2.7",
+        "env_slug": "KIMI_2_7",
+        "default_provider": "kimi",
+        "default_model": "moonshot-v1-8k",
+        "default_api_key_env": "MOONSHOT_API_KEY",
+        "default_base_url": "https://api.moonshot.cn/v1",
+    },
+    {
+        "alias": "deepseek-v4-pro",
+        "env_slug": "DEEPSEEK_V4_PRO",
+        "default_provider": "deepseek",
+        "default_model": "deepseek-chat",
+        "default_api_key_env": "DEEPSEEK_API_KEY",
+        "default_base_url": "https://api.deepseek.com/v1",
+    },
+)
+CHAT_MODEL_CONFIG_KEYS = tuple(
+    f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias['env_slug']}_{suffix}"
+    for alias in CHAT_MODEL_ALIASES
+    for suffix in (
+        "API_KEY_ENV",
+        "PROVIDER",
+        "MODEL",
+        "BASE_URL",
+        "MAX_OUTPUT_TOKENS",
+        "TEMPERATURE",
+    )
+)
 KNOWN_API_KEY_ENVS = (
     "DEEPSEEK_API_KEY",
     "OPENAI_API_KEY",
@@ -147,7 +177,7 @@ def _resolve_ssh_key(repo_root: Path, value: str) -> Path:
 
 def _sanitize_env_mapping(mapping: os._Environ[str] | dict[str, str]) -> dict[str, Any]:
     safe_values: dict[str, str] = {}
-    for key in (*ANSWER_CONFIG_KEYS, *EMBEDDING_CONFIG_KEYS):
+    for key in (*ANSWER_CONFIG_KEYS, *EMBEDDING_CONFIG_KEYS, *CHAT_MODEL_CONFIG_KEYS):
         value = str(mapping.get(key, "")).strip()
         if value:
             safe_values[key] = value
@@ -159,6 +189,13 @@ def _sanitize_env_mapping(mapping: os._Environ[str] | dict[str, str]) -> dict[st
     kimi_key_env = safe_values.get("KIMI_API_KEY_ENV", "").strip()
     if kimi_key_env:
         status_names.add(kimi_key_env)
+    for alias in CHAT_MODEL_ALIASES:
+        api_key_env = safe_values.get(
+            f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias['env_slug']}_API_KEY_ENV",
+            "",
+        ).strip()
+        if api_key_env:
+            status_names.add(api_key_env)
 
     key_status = {
         name: "SET" if str(mapping.get(name, "")).strip() else "UNSET"
@@ -175,18 +212,24 @@ def _build_scope_report(scope: str, snapshot: dict[str, Any]) -> dict[str, Any]:
         _candidate_readiness(candidate, key_status=key_status)
         for candidate in PROVIDER_CANDIDATES
     ]
+    chat_models = _chat_model_readiness(safe_values=safe_values, key_status=key_status)
     ready_candidates = [
         candidate["candidate"]
         for candidate in candidates
         if candidate["precondition_status"] == "ready_for_smoke"
     ]
+    ready_chat_model_aliases = [
+        model["alias"] for model in chat_models if model["status"] == "configured_with_key"
+    ]
     return {
         "scope": scope,
         "answer_runtime": answer_config,
         "embedding_runtime": _embedding_runtime(safe_values=safe_values, key_status=key_status),
+        "chat_model_runtime": chat_models,
         "provider_candidates": candidates,
-        "ready_for_provider_smoke": bool(ready_candidates),
+        "ready_for_provider_smoke": bool(ready_candidates or ready_chat_model_aliases),
         "ready_provider_candidates": ready_candidates,
+        "ready_chat_model_aliases": ready_chat_model_aliases,
     }
 
 
@@ -238,6 +281,48 @@ def _embedding_runtime(
     }
 
 
+def _chat_model_readiness(
+    *, safe_values: dict[str, Any], key_status: dict[str, Any]
+) -> list[dict[str, Any]]:
+    models: list[dict[str, Any]] = []
+    for alias in CHAT_MODEL_ALIASES:
+        prefix = f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias['env_slug']}"
+        api_key_env = str(safe_values.get(f"{prefix}_API_KEY_ENV", "")).strip()
+        api_key_state = str(key_status.get(api_key_env, "UNSET")) if api_key_env else "UNSET"
+        if not api_key_env:
+            status = "missing_api_key_env"
+        elif api_key_state == "SET":
+            status = "configured_with_key"
+        else:
+            status = "configured_missing_key"
+        models.append(
+            {
+                "alias": alias["alias"],
+                "status": status,
+                "provider": str(
+                    safe_values.get(f"{prefix}_PROVIDER", alias["default_provider"])
+                ).strip()
+                or alias["default_provider"],
+                "model": str(safe_values.get(f"{prefix}_MODEL", alias["default_model"])).strip()
+                or alias["default_model"],
+                "api_key_env": api_key_env or None,
+                "expected_api_key_env": alias["default_api_key_env"],
+                "api_key_status": api_key_state,
+                "base_url": str(
+                    safe_values.get(f"{prefix}_BASE_URL", alias["default_base_url"])
+                ).strip()
+                or alias["default_base_url"],
+                "max_output_tokens": str(
+                    safe_values.get(f"{prefix}_MAX_OUTPUT_TOKENS", "")
+                ).strip()
+                or None,
+                "temperature": str(safe_values.get(f"{prefix}_TEMPERATURE", "")).strip()
+                or None,
+            }
+        )
+    return models
+
+
 def _candidate_readiness(
     candidate: dict[str, str], *, key_status: dict[str, Any]
 ) -> dict[str, Any]:
@@ -255,7 +340,7 @@ def _candidate_readiness(
 def _build_report(scopes: list[dict[str, Any]]) -> dict[str, Any]:
     ready_scopes = [scope for scope in scopes if scope["ready_for_provider_smoke"]]
     status = "ready_for_smoke" if ready_scopes else "blocked"
-    blockers = [] if ready_scopes else ["no-provider-api-key-env-set"]
+    blockers = [] if ready_scopes else ["no-provider-or-chat-model-api-key-env-set"]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017 - py3.9 compat
         "status": status,
@@ -324,7 +409,7 @@ def _collect_remote_snapshot(
 
 
 def _remote_audit_code(*, container: str) -> str:
-    config_keys = tuple((*ANSWER_CONFIG_KEYS, *EMBEDDING_CONFIG_KEYS))
+    config_keys = tuple((*ANSWER_CONFIG_KEYS, *EMBEDDING_CONFIG_KEYS, *CHAT_MODEL_CONFIG_KEYS))
     known_key_envs = tuple(KNOWN_API_KEY_ENVS)
     return f"""
 import json
@@ -353,6 +438,9 @@ if answer_key_env:
 kimi_key_env = safe_values.get('KIMI_API_KEY_ENV', '').strip()
 if kimi_key_env:
     known_key_envs.add(kimi_key_env)
+for key, value in safe_values.items():
+    if key.startswith('MEDICAL_AUDIT_KB_CHAT_MODEL_') and key.endswith('_API_KEY_ENV'):
+        known_key_envs.add(value)
 
 key_status = {{
     name: 'SET' if os.environ.get(name, '').strip() else 'UNSET'
@@ -396,6 +484,10 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
         lines.append(f"### {scope['scope']}")
         lines.append("")
         lines.append(f"- answer_runtime: `{scope['answer_runtime']['status']}`")
+        lines.append(
+            "- ready_chat_model_aliases: "
+            f"`{', '.join(scope['ready_chat_model_aliases']) or 'none'}`"
+        )
         lines.append(
             "- ready_provider_candidates: "
             f"`{', '.join(scope['ready_provider_candidates']) or 'none'}`"
