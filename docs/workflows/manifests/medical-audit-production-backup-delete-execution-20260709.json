@@ -1,0 +1,571 @@
+{
+  "created_at": "2026-07-09T15:44:27+0800",
+  "task": "medical_audit_production_backup_delete_execution_20260709",
+  "evidence_grade": "L4-authorized-production-file-delete + L3-production-read-only-postcheck",
+  "authorization_source": "user approved next recommended production-backup deletion execution batch in this conversation",
+  "boundaries": {
+    "business_code_changed": false,
+    "deployment_executed": false,
+    "database_write": false,
+    "docker_resource_deleted": false,
+    "backup_files_deleted": true,
+    "deleted_only_authorized_candidate_paths": true,
+    "outside_backup_root_deleted": false,
+    "directory_deleted": false,
+    "symlink_deleted": false
+  },
+  "pre_state": {
+    "status": "pass",
+    "issues": [],
+    "warnings": [],
+    "deploy_sha": "d6ae4c191453b0e5619d451cb26b41e3aeb68bee"
+  },
+  "execution": {
+    "created_at": "2026-07-09T15:43:35+0800",
+    "scope": "authorized production backup deletion execution",
+    "backup_root": "/opt/medical-audit/backups",
+    "candidate_count": 46,
+    "candidate_bytes": 40549758482,
+    "delete_executed": true,
+    "outside_backup_root_deleted": false,
+    "directory_deleted": false,
+    "symlink_deleted": false,
+    "before": {
+      "label": "before-delete",
+      "at": "2026-07-09T15:43:34+0800",
+      "disk": {
+        "path": "/",
+        "total_bytes": 285230424064,
+        "used_bytes": 258271555584,
+        "free_bytes": 15239086080,
+        "used_pct": 90.55
+      },
+      "deploy_sha": {
+        "path": "/opt/medical-audit/app/.deploy-sha",
+        "value": "d6ae4c191453b0e5619d451cb26b41e3aeb68bee"
+      },
+      "containers": {
+        "medical_audit_app": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        },
+        "medical_audit_pg": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        },
+        "medical_audit_clamav": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        }
+      },
+      "nginx_test": {
+        "cmd": [
+          "docker",
+          "exec",
+          "ai_video_nginx",
+          "nginx",
+          "-t"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful"
+      }
+    },
+    "existing_before_count": 46,
+    "deleted_count": 46,
+    "deleted_bytes": 40549758482,
+    "skipped_count": 0,
+    "error_count": 0,
+    "remaining_candidate_count": 0,
+    "after": {
+      "label": "after-delete",
+      "at": "2026-07-09T15:43:35+0800",
+      "disk": {
+        "path": "/",
+        "total_bytes": 285230424064,
+        "used_bytes": 217721630720,
+        "free_bytes": 55789010944,
+        "used_pct": 76.33
+      },
+      "deploy_sha": {
+        "path": "/opt/medical-audit/app/.deploy-sha",
+        "value": "d6ae4c191453b0e5619d451cb26b41e3aeb68bee"
+      },
+      "containers": {
+        "medical_audit_app": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        },
+        "medical_audit_pg": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        },
+        "medical_audit_clamav": {
+          "inspect_returncode": 0,
+          "status": "running",
+          "running": true,
+          "health": "healthy"
+        }
+      },
+      "nginx_test": {
+        "cmd": [
+          "docker",
+          "exec",
+          "ai_video_nginx",
+          "nginx",
+          "-t"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful"
+      }
+    },
+    "disk_delta_free_bytes": 40549924864,
+    "deploy_sha_unchanged": true,
+    "containers_healthy_after": true,
+    "nginx_test_passed_after": true,
+    "deleted": [
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+        "expected_size_bytes": 185231566,
+        "state": "exists_before",
+        "actual_size_bytes": 185231566,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-postmerge-main-a7a81da6-20260705",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-postmerge-main-a7a81da6-20260705.sql.gz",
+        "expected_size_bytes": 4834954411,
+        "state": "exists_before",
+        "actual_size_bytes": 4834954411,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-postmerge-main-a7a81da6-20260705.tar.gz",
+        "expected_size_bytes": 643150,
+        "state": "exists_before",
+        "actual_size_bytes": 643150,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-postmerge-main-a7a81da6-20260705",
+        "expected_size_bytes": 33029,
+        "state": "exists_before",
+        "actual_size_bytes": 33029,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-login-gate-579d3983-20260705T1958.tar.gz",
+        "expected_size_bytes": 198434728,
+        "state": "exists_before",
+        "actual_size_bytes": 198434728,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-login-gate-579d3983-20260705T1958",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-login-gate-579d3983-20260705T1958.sql.gz",
+        "expected_size_bytes": 4834957770,
+        "state": "exists_before",
+        "actual_size_bytes": 4834957770,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-login-gate-579d3983-20260705T1958.tar.gz",
+        "expected_size_bytes": 432289,
+        "state": "exists_before",
+        "actual_size_bytes": 432289,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-login-gate-579d3983-20260705T1958",
+        "expected_size_bytes": 33029,
+        "state": "exists_before",
+        "actual_size_bytes": 33029,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-main-65a7ca61-login-gate-20260706.tar.gz",
+        "expected_size_bytes": 185131923,
+        "state": "exists_before",
+        "actual_size_bytes": 185131923,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-65a7ca61-login-gate-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-main-65a7ca61-login-gate-20260706.sql.gz",
+        "expected_size_bytes": 4834962238,
+        "state": "exists_before",
+        "actual_size_bytes": 4834962238,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-65a7ca61-login-gate-20260706.tar.gz",
+        "expected_size_bytes": 550366,
+        "state": "exists_before",
+        "actual_size_bytes": 550366,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-65a7ca61-login-gate-20260706",
+        "expected_size_bytes": 33029,
+        "state": "exists_before",
+        "actual_size_bytes": 33029,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-api-v1-prefix-2adee6e4-20260706T022056+0800",
+        "expected_size_bytes": 33029,
+        "state": "exists_before",
+        "actual_size_bytes": 33029,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.tar.gz",
+        "expected_size_bytes": 184818184,
+        "state": "exists_before",
+        "actual_size_bytes": 184818184,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.sql.gz",
+        "expected_size_bytes": 4834973471,
+        "state": "exists_before",
+        "actual_size_bytes": 4834973471,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800.tar.gz",
+        "expected_size_bytes": 637092,
+        "state": "exists_before",
+        "actual_size_bytes": 637092,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-legacy-page-retire-nginx-b5ad9fce-20260706T032743+0800",
+        "expected_size_bytes": 33028,
+        "state": "exists_before",
+        "actual_size_bytes": 33028,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-legacy-page-retire-docker-b5ad9fce-20260706T030541+0800",
+        "expected_size_bytes": 33028,
+        "state": "exists_before",
+        "actual_size_bytes": 33028,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.tar.gz",
+        "expected_size_bytes": 185292269,
+        "state": "exists_before",
+        "actual_size_bytes": 185292269,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-65a7ca61-replica-recovery-20260706T0415",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.sql.gz",
+        "expected_size_bytes": 4834972882,
+        "state": "exists_before",
+        "actual_size_bytes": 4834972882,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-65a7ca61-replica-recovery-20260706T0415.tar.gz",
+        "expected_size_bytes": 629222,
+        "state": "exists_before",
+        "actual_size_bytes": 629222,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-65a7ca61-replica-recovery-20260706T0415",
+        "expected_size_bytes": 33317,
+        "state": "exists_before",
+        "actual_size_bytes": 33317,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-release-6178cff1-restore-ui-agents-20260706.tar.gz",
+        "expected_size_bytes": 185038253,
+        "state": "exists_before",
+        "actual_size_bytes": 185038253,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-release-6178cff1-restore-ui-agents-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.tar.gz",
+        "expected_size_bytes": 185328289,
+        "state": "exists_before",
+        "actual_size_bytes": 185328289,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-replica-workspace-recovery-f3c34ff3-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.sql.gz",
+        "expected_size_bytes": 4834978447,
+        "state": "exists_before",
+        "actual_size_bytes": 4834978447,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-replica-workspace-recovery-f3c34ff3-20260706.tar.gz",
+        "expected_size_bytes": 631593,
+        "state": "exists_before",
+        "actual_size_bytes": 631593,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-replica-workspace-recovery-f3c34ff3-20260706",
+        "expected_size_bytes": 33317,
+        "state": "exists_before",
+        "actual_size_bytes": 33317,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-main-edae4567-replica-governance-20260706.tar.gz",
+        "expected_size_bytes": 185275676,
+        "state": "exists_before",
+        "actual_size_bytes": 185275676,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-edae4567-replica-governance-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-main-edae4567-replica-governance-20260706.sql.gz",
+        "expected_size_bytes": 4834979509,
+        "state": "exists_before",
+        "actual_size_bytes": 4834979509,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-edae4567-replica-governance-20260706.tar.gz",
+        "expected_size_bytes": 504254,
+        "state": "exists_before",
+        "actual_size_bytes": 504254,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-edae4567-replica-governance-20260706",
+        "expected_size_bytes": 33317,
+        "state": "exists_before",
+        "actual_size_bytes": 33317,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-main-9a73d3b7-backend-connectivity-20260706.tar.gz",
+        "expected_size_bytes": 185273153,
+        "state": "exists_before",
+        "actual_size_bytes": 185273153,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-9a73d3b7-backend-connectivity-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/db/pre-deploy-main-9a73d3b7-backend-connectivity-20260706.sql.gz",
+        "expected_size_bytes": 4834984288,
+        "state": "exists_before",
+        "actual_size_bytes": 4834984288,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/web/audit-web-pre-deploy-main-9a73d3b7-backend-connectivity-20260706.tar.gz",
+        "expected_size_bytes": 504749,
+        "state": "exists_before",
+        "actual_size_bytes": 504749,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-main-9a73d3b7-backend-connectivity-20260706",
+        "expected_size_bytes": 33317,
+        "state": "exists_before",
+        "actual_size_bytes": 33317,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/app/pre-deploy-main-58258277-projects-cockpit-20260706.tar.gz",
+        "expected_size_bytes": 185281510,
+        "state": "exists_before",
+        "actual_size_bytes": 185281510,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      },
+      {
+        "path": "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-main-58258277-projects-cockpit-20260706",
+        "expected_size_bytes": 2576,
+        "state": "exists_before",
+        "actual_size_bytes": 2576,
+        "is_symlink": false,
+        "is_file": true,
+        "deleted": true
+      }
+    ],
+    "skipped": [],
+    "errors": [],
+    "remaining_candidates": []
+  },
+  "post_state": {
+    "status": "pass",
+    "issues": [],
+    "warnings": [],
+    "deploy_sha": "d6ae4c191453b0e5619d451cb26b41e3aeb68bee"
+  },
+  "acceptance": {
+    "deleted_count_equals_candidate_count": true,
+    "remaining_candidate_count_zero": true,
+    "deploy_sha_unchanged": true,
+    "containers_healthy_after": true,
+    "nginx_test_passed_after": true,
+    "post_state_passed": true
+  }
+}

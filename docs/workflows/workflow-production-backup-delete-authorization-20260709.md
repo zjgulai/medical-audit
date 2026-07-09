@@ -2,7 +2,7 @@
 title: medical_audit 生产备份删除授权包
 doc_type: workflow
 module: production-governance
-status: pending-authorization
+status: executed-via-followup
 created: 2026-07-09
 updated: 2026-07-09
 owner: codex
@@ -13,8 +13,8 @@ source: production-readonly
 
 ## 边界
 
-- 本文件只列出候选备份；本轮没有删除任何生产文件。
-- 删除前仍需要单独明确授权。
+- 本文件是删除前授权包；原始授权 JSON 保持 `delete_executed=false`，用于保留删除前证据。
+- 删除动作已在后续授权批次执行，执行记录见 `docs/workflows/workflow-production-backup-delete-execution-20260709.md`。
 - 默认保留最近 3 天备份，并保护每个分类最新备份。
 
 ## 当前采样
