@@ -136,7 +136,7 @@
     {
       "route": "/chat",
       "goal": "模型、知识库范围、附件和智能体上下文进入同一个 query payload，并返回引用与调用状态。",
-      "current_grade": "live_query_api_with_provider_availability_gate",
+      "current_grade": "live_contextual_query_payload_with_status_display",
       "target_grade": "live_contextual_ai_entry",
       "read_apis": [
         "GET /api/v1/query/models",
@@ -152,6 +152,13 @@
         "source_collections scopes query",
         "agent param is preserved",
         "attachments produce analysis or summary result"
+      ],
+      "implemented_first_batch": [
+        "model, source_collections and agent are sent together in POST /api/v1/query",
+        "question, source_collection and agent URL parameters hydrate the chat composer",
+        "@ and / commands both select an agent before submission",
+        "assistant answers show model status, effective source collections, fallback state, citations and query log id",
+        "attachment analysis uses POST /api/v1/chat/attachments/analyze with selected model when available"
       ]
     }
   ],

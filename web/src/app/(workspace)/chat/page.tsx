@@ -295,7 +295,9 @@ function ChatPortalContent() {
         text: response.answer,
         meta: [
           `模型：${response.model_alias ?? queryModel ?? "默认知识库问答"}`,
-          `知识库：${selectedSourceLabel}`,
+          response.model_status ? `模型状态：${modelStatusLabel(response.model_status)}` : null,
+          `知识库：${sourceLabelFromResponse(response.effective_source_collections, sourceCollections, selectedSourceLabel)}`,
+          response.fallback_used ? "检索：使用兜底" : "检索：已命中",
           response.agent_invocation_id ? `智能体调用已记录` : null,
           response.query_log_id ? `查询记录：${response.query_log_id}` : null
         ].filter(Boolean).join(" · "),
@@ -548,4 +550,33 @@ function attachmentMessage(response: ChatAttachmentAnalysisResponse): LocalMessa
       ...response.summary_items.slice(0, 2)
     ].join(" · ")
   };
+}
+
+function modelStatusLabel(status: string): string {
+  if (status === "selected_provider") {
+    return "选定模型";
+  }
+  if (status === "default_fallback") {
+    return "默认通道";
+  }
+  if (status.includes("missing") || status.includes("unavailable")) {
+    return "模型不可用";
+  }
+  return status.replace(/[_-]+/g, " ");
+}
+
+function sourceLabelFromResponse(
+  effectiveSources: readonly SourceCollection[],
+  catalog: readonly DocumentSourceCollectionCatalogItem[],
+  fallbackLabel: string
+): string {
+  if (effectiveSources.length === 0) {
+    return fallbackLabel;
+  }
+  const labelBySource = new Map(catalog.map((source) => [source.source_collection, source.label] as const));
+  const labels = effectiveSources.map((source) => labelBySource.get(source) ?? source);
+  if (labels.length <= 2) {
+    return labels.join("、");
+  }
+  return `${labels.slice(0, 2).join("、")} 等 ${labels.length} 个知识库`;
 }

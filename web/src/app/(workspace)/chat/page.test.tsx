@@ -203,8 +203,35 @@ describe("ChatPortalPage", () => {
       });
     });
     expect(await screen.findByText(/应核验医保基金审核依据/)).toBeInTheDocument();
+    expect(screen.getByText(/模型状态：选定模型/)).toBeInTheDocument();
+    expect(screen.getByText(/知识库：法规政策/)).toBeInTheDocument();
+    expect(screen.getByText(/检索：已命中/)).toBeInTheDocument();
     expect(screen.getByText(/智能体调用已记录/)).toBeInTheDocument();
     expect(apiMocks.fetchQueryModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects an agent from slash command and submits it to the query API", async () => {
+    render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi 2.7" });
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "/数" }
+    });
+    fireEvent.click(await screen.findByText("数据分析助手"));
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "请分析收费明细" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: "请分析收费明细",
+          model: "kimi-2.7",
+          agent: "agent-data-helper"
+        })
+      );
+    });
   });
 
   it("hydrates question, knowledge base, and agent from chat URL params", async () => {
@@ -299,6 +326,8 @@ describe("ChatPortalPage", () => {
     });
     expect(await screen.findByText("默认知识库回答。")).toBeInTheDocument();
     expect(screen.getByText(/模型：默认知识库问答/)).toBeInTheDocument();
+    expect(screen.getByText(/模型状态：默认通道/)).toBeInTheDocument();
+    expect(screen.getByText(/检索：使用兜底/)).toBeInTheDocument();
   });
 
   it("uploads an attachment through the chat analysis endpoint", async () => {
