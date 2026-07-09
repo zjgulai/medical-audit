@@ -6,6 +6,8 @@ import {
   createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
+  fetchProjectDashboard,
+  fetchProjects,
   fetchReportWorkbench,
   recordMedicalAuditImportPreflight,
   registerMedicalAuditSupplement,
@@ -15,6 +17,8 @@ import type {
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogResponse,
   MedicalAuditWorkflowActionResponse,
+  ProjectDashboardResponse,
+  ProjectsResponse,
   ReportWorkbenchResponse
 } from "@/lib/api-types";
 
@@ -25,6 +29,8 @@ vi.mock("@/lib/api-client", () => ({
   createMedicalAuditReviewTask: vi.fn(),
   fetchAuditFindings: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
+  fetchProjectDashboard: vi.fn(),
+  fetchProjects: vi.fn(),
   fetchReportWorkbench: vi.fn(),
   recordMedicalAuditImportPreflight: vi.fn(),
   registerMedicalAuditSupplement: vi.fn(),
@@ -35,6 +41,8 @@ const addMedicalAuditFindingToReportMock = vi.mocked(addMedicalAuditFindingToRep
 const createMedicalAuditReviewTaskMock = vi.mocked(createMedicalAuditReviewTask);
 const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
 const fetchDocumentSourceCollectionsMock = vi.mocked(fetchDocumentSourceCollections);
+const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
+const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
 const recordMedicalAuditImportPreflightMock = vi.mocked(recordMedicalAuditImportPreflight);
 const registerMedicalAuditSupplementMock = vi.mocked(registerMedicalAuditSupplement);
@@ -163,6 +171,71 @@ const reportWorkbenchResponse: ReportWorkbenchResponse = {
   store: { ready: true, backend: "SqlAlchemyReviewTaskStore" }
 };
 
+const projectSummary = {
+  id: "SELF-CHECK-FUND-20260607",
+  name: "医保基金使用合规专项自查",
+  audit_topic: "医保基金使用合规",
+  organization_name: "单院医保内审试运行",
+  member_count: 3,
+  creator: "审计办",
+  created_at: "2026-06-07T00:00:00Z",
+  status: "进行中",
+  operation_label: "进入专题",
+  source: "system-default"
+} as const;
+
+const projectsResponse: ProjectsResponse = {
+  items: [projectSummary],
+  roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
+  statuses: ["在项目中", "待确认"],
+  store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+};
+
+const projectDashboardResponse: ProjectDashboardResponse = {
+  format: "project-dashboard-v1",
+  project: projectSummary,
+  metrics: [
+    {
+      key: "open_findings",
+      label: "未闭环疑点",
+      value: "1",
+      helper: "来自审计疑点库",
+      tone: "warning"
+    }
+  ],
+  queue: [
+    {
+      id: "queue-1",
+      title: "核对非目录项目发生基金支付的结算明细",
+      owner: "医保办",
+      dueLabel: "今日",
+      status: "open",
+      risk: "medium"
+    }
+  ],
+  activities: [],
+  status_distribution: [{ status: "confirmed-violation", label: "确认违规", count: 1 }],
+  member_workloads: [
+    {
+      name: "张主任",
+      role: "项目负责人",
+      department: "审计办",
+      total: 1,
+      pending: 1,
+      closed: 0
+    }
+  ],
+  evidence_grade: "live-db-connected",
+  production_side_effect: "none",
+  store: {
+    ready: true,
+    backend: {
+      project_members: "SqlAlchemyProjectMemberStore",
+      audit_findings: "SqlAlchemyAuditFindingStore"
+    }
+  }
+};
+
 const workflowResponse: MedicalAuditWorkflowActionResponse = {
   format: "medical-audit-workflow-action-v1",
   action: "review-task-create",
@@ -193,6 +266,8 @@ const workflowResponse: MedicalAuditWorkflowActionResponse = {
 function mockApis() {
   fetchAuditFindingsMock.mockResolvedValue(auditFindingsResponse);
   fetchDocumentSourceCollectionsMock.mockResolvedValue(sourceCollectionsResponse);
+  fetchProjectsMock.mockResolvedValue(projectsResponse);
+  fetchProjectDashboardMock.mockResolvedValue(projectDashboardResponse);
   fetchReportWorkbenchMock.mockResolvedValue(reportWorkbenchResponse);
   addMedicalAuditFindingToReportMock.mockResolvedValue({
     ...workflowResponse,
@@ -220,6 +295,7 @@ function mockApis() {
 
 describe("MedicalAuditPage", () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
@@ -234,11 +310,31 @@ describe("MedicalAuditPage", () => {
 
     expect(fetchAuditFindingsMock).toHaveBeenCalledWith(undefined);
     expect(fetchDocumentSourceCollectionsMock).toHaveBeenCalled();
+    expect(fetchProjectsMock).toHaveBeenCalled();
+    expect(fetchProjectDashboardMock).toHaveBeenCalledWith("SELF-CHECK-FUND-20260607");
     expect(fetchReportWorkbenchMock).toHaveBeenCalled();
     expect(screen.getByText(/SqlAlchemyAuditFindingStore/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
+    expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
+    expect(screen.getByText("张主任")).toBeInTheDocument();
     expect(screen.getByText("医保法规库")).toBeInTheDocument();
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
+  });
+
+  it("keeps audit findings visible when the project dashboard is unavailable", async () => {
+    mockApis();
+    fetchProjectsMock.mockRejectedValueOnce(new Error("project api down"));
+
+    render(<MedicalAuditPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("finding-f044ebd309b659dc").length).toBeGreaterThanOrEqual(1);
+    });
+
+    expect(screen.getByRole("heading", { name: "专题项目待恢复" })).toBeInTheDocument();
+    expect(screen.getByText("专题驾驶舱等待项目接口恢复")).toBeInTheDocument();
+    expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
   });
 
   it("opens a backend-backed finding drawer and links context into chat", async () => {
