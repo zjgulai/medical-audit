@@ -19,6 +19,7 @@ DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 20 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
+REMOTE_COMPLETION_POLL_SECONDS = 5
 
 APP_RSYNC_EXCLUDES = (
     ".DS_Store",
@@ -289,6 +290,15 @@ def _create_remote_backups(config: DeployConfig) -> None:
     web_backup = (
         f"/opt/medical-audit/backups/web/audit-web-pre-deploy-{config.stamp}.tar.gz"
     )
+    stale_backup_cleanup_script = f"""
+set -euo pipefail
+rm -f {shlex.quote(backup_marker)} \
+  {shlex.quote(app_backup)} \
+  {shlex.quote(env_backup)} \
+  {shlex.quote(db_backup)} \
+  {shlex.quote(nginx_backup)} \
+  {shlex.quote(web_backup)}
+"""
     script = f"""
 set -euo pipefail
 stamp={shlex.quote(config.stamp)}
@@ -324,12 +334,14 @@ test -s {shlex.quote(db_backup)}
 test -s {shlex.quote(nginx_backup)}
 test -s {shlex.quote(web_backup)}
 """
-    _ssh(
+    _ssh(config, stale_backup_cleanup_script)
+    _ssh_background_with_completion(
         config,
         script,
         timeout_seconds=REMOTE_BACKUP_TIMEOUT_SECONDS,
         completion_check_script=completion_check_script,
         timeout_description="remote backups",
+        job_name=f"medical-audit-deploy-backups-{config.stamp}",
     )
 
 
@@ -583,6 +595,99 @@ def _ssh(
             text=True,
             timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
         )
+
+
+def _ssh_background_with_completion(
+    config: DeployConfig,
+    script: str,
+    completion_check_script: str,
+    *,
+    timeout_seconds: int,
+    timeout_description: str,
+    job_name: str,
+) -> None:
+    safe_job_name = _safe_remote_job_name(job_name)
+    remote_script = f"/tmp/{safe_job_name}.sh"
+    remote_log = f"/tmp/{safe_job_name}.log"
+    remote_pid = f"/tmp/{safe_job_name}.pid"
+    starter_script = f"""
+set -euo pipefail
+job_script={shlex.quote(remote_script)}
+job_log={shlex.quote(remote_log)}
+job_pid={shlex.quote(remote_pid)}
+cat > "$job_script" <<'MEDICAL_AUDIT_REMOTE_JOB_EOF'
+{script}
+MEDICAL_AUDIT_REMOTE_JOB_EOF
+chmod 700 "$job_script"
+rm -f "$job_log" "$job_pid"
+nohup bash "$job_script" > "$job_log" 2>&1 &
+printf '%s\\n' "$!" > "$job_pid"
+"""
+    print(
+        f"+ ssh background {config.ssh_target} {timeout_description} "
+        f"job={safe_job_name}",
+        flush=True,
+    )
+    subprocess.run(
+        _ssh_args(config, starter_script),
+        cwd=config.repo_root,
+        check=True,
+        text=True,
+        timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+    )
+    deadline = time.monotonic() + timeout_seconds
+    poll_script = f"""
+set -euo pipefail
+job_pid={shlex.quote(remote_pid)}
+job_log={shlex.quote(remote_log)}
+if bash -lc {shlex.quote(completion_check_script)}; then
+  exit 0
+fi
+pid="$(cat "$job_pid" 2>/dev/null || true)"
+if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  echo "remote job still running"
+  exit 10
+fi
+echo "remote job exited before completion marker" >&2
+tail -n 80 "$job_log" >&2 || true
+exit 20
+"""
+    while True:
+        completed = subprocess.run(
+            _ssh_args(config, poll_script),
+            cwd=config.repo_root,
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+        )
+        if completed.returncode == 0:
+            print(f"{timeout_description} completed remotely", flush=True)
+            return
+        if completed.returncode != 10:
+            detail = "\n".join(
+                part.strip()
+                for part in (completed.stdout, completed.stderr)
+                if part.strip()
+            )
+            raise DeployError(
+                f"{timeout_description} failed before completion marker"
+                + (f":\n{detail}" if detail else ""),
+            )
+        if time.monotonic() >= deadline:
+            raise DeployError(
+                f"{timeout_description} timed out after {timeout_seconds} seconds",
+            )
+        if completed.stdout.strip():
+            print(completed.stdout.strip(), flush=True)
+        time.sleep(REMOTE_COMPLETION_POLL_SECONDS)
+
+
+def _safe_remote_job_name(job_name: str) -> str:
+    safe = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-" for char in job_name
+    ).strip("-")
+    return safe or "medical-audit-remote-job"
 
 
 def _ssh_args(config: DeployConfig, script: str) -> list[str]:

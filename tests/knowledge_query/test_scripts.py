@@ -1634,6 +1634,166 @@ def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
     assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
 
 
+def test_deploy_tencent_cloud_background_completion_polls_until_marker(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_background_completion",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+    calls: list[dict[str, object]] = []
+    poll_results = [
+        subprocess.CompletedProcess(
+            args=["ssh"],
+            returncode=10,
+            stdout="remote job still running\n",
+            stderr="",
+        ),
+        subprocess.CompletedProcess(args=["ssh"], returncode=0, stdout="", stderr=""),
+    ]
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        text: bool,
+        timeout: int,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(
+            {
+                "args": args,
+                "cwd": cwd,
+                "check": check,
+                "text": text,
+                "timeout": timeout,
+                "capture_output": capture_output,
+            },
+        )
+        if capture_output:
+            return poll_results.pop(0)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module._ssh_background_with_completion(
+        config,
+        "printf 'complete\\n' > /tmp/marker",
+        "test -s /tmp/marker",
+        timeout_seconds=5,
+        timeout_description="remote backups",
+        job_name="deploy-backups-test",
+    )
+
+    assert len(calls) == 3
+    starter_script = calls[0]["args"][-1]
+    assert isinstance(starter_script, str)
+    assert "deploy-backups-test.sh" in starter_script
+    assert "nohup bash" in starter_script
+    assert "deploy-backups-test.pid" in starter_script
+    assert calls[0]["check"] is True
+    assert calls[1]["capture_output"] is True
+    assert calls[1]["check"] is False
+    assert calls[2]["capture_output"] is True
+    assert calls[2]["check"] is False
+    assert not poll_results
+
+
+def test_deploy_tencent_cloud_remote_backups_use_background_completion(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_remote_backups_background",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured: dict[str, object] = {}
+    captured_cleanup: list[str] = []
+    events: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        events.append("cleanup")
+        captured_cleanup.append(script)
+
+    def fake_background_completion(
+        config: object,
+        script: str,
+        completion_check_script: str,
+        *,
+        timeout_seconds: int,
+        timeout_description: str,
+        job_name: str,
+    ) -> None:
+        events.append("background")
+        captured.update(
+            {
+                "config": config,
+                "script": script,
+                "completion_check_script": completion_check_script,
+                "timeout_seconds": timeout_seconds,
+                "timeout_description": timeout_description,
+                "job_name": job_name,
+            },
+        )
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    monkeypatch.setattr(
+        module,
+        "_ssh_background_with_completion",
+        fake_background_completion,
+    )
+    config = types.SimpleNamespace(
+        stamp="unit-stamp",
+        remote_app_dir="/opt/medical-audit/app",
+    )
+
+    module._create_remote_backups(config)
+
+    assert events == ["cleanup", "background"]
+    assert len(captured_cleanup) == 1
+    cleanup_script = captured_cleanup[0]
+    assert "rm -f" in cleanup_script
+    assert "/tmp/medical-audit-deploy-backups-unit-stamp.complete" in cleanup_script
+    assert "/opt/medical-audit/backups/app/pre-deploy-unit-stamp.tar.gz" in (
+        cleanup_script
+    )
+    assert "/opt/medical-audit/backups/env/medical-audit.env.pre-deploy-unit-stamp" in (
+        cleanup_script
+    )
+    assert "/opt/medical-audit/backups/db/pre-deploy-unit-stamp.sql.gz" in (
+        cleanup_script
+    )
+    assert "/opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-unit-stamp" in (
+        cleanup_script
+    )
+    assert (
+        "/opt/medical-audit/backups/web/audit-web-pre-deploy-unit-stamp.tar.gz"
+        in cleanup_script
+    )
+    assert captured["config"] is config
+    assert captured["timeout_seconds"] == module.REMOTE_BACKUP_TIMEOUT_SECONDS
+    assert captured["timeout_description"] == "remote backups"
+    assert captured["job_name"] == "medical-audit-deploy-backups-unit-stamp"
+    script = captured["script"]
+    completion_script = captured["completion_check_script"]
+    assert isinstance(script, str)
+    assert isinstance(completion_script, str)
+    assert "pg_dump" in script
+    assert "pre-deploy-${stamp}.sql.gz" in script
+    assert "medical-audit-deploy-backups-unit-stamp.complete" in completion_script
+    assert "test -s /opt/medical-audit/backups/db/pre-deploy-unit-stamp.sql.gz" in (
+        completion_script
+    )
+
+
 def test_deploy_tencent_cloud_package_carries_static_export() -> None:
     module = _load_script_module(
         "deploy_tencent_cloud_package_static_export",
