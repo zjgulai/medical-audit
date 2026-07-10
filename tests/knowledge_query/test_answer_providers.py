@@ -59,9 +59,15 @@ def test_openai_compatible_answer_provider_sends_provider_thinking_mode() -> Non
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        request_payload = json.loads(request.read())
+        content = (
+            json.dumps({"answer": "回答 [C1]。", "citation_ids": ["C1"]})
+            if request_payload.get("response_format") == {"type": "json_object"}
+            else "回答 [C1]。"
+        )
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "回答 [C1]。"}}]},
+            json={"choices": [{"message": {"content": content}}]},
         )
 
     for provider_name, expected_mode in (("kimi", "enabled"), ("deepseek", "disabled")):
@@ -83,9 +89,15 @@ def test_openai_compatible_answer_provider_uses_provider_token_field() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        request_payload = json.loads(request.read())
+        content = (
+            json.dumps({"answer": "回答 [C1]。", "citation_ids": ["C1"]})
+            if request_payload.get("response_format") == {"type": "json_object"}
+            else "回答 [C1]。"
+        )
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "回答 [C1]。"}}]},
+            json={"choices": [{"message": {"content": content}}]},
         )
 
     for provider_name, expected_field, excluded_field in (
@@ -153,6 +165,73 @@ def test_openai_compatible_answer_provider_requires_visible_citation_marker() ->
     assert "最终答案至少包含一个来自可用引用列表的原样标记" in prompt
     assert "不得只在推理内容中引用" in prompt
     assert "依据不足，当前知识库未检索到足够可引用依据，拒绝生成结论。" in prompt
+
+
+def test_deepseek_answer_provider_requests_json_and_parses_cited_answer() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer": "医疗机构应当保留医保基金审核依据 [C1]。",
+                                    "citation_ids": ["C1"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = provider.generate_answer("医疗机构需要保留什么？", (_citation("C1", "依据"),))
+
+    payload = json.loads(requests[0].read())
+    prompt = "\n".join(message["content"] for message in payload["messages"])
+    assert answer == "医疗机构应当保留医保基金审核依据 [C1]。"
+    assert payload["response_format"] == {"type": "json_object"}
+    assert '"answer"' in prompt
+    assert '"citation_ids"' in prompt
+    assert "json" in prompt.lower()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{not-json",
+        json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C2"]}),
+        json.dumps({"answer": "正文没有引用标记。", "citation_ids": ["C1"]}),
+    ],
+)
+def test_deepseek_answer_provider_rejects_invalid_citation_json(content: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AnswerProviderError) as error_info:
+        provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    assert error_info.value.code == "provider_response_invalid"
 
 
 def test_openai_compatible_answer_provider_rejects_empty_content() -> None:

@@ -1247,6 +1247,15 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
     assert projects_body["items"][0]["member_count"] == 3
 
+    project_response = client.get("/projects/SELF-CHECK-FUND-20260607")
+
+    assert project_response.status_code == 200
+    project_body = project_response.json()
+    assert project_body["item"]["id"] == "SELF-CHECK-FUND-20260607"
+    assert project_body["item"]["member_count"] == 3
+    assert project_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
+    assert project_body["production_side_effect"] == "none"
+
     dashboard_response = client.get("/projects/SELF-CHECK-FUND-20260607/dashboard")
 
     assert dashboard_response.status_code == 200
@@ -1309,7 +1318,8 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(state))
 
-    missing_response = client.get("/projects/UNKNOWN/members")
+    missing_detail_response = client.get("/projects/UNKNOWN")
+    missing_members_response = client.get("/projects/UNKNOWN/members")
     invalid_role_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         json={
@@ -1319,7 +1329,8 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
         },
     )
 
-    assert missing_response.status_code == 404
+    assert missing_detail_response.status_code == 404
+    assert missing_members_response.status_code == 404
     assert invalid_role_response.status_code == 422
 
 
