@@ -241,6 +241,9 @@ describe("replica backend read adapters", () => {
 
     expect(result.source).toBe("api");
     expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBe(120);
+    expect(result.data.currentSearchEmbeddingCount).toBe(120);
+    expect(result.data.metricsSource).toBe("knowledge-base-catalog");
     expect(fetchDocumentPermissions).toHaveBeenCalledTimes(1);
     expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
     expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);

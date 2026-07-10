@@ -330,8 +330,8 @@ def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_s
     assert kimi_runtime["status"] == "configured_with_key"
     assert kimi_runtime["api_key_env"] == "MOONSHOT_API_KEY"
     assert kimi_runtime["api_key_status"] == "SET"
-    assert kimi_runtime["model"] == "kimi-k2.7-code"
-    assert kimi_runtime["base_url"] == "https://api.moonshot.ai/v1"
+    assert kimi_runtime["model"] == "kimi-k2.6"
+    assert kimi_runtime["base_url"] == "https://api.moonshot.cn/v1"
     assert kimi_runtime["max_output_tokens"] == "4096"
     assert kimi_runtime["temperature"] == "1.0"
     assert kimi_runtime["thinking_mode"] == "enabled"
@@ -446,7 +446,7 @@ def test_run_production_chat_model_catalog_readonly_probe_allows_catalog_only() 
                         "items": [
                             {
                                 "alias": "kimi-2.7",
-                                "label": "Kimi 2.7",
+                                "label": "Kimi K2.6（兼容别名）",
                                 "provider": None,
                                 "available": False,
                                 "default": True,
@@ -521,7 +521,7 @@ def test_run_production_chat_model_catalog_readonly_probe_can_require_ready_mode
                         "items": [
                             {
                                 "alias": "kimi-2.7",
-                                "label": "Kimi 2.7",
+                                "label": "Kimi K2.6（兼容别名）",
                                 "provider": None,
                                 "available": False,
                                 "default": True,
@@ -1763,6 +1763,14 @@ def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor(
     assert "def http_status(url, expected_texts=None, headers=None):" in script_text
     assert "request_headers.update(headers)" in script_text
     assert "headers=AUDIT_HEADERS" in script_text
+    assert '["文档检索", "检索关键词"]' in script_text
+    assert "文档依据检索" not in script_text
+
+
+def test_local_fullstack_e2e_runs_playwright_serially_for_stable_route_compilation() -> None:
+    script_text = Path("scripts/run-local-fullstack-e2e.py").read_text(encoding="utf-8")
+
+    assert 'command = [pnpm, "--dir", "web", "e2e", "--workers=1"]' in script_text
 
 
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:

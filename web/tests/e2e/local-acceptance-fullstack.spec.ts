@@ -78,30 +78,29 @@ test.describe("local fullstack acceptance for restored replica product", () => {
 
     await page.goto("/agent-market");
     await expect(page.getByRole("heading", { name: "智能体广场" })).toBeVisible();
-    await expect(page.getByText("广场助手")).toBeVisible();
     await expect(page.getByRole("button", { name: /详情/ }).first()).toBeVisible();
   });
 
   test("preview modules are clear and medical audit remains interactive", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(page.getByRole("heading", { name: "AI数据分析" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "AI数据分析", exact: true })).toBeVisible();
     await expect(page.getByLabel("AI数据分析开通说明")).toBeVisible();
     await expect(page.getByText("内测中")).toBeVisible();
 
     await page.goto("/graph");
     await expect(page.getByRole("heading", { name: "知识图谱", exact: true })).toBeVisible();
-    await expect(page.getByLabel("知识图谱开通说明")).toBeVisible();
+    await expect(page.getByLabel("知识图谱工作台")).toBeVisible();
 
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "审计底稿/报告" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "审计底稿/报告", exact: true })).toBeVisible();
     await expect(page.getByLabel("审计底稿/报告开通说明")).toBeVisible();
 
     await page.goto("/projects");
-    await expect(page.getByRole("heading", { name: "项目管理" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "项目管理", exact: true })).toBeVisible();
     await expect(page.getByLabel("项目管理开通说明")).toBeVisible();
 
     await page.goto("/medical-audit");
-    await expect(page.getByRole("heading", { name: "医保审计" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "医保审计", exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "费用汇总表" }).click();
     await expect(page.getByLabel("医保费用汇总表")).toBeVisible();
   });

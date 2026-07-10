@@ -30,12 +30,12 @@ CHAT_MODEL_ALIASES: tuple[ChatModelAlias, ...] = (
 
 
 DEFAULT_BASE_URL_BY_ALIAS: dict[ChatModelAlias, str] = {
-    ChatModelAlias.KIMI_2_7: "https://api.moonshot.ai/v1",
+    ChatModelAlias.KIMI_2_7: "https://api.moonshot.cn/v1",
     ChatModelAlias.DEEPSEEK_V4_PRO: "https://api.deepseek.com",
 }
 
 DEFAULT_MODEL_BY_ALIAS: dict[ChatModelAlias, str] = {
-    ChatModelAlias.KIMI_2_7: "kimi-k2.7-code",
+    ChatModelAlias.KIMI_2_7: "kimi-k2.6",
     ChatModelAlias.DEEPSEEK_V4_PRO: "deepseek-v4-pro",
 }
 
@@ -69,7 +69,7 @@ DEFAULT_PROVIDER_BY_ALIAS: dict[ChatModelAlias, str] = {
 }
 
 MODEL_LABEL_BY_ALIAS: dict[ChatModelAlias, str] = {
-    ChatModelAlias.KIMI_2_7: "Kimi 2.7",
+    ChatModelAlias.KIMI_2_7: "Kimi K2.6（兼容别名）",
     ChatModelAlias.DEEPSEEK_V4_PRO: "DeepSeek V4 Pro",
 }
 

@@ -44,6 +44,7 @@ describe("KnowledgeQueryWorkbench", () => {
       fallback_used: true,
       generation_status: "not_requested",
       generation_failure_code: null,
+      generation_http_status: null,
       effective_source_collections: ["medical-insurance-laws"],
       query_log_index: 7,
       basis_groups: [

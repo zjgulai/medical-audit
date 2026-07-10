@@ -159,7 +159,9 @@ const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
     knowledgeBases: referenceKnowledgeBases,
     sourceGroups: FALLBACK_SOURCE_COLLECTION_GROUPS,
     readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
-    canUploadPersonal: true
+    canUploadPersonal: true,
+    currentSearchEmbeddingCount: null,
+    metricsSource: "unavailable"
   },
   issues: [
     {

@@ -124,8 +124,35 @@ def test_openai_compatible_answer_provider_does_not_expose_http_response_body() 
         provider.generate_answer("问题", (_citation("C1", "依据"),))
 
     assert error_info.value.code == "provider_http_status"
+    assert error_info.value.http_status == 401
     assert "401" in str(error_info.value)
     assert "private provider sentinel" not in str(error_info.value)
+
+
+def test_openai_compatible_answer_provider_requires_visible_citation_marker() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "回答 [C1]。"}}]},
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="custom-chat",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    payload = json.loads(requests[0].read())
+    messages = payload["messages"]
+    prompt = "\n".join(message["content"] for message in messages)
+    assert "最终答案至少包含一个来自可用引用列表的原样标记" in prompt
+    assert "不得只在推理内容中引用" in prompt
+    assert "依据不足，当前知识库未检索到足够可引用依据，拒绝生成结论。" in prompt
 
 
 def test_openai_compatible_answer_provider_rejects_empty_content() -> None:
@@ -200,6 +227,7 @@ def test_anthropic_answer_provider_does_not_expose_http_response_body() -> None:
         provider.generate_answer("问题", (_citation("C1", "依据"),))
 
     assert error_info.value.code == "provider_http_status"
+    assert error_info.value.http_status == 403
     assert "403" in str(error_info.value)
     assert "private anthropic sentinel" not in str(error_info.value)
 

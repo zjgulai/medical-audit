@@ -45,7 +45,7 @@ pnpm production:chat-model-ready
 
 2026-07-10 provider 合同修正：
 
-- 产品别名 `kimi-2.7` 映射到 `kimi-k2.7-code`、`https://api.moonshot.ai/v1`、`temperature=1.0`。
+- 历史产品别名 `kimi-2.7` 暂保留以兼容已发布请求；默认运行时映射到官方 Chat Completion 已发布的 `kimi-k2.6`、`https://api.moonshot.cn/v1`、`temperature=1.0`，界面标签必须明确显示实际模型。生产环境变量切换仍需单独授权。
 - 产品别名 `deepseek-v4-pro` 映射到 `deepseek-v4-pro`、`https://api.deepseek.com`、`temperature=0.0`。
 - Kimi K2.7 Code 必须使用 `thinking=enabled`；本项目默认输出预算为 4096，并按 Kimi API 合同发送 `max_completion_tokens`。DeepSeek V4 Pro 的短答案检索增强路径使用 `thinking=disabled` 和 `max_tokens=900`。
 - 运行时默认值、生产 env 示例和只读 readiness 报告必须使用同一映射；未配置有效 key 时仍保持不可用，不得因默认值完整而升级为 provider 就绪。

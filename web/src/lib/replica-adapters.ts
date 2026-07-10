@@ -111,6 +111,8 @@ export type ReplicaKnowledgeBaseData = {
   readonly sourceGroups: readonly SourceCollectionGroup[];
   readonly readableSourceCollections: readonly string[];
   readonly canUploadPersonal: boolean;
+  readonly currentSearchEmbeddingCount: number | null;
+  readonly metricsSource: "knowledge-base-catalog" | "search-backend" | "unavailable";
 };
 
 export type ReplicaDocumentsData = {
@@ -369,6 +371,7 @@ function mapKnowledgeBasesFromSourceGroups(
         scope: toKnowledgeBaseScope(option.scope),
         owner: option.scope.includes("个人") ? "审计员" : "系统",
         documentCount,
+        chunkCount,
         appCount,
         updatedAt: item?.phase ?? (option.queryable ? "可检索" : "待接入"),
         description: item?.audit_hint || option.description,
@@ -616,6 +619,9 @@ export async function loadReplicaKnowledgeBaseData(
   const documentCatalogUploadPermissions = catalog && "upload_permissions" in catalog
     ? catalog.upload_permissions
     : null;
+  const searchBackendEmbeddingCount = catalog?.search_backend.details.matching_embedding_count;
+  const currentSearchEmbeddingCount = knowledgeCatalog?.summary.current_search_embedding_count ??
+    (typeof searchBackendEmbeddingCount === "number" ? searchBackendEmbeddingCount : null);
 
   return {
     source: knowledgeBases.length > 0
@@ -631,7 +637,13 @@ export async function loadReplicaKnowledgeBaseData(
       canUploadPersonal:
         documentCatalogUploadPermissions?.can_upload_personal ??
         permissions?.upload_permissions.can_upload_personal ??
-        true
+        true,
+      currentSearchEmbeddingCount,
+      metricsSource: knowledgeCatalog
+        ? "knowledge-base-catalog"
+        : currentSearchEmbeddingCount !== null
+          ? "search-backend"
+          : "unavailable"
     },
     issues
   };

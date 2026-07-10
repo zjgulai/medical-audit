@@ -251,6 +251,7 @@ def query(
         **filter_payload,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_http_status": answer.generation_http_status,
     }
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     agent_invocation_id: str | None = None
@@ -265,6 +266,7 @@ def query(
         "model_status": model_status,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_http_status": answer.generation_http_status,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
         "citation_count": len(answer.citations),
@@ -310,6 +312,7 @@ def query(
             "model_status": model_status,
             "generation_status": answer.generation_status.value,
             "generation_failure_code": answer.generation_failure_code,
+            "generation_http_status": answer.generation_http_status,
             "query_log_id": persisted_log.get("id") if persisted_log else None,
             "query_history_error": query_history_error,
             "filters": filter_payload,
@@ -325,6 +328,7 @@ def query(
         "fallback_used": answer.fallback_used,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_http_status": answer.generation_http_status,
         "model_alias": model_alias,
         "model_status": model_status,
         "effective_source_collections": [item.value for item in effective_source_collections],
@@ -407,6 +411,7 @@ def _query_history_item(item: dict[str, object]) -> dict[str, object]:
         **item,
         "generation_status": filters["generation_status"],
         "generation_failure_code": filters.get("generation_failure_code"),
+        "generation_http_status": filters.get("generation_http_status"),
     }
 
 

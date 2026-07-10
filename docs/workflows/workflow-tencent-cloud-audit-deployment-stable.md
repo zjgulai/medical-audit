@@ -647,7 +647,7 @@ python3 scripts/run-production-e2e-smoke.py \
 
 ### 2026-07-09 chat model alias 门禁复核
 
-- `/chat` 模型下拉使用新的别名合同：`kimi-2.7` 对应 `MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_*`，`deepseek-v4-pro` 对应 `MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_*`。
+- `/chat` 保留历史请求别名 `kimi-2.7` 对应 `MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_*`，但界面展示实际默认模型 `Kimi K2.6（兼容别名）`；`deepseek-v4-pro` 对应 `MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_*`。
 - 生产只读 readiness 仍显示答案生成 provider 未启用；`KIMI_API_KEY` 在生产容器内存在，但它是 embedding 运行态使用的 key。
 - 2026-07-09 最小 provider smoke 复核：现有生产 `KIMI_API_KEY` 调用 `https://api.moonshot.cn/v1/chat/completions` + `moonshot-v1-8k` 返回 `401 Invalid Authentication`，不能把该 key 绑定到 `kimi-2.7` 聊天模型。
 - `kimi-2.7` 的生产启用前置应使用经过 smoke 的 `MOONSHOT_API_KEY`；`deepseek-v4-pro` 的生产启用前置应使用经过 smoke 的 `DEEPSEEK_API_KEY`。

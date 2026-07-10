@@ -10,6 +10,7 @@ from medical_audit_kb.generation.answer_builder import (
     NoCitedEvidenceError,
     build_citation_backed_answer,
 )
+from medical_audit_kb.generation.answer_providers import AnswerProviderError
 from medical_audit_kb.generation.citations import EvidenceType, build_citations, group_citations
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult, RetrievedChunk
 
@@ -41,6 +42,20 @@ class UnsafeCodedFailingProvider:
         error = RuntimeError("model unavailable")
         error.code = "private-provider-detail"  # type: ignore[attr-defined]
         raise error
+
+
+class HttpStatusFailingProvider:
+    provider = "fake"
+    model_name = "http-status-answer"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        _ = question, citations
+        raise AnswerProviderError(
+            "answer generation request failed: HTTP 429",
+            code="provider_http_status",
+            http_status=429,
+        )
 
 
 class UncitedProvider:
@@ -198,6 +213,17 @@ def test_answer_rejects_unregistered_provider_failure_code() -> None:
     )
 
     assert answer.generation_failure_code == "provider_exception"
+
+
+def test_answer_preserves_safe_provider_http_status() -> None:
+    answer = build_citation_backed_answer(
+        "超量开药依据是什么？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=HttpStatusFailingProvider(),
+    )
+
+    assert answer.generation_failure_code == "provider_http_status"
+    assert answer.generation_http_status == 429
 
 
 def test_answer_fallback_keeps_question_focused_citations() -> None:

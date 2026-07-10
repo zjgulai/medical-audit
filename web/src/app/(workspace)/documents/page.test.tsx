@@ -170,6 +170,7 @@ describe("DocumentsPage", () => {
       fallback_used: false,
       generation_status: "generated",
       generation_failure_code: null,
+      generation_http_status: null,
       model_alias: "kimi-2.7",
       model_status: "selected_provider",
       effective_source_collections: ["medical-insurance-laws"],

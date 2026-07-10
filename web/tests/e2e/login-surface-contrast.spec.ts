@@ -1,29 +1,28 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("login surface contrast", () => {
-  test("renders the hospital login hero with a dark readable surface", async ({ page }) => {
+  test("renders the configured compact login card without a dimming overlay", async ({ page }) => {
     await page.goto("/");
 
-    const hero = page.locator(".audit-login-hero");
-    await expect(hero).toBeVisible();
-    await expect(hero.getByRole("heading", { name: "面向医院内审的医保审计工作台" })).toHaveCSS("color", "rgb(255, 255, 255)");
+    const shell = page.locator(".audit-login-shell-compact");
+    const card = page.locator(".audit-login-card-compact");
+    await expect(shell).toBeVisible();
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("heading", { name: "登录工作台" })).toBeVisible();
+    await expect(card.getByText("AI审计一体化协作平台")).toBeVisible();
+    await expect(card.getByRole("button", { name: "登录" })).toBeVisible();
 
-    const styles = await hero.evaluate((element) => {
+    const styles = await shell.evaluate((element) => {
       const computed = getComputedStyle(element);
-      const before = getComputedStyle(element, "::before");
-      const after = getComputedStyle(element, "::after");
       return {
         background: computed.backgroundImage,
         backgroundColor: computed.backgroundColor,
-        beforeOpacity: before.opacity,
-        afterBackground: after.backgroundImage
+        opacity: computed.opacity
       };
     });
 
-    expect(styles.background).toContain("rgb(9, 42, 89)");
-    expect(styles.background).toContain("rgb(14, 85, 152)");
-    expect(styles.backgroundColor).toBe("rgb(9, 42, 89)");
-    expect(Number(styles.beforeOpacity)).toBeLessThanOrEqual(0.25);
-    expect(styles.afterBackground).not.toContain("rgba(255, 255, 255, 0.2)");
+    expect(styles.background).toContain("rgb(247, 250, 252)");
+    expect(styles.opacity).toBe("1");
+    await expect(card).toHaveCSS("background-color", "rgb(255, 255, 255)");
   });
 });

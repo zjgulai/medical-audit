@@ -49,6 +49,7 @@ from medical_audit_kb.domain.source_collection_registry import (
     KNOWLEDGE_QUERY_CONTRACT_VERSION,
     SYSTEM_SOURCE_COLLECTION_DEFINITIONS,
 )
+from medical_audit_kb.generation.answer_providers import AnswerProviderError
 from medical_audit_kb.generation.citations import Citation
 from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import DeterministicFakeEmbeddingProvider
@@ -2653,8 +2654,8 @@ def test_query_models_reports_alias_availability_without_secret_values(
         (
             ChatModelAlias.KIMI_2_7,
             "TEST_KIMI_CHAT_KEY",
-            "kimi-k2.7-code",
-            "https://api.moonshot.ai/v1",
+            "kimi-k2.6",
+            "https://api.moonshot.cn/v1",
             1.0,
             4096,
             "enabled",
@@ -2854,6 +2855,39 @@ def test_query_endpoint_reports_sanitized_generation_fallback(
     assert isinstance(operation_payload, dict)
     assert operation_payload["generation_status"] == "retrieval_fallback"
     assert operation_payload["generation_failure_code"] == "provider_exception"
+
+
+def test_query_endpoint_reports_and_persists_safe_provider_http_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_query.answer_generation_provider_for_alias",
+        lambda _alias: HttpStatusFailingApiAnswerProvider(),
+        raising=False,
+    )
+    database_url = f"sqlite:///{tmp_path / 'query-http-status-history.db'}"
+    state = _api_state(tmp_path)
+    state.query_history_store = SqlAlchemyQueryHistoryStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "kimi-2.7"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generation_failure_code"] == "provider_http_status"
+    assert body["generation_http_status"] == 429
+    assert state.query_logs[-1]["generation_http_status"] == 429
+    assert state.operation_logs[-1]["payload"]["generation_http_status"] == 429
+
+    second_state = _api_state(tmp_path / "second-http-status-history")
+    second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
+    persisted = TestClient(create_app(second_state)).get("/query/logs").json()["items"][0]
+    assert persisted["generation_http_status"] == 429
 
 
 def test_chat_attachment_analyzes_table_with_selected_model(
@@ -3771,6 +3805,20 @@ class FailingApiAnswerProvider:
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
         _ = question, citations
         raise RuntimeError("private provider detail")
+
+
+class HttpStatusFailingApiAnswerProvider:
+    provider = "fake"
+    model_name = "fake-chat"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        _ = question, citations
+        raise AnswerProviderError(
+            "answer generation request failed: HTTP 429",
+            code="provider_http_status",
+            http_status=429,
+        )
 
 
 class FailingQueryHistoryStore:
