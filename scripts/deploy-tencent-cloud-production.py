@@ -438,31 +438,37 @@ def _rebuild_application(config: DeployConfig) -> None:
         print("skip app rebuild", flush=True)
         return
     sha = _current_deploy_sha(config)
+    container_id_format = "{{.Id}}"
     health_format = "{{.State.Health.Status}}"
     script = f"""
 set -euo pipefail
 export MEDICAL_AUDIT_DEPLOY_SHA={shlex.quote(sha)}
 cd {shlex.quote(config.remote_app_dir)}
-docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
-  --env-file configs/deploy/tencent-cloud/medical-audit.env build app
+postgres_id_before="$(docker inspect medical_audit_pg \
+  --format {shlex.quote(container_id_format)})"
+test -n "$postgres_id_before"
+clamav_service_present=0
+clamav_id_before=""
 if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env config --services \
   | grep -Fx clamav >/dev/null; then
-  docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
-    --env-file configs/deploy/tencent-cloud/medical-audit.env up -d clamav
-  for attempt in $(seq 1 60); do
-    clamav_health="$(docker inspect medical_audit_clamav \
-      --format {shlex.quote(health_format)} 2>/dev/null || true)"
-    if [ "$clamav_health" = "healthy" ]; then
-      break
-    fi
-    sleep 2
-  done
+  clamav_service_present=1
+  clamav_id_before="$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(container_id_format)})"
+  test -n "$clamav_id_before"
   test "$(docker inspect medical_audit_clamav \
     --format {shlex.quote(health_format)})" = "healthy"
 fi
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
-  --env-file configs/deploy/tencent-cloud/medical-audit.env up -d app
+  --env-file configs/deploy/tencent-cloud/medical-audit.env build app
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env up -d --no-deps app
+test "$(docker inspect medical_audit_pg \
+  --format {shlex.quote(container_id_format)})" = "$postgres_id_before"
+if [ "$clamav_service_present" -eq 1 ]; then
+  test "$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(container_id_format)})" = "$clamav_id_before"
+fi
 """
     _ssh(config, script)
 

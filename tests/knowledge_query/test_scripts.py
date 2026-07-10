@@ -1882,6 +1882,48 @@ def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
     assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
 
 
+def test_deploy_tencent_cloud_rebuilds_only_app_without_dependencies(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_rebuild_app_without_dependencies",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+
+    def fake_ssh(config: object, script: str) -> None:
+        del config
+        captured_scripts.append(script)
+
+    monkeypatch.setattr(module, "_ssh", fake_ssh)
+    monkeypatch.setattr(module, "_current_deploy_sha", lambda _config: "deploy-sha")
+    config = types.SimpleNamespace(
+        skip_app_rebuild=False,
+        remote_app_dir="/opt/medical-audit/app",
+    )
+
+    module._rebuild_application(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "build app" in script
+    assert "up -d --no-deps app" in script
+    assert "up -d clamav" not in script
+    assert "up -d postgres" not in script
+    assert 'postgres_id_before="$(docker inspect medical_audit_pg' in script
+    assert 'clamav_id_before="$(docker inspect medical_audit_clamav' in script
+    assert 'test "$(docker inspect medical_audit_pg' in script
+    assert 'test "$(docker inspect medical_audit_clamav' in script
+    syntax_check = subprocess.run(
+        ["bash", "-n"],
+        input=script,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert syntax_check.returncode == 0, syntax_check.stderr
+
+
 def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,

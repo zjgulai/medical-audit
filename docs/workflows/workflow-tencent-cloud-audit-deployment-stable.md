@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-06-29
+updated: 2026-07-10
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,13 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-07-10 app-only 部署隔离合同
+
+- `docker compose up -d app` 会沿 `depends_on` 评估依赖服务，不能作为“只重建 app”的证明；生产 app-only 部署必须使用 `docker compose up -d --no-deps app`。
+- 部署脚本只允许构建 app 镜像，不得执行 `up -d postgres` 或 `up -d clamav`。ClamAV 在 app 重建前只做存在性和健康检查。
+- app 重建前记录 `medical_audit_pg` 与 `medical_audit_clamav` 容器 ID，重建后必须保持一致；任一 ID 变化都使部署脚本返回非零，不能继续写入部署完成结论。
+- 该合同只约束后续部署脚本行为；代码合并、生产部署和容器身份验收仍是独立证据层。
 
 ### 2026-06-29 Batch 1 个人材料 active retrieval 显式查询生产验收
 
