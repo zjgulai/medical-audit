@@ -35,5 +35,8 @@ The `/query` response must include:
 
 - `contract_version`
 - `effective_source_collections`
+- `generation_status`: `not_requested`, `generated`, or `retrieval_fallback`
+- `generation_failure_code`: a sanitized reason code or `null`; never a provider response body
 
-These fields make the requested and effective backend filtering visible to the frontend and test suite.
+These fields make effective backend filtering and generation fallback state visible to the frontend
+and test suite without exposing provider credentials or raw provider responses.

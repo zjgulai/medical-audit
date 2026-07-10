@@ -710,6 +710,15 @@ export type QueryResponse = {
   readonly answer: string;
   readonly confidence: string;
   readonly fallback_used: boolean;
+  readonly generation_status: "not_requested" | "generated" | "retrieval_fallback";
+  readonly generation_failure_code:
+    | "provider_configuration"
+    | "provider_transport"
+    | "provider_http_status"
+    | "provider_response_invalid"
+    | "citation_marker_missing"
+    | "provider_exception"
+    | null;
   readonly model_alias?: ChatModelAlias | null;
   readonly model_status?: string | null;
   readonly effective_source_collections: readonly SourceCollection[];

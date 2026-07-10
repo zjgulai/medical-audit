@@ -247,6 +247,11 @@ def query(
         effective_source_collections=effective_source_collections,
         role=role,
     )
+    history_filter_payload = {
+        **filter_payload,
+        "generation_status": answer.generation_status.value,
+        "generation_failure_code": answer.generation_failure_code,
+    }
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
     agent_invocation_id: str | None = None
     log_entry: dict[str, object] = {
@@ -258,6 +263,8 @@ def query(
         "agent_id": agent_key,
         "model": model_alias,
         "model_status": model_status,
+        "generation_status": answer.generation_status.value,
+        "generation_failure_code": answer.generation_failure_code,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
         "citation_count": len(answer.citations),
@@ -269,7 +276,7 @@ def query(
         {
             "user_identifier": user.user_identifier,
             "question": payload.question,
-            "filters": filter_payload,
+            "filters": history_filter_payload,
             "answer_summary": answer.answer[:500],
             "retrieved_chunk_ids": retrieved_chunk_ids,
         },
@@ -301,6 +308,8 @@ def query(
             "agent_invocation_id": agent_invocation_id,
             "model": model_alias,
             "model_status": model_status,
+            "generation_status": answer.generation_status.value,
+            "generation_failure_code": answer.generation_failure_code,
             "query_log_id": persisted_log.get("id") if persisted_log else None,
             "query_history_error": query_history_error,
             "filters": filter_payload,
@@ -314,6 +323,8 @@ def query(
         "answer": answer.answer,
         "confidence": answer.confidence.value,
         "fallback_used": answer.fallback_used,
+        "generation_status": answer.generation_status.value,
+        "generation_failure_code": answer.generation_failure_code,
         "model_alias": model_alias,
         "model_status": model_status,
         "effective_source_collections": [item.value for item in effective_source_collections],
@@ -379,12 +390,23 @@ def query_logs(
             }
         assert history_items is not None
         return {
-            "items": history_items,
+            "items": [_query_history_item(item) for item in history_items],
             "store": {"ready": True, "backend": state.query_history_store.__class__.__name__},
         }
     return {
         "items": list(reversed(state.query_logs[-limit:])),
         "store": {"ready": False, "backend": "memory"},
+    }
+
+
+def _query_history_item(item: dict[str, object]) -> dict[str, object]:
+    filters = item.get("filters")
+    if not isinstance(filters, dict) or "generation_status" not in filters:
+        return item
+    return {
+        **item,
+        "generation_status": filters["generation_status"],
+        "generation_failure_code": filters.get("generation_failure_code"),
     }
 
 

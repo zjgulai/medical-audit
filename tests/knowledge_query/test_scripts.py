@@ -312,6 +312,8 @@ def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_s
         {
             "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV": "MOONSHOT_API_KEY",
             "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_PROVIDER": "kimi",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MAX_OUTPUT_TOKENS": "4096",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_THINKING_MODE": "enabled",
             "MOONSHOT_API_KEY": "do-not-print-this-moonshot-secret",
         }
     )
@@ -330,10 +332,46 @@ def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_s
     assert kimi_runtime["api_key_status"] == "SET"
     assert kimi_runtime["model"] == "kimi-k2.7-code"
     assert kimi_runtime["base_url"] == "https://api.moonshot.ai/v1"
+    assert kimi_runtime["max_output_tokens"] == "4096"
     assert kimi_runtime["temperature"] == "1.0"
+    assert kimi_runtime["thinking_mode"] == "enabled"
     assert "do-not-print-this-moonshot-secret" not in serialized
     assert report["boundaries"]["secret_values_reported"] is False
     assert report["boundaries"]["provider_call_status"] == "not_called"
+
+
+@pytest.mark.parametrize(
+    ("max_output_tokens", "thinking_mode", "expected_status"),
+    (
+        ("900", "enabled", "insufficient_output_budget"),
+        ("4096", "disabled", "unsupported_thinking_mode"),
+    ),
+)
+def test_audit_answer_provider_gate_readiness_rejects_invalid_kimi_runtime(
+    max_output_tokens: str,
+    thinking_mode: str,
+    expected_status: str,
+) -> None:
+    module = _load_script_module(
+        f"audit_answer_provider_gate_readiness_kimi_{expected_status}",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    snapshot = module._sanitize_env_mapping(
+        {
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV": "MOONSHOT_API_KEY",
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MAX_OUTPUT_TOKENS": max_output_tokens,
+            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_THINKING_MODE": thinking_mode,
+            "MOONSHOT_API_KEY": "do-not-print-this-moonshot-secret",
+        }
+    )
+
+    scope = module._build_scope_report("local-shell", snapshot)
+    kimi_runtime = next(
+        item for item in scope["chat_model_runtime"] if item["alias"] == "kimi-2.7"
+    )
+
+    assert kimi_runtime["status"] == expected_status
+    assert scope["ready_chat_model_aliases"] == []
 
 
 def test_audit_answer_provider_gate_readiness_blocks_without_candidate_key() -> None:

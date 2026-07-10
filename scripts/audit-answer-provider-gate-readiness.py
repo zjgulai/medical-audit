@@ -41,8 +41,11 @@ CHAT_MODEL_ALIASES = (
         "default_model": "kimi-k2.7-code",
         "default_api_key_env": "MOONSHOT_API_KEY",
         "default_base_url": "https://api.moonshot.ai/v1",
-        "default_max_output_tokens": "900",
+        "default_max_output_tokens": "4096",
+        "minimum_output_tokens": 4096,
         "default_temperature": "1.0",
+        "default_thinking_mode": "enabled",
+        "required_thinking_mode": "enabled",
     },
     {
         "alias": "deepseek-v4-pro",
@@ -52,7 +55,10 @@ CHAT_MODEL_ALIASES = (
         "default_api_key_env": "DEEPSEEK_API_KEY",
         "default_base_url": "https://api.deepseek.com",
         "default_max_output_tokens": "900",
+        "minimum_output_tokens": None,
         "default_temperature": "0.0",
+        "default_thinking_mode": "disabled",
+        "required_thinking_mode": "disabled",
     },
 )
 CHAT_MODEL_CONFIG_KEYS = tuple(
@@ -65,6 +71,7 @@ CHAT_MODEL_CONFIG_KEYS = tuple(
         "BASE_URL",
         "MAX_OUTPUT_TOKENS",
         "TEMPERATURE",
+        "THINKING_MODE",
     )
 )
 KNOWN_API_KEY_ENVS = (
@@ -293,12 +300,29 @@ def _chat_model_readiness(
         prefix = f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias['env_slug']}"
         api_key_env = str(safe_values.get(f"{prefix}_API_KEY_ENV", "")).strip()
         api_key_state = str(key_status.get(api_key_env, "UNSET")) if api_key_env else "UNSET"
+        max_output_tokens = str(
+            safe_values.get(
+                f"{prefix}_MAX_OUTPUT_TOKENS",
+                alias["default_max_output_tokens"],
+            )
+        ).strip() or str(alias["default_max_output_tokens"])
+        thinking_mode = str(
+            safe_values.get(
+                f"{prefix}_THINKING_MODE",
+                alias["default_thinking_mode"],
+            )
+        ).strip().lower() or str(alias["default_thinking_mode"])
         if not api_key_env:
             status = "missing_api_key_env"
-        elif api_key_state == "SET":
-            status = "configured_with_key"
-        else:
+        elif api_key_state != "SET":
             status = "configured_missing_key"
+        elif thinking_mode != alias["required_thinking_mode"]:
+            status = "unsupported_thinking_mode"
+        else:
+            status = _output_budget_status(
+                max_output_tokens,
+                minimum=alias["minimum_output_tokens"],
+            )
         models.append(
             {
                 "alias": alias["alias"],
@@ -316,13 +340,7 @@ def _chat_model_readiness(
                     safe_values.get(f"{prefix}_BASE_URL", alias["default_base_url"])
                 ).strip()
                 or alias["default_base_url"],
-                "max_output_tokens": str(
-                    safe_values.get(
-                        f"{prefix}_MAX_OUTPUT_TOKENS",
-                        alias["default_max_output_tokens"],
-                    )
-                ).strip()
-                or alias["default_max_output_tokens"],
+                "max_output_tokens": max_output_tokens,
                 "temperature": str(
                     safe_values.get(
                         f"{prefix}_TEMPERATURE",
@@ -330,9 +348,22 @@ def _chat_model_readiness(
                     )
                 ).strip()
                 or alias["default_temperature"],
+                "thinking_mode": thinking_mode,
             }
         )
     return models
+
+
+def _output_budget_status(value: str, *, minimum: object) -> str:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return "invalid_output_budget"
+    if parsed <= 0:
+        return "invalid_output_budget"
+    if isinstance(minimum, int) and parsed < minimum:
+        return "insufficient_output_budget"
+    return "configured_with_key"
 
 
 def _candidate_readiness(

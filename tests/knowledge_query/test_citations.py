@@ -32,6 +32,17 @@ class FailingProvider:
         raise RuntimeError("model unavailable")
 
 
+class UnsafeCodedFailingProvider:
+    provider = "fake"
+    model_name = "unsafe-coded-answer"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        error = RuntimeError("model unavailable")
+        error.code = "private-provider-detail"  # type: ignore[attr-defined]
+        raise error
+
+
 class UncitedProvider:
     provider = "fake"
     model_name = "uncited-answer"
@@ -177,6 +188,16 @@ def test_answer_falls_back_to_citation_list_when_model_fails() -> None:
     assert "[C1]" in answer.answer
     assert "[C2]" not in answer.answer
     assert answer.confidence == ConfidenceCue.MEDIUM
+
+
+def test_answer_rejects_unregistered_provider_failure_code() -> None:
+    answer = build_citation_backed_answer(
+        "超量开药依据是什么？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=UnsafeCodedFailingProvider(),
+    )
+
+    assert answer.generation_failure_code == "provider_exception"
 
 
 def test_answer_fallback_keeps_question_focused_citations() -> None:

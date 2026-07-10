@@ -2222,6 +2222,8 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert body["citations"][0]["source_package_version_key"] == "package-v1"
     assert body["basis_groups"][0]["title"] == "法规依据"
     assert body["basis_groups"][0]["items"][0]["source_collection"] == "medical-insurance-laws"
+    assert body["generation_status"] == "not_requested"
+    assert body["generation_failure_code"] is None
     assert body["query_log_index"] == 0
 
     logs_response = client.get("/query/logs")
@@ -2514,12 +2516,44 @@ def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
     assert history_body["items"][0]["filters"]["source_collections"] == ["medical-insurance-laws"]
     assert history_body["items"][0]["citation_count"] == 1
     assert history_body["items"][0]["answer_summary"]
+    assert history_body["items"][0]["generation_status"] == "not_requested"
+    assert history_body["items"][0]["generation_failure_code"] is None
 
     second_state = _api_state(tmp_path / "second")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
     second_client = TestClient(create_app(second_state))
     persisted_items = second_client.get("/query/logs").json()["items"]
     assert persisted_items[0]["id"] == body["query_log_id"]
+    assert persisted_items[0]["generation_status"] == "not_requested"
+    assert persisted_items[0]["generation_failure_code"] is None
+
+
+def test_query_endpoint_persists_generation_fallback_after_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_query.answer_generation_provider_for_alias",
+        lambda _alias: FailingApiAnswerProvider(),
+        raising=False,
+    )
+    database_url = f"sqlite:///{tmp_path / 'query-generation-history.db'}"
+    state = _api_state(tmp_path)
+    state.query_history_store = SqlAlchemyQueryHistoryStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "kimi-2.7"},
+    )
+
+    assert response.status_code == 200
+    second_state = _api_state(tmp_path / "second-generation-history")
+    second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
+    persisted = TestClient(create_app(second_state)).get("/query/logs").json()["items"][0]
+    assert persisted["generation_status"] == "retrieval_fallback"
+    assert persisted["generation_failure_code"] == "provider_exception"
 
 
 def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> None:
@@ -2575,6 +2609,8 @@ def test_query_endpoint_uses_configured_answer_generation_provider(
     assert response.status_code == 200
     body = response.json()
     assert body["fallback_used"] is False
+    assert body["generation_status"] == "generated"
+    assert body["generation_failure_code"] is None
     assert body["answer"] == "生成模型回答：应核验医保基金审核依据 [C1]。"
 
 
@@ -2610,6 +2646,8 @@ def test_query_models_reports_alias_availability_without_secret_values(
         "expected_model",
         "expected_base_url",
         "expected_temperature",
+        "expected_max_output_tokens",
+        "expected_thinking_mode",
     ),
     (
         (
@@ -2618,6 +2656,8 @@ def test_query_models_reports_alias_availability_without_secret_values(
             "kimi-k2.7-code",
             "https://api.moonshot.ai/v1",
             1.0,
+            4096,
+            "enabled",
         ),
         (
             ChatModelAlias.DEEPSEEK_V4_PRO,
@@ -2625,6 +2665,8 @@ def test_query_models_reports_alias_availability_without_secret_values(
             "deepseek-v4-pro",
             "https://api.deepseek.com",
             0.0,
+            900,
+            "disabled",
         ),
     ),
 )
@@ -2635,6 +2677,8 @@ def test_chat_model_config_uses_verified_provider_defaults(
     expected_model: str,
     expected_base_url: str,
     expected_temperature: float,
+    expected_max_output_tokens: int,
+    expected_thinking_mode: str,
 ) -> None:
     _clear_chat_model_env(monkeypatch)
     env_slug = alias.value.upper().replace("-", "_").replace(".", "_")
@@ -2651,6 +2695,42 @@ def test_chat_model_config_uses_verified_provider_defaults(
     assert config.model_name == expected_model
     assert config.base_url == expected_base_url
     assert config.temperature == expected_temperature
+    assert config.max_output_tokens == expected_max_output_tokens
+    assert config.thinking_mode == expected_thinking_mode
+
+
+def test_kimi_chat_model_rejects_insufficient_output_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV", "TEST_KIMI_CHAT_KEY")
+    monkeypatch.setenv("MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MAX_OUTPUT_TOKENS", "900")
+    monkeypatch.setenv("TEST_KIMI_CHAT_KEY", "secret-value-not-returned")
+
+    config, reason = chat_model_config_from_env(ChatModelAlias.KIMI_2_7)
+
+    assert config is None
+    assert reason == "insufficient_output_budget"
+
+
+def test_deepseek_chat_model_rejects_enabled_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_API_KEY_ENV",
+        "TEST_DEEPSEEK_CHAT_KEY",
+    )
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_THINKING_MODE",
+        "enabled",
+    )
+    monkeypatch.setenv("TEST_DEEPSEEK_CHAT_KEY", "secret-value-not-returned")
+
+    config, reason = chat_model_config_from_env(ChatModelAlias.DEEPSEEK_V4_PRO)
+
+    assert config is None
+    assert reason == "unsupported_thinking_mode"
 
 
 def test_query_models_fake_provider_requires_explicit_local_gate(
@@ -2736,8 +2816,44 @@ def test_query_endpoint_uses_selected_chat_model_alias(
     assert body["model_alias"] == "kimi-2.7"
     assert body["model_status"] == "selected_provider"
     assert body["fallback_used"] is False
+    assert body["generation_status"] == "generated"
+    assert body["generation_failure_code"] is None
     assert state.query_logs[-1]["filters"]["model"] == "kimi-2.7"
+    assert state.query_logs[-1]["generation_status"] == "generated"
+    assert state.query_logs[-1]["generation_failure_code"] is None
     assert state.operation_logs[-1]["payload"]["model"] == "kimi-2.7"
+
+
+def test_query_endpoint_reports_sanitized_generation_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_query.answer_generation_provider_for_alias",
+        lambda _alias: FailingApiAnswerProvider(),
+        raising=False,
+    )
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "kimi-2.7"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fallback_used"] is True
+    assert body["generation_status"] == "retrieval_fallback"
+    assert body["generation_failure_code"] == "provider_exception"
+    assert "private provider detail" not in json.dumps(body, ensure_ascii=False)
+    assert state.query_logs[-1]["generation_status"] == "retrieval_fallback"
+    assert state.query_logs[-1]["generation_failure_code"] == "provider_exception"
+    operation_payload = state.operation_logs[-1]["payload"]
+    assert isinstance(operation_payload, dict)
+    assert operation_payload["generation_status"] == "retrieval_fallback"
+    assert operation_payload["generation_failure_code"] == "provider_exception"
 
 
 def test_chat_attachment_analyzes_table_with_selected_model(
@@ -3628,6 +3744,7 @@ def _clear_chat_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "BASE_URL",
         "MAX_OUTPUT_TOKENS",
         "TEMPERATURE",
+        "THINKING_MODE",
     )
     for alias in aliases:
         for suffix in suffixes:
@@ -3644,6 +3761,16 @@ class StaticApiAnswerProvider:
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
         return f"生成模型回答：应核验医保基金审核依据 {citations[0].marker}。"
+
+
+class FailingApiAnswerProvider:
+    provider = "fake"
+    model_name = "fake-chat"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        _ = question, citations
+        raise RuntimeError("private provider detail")
 
 
 class FailingQueryHistoryStore:

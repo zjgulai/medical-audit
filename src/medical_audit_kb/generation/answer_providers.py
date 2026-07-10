@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+from typing import Literal
 
 import httpx
 
@@ -9,7 +10,17 @@ from medical_audit_kb.generation.citations import Citation
 
 
 class AnswerProviderError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = "provider_exception") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+ThinkingMode = Literal["enabled", "disabled"]
+
+DEFAULT_THINKING_MODE_BY_PROVIDER: dict[str, ThinkingMode] = {
+    "kimi": "enabled",
+    "deepseek": "disabled",
+}
 
 
 class OpenAICompatibleAnswerGenerationProvider:
@@ -24,10 +35,14 @@ class OpenAICompatibleAnswerGenerationProvider:
         timeout_seconds: float = 120.0,
         max_output_tokens: int = 600,
         temperature: float = 0.0,
+        thinking_mode: ThinkingMode | None = None,
         http_client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
-            raise AnswerProviderError("answer generation api_key must be non-empty")
+            raise AnswerProviderError(
+                "answer generation api_key must be non-empty",
+                code="provider_configuration",
+            )
         if max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive")
         self.provider = provider
@@ -37,6 +52,7 @@ class OpenAICompatibleAnswerGenerationProvider:
         self._base_url = base_url.rstrip("/")
         self._max_output_tokens = max_output_tokens
         self._temperature = temperature
+        self._thinking_mode = thinking_mode or DEFAULT_THINKING_MODE_BY_PROVIDER.get(provider)
         self._http_client = http_client or httpx.Client(timeout=timeout_seconds)
 
     @classmethod
@@ -48,40 +64,56 @@ class OpenAICompatibleAnswerGenerationProvider:
         base_url: str = "https://api.openai.com/v1",
         max_output_tokens: int = 600,
         temperature: float = 0.0,
+        thinking_mode: ThinkingMode | None = None,
     ) -> OpenAICompatibleAnswerGenerationProvider:
         api_key = os.getenv(api_key_env)
         if not api_key:
-            raise AnswerProviderError(f"missing answer generation api key env: {api_key_env}")
+            raise AnswerProviderError(
+                f"missing answer generation api key env: {api_key_env}",
+                code="provider_configuration",
+            )
         return cls(
             api_key=api_key,
             model_name=model_name,
             base_url=base_url,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
+            thinking_mode=thinking_mode,
         )
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
-        response = self._http_client.post(
-            f"{self._base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model_name,
-                "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": _user_prompt(question, citations)},
-                ],
-                "temperature": self._temperature,
-                "max_tokens": self._max_output_tokens,
-            },
-        )
+        payload: dict[str, object] = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": _user_prompt(question, citations)},
+            ],
+            "temperature": self._temperature,
+        }
+        token_field = "max_completion_tokens" if self.provider == "kimi" else "max_tokens"
+        payload[token_field] = self._max_output_tokens
+        if self._thinking_mode is not None:
+            payload["thinking"] = {"type": self._thinking_mode}
+        try:
+            response = self._http_client.post(
+                f"{self._base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        except httpx.HTTPError as exc:
+            raise AnswerProviderError(
+                f"answer generation transport failed: {exc.__class__.__name__}",
+                code="provider_transport",
+            ) from exc
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise AnswerProviderError(
-                f"answer generation request failed: {exc.response.status_code} {exc.response.text}"
+                f"answer generation request failed: HTTP {exc.response.status_code}",
+                code="provider_http_status",
             ) from exc
 
         return _answer_content(response.json())
@@ -102,7 +134,10 @@ class AnthropicAnswerGenerationProvider:
         http_client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
-            raise AnswerProviderError("answer generation api_key must be non-empty")
+            raise AnswerProviderError(
+                "answer generation api_key must be non-empty",
+                code="provider_configuration",
+            )
         if max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive")
         self.provider = provider
@@ -126,7 +161,10 @@ class AnthropicAnswerGenerationProvider:
     ) -> AnthropicAnswerGenerationProvider:
         api_key = os.getenv(api_key_env)
         if not api_key:
-            raise AnswerProviderError(f"missing answer generation api key env: {api_key_env}")
+            raise AnswerProviderError(
+                f"missing answer generation api key env: {api_key_env}",
+                code="provider_configuration",
+            )
         return cls(
             api_key=api_key,
             model_name=model_name,
@@ -136,26 +174,35 @@ class AnthropicAnswerGenerationProvider:
         )
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
-        response = self._http_client.post(
-            f"{self._base_url}/v1/messages",
-            headers={
-                "x-api-key": self._api_key,
-                "anthropic-version": self.provider_version,
-                "content-type": "application/json",
-            },
-            json={
-                "model": self.model_name,
-                "system": _SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": _user_prompt(question, citations)}],
-                "temperature": self._temperature,
-                "max_tokens": self._max_output_tokens,
-            },
-        )
+        try:
+            response = self._http_client.post(
+                f"{self._base_url}/v1/messages",
+                headers={
+                    "x-api-key": self._api_key,
+                    "anthropic-version": self.provider_version,
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "system": _SYSTEM_PROMPT,
+                    "messages": [
+                        {"role": "user", "content": _user_prompt(question, citations)}
+                    ],
+                    "temperature": self._temperature,
+                    "max_tokens": self._max_output_tokens,
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise AnswerProviderError(
+                f"answer generation transport failed: {exc.__class__.__name__}",
+                code="provider_transport",
+            ) from exc
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise AnswerProviderError(
-                f"answer generation request failed: {exc.response.status_code} {exc.response.text}"
+                f"answer generation request failed: HTTP {exc.response.status_code}",
+                code="provider_http_status",
             ) from exc
 
         return _anthropic_answer_content(response.json())
@@ -190,19 +237,34 @@ def _user_prompt(question: str, citations: Sequence[Citation]) -> str:
 
 def _answer_content(payload: object) -> str:
     if not isinstance(payload, dict):
-        raise AnswerProviderError("answer generation response root must be an object")
+        raise AnswerProviderError(
+            "answer generation response root must be an object",
+            code="provider_response_invalid",
+        )
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise AnswerProviderError("answer generation response missing choices")
+        raise AnswerProviderError(
+            "answer generation response missing choices",
+            code="provider_response_invalid",
+        )
     first_choice = choices[0]
     if not isinstance(first_choice, dict):
-        raise AnswerProviderError("answer generation choice must be an object")
+        raise AnswerProviderError(
+            "answer generation choice must be an object",
+            code="provider_response_invalid",
+        )
     message = first_choice.get("message")
     if not isinstance(message, dict):
-        raise AnswerProviderError("answer generation choice missing message")
+        raise AnswerProviderError(
+            "answer generation choice missing message",
+            code="provider_response_invalid",
+        )
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
-        raise AnswerProviderError("answer generation message content must be non-empty")
+        raise AnswerProviderError(
+            "answer generation message content must be non-empty",
+            code="provider_response_invalid",
+        )
     return content.strip()
 
 

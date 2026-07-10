@@ -4,7 +4,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from medical_audit_kb.domain.constants import SourceCollection
@@ -50,6 +50,32 @@ class ConfidenceCue(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+
+class GenerationStatus(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    GENERATED = "generated"
+    RETRIEVAL_FALLBACK = "retrieval_fallback"
+
+
+GenerationFailureCode = Literal[
+    "provider_configuration",
+    "provider_transport",
+    "provider_http_status",
+    "provider_response_invalid",
+    "citation_marker_missing",
+    "provider_exception",
+]
+GENERATION_FAILURE_CODES = frozenset(
+    {
+        "provider_configuration",
+        "provider_transport",
+        "provider_http_status",
+        "provider_response_invalid",
+        "citation_marker_missing",
+        "provider_exception",
+    }
+)
 
 
 class AnswerGenerationError(Exception):
@@ -99,6 +125,8 @@ class CitationBackedAnswer:
     citations: tuple[Citation, ...]
     confidence: ConfidenceCue
     fallback_used: bool
+    generation_status: GenerationStatus
+    generation_failure_code: GenerationFailureCode | None = None
     generation_error: str | None = None
 
 
@@ -122,7 +150,13 @@ def build_citation_backed_answer(
     basis_groups = _basis_groups(citation_groups)
     fallback_answer = _fallback_answer(question, citation_groups)
     generation_error: str | None = None
+    generation_failure_code: GenerationFailureCode | None = None
     fallback_used = generation_provider is None
+    generation_status = (
+        GenerationStatus.NOT_REQUESTED
+        if generation_provider is None
+        else GenerationStatus.RETRIEVAL_FALLBACK
+    )
 
     answer = fallback_answer
     if generation_provider is not None:
@@ -132,10 +166,13 @@ def build_citation_backed_answer(
                 raise AnswerGenerationError("generated answer does not contain citation markers")
             answer = candidate_answer
             fallback_used = False
+            generation_status = GenerationStatus.GENERATED
         except Exception as exc:
             generation_error = str(exc)
+            generation_failure_code = _generation_failure_code(exc)
             answer = fallback_answer
             fallback_used = True
+            generation_status = GenerationStatus.RETRIEVAL_FALLBACK
 
     return CitationBackedAnswer(
         question=question,
@@ -144,8 +181,19 @@ def build_citation_backed_answer(
         citations=citations,
         confidence=_confidence(citations),
         fallback_used=fallback_used,
+        generation_status=generation_status,
+        generation_failure_code=generation_failure_code,
         generation_error=generation_error,
     )
+
+
+def _generation_failure_code(exc: Exception) -> GenerationFailureCode:
+    if isinstance(exc, AnswerGenerationError):
+        return "citation_marker_missing"
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code in GENERATION_FAILURE_CODES:
+        return cast(GenerationFailureCode, code)
+    return "provider_exception"
 
 
 def _basis_groups(citation_groups: tuple[CitationGroup, ...]) -> tuple[AnswerBasisGroup, ...]:
