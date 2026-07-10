@@ -488,7 +488,7 @@ report = {{
         "health": http_status(BASE_URL + "/api/v1/health"),
         "documents": http_status(
             BASE_URL + "/documents",
-            ["文档检索", "检索关键词"],
+            ["登录工作台", "AI审计一体化协作平台"],
             headers=AUDIT_HEADERS,
         ),
         "next_static": next_static_asset_status(),

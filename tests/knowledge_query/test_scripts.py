@@ -1763,7 +1763,7 @@ def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor(
     assert "def http_status(url, expected_texts=None, headers=None):" in script_text
     assert "request_headers.update(headers)" in script_text
     assert "headers=AUDIT_HEADERS" in script_text
-    assert '["文档检索", "检索关键词"]' in script_text
+    assert '["登录工作台", "AI审计一体化协作平台"]' in script_text
     assert "文档依据检索" not in script_text
 
 
