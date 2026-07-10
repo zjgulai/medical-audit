@@ -127,13 +127,8 @@ function matchesKnowledgeBase(item: ReferenceKnowledgeBase, query: string) {
     `${item.name} ${item.scope} ${item.owner} ${item.description} ${item.tags.join(" ")}`.toLowerCase().includes(normalizedQuery);
 }
 
-function chunkCountForItem(item: ReferenceKnowledgeBase): number {
-  const chunkTag = item.tags.find((tag) => tag.endsWith(" chunks"));
-  if (!chunkTag) {
-    return 0;
-  }
-  const value = Number.parseInt(chunkTag.replace(/[^\d]/g, ""), 10);
-  return Number.isFinite(value) ? value : 0;
+function chunkCountForItem(item: ReferenceKnowledgeBase): number | null {
+  return typeof item.chunkCount === "number" && item.chunkCount >= 0 ? item.chunkCount : null;
 }
 
 function sumDocuments(items: readonly ReferenceKnowledgeBase[]) {
@@ -141,7 +136,8 @@ function sumDocuments(items: readonly ReferenceKnowledgeBase[]) {
 }
 
 function sumChunks(items: readonly ReferenceKnowledgeBase[]) {
-  return items.reduce((sum, item) => sum + chunkCountForItem(item), 0);
+  const counts = items.map(chunkCountForItem).filter((value): value is number => value !== null);
+  return counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null;
 }
 
 function newestUpdatedAt(items: readonly ReferenceKnowledgeBase[]) {
@@ -175,7 +171,7 @@ export default function KnowledgeBasePage() {
   }, [activeCategory, knowledgeBases, productCategories, query]);
 
   const totalDocuments = sumDocuments(knowledgeBases);
-  const totalChunks = sumChunks(knowledgeBases);
+  const totalChunks = knowledgeBaseData.data.currentSearchEmbeddingCount ?? sumChunks(knowledgeBases);
   const selectedKnowledgeBase =
     knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ??
     activeItems[0] ??
@@ -229,16 +225,16 @@ export default function KnowledgeBasePage() {
         <article>
           <span>文档数</span>
           <strong>{totalDocuments.toLocaleString()}</strong>
-          <p>来自当前后端目录或本地样例</p>
+          <p>{knowledgeBaseData.source === "fixture" ? "本地静态目录" : "来自当前后端目录"}</p>
         </article>
         <article>
           <span>知识片段</span>
-          <strong>{totalChunks > 0 ? totalChunks.toLocaleString() : "待同步"}</strong>
-          <p>有索引片段时按后端返回展示</p>
+          <strong>{totalChunks !== null ? totalChunks.toLocaleString() : "待同步"}</strong>
+          <p>当前检索索引中的可用向量数量</p>
         </article>
         <article>
           <span>数据来源</span>
-          <strong>{knowledgeBaseData.source === "fixture" ? "样例" : "后端"}</strong>
+          <strong>{knowledgeBaseData.source === "fixture" ? "本地目录" : "后端目录"}</strong>
           <p>页面仅展示，不执行生产写入</p>
         </article>
       </section>
@@ -278,7 +274,7 @@ export default function KnowledgeBasePage() {
               <span>{category.title}</span>
               <strong>{category.items.length}</strong>
               <p>{category.description}</p>
-              <small>{sumDocuments(category.items).toLocaleString()} 份文档 · {sumChunks(category.items).toLocaleString()} 个片段</small>
+              <small>{sumDocuments(category.items).toLocaleString()} 份文档 · {formatChunkCount(sumChunks(category.items))}</small>
             </button>
           ))}
         </div>
@@ -324,7 +320,7 @@ export default function KnowledgeBasePage() {
                     </div>
                     <div>
                       <dt>知识片段</dt>
-                      <dd>{chunkCountForItem(item).toLocaleString()}</dd>
+                      <dd>{formatChunkCount(chunkCountForItem(item), false)}</dd>
                     </div>
                     <div>
                       <dt>同步</dt>
@@ -355,7 +351,7 @@ export default function KnowledgeBasePage() {
                   </div>
                   <div>
                     <dt>知识片段</dt>
-                    <dd>{chunkCountForItem(selectedKnowledgeBase).toLocaleString()}</dd>
+                    <dd>{formatChunkCount(chunkCountForItem(selectedKnowledgeBase), false)}</dd>
                   </div>
                   <div>
                     <dt>最后同步</dt>
@@ -400,6 +396,13 @@ export default function KnowledgeBasePage() {
       </section>
     </main>
   );
+}
+
+function formatChunkCount(value: number | null, includeUnit = true): string {
+  if (value === null) {
+    return "待归集";
+  }
+  return `${value.toLocaleString()}${includeUnit ? " 个片段" : ""}`;
 }
 
 function sourceCollectionsFromKnowledgeBaseId(id: string): readonly SourceCollection[] {

@@ -127,6 +127,7 @@ class CitationBackedAnswer:
     fallback_used: bool
     generation_status: GenerationStatus
     generation_failure_code: GenerationFailureCode | None = None
+    generation_http_status: int | None = None
     generation_error: str | None = None
 
 
@@ -151,6 +152,7 @@ def build_citation_backed_answer(
     fallback_answer = _fallback_answer(question, citation_groups)
     generation_error: str | None = None
     generation_failure_code: GenerationFailureCode | None = None
+    generation_http_status: int | None = None
     fallback_used = generation_provider is None
     generation_status = (
         GenerationStatus.NOT_REQUESTED
@@ -170,6 +172,7 @@ def build_citation_backed_answer(
         except Exception as exc:
             generation_error = str(exc)
             generation_failure_code = _generation_failure_code(exc)
+            generation_http_status = _generation_http_status(exc)
             answer = fallback_answer
             fallback_used = True
             generation_status = GenerationStatus.RETRIEVAL_FALLBACK
@@ -183,6 +186,7 @@ def build_citation_backed_answer(
         fallback_used=fallback_used,
         generation_status=generation_status,
         generation_failure_code=generation_failure_code,
+        generation_http_status=generation_http_status,
         generation_error=generation_error,
     )
 
@@ -194,6 +198,11 @@ def _generation_failure_code(exc: Exception) -> GenerationFailureCode:
     if isinstance(code, str) and code in GENERATION_FAILURE_CODES:
         return cast(GenerationFailureCode, code)
     return "provider_exception"
+
+
+def _generation_http_status(exc: Exception) -> int | None:
+    value = getattr(exc, "http_status", None)
+    return value if isinstance(value, int) and 400 <= value <= 599 else None
 
 
 def _basis_groups(citation_groups: tuple[CitationGroup, ...]) -> tuple[AnswerBasisGroup, ...]:

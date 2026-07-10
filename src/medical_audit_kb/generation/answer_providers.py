@@ -10,9 +10,20 @@ from medical_audit_kb.generation.citations import Citation
 
 
 class AnswerProviderError(RuntimeError):
-    def __init__(self, message: str, *, code: str = "provider_exception") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_exception",
+        http_status: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.http_status = (
+            http_status
+            if isinstance(http_status, int) and 400 <= http_status <= 599
+            else None
+        )
 
 
 ThinkingMode = Literal["enabled", "disabled"]
@@ -114,6 +125,7 @@ class OpenAICompatibleAnswerGenerationProvider:
             raise AnswerProviderError(
                 f"answer generation request failed: HTTP {exc.response.status_code}",
                 code="provider_http_status",
+                http_status=exc.response.status_code,
             ) from exc
 
         return _answer_content(response.json())
@@ -203,6 +215,7 @@ class AnthropicAnswerGenerationProvider:
             raise AnswerProviderError(
                 f"answer generation request failed: HTTP {exc.response.status_code}",
                 code="provider_http_status",
+                http_status=exc.response.status_code,
             ) from exc
 
         return _anthropic_answer_content(response.json())
@@ -211,6 +224,7 @@ class AnthropicAnswerGenerationProvider:
 _SYSTEM_PROMPT = """你是医保审计知识库答案生成器。
 只能依据用户提供的引用片段回答，不得引入外部知识或自行推断。
 每个事实性结论必须带引用标记，例如 [C1]。
+最终答案至少包含一个来自可用引用列表的原样标记，不得只在推理内容中引用。
 如果引用不足以回答问题，必须回答：依据不足，当前知识库未检索到足够可引用依据，拒绝生成结论。
 回答保持简洁，优先直接回答问题。"""
 
@@ -229,6 +243,8 @@ def _user_prompt(question: str, citations: Sequence[Citation]) -> str:
             "输出要求：",
             "- 只基于可用引用回答。",
             "- 必须在关键结论后使用引用标记。",
+            "- 最终答案至少包含一个来自可用引用列表的原样标记。",
+            "- 不得只在推理内容中引用，最终答案正文必须保留引用标记。",
             "- 不要输出未被引用支持的判断。",
         ]
     )

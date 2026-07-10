@@ -45,6 +45,7 @@ export type ReferenceKnowledgeBase = {
   readonly scope: "个人知识库" | "公开知识库" | "系统知识库" | "项目知识库";
   readonly owner: string;
   readonly documentCount: number;
+  readonly chunkCount?: number | null;
   readonly appCount: number;
   readonly updatedAt: string;
   readonly description: string;

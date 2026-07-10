@@ -215,6 +215,7 @@ describe("api-client", () => {
           fallback_used: true,
           generation_status: "not_requested",
           generation_failure_code: null,
+          generation_http_status: null,
           effective_source_collections: ["medical-insurance-laws"],
           basis_groups: [],
           citations: [],
@@ -269,7 +270,7 @@ describe("api-client", () => {
           items: [
             {
               alias: "kimi-2.7",
-              label: "Kimi 2.7",
+              label: "Kimi K2.6（兼容别名）",
               provider: "kimi",
               available: true,
               default: true,

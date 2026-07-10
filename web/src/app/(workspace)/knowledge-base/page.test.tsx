@@ -17,6 +17,7 @@ vi.mock("@/components/replica/use-replica-runtime", () => ({
           scope: "公开知识库",
           owner: "审计中心",
           documentCount: 128,
+          chunkCount: 49051,
           appCount: 3,
           updatedAt: "2026-07-08",
           description: "医保法规、政策解释和处罚依据。",
@@ -38,7 +39,9 @@ vi.mock("@/components/replica/use-replica-runtime", () => ({
         }
       ],
       readableSourceCollections: ["medical-insurance-laws"],
-      canUploadPersonal: true
+      canUploadPersonal: true,
+      currentSearchEmbeddingCount: 49051,
+      metricsSource: "knowledge-base-catalog"
     }
   })
 }));
@@ -67,5 +70,8 @@ describe("KnowledgeBasePage", () => {
       "href",
       "/graph?source_collection=medical-insurance-laws"
     );
+    expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
+    expect(screen.queryByText("样例")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 个片段")).not.toBeInTheDocument();
   });
 });

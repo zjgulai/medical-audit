@@ -31,7 +31,7 @@ async function mockReplicaBackend(page: Page) {
   await mockJson(page, "**/api/v1/query/models", {
     default_model: "kimi-2.7",
     items: [
-      { alias: "kimi-2.7", label: "Kimi 2.7", available: true, model_status: "ready" },
+      { alias: "kimi-2.7", label: "Kimi K2.6（兼容别名）", available: true, model_status: "ready" },
       { alias: "deepseek-v4-pro", label: "DeepSeek V4 Pro", available: true, model_status: "ready" }
     ]
   });
@@ -401,7 +401,7 @@ test("compatibility route CTAs keep the medical audit workflow reachable", async
   await page.goto("/fund-compliance");
   await page.getByRole("link", { name: "进入医保审计" }).click();
   await expect(page).toHaveURL(/\/medical-audit$/);
-  await expect(page.getByRole("heading", { name: "医保审计" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "医保审计", exact: true })).toBeVisible();
 
   await page.goto("/fund-compliance/review");
   await page.getByRole("link", { name: "进入分析" }).first().click();
@@ -426,7 +426,7 @@ test("document search, preview modules and medical audit keep core interactions 
   await expect(page.getByText("内测中")).toBeVisible();
 
   await page.goto("/graph");
-  await expect(page.getByLabel("知识图谱开通说明")).toBeVisible();
+  await expect(page.getByLabel("知识图谱工作台")).toBeVisible();
 
   await page.goto("/reports");
   await expect(page.getByLabel("审计底稿/报告开通说明")).toBeVisible();

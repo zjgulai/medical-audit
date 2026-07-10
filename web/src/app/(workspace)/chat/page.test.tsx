@@ -64,7 +64,7 @@ describe("ChatPortalPage", () => {
       items: [
         {
           alias: "kimi-2.7",
-          label: "Kimi 2.7",
+          label: "Kimi K2.6（兼容别名）",
           provider: "kimi",
           available: true,
           default: true,
@@ -136,6 +136,7 @@ describe("ChatPortalPage", () => {
       fallback_used: false,
       generation_status: "generated",
       generation_failure_code: null,
+      generation_http_status: null,
       model_alias: "deepseek-v4-pro",
       model_status: "selected_provider",
       effective_source_collections: ["medical-insurance-laws"],
@@ -215,7 +216,7 @@ describe("ChatPortalPage", () => {
   it("selects an agent from slash command and submits it to the query API", async () => {
     render(<ChatPortalPage />);
 
-    await screen.findByRole("option", { name: "Kimi 2.7" });
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
     fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
       target: { value: "/数" }
     });
@@ -271,7 +272,7 @@ describe("ChatPortalPage", () => {
       items: [
         {
           alias: "kimi-2.7",
-          label: "Kimi 2.7",
+          label: "Kimi K2.6（兼容别名）",
           provider: null,
           available: false,
           default: true,
@@ -301,6 +302,7 @@ describe("ChatPortalPage", () => {
       fallback_used: true,
       generation_status: "not_requested",
       generation_failure_code: null,
+      generation_http_status: null,
       model_alias: null,
       model_status: "default_fallback",
       effective_source_collections: ["medical-insurance-laws"],
@@ -313,7 +315,7 @@ describe("ChatPortalPage", () => {
     });
     render(<ChatPortalPage />);
 
-    await screen.findByRole("option", { name: "Kimi 2.7（未配置）" });
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）（未配置）" });
     fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
       target: { value: "医保基金审核依据" }
     });
@@ -337,7 +339,7 @@ describe("ChatPortalPage", () => {
   it("uploads an attachment through the chat analysis endpoint", async () => {
     const { container } = render(<ChatPortalPage />);
 
-    await screen.findByRole("option", { name: "Kimi 2.7" });
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
     fireEvent.click(screen.getByRole("button", { name: "上传附件" }));
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["charge_amount\n100"], "charges.csv", { type: "text/csv" });
@@ -356,7 +358,7 @@ describe("ChatPortalPage", () => {
       items: [
         {
           alias: "kimi-2.7",
-          label: "Kimi 2.7",
+          label: "Kimi K2.6（兼容别名）",
           provider: null,
           available: false,
           default: true,
@@ -397,7 +399,7 @@ describe("ChatPortalPage", () => {
     });
     const { container } = render(<ChatPortalPage />);
 
-    await screen.findByRole("option", { name: "Kimi 2.7（未配置）" });
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）（未配置）" });
     fireEvent.click(screen.getByRole("button", { name: "上传附件" }));
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["charge_amount\n100"], "charges.csv", { type: "text/csv" });

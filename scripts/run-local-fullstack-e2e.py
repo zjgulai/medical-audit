@@ -70,7 +70,7 @@ def _run_in_memory_e2e(args: argparse.Namespace, *, repo_root: Path, pnpm: str) 
             backend_url = f"http://{args.backend_host}:{args.backend_port}"
             _wait_for_health(backend_url, backend, timeout_seconds=args.timeout)
             _run_backend_smoke(backend_url)
-            command = [pnpm, "--dir", "web", "e2e"]
+            command = [pnpm, "--dir", "web", "e2e", "--workers=1"]
             env = {
                 **dict(os.environ),
                 "MEDICAL_AUDIT_API_BASE_URL": backend_url,

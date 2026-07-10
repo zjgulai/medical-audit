@@ -719,6 +719,7 @@ export type QueryResponse = {
     | "citation_marker_missing"
     | "provider_exception"
     | null;
+  readonly generation_http_status: number | null;
   readonly model_alias?: ChatModelAlias | null;
   readonly model_status?: string | null;
   readonly effective_source_collections: readonly SourceCollection[];

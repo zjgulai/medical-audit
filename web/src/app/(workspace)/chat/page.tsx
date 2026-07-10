@@ -38,7 +38,7 @@ type CommandFragment = {
 const DEFAULT_MODEL_OPTIONS: readonly ChatModelCatalogItem[] = [
   {
     alias: "kimi-2.7",
-    label: "Kimi 2.7",
+    label: "Kimi K2.6（兼容别名）",
     provider: null,
     available: false,
     default: true,

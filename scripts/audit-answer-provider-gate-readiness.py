@@ -38,9 +38,9 @@ CHAT_MODEL_ALIASES = (
         "alias": "kimi-2.7",
         "env_slug": "KIMI_2_7",
         "default_provider": "kimi",
-        "default_model": "kimi-k2.7-code",
+        "default_model": "kimi-k2.6",
         "default_api_key_env": "MOONSHOT_API_KEY",
-        "default_base_url": "https://api.moonshot.ai/v1",
+        "default_base_url": "https://api.moonshot.cn/v1",
         "default_max_output_tokens": "4096",
         "minimum_output_tokens": 4096,
         "default_temperature": "1.0",
@@ -106,9 +106,9 @@ PROVIDER_CANDIDATES = (
     {
         "candidate": "moonshot-chat",
         "answer_provider": "openai",
-        "answer_model": "kimi-k2.7-code",
+        "answer_model": "kimi-k2.6",
         "answer_api_key_env": "MOONSHOT_API_KEY",
-        "answer_base_url": "https://api.moonshot.ai/v1",
+        "answer_base_url": "https://api.moonshot.cn/v1",
     },
 )
 
