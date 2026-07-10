@@ -312,10 +312,6 @@ def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_s
         {
             "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_API_KEY_ENV": "MOONSHOT_API_KEY",
             "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_PROVIDER": "kimi",
-            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_MODEL": "moonshot-v1-8k",
-            "MEDICAL_AUDIT_KB_CHAT_MODEL_KIMI_2_7_BASE_URL": (
-                "https://api.moonshot.cn/v1"
-            ),
             "MOONSHOT_API_KEY": "do-not-print-this-moonshot-secret",
         }
     )
@@ -332,6 +328,9 @@ def test_audit_answer_provider_gate_readiness_reports_chat_model_alias_without_s
     assert kimi_runtime["status"] == "configured_with_key"
     assert kimi_runtime["api_key_env"] == "MOONSHOT_API_KEY"
     assert kimi_runtime["api_key_status"] == "SET"
+    assert kimi_runtime["model"] == "kimi-k2.7-code"
+    assert kimi_runtime["base_url"] == "https://api.moonshot.ai/v1"
+    assert kimi_runtime["temperature"] == "1.0"
     assert "do-not-print-this-moonshot-secret" not in serialized
     assert report["boundaries"]["secret_values_reported"] is False
     assert report["boundaries"]["provider_call_status"] == "not_called"
