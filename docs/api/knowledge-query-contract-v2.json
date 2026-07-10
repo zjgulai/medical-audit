@@ -201,6 +201,8 @@
     "answer",
     "confidence",
     "fallback_used",
+    "generation_status",
+    "generation_failure_code",
     "basis_groups",
     "citations",
     "personal_upload_matches",

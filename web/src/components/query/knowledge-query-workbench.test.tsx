@@ -42,6 +42,8 @@ describe("KnowledgeQueryWorkbench", () => {
       answer: "应核验诊疗记录、收费明细和政策依据。",
       confidence: "high",
       fallback_used: true,
+      generation_status: "not_requested",
+      generation_failure_code: null,
       effective_source_collections: ["medical-insurance-laws"],
       query_log_index: 7,
       basis_groups: [

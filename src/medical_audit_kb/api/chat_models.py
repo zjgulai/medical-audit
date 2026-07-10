@@ -9,7 +9,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
-from medical_audit_kb.generation.answer_providers import OpenAICompatibleAnswerGenerationProvider
+from medical_audit_kb.generation.answer_providers import (
+    OpenAICompatibleAnswerGenerationProvider,
+    ThinkingMode,
+)
 from medical_audit_kb.generation.citations import Citation
 
 
@@ -39,6 +42,25 @@ DEFAULT_MODEL_BY_ALIAS: dict[ChatModelAlias, str] = {
 DEFAULT_TEMPERATURE_BY_ALIAS: dict[ChatModelAlias, float] = {
     ChatModelAlias.KIMI_2_7: 1.0,
     ChatModelAlias.DEEPSEEK_V4_PRO: 0.0,
+}
+
+DEFAULT_MAX_OUTPUT_TOKENS_BY_ALIAS: dict[ChatModelAlias, int] = {
+    ChatModelAlias.KIMI_2_7: 4096,
+    ChatModelAlias.DEEPSEEK_V4_PRO: 900,
+}
+
+MIN_OUTPUT_TOKENS_BY_ALIAS: dict[ChatModelAlias, int] = {
+    ChatModelAlias.KIMI_2_7: 4096,
+}
+
+DEFAULT_THINKING_MODE_BY_ALIAS: dict[ChatModelAlias, ThinkingMode] = {
+    ChatModelAlias.KIMI_2_7: "enabled",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "disabled",
+}
+
+REQUIRED_THINKING_MODE_BY_ALIAS: dict[ChatModelAlias, ThinkingMode] = {
+    ChatModelAlias.KIMI_2_7: "enabled",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "disabled",
 }
 
 DEFAULT_PROVIDER_BY_ALIAS: dict[ChatModelAlias, str] = {
@@ -88,6 +110,7 @@ class ChatModelConfig:
     base_url: str
     max_output_tokens: int
     temperature: float
+    thinking_mode: ThinkingMode
 
 
 def chat_model_catalog_response() -> ChatModelCatalogResponse:
@@ -119,6 +142,7 @@ def answer_generation_provider_for_alias(alias: ChatModelAlias) -> AnswerGenerat
         provider=config.provider,
         max_output_tokens=config.max_output_tokens,
         temperature=config.temperature,
+        thinking_mode=config.thinking_mode,
     )
 
 
@@ -141,6 +165,22 @@ def chat_model_config_from_env(alias: ChatModelAlias) -> tuple[ChatModelConfig |
         return None, "missing_model_name"
     if not base_url:
         return None, "missing_base_url"
+    thinking_mode_value = os.getenv(
+        f"{prefix}_THINKING_MODE",
+        DEFAULT_THINKING_MODE_BY_ALIAS[alias],
+    ).strip().lower()
+    if thinking_mode_value not in {"enabled", "disabled"}:
+        return None, "invalid_thinking_mode"
+    if thinking_mode_value != REQUIRED_THINKING_MODE_BY_ALIAS[alias]:
+        return None, "unsupported_thinking_mode"
+    thinking_mode: ThinkingMode = "enabled" if thinking_mode_value == "enabled" else "disabled"
+    max_output_tokens = _int_env(
+        f"{prefix}_MAX_OUTPUT_TOKENS",
+        DEFAULT_MAX_OUTPUT_TOKENS_BY_ALIAS[alias],
+    )
+    minimum_output_tokens = MIN_OUTPUT_TOKENS_BY_ALIAS.get(alias)
+    if minimum_output_tokens is not None and max_output_tokens < minimum_output_tokens:
+        return None, "insufficient_output_budget"
 
     return (
         ChatModelConfig(
@@ -149,11 +189,12 @@ def chat_model_config_from_env(alias: ChatModelAlias) -> tuple[ChatModelConfig |
             api_key_env=api_key_env,
             model_name=model_name,
             base_url=base_url,
-            max_output_tokens=_int_env(f"{prefix}_MAX_OUTPUT_TOKENS", 900),
+            max_output_tokens=max_output_tokens,
             temperature=_float_env(
                 f"{prefix}_TEMPERATURE",
                 DEFAULT_TEMPERATURE_BY_ALIAS[alias],
             ),
+            thinking_mode=thinking_mode,
         ),
         None,
     )

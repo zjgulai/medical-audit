@@ -168,6 +168,8 @@ describe("DocumentsPage", () => {
       answer: "应核验医保基金支付依据。",
       confidence: "medium",
       fallback_used: false,
+      generation_status: "generated",
+      generation_failure_code: null,
       model_alias: "kimi-2.7",
       model_status: "selected_provider",
       effective_source_collections: ["medical-insurance-laws"],

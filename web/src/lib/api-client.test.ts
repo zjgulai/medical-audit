@@ -213,6 +213,8 @@ describe("api-client", () => {
           answer: "应核验证据链。",
           confidence: "high",
           fallback_used: true,
+          generation_status: "not_requested",
+          generation_failure_code: null,
           effective_source_collections: ["medical-insurance-laws"],
           basis_groups: [],
           citations: [],
