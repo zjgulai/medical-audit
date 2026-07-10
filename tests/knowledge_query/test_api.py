@@ -21,6 +21,7 @@ from medical_audit_kb.api.auth_user_store import (
     AUTH_USER_ID_PREFIX,
     SqlAlchemyAuthUserStore,
 )
+from medical_audit_kb.api.chat_models import ChatModelAlias, chat_model_config_from_env
 from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
@@ -2602,6 +2603,56 @@ def test_query_models_reports_alias_availability_without_secret_values(
     assert "secret-value-not-in-response" not in serialized
 
 
+@pytest.mark.parametrize(
+    (
+        "alias",
+        "api_key_env",
+        "expected_model",
+        "expected_base_url",
+        "expected_temperature",
+    ),
+    (
+        (
+            ChatModelAlias.KIMI_2_7,
+            "TEST_KIMI_CHAT_KEY",
+            "kimi-k2.7-code",
+            "https://api.moonshot.ai/v1",
+            1.0,
+        ),
+        (
+            ChatModelAlias.DEEPSEEK_V4_PRO,
+            "TEST_DEEPSEEK_CHAT_KEY",
+            "deepseek-v4-pro",
+            "https://api.deepseek.com",
+            0.0,
+        ),
+    ),
+)
+def test_chat_model_config_uses_verified_provider_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    alias: ChatModelAlias,
+    api_key_env: str,
+    expected_model: str,
+    expected_base_url: str,
+    expected_temperature: float,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    env_slug = alias.value.upper().replace("-", "_").replace(".", "_")
+    monkeypatch.setenv(
+        f"MEDICAL_AUDIT_KB_CHAT_MODEL_{env_slug}_API_KEY_ENV",
+        api_key_env,
+    )
+    monkeypatch.setenv(api_key_env, "secret-value-not-returned")
+
+    config, reason = chat_model_config_from_env(alias)
+
+    assert reason is None
+    assert config is not None
+    assert config.model_name == expected_model
+    assert config.base_url == expected_base_url
+    assert config.temperature == expected_temperature
+
+
 def test_query_models_fake_provider_requires_explicit_local_gate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3582,6 +3633,7 @@ def _clear_chat_model_env(monkeypatch: pytest.MonkeyPatch) -> None:
         for suffix in suffixes:
             monkeypatch.delenv(f"MEDICAL_AUDIT_KB_CHAT_MODEL_{alias}_{suffix}", raising=False)
     monkeypatch.delenv("TEST_KIMI_CHAT_KEY", raising=False)
+    monkeypatch.delenv("TEST_DEEPSEEK_CHAT_KEY", raising=False)
     monkeypatch.delenv("MEDICAL_AUDIT_KB_ALLOW_FAKE_CHAT_MODELS", raising=False)
 
 

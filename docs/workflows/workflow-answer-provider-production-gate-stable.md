@@ -42,6 +42,13 @@ pnpm production:chat-model-ready
 - 当前生产 `available_model_aliases=[]`，两个别名均为 `missing_api_key_env`。
 - 生产容器 readiness 交叉复核仍为 `blocked`，`ready_chat_model_aliases=[]`，`provider_call_status=not_called`，`production_env_write=false`。
 
+2026-07-10 provider 合同修正：
+
+- 产品别名 `kimi-2.7` 映射到 `kimi-k2.7-code`、`https://api.moonshot.ai/v1`、`temperature=1.0`。
+- 产品别名 `deepseek-v4-pro` 映射到 `deepseek-v4-pro`、`https://api.deepseek.com`、`temperature=0.0`。
+- 运行时默认值、生产 env 示例和只读 readiness 报告必须使用同一映射；未配置有效 key 时仍保持不可用，不得因默认值完整而升级为 provider 就绪。
+- 合同依据：Kimi `https://platform.kimi.ai/docs/models`、`https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart`；DeepSeek `https://api-docs.deepseek.com/`。
+
 边界：
 
 - `KIMI_API_KEY=SET` 只说明 embedding runtime 已配置；它不能自动等同于 `kimi-2.7` 聊天模型可用。

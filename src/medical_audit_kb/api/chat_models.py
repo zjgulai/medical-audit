@@ -27,8 +27,28 @@ CHAT_MODEL_ALIASES: tuple[ChatModelAlias, ...] = (
 
 
 DEFAULT_BASE_URL_BY_ALIAS: dict[ChatModelAlias, str] = {
-    ChatModelAlias.KIMI_2_7: "https://api.moonshot.cn/v1",
-    ChatModelAlias.DEEPSEEK_V4_PRO: "https://api.deepseek.com/v1",
+    ChatModelAlias.KIMI_2_7: "https://api.moonshot.ai/v1",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "https://api.deepseek.com",
+}
+
+DEFAULT_MODEL_BY_ALIAS: dict[ChatModelAlias, str] = {
+    ChatModelAlias.KIMI_2_7: "kimi-k2.7-code",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "deepseek-v4-pro",
+}
+
+DEFAULT_TEMPERATURE_BY_ALIAS: dict[ChatModelAlias, float] = {
+    ChatModelAlias.KIMI_2_7: 1.0,
+    ChatModelAlias.DEEPSEEK_V4_PRO: 0.0,
+}
+
+DEFAULT_PROVIDER_BY_ALIAS: dict[ChatModelAlias, str] = {
+    ChatModelAlias.KIMI_2_7: "kimi",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "deepseek",
+}
+
+MODEL_LABEL_BY_ALIAS: dict[ChatModelAlias, str] = {
+    ChatModelAlias.KIMI_2_7: "Kimi 2.7",
+    ChatModelAlias.DEEPSEEK_V4_PRO: "DeepSeek V4 Pro",
 }
 
 
@@ -86,7 +106,7 @@ def chat_model_catalog_response() -> ChatModelCatalogResponse:
 def answer_generation_provider_for_alias(alias: ChatModelAlias) -> AnswerGenerationProvider:
     config, reason = chat_model_config_from_env(alias)
     if config is None:
-        raise ChatModelUnavailableError(alias, reason)
+        raise ChatModelUnavailableError(alias, reason or "invalid_configuration")
     if config.provider == "fake":
         return _FakeChatModelAnswerProvider(alias)
     api_key = os.getenv(config.api_key_env, "")
@@ -111,7 +131,7 @@ def chat_model_config_from_env(alias: ChatModelAlias) -> tuple[ChatModelConfig |
         return None, "missing_api_key"
 
     provider = os.getenv(f"{prefix}_PROVIDER", _default_provider(alias)).strip().lower()
-    model_name = os.getenv(f"{prefix}_MODEL", alias.value).strip()
+    model_name = os.getenv(f"{prefix}_MODEL", DEFAULT_MODEL_BY_ALIAS[alias]).strip()
     base_url = os.getenv(f"{prefix}_BASE_URL", DEFAULT_BASE_URL_BY_ALIAS[alias]).strip()
     if not provider:
         return None, "missing_provider"
@@ -130,7 +150,10 @@ def chat_model_config_from_env(alias: ChatModelAlias) -> tuple[ChatModelConfig |
             model_name=model_name,
             base_url=base_url,
             max_output_tokens=_int_env(f"{prefix}_MAX_OUTPUT_TOKENS", 900),
-            temperature=_float_env(f"{prefix}_TEMPERATURE", 0.0),
+            temperature=_float_env(
+                f"{prefix}_TEMPERATURE",
+                DEFAULT_TEMPERATURE_BY_ALIAS[alias],
+            ),
         ),
         None,
     )
@@ -154,19 +177,11 @@ def _env_prefix(alias: ChatModelAlias) -> str:
 
 
 def _model_label(alias: ChatModelAlias) -> str:
-    if alias == ChatModelAlias.KIMI_2_7:
-        return "Kimi 2.7"
-    if alias == ChatModelAlias.DEEPSEEK_V4_PRO:
-        return "DeepSeek V4 Pro"
-    return alias.value
+    return MODEL_LABEL_BY_ALIAS[alias]
 
 
 def _default_provider(alias: ChatModelAlias) -> str:
-    if alias == ChatModelAlias.KIMI_2_7:
-        return "kimi"
-    if alias == ChatModelAlias.DEEPSEEK_V4_PRO:
-        return "deepseek"
-    return "openai-compatible"
+    return DEFAULT_PROVIDER_BY_ALIAS[alias]
 
 
 def _int_env(name: str, default: int) -> int:

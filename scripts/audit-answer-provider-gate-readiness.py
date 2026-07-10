@@ -38,17 +38,21 @@ CHAT_MODEL_ALIASES = (
         "alias": "kimi-2.7",
         "env_slug": "KIMI_2_7",
         "default_provider": "kimi",
-        "default_model": "moonshot-v1-8k",
+        "default_model": "kimi-k2.7-code",
         "default_api_key_env": "MOONSHOT_API_KEY",
-        "default_base_url": "https://api.moonshot.cn/v1",
+        "default_base_url": "https://api.moonshot.ai/v1",
+        "default_max_output_tokens": "900",
+        "default_temperature": "1.0",
     },
     {
         "alias": "deepseek-v4-pro",
         "env_slug": "DEEPSEEK_V4_PRO",
         "default_provider": "deepseek",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-v4-pro",
         "default_api_key_env": "DEEPSEEK_API_KEY",
-        "default_base_url": "https://api.deepseek.com/v1",
+        "default_base_url": "https://api.deepseek.com",
+        "default_max_output_tokens": "900",
+        "default_temperature": "0.0",
     },
 )
 CHAT_MODEL_CONFIG_KEYS = tuple(
@@ -74,9 +78,9 @@ PROVIDER_CANDIDATES = (
     {
         "candidate": "deepseek",
         "answer_provider": "openai",
-        "answer_model": "deepseek-chat",
+        "answer_model": "deepseek-v4-pro",
         "answer_api_key_env": "DEEPSEEK_API_KEY",
-        "answer_base_url": "https://api.deepseek.com/v1",
+        "answer_base_url": "https://api.deepseek.com",
     },
     {
         "candidate": "openai",
@@ -95,9 +99,9 @@ PROVIDER_CANDIDATES = (
     {
         "candidate": "moonshot-chat",
         "answer_provider": "openai",
-        "answer_model": "moonshot-v1-8k",
+        "answer_model": "kimi-k2.7-code",
         "answer_api_key_env": "MOONSHOT_API_KEY",
-        "answer_base_url": "https://api.moonshot.cn/v1",
+        "answer_base_url": "https://api.moonshot.ai/v1",
     },
 )
 
@@ -313,11 +317,19 @@ def _chat_model_readiness(
                 ).strip()
                 or alias["default_base_url"],
                 "max_output_tokens": str(
-                    safe_values.get(f"{prefix}_MAX_OUTPUT_TOKENS", "")
+                    safe_values.get(
+                        f"{prefix}_MAX_OUTPUT_TOKENS",
+                        alias["default_max_output_tokens"],
+                    )
                 ).strip()
-                or None,
-                "temperature": str(safe_values.get(f"{prefix}_TEMPERATURE", "")).strip()
-                or None,
+                or alias["default_max_output_tokens"],
+                "temperature": str(
+                    safe_values.get(
+                        f"{prefix}_TEMPERATURE",
+                        alias["default_temperature"],
+                    )
+                ).strip()
+                or alias["default_temperature"],
             }
         )
     return models
