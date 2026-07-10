@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from collections.abc import Sequence
 from typing import Literal
 
@@ -93,11 +95,16 @@ class OpenAICompatibleAnswerGenerationProvider:
         )
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        user_prompt = (
+            _deepseek_user_prompt(question, citations)
+            if self.provider == "deepseek"
+            else _user_prompt(question, citations)
+        )
         payload: dict[str, object] = {
             "model": self.model_name,
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _user_prompt(question, citations)},
+                {"role": "user", "content": user_prompt},
             ],
             "temperature": self._temperature,
         }
@@ -105,6 +112,8 @@ class OpenAICompatibleAnswerGenerationProvider:
         payload[token_field] = self._max_output_tokens
         if self._thinking_mode is not None:
             payload["thinking"] = {"type": self._thinking_mode}
+        if self.provider == "deepseek":
+            payload["response_format"] = {"type": "json_object"}
         try:
             response = self._http_client.post(
                 f"{self._base_url}/chat/completions",
@@ -128,7 +137,10 @@ class OpenAICompatibleAnswerGenerationProvider:
                 http_status=exc.response.status_code,
             ) from exc
 
-        return _answer_content(response.json())
+        response_payload = response.json()
+        if self.provider == "deepseek":
+            return _deepseek_answer_content(response_payload, citations)
+        return _answer_content(response_payload)
 
 
 class AnthropicAnswerGenerationProvider:
@@ -251,6 +263,19 @@ def _user_prompt(question: str, citations: Sequence[Citation]) -> str:
     return "\n".join(lines)
 
 
+def _deepseek_user_prompt(question: str, citations: Sequence[Citation]) -> str:
+    return "\n".join(
+        [
+            _user_prompt(question, citations),
+            "",
+            "请仅输出一个合法 json 对象，不要输出 Markdown 代码块或额外文字。",
+            'json 结构必须为：{"answer":"带原样引用标记的最终答案 [C1]",'
+            '"citation_ids":["C1"]}',
+            "citation_ids 必须完整列出 answer 正文中出现的引用 ID，且只能使用可用引用。",
+        ]
+    )
+
+
 def _answer_content(payload: object) -> str:
     if not isinstance(payload, dict):
         raise AnswerProviderError(
@@ -282,6 +307,58 @@ def _answer_content(payload: object) -> str:
             code="provider_response_invalid",
         )
     return content.strip()
+
+
+def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> str:
+    content = _answer_content(payload)
+    try:
+        structured = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise AnswerProviderError(
+            "deepseek answer generation content must be valid json",
+            code="provider_response_invalid",
+        ) from exc
+    if not isinstance(structured, dict):
+        raise AnswerProviderError(
+            "deepseek answer generation json root must be an object",
+            code="provider_response_invalid",
+        )
+
+    answer = structured.get("answer")
+    citation_ids = structured.get("citation_ids")
+    if not isinstance(answer, str) or not answer.strip():
+        raise AnswerProviderError(
+            "deepseek answer generation json answer must be non-empty",
+            code="provider_response_invalid",
+        )
+    if (
+        not isinstance(citation_ids, list)
+        or not citation_ids
+        or not all(isinstance(citation_id, str) and citation_id for citation_id in citation_ids)
+    ):
+        raise AnswerProviderError(
+            "deepseek answer generation json citation_ids must be non-empty",
+            code="provider_response_invalid",
+        )
+
+    normalized_answer = answer.strip()
+    claimed_ids = {citation_id.upper() for citation_id in citation_ids}
+    available_ids = {citation.citation_id.upper() for citation in citations}
+    visible_ids = {
+        match.group(1).upper()
+        for match in re.finditer(r"\[(C\d+)\]", normalized_answer, flags=re.IGNORECASE)
+    }
+    if not claimed_ids.issubset(available_ids):
+        raise AnswerProviderError(
+            "deepseek answer generation json contains unavailable citation ids",
+            code="provider_response_invalid",
+        )
+    if not visible_ids or visible_ids != claimed_ids:
+        raise AnswerProviderError(
+            "deepseek answer generation json citations must match answer markers",
+            code="provider_response_invalid",
+        )
+    return normalized_answer
 
 
 def _anthropic_answer_content(payload: object) -> str:

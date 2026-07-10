@@ -39,17 +39,18 @@ pnpm production:chat-model-ready
 2026-07-10 生产证据：
 
 - `production:chat-model-catalog-readonly` 对当前生产返回 `status=pass`，`contract_version=chat-model-catalog-v1`，`model_aliases=["kimi-2.7","deepseek-v4-pro"]`。
-- PR #226 已合入并部署为 `main@c29f5e37`；生产环境已配置独立的 `MOONSHOT_API_KEY` 与 `DEEPSEEK_API_KEY`，两个模型别名均返回 `available=true`。
-- 经授权对两个模型各执行一次最小 `/api/v1/query`，请求均返回 `200` 和 3 条引用，但 `fallback_used=true`，只能证明检索、请求编排和查询历史链路可用，不能证明模型生成已生效。
-- 后续修复分支必须先输出脱敏的 `generation_status` 与 `generation_failure_code`，再通过 provider-specific `thinking` 参数和输出预算修正做第二轮最小验收；修复分支未部署前，生产结论仍是“模型可选，生成链路未达标”。
+- PR #228 已合入并部署为 `main@5de2c87e`；生产环境已配置独立的 `MOONSHOT_API_KEY` 与 `DEEPSEEK_API_KEY`，两个模型别名均返回 `available=true`。
+- 经授权各执行一次最小 `/api/v1/query`：Kimi 返回 `generation_status=generated`、引用标记有效；DeepSeek 返回 `generation_status=retrieval_fallback`、`generation_failure_code=citation_marker_missing`。因此当前生产结论是“Kimi 真实生成已验证，DeepSeek 保持安全回退”。
+- 分支 `codex/projects-deepseek-contract-20260710` 使用 DeepSeek 官方 JSON Output 合同约束最终答案和 `citation_ids`，并拒绝非法 JSON、越界引用和正文无引用响应；该分支当前仅有本地自动化证据，尚未部署、未追加真实 provider 调用。
 
 2026-07-10 provider 合同修正：
 
 - 历史产品别名 `kimi-2.7` 暂保留以兼容已发布请求；默认运行时映射到官方 Chat Completion 已发布的 `kimi-k2.6`、`https://api.moonshot.cn/v1`、`temperature=1.0`，界面标签必须明确显示实际模型。生产环境变量切换仍需单独授权。
 - 产品别名 `deepseek-v4-pro` 映射到 `deepseek-v4-pro`、`https://api.deepseek.com`、`temperature=0.0`。
 - Kimi K2.7 Code 必须使用 `thinking=enabled`；本项目默认输出预算为 4096，并按 Kimi API 合同发送 `max_completion_tokens`。DeepSeek V4 Pro 的短答案检索增强路径使用 `thinking=disabled` 和 `max_tokens=900`。
+- DeepSeek 请求使用 `response_format={"type":"json_object"}`，响应必须包含非空 `answer` 与 `citation_ids`；引用 ID 必须来自本次检索结果并与答案中的原样 `[Cn]` 标记完全一致。解析器不得替模型机械追加引用标记，最终仍由 answer builder 执行证据门禁。
 - 运行时默认值、生产 env 示例和只读 readiness 报告必须使用同一映射；未配置有效 key 时仍保持不可用，不得因默认值完整而升级为 provider 就绪。
-- 合同依据：Kimi `https://platform.kimi.com/docs/api/chat`；DeepSeek `https://api-docs.deepseek.com/`。
+- 合同依据：Kimi `https://platform.kimi.com/docs/api/chat`；DeepSeek Chat API `https://api-docs.deepseek.com/api/create-chat-completion` 与 JSON Output `https://api-docs.deepseek.com/guides/json_mode`。
 
 边界：
 

@@ -81,6 +81,34 @@ def list_projects(
     }
 
 
+@router.get("/projects/{project_key}")
+def get_project(
+    project_key: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> dict[str, object]:
+    _require_project(project_key)
+    store = _project_member_store(state)
+    try:
+        project = next(
+            item
+            for item in project_payloads_with_member_counts(store.member_counts())
+            if item["id"] == project_key
+        )
+        store_ready = True
+        store_backend = store.__class__.__name__
+    except SQLAlchemyError:
+        project = next(dict(item) for item in DEFAULT_PROJECT_PAYLOADS if item["id"] == project_key)
+        store_ready = False
+        store_backend = "unavailable"
+
+    record_operation(state, "project-detail", {"project_key": project_key})
+    return {
+        "item": project,
+        "store": {"ready": store_ready, "backend": store_backend},
+        "production_side_effect": "none",
+    }
+
+
 @router.get("/projects/{project_key}/members")
 def list_project_members(
     project_key: str,
