@@ -48,7 +48,14 @@ import {
   type SourceCollectionGroup
 } from "./source-collection-catalog";
 
-export type ReplicaDataSource = "fixture" | "api" | "hybrid";
+type OptionalApiRead<T> =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "success"; readonly value: T }
+  | { readonly kind: "failure"; readonly message: string };
+
+export type ReplicaDataSource = "fixture" | "catalog" | "api" | "hybrid";
+
+export type ReplicaAdapterOutcome = "ready" | "empty" | "degraded" | "error";
 
 export type ReplicaSurface =
   | "shell"
@@ -78,6 +85,7 @@ export type ReplicaAdapterIssue = {
 
 export type ReplicaAdapterResult<TData> = {
   readonly source: ReplicaDataSource;
+  readonly outcome: ReplicaAdapterOutcome;
   readonly data: TData;
   readonly issues: readonly ReplicaAdapterIssue[];
 };
@@ -209,13 +217,6 @@ function issue(
   return { surface, code, message };
 }
 
-function sourceFrom(apiUsed: boolean, fixtureUsed: boolean): ReplicaDataSource {
-  if (!apiUsed) {
-    return "fixture";
-  }
-  return fixtureUsed ? "hybrid" : "api";
-}
-
 function isReadonlySeedBackend(backend: string): boolean {
   return backend.startsWith("Readonly") && backend.endsWith("Seed");
 }
@@ -224,19 +225,28 @@ async function readOptionalApi<TResponse>(
   surface: ReplicaSurface,
   issues: ReplicaAdapterIssue[],
   read: (() => Promise<TResponse>) | undefined
-): Promise<TResponse | null> {
+): Promise<OptionalApiRead<TResponse>> {
   if (!read) {
-    return null;
+    return { kind: "disabled" };
   }
 
   try {
-    return await read();
-  } catch {
+    return { kind: "success", value: await read() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown API read failure";
     issues.push(
-      issue(surface, "api-read-failed", "API read failed; reference fixture data remains active.")
+      issue(surface, "api-read-failed", "API read failed; no fixture data was substituted.")
     );
-    return null;
+    return { kind: "failure", message };
   }
+}
+
+function hasApiFailure(reads: readonly OptionalApiRead<unknown>[]): boolean {
+  return reads.some((read) => read.kind === "failure");
+}
+
+function allApiReadsDisabled(reads: readonly OptionalApiRead<unknown>[]): boolean {
+  return reads.every((read) => read.kind === "disabled");
 }
 
 function normalizeText(value: string | null | undefined, fallback: string): string {
@@ -324,7 +334,7 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
 function mapDocumentCategoriesFromCatalog(
   items: readonly DocumentSourceCollectionCatalogItem[]
 ): readonly ReferenceDocumentCategory[] {
-  const categories = items
+  return items
     .filter((item) => item.product_queryable || item.queryable)
     .map((item) => ({
       id: `source-${item.source_collection}`,
@@ -332,7 +342,6 @@ function mapDocumentCategoriesFromCatalog(
       description: item.description,
       count: item.metrics.document_count ?? item.metrics.chunk_count ?? 0
     }));
-  return categories.length > 0 ? categories : referenceDocumentCategories;
 }
 
 function toKnowledgeBaseScope(scope: string): ReferenceKnowledgeBase["scope"] {
@@ -417,6 +426,22 @@ function graphDataFallback(): ReplicaGraphData {
   };
 }
 
+function emptyGraphData(): ReplicaGraphData {
+  return {
+    title: "",
+    scope: "",
+    nodes: [],
+    relations: [],
+    metrics: {
+      nodeCount: 0,
+      nodeKindCount: 0,
+      relationCount: 0,
+      strongRelationCount: 0,
+      pendingRelationCount: 0
+    }
+  };
+}
+
 function mapGraphWorkbench(response: GraphWorkbenchResponse): ReplicaGraphData {
   return {
     title: response.graph_title,
@@ -492,29 +517,58 @@ export async function loadReplicaShellData(
   client: ReplicaShellClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaShellData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  let user: ReplicaShellUser = {
+  const fixtureUser: ReplicaShellUser = {
     displayName: "审计员",
     avatarLabel: "审",
     roleLabel: "演示身份",
     tenantLabel: "fixture"
   };
-  let historyItems = referenceHistoryItems;
-  let apiUsed = false;
+  const emptyUser: ReplicaShellUser = {
+    displayName: "",
+    avatarLabel: "",
+    roleLabel: "",
+    tenantLabel: ""
+  };
+  const [sessionRead, historyRead] = await Promise.all([
+    readOptionalApi("shell", issues, client.fetchAuthSession),
+    readOptionalApi("shell", issues, client.fetchQueryHistory)
+  ]);
 
-  const session = await readOptionalApi("shell", issues, client.fetchAuthSession);
-  if (session) {
-    user = mapSessionUser(session);
-    apiUsed = true;
+  if (allApiReadsDisabled([sessionRead, historyRead])) {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: { navigation: referenceNavigation, historyItems: referenceHistoryItems, user: fixtureUser },
+      issues
+    };
   }
 
-  const history = await readOptionalApi("shell", issues, client.fetchQueryHistory);
-  if (history && history.items.length > 0) {
-    historyItems = mapQueryHistoryItems(history);
-    apiUsed = true;
+  if (hasApiFailure([sessionRead, historyRead])) {
+    return {
+      source: "api",
+      outcome: "error",
+      data: { navigation: referenceNavigation, historyItems: [], user: emptyUser },
+      issues
+    };
+  }
+
+  const session = sessionRead.kind === "success" ? sessionRead.value : null;
+  const history = historyRead.kind === "success" ? historyRead.value : null;
+  const user = session ? mapSessionUser(session) : emptyUser;
+  const historyItems = history ? mapQueryHistoryItems(history) : [];
+  const degraded = Boolean((session && !session.store.ready) || (history && !history.store.ready));
+
+  if (degraded) {
+    issues.push(issue("shell", "partial-schema-gap", "Session or query-history storage is not ready."));
   }
 
   return {
-    source: sourceFrom(apiUsed, true),
+    source: session ? "hybrid" : "api",
+    outcome: degraded
+      ? "degraded"
+      : session || historyItems.length > 0
+        ? "ready"
+        : "empty",
     data: { navigation: referenceNavigation, historyItems, user },
     issues
   };
@@ -524,25 +578,51 @@ export async function loadReplicaChatData(
   client: ReplicaShellClient & ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaChatData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  let agents = referenceAgents.slice(0, 4);
-  let historyItems = referenceHistoryItems;
-  let apiUsed = false;
+  const [agentRead, historyRead] = await Promise.all([
+    readOptionalApi("chat", issues, client.fetchAgents),
+    readOptionalApi("chat", issues, client.fetchQueryHistory)
+  ]);
 
-  const agentResponse = await readOptionalApi("chat", issues, client.fetchAgents);
-  if (agentResponse && agentResponse.items.length > 0) {
-    agents = agentResponse.items.slice(0, 4).map((item, index) => mapAgent(item, index, "未关联项目"));
-    apiUsed = true;
+  if (allApiReadsDisabled([agentRead, historyRead])) {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: {
+        agents: referenceAgents.slice(0, 4),
+        historyItems: referenceHistoryItems,
+        documentResults: referenceDocumentResults
+      },
+      issues
+    };
   }
 
-  const history = await readOptionalApi("chat", issues, client.fetchQueryHistory);
-  if (history && history.items.length > 0) {
-    historyItems = mapQueryHistoryItems(history);
-    apiUsed = true;
+  if (hasApiFailure([agentRead, historyRead])) {
+    return {
+      source: "api",
+      outcome: "error",
+      data: { agents: [], historyItems: [], documentResults: [] },
+      issues
+    };
+  }
+
+  const agentResponse = agentRead.kind === "success" ? agentRead.value : null;
+  const history = historyRead.kind === "success" ? historyRead.value : null;
+  const agents = agentResponse
+    ? agentResponse.items.slice(0, 4).map((item, index) => mapAgent(item, index, "未关联项目"))
+    : [];
+  const historyItems = history ? mapQueryHistoryItems(history) : [];
+  const degraded = Boolean(
+    (agentResponse && !agentResponse.store.ready) || (history && !history.store.ready)
+  );
+
+  if (degraded) {
+    issues.push(issue("chat", "partial-schema-gap", "Agent or query-history storage is not ready."));
   }
 
   return {
-    source: sourceFrom(apiUsed, true),
-    data: { agents, historyItems, documentResults: referenceDocumentResults },
+    source: "api",
+    outcome: degraded ? "degraded" : agents.length > 0 || historyItems.length > 0 ? "ready" : "empty",
+    data: { agents, historyItems, documentResults: [] },
     issues
   };
 }
@@ -551,45 +631,55 @@ export async function loadReplicaAgentsData(
   client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const agentResponse = await readOptionalApi("agents", issues, client.fetchAgents);
+  const agentRead = await readOptionalApi("agents", issues, client.fetchAgents);
 
-  if (!agentResponse || agentResponse.items.length === 0) {
+  if (agentRead.kind === "disabled") {
     return {
       source: "fixture",
+      outcome: "ready",
       data: { agents: referenceAgents, categories: uniqueAgentCategories(referenceAgents) },
       issues
     };
   }
 
+  if (agentRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: { agents: [], categories: [] }, issues };
+  }
+
+  const agentResponse = agentRead.value;
+  const agents = agentResponse.items.map((item, index) => mapAgent(item, index, "未关联项目"));
+  const degraded = !agentResponse.store.ready;
+  if (degraded) {
+    issues.push(issue("agents", "partial-schema-gap", "Agent storage is not ready."));
+  }
+
   return {
     source: "api",
+    outcome: degraded ? "degraded" : agents.length > 0 ? "ready" : "empty",
     data: {
-      agents: agentResponse.items.map((item, index) => mapAgent(item, index, "未关联项目")),
-      categories: agentResponse.categories.map(toReferenceAgentCategory)
+      agents,
+      categories: agents.length > 0
+        ? agentResponse.categories.map(toReferenceAgentCategory)
+        : []
     },
     issues
   };
 }
 
 export async function loadReplicaAgentMarketData(
-  client: ReplicaAgentClient = {}
+  _client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
   const issues: ReplicaAdapterIssue[] = [
-    issue(
-      "agent-market",
-      "catalog-api-needed",
-      "Dedicated marketplace rating and ownership contract is not available yet."
-    ),
     issue(
       "agent-market",
       "mutation-gated",
       "Publish, rating, and lifecycle actions remain gated; install uses the agent create API."
     )
   ];
-  await readOptionalApi("agent-market", issues, client.fetchAgents);
 
   return {
-    source: "fixture",
+    source: "catalog",
+    outcome: "ready",
     data: {
       agents: referenceMarketAgents,
       categories: uniqueAgentCategories(referenceMarketAgents)
@@ -606,42 +696,108 @@ export async function loadReplicaKnowledgeBaseData(
   client: ReplicaKnowledgeBaseClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaKnowledgeBaseData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const [permissions, knowledgeCatalog, sourceCollectionCatalog] = await Promise.all([
+  const [permissionsRead, knowledgeCatalogRead, sourceCollectionCatalogRead] = await Promise.all([
     readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions),
     readOptionalApi("knowledge-base", issues, client.fetchKnowledgeBaseCatalog),
     readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections)
   ]);
+  const reads = [permissionsRead, knowledgeCatalogRead, sourceCollectionCatalogRead];
+
+  if (allApiReadsDisabled(reads)) {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: {
+        knowledgeBases: referenceKnowledgeBases.map((item) => ({
+          ...item,
+          chunkCount: item.chunkCount ?? null
+        })),
+        sourceGroups: FALLBACK_SOURCE_COLLECTION_GROUPS,
+        readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
+        canUploadPersonal: true,
+        currentSearchEmbeddingCount: null,
+        metricsSource: "unavailable"
+      },
+      issues
+    };
+  }
+
+  if (hasApiFailure(reads)) {
+    return {
+      source: "api",
+      outcome: "error",
+      data: {
+        knowledgeBases: [],
+        sourceGroups: [],
+        readableSourceCollections: [],
+        canUploadPersonal: false,
+        currentSearchEmbeddingCount: null,
+        metricsSource: "unavailable"
+      },
+      issues
+    };
+  }
+
+  const permissions = permissionsRead.kind === "success" ? permissionsRead.value : null;
+  const knowledgeCatalog = knowledgeCatalogRead.kind === "success"
+    ? knowledgeCatalogRead.value
+    : null;
+  const sourceCollectionCatalog = sourceCollectionCatalogRead.kind === "success"
+    ? sourceCollectionCatalogRead.value
+    : null;
   const catalog =
     knowledgeCatalog ??
     sourceCollectionCatalog;
-  const sourceGroups = sourceCollectionCatalogToGroups(catalog?.items);
+  const selectableCatalogItems = catalog?.items.filter((item) =>
+    item.product_queryable && (item.access === "read" || item.access.startsWith("explicit-"))
+  ) ?? [];
+  const sourceGroups = selectableCatalogItems.length > 0
+    ? sourceCollectionCatalogToGroups(selectableCatalogItems)
+    : [];
   const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
-  const documentCatalogUploadPermissions = catalog && "upload_permissions" in catalog
-    ? catalog.upload_permissions
-    : null;
+  const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
   const searchBackendEmbeddingCount = catalog?.search_backend.details.matching_embedding_count;
   const currentSearchEmbeddingCount = knowledgeCatalog?.summary.current_search_embedding_count ??
     (typeof searchBackendEmbeddingCount === "number" ? searchBackendEmbeddingCount : null);
+  const readinessGap = Boolean(
+    (knowledgeCatalog && (
+      !knowledgeCatalog.store.ready ||
+      !knowledgeCatalog.search_backend.ready ||
+      knowledgeCatalog.items.some((item) => !item.index.search_backend_ready)
+    )) ||
+    (sourceCollectionCatalog && !sourceCollectionCatalog.search_backend.ready)
+  );
+
+  if (readinessGap) {
+    issues.push(issue(
+      "knowledge-base",
+      "partial-schema-gap",
+      "Knowledge-base registry data is available, but search metrics or backend readiness is unavailable."
+    ));
+  }
 
   return {
-    source: knowledgeBases.length > 0
-      ? "api"
-      : sourceFrom(Boolean(permissions || catalog), true),
+    source: "api",
+    outcome: readinessGap
+      ? "degraded"
+      : knowledgeBases.length > 0 || (permissions?.source_collections.length ?? 0) > 0
+        ? "ready"
+        : "empty",
     data: {
-      knowledgeBases: knowledgeBases.length > 0 ? knowledgeBases : referenceKnowledgeBases,
+      knowledgeBases,
       sourceGroups,
       readableSourceCollections:
         catalog?.items.filter((item) => item.queryable || item.product_queryable).map((item) => item.label) ??
         permissions?.source_collections.map((item) => item.label) ??
-        FALLBACK_SOURCE_COLLECTION_GROUPS.flatMap((group) => group.options.map((item) => item.label)),
+        [],
       canUploadPersonal:
         documentCatalogUploadPermissions?.can_upload_personal ??
         permissions?.upload_permissions.can_upload_personal ??
-        true,
+        false,
       currentSearchEmbeddingCount,
-      metricsSource: knowledgeCatalog
+      metricsSource: knowledgeCatalog && !readinessGap
         ? "knowledge-base-catalog"
-        : currentSearchEmbeddingCount !== null
+        : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
           ? "search-backend"
           : "unavailable"
     },
@@ -653,32 +809,74 @@ export async function loadReplicaDocumentsData(
   client: ReplicaDocumentsClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaDocumentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  let searchHistory = referenceSearchHistory;
-  let categories = referenceDocumentCategories;
-  const results = referenceDocumentResults;
-  let apiUsed = false;
-
-  const [knowledgeCatalog, sourceCollectionCatalog, history] = await Promise.all([
+  const [knowledgeCatalogRead, sourceCollectionCatalogRead, historyRead] = await Promise.all([
     readOptionalApi("documents", issues, client.fetchKnowledgeBaseCatalog),
     readOptionalApi("documents", issues, client.fetchDocumentSourceCollections),
     readOptionalApi("documents", issues, client.fetchQueryHistory)
   ]);
+  const reads = [knowledgeCatalogRead, sourceCollectionCatalogRead, historyRead];
+
+  if (allApiReadsDisabled(reads)) {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: {
+        categories: referenceDocumentCategories,
+        searchHistory: referenceSearchHistory,
+        results: referenceDocumentResults
+      },
+      issues
+    };
+  }
+
+  if (hasApiFailure(reads)) {
+    return {
+      source: "api",
+      outcome: "error",
+      data: { categories: [], searchHistory: [], results: [] },
+      issues
+    };
+  }
+
+  const knowledgeCatalog = knowledgeCatalogRead.kind === "success"
+    ? knowledgeCatalogRead.value
+    : null;
+  const sourceCollectionCatalog = sourceCollectionCatalogRead.kind === "success"
+    ? sourceCollectionCatalogRead.value
+    : null;
+  const history = historyRead.kind === "success" ? historyRead.value : null;
   const catalog =
     knowledgeCatalog ??
     sourceCollectionCatalog;
-  if (catalog && catalog.items.length > 0) {
-    categories = mapDocumentCategoriesFromCatalog(catalog.items);
-    apiUsed = true;
-  }
+  const categories = catalog ? mapDocumentCategoriesFromCatalog(catalog.items) : [];
+  const searchHistory = history
+    ? history.items.map((item) => normalizeText(item.question, "未命名查询"))
+    : [];
+  const readinessGap = Boolean(
+    (knowledgeCatalog && (
+      !knowledgeCatalog.store.ready ||
+      !knowledgeCatalog.search_backend.ready
+    )) ||
+    (sourceCollectionCatalog && !sourceCollectionCatalog.search_backend.ready) ||
+    (history && !history.store.ready)
+  );
 
-  if (history && history.items.length > 0) {
-    searchHistory = history.items.map((item) => normalizeText(item.question, "未命名查询"));
-    apiUsed = true;
+  if (readinessGap) {
+    issues.push(issue(
+      "documents",
+      "partial-schema-gap",
+      "Document catalog, search backend, or query-history storage is not ready."
+    ));
   }
 
   return {
-    source: sourceFrom(apiUsed, true),
-    data: { categories, searchHistory, results },
+    source: "api",
+    outcome: readinessGap
+      ? "degraded"
+      : categories.length > 0 || searchHistory.length > 0
+        ? "ready"
+        : "empty",
+    data: { categories, searchHistory, results: [] },
     issues
   };
 }
@@ -693,15 +891,36 @@ export async function loadReplicaAnalyticsData(
       "Upload, chart generation, and provider analysis actions remain disabled until write gates are approved."
     )
   ];
-  const uploadHistory = await readOptionalApi("analytics", issues, client.fetchAnalysisUploadHistory);
+  const uploadHistoryRead = await readOptionalApi(
+    "analytics",
+    issues,
+    client.fetchAnalysisUploadHistory
+  );
 
-  if (!uploadHistory || uploadHistory.items.length === 0) {
-    return { source: "fixture", data: { datasets: referenceAnalysisDatasets }, issues };
+  if (uploadHistoryRead.kind === "disabled") {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: { datasets: referenceAnalysisDatasets },
+      issues
+    };
+  }
+
+  if (uploadHistoryRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: { datasets: [] }, issues };
+  }
+
+  const uploadHistory = uploadHistoryRead.value;
+  const datasets = mapAnalysisUploads(uploadHistory);
+  const degraded = !uploadHistory.store.ready;
+  if (degraded) {
+    issues.push(issue("analytics", "partial-schema-gap", "Analysis upload storage is not ready."));
   }
 
   return {
     source: "api",
-    data: { datasets: mapAnalysisUploads(uploadHistory) },
+    outcome: degraded ? "degraded" : datasets.length > 0 ? "ready" : "empty",
+    data: { datasets },
     issues
   };
 }
@@ -710,13 +929,20 @@ export async function loadReplicaGraphData(
   client: ReplicaGraphClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaGraphData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const graph = await readOptionalApi("graph", issues, client.fetchGraphWorkbench);
+  const graphRead = await readOptionalApi("graph", issues, client.fetchGraphWorkbench);
 
-  if (!graph || graph.nodes.length === 0) {
-    return { source: "fixture", data: graphDataFallback(), issues };
+  if (graphRead.kind === "disabled") {
+    return { source: "fixture", outcome: "ready", data: graphDataFallback(), issues };
   }
 
-  if (isReadonlySeedBackend(graph.store.backend)) {
+  if (graphRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: emptyGraphData(), issues };
+  }
+
+  const graph = graphRead.value;
+  const seedBackend = isReadonlySeedBackend(graph.store.backend);
+
+  if (seedBackend) {
     issues.push(issue(
       "graph",
       "backend-seed-data",
@@ -724,7 +950,20 @@ export async function loadReplicaGraphData(
     ));
   }
 
-  return { source: "api", data: mapGraphWorkbench(graph), issues };
+  if (!graph.store.ready) {
+    issues.push(issue("graph", "partial-schema-gap", "Graph workbench storage is not ready."));
+  }
+
+  return {
+    source: "api",
+    outcome: seedBackend || !graph.store.ready
+      ? "degraded"
+      : graph.nodes.length > 0
+        ? "ready"
+        : "empty",
+    data: mapGraphWorkbench(graph),
+    issues
+  };
 }
 
 export async function loadReplicaReportsData(
@@ -737,15 +976,32 @@ export async function loadReplicaReportsData(
       "Report generation, signing, and download side effects remain gated until explicit approval."
     )
   ];
-  const reports = await readOptionalApi("reports", issues, client.fetchReportWorkbench);
+  const reportsRead = await readOptionalApi("reports", issues, client.fetchReportWorkbench);
 
-  if (!reports || reports.report_entries.length === 0) {
-    return { source: "fixture", data: { records: referenceReportRecords }, issues };
+  if (reportsRead.kind === "disabled") {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: { records: referenceReportRecords },
+      issues
+    };
+  }
+
+  if (reportsRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: { records: [] }, issues };
+  }
+
+  const reports = reportsRead.value;
+  const records = mapReportWorkbench(reports);
+  const degraded = !reports.store.ready;
+  if (degraded) {
+    issues.push(issue("reports", "partial-schema-gap", "Report workbench storage is not ready."));
   }
 
   return {
     source: "api",
-    data: { records: mapReportWorkbench(reports) },
+    outcome: degraded ? "degraded" : records.length > 0 ? "ready" : "empty",
+    data: { records },
     issues
   };
 }
@@ -760,11 +1016,32 @@ export async function loadReplicaProjectsData(
       "Create project, member changes, archive, and role updates remain gated until write approval."
     )
   ];
-  const projects = await readOptionalApi("projects", issues, client.fetchProjects);
+  const projectsRead = await readOptionalApi("projects", issues, client.fetchProjects);
 
-  if (!projects || projects.items.length === 0) {
-    return { source: "fixture", data: { projects: referenceProjects }, issues };
+  if (projectsRead.kind === "disabled") {
+    return {
+      source: "fixture",
+      outcome: "ready",
+      data: { projects: referenceProjects },
+      issues
+    };
   }
 
-  return { source: "api", data: { projects: mapProjects(projects) }, issues };
+  if (projectsRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: { projects: [] }, issues };
+  }
+
+  const projects = projectsRead.value;
+  const mappedProjects = mapProjects(projects);
+  const degraded = !projects.store.ready;
+  if (degraded) {
+    issues.push(issue("projects", "partial-schema-gap", "Project storage is not ready."));
+  }
+
+  return {
+    source: "api",
+    outcome: degraded ? "degraded" : mappedProjects.length > 0 ? "ready" : "empty",
+    data: { projects: mappedProjects },
+    issues
+  };
 }

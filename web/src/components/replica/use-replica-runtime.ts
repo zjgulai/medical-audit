@@ -27,6 +27,7 @@ import {
   loadReplicaShellData
 } from "@/lib/replica-adapters";
 import type {
+  ReplicaAdapterIssue,
   ReplicaAdapterResult,
   ReplicaAgentsData,
   ReplicaAnalyticsData,
@@ -56,7 +57,7 @@ import {
 } from "@/lib/reference-replica-data";
 import { FALLBACK_SOURCE_COLLECTION_GROUPS } from "@/lib/source-collection-catalog";
 
-export type ReplicaRuntimeStatus = "loading" | "ready";
+export type ReplicaRuntimeStatus = "loading" | "ready" | "empty" | "degraded" | "error";
 
 export type ReplicaRuntimeResult<TData> = ReplicaAdapterResult<TData> & {
   readonly apiReadsEnabled: boolean;
@@ -88,17 +89,38 @@ function replicaReadClient(): ReplicaClient {
 
 function runtimeResult<TData>(
   result: ReplicaAdapterResult<TData>,
-  status: ReplicaRuntimeStatus
+  status: ReplicaRuntimeStatus,
+  apiReadsEnabled: boolean
 ): ReplicaRuntimeResult<TData> {
   return {
     ...result,
-    apiReadsEnabled: replicaApiReadsEnabled(),
+    apiReadsEnabled,
     status
+  };
+}
+
+function apiReadFailure<TData>(
+  surface: ReplicaAdapterIssue["surface"],
+  emptyResult: ReplicaAdapterResult<TData>
+): ReplicaAdapterResult<TData> {
+  return {
+    ...emptyResult,
+    source: "api",
+    outcome: "error",
+    issues: [
+      ...emptyResult.issues,
+      {
+        surface,
+        code: "api-read-failed",
+        message: "API read failed unexpectedly; no fixture data was substituted."
+      }
+    ]
   };
 }
 
 const shellFallback: ReplicaAdapterResult<ReplicaShellData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     navigation: referenceNavigation,
     historyItems: referenceHistoryItems,
@@ -114,6 +136,7 @@ const shellFallback: ReplicaAdapterResult<ReplicaShellData> = {
 
 const chatFallback: ReplicaAdapterResult<ReplicaChatData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     agents: referenceAgents.slice(0, 4),
     historyItems: referenceHistoryItems,
@@ -124,6 +147,7 @@ const chatFallback: ReplicaAdapterResult<ReplicaChatData> = {
 
 const mineAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     agents: referenceAgents,
     categories: ["业务类", "效率类", "研究类"]
@@ -134,17 +158,13 @@ const mineAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
 const marketAgentCategories = Array.from(new Set(referenceMarketAgents.map((agent) => agent.category)));
 
 const marketAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
-  source: "fixture",
+  source: "catalog",
+  outcome: "ready",
   data: {
     agents: referenceMarketAgents,
     categories: marketAgentCategories
   },
   issues: [
-    {
-      surface: "agent-market",
-      code: "catalog-api-needed",
-      message: "Marketplace catalog contract is not available yet."
-    },
     {
       surface: "agent-market",
       code: "mutation-gated",
@@ -155,8 +175,12 @@ const marketAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
 
 const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
-    knowledgeBases: referenceKnowledgeBases,
+    knowledgeBases: referenceKnowledgeBases.map((item) => ({
+      ...item,
+      chunkCount: item.chunkCount ?? null
+    })),
     sourceGroups: FALLBACK_SOURCE_COLLECTION_GROUPS,
     readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
     canUploadPersonal: true,
@@ -174,6 +198,7 @@ const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
 
 const documentsFallback: ReplicaAdapterResult<ReplicaDocumentsData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     categories: referenceDocumentCategories,
     searchHistory: referenceSearchHistory,
@@ -184,6 +209,7 @@ const documentsFallback: ReplicaAdapterResult<ReplicaDocumentsData> = {
 
 const analyticsFallback: ReplicaAdapterResult<ReplicaAnalyticsData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     datasets: referenceAnalysisDatasets
   },
@@ -198,6 +224,7 @@ const analyticsFallback: ReplicaAdapterResult<ReplicaAnalyticsData> = {
 
 const graphFallback: ReplicaAdapterResult<ReplicaGraphData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     title: "审计知识图谱",
     scope: "项目、知识库、文档、规则与疑点的只读关系视图",
@@ -216,6 +243,7 @@ const graphFallback: ReplicaAdapterResult<ReplicaGraphData> = {
 
 const reportsFallback: ReplicaAdapterResult<ReplicaReportsData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     records: referenceReportRecords
   },
@@ -230,6 +258,7 @@ const reportsFallback: ReplicaAdapterResult<ReplicaReportsData> = {
 
 const projectsFallback: ReplicaAdapterResult<ReplicaProjectsData> = {
   source: "fixture",
+  outcome: "ready",
   data: {
     projects: referenceProjects
   },
@@ -242,80 +271,197 @@ const projectsFallback: ReplicaAdapterResult<ReplicaProjectsData> = {
   ]
 };
 
+const shellEmpty: ReplicaAdapterResult<ReplicaShellData> = {
+  source: "api",
+  outcome: "empty",
+  data: {
+    navigation: referenceNavigation,
+    historyItems: [],
+    user: { displayName: "", avatarLabel: "", roleLabel: "", tenantLabel: "" }
+  },
+  issues: []
+};
+
+const chatEmpty: ReplicaAdapterResult<ReplicaChatData> = {
+  source: "api",
+  outcome: "empty",
+  data: { agents: [], historyItems: [], documentResults: [] },
+  issues: []
+};
+
+const mineAgentsEmpty: ReplicaAdapterResult<ReplicaAgentsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { agents: [], categories: [] },
+  issues: []
+};
+
+const knowledgeBaseEmpty: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
+  source: "api",
+  outcome: "empty",
+  data: {
+    knowledgeBases: [],
+    sourceGroups: [],
+    readableSourceCollections: [],
+    canUploadPersonal: false,
+    currentSearchEmbeddingCount: null,
+    metricsSource: "unavailable"
+  },
+  issues: []
+};
+
+const documentsEmpty: ReplicaAdapterResult<ReplicaDocumentsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { categories: [], searchHistory: [], results: [] },
+  issues: []
+};
+
+const analyticsEmpty: ReplicaAdapterResult<ReplicaAnalyticsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { datasets: [] },
+  issues: analyticsFallback.issues
+};
+
+const graphEmpty: ReplicaAdapterResult<ReplicaGraphData> = {
+  source: "api",
+  outcome: "empty",
+  data: {
+    title: "",
+    scope: "",
+    nodes: [],
+    relations: [],
+    metrics: {
+      nodeCount: 0,
+      nodeKindCount: 0,
+      relationCount: 0,
+      strongRelationCount: 0,
+      pendingRelationCount: 0
+    }
+  },
+  issues: []
+};
+
+const reportsEmpty: ReplicaAdapterResult<ReplicaReportsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { records: [] },
+  issues: reportsFallback.issues
+};
+
+const projectsEmpty: ReplicaAdapterResult<ReplicaProjectsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { projects: [] },
+  issues: projectsFallback.issues
+};
+
 function useReplicaLoader<TData>(
   fallback: ReplicaAdapterResult<TData>,
-  load: (client: ReplicaClient) => Promise<ReplicaAdapterResult<TData>>
+  emptyResult: ReplicaAdapterResult<TData>,
+  load: (client: ReplicaClient) => Promise<ReplicaAdapterResult<TData>>,
+  surface: ReplicaAdapterIssue["surface"],
+  catalogResult?: ReplicaAdapterResult<TData>
 ): ReplicaRuntimeResult<TData> {
-  const [result, setResult] = useState<ReplicaAdapterResult<TData>>(fallback);
+  const apiReadsEnabled = replicaApiReadsEnabled();
+  const initialResult = catalogResult ?? (apiReadsEnabled ? emptyResult : fallback);
+  const [result, setResult] = useState<ReplicaAdapterResult<TData>>(initialResult);
   const [status, setStatus] = useState<ReplicaRuntimeStatus>(() =>
-    replicaApiReadsEnabled() ? "loading" : "ready"
+    catalogResult ? "ready" : apiReadsEnabled ? "loading" : fallback.outcome
   );
 
   useEffect(() => {
     let mounted = true;
-    const apiReadsEnabled = replicaApiReadsEnabled();
+    const readsEnabled = replicaApiReadsEnabled();
 
-    setStatus(apiReadsEnabled ? "loading" : "ready");
+    if (catalogResult) {
+      setResult(catalogResult);
+      setStatus("ready");
+      return () => {
+        mounted = false;
+      };
+    }
 
-    void load(apiReadsEnabled ? replicaReadClient() : {})
+    if (!readsEnabled) {
+      setResult(fallback);
+      setStatus(fallback.outcome);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setResult(emptyResult);
+    setStatus("loading");
+
+    void load(replicaReadClient())
       .then((nextResult) => {
         if (mounted) {
           setResult(nextResult);
+          setStatus(nextResult.outcome);
         }
       })
       .catch(() => {
         if (mounted) {
-          setResult(fallback);
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          setStatus("ready");
+          setResult(apiReadFailure(surface, emptyResult));
+          setStatus("error");
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, [fallback, load]);
+  }, [catalogResult, emptyResult, fallback, load, surface]);
 
-  return runtimeResult(result, status);
+  return runtimeResult(result, status, apiReadsEnabled);
 }
 
 export function useReplicaShellData(): ReplicaRuntimeResult<ReplicaShellData> {
-  return useReplicaLoader(shellFallback, loadReplicaShellData);
+  return useReplicaLoader(shellFallback, shellEmpty, loadReplicaShellData, "shell");
 }
 
 export function useReplicaChatData(): ReplicaRuntimeResult<ReplicaChatData> {
-  return useReplicaLoader(chatFallback, loadReplicaChatData);
+  return useReplicaLoader(chatFallback, chatEmpty, loadReplicaChatData, "chat");
 }
 
 export function useReplicaAgentsData(mode: "mine" | "market"): ReplicaRuntimeResult<ReplicaAgentsData> {
   const fallback = mode === "mine" ? mineAgentsFallback : marketAgentsFallback;
+  const emptyResult = mode === "mine" ? mineAgentsEmpty : marketAgentsFallback;
   const loader = mode === "mine" ? loadReplicaAgentsData : loadReplicaAgentMarketData;
-  return useReplicaLoader(fallback, loader);
+  return useReplicaLoader(
+    fallback,
+    emptyResult,
+    loader,
+    mode === "mine" ? "agents" : "agent-market",
+    mode === "market" ? marketAgentsFallback : undefined
+  );
 }
 
 export function useReplicaKnowledgeBaseData(): ReplicaRuntimeResult<ReplicaKnowledgeBaseData> {
-  return useReplicaLoader(knowledgeBaseFallback, loadReplicaKnowledgeBaseData);
+  return useReplicaLoader(
+    knowledgeBaseFallback,
+    knowledgeBaseEmpty,
+    loadReplicaKnowledgeBaseData,
+    "knowledge-base"
+  );
 }
 
 export function useReplicaDocumentsData(): ReplicaRuntimeResult<ReplicaDocumentsData> {
-  return useReplicaLoader(documentsFallback, loadReplicaDocumentsData);
+  return useReplicaLoader(documentsFallback, documentsEmpty, loadReplicaDocumentsData, "documents");
 }
 
 export function useReplicaAnalyticsData(): ReplicaRuntimeResult<ReplicaAnalyticsData> {
-  return useReplicaLoader(analyticsFallback, loadReplicaAnalyticsData);
+  return useReplicaLoader(analyticsFallback, analyticsEmpty, loadReplicaAnalyticsData, "analytics");
 }
 
 export function useReplicaGraphData(): ReplicaRuntimeResult<ReplicaGraphData> {
-  return useReplicaLoader(graphFallback, loadReplicaGraphData);
+  return useReplicaLoader(graphFallback, graphEmpty, loadReplicaGraphData, "graph");
 }
 
 export function useReplicaReportsData(): ReplicaRuntimeResult<ReplicaReportsData> {
-  return useReplicaLoader(reportsFallback, loadReplicaReportsData);
+  return useReplicaLoader(reportsFallback, reportsEmpty, loadReplicaReportsData, "reports");
 }
 
 export function useReplicaProjectsData(): ReplicaRuntimeResult<ReplicaProjectsData> {
-  return useReplicaLoader(projectsFallback, loadReplicaProjectsData);
+  return useReplicaLoader(projectsFallback, projectsEmpty, loadReplicaProjectsData, "projects");
 }

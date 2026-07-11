@@ -11,7 +11,8 @@ import {
   loadReplicaAgentMarketData,
   loadReplicaDocumentsData,
   loadReplicaGraphData,
-  loadReplicaKnowledgeBaseData
+  loadReplicaKnowledgeBaseData,
+  loadReplicaProjectsData
 } from "./replica-adapters";
 import { referenceMarketAgents } from "./reference-replica-data";
 
@@ -106,6 +107,92 @@ const sourceCollectionCatalog: DocumentSourceCollectionCatalogResponse = {
   }
 };
 
+const emptyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
+  ...knowledgeBaseCatalog,
+  summary: {
+    source_collection_count: 0,
+    queryable_collection_count: 0,
+    total_document_count: 0,
+    total_chunk_count: 0,
+    total_embedding_count: 0,
+    current_search_embedding_count: 0,
+    candidate_chunk_count: 0,
+    domain_counts: {}
+  },
+  items: []
+};
+
+const emptySourceCatalog: DocumentSourceCollectionCatalogResponse = {
+  ...sourceCollectionCatalog,
+  items: []
+};
+
+const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
+  ...knowledgeBaseCatalog,
+  summary: {
+    source_collection_count: 1,
+    queryable_collection_count: 1,
+    total_document_count: 0,
+    total_chunk_count: 0,
+    total_embedding_count: 0,
+    current_search_embedding_count: 0,
+    candidate_chunk_count: 0,
+    domain_counts: { 医保: 1 }
+  },
+  items: [
+    {
+      ...catalogItem,
+      metrics: {
+        document_count: 0,
+        chunk_count: 0,
+        character_count: 0,
+        linked_app_count: 0,
+        embedding_count: 0,
+        active_embedding_count: 0,
+        candidate_chunk_count: 0
+      },
+      index: {
+        ...catalogItem.index,
+        search_backend_ready: false
+      }
+    }
+  ],
+  search_backend: { ready: false, backend: "unavailable", details: {} },
+  boundaries: {
+    ...knowledgeBaseCatalog.boundaries,
+    source: "runtime_state_and_registry_only"
+  }
+};
+
+const readyZeroMetricKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
+  ...registryOnlyKnowledgeCatalog,
+  search_backend: { ready: true, backend: "postgres", details: {} },
+  items: registryOnlyKnowledgeCatalog.items.map((item) => ({
+    ...item,
+    index: { ...item.index, search_backend_ready: true }
+  })),
+  boundaries: {
+    ...knowledgeBaseCatalog.boundaries,
+    source: "runtime_state_and_postgres_catalog"
+  }
+};
+
+const unavailableKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
+  ...knowledgeBaseCatalog,
+  summary: {
+    ...knowledgeBaseCatalog.summary,
+    queryable_collection_count: 0
+  },
+  items: [
+    {
+      ...catalogItem,
+      product_queryable: false,
+      queryable: false,
+      index: { ...catalogItem.index, queryable: false }
+    }
+  ]
+};
+
 const graphWorkbench: GraphWorkbenchResponse = {
   format: "graph-workbench-v1",
   generated_at: "2026-07-08T08:00:00Z",
@@ -172,7 +259,7 @@ const graphWorkbench: GraphWorkbenchResponse = {
 };
 
 describe("loadReplicaAgentMarketData", () => {
-  it("keeps the market catalog on prompt-source categories when the API returns old seed agents", async () => {
+  it("keeps the market catalog independent from personal agent API reads", async () => {
     const fetchAgents = vi.fn(async (): Promise<AgentsResponse> => ({
       items: [
         {
@@ -201,7 +288,9 @@ describe("loadReplicaAgentMarketData", () => {
 
     const result = await loadReplicaAgentMarketData({ fetchAgents });
 
-    expect(fetchAgents).toHaveBeenCalledTimes(1);
+    expect(fetchAgents).not.toHaveBeenCalled();
+    expect(result.source).toBe("catalog");
+    expect(result.outcome).toBe("ready");
     expect(result.data.agents).toHaveLength(referenceMarketAgents.length);
     expect(result.data.categories).toEqual([
       "财务收支审计",
@@ -217,6 +306,75 @@ describe("loadReplicaAgentMarketData", () => {
 });
 
 describe("replica backend read adapters", () => {
+  it("uses fixture data only when API reads are disabled", async () => {
+    const result = await loadReplicaProjectsData();
+
+    expect(result.source).toBe("fixture");
+    expect(result.outcome).toBe("ready");
+    expect(result.data.projects).not.toEqual([]);
+  });
+
+  it("keeps a successful empty API collection empty", async () => {
+    const result = await loadReplicaDocumentsData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(emptyKnowledgeCatalog),
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(emptySourceCatalog),
+      fetchQueryHistory: vi.fn().mockResolvedValue({
+        items: [],
+        store: { ready: true, backend: "test" }
+      })
+    });
+
+    expect(result.outcome).toBe("empty");
+    expect(result.source).toBe("api");
+    expect(result.data.results).toEqual([]);
+    expect(result.data.searchHistory).toEqual([]);
+  });
+
+  it("returns error without fixture substitution when an enabled API read fails", async () => {
+    const result = await loadReplicaProjectsData({
+      fetchProjects: vi.fn().mockRejectedValue(new Error("offline"))
+    });
+
+    expect(result.outcome).toBe("error");
+    expect(result.source).toBe("api");
+    expect(result.data.projects).toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
+  });
+
+  it("preserves registry data as degraded when metrics are unavailable", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(registryOnlyKnowledgeCatalog)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBe(0);
+    expect(result.data.currentSearchEmbeddingCount).toBe(0);
+    expect(result.data.metricsSource).toBe("unavailable");
+  });
+
+  it("keeps zero metrics ready when the catalog and search backend are ready", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(readyZeroMetricKnowledgeCatalog)
+    });
+
+    expect(result.outcome).toBe("ready");
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBe(0);
+    expect(result.data.currentSearchEmbeddingCount).toBe(0);
+    expect(result.data.metricsSource).toBe("knowledge-base-catalog");
+  });
+
+  it("does not substitute fixture groups for an API catalog without selectable items", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(unavailableKnowledgeCatalog)
+    });
+
+    expect(result.outcome).toBe("empty");
+    expect(result.data.knowledgeBases).toEqual([]);
+    expect(result.data.sourceGroups).toEqual([]);
+  });
+
   it("starts knowledge-base permissions and both catalog reads in the same load pass", async () => {
     const fetchDocumentPermissions = vi.fn(async () => ({
       role: "admin",
@@ -240,6 +398,7 @@ describe("replica backend read adapters", () => {
     });
 
     expect(result.source).toBe("api");
+    expect(result.outcome).toBe("ready");
     expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
     expect(result.data.knowledgeBases[0]?.chunkCount).toBe(120);
     expect(result.data.currentSearchEmbeddingCount).toBe(120);
@@ -274,9 +433,11 @@ describe("replica backend read adapters", () => {
       fetchQueryHistory
     });
 
-    expect(result.source).toBe("hybrid");
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("ready");
     expect(result.data.categories[0]?.name).toBe("医保法规库");
     expect(result.data.searchHistory).toContain("医保法规查询");
+    expect(result.data.results).toEqual([]);
     expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
     expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);
     expect(fetchQueryHistory).toHaveBeenCalledTimes(1);
@@ -288,6 +449,7 @@ describe("replica backend read adapters", () => {
     const result = await loadReplicaGraphData({ fetchGraphWorkbench });
 
     expect(result.source).toBe("api");
+    expect(result.outcome).toBe("ready");
     expect(result.data.title).toBe("医疗审计知识工程");
     expect(result.data.nodes).toHaveLength(2);
     expect(result.data.nodes[0]?.label).toBe("医疗审计知识工程");

@@ -1,12 +1,27 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
+import type { AgentsResponse } from "@/lib/api-types";
 
 import { useReplicaAgentsData, useReplicaGraphData } from "./use-replica-runtime";
 
 vi.mock("@/lib/api-client", () => ({
-  fetchAgents: vi.fn(async () => ({
+  fetchAgents: vi.fn(),
+  fetchAnalysisUploadHistory: vi.fn(),
+  fetchAuthSession: vi.fn(),
+  fetchDocumentPermissions: vi.fn(),
+  fetchDocumentSourceCollections: vi.fn(),
+  fetchGraphWorkbench: vi.fn(),
+  fetchKnowledgeBaseCatalog: vi.fn(),
+  fetchProjects: vi.fn(),
+  fetchQueryHistory: vi.fn(),
+  fetchReportWorkbench: vi.fn(),
+  runKnowledgeQuery: vi.fn()
+}));
+
+function agentsResponse(storeReady = true): AgentsResponse {
+  return {
     items: [
       {
         id: "agent-runtime-api",
@@ -29,25 +44,20 @@ vi.mock("@/lib/api-client", () => ({
       }
     ],
     categories: ["业务类"],
-    store: { ready: true, backend: "unit-test" }
-  })),
-  fetchAnalysisUploadHistory: vi.fn(),
-  fetchAuthSession: vi.fn(),
-  fetchDocumentPermissions: vi.fn(),
-  fetchDocumentSourceCollections: vi.fn(),
-  fetchGraphWorkbench: vi.fn(),
-  fetchKnowledgeBaseCatalog: vi.fn(),
-  fetchProjects: vi.fn(),
-  fetchQueryHistory: vi.fn(),
-  fetchReportWorkbench: vi.fn(),
-  runKnowledgeQuery: vi.fn()
-}));
+    store: { ready: storeReady, backend: "unit-test" }
+  };
+}
 
-function AgentsRuntimeProbe() {
-  const result = useReplicaAgentsData("mine");
+function AgentsRuntimeProbe({ mode = "mine" }: { readonly mode?: "mine" | "market" }) {
+  const result = useReplicaAgentsData(mode);
 
   return (
-    <div data-source={result.source} data-status={result.status}>
+    <div
+      data-testid={`${mode}-agents-runtime`}
+      data-source={result.source}
+      data-status={result.status}
+      data-outcome={result.outcome}
+    >
       {result.data.agents.map((agent) => (
         <span key={agent.id}>{agent.name}</span>
       ))}
@@ -62,7 +72,12 @@ function GraphRuntimeProbe() {
   const result = useReplicaGraphData();
 
   return (
-    <div data-source={result.source} data-status={result.status}>
+    <div
+      data-testid="graph-runtime"
+      data-source={result.source}
+      data-status={result.status}
+      data-outcome={result.outcome}
+    >
       <span>{result.data.title}</span>
       {result.issues.map((issue) => (
         <em key={`${issue.surface}-${issue.code}`}>{issue.code}</em>
@@ -72,6 +87,10 @@ function GraphRuntimeProbe() {
 }
 
 describe("use-replica-runtime", () => {
+  beforeEach(() => {
+    vi.mocked(fetchAgents).mockResolvedValue(agentsResponse());
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.clearAllMocks();
@@ -87,6 +106,16 @@ describe("use-replica-runtime", () => {
     expect(fetchAgents).toHaveBeenCalledTimes(1);
   });
 
+  it("starts enabled API reads in a loading empty state without fixture records", () => {
+    vi.mocked(fetchAgents).mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<AgentsRuntimeProbe />);
+
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-source", "api");
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "loading");
+    expect(screen.queryByText("模拟数据助手")).not.toBeInTheDocument();
+  });
+
   it("can explicitly disable replica API reads", async () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
 
@@ -100,25 +129,37 @@ describe("use-replica-runtime", () => {
     expect(fetchAgents).not.toHaveBeenCalled();
   });
 
-  it("falls back to fixture data when an enabled read API fails", async () => {
+  it("returns an API error without fixture substitution when an enabled read fails", async () => {
     vi.mocked(fetchAgents).mockRejectedValueOnce(new Error("read unavailable"));
 
     render(<AgentsRuntimeProbe />);
 
     await waitFor(() => {
-      expect(screen.getByText("模拟数据助手")).toBeInTheDocument();
+      expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "error");
     });
-    expect(screen.getByText("模拟数据助手").parentElement).toHaveAttribute("data-source", "fixture");
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-source", "api");
+    expect(screen.queryByText("模拟数据助手")).not.toBeInTheDocument();
     expect(screen.getByText("api-read-failed")).toBeInTheDocument();
   });
 
-  it("keeps fixture evidence ready while an enabled read API is still pending", () => {
-    vi.mocked(fetchGraphWorkbench).mockReturnValueOnce(new Promise(() => undefined));
+  it("maps an unready API store to degraded while preserving API data", async () => {
+    vi.mocked(fetchAgents).mockResolvedValueOnce(agentsResponse(false));
 
-    render(<GraphRuntimeProbe />);
+    render(<AgentsRuntimeProbe />);
 
-    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-source", "fixture");
-    expect(screen.getByText("审计知识图谱").parentElement).toHaveAttribute("data-status", "loading");
+    await waitFor(() => {
+      expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "degraded");
+    });
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-source", "api");
+    expect(screen.getByText("运行时只读助手")).toBeInTheDocument();
+  });
+
+  it("keeps the medical agent marketplace on the version-controlled catalog", () => {
+    render(<AgentsRuntimeProbe mode="market" />);
+
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
+    expect(fetchAgents).not.toHaveBeenCalled();
   });
 
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {
@@ -171,6 +212,7 @@ describe("use-replica-runtime", () => {
       expect(screen.getByText("种子图谱")).toBeInTheDocument();
     });
     expect(screen.getByText("种子图谱").parentElement).toHaveAttribute("data-source", "api");
+    expect(screen.getByText("种子图谱").parentElement).toHaveAttribute("data-status", "degraded");
     expect(screen.getByText("backend-seed-data")).toBeInTheDocument();
   });
 });
