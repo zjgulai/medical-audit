@@ -362,7 +362,8 @@ function toKnowledgeBaseScope(scope: string): ReferenceKnowledgeBase["scope"] {
 
 function mapKnowledgeBasesFromSourceGroups(
   groups: readonly SourceCollectionGroup[],
-  catalogItems: readonly DocumentSourceCollectionCatalogItem[] | null | undefined
+  catalogItems: readonly DocumentSourceCollectionCatalogItem[] | null | undefined,
+  chunkMetricsAvailable: boolean
 ): readonly ReferenceKnowledgeBase[] {
   const itemBySource = new Map(
     (catalogItems ?? []).map((item) => [item.source_collection, item])
@@ -372,7 +373,7 @@ function mapKnowledgeBasesFromSourceGroups(
     group.options.map((option) => {
       const item = itemBySource.get(option.value);
       const documentCount = item?.metrics.document_count ?? item?.metrics.chunk_count ?? 0;
-      const chunkCount = item?.metrics.chunk_count ?? 0;
+      const chunkCount = chunkMetricsAvailable ? item?.metrics.chunk_count ?? 0 : null;
       const appCount = item?.metrics.linked_app_count ?? 0;
       return {
         id: `kb-${option.value}`,
@@ -388,7 +389,9 @@ function mapKnowledgeBasesFromSourceGroups(
           group.title,
           option.queryable ? "可检索" : "待接入",
           item?.evidence_group || option.scope,
-          chunkCount > 0 ? `${chunkCount.toLocaleString("zh-CN")} chunks` : ""
+          typeof chunkCount === "number" && chunkCount > 0
+            ? `${chunkCount.toLocaleString("zh-CN")} chunks`
+            : ""
         ].filter(Boolean)
       };
     })
@@ -754,9 +757,13 @@ export async function loadReplicaKnowledgeBaseData(
   const sourceGroups = selectableCatalogItems.length > 0
     ? sourceCollectionCatalogToGroups(selectableCatalogItems)
     : [];
-  const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
-  const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
   const registryOnly = knowledgeCatalog?.boundaries.source === "runtime_state_and_registry_only";
+  const knowledgeBases = mapKnowledgeBasesFromSourceGroups(
+    sourceGroups,
+    catalog?.items,
+    !registryOnly
+  );
+  const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
   const knowledgeMetricsReady = Boolean(
     knowledgeCatalog &&
     knowledgeCatalog.store.ready &&

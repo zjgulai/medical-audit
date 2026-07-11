@@ -142,7 +142,7 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
     source_collection_count: 1,
     queryable_collection_count: 1,
     total_document_count: 0,
-    total_chunk_count: 0,
+    total_chunk_count: 120,
     total_embedding_count: 0,
     current_search_embedding_count: 0,
     candidate_chunk_count: 0,
@@ -153,7 +153,7 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
       ...catalogItem,
       metrics: {
         document_count: 0,
-        chunk_count: 0,
+        chunk_count: 120,
         character_count: 0,
         linked_app_count: 0,
         embedding_count: 0,
@@ -175,9 +175,14 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
 
 const readyZeroMetricKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
   ...registryOnlyKnowledgeCatalog,
+  summary: {
+    ...registryOnlyKnowledgeCatalog.summary,
+    total_chunk_count: 0
+  },
   search_backend: { ready: true, backend: "postgres", details: {} },
   items: registryOnlyKnowledgeCatalog.items.map((item) => ({
     ...item,
+    metrics: { ...item.metrics, chunk_count: 0 },
     index: { ...item.index, search_backend_ready: true }
   })),
   boundaries: {
@@ -187,9 +192,14 @@ const readyZeroMetricKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
 };
 
 const registryProvenanceOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
-  ...readyZeroMetricKnowledgeCatalog,
+  ...registryOnlyKnowledgeCatalog,
+  search_backend: { ready: true, backend: "postgres", details: {} },
+  items: registryOnlyKnowledgeCatalog.items.map((item) => ({
+    ...item,
+    index: { ...item.index, search_backend_ready: true }
+  })),
   boundaries: {
-    ...readyZeroMetricKnowledgeCatalog.boundaries,
+    ...registryOnlyKnowledgeCatalog.boundaries,
     source: "runtime_state_and_registry_only"
   }
 };
@@ -366,7 +376,8 @@ describe("replica backend read adapters", () => {
     expect(result.source).toBe("api");
     expect(result.outcome).toBe("degraded");
     expect(result.data.knowledgeBases).not.toEqual([]);
-    expect(result.data.knowledgeBases[0]?.chunkCount).toBe(0);
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBeNull();
+    expect(result.data.knowledgeBases[0]?.tags.some((tag) => tag.includes("chunks"))).toBe(false);
     expect(result.data.currentSearchEmbeddingCount).toBeNull();
     expect(result.data.metricsSource).toBe("unavailable");
   });
@@ -380,6 +391,8 @@ describe("replica backend read adapters", () => {
     expect(result.source).toBe("api");
     expect(result.outcome).toBe("degraded");
     expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBeNull();
+    expect(result.data.knowledgeBases[0]?.tags.some((tag) => tag.includes("chunks"))).toBe(false);
     expect(result.data.currentSearchEmbeddingCount).toBeNull();
     expect(result.data.metricsSource).toBe("unavailable");
   });
