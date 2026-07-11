@@ -131,9 +131,15 @@ export const referenceNavigation: readonly ReferenceNavigationItem[] = [
   { id: "analysis", label: "AI数据分析", href: "/analytics", icon: "ai" },
   { id: "graph", label: "知识图谱", href: "/graph", icon: "graph" },
   { id: "workpaper", label: "审计底稿/报告", href: "/reports", icon: "paper" },
-  { id: "project", label: "项目管理", href: "/projects", icon: "folder" },
-  { id: "medical-topic", label: "医保审计专题", href: "/medical-audit", icon: "shield" }
+  { id: "project", label: "项目管理", href: "/projects", icon: "folder" }
 ];
+
+export const referenceTopicNavigation: ReferenceNavigationItem = {
+  id: "medical-topic",
+  label: "医保审计专题",
+  href: "/medical-audit",
+  icon: "shield"
+};
 
 export const referenceHistoryItems: readonly ReferenceHistoryItem[] = [
   {
