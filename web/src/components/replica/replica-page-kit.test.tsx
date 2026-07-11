@@ -12,6 +12,15 @@ describe("ReplicaRuntimeBadge", () => {
     expect(badge).toHaveTextContent("目录已就绪");
   });
 
+  it("identifies ready fixture data without claiming an interface was verified", () => {
+    render(<ReplicaRuntimeBadge source="fixture" status="ready" />);
+
+    const badge = screen.getByLabelText("数据来源：本地样例；状态：已就绪");
+    expect(badge).toHaveTextContent("本地样例");
+    expect(badge).toHaveTextContent("样例数据已启用");
+    expect(badge).not.toHaveTextContent("接口已校验");
+  });
+
   it("identifies a successful empty API result", () => {
     render(<ReplicaRuntimeBadge source="api" status="empty" />);
 

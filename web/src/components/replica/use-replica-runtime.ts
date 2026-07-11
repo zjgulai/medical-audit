@@ -365,55 +365,69 @@ function useReplicaLoader<TData>(
   catalogResult?: ReplicaAdapterResult<TData>
 ): ReplicaRuntimeResult<TData> {
   const apiReadsEnabled = replicaApiReadsEnabled();
+  const runtimeKey = catalogResult
+    ? `${surface}:catalog`
+    : `${surface}:${apiReadsEnabled ? "api" : "fixture"}`;
   const initialResult = catalogResult ?? (apiReadsEnabled ? emptyResult : fallback);
-  const [result, setResult] = useState<ReplicaAdapterResult<TData>>(initialResult);
-  const [status, setStatus] = useState<ReplicaRuntimeStatus>(() =>
-    catalogResult ? "ready" : apiReadsEnabled ? "loading" : fallback.outcome
-  );
+  const initialStatus: ReplicaRuntimeStatus = catalogResult
+    ? "ready"
+    : apiReadsEnabled
+      ? "loading"
+      : fallback.outcome;
+  const [state, setState] = useState<{
+    readonly key: string;
+    readonly result: ReplicaAdapterResult<TData>;
+    readonly status: ReplicaRuntimeStatus;
+  }>(() => ({ key: runtimeKey, result: initialResult, status: initialStatus }));
+  const visibleState = state.key === runtimeKey
+    ? state
+    : { key: runtimeKey, result: initialResult, status: initialStatus };
 
   useEffect(() => {
     let mounted = true;
-    const readsEnabled = replicaApiReadsEnabled();
 
     if (catalogResult) {
-      setResult(catalogResult);
-      setStatus("ready");
+      setState({ key: runtimeKey, result: catalogResult, status: "ready" });
       return () => {
         mounted = false;
       };
     }
 
-    if (!readsEnabled) {
-      setResult(fallback);
-      setStatus(fallback.outcome);
+    if (!apiReadsEnabled) {
+      setState({ key: runtimeKey, result: fallback, status: fallback.outcome });
       return () => {
         mounted = false;
       };
     }
 
-    setResult(emptyResult);
-    setStatus("loading");
+    setState({ key: runtimeKey, result: emptyResult, status: "loading" });
 
     void load(replicaReadClient())
       .then((nextResult) => {
         if (mounted) {
-          setResult(nextResult);
-          setStatus(nextResult.outcome);
+          setState((currentState) => currentState.key === runtimeKey
+            ? { key: runtimeKey, result: nextResult, status: nextResult.outcome }
+            : currentState);
         }
       })
       .catch(() => {
         if (mounted) {
-          setResult(apiReadFailure(surface, emptyResult));
-          setStatus("error");
+          setState((currentState) => currentState.key === runtimeKey
+            ? {
+                key: runtimeKey,
+                result: apiReadFailure(surface, emptyResult),
+                status: "error"
+              }
+            : currentState);
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, [catalogResult, emptyResult, fallback, load, surface]);
+  }, [apiReadsEnabled, catalogResult, emptyResult, fallback, load, runtimeKey, surface]);
 
-  return runtimeResult(result, status, apiReadsEnabled);
+  return runtimeResult(visibleState.result, visibleState.status, apiReadsEnabled);
 }
 
 export function useReplicaShellData(): ReplicaRuntimeResult<ReplicaShellData> {

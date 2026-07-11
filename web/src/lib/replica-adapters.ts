@@ -756,13 +756,27 @@ export async function loadReplicaKnowledgeBaseData(
     : [];
   const knowledgeBases = mapKnowledgeBasesFromSourceGroups(sourceGroups, catalog?.items);
   const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
-  const searchBackendEmbeddingCount = catalog?.search_backend.details.matching_embedding_count;
-  const currentSearchEmbeddingCount = knowledgeCatalog?.summary.current_search_embedding_count ??
-    (typeof searchBackendEmbeddingCount === "number" ? searchBackendEmbeddingCount : null);
+  const registryOnly = knowledgeCatalog?.boundaries.source === "runtime_state_and_registry_only";
+  const knowledgeMetricsReady = Boolean(
+    knowledgeCatalog &&
+    knowledgeCatalog.store.ready &&
+    knowledgeCatalog.search_backend.ready &&
+    !registryOnly &&
+    knowledgeCatalog.items.every((item) => item.index.search_backend_ready)
+  );
+  const searchBackendEmbeddingCount = sourceCollectionCatalog?.search_backend.details.matching_embedding_count;
+  const currentSearchEmbeddingCount = registryOnly
+    ? null
+    : knowledgeMetricsReady
+      ? knowledgeCatalog?.summary.current_search_embedding_count ?? null
+      : sourceCollectionCatalog?.search_backend.ready && typeof searchBackendEmbeddingCount === "number"
+        ? searchBackendEmbeddingCount
+        : null;
   const readinessGap = Boolean(
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
       !knowledgeCatalog.search_backend.ready ||
+      registryOnly ||
       knowledgeCatalog.items.some((item) => !item.index.search_backend_ready)
     )) ||
     (sourceCollectionCatalog && !sourceCollectionCatalog.search_backend.ready)
@@ -795,11 +809,13 @@ export async function loadReplicaKnowledgeBaseData(
         permissions?.upload_permissions.can_upload_personal ??
         false,
       currentSearchEmbeddingCount,
-      metricsSource: knowledgeCatalog && !readinessGap
-        ? "knowledge-base-catalog"
-        : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
-          ? "search-backend"
-          : "unavailable"
+      metricsSource: registryOnly
+        ? "unavailable"
+        : knowledgeMetricsReady
+          ? "knowledge-base-catalog"
+          : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
+            ? "search-backend"
+            : "unavailable"
     },
     issues
   };

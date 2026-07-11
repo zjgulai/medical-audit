@@ -48,8 +48,25 @@ function agentsResponse(storeReady = true): AgentsResponse {
   };
 }
 
-function AgentsRuntimeProbe({ mode = "mine" }: { readonly mode?: "mine" | "market" }) {
+type AgentsRuntimeSnapshot = {
+  readonly source: string;
+  readonly status: string;
+  readonly agentNames: readonly string[];
+};
+
+function AgentsRuntimeProbe({
+  mode = "mine",
+  onRender
+}: {
+  readonly mode?: "mine" | "market";
+  readonly onRender?: (snapshot: AgentsRuntimeSnapshot) => void;
+}) {
   const result = useReplicaAgentsData(mode);
+  onRender?.({
+    source: result.source,
+    status: result.status,
+    agentNames: result.data.agents.map((agent) => agent.name)
+  });
 
   return (
     <div
@@ -93,7 +110,7 @@ describe("use-replica-runtime", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("uses replica API reads by default", async () => {
@@ -160,6 +177,82 @@ describe("use-replica-runtime", () => {
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
     expect(fetchAgents).not.toHaveBeenCalled();
+  });
+
+  it("switches from disabled fixtures to enabled loading data on the first mounted rerender", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    const snapshots: AgentsRuntimeSnapshot[] = [];
+    const recordSnapshot = (snapshot: AgentsRuntimeSnapshot) => snapshots.push(snapshot);
+    const { rerender } = render(<AgentsRuntimeProbe onRender={recordSnapshot} />);
+
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-source", "fixture");
+
+    vi.mocked(fetchAgents).mockReturnValueOnce(new Promise(() => undefined));
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "1");
+    const firstEnabledRender = snapshots.length;
+    rerender(<AgentsRuntimeProbe onRender={recordSnapshot} />);
+
+    expect(snapshots[firstEnabledRender]).toEqual({
+      source: "api",
+      status: "loading",
+      agentNames: []
+    });
+  });
+
+  it("switches from enabled API data to disabled fixtures on the first mounted rerender", async () => {
+    const snapshots: AgentsRuntimeSnapshot[] = [];
+    const recordSnapshot = (snapshot: AgentsRuntimeSnapshot) => snapshots.push(snapshot);
+    const { rerender } = render(<AgentsRuntimeProbe onRender={recordSnapshot} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "ready");
+    });
+
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    const firstDisabledRender = snapshots.length;
+    rerender(<AgentsRuntimeProbe onRender={recordSnapshot} />);
+
+    expect(snapshots[firstDisabledRender]).toEqual(expect.objectContaining({
+      source: "fixture",
+      status: "ready"
+    }));
+    expect(snapshots[firstDisabledRender]?.agentNames).toContain("模拟数据助手");
+  });
+
+  it("switches mine to market without exposing personal records on the first mounted rerender", async () => {
+    const snapshots: AgentsRuntimeSnapshot[] = [];
+    const recordSnapshot = (snapshot: AgentsRuntimeSnapshot) => snapshots.push(snapshot);
+    const { rerender } = render(<AgentsRuntimeProbe mode="mine" onRender={recordSnapshot} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "ready");
+    });
+
+    const firstMarketRender = snapshots.length;
+    rerender(<AgentsRuntimeProbe mode="market" onRender={recordSnapshot} />);
+
+    expect(snapshots[firstMarketRender]).toEqual(expect.objectContaining({
+      source: "catalog",
+      status: "ready"
+    }));
+    expect(snapshots[firstMarketRender]?.agentNames).not.toContain("运行时只读助手");
+    expect(snapshots[firstMarketRender]?.agentNames.length).toBeGreaterThan(0);
+  });
+
+  it("switches market to mine loading data on the first mounted rerender", () => {
+    const snapshots: AgentsRuntimeSnapshot[] = [];
+    const recordSnapshot = (snapshot: AgentsRuntimeSnapshot) => snapshots.push(snapshot);
+    const { rerender } = render(<AgentsRuntimeProbe mode="market" onRender={recordSnapshot} />);
+
+    vi.mocked(fetchAgents).mockReturnValueOnce(new Promise(() => undefined));
+    const firstMineRender = snapshots.length;
+    rerender(<AgentsRuntimeProbe mode="mine" onRender={recordSnapshot} />);
+
+    expect(snapshots[firstMineRender]).toEqual({
+      source: "api",
+      status: "loading",
+      agentNames: []
+    });
   });
 
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {

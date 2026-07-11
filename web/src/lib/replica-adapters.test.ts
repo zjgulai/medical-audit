@@ -88,7 +88,7 @@ const knowledgeBaseCatalog: KnowledgeBaseCatalogResponse = {
     database_write: false,
     object_storage_write: false,
     query_history_write: false,
-    source: "runtime_state_and_registry_only"
+    source: "runtime_state_and_postgres_catalog"
   }
 };
 
@@ -125,6 +125,15 @@ const emptyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
 const emptySourceCatalog: DocumentSourceCollectionCatalogResponse = {
   ...sourceCollectionCatalog,
   items: []
+};
+
+const metricBearingSourceCatalog: DocumentSourceCollectionCatalogResponse = {
+  ...sourceCollectionCatalog,
+  search_backend: {
+    ready: true,
+    backend: "postgres",
+    details: { matching_embedding_count: 456 }
+  }
 };
 
 const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
@@ -174,6 +183,14 @@ const readyZeroMetricKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
   boundaries: {
     ...knowledgeBaseCatalog.boundaries,
     source: "runtime_state_and_postgres_catalog"
+  }
+};
+
+const registryProvenanceOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
+  ...readyZeroMetricKnowledgeCatalog,
+  boundaries: {
+    ...readyZeroMetricKnowledgeCatalog.boundaries,
+    source: "runtime_state_and_registry_only"
   }
 };
 
@@ -350,7 +367,20 @@ describe("replica backend read adapters", () => {
     expect(result.outcome).toBe("degraded");
     expect(result.data.knowledgeBases).not.toEqual([]);
     expect(result.data.knowledgeBases[0]?.chunkCount).toBe(0);
-    expect(result.data.currentSearchEmbeddingCount).toBe(0);
+    expect(result.data.currentSearchEmbeddingCount).toBeNull();
+    expect(result.data.metricsSource).toBe("unavailable");
+  });
+
+  it("treats registry-only provenance as degraded even when readiness flags are true", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(registryProvenanceOnlyKnowledgeCatalog),
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(metricBearingSourceCatalog)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.data.currentSearchEmbeddingCount).toBeNull();
     expect(result.data.metricsSource).toBe("unavailable");
   });
 

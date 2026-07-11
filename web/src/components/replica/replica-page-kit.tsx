@@ -152,7 +152,10 @@ function runtimeBadgeDetail(
   if (issueCount > 0) {
     return `${issueCount} 项待接入`;
   }
-  return source === "catalog" ? "目录已就绪" : "接口已校验";
+  if (source === "catalog") {
+    return "目录已就绪";
+  }
+  return source === "fixture" ? "样例数据已启用" : "接口已校验";
 }
 
 export function ReplicaFilterButton<T extends string>({
