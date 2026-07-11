@@ -53,6 +53,18 @@ type OptionalApiRead<T> =
   | { readonly kind: "success"; readonly value: T }
   | { readonly kind: "failure"; readonly message: string };
 
+type ReplicaApiReadName =
+  | "auth-session"
+  | "query-history"
+  | "agents"
+  | "document-permissions"
+  | "knowledge-base-catalog"
+  | "document-source-collections"
+  | "analysis-upload-history"
+  | "graph-workbench"
+  | "report-workbench"
+  | "projects";
+
 export type ReplicaDataSource = "fixture" | "catalog" | "api" | "hybrid";
 
 export type ReplicaAdapterOutcome = "ready" | "empty" | "degraded" | "error";
@@ -223,6 +235,7 @@ function isReadonlySeedBackend(backend: string): boolean {
 
 async function readOptionalApi<TResponse>(
   surface: ReplicaSurface,
+  readName: ReplicaApiReadName,
   issues: ReplicaAdapterIssue[],
   read: (() => Promise<TResponse>) | undefined
 ): Promise<OptionalApiRead<TResponse>> {
@@ -232,11 +245,9 @@ async function readOptionalApi<TResponse>(
 
   try {
     return { kind: "success", value: await read() };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown API read failure";
-    issues.push(
-      issue(surface, "api-read-failed", "API read failed; no fixture data was substituted.")
-    );
+  } catch {
+    const message = `API read ${readName} failed; no fixture data was substituted.`;
+    issues.push(issue(surface, "api-read-failed", message));
     return { kind: "failure", message };
   }
 }
@@ -533,8 +544,8 @@ export async function loadReplicaShellData(
     tenantLabel: ""
   };
   const [sessionRead, historyRead] = await Promise.all([
-    readOptionalApi("shell", issues, client.fetchAuthSession),
-    readOptionalApi("shell", issues, client.fetchQueryHistory)
+    readOptionalApi("shell", "auth-session", issues, client.fetchAuthSession),
+    readOptionalApi("shell", "query-history", issues, client.fetchQueryHistory)
   ]);
 
   if (allApiReadsDisabled([sessionRead, historyRead])) {
@@ -582,8 +593,8 @@ export async function loadReplicaChatData(
 ): Promise<ReplicaAdapterResult<ReplicaChatData>> {
   const issues: ReplicaAdapterIssue[] = [];
   const [agentRead, historyRead] = await Promise.all([
-    readOptionalApi("chat", issues, client.fetchAgents),
-    readOptionalApi("chat", issues, client.fetchQueryHistory)
+    readOptionalApi("chat", "agents", issues, client.fetchAgents),
+    readOptionalApi("chat", "query-history", issues, client.fetchQueryHistory)
   ]);
 
   if (allApiReadsDisabled([agentRead, historyRead])) {
@@ -634,7 +645,7 @@ export async function loadReplicaAgentsData(
   client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const agentRead = await readOptionalApi("agents", issues, client.fetchAgents);
+  const agentRead = await readOptionalApi("agents", "agents", issues, client.fetchAgents);
 
   if (agentRead.kind === "disabled") {
     return {
@@ -700,9 +711,14 @@ export async function loadReplicaKnowledgeBaseData(
 ): Promise<ReplicaAdapterResult<ReplicaKnowledgeBaseData>> {
   const issues: ReplicaAdapterIssue[] = [];
   const [permissionsRead, knowledgeCatalogRead, sourceCollectionCatalogRead] = await Promise.all([
-    readOptionalApi("knowledge-base", issues, client.fetchDocumentPermissions),
-    readOptionalApi("knowledge-base", issues, client.fetchKnowledgeBaseCatalog),
-    readOptionalApi("knowledge-base", issues, client.fetchDocumentSourceCollections)
+    readOptionalApi("knowledge-base", "document-permissions", issues, client.fetchDocumentPermissions),
+    readOptionalApi("knowledge-base", "knowledge-base-catalog", issues, client.fetchKnowledgeBaseCatalog),
+    readOptionalApi(
+      "knowledge-base",
+      "document-source-collections",
+      issues,
+      client.fetchDocumentSourceCollections
+    )
   ]);
   const reads = [permissionsRead, knowledgeCatalogRead, sourceCollectionCatalogRead];
 
@@ -833,9 +849,14 @@ export async function loadReplicaDocumentsData(
 ): Promise<ReplicaAdapterResult<ReplicaDocumentsData>> {
   const issues: ReplicaAdapterIssue[] = [];
   const [knowledgeCatalogRead, sourceCollectionCatalogRead, historyRead] = await Promise.all([
-    readOptionalApi("documents", issues, client.fetchKnowledgeBaseCatalog),
-    readOptionalApi("documents", issues, client.fetchDocumentSourceCollections),
-    readOptionalApi("documents", issues, client.fetchQueryHistory)
+    readOptionalApi("documents", "knowledge-base-catalog", issues, client.fetchKnowledgeBaseCatalog),
+    readOptionalApi(
+      "documents",
+      "document-source-collections",
+      issues,
+      client.fetchDocumentSourceCollections
+    ),
+    readOptionalApi("documents", "query-history", issues, client.fetchQueryHistory)
   ]);
   const reads = [knowledgeCatalogRead, sourceCollectionCatalogRead, historyRead];
 
@@ -916,6 +937,7 @@ export async function loadReplicaAnalyticsData(
   ];
   const uploadHistoryRead = await readOptionalApi(
     "analytics",
+    "analysis-upload-history",
     issues,
     client.fetchAnalysisUploadHistory
   );
@@ -952,7 +974,12 @@ export async function loadReplicaGraphData(
   client: ReplicaGraphClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaGraphData>> {
   const issues: ReplicaAdapterIssue[] = [];
-  const graphRead = await readOptionalApi("graph", issues, client.fetchGraphWorkbench);
+  const graphRead = await readOptionalApi(
+    "graph",
+    "graph-workbench",
+    issues,
+    client.fetchGraphWorkbench
+  );
 
   if (graphRead.kind === "disabled") {
     return { source: "fixture", outcome: "ready", data: graphDataFallback(), issues };
@@ -999,7 +1026,12 @@ export async function loadReplicaReportsData(
       "Report generation, signing, and download side effects remain gated until explicit approval."
     )
   ];
-  const reportsRead = await readOptionalApi("reports", issues, client.fetchReportWorkbench);
+  const reportsRead = await readOptionalApi(
+    "reports",
+    "report-workbench",
+    issues,
+    client.fetchReportWorkbench
+  );
 
   if (reportsRead.kind === "disabled") {
     return {
@@ -1039,7 +1071,7 @@ export async function loadReplicaProjectsData(
       "Create project, member changes, archive, and role updates remain gated until write approval."
     )
   ];
-  const projectsRead = await readOptionalApi("projects", issues, client.fetchProjects);
+  const projectsRead = await readOptionalApi("projects", "projects", issues, client.fetchProjects);
 
   if (projectsRead.kind === "disabled") {
     return {

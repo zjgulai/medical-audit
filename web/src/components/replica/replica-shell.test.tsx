@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ReplicaShell } from "./replica-shell";
 
@@ -14,6 +14,10 @@ vi.mock("next/navigation", () => ({
 describe("ReplicaShell", () => {
   beforeEach(() => {
     usePathnameMock.mockReturnValue("/chat");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("renders the active page tag as a closable control", () => {
@@ -35,6 +39,8 @@ describe("ReplicaShell", () => {
   });
 
   it("renders history items as deterministic chat links", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+
     render(
       <ReplicaShell>
         <main>复刻页面内容</main>

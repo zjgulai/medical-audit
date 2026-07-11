@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
@@ -46,6 +46,14 @@ function agentsResponse(storeReady = true): AgentsResponse {
     categories: ["业务类"],
     store: { ready: storeReady, backend: "unit-test" }
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 type AgentsRuntimeSnapshot = {
@@ -253,6 +261,27 @@ describe("use-replica-runtime", () => {
       status: "loading",
       agentNames: []
     });
+  });
+
+  it("ignores a late personal API result after switching mine to market", async () => {
+    const oldMineRead = deferred<AgentsResponse>();
+    vi.mocked(fetchAgents).mockReturnValueOnce(oldMineRead.promise);
+    const { rerender } = render(<AgentsRuntimeProbe mode="mine" />);
+
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "loading");
+
+    rerender(<AgentsRuntimeProbe mode="market" />);
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
+
+    await act(async () => {
+      oldMineRead.resolve(agentsResponse());
+      await oldMineRead.promise;
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
+    expect(screen.queryByText("运行时只读助手")).not.toBeInTheDocument();
   });
 
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {

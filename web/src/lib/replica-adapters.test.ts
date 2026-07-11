@@ -368,6 +368,28 @@ describe("replica backend read adapters", () => {
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
   });
 
+  it("identifies failed reads by safe names without exposing raw exceptions", async () => {
+    const secretError = "https://private.invalid/read?password=do-not-expose body=confidential";
+    const result = await loadReplicaDocumentsData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockRejectedValue(new Error(secretError)),
+      fetchDocumentSourceCollections: vi.fn().mockRejectedValue(new Error(secretError)),
+      fetchQueryHistory: vi.fn().mockRejectedValue(new Error(secretError))
+    });
+
+    const failureMessages = result.issues
+      .filter((item) => item.code === "api-read-failed")
+      .map((item) => item.message);
+
+    expect(failureMessages).toHaveLength(3);
+    expect(failureMessages).toEqual(expect.arrayContaining([
+      expect.stringContaining("knowledge-base-catalog"),
+      expect.stringContaining("document-source-collections"),
+      expect.stringContaining("query-history")
+    ]));
+    expect(failureMessages.join(" ")).not.toContain("password=do-not-expose");
+    expect(failureMessages.join(" ")).not.toContain("body=confidential");
+  });
+
   it("preserves registry data as degraded when metrics are unavailable", async () => {
     const result = await loadReplicaKnowledgeBaseData({
       fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(registryOnlyKnowledgeCatalog)
