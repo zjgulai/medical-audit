@@ -2369,6 +2369,10 @@ def test_project_graph_builds_only_exact_persisted_evidence_chain(
     }
     self_ids = {node["id"] for node in self_body["nodes"]}
     catalog_ids = {node["id"] for node in catalog_body["nodes"]}
+    allowed_statuses = {"已归集", "可引用", "待复核", "门禁中", "跟踪中", "待接入"}
+    assert {
+        node["status"] for node in [*self_body["nodes"], *catalog_body["nodes"]]
+    } <= allowed_statuses
     assert {
         "project:SELF-CHECK-FUND-20260607",
         "finding:finding-self-sql",
@@ -2406,6 +2410,170 @@ def test_project_graph_builds_only_exact_persisted_evidence_chain(
     assert success_payload["node_count"] == len(catalog_body["nodes"])
     assert "finding" not in success_payload
     assert "task" not in success_payload
+
+
+def test_project_graph_normalizes_business_statuses_and_requires_canonical_signed_report(
+    tmp_path: Path,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_statuses = {
+        "pending": "pending-review",
+        "needs": "needs-evidence",
+        "confirmed": "confirmed-violation",
+        "rule": "rule-issue",
+        "data": "data-issue",
+        "excluded": "not-violation",
+        "closed": "closed",
+        "unknown": "future-status",
+    }
+    findings = [
+        {
+            "project_key": project_key,
+            "finding_key": f"finding-status-{suffix}",
+            "severity": "medium",
+            "review_status": status,
+            "review_task_id": f"review-status-{suffix}"
+            if suffix in {"pending", "needs", "confirmed", "closed"}
+            else None,
+            "audit_task_key": f"task-status-{suffix}",
+            "rule_version_key": "STATUS-RULE@v1",
+            "evidence_items": [],
+        }
+        for suffix, status in finding_statuses.items()
+    ]
+    tasks = [
+        {
+            "task_id": "review-status-pending",
+            "status": "pending-review",
+            "status_label": "待复核原始标签",
+            "citation_count": 0,
+            "dossier": {
+                "report_draft": {"title": "真实报告草稿"},
+                "rectification": {
+                    "rectification_id": "rectification-status-pending",
+                    "status": "pending-rectification",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-needs",
+            "status": "needs-evidence",
+            "status_label": "需补证原始标签",
+            "citation_count": 1,
+            "dossier": {
+                "report_draft": {"title": "缺 hash 时保留的真实草稿"},
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-missing-hash",
+                    "content": "SENSITIVE-INCOMPLETE-SIGNED-CONTENT",
+                },
+                "rectification": {
+                    "rectification_id": "rectification-status-in-progress",
+                    "status": "in-progress",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-confirmed",
+            "status": "confirmed-violation",
+            "status_label": "确认违规原始标签",
+            "citation_count": 2,
+            "dossier": {
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-canonical",
+                    "content_sha256": "sha256-canonical",
+                    "content": "SENSITIVE-CANONICAL-SIGNED-CONTENT",
+                },
+                "rectification": {
+                    "rectification_id": "rectification-status-accepted",
+                    "status": "accepted",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-closed",
+            "status": "closed",
+            "status_label": "已关闭原始标签",
+            "citation_count": 0,
+            "dossier": {
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-missing-content",
+                    "content_sha256": "sha256-without-content",
+                }
+            },
+        },
+    ]
+    for status in ("submitted", "returned"):
+        tasks.append(
+            {
+                "task_id": f"report-draft-rectification-{status}",
+                "status": "closed",
+                "status_label": "已关闭原始标签",
+                "citation_count": 0,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": f"template-{status}",
+                        "project_key": project_key,
+                    },
+                    "rectification": {
+                        "rectification_id": f"rectification-status-{status}",
+                        "status": status,
+                    },
+                },
+            }
+        )
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore(  # type: ignore[assignment]
+        {project_key: findings}
+    )
+    state.review_task_store = _RecordingGraphReviewTaskStore(tasks)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    nodes = {node["id"]: node for node in body["nodes"]}
+    allowed_statuses = {"已归集", "可引用", "待复核", "门禁中", "跟踪中", "待接入"}
+    assert {node["status"] for node in nodes.values()} <= allowed_statuses
+    assert nodes[f"project:{project_key}"]["status"] == "已归集"
+    assert "进行中" in nodes[f"project:{project_key}"]["description"]
+    assert nodes["finding:finding-status-pending"]["status"] == "待复核"
+    assert nodes["finding:finding-status-needs"]["status"] == "门禁中"
+    for suffix in ("confirmed", "rule", "data", "excluded", "closed"):
+        assert nodes[f"finding:finding-status-{suffix}"]["status"] == "已归集"
+    assert nodes["finding:finding-status-unknown"]["status"] == "待复核"
+    assert "future-status" in nodes["finding:finding-status-unknown"]["description"]
+    assert nodes["review:review-status-pending"]["status"] == "待复核"
+    assert nodes["review:review-status-needs"]["status"] == "门禁中"
+    assert nodes["review:review-status-confirmed"]["status"] == "已归集"
+    assert nodes["review:review-status-closed"]["status"] == "已归集"
+    assert "confirmed-violation" in nodes["review:review-status-confirmed"]["description"]
+    assert "确认违规原始标签" in nodes["review:review-status-confirmed"]["description"]
+    assert nodes["report:review-status-pending"]["status"] == "门禁中"
+    assert nodes["report:review-status-needs"]["status"] == "门禁中"
+    assert nodes["report:review-status-confirmed"]["status"] == "已归集"
+    assert "signed" in nodes["report:review-status-confirmed"]["description"]
+    assert "report:review-status-closed" not in nodes
+    assert nodes["remediation:rectification-status-pending"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-in-progress"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-submitted"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-returned"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-accepted"]["status"] == "已归集"
+    assert "accepted" in nodes[
+        "remediation:rectification-status-accepted"
+    ]["description"]
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert "SENSITIVE-INCOMPLETE-SIGNED-CONTENT" not in serialized
+    assert "SENSITIVE-CANONICAL-SIGNED-CONTENT" not in serialized
 
 
 def test_project_graph_empty_chain_is_distinct_from_unavailable_store(

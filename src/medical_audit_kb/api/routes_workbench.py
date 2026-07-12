@@ -33,6 +33,16 @@ DOMAIN_LABELS: dict[str, str] = {
 
 DOMAIN_ORDER: tuple[str, ...] = ("medical", "policy", "management", "other", "personal")
 
+PROJECT_GRAPH_RESOLVED_STATUSES = frozenset(
+    {
+        "confirmed-violation",
+        "rule-issue",
+        "data-issue",
+        "not-violation",
+        "closed",
+    }
+)
+
 
 GRAPH_NODES: tuple[dict[str, object], ...] = (
     {
@@ -1024,6 +1034,7 @@ def _project_evidence_graph(
         if str(item["id"]) == project_key
     )
     project_name = str(project["name"])
+    project_raw_status = str(project["status"])
     project_findings = [
         finding
         for finding in findings
@@ -1055,18 +1066,22 @@ def _project_evidence_graph(
     if evidence_count:
         project_description = (
             f"当前项目已归集 {len(project_findings)} 条疑点和 "
-            f"{len(template_review_task_ids)} 份项目模板草稿。"
+            f"{len(template_review_task_ids)} 份项目模板草稿；"
+            f"项目原始状态 {project_raw_status}。"
         )
         project_metric = f"{evidence_count} 条项目证据"
     else:
-        project_description = "当前项目已归集 0 条项目证据，尚无疑点或报告模板草稿。"
+        project_description = (
+            "当前项目已归集 0 条项目证据，尚无疑点或报告模板草稿；"
+            f"项目原始状态 {project_raw_status}。"
+        )
         project_metric = "0 条项目证据"
     nodes: list[dict[str, object]] = [
         {
             "id": f"project:{project_key}",
             "label": project_name,
             "kind": "项目",
-            "status": str(project["status"]),
+            "status": "已归集",
             "description": project_description,
             "metric": project_metric,
             "href": f"/projects?project={project_key}",
@@ -1092,7 +1107,7 @@ def _project_evidence_graph(
                 "id": finding_node_id,
                 "label": f"疑点 {finding_key}",
                 "kind": "疑点",
-                "status": review_status,
+                "status": _project_finding_node_status(review_status),
                 "description": f"项目疑点已持久化；严重程度 {severity}，复核状态 {review_status}。",
                 "metric": f"{evidence_item_count} 项证据",
                 "href": "/findings",
@@ -1132,15 +1147,20 @@ def _project_evidence_graph(
 
     for index, task_id in enumerate(sorted(selected_review_tasks)):
         task = selected_review_tasks[task_id]
-        status = str(task.get("status_label") or task.get("status") or "待复核")
+        raw_status = str(task.get("status") or "").strip()
+        raw_status_label = str(task.get("status_label") or "").strip()
         citation_count = _graph_non_negative_int(task.get("citation_count"))
         nodes.append(
             {
                 "id": f"review:{task_id}",
                 "label": f"复核任务 {task_id}",
                 "kind": "复核",
-                "status": status,
-                "description": "项目疑点或项目模板草稿关联的持久化复核任务。",
+                "status": _project_review_node_status(raw_status),
+                "description": (
+                    "项目疑点或项目模板草稿关联的持久化复核任务；"
+                    f"原始状态 {raw_status or '未记录'}，"
+                    f"原始标签 {raw_status_label or '未记录'}。"
+                ),
                 "metric": f"{citation_count} 项引用",
                 "href": "/findings",
                 "x": 520,
@@ -1171,7 +1191,10 @@ def _project_evidence_graph(
                 "label": f"报告 {task_id}",
                 "kind": "报告",
                 "status": report_state["status"],
-                "description": "当前项目复核任务已持久化报告草稿或正式签发状态。",
+                "description": (
+                    "当前项目复核任务已持久化报告草稿或正式签发状态；"
+                    f"原始报告状态 {report_state['raw_status']}。"
+                ),
                 "metric": report_state["metric"],
                 "href": "/reports",
                 "x": 740,
@@ -1187,13 +1210,16 @@ def _project_evidence_graph(
                 "relation": "形成",
                 "target": task_id,
                 "evidence": str(report_state["evidence"]),
-                "strength": "强" if report_state["status"] == "已签发" else "中",
+                "strength": "强" if report_state["status"] == "已归集" else "中",
             }
         )
 
         rectification = _graph_dict(_graph_dict(task.get("dossier")).get("rectification"))
         rectification_id = str(rectification.get("rectification_id") or "").strip()
         rectification_status = str(rectification.get("status") or "").strip()
+        rectification_status_label = str(
+            rectification.get("status_label") or ""
+        ).strip()
         if not rectification_id or rectification_status in {"", "not-created"}:
             continue
         events = rectification.get("events")
@@ -1204,8 +1230,12 @@ def _project_evidence_graph(
                 "id": remediation_node_id,
                 "label": f"整改 {rectification_id}",
                 "kind": "整改",
-                "status": rectification_status,
-                "description": "正式报告链路已持久化整改跟踪状态。",
+                "status": _project_rectification_node_status(rectification_status),
+                "description": (
+                    "正式报告链路已持久化整改跟踪状态；"
+                    f"原始状态 {rectification_status}，"
+                    f"原始标签 {rectification_status_label or '未记录'}。"
+                ),
                 "metric": f"{event_count} 条事件",
                 "href": "/remediation",
                 "x": 960,
@@ -1247,6 +1277,26 @@ def _template_draft_project_key(task: dict[str, object]) -> str | None:
     return project_key or None
 
 
+def _project_finding_node_status(review_status: str) -> str:
+    if review_status == "needs-evidence":
+        return "门禁中"
+    if review_status in PROJECT_GRAPH_RESOLVED_STATUSES:
+        return "已归集"
+    return "待复核"
+
+
+def _project_review_node_status(status: str) -> str:
+    if status == "needs-evidence":
+        return "门禁中"
+    if status in PROJECT_GRAPH_RESOLVED_STATUSES:
+        return "已归集"
+    return "待复核"
+
+
+def _project_rectification_node_status(status: str) -> str:
+    return "已归集" if status == "accepted" else "跟踪中"
+
+
 def _project_report_state(
     *,
     task: dict[str, object],
@@ -1254,12 +1304,16 @@ def _project_report_state(
 ) -> dict[str, str] | None:
     dossier = _graph_dict(task.get("dossier"))
     signed_report = _graph_dict(dossier.get("signed_report"))
+    signed_status = str(signed_report.get("status") or "").strip()
     report_id = str(signed_report.get("report_id") or "").strip()
-    if str(signed_report.get("status") or "").strip() == "signed" and report_id:
+    content_sha256 = str(signed_report.get("content_sha256") or "").strip()
+    content = str(signed_report.get("content") or "").strip()
+    if signed_status == "signed" and report_id and content_sha256 and content:
         return {
-            "status": "已签发",
+            "status": "已归集",
             "metric": report_id,
             "evidence": "signed_report.status",
+            "raw_status": signed_status,
         }
 
     report_draft = _graph_dict(dossier.get("report_draft"))
@@ -1268,9 +1322,10 @@ def _project_report_state(
         for field in ("title", "summary", "rectification_request")
     ):
         return {
-            "status": "草稿",
+            "status": "门禁中",
             "metric": "报告草稿已记录",
             "evidence": "dossier.report_draft",
+            "raw_status": signed_status or "draft",
         }
 
     template_draft = _graph_dict(dossier.get("report_template_draft"))
@@ -1281,9 +1336,10 @@ def _project_report_state(
         and template_id
     ):
         return {
-            "status": "草稿",
+            "status": "门禁中",
             "metric": template_id,
             "evidence": "dossier.report_template_draft",
+            "raw_status": str(template_draft.get("status") or "draft").strip(),
         }
     return None
 
