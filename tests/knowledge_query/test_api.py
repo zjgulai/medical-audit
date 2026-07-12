@@ -30,7 +30,9 @@ from medical_audit_kb.api.document_upload_store import (
 )
 from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_ID_PREFIX,
+    InMemoryProjectMemberStore,
     SqlAlchemyProjectMemberStore,
+    visible_project_keys,
 )
 from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
@@ -513,7 +515,12 @@ def test_permission_resolver_prefers_persisted_global_role(tmp_path: Path) -> No
     project_member_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         headers={"X-User-Id": "persistent-technician", "X-Role": "admin"},
-        json={"name": "持久化越权用户", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "persistent-denied-member",
+            "name": "持久化越权用户",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
     assert project_member_response.status_code == 403
     denied_payload = state.operation_logs[-1]["payload"]
@@ -578,12 +585,22 @@ def test_permission_resolver_uses_project_scoped_role_for_matching_project(
     allowed_member_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         headers={"X-User-Id": "project-director", "X-Role": "member"},
-        json={"name": "项目授权成员", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "project-authorized-member",
+            "name": "项目授权成员",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
     blocked_member_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
         headers={"X-User-Id": "project-director", "X-Role": "admin"},
-        json={"name": "跨项目越权成员", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "cross-project-denied-member",
+            "name": "跨项目越权成员",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
 
     assert scoped_session_response.status_code == 200
@@ -1232,22 +1249,194 @@ def test_agents_api_enforces_manage_agent_permission(tmp_path: Path) -> None:
     assert state.operation_logs[-1]["payload"]["permission"] == "manage_agents"
 
 
-def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
     state = _api_state(tmp_path)
     state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
     client = TestClient(create_app(state))
 
-    projects_response = client.get("/projects")
+    anonymous_response = client.get("/projects")
+    role_only_response = client.get("/projects", headers={"X-Role": "admin"})
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog"},
+    )
+    active_member_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+    )
+    pending_member_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "it-self-check", "X-Role": "member"},
+    )
+    unrelated_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
 
-    assert projects_response.status_code == 200
-    projects_body = projects_response.json()
+    assert anonymous_response.status_code == 200
+    assert anonymous_response.json()["items"] == []
+    assert role_only_response.status_code == 200
+    assert role_only_response.json()["items"] == []
+    assert admin_response.status_code == 200
+    projects_body = admin_response.json()
     assert projects_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
     assert projects_body["roles"] == ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"]
+    assert projects_body["statuses"] == ["在项目中", "待确认"]
+    assert projects_body["project_statuses"] == ["待开始", "进行中", "已完成", "已归档"]
+    project_statuses = {item["status"] for item in projects_body["items"]}
+    assert project_statuses <= set(projects_body["project_statuses"])
+    assert "待启动" not in project_statuses
+    assert len(projects_body["items"]) == 4
     assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
     assert projects_body["items"][0]["member_count"] == 3
+    assert {
+        item["id"]: item["creator_user_identifier"] for item in projects_body["items"]
+    } == {
+        "SELF-CHECK-FUND-20260607": "owner-self-check",
+        "CATALOG-LIMIT-202606": "expert-catalog",
+        "OUTPATIENT-DOSE-202606": "auditor-outpatient-dose",
+        "KB-GOVERNANCE-202606": "it-kb-governance",
+    }
+    assert next(
+        item
+        for item in projects_body["items"]
+        if item["id"] == "OUTPATIENT-DOSE-202606"
+    )["status"] == "进行中"
+    assert [item["id"] for item in creator_response.json()["items"]] == [
+        "CATALOG-LIMIT-202606"
+    ]
+    assert [item["id"] for item in active_member_response.json()["items"]] == [
+        "SELF-CHECK-FUND-20260607"
+    ]
+    assert pending_member_response.json()["items"] == []
+    assert unrelated_response.json()["items"] == []
+    assert state.operation_logs[-1]["payload"]["actor"] == "unrelated-member"
+    assert state.operation_logs[-1]["payload"]["visible_project_count"] == 0
 
-    project_response = client.get("/projects/SELF-CHECK-FUND-20260607")
+
+def test_projects_api_protects_project_detail_members_and_dashboard(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    routes = (
+        "/projects/SELF-CHECK-FUND-20260607",
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+    )
+
+    for route in routes:
+        creator_response = client.get(
+            route,
+            headers={"X-User-Id": "owner-self-check"},
+        )
+        active_member_response = client.get(
+            route,
+            headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+        )
+        pending_member_response = client.get(
+            route,
+            headers={"X-User-Id": "it-self-check", "X-Role": "member"},
+        )
+        unrelated_response = client.get(
+            route,
+            headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+        )
+        anonymous_response = client.get(route)
+        role_only_response = client.get(route, headers={"X-Role": "admin"})
+
+        assert creator_response.status_code == 200
+        assert active_member_response.status_code == 200
+        assert pending_member_response.status_code == 404
+        assert unrelated_response.status_code == 404
+        assert anonymous_response.status_code == 404
+        assert role_only_response.status_code == 404
+
+    members = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+    ).json()["items"]
+    assert members[0]["user_identifier"] == "auditor-self-check"
+    assert state.operation_logs[-1]["payload"]["actor"] == "auditor-self-check"
+
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+    for route in (
+        "/projects/CATALOG-LIMIT-202606",
+        "/projects/CATALOG-LIMIT-202606/members",
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+    ):
+        assert client.get(route, headers=admin_headers).status_code == 200
+
+
+def test_projects_api_uses_project_scoped_auth_for_detail(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+    assert client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "user_key": "scoped-project-admin",
+            "display_name": "项目级管理员",
+            "department_key": "audit-office",
+        },
+    ).status_code == 200
+    assert client.post(
+        "/auth/users/scoped-project-admin/role-assignments",
+        headers=admin_headers,
+        json={
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    ).status_code == 200
+
+    headers = {"X-User-Id": "scoped-project-admin", "X-Role": "member"}
+    list_response = client.get("/projects", headers=headers)
+    detail_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607",
+        headers=headers,
+    )
+    other_detail_response = client.get(
+        "/projects/CATALOG-LIMIT-202606",
+        headers=headers,
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
+    assert detail_response.status_code == 200
+    assert other_detail_response.status_code == 404
+    assert state.operation_logs[-1]["payload"]["actor"] == "scoped-project-admin"
+    assert state.operation_logs[-1]["payload"]["actor_role"] == "admin"
+
+
+def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    project_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607",
+        headers=admin_headers,
+    )
 
     assert project_response.status_code == 200
     project_body = project_response.json()
@@ -1256,7 +1445,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert project_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
     assert project_body["production_side_effect"] == "none"
 
-    dashboard_response = client.get("/projects/SELF-CHECK-FUND-20260607/dashboard")
+    dashboard_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=admin_headers,
+    )
 
     assert dashboard_response.status_code == 200
     dashboard_body = dashboard_response.json()
@@ -1268,7 +1460,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert dashboard_body["store"]["backend"]["audit_findings"] == "unavailable"
     assert dashboard_body["production_side_effect"] == "none"
 
-    members_response = client.get("/projects/CATALOG-LIMIT-202606/members")
+    members_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+    )
 
     assert members_response.status_code == 200
     members_body = members_response.json()
@@ -1278,11 +1473,17 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
 
     create_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
-        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        headers=admin_headers,
         json={
+            "user_identifier": "  custom-catalog-auditor  ",
             "name": "赵审计",
             "role": "审计员",
             "department": "医保办",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "MEMBER-42",
+                "user_identifier": "spoofed-catalog-member",
+            },
         },
     )
 
@@ -1290,7 +1491,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     created = create_response.json()["item"]
     assert created["id"].startswith(PROJECT_MEMBER_ID_PREFIX)
     assert created["project_key"] == "CATALOG-LIMIT-202606"
-    assert created["status"] == "待确认"
+    assert created["status"] == "在项目中"
+    assert created["user_identifier"] == "custom-catalog-auditor"
+    assert created["metadata"]["ticket"] == "MEMBER-42"
+    assert created["metadata"]["user_identifier"] == "custom-catalog-auditor"
     assert created["created_by"] == "admin-1"
     assert state.operation_logs[-1]["action"] == "project-member-create"
     assert state.operation_logs[-1]["payload"]["actor_role"] == "admin"
@@ -1298,16 +1502,168 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()["items"]
-    persisted_projects = second_client.get("/projects").json()["items"]
+    persisted_members = second_client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers={"X-User-Id": "custom-catalog-auditor", "X-Role": "member"},
+    ).json()["items"]
+    persisted_projects = second_client.get(
+        "/projects",
+        headers={"X-User-Id": "custom-catalog-auditor", "X-Role": "member"},
+    ).json()["items"]
     catalog_project = next(
         item for item in persisted_projects if item["id"] == "CATALOG-LIMIT-202606"
     )
 
     assert persisted_members[0]["id"] == created["id"]
     assert persisted_members[0]["name"] == "赵审计"
+    assert persisted_members[0]["user_identifier"] == "custom-catalog-auditor"
+    assert persisted_members[0]["metadata"]["ticket"] == "MEMBER-42"
+    assert persisted_members[0]["metadata"]["user_identifier"] == "custom-catalog-auditor"
     assert any(item["id"] == "member-catalog-owner" for item in persisted_members)
     assert catalog_project["member_count"] == 5
+
+
+def test_projects_api_keeps_pending_custom_member_invisible_and_matches_in_memory(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    active_response = client.post(
+        "/projects/OUTPATIENT-DOSE-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "  custom-dose-active  ",
+            "name": "自定义门诊审计员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "DOSE-1",
+                "user_identifier": "spoofed-dose-member",
+            },
+        },
+    )
+    pending_response = client.post(
+        "/projects/OUTPATIENT-DOSE-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "custom-dose-pending",
+            "name": "待确认门诊审计员",
+            "role": "审计员",
+            "department": "内审部",
+            "metadata": {"ticket": "DOSE-2"},
+        },
+    )
+
+    assert active_response.status_code == 200
+    assert active_response.json()["item"]["user_identifier"] == "custom-dose-active"
+    assert active_response.json()["item"]["metadata"]["ticket"] == "DOSE-1"
+    assert (
+        active_response.json()["item"]["metadata"]["user_identifier"]
+        == "custom-dose-active"
+    )
+    assert pending_response.status_code == 200
+    active_headers = {"X-User-Id": "custom-dose-active", "X-Role": "member"}
+    pending_headers = {"X-User-Id": "custom-dose-pending", "X-Role": "member"}
+    assert [
+        item["id"] for item in client.get("/projects", headers=active_headers).json()["items"]
+    ] == ["OUTPATIENT-DOSE-202606"]
+    assert client.get(
+        "/projects/OUTPATIENT-DOSE-202606",
+        headers=active_headers,
+    ).status_code == 200
+    assert client.get("/projects", headers=pending_headers).json()["items"] == []
+    assert client.get(
+        "/projects/OUTPATIENT-DOSE-202606",
+        headers=pending_headers,
+    ).status_code == 404
+
+
+def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: Path) -> None:
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = FailingProjectMemberStore()
+    client = TestClient(create_app(state))
+
+    creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+    unrelated_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    creator_detail_response = client.get(
+        "/projects/CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+    creator_dashboard_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert [item["id"] for item in creator_response.json()["items"]] == [
+        "CATALOG-LIMIT-202606"
+    ]
+    assert creator_response.json()["store"] == {"ready": False, "backend": "unavailable"}
+    assert unrelated_response.json()["items"] == []
+    assert len(admin_response.json()["items"]) == 4
+    fallback_statuses = {item["status"] for item in admin_response.json()["items"]}
+    assert fallback_statuses <= set(admin_response.json()["project_statuses"])
+    assert "待启动" not in fallback_statuses
+    assert creator_detail_response.status_code == 200
+    assert creator_detail_response.json()["item"]["status"] == "待开始"
+    assert creator_dashboard_response.status_code == 200
+    assert creator_dashboard_response.json()["project"]["status"] == "待开始"
+
+
+def test_projects_api_admin_visibility_helper_does_not_read_store() -> None:
+    class ExplodingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise AssertionError("admin visibility must not read member store")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise AssertionError("admin visibility must not write member store")
+
+        def member_counts(self) -> dict[str, int]:
+            raise AssertionError("admin visibility must not count member store")
+
+    visible_keys = visible_project_keys(
+        user_identifier="admin-1",
+        is_admin=True,
+        store=ExplodingProjectMemberStore(),
+    )
+    assert isinstance(visible_keys, frozenset)
+    assert visible_keys == {
+        "SELF-CHECK-FUND-20260607",
+        "CATALOG-LIMIT-202606",
+        "OUTPATIENT-DOSE-202606",
+        "KB-GOVERNANCE-202606",
+    }
 
 
 def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
@@ -1318,13 +1674,34 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(state))
 
-    missing_detail_response = client.get("/projects/UNKNOWN")
-    missing_members_response = client.get("/projects/UNKNOWN/members")
+    member_headers = {"X-User-Id": "unrelated-member", "X-Role": "member"}
+    missing_detail_response = client.get("/projects/UNKNOWN", headers=member_headers)
+    missing_members_response = client.get("/projects/UNKNOWN/members", headers=member_headers)
     invalid_role_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         json={
+            "user_identifier": "invalid-role-member",
             "name": "未知角色",
             "role": "访客",
+            "department": "医保办",
+        },
+    )
+    missing_identifier_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "name": "缺少身份",
+            "role": "审计员",
+            "department": "医保办",
+        },
+    )
+    whitespace_identifier_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "user_identifier": "   ",
+            "name": "空白身份",
+            "role": "审计员",
             "department": "医保办",
         },
     )
@@ -1332,6 +1709,8 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
     assert missing_detail_response.status_code == 404
     assert missing_members_response.status_code == 404
     assert invalid_role_response.status_code == 422
+    assert missing_identifier_response.status_code == 422
+    assert whitespace_identifier_response.status_code == 422
 
 
 def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> None:
@@ -1342,6 +1721,7 @@ def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> N
     )
     client = TestClient(create_app(state))
     payload = {
+        "user_identifier": "permission-test-member",
         "name": "赵审计",
         "role": "审计员",
         "department": "医保办",
@@ -1356,9 +1736,15 @@ def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> N
         headers={"X-User-Id": "director-1", "X-Role": "director"},
         json=payload,
     )
+    member_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+        json=payload,
+    )
 
     assert unauthenticated_response.status_code == 401
     assert director_response.status_code == 403
+    assert member_response.status_code == 403
     assert state.operation_logs[-1]["action"] == "authorization-denied"
     assert state.operation_logs[-1]["payload"]["attempted_action"] == "project-member-create"
     assert state.operation_logs[-1]["payload"]["permission"] == "manage_project_members"

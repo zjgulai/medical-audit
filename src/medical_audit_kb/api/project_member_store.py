@@ -8,12 +8,14 @@ from uuid import uuid4
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from medical_audit_kb.db.models import AuditProjectMember, Base, utc_now
 
 PROJECT_MEMBER_ROLES = ("项目负责人", "审计员", "业务专家", "信息科", "只读观察员")
 PROJECT_MEMBER_STATUSES = ("在项目中", "待确认")
+PROJECT_STATUSES = ("待开始", "进行中", "已完成", "已归档")
 PROJECT_MEMBER_ID_PREFIX = "member-custom-"
 
 DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
@@ -24,6 +26,7 @@ DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
         "organization_name": "单院医保内审试运行",
         "member_count": 3,
         "creator": "项目负责人",
+        "creator_user_identifier": "owner-self-check",
         "created_at": "2026-06-07",
         "status": "进行中",
         "operation_label": "进入项目",
@@ -36,6 +39,7 @@ DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
         "organization_name": "单院医保内审试运行",
         "member_count": 4,
         "creator": "业务专家",
+        "creator_user_identifier": "expert-catalog",
         "created_at": "2026-06-09",
         "status": "待启动",
         "operation_label": "查看成员",
@@ -48,6 +52,7 @@ DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
         "organization_name": "单院医保内审试运行",
         "member_count": 5,
         "creator": "审计员",
+        "creator_user_identifier": "auditor-outpatient-dose",
         "created_at": "2026-06-10",
         "status": "进行中",
         "operation_label": "进入项目",
@@ -60,6 +65,7 @@ DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
         "organization_name": "内审部",
         "member_count": 2,
         "creator": "信息科接口人",
+        "creator_user_identifier": "it-kb-governance",
         "created_at": "2026-06-11",
         "status": "已归档",
         "operation_label": "查看归档",
@@ -71,6 +77,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
     "SELF-CHECK-FUND-20260607": (
         {
             "id": "member-auditor",
+            "user_identifier": "auditor-self-check",
             "name": "审计员",
             "role": "审计员",
             "department": "内审部",
@@ -78,6 +85,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-owner",
+            "user_identifier": "owner-self-check",
             "name": "项目负责人",
             "role": "项目负责人",
             "department": "内审部",
@@ -85,6 +93,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-it",
+            "user_identifier": "it-self-check",
             "name": "信息科接口人",
             "role": "信息科",
             "department": "信息科",
@@ -94,6 +103,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
     "CATALOG-LIMIT-202606": (
         {
             "id": "member-catalog-owner",
+            "user_identifier": "expert-catalog",
             "name": "业务专家",
             "role": "业务专家",
             "department": "医保办",
@@ -101,6 +111,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-catalog-auditor",
+            "user_identifier": "auditor-catalog",
             "name": "目录审计员",
             "role": "审计员",
             "department": "内审部",
@@ -108,6 +119,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-catalog-it",
+            "user_identifier": "it-catalog",
             "name": "信息科接口人",
             "role": "信息科",
             "department": "信息科",
@@ -115,6 +127,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-catalog-observer",
+            "user_identifier": "observer-catalog",
             "name": "只读观察员",
             "role": "只读观察员",
             "department": "财务科",
@@ -124,6 +137,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
     "OUTPATIENT-DOSE-202606": (
         {
             "id": "member-dose-auditor",
+            "user_identifier": "auditor-outpatient-dose",
             "name": "审计员",
             "role": "审计员",
             "department": "内审部",
@@ -131,6 +145,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-dose-owner",
+            "user_identifier": "owner-outpatient-dose",
             "name": "项目负责人",
             "role": "项目负责人",
             "department": "内审部",
@@ -138,6 +153,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-dose-expert",
+            "user_identifier": "expert-outpatient-dose",
             "name": "药剂科专家",
             "role": "业务专家",
             "department": "药剂科",
@@ -145,6 +161,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-dose-it",
+            "user_identifier": "it-outpatient-dose",
             "name": "信息科接口人",
             "role": "信息科",
             "department": "信息科",
@@ -152,6 +169,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-dose-observer",
+            "user_identifier": "observer-outpatient-dose",
             "name": "只读观察员",
             "role": "只读观察员",
             "department": "门诊办",
@@ -161,6 +179,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
     "KB-GOVERNANCE-202606": (
         {
             "id": "member-kb-it",
+            "user_identifier": "it-kb-governance",
             "name": "信息科接口人",
             "role": "信息科",
             "department": "信息科",
@@ -168,6 +187,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-kb-owner",
+            "user_identifier": "owner-kb-governance",
             "name": "项目负责人",
             "role": "项目负责人",
             "department": "内审部",
@@ -221,6 +241,7 @@ class SqlAlchemyProjectMemberStore:
 
     def add_member(self, project_key: str, values: dict[str, object]) -> dict[str, object]:
         now = utc_now()
+        metadata = _member_metadata(values)
         member = AuditProjectMember(
             member_key=_new_member_key(),
             project_key=project_key,
@@ -229,7 +250,7 @@ class SqlAlchemyProjectMemberStore:
             department=str(values["department"]),
             status=str(values.get("status", "待确认")),
             created_by=_optional_str(values.get("created_by")),
-            extra_metadata=_dict_value(values.get("metadata")),
+            extra_metadata=metadata,
             created_at=now,
             updated_at=now,
         )
@@ -257,6 +278,7 @@ class InMemoryProjectMemberStore:
 
     def add_member(self, project_key: str, values: dict[str, object]) -> dict[str, object]:
         now = _datetime_to_iso(utc_now())
+        metadata = _member_metadata(values)
         member: dict[str, object] = {
             "id": _new_member_key(),
             "project_key": project_key,
@@ -264,11 +286,12 @@ class InMemoryProjectMemberStore:
             "role": str(values["role"]),
             "department": str(values["department"]),
             "status": str(values.get("status", "待确认")),
+            "user_identifier": metadata["user_identifier"],
             "created_by": _optional_str(values.get("created_by")),
             "created_at": now,
             "updated_at": now,
             "source": "custom",
-            "metadata": _dict_value(values.get("metadata")),
+            "metadata": metadata,
         }
         self.members.setdefault(project_key, []).insert(0, member)
         return copy.deepcopy(member)
@@ -286,11 +309,56 @@ def project_payloads_with_member_counts(custom_counts: dict[str, int]) -> list[d
     for project in DEFAULT_PROJECT_PAYLOADS:
         project_key = str(project["id"])
         item = copy.deepcopy(project)
+        item["status"] = normalize_project_status(str(item["status"]))
         item["member_count"] = (
             _default_member_count(project_key) + custom_counts.get(project_key, 0)
         )
         items.append(item)
     return items
+
+
+def visible_project_keys(
+    *,
+    user_identifier: str,
+    is_admin: bool,
+    store: ProjectMemberStore,
+) -> frozenset[str]:
+    normalized_user_identifier = _optional_str(user_identifier)
+    if normalized_user_identifier in {None, "anonymous"}:
+        return frozenset()
+    if is_admin:
+        return _PROJECT_KEYS
+
+    default_visible = {
+        str(project["id"])
+        for project in DEFAULT_PROJECT_PAYLOADS
+        if project.get("creator_user_identifier") == normalized_user_identifier
+    }
+    for project_key, default_members in DEFAULT_PROJECT_MEMBERS_BY_PROJECT.items():
+        if any(
+            member.get("status") == "在项目中"
+            and member.get("user_identifier") == normalized_user_identifier
+            for member in default_members
+        ):
+            default_visible.add(project_key)
+
+    custom_visible: set[str] = set()
+    try:
+        for project_key in _PROJECT_KEYS:
+            custom_members = store.list_members(project_key)
+            if any(
+                member.get("status") == "在项目中"
+                and _member_user_identifier(member) == normalized_user_identifier
+                for member in custom_members
+            ):
+                custom_visible.add(project_key)
+    except SQLAlchemyError:
+        return frozenset(default_visible)
+    return frozenset(default_visible | custom_visible)
+
+
+def normalize_project_status(status: str) -> str:
+    return "待开始" if status == "待启动" else status
 
 
 def combined_project_members(
@@ -335,6 +403,7 @@ def _default_member_payload(
 
 
 def _member_to_payload(member: AuditProjectMember) -> dict[str, object]:
+    metadata = copy.deepcopy(member.extra_metadata)
     return {
         "id": member.member_key,
         "project_key": member.project_key,
@@ -342,11 +411,12 @@ def _member_to_payload(member: AuditProjectMember) -> dict[str, object]:
         "role": member.role,
         "department": member.department,
         "status": member.status,
+        "user_identifier": _member_user_identifier({"metadata": metadata}),
         "created_by": member.created_by,
         "created_at": _datetime_to_iso(member.created_at),
         "updated_at": _datetime_to_iso(member.updated_at),
         "source": "custom",
-        "metadata": copy.deepcopy(member.extra_metadata),
+        "metadata": metadata,
     }
 
 
@@ -371,6 +441,23 @@ def _dict_value(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return copy.deepcopy(value)
     return {}
+
+
+def _member_metadata(values: dict[str, object]) -> dict[str, object]:
+    metadata = _dict_value(values.get("metadata"))
+    user_identifier = _optional_str(values.get("user_identifier"))
+    if user_identifier is None:
+        raise ValueError("user_identifier is required")
+    metadata["user_identifier"] = user_identifier
+    return metadata
+
+
+def _member_user_identifier(member: dict[str, object]) -> str | None:
+    direct_value = _optional_str(member.get("user_identifier"))
+    if direct_value is not None:
+        return direct_value
+    metadata = _dict_value(member.get("metadata"))
+    return _optional_str(metadata.get("user_identifier"))
 
 
 def _sync_database_url(database_url: str) -> str:
