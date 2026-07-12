@@ -29,6 +29,7 @@ class Permission(StrEnum):
     MANAGE_INDEX = "manage_index"
     READ_AUDIT_LOGS = "read_audit_logs"
     SIGN_REPORTS = "sign_reports"
+    CREATE_REPORT_DRAFT = "create_report_draft"
 
 
 ROLE_LABELS: dict[HospitalRole, str] = {
@@ -78,6 +79,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.MANAGE_PROJECT_MEMBERS,
             Permission.MANAGE_INDEX,
             Permission.READ_AUDIT_LOGS,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
     HospitalRole.TECHNICIAN: frozenset(
@@ -98,6 +100,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.MANAGE_AGENTS,
             Permission.READ_AUDIT_LOGS,
             Permission.SIGN_REPORTS,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
     HospitalRole.MEMBER: frozenset(
@@ -105,6 +108,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.QUERY_KNOWLEDGE,
             Permission.UPLOAD_PERSONAL_DOCUMENT,
             Permission.ANALYZE_DATA,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
 }
@@ -254,7 +258,7 @@ def require_permission(
             project_key=project_key,
         )
     except HTTPException as exc:
-        _record_authorization_denied(
+        record_authorization_denied(
             state,
             attempted_action=attempted_action,
             permission=permission,
@@ -268,7 +272,7 @@ def require_permission(
     if has_permission(user.role, permission):
         return user
 
-    _record_authorization_denied(
+    record_authorization_denied(
         state,
         attempted_action=attempted_action,
         permission=permission,
@@ -285,7 +289,7 @@ def require_permission(
     raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
 
 
-def _record_authorization_denied(
+def record_authorization_denied(
     state: ApiState,
     *,
     attempted_action: str,

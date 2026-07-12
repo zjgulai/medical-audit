@@ -302,6 +302,13 @@ def test_auth_api_lists_roles_and_manages_users(tmp_path: Path) -> None:
     ]
     assert roles_body["compatibility"]["it-admin"] == "admin"
     assert roles_body["compatibility"]["system-admin"] == "admin"
+    permissions_by_role = {
+        item["role"]: set(item["permissions"]) for item in roles_body["items"]
+    }
+    assert "create_report_draft" in permissions_by_role["admin"]
+    assert "create_report_draft" in permissions_by_role["director"]
+    assert "create_report_draft" in permissions_by_role["member"]
+    assert "create_report_draft" not in permissions_by_role["technician"]
 
     session_response = client.get(
         "/auth/session",

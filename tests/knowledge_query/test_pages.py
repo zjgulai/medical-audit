@@ -1,4 +1,5 @@
 import hashlib
+import json
 from io import BytesIO
 from pathlib import Path
 from typing import cast
@@ -7,12 +8,14 @@ from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.agent_store import SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
 from medical_audit_kb.api.auth_user_store import SqlAlchemyAuthUserStore
+from medical_audit_kb.api.project_member_store import InMemoryProjectMemberStore
 from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
 from medical_audit_kb.api.review_task_store import (
     JsonFileReviewTaskStore,
@@ -432,6 +435,22 @@ def test_report_workpaper_template_registry_returns_docx_metadata(tmp_path: Path
     assert body["format"] == "workpaper-template-registry-v1"
     assert body["registry_status"] == "active"
     assert body["count"] == 3
+    assert [item["label"] for item in body["template_categories"]] == [
+        "计划类",
+        "底稿类",
+        "取证类",
+        "函证类",
+        "报告类",
+        "整改类",
+    ]
+    assert [item["availability"] for item in body["template_categories"]] == [
+        "awaiting-business-template",
+        "active",
+        "awaiting-business-template",
+        "awaiting-business-template",
+        "awaiting-business-template",
+        "awaiting-business-template",
+    ]
     template_names = {item["name"] for item in body["items"]}
     assert template_names == {
         "费用汇总风险底稿",
@@ -442,7 +461,353 @@ def test_report_workpaper_template_registry_returns_docx_metadata(tmp_path: Path
     assert visit_detail["source_file_name"] == "表3_就诊费用明细表（空白）.xlsx"
     assert "身份证号码" in visit_detail["expected_columns"]
     assert "隐私字段处理记录" in visit_detail["evidence_bindings"]
+    assert {item["category_id"] for item in body["items"]} == {"workpaper"}
     assert state.operation_logs[-1]["action"] == "report-workpaper-template-registry-view"
+
+
+def test_report_workbench_returns_six_categories_and_only_workpaper_templates(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/reports/workbench")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["template_categories"]] == [
+        "plan",
+        "workpaper",
+        "evidence",
+        "confirmation",
+        "report",
+        "remediation",
+    ]
+    assert [item["label"] for item in body["template_categories"]] == [
+        "计划类",
+        "底稿类",
+        "取证类",
+        "函证类",
+        "报告类",
+        "整改类",
+    ]
+    assert {item["id"] for item in body["workpaper_templates"]} == {
+        "workpaper-summary-risk",
+        "workpaper-category-review",
+        "workpaper-visit-detail",
+    }
+    assert {item["category_id"] for item in body["workpaper_templates"]} == {
+        "workpaper"
+    }
+
+
+@pytest.mark.parametrize(
+    ("role", "user_identifier"),
+    (
+        ("admin", "next-admin"),
+        ("director", "next-director"),
+        ("member", "next-member"),
+    ),
+)
+def test_report_template_draft_persists_controlled_review_task_for_allowed_roles(
+    tmp_path: Path,
+    role: str,
+    user_identifier: str,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    sensitive_value = "SENTINEL-FIELD-VALUE-MUST-NOT-ENTER-AUDIT-LOG"
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": user_identifier, "X-Role": role},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sensitive_value},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "format": "report-template-draft-v1",
+        "task_id": "review-task-0001",
+        "template_id": "workpaper-summary-risk",
+        "category_id": "workpaper",
+        "project_key": "SELF-CHECK-FUND-20260607",
+        "project_href": "/projects?project=SELF-CHECK-FUND-20260607",
+        "status": "pending-review",
+        "store": {"ready": True, "backend": "JsonFileReviewTaskStore"},
+        "formal_report_created": False,
+        "provider_call": False,
+    }
+    task = _review_tasks(state)[0]
+    assert task["source"] == "report-template-draft"
+    assert task["status"] == "pending-review"
+    assert task["created_by"] == user_identifier
+    dossier = task["dossier"]
+    assert isinstance(dossier, dict)
+    draft = dossier["report_template_draft"]
+    assert draft == {
+        "status": "draft",
+        "template_id": "workpaper-summary-risk",
+        "template_name": "费用汇总风险底稿",
+        "category_id": "workpaper",
+        "project_key": "SELF-CHECK-FUND-20260607",
+        "created_by": user_identifier,
+        "user_identifier": user_identifier,
+        "field_values": {"人工复核意见": sensitive_value},
+    }
+    assert state.operation_logs[-1]["action"] == "report-template-draft-create"
+    assert state.operation_logs[-1]["payload"]["field_count"] == 1
+    serialized_operation = json.dumps(state.operation_logs[-1], ensure_ascii=False)
+    assert sensitive_value not in serialized_operation
+    assert "field_values" not in serialized_operation
+
+
+def test_report_template_draft_rejects_unknown_template_and_field_without_task(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "next-admin", "X-Role": "admin"}
+
+    unknown_template = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "not-a-template",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {},
+        },
+    )
+    unknown_field = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"not-an-evidence-binding": "value"},
+        },
+    )
+    nested_field_value = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": {"nested": "not allowed"}},
+        },
+    )
+    normalized_key_collision = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {
+                "人工复核意见": "first",
+                " 人工复核意见 ": "second",
+            },
+        },
+    )
+
+    assert unknown_template.status_code == 404
+    assert unknown_template.json()["detail"] == "report template not found"
+    assert unknown_field.status_code == 422
+    assert unknown_field.json()["detail"] == (
+        "field_values contains unsupported evidence binding: not-an-evidence-binding"
+    )
+    assert nested_field_value.status_code == 422
+    assert normalized_key_collision.status_code == 422
+    assert _review_tasks(state) == []
+    assert all(log["action"] != "authorization-denied" for log in state.operation_logs)
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected_status", "expected_reason"),
+    (
+        (
+            {"X-Role": "member"},
+            401,
+            "X-User-Id header is required",
+        ),
+        (
+            {"X-User-Id": "anonymous", "X-Role": "member"},
+            401,
+            "X-User-Id header is required",
+        ),
+        (
+            {"X-User-Id": "unrelated-member", "X-Role": "member"},
+            404,
+            "project not found",
+        ),
+    ),
+)
+def test_report_template_draft_hides_project_and_safely_audits_denials(
+    tmp_path: Path,
+    headers: dict[str, str],
+    expected_status: int,
+    expected_reason: str,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    sensitive_value = "SENTINEL-DENIED-FIELD-VALUE"
+
+    response = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sensitive_value},
+        },
+    )
+
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == expected_reason
+    assert _review_tasks(state) == []
+    denial = state.operation_logs[-1]
+    assert denial["action"] == "authorization-denied"
+    assert denial["payload"]["attempted_action"] == "report-template-draft-create"
+    assert denial["payload"]["permission"] == "create_report_draft"
+    assert denial["payload"]["status_code"] == expected_status
+    assert denial["payload"]["auth_scope_type"] == "project"
+    assert denial["payload"]["auth_scope_key"] == "SELF-CHECK-FUND-20260607"
+    serialized_denial = json.dumps(denial, ensure_ascii=False)
+    assert sensitive_value not in serialized_denial
+    assert "field_values" not in serialized_denial
+
+
+def test_report_template_draft_checks_identity_before_template_lookup(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-Role": "member"},
+        json={
+            "template_id": "not-a-template",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {},
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "X-User-Id header is required"
+    assert _review_tasks(state) == []
+    assert state.operation_logs[-1]["action"] == "authorization-denied"
+
+
+def test_report_template_draft_hides_unknown_project_and_safely_audits(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    sensitive_value = "SENTINEL-UNKNOWN-PROJECT-FIELD-VALUE"
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-admin", "X-Role": "admin"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "UNKNOWN-PROJECT",
+            "field_values": {"人工复核意见": sensitive_value},
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "project not found"
+    assert _review_tasks(state) == []
+    denial = state.operation_logs[-1]
+    assert denial["action"] == "authorization-denied"
+    assert denial["payload"]["auth_scope_key"] == "UNKNOWN-PROJECT"
+    serialized_denial = json.dumps(denial, ensure_ascii=False)
+    assert sensitive_value not in serialized_denial
+    assert "field_values" not in serialized_denial
+
+
+def test_report_template_draft_rejects_visible_technician_and_safely_audits(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    store = InMemoryProjectMemberStore()
+    store.add_member(
+        "SELF-CHECK-FUND-20260607",
+        {
+            "user_identifier": "active-technician",
+            "name": "可见技术人员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    state.project_member_store = store
+    client = TestClient(create_app(state))
+    sensitive_value = "SENTINEL-TECHNICIAN-FIELD-VALUE"
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "active-technician", "X-Role": "technician"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sensitive_value},
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "create_report_draft is not allowed"
+    assert _review_tasks(state) == []
+    denial = state.operation_logs[-1]
+    assert denial["action"] == "authorization-denied"
+    assert denial["payload"]["effective_role"] == "technician"
+    assert denial["payload"]["status_code"] == 403
+    serialized_denial = json.dumps(denial, ensure_ascii=False)
+    assert sensitive_value not in serialized_denial
+    assert "field_values" not in serialized_denial
+
+
+def test_report_template_draft_uses_default_visibility_when_sql_store_fails(
+    tmp_path: Path,
+) -> None:
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("project member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = FailingProjectMemberStore()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json={
+            "template_id": "workpaper-category-review",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"需下钻明细": "待复核"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task_id"] == "review-task-0001"
+    assert _review_tasks(state)[0]["source"] == "report-template-draft"
 
 
 def test_chat_dossier_export_fails_when_backend_is_not_ready(tmp_path: Path) -> None:

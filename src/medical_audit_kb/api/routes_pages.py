@@ -11,9 +11,20 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.agent_store import AgentStore, InMemoryAgentStore, combined_agent_payloads
@@ -26,7 +37,14 @@ from medical_audit_kb.api.audit_log_policy import (
     audit_log_policy_payload,
     redact_audit_log_events,
 )
-from medical_audit_kb.api.auth import Permission, has_permission, resolve_authenticated_user
+from medical_audit_kb.api.auth import (
+    AuthenticatedUser,
+    HospitalRole,
+    Permission,
+    has_permission,
+    record_authorization_denied,
+    resolve_authenticated_user,
+)
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
@@ -34,6 +52,12 @@ from medical_audit_kb.api.evaluation_reports import (
     list_evaluation_report_files,
 )
 from medical_audit_kb.api.postgres_status import load_postgres_index_status, row_count
+from medical_audit_kb.api.project_member_store import (
+    InMemoryProjectMemberStore,
+    ProjectMemberStore,
+    project_exists,
+    visible_project_keys,
+)
 from medical_audit_kb.api.query_history_store import try_add_query_history
 from medical_audit_kb.api.review_task_store import (
     InMemoryReviewTaskStore,
@@ -134,9 +158,69 @@ SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
     for definition in SOURCE_COLLECTION_DEFINITIONS
 }
 
+REPORT_TEMPLATE_CATEGORIES: tuple[dict[str, str], ...] = (
+    {"id": "plan", "label": "计划类", "availability": "awaiting-business-template"},
+    {"id": "workpaper", "label": "底稿类", "availability": "active"},
+    {
+        "id": "evidence",
+        "label": "取证类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "confirmation",
+        "label": "函证类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "report",
+        "label": "报告类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "remediation",
+        "label": "整改类",
+        "availability": "awaiting-business-template",
+    },
+)
+
+
+class ReportTemplateDraftCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=1, max_length=128)
+    project_key: str = Field(min_length=1, max_length=128)
+    field_values: dict[str, str]
+
+    @field_validator("template_id", "project_key")
+    @classmethod
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("identifier is required")
+        return normalized
+
+    @field_validator("field_values")
+    @classmethod
+    def normalize_field_values(cls, values: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in values.items():
+            normalized_key = key.strip()
+            if not normalized_key:
+                raise ValueError("field_values keys must not be blank")
+            if len(normalized_key) > 128:
+                raise ValueError("field_values keys must not exceed 128 characters")
+            if normalized_key in normalized:
+                raise ValueError("field_values keys must be unique after normalization")
+            normalized_value = value.strip()
+            if len(normalized_value) > 4000:
+                raise ValueError("field_values values must not exceed 4000 characters")
+            normalized[normalized_key] = normalized_value
+        return normalized
+
 WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     {
         "id": "workpaper-summary-risk",
+        "category_id": "workpaper",
         "name": "费用汇总风险底稿",
         "source_template_id": "medical-expense-summary",
         "source_table": "表1 医保费用汇总表",
@@ -188,6 +272,7 @@ WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     },
     {
         "id": "workpaper-category-review",
+        "category_id": "workpaper",
         "name": "分类费用复核清单",
         "source_template_id": "medical-expense-category-summary",
         "source_table": "表2 医保费用分类汇总表",
@@ -239,6 +324,7 @@ WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     },
     {
         "id": "workpaper-visit-detail",
+        "category_id": "workpaper",
         "name": "就诊明细疑点摘要",
         "source_template_id": "visit-expense-detail",
         "source_table": "表3 就诊费用明细表",
@@ -474,9 +560,106 @@ def report_workpaper_templates(
         "format": "workpaper-template-registry-v1",
         "generated_at": _utc_now_iso(),
         "registry_status": "active",
+        "template_categories": REPORT_TEMPLATE_CATEGORIES,
         "items": templates_payload,
         "count": len(templates_payload),
         "store": {"ready": True, "backend": "static-template-registry"},
+    }
+
+
+@router.post("/reports/drafts")
+def create_report_template_draft(
+    payload: ReportTemplateDraftCreateRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _report_draft_authorized_user(
+        state,
+        project_key=payload.project_key,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    template = _report_template_by_id(payload.template_id)
+    allowed_fields = frozenset(_string_sequence(template.get("evidence_bindings")))
+    unsupported_fields = sorted(set(payload.field_values) - allowed_fields)
+    if unsupported_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "field_values contains unsupported evidence binding: "
+                f"{unsupported_fields[0]}"
+            ),
+        )
+    now = _utc_now_iso()
+    template_name = str(template["name"])
+    category_id = str(template["category_id"])
+    task = {
+        "task_id": _review_task_store(state).next_task_id(),
+        "created_at": now,
+        "updated_at": now,
+        "status": "pending-review",
+        "status_label": REVIEW_TASK_STATUS_LABELS["pending-review"],
+        "question": f"{template_name}：{payload.project_key}",
+        "citation_count": 0,
+        "review_gate": "模板字段已受控校验，待人工复核。",
+        "confidence_label": "待复核",
+        "fallback_label": "模板草稿",
+        "source": "report-template-draft",
+        "created_by": user.user_identifier,
+        "assigned_to": "",
+        "reviewer_note": "",
+        "conclusion": "",
+        "dossier": _with_review_task_governance_defaults(
+            {
+                "report_template_draft": {
+                    "status": "draft",
+                    "template_id": payload.template_id,
+                    "template_name": template_name,
+                    "category_id": category_id,
+                    "project_key": payload.project_key,
+                    "created_by": user.user_identifier,
+                    "user_identifier": user.user_identifier,
+                    "field_values": dict(payload.field_values),
+                }
+            }
+        ),
+    }
+    created_task = _review_task_store(state).add_task(task)
+    task_id = str(created_task["task_id"])
+    record_operation(
+        state,
+        "report-template-draft-create",
+        {
+            "task_id": task_id,
+            "template_id": payload.template_id,
+            "category_id": category_id,
+            "project_key": payload.project_key,
+            "created_by": user.user_identifier,
+            "actor_role": user.role.value,
+            "field_count": len(payload.field_values),
+            "status": "pending-review",
+            "formal_report_created": False,
+            "provider_call": False,
+        },
+    )
+    return {
+        "format": "report-template-draft-v1",
+        "task_id": task_id,
+        "template_id": payload.template_id,
+        "category_id": category_id,
+        "project_key": payload.project_key,
+        "project_href": (
+            "/projects?project="
+            f"{urllib.parse.quote(payload.project_key, safe='')}"
+        ),
+        "status": "pending-review",
+        "store": {
+            "ready": True,
+            "backend": _review_task_store(state).__class__.__name__,
+        },
+        "formal_report_created": False,
+        "provider_call": False,
     }
 
 
@@ -507,6 +690,7 @@ def reports_workbench(
         "format": "report-workbench-v1",
         "generated_at": _utc_now_iso(),
         "template_registry_status": "active",
+        "template_categories": REPORT_TEMPLATE_CATEGORIES,
         "workpaper_templates": templates_payload,
         "report_entries": report_entries,
         "report_evidence_sources": report_evidence_sources,
@@ -1717,6 +1901,7 @@ def _docx_download_response(
 def _workpaper_template_registry_item(template: Mapping[str, object]) -> dict[str, object]:
     return {
         "id": str(template["id"]),
+        "category_id": str(template["category_id"]),
         "name": str(template["name"]),
         "source_template_id": str(template["source_template_id"]),
         "source_table": str(template["source_table"]),
@@ -1730,6 +1915,133 @@ def _workpaper_template_registry_item(template: Mapping[str, object]) -> dict[st
         "prompt": str(template["prompt"]),
         "chat_href": str(template["chat_href"]),
     }
+
+
+def _report_template_by_id(template_id: str) -> Mapping[str, object]:
+    for template in WORKPAPER_TEMPLATE_REGISTRY:
+        if template["id"] == template_id:
+            return template
+    raise HTTPException(status_code=404, detail="report template not found")
+
+
+def _report_draft_authorized_user(
+    state: ApiState,
+    *,
+    project_key: str,
+    x_user_id: str | None,
+    x_role: str | None,
+) -> AuthenticatedUser:
+    attempted_action = "report-template-draft-create"
+    permission = Permission.CREATE_REPORT_DRAFT
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+
+    try:
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=normalized_user_identifier,
+            x_role=x_role,
+            project_key=project_key,
+        )
+    except HTTPException as exc:
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier=normalized_user_identifier,
+            raw_role=x_role,
+            status_code=exc.status_code,
+            reason=str(exc.detail),
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise
+
+    if not project_exists(project_key):
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=404,
+            reason="project not found",
+        )
+        raise HTTPException(status_code=404, detail="project not found")
+
+    store = _report_project_member_store(state)
+    try:
+        visible_keys = visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=store,
+        )
+    except SQLAlchemyError:
+        visible_keys = visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=InMemoryProjectMemberStore(),
+        )
+    if project_key not in visible_keys:
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=404,
+            reason="project not found",
+        )
+        raise HTTPException(status_code=404, detail="project not found")
+
+    if not has_permission(user.role, permission):
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=403,
+            reason=f"{permission.value} requires a higher hospital role",
+        )
+        raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
+    return user
+
+
+def _record_report_draft_denial(
+    state: ApiState,
+    *,
+    user: AuthenticatedUser,
+    project_key: str,
+    status_code: int,
+    reason: str,
+) -> None:
+    record_authorization_denied(
+        state,
+        attempted_action="report-template-draft-create",
+        permission=Permission.CREATE_REPORT_DRAFT,
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type="project",
+        auth_scope_key=project_key,
+        status_code=status_code,
+        reason=reason,
+    )
+
+
+def _report_project_member_store(state: ApiState) -> ProjectMemberStore:
+    if state.project_member_store is None:
+        state.project_member_store = InMemoryProjectMemberStore()
+    return state.project_member_store
 
 
 def _review_task_report_entry(task: dict[str, object]) -> dict[str, object]:
