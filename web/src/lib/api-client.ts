@@ -122,7 +122,11 @@ async function postJson<T>(
   return (await response.json()) as T;
 }
 
-async function postForm<T>(path: string, formData: FormData): Promise<T> {
+async function postForm<T>(
+  path: string,
+  formData: FormData,
+  options: { readonly exposeValidationDetail?: boolean } = {}
+): Promise<T> {
   assertBackendProxyClientRuntime();
 
   const response = await fetch(path, {
@@ -136,7 +140,7 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
   });
 
   if (!response.ok) {
-    if (response.status === 413 || response.status === 422) {
+    if (options.exposeValidationDetail && (response.status === 413 || response.status === 422)) {
       let detail: string | null = null;
       try {
         const payload = await response.json() as unknown;
@@ -288,7 +292,9 @@ export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
 export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData);
+  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData, {
+    exposeValidationDetail: true
+  });
 }
 
 export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {

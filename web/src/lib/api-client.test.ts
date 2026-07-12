@@ -868,6 +868,16 @@ describe("api-client", () => {
     );
   });
 
+  it("keeps non-analytics form validation errors generic without reading backend detail", async () => {
+    const json = vi.fn(async () => ({ detail: "internal document validation detail" }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 422, json })));
+
+    await expect(uploadPersonalDocument(new File(["x"], "document.pdf"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/documents/uploads returned 422"
+    );
+    expect(json).not.toHaveBeenCalled();
+  });
+
   it("fetches analysis upload history through the versioned API proxy", async () => {
     vi.stubGlobal(
       "fetch",
