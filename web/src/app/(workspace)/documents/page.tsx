@@ -203,6 +203,7 @@ export default function DocumentsPage() {
       return;
     }
     setSubmittedQuery(nextQuery);
+    setDocumentSearchState({ kind: "idle" });
     setAiSearchState({ kind: "searching" });
     setActionNotice("");
     try {

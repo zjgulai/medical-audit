@@ -54,6 +54,31 @@ vi.mock("@/lib/api-client", () => ({
 const runKnowledgeQueryMock = vi.mocked(runKnowledgeQuery);
 const searchDocumentsMock = vi.mocked(searchDocuments);
 
+function makeAiResponse(
+  overrides: Partial<Awaited<ReturnType<typeof runKnowledgeQuery>>> = {}
+): Awaited<ReturnType<typeof runKnowledgeQuery>> {
+  return {
+    contract_version: "knowledge-query-contract-v2",
+    question: "劳动争议司法案件解释",
+    answer: "",
+    confidence: "low",
+    fallback_used: false,
+    generation_status: "generated",
+    generation_failure_code: null,
+    generation_http_status: null,
+    model_alias: "kimi-2.7",
+    model_status: "selected_provider",
+    effective_source_collections: [],
+    basis_groups: [],
+    citations: [],
+    personal_upload_matches: [],
+    query_log_index: 1,
+    query_log_id: "query-log-mode-test",
+    agent_invocation_id: null,
+    ...overrides
+  };
+}
+
 describe("DocumentsPage", () => {
   beforeEach(() => {
     runtimeMock.current = makeApiRuntime();
@@ -372,6 +397,90 @@ describe("DocumentsPage", () => {
       sourceCollections: ["medical-insurance-laws"]
     });
     expect((await screen.findAllByText("重试后的医保依据")).length).toBeGreaterThan(0);
+  });
+
+  it("replaces pure search results and boundaries when AI+ finishes empty", async () => {
+    searchDocumentsMock.mockResolvedValue({
+      contract_version: "document-search-v1",
+      query: "劳动争议司法案件解释",
+      effective_source_collections: [],
+      items: [
+        {
+          id: "pure-search-old",
+          chunk_id: "pure-search-old",
+          title: "纯检索旧结果",
+          source_collection: "medical-insurance-laws",
+          source_label: "医保法规库",
+          snippet: "这条结果不应残留到 AI+ 状态。",
+          locator: { title: "纯检索旧结果" },
+          score: 1,
+          matched_by: ["bm25"],
+          index_version_key: "index-v1",
+          source_package_version_key: "package-v1",
+          preview_url: "/api/v1/preview/pure-search-old"
+        }
+      ],
+      store: { ready: true, backend: "unit-test" },
+      boundaries: {
+        production_write: false,
+        provider_call: true,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
+    });
+    runKnowledgeQueryMock.mockResolvedValue(makeAiResponse());
+
+    render(<DocumentsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+
+    expect((await screen.findAllByText("纯检索旧结果")).length).toBeGreaterThan(0);
+    expect(screen.getByText("文档检索 provider_call：是")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /检索AI\+/ }));
+
+    expect(await screen.findByText("AI+ 已完成审证，但未返回可展示的引用文档。")).toBeInTheDocument();
+    expect(screen.queryByText("纯检索旧结果")).not.toBeInTheDocument();
+    expect(screen.queryByText(/文档检索 provider_call：/)).not.toBeInTheDocument();
+    expect(screen.getByText("AI+ provider_call：当前查询契约未独立提供")).toBeInTheDocument();
+    expect(screen.getByText("AI+ generation_status：generated")).toBeInTheDocument();
+    expect(screen.getByLabelText("当前检索状态")).toHaveTextContent("0 条匹配");
+  });
+
+  it("replaces a pure search error and retry when AI+ returns results", async () => {
+    searchDocumentsMock.mockRejectedValue(new Error("409 search backend unavailable"));
+    runKnowledgeQueryMock.mockResolvedValue(makeAiResponse({
+      citations: [
+        {
+          citation_id: "ai-current-result",
+          marker: "[1]",
+          chunk_id: "ai-current-result",
+          evidence_type: "法规依据",
+          source_collection: "medical-insurance-laws",
+          snippet: "AI+ 当前模式返回的结果。",
+          locator: { title: "AI+ 当前结果" },
+          index_version_key: "index-v1",
+          source_package_version_key: "package-v1"
+        }
+      ]
+    }));
+
+    render(<DocumentsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+
+    expect(await screen.findByText("文档检索失败：请确认知识库检索服务可用后重试。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试检索" })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前检索状态")).toHaveTextContent("检索失败");
+
+    fireEvent.click(screen.getByRole("button", { name: /检索AI\+/ }));
+
+    expect((await screen.findAllByText("AI+ 当前结果")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("文档检索失败：请确认知识库检索服务可用后重试。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试检索" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/文档检索 provider_call：/)).not.toBeInTheDocument();
+    expect(screen.getByText("AI+ provider_call：当前查询契约未独立提供")).toBeInTheDocument();
+    expect(screen.getByLabelText("当前检索状态")).not.toHaveTextContent("检索失败");
+    expect(screen.getByLabelText("当前检索状态")).toHaveTextContent("1 条匹配");
   });
 
   it("keeps source collection scope from the knowledge base entry through search and AI+ query", async () => {
