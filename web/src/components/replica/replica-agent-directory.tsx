@@ -217,7 +217,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [detailOpen, setDetailOpen] = useState(() => mode === "mine");
   const [activeAction, setActiveAction] = useState<AgentAction>("查看详情");
   const [installingAgentId, setInstallingAgentId] = useState("");
-  const [installedAgentId, setInstalledAgentId] = useState("");
+  const [installedAgent, setInstalledAgent] = useState<{
+    readonly templateId: string;
+    readonly agentId: string;
+  } | null>(null);
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const agentData = useReplicaAgentsData(mode);
@@ -244,6 +247,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       visibleAgents[0] ??
       filteredAgents[0] ??
       sourceAgents[0];
+  const installedAgentId = selectedAgent && installedAgent?.templateId === selectedAgent.id
+    ? installedAgent.agentId
+    : "";
   const actionPanel = (isMine ? mineActionPanels : marketActionPanels)[activeAction];
   const isSelectedAgentFavorite = selectedAgent ? favoriteAgentIds.has(selectedAgent.id) : false;
 
@@ -276,6 +282,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     setSelectedAgentId(agent.id);
     setDetailOpen(true);
     setActiveAction("查看详情");
+    setNotice("");
   }
 
   function toggleFavorite(agent: ReferenceAgentCard) {
@@ -300,7 +307,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     setDetailOpen(true);
     setActiveAction("创建副本");
     setInstallingAgentId(agent.id);
-    setInstalledAgentId("");
+    setInstalledAgent(null);
     setNotice("");
 
     try {
@@ -327,7 +334,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_source_file: agent.sourceFile
         }
       });
-      setInstalledAgentId(response.item.id);
+      setInstalledAgent({ templateId: agent.id, agentId: response.item.id });
       setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
     } catch {
       setNotice("安装未完成：智能体创建接口暂不可用，请稍后重试。");

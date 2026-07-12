@@ -296,4 +296,34 @@ describe("ReplicaAgentDirectory", () => {
       );
     }
   );
+
+  it("does not reuse an installed chat link across extension templates", async () => {
+    const [firstAgent, secondAgent] = auditExtensionValidationCatalog;
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
+      target: { value: firstAgent.name }
+    });
+    fireEvent.click(screen.getByRole("button", { name: `详情：${firstAgent.name}` }));
+    let dialog = screen.getByRole("dialog", { name: firstAgent.name });
+    fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${firstAgent.name}` }));
+    expect(await within(dialog).findByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+      "href",
+      `/chat?agent=installed-${firstAgent.id}`
+    );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭智能体详情" }));
+    fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
+      target: { value: secondAgent.name }
+    });
+    fireEvent.click(screen.getByRole("button", { name: `详情：${secondAgent.name}` }));
+    dialog = screen.getByRole("dialog", { name: secondAgent.name });
+    expect(within(dialog).queryByRole("link", { name: "进入 AI 对话" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${secondAgent.name}` }));
+    expect(await within(dialog).findByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+      "href",
+      `/chat?agent=installed-${secondAgent.id}`
+    );
+  });
 });
