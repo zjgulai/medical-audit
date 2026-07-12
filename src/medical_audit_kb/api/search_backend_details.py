@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
@@ -11,6 +12,7 @@ SENSITIVE_KEY_FRAGMENTS = (
     "api_key",
     "credential",
 )
+SENSITIVE_MATCH_UNQUOTE_MAX_ROUNDS = 4
 
 _INVALID_URL_SENTINEL = "<redacted-invalid-url>"
 _UNSUPPORTED_VALUE_SENTINEL = "<unsupported-diagnostic-value>"
@@ -25,8 +27,10 @@ def safe_search_backend_details(details: Mapping[str, object]) -> dict[str, obje
 
 
 def safe_search_backend_value(value: object) -> object:
-    if value is None or isinstance(value, (bool, int, float)):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _UNSUPPORTED_VALUE_SENTINEL
     if isinstance(value, str):
         return redact_url_credentials_and_sensitive_query(value)
     if isinstance(value, Mapping):
@@ -46,7 +50,12 @@ def redact_url_credentials_and_sensitive_query(value: str) -> str:
     except ValueError:
         return _INVALID_URL_SENTINEL
 
-    if not parsed.scheme or not parsed.netloc:
+    explicit_authority = value.startswith("//") or (
+        bool(parsed.scheme) and value.lower().startswith(f"{parsed.scheme.lower()}://")
+    )
+    if not parsed.netloc:
+        if explicit_authority:
+            return _INVALID_URL_SENTINEL
         return value
 
     try:
@@ -66,16 +75,26 @@ def redact_url_credentials_and_sensitive_query(value: str) -> str:
         doseq=True,
     )
     fragment = parsed.fragment
-    if _contains_sensitive_fragment(unquote(fragment)):
+    if _contains_sensitive_fragment(fragment):
         fragment = ""
     return urlunsplit((parsed.scheme, netloc, parsed.path, safe_query, fragment))
 
 
 def _is_sensitive_key(key: str) -> bool:
-    lowered = key.lower()
+    lowered = _canonicalize_for_sensitive_matching(key).lower()
     return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
 
 
 def _contains_sensitive_fragment(value: str) -> bool:
-    lowered = value.lower()
+    lowered = _canonicalize_for_sensitive_matching(value).lower()
     return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
+
+
+def _canonicalize_for_sensitive_matching(value: str) -> str:
+    current = value
+    for _ in range(SENSITIVE_MATCH_UNQUOTE_MAX_ROUNDS):
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+    return current

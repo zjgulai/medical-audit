@@ -1816,6 +1816,121 @@ def test_document_source_and_knowledge_base_catalog_replace_unsupported_diagnost
         }
 
 
+def test_document_source_and_knowledge_base_catalog_scrub_protocol_relative_urls(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "protocol_relative_url": (
+            "//dummy-user-sentinel:dummy-pass-sentinel@example.invalid/path"
+            "?safe=ok&token=dummy-query-token-sentinel"
+            "#password=dummy-fragment-password-sentinel"
+        ),
+        "empty_host_url": (
+            "https://?token=dummy-empty-token-sentinel"
+            "#password=dummy-empty-password-sentinel"
+        ),
+        "missing_protocol_relative_host_url": "//",
+        "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "protocol_relative_url": "//example.invalid/path?safe=ok",
+            "empty_host_url": "<redacted-invalid-url>",
+            "missing_protocol_relative_host_url": "<redacted-invalid-url>",
+            "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-user-sentinel",
+            "dummy-pass-sentinel",
+            "dummy-query-token-sentinel",
+            "dummy-fragment-password-sentinel",
+            "dummy-empty-token-sentinel",
+            "dummy-empty-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_scrub_double_encoded_url_parts(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "encoded_url": (
+            "https://example.invalid/path?safe=ok"
+            "&to%256ben=dummy-double-token-sentinel"
+            "&Pa%2573sword=dummy-double-password-sentinel"
+            "#Pa%2573sword=dummy-double-fragment-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "encoded_url": "https://example.invalid/path?safe=ok"
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-double-token-sentinel",
+            "dummy-double-password-sentinel",
+            "dummy-double-fragment-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_replace_nonfinite_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "nested": {
+            "nan": float("nan"),
+            "positive_infinity": float("inf"),
+            "negative_infinity": float("-inf"),
+        }
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "nested": {
+                "nan": "<unsupported-diagnostic-value>",
+                "positive_infinity": "<unsupported-diagnostic-value>",
+                "negative_infinity": "<unsupported-diagnostic-value>",
+            }
+        }
+
+
 def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
