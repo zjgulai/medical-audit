@@ -1,20 +1,20 @@
 ---
-title: AI智能审计管理系统 V1.0 开发计划
+title: AI审计一体化协作平台 V1.0 开发计划
 doc_type: other
 module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-06-21
+updated: 2026-07-13
 owner: self
 source: human+ai
 ---
 
-# AI智能审计管理系统 V1.0 开发计划
+# AI审计一体化协作平台 V1.0 开发计划
 
 ## 1. 当前基线
 
-本计划以 `AI智能审计管理系统 V1.0 PRD` 为母版，并以当前已部署的 AuditScope 知识库网站为工程基线。
+本计划以 `AI审计一体化协作平台 V1.0 PRD` 为母版，并以当前已部署的 AuditScope 知识库网站为工程基线。
 
 当前已完成：
 
@@ -47,7 +47,7 @@ source: human+ai
 - 已新增审计日志受控归档目录策略：`audit-log-retention --archive-root` 自动生成 `audit-log-events/YYYY/MM/DD/<batch-key>.jsonl` 和同目录签名 manifest，显式归档/签名路径不能逃出归档根目录。
 - 已新增审计日志归档根目录巡检 CLI `audit-log-archive-audit`，可递归验签 archive root 下的签名 manifest，识别归档文件缺失、路径逃逸、sha256 不匹配和签名失败。
 - 已新增生产侧审计日志归档巡检脚本 `scripts/run-audit-log-archive-audit.py` 和腾讯云 Compose 挂载策略，支持按 cron/systemd timer 执行只读巡检、维护 latest JSON 报告，并在配置 webhook URL 后对失败或脚本异常发送外部告警。
-- 已完成 `AI智能审计管理系统` 门户壳层生产部署，当前生产静态路由覆盖 `/workspace`、`/chat`、`/agents`、`/agent-market`、`/knowledge-base`、`/documents`、`/analytics`、`/graph`、`/rules`、`/reports`、`/remediation`、`/archive`、`/projects`、`/guided-check`、`/knowledge-query` 和 `/findings`。
+- 历史生产基线已部署旧品牌门户壳层，静态路由覆盖 `/workspace`、`/chat`、`/agents`、`/agent-market`、`/knowledge-base`、`/documents`、`/analytics`、`/graph`、`/rules`、`/reports`、`/remediation`、`/archive`、`/projects`、`/guided-check`、`/knowledge-query` 和 `/findings`；本轮新品牌和产品对齐尚未部署。
 - 已将参考系统 UI 要求转化为门户信息架构，完成侧边导航、多页面工作区、提示词型智能体入口、知识库三类展示、文档检索入口、上传表格分析入口、项目成员管理入口、图谱/规则/报告/整改/归档只读入口。
 - 已新增生产前端语义验收脚本 `scripts/run-production-frontend-acceptance.mjs`，覆盖桌面和移动视口下的门户路由、关键文案、文件上传入口、控制项和横向溢出检查。
 - 已完成提示词型智能体生产写入型 E2E：`/api/v1/agents` 使用 `SqlAlchemyAgentStore`，新增智能体 `agent-custom-ec210547464a` 后刷新可读，智能体列表从 `3` 增至 `4`。
@@ -58,13 +58,27 @@ source: human+ai
 - 文档检索搜索历史持久化已完成本地实现和联调：`/api/v1/query` 返回 `query_log_id`，`GET /api/v1/query/logs` 可从 `query_logs` 持久化读取历史，`/documents` 可展示、刷新和回填搜索历史；尚未生产部署。
 - 本地权限底座已新增医院四类角色、用户、科室、角色授权和本地租户头过渡层，`/query`、`/documents/permissions`、`/documents/uploads`、`/audit/logs`、`/audit/logs/export` 和 `/pages/audit-logs` 已优先读取持久化 `active/global/project` 角色并拦截 `disabled/pending` 用户；受控 API 鉴权中间件本地强制模式已要求 `X-Tenant-Id`，但该能力仍是本地 header 过渡层，不等同于真实 SSO、正式登录会话或正式租户身份来源。
 - 后端 Word/docx 导出切片已完成本地实现：单轮对话审计底稿、复核任务记录、任务级报告草稿和已签发报告均可通过 `format=docx` 下载；docx 由既有 Markdown 内容即时转换，不调用外部 provider。
-- 报告页 API-first 下载切片已完成本地实现：`/reports/workpaper-templates` 暴露三张医保费用模板 registry，`/reports/workbench` 聚合模板、复核任务报告记录、证据来源和 Word 下载链接，Next `/reports` 已优先读取该接口并保留样例兜底。
+- 报告页受控工作台已完成本地实现：固定六类目录，`/reports/workbench` 聚合三张 active 底稿模板、复核任务报告记录、证据来源和受控下载链接；API 空结果与错误不再回退样例记录。
+
+### 1.1 2026-07-12 PPT 反馈本地实现状态
+
+- 统一品牌为 `AI审计一体化协作平台`；登录页精简，主导航固定 9 项，`医保审计专题` 作为唯一独立入口。
+- 运行态统一区分 API ready/empty/error/degraded 与显式 catalog/fixture，不再用静态记录伪装 API 空结果或错误。
+- AI 数据分析采用 table-first `.xlsx` / `.csv` 工作台；文档提炼复用文档检索和 AI 对话，OCR 保持后置。
+- 项目状态统一为待开始/进行中/已完成/已归档；管理员、创建人和活跃成员由后端强制协作可见范围。
+- 报告首页固定六类目录，当前 3 个真实底稿模板 active；草稿显式关联可见项目，未交付业务模板保持阻塞。
+- 图谱拆为知识依据与项目证据链双视图；项目视图只读取精确项目证据，不绘制伪拓扑；业务流程图谱等待医院输入。
+- 智能体广场默认精确 3 个医疗模板；feature flag 只追加 3 个批准的扩展验证模板，安装链不调用 provider。
+- 新鲜本地证据：backend `281 passed`；frontend `32 files / 267 tests`；typecheck、lint exit `0`；Next build `24/24` pages；local full-stack E2E `13 passed`。
+- 本地 production-build 视觉矩阵 `45/45` passed，覆盖 9 页、5 种视口/缩放组合；最终代码复审 Critical/Important/Minor 均为 `0`。
+- 本地加固证据：项目级智能体缺少当前项目 scope 时 fail-closed；项目图谱拒绝跨项目冲突任务；分析历史按创建人隔离且不返回内部存储路径，持久化失败会补偿删除孤儿文件。
+- 本轮边界：`production unchanged`、`provider_call=false`、`database_write=local-test-only`；生产发布、生产只读复验和真实 provider smoke 均未执行。
 
 当前未完成：
 
 - 门户核心模块的后端持久化和真实业务闭环：`/agents` 和 `/projects` 已完成生产持久化写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收，但病毒扫描、脱敏留存、对象存储、下载权限隔离和正式工作簿治理仍未完成；`/documents` 已完成生产查询验收，搜索历史持久化、后端 `title_only`、个人材料治理状态机、本地策略扫描/DLP 标记和受控下载已完成本地实现但尚未生产部署，仍需个人材料真实入向量索引、外部杀毒/DLP 服务、脱敏改写和对象存储治理。
 - 智能体提示词版本治理、版本对比 UI、上下架/停用、软归档、角色可见范围、调用记录和效果反馈已完成本地首切片；生产部署验收、真实对话自动调用挂接、逐行 diff/审批流、项目级范围强校验和完整权限闭环仍未完成。
-- 多数门户页面仍由 `web/src/lib/portal-data.ts` 静态数据驱动；`/reports` 已完成本地 API-first 过渡并保留样例兜底，其他页面当前仍只能作为首期只读展示和验收壳层，不能写成完整业务 API 闭环。
+- `/analytics`、`/projects`、`/reports` 和 `/graph` 已完成本地 API-first/受控工作台收口；知识库、文档和智能体目录也已建立显式数据来源状态。上述事实仍是本地实现证据，不能写成生产已部署或完整医院业务闭环。
 - 顶部多标签和历史对话区仍是门户交互层能力，尚未形成服务端持久化会话系统。
 - HIS 字段映射页面、院方字段确认流和映射版本发布流。
 - 结构化规则执行器、医院本地覆盖规则和规则评审发布流程。
@@ -77,7 +91,7 @@ source: human+ai
 
 ## 2. 下一阶段目标
 
-V0.3 门户壳层已经部署到生产，提示词型智能体、项目成员管理、AI 数据分析上传解析、上传留存/历史记录和文档检索生产查询已完成生产验收；文档搜索历史、本地权限过渡层核心路由覆盖、后端 docx 导出、Next 报告页 API-first 下载切片、后端 `title_only`、个人材料治理状态机、本地策略扫描/DLP 标记、受控下载、智能体提示词版本/生命周期/角色可见范围/调用记录/效果反馈/软归档已完成本地实现。下一阶段不再继续盲目补页面，而是继续处理产品集成债务：推进个人材料真实入向量索引、外部杀毒/DLP 服务、对象存储、生产报告验收和电子签章，把现有审计证据链能力统一到可验收门户。
+V0.3 历史门户壳层已经部署到生产，提示词型智能体、项目成员管理、AI 数据分析上传解析、上传留存/历史记录和文档检索生产查询已完成生产验收；本轮 `AI审计一体化协作平台` 品牌与 9+1 信息架构仍仅有本地证据，尚未部署。文档搜索历史、本地权限过渡层核心路由覆盖、后端 docx 导出、Next 报告页 API-first 下载切片、后端 `title_only`、个人材料治理状态机、本地策略扫描/DLP 标记、受控下载、智能体提示词版本/生命周期/角色可见范围/调用记录/效果反馈/软归档已完成本地实现。下一阶段不再继续盲目补页面，而是继续处理产品集成债务：推进个人材料真实入向量索引、外部杀毒/DLP 服务、对象存储、生产报告验收和电子签章，把现有审计证据链能力统一到可验收门户。
 
 产品集成债务收敛后，继续把项目从“知识库支撑层 + 门户壳层”推进到“单院 HIS 专项审计 MVP”。
 
@@ -95,8 +109,8 @@ V0.3 门户壳层已经部署到生产，提示词型智能体、项目成员管
 
 ### 3.1 优先做
 
-- `PORTAL-01`：`AI智能审计管理系统` 品牌和门户壳。
-- `PORTAL-02`：左侧 9 模块导航和真实页面。
+- `PORTAL-01`：`AI审计一体化协作平台` 品牌和门户壳。
+- `PORTAL-02`：左侧 9 模块导航、唯一独立专题入口和真实页面。
 - `PORTAL-03`：顶部多标签工作区。
 - `AGENT-01/02/03`：提示词型智能体列表、新增和智能体广场。
 - `DOC-01`：参考系统式文档检索首页。
