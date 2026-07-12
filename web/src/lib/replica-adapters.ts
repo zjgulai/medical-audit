@@ -168,7 +168,7 @@ export type ReplicaKnowledgeBaseData = {
   readonly readableSourceCollections: readonly string[];
   readonly canUploadPersonal: boolean;
   readonly currentSearchEmbeddingCount: number | null;
-  readonly metricsSource: "knowledge-base-catalog" | "search-backend" | "unavailable";
+  readonly metricsSource: "knowledge-base-catalog" | "unavailable";
   readonly summary: ReplicaKnowledgeBaseSummary | null;
   readonly store: ReplicaKnowledgeBaseStore | null;
   readonly boundaries: ReplicaKnowledgeBaseBoundaries | null;
@@ -878,14 +878,9 @@ export async function loadReplicaKnowledgeBaseData(
     knowledgeMetricsReady
   );
   const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
-  const searchBackendEmbeddingCount = sourceCollectionCatalog?.search_backend.details.matching_embedding_count;
-  const currentSearchEmbeddingCount = knowledgeCatalog
-    ? knowledgeMetricsReady
-      ? knowledgeCatalog.summary.current_search_embedding_count
-      : null
-    : sourceCollectionCatalog?.search_backend.ready && typeof searchBackendEmbeddingCount === "number"
-      ? searchBackendEmbeddingCount
-      : null;
+  const currentSearchEmbeddingCount = knowledgeMetricsReady
+    ? knowledgeCatalog?.summary.current_search_embedding_count ?? null
+    : null;
   const readinessGap = Boolean(
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
@@ -895,9 +890,7 @@ export async function loadReplicaKnowledgeBaseData(
       registryOnly ||
       knowledgeCatalog.items.some((item) => !item.index.search_backend_ready)
     )) ||
-    (!knowledgeCatalog && sourceCollectionCatalog && (
-      !sourceCollectionCatalog.search_backend.ready || sourceGroups.length > 0
-    ))
+    (!knowledgeCatalog && sourceCollectionCatalog)
   );
 
   if (readinessGap) {
@@ -927,13 +920,7 @@ export async function loadReplicaKnowledgeBaseData(
         permissions?.upload_permissions.can_upload_personal ??
         false,
       currentSearchEmbeddingCount,
-      metricsSource: knowledgeCatalog
-        ? knowledgeMetricsReady
-          ? "knowledge-base-catalog"
-          : "unavailable"
-        : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
-          ? "search-backend"
-          : "unavailable",
+      metricsSource: knowledgeMetricsReady ? "knowledge-base-catalog" : "unavailable",
       summary: mapKnowledgeBaseSummary(knowledgeCatalog, knowledgeMetricsReady),
       store: mapKnowledgeBaseStore(knowledgeCatalog),
       boundaries: mapKnowledgeBaseBoundaries(knowledgeCatalog)

@@ -138,13 +138,33 @@ function chunkCountForItem(item: ReplicaKnowledgeBaseItem): number | null {
 }
 
 function sumDocuments(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
-  const counts = items.map(documentCountForItem).filter((value): value is number => value !== null);
-  return counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null;
+  if (items.length === 0) {
+    return null;
+  }
+  let total = 0;
+  for (const item of items) {
+    const count = documentCountForItem(item);
+    if (count === null) {
+      return null;
+    }
+    total += count;
+  }
+  return total;
 }
 
 function sumChunks(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
-  const counts = items.map(chunkCountForItem).filter((value): value is number => value !== null);
-  return counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null;
+  if (items.length === 0) {
+    return null;
+  }
+  let total = 0;
+  for (const item of items) {
+    const count = chunkCountForItem(item);
+    if (count === null) {
+      return null;
+    }
+    total += count;
+  }
+  return total;
 }
 
 function newestUpdatedAt(items: readonly ReplicaKnowledgeBaseItem[]) {

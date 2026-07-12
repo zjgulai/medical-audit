@@ -187,6 +187,43 @@ describe("KnowledgeBasePage", () => {
     expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("does not present a partial category sum when any item metric is unavailable", () => {
+    const ready = makeMetricsReadyRuntime();
+    runtimeMock.current = {
+      ...ready,
+      apiReadsEnabled: false,
+      source: "fixture",
+      data: {
+        ...ready.data,
+        knowledgeBases: [
+          ready.data.knowledgeBases[0]!,
+          {
+            ...ready.data.knowledgeBases[0]!,
+            id: "kb-review-partial-medical-policy",
+            name: "医保政策补充库",
+            documentCount: null,
+            chunkCount: null,
+            appCount: null
+          }
+        ],
+        currentSearchEmbeddingCount: null,
+        metricsSource: "unavailable",
+        summary: null,
+        store: null,
+        boundaries: null
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    const categoryTitle = within(screen.getByLabelText("知识库分类卡片")).getByText("医疗领域法律法规");
+    const categoryCard = categoryTitle.closest("button");
+    expect(categoryCard).not.toBeNull();
+    expect(categoryCard as HTMLButtonElement).toHaveTextContent("待同步 · 待同步");
+    expect(categoryCard as HTMLButtonElement).not.toHaveTextContent("12 份文档");
+    expect(categoryCard as HTMLButtonElement).not.toHaveTextContent("120 个片段");
+  });
+
   it("uses a catalog-empty message instead of search-no-result copy", () => {
     runtimeMock.current = makeUnavailableRuntime("empty");
 

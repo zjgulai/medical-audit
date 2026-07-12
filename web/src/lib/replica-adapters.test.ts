@@ -565,6 +565,39 @@ describe("replica backend read adapters", () => {
     expect(result.data.metricsSource).toBe("unavailable");
   });
 
+  it("does not expose partial search metrics without the knowledge catalog", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(metricBearingSourceCatalog)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.data.knowledgeBases[0]?.documentCount).toBeNull();
+    expect(result.data.knowledgeBases[0]?.chunkCount).toBeNull();
+    expect(result.data.knowledgeBases[0]?.appCount).toBeNull();
+    expect(result.data.currentSearchEmbeddingCount).toBeNull();
+    expect(result.data.metricsSource).toBe("unavailable");
+    expect(result.data.summary).toBeNull();
+    expect(result.data.store).toBeNull();
+    expect(result.data.boundaries).toBeNull();
+  });
+
+  it("marks an empty source-only catalog degraded when the knowledge catalog is absent", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(emptySourceCatalog)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.knowledgeBases).toEqual([]);
+    expect(result.data.currentSearchEmbeddingCount).toBeNull();
+    expect(result.data.metricsSource).toBe("unavailable");
+    expect(result.data.summary).toBeNull();
+    expect(result.data.store).toBeNull();
+    expect(result.data.boundaries).toBeNull();
+  });
+
   it("keeps zero metrics ready when the catalog and search backend are ready", async () => {
     const result = await loadReplicaKnowledgeBaseData({
       fetchKnowledgeBaseCatalog: vi.fn().mockResolvedValue(readyZeroMetricKnowledgeCatalog)
