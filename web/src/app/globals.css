@@ -1102,6 +1102,11 @@ select {
   outline-offset: 2px;
 }
 
+.replica-report-workbench .replica-report-catalog-section {
+  display: grid;
+  gap: 12px;
+}
+
 .replica-report-workbench .replica-report-catalog {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

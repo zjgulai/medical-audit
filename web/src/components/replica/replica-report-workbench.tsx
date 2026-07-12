@@ -435,6 +435,7 @@ export function ReplicaReportWorkbench() {
   const [submitting, setSubmitting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftResult, setDraftResult] = useState<ReportDraftCreateResponse | null>(null);
+  const [projectContextNotice, setProjectContextNotice] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
 
@@ -491,6 +492,7 @@ export function ReplicaReportWorkbench() {
     setFieldValues({});
     setDraftError(null);
     setDraftResult(null);
+    setProjectContextNotice(null);
     setDownloadError(null);
     loadWorkbench(auditUser.role);
   }, [abortPendingDownload, auditUser.role, loadWorkbench]);
@@ -512,12 +514,15 @@ export function ReplicaReportWorkbench() {
   const report = roleReportState.phase === "ready" ? roleReportState.response : null;
   const projects = roleProjectsState.response?.items ?? [];
   const projectReady = roleProjectsState.phase === "ready" && roleProjectsState.response !== null;
+  const selectedProjectVisible = projectReady && selectedProjectKey !== "" && projects.some(
+    (project) => project.id === selectedProjectKey
+  );
   const selectedTemplate = report?.workpaper_templates.find(
     (template) => template.id === selectedTemplateId
   ) ?? null;
   const canCreate = auditUser.can("create_report_draft");
   const unsavedFields = hasNonEmptyValues(fieldValues);
-  const canSelectTemplate = canCreate && projectReady && Boolean(selectedProjectKey) && !submitting;
+  const canSelectTemplate = canCreate && selectedProjectVisible && !submitting;
   const submittingFromAnotherRole = submitting && submitRoleRef.current !== auditUser.role;
   const templateSelectionHint = !canCreate
     ? "无草稿创建权限"
@@ -525,7 +530,7 @@ export function ReplicaReportWorkbench() {
       ? "草稿请求处理中，暂不可切换"
       : !projectReady
         ? "项目上下文未就绪"
-        : !selectedProjectKey
+        : !selectedProjectVisible
           ? "请先选择项目后填写模板"
           : "已选择项目，可填写模板";
   const retryVisible = (
@@ -534,6 +539,17 @@ export function ReplicaReportWorkbench() {
     roleProjectsState.phase === "error" ||
     roleProjectsState.phase === "degraded"
   );
+
+  useEffect(() => {
+    if (!projectReady || selectedProjectKey === "" || selectedProjectVisible) return;
+    ++interactionGenerationRef.current;
+    setSelectedProjectKey("");
+    setSelectedTemplateId(null);
+    setFieldValues({});
+    setDraftError(null);
+    setDraftResult(null);
+    setProjectContextNotice("原项目已不可见，请重新选择");
+  }, [projectReady, selectedProjectKey, selectedProjectVisible]);
 
   function clearDraftDisplay(): void {
     ++interactionGenerationRef.current;
@@ -547,6 +563,7 @@ export function ReplicaReportWorkbench() {
     clearDraftDisplay();
     setSelectedProjectKey(projectKey);
     setFieldValues({});
+    setProjectContextNotice(null);
   }
 
   function selectTemplate(templateId: string): void {
@@ -566,7 +583,7 @@ export function ReplicaReportWorkbench() {
 
   async function submitDraft(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!selectedTemplate || !selectedProjectKey || !canCreate || !projectReady || submittingRef.current) return;
+    if (!selectedTemplate || !selectedProjectVisible || !canCreate || submittingRef.current) return;
     const allowedFields = new Set(selectedTemplate.evidence_bindings);
     const normalizedValues: Record<string, string> = {};
     for (const [field, value] of Object.entries(fieldValues)) {
@@ -648,7 +665,7 @@ export function ReplicaReportWorkbench() {
             <select
               aria-label="所属项目"
               disabled={!projectReady || submitting}
-              value={selectedProjectKey}
+              value={selectedProjectVisible ? selectedProjectKey : ""}
               onChange={(event) => selectProject(event.target.value)}
             >
               <option value="">请选择可见项目</option>
@@ -663,6 +680,7 @@ export function ReplicaReportWorkbench() {
           ) : null}
           {roleProjectsState.phase === "degraded" ? <span>项目存储未就绪</span> : null}
           {projectReady && projects.length === 0 ? <span>当前没有可见项目</span> : null}
+          {projectContextNotice ? <span role="status">{projectContextNotice}</span> : null}
         </div>
         <div>
           <p>当前身份边界</p>
@@ -689,11 +707,9 @@ export function ReplicaReportWorkbench() {
           <span>当前不展示草稿入口或历史 fixture。</span>
         </div>
       ) : null}
-      {retryVisible ? (
-        <button disabled={submitting} type="button" onClick={() => loadWorkbench(auditUser.role)}>
-          重试工作台
-        </button>
-      ) : null}
+      <button disabled={submitting} type="button" onClick={() => loadWorkbench(auditUser.role)}>
+        {retryVisible ? "重试工作台" : "刷新工作台"}
+      </button>
 
       {report ? (
         <>
@@ -706,9 +722,9 @@ export function ReplicaReportWorkbench() {
             onSelectTemplate={selectTemplate}
           />
 
-          {selectedTemplate ? (
+          {selectedTemplate && selectedProjectVisible ? (
             <DraftPanel
-              canCreate={canCreate && projectReady}
+              canCreate={canCreate && selectedProjectVisible}
               error={draftError}
               fieldValues={fieldValues}
               projectKey={selectedProjectKey}

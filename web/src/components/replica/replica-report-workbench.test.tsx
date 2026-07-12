@@ -238,10 +238,14 @@ async function selectTemplateAndProject(
   templateName = "费用汇总风险底稿",
   projectKey = "ALPHA"
 ) {
-  fireEvent.change(await screen.findByRole("combobox", { name: "所属项目" }), {
+  const projectSelect = await screen.findByRole("combobox", { name: "所属项目" });
+  await waitFor(() => expect(projectSelect).toBeEnabled());
+  fireEvent.change(projectSelect, {
     target: { value: projectKey }
   });
-  fireEvent.click(screen.getByRole("button", { name: `填写模板：${templateName}` }));
+  const templateButton = await screen.findByRole("button", { name: `填写模板：${templateName}` });
+  await waitFor(() => expect(templateButton).toBeEnabled());
+  fireEvent.click(templateButton);
 }
 
 beforeEach(() => {
@@ -465,6 +469,7 @@ describe("ReplicaReportWorkbench", () => {
     fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
 
     expect(screen.getByRole("combobox", { name: "所属项目" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "刷新工作台" })).toBeDisabled();
     for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
       expect(button).toBeDisabled();
     }
@@ -480,6 +485,7 @@ describe("ReplicaReportWorkbench", () => {
 
     await act(async () => pendingDraft.resolve(draftResponse()));
     expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "刷新工作台" })).toBeEnabled();
   });
 
   it("restores draft results and controls after a StrictMode lifecycle replay", async () => {
@@ -631,6 +637,64 @@ describe("ReplicaReportWorkbench", () => {
     expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
     expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
     expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed when a same-role refresh removes the selected project", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fetchReportWorkbenchMock.mockResolvedValue(reportResponse());
+    fetchProjectsMock
+      .mockResolvedValueOnce(projectsResponse([alphaProject]))
+      .mockResolvedValueOnce(projectsResponse([betaProject]));
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "项目 A 的未保存字段" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+    expect(await screen.findByText("草稿已进入待复核队列")).toBeInTheDocument();
+    expect(createReportDraftMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新工作台" }));
+    expect(await screen.findByRole("option", { name: "Beta 收费专项" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+
+    const staleForm = screen.queryByRole("form", { name: "费用汇总风险底稿草稿" });
+    await act(async () => {
+      if (staleForm) fireEvent.submit(staleForm);
+    });
+    expect(createReportDraftMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("");
+    expect(screen.getByText("原项目已不可见，请重新选择")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("项目 A 的未保存字段")).not.toBeInTheDocument();
+    expect(screen.queryByText("草稿已进入待复核队列")).not.toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
+      expect(button).toBeDisabled();
+    }
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("preserves the draft context when a same-role refresh keeps the selected project visible", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fetchReportWorkbenchMock.mockResolvedValue(reportResponse());
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alphaProject]));
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "仍可见项目的未保存字段" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新工作台" }));
+    await waitFor(() => {
+      expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
+      expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("ALPHA");
+    });
+
+    expect(screen.getByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "人工复核意见" })).toHaveValue("仍可见项目的未保存字段");
+    expect(screen.queryByText("原项目已不可见，请重新选择")).not.toBeInTheDocument();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("keeps project selection visible without pretending a degraded report lane is ready", async () => {
