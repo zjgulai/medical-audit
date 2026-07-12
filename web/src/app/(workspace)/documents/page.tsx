@@ -22,6 +22,7 @@ const sourceCollectionFallbackLabelByValue = new Map<SourceCollection, string>(
 );
 
 const ALL_DOCUMENTS_CATEGORY = "全部文档";
+const DEFAULT_DOCUMENT_QUERY = "医保基金监管";
 
 type DocumentPreview = ReferenceDocumentResult & {
   readonly previewType: "对话文档" | "检索命中" | "知识库目录";
@@ -31,22 +32,23 @@ type DocumentPreview = ReferenceDocumentResult & {
 
 type DocumentSearchState =
   | { readonly kind: "idle" }
-  | { readonly kind: "searching" }
-  | { readonly kind: "results"; readonly response: DocumentSearchResponse }
-  | { readonly kind: "empty"; readonly response: DocumentSearchResponse }
-  | { readonly kind: "error"; readonly message: string };
+  | { readonly kind: "searching"; readonly request: SearchRequestSnapshot }
+  | { readonly kind: "results"; readonly request: SearchRequestSnapshot; readonly response: DocumentSearchResponse }
+  | { readonly kind: "empty"; readonly request: SearchRequestSnapshot; readonly response: DocumentSearchResponse }
+  | { readonly kind: "error"; readonly request: SearchRequestSnapshot; readonly message: string };
 
 type AiDocumentSearchState =
   | { readonly kind: "idle" }
-  | { readonly kind: "searching" }
-  | { readonly kind: "results"; readonly response: QueryResponse }
-  | { readonly kind: "empty"; readonly response: QueryResponse }
-  | { readonly kind: "error"; readonly message: string };
+  | { readonly kind: "searching"; readonly request: SearchRequestSnapshot }
+  | { readonly kind: "results"; readonly request: SearchRequestSnapshot; readonly response: QueryResponse }
+  | { readonly kind: "empty"; readonly request: SearchRequestSnapshot; readonly response: QueryResponse }
+  | { readonly kind: "error"; readonly request: SearchRequestSnapshot; readonly message: string };
 
-type DocumentSearchRequest = {
+type SearchRequestSnapshot = {
   readonly query: string;
   readonly titleOnly: boolean;
   readonly sourceCollections: readonly SourceCollection[];
+  readonly categoryLabel: string;
 };
 
 export default function DocumentsPage() {
@@ -76,8 +78,7 @@ export default function DocumentsPage() {
       }))
     ]
     : [];
-  const [query, setQuery] = useState("劳动争议司法案件解释");
-  const [submittedQuery, setSubmittedQuery] = useState("劳动争议司法案件解释");
+  const [query, setQuery] = useState(DEFAULT_DOCUMENT_QUERY);
   const [titleOnly, setTitleOnly] = useState(false);
   const [activeCategory, setActiveCategory] = useState(ALL_DOCUMENTS_CATEGORY);
   const [historyVisible, setHistoryVisible] = useState(true);
@@ -86,7 +87,6 @@ export default function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(true);
   const [documentSearchState, setDocumentSearchState] = useState<DocumentSearchState>({ kind: "idle" });
   const [aiSearchState, setAiSearchState] = useState<AiDocumentSearchState>({ kind: "idle" });
-  const [lastDocumentSearchRequest, setLastDocumentSearchRequest] = useState<DocumentSearchRequest | null>(null);
   const [urlSourceCollections, setUrlSourceCollections] = useState<readonly SourceCollection[]>([]);
   const documentSearchResponse = documentSearchState.kind === "results" || documentSearchState.kind === "empty"
     ? documentSearchState.response
@@ -117,7 +117,21 @@ export default function DocumentsPage() {
     () => selectedSourceCollections(categories, activeCategory, urlSourceCollections),
     [activeCategory, categories, urlSourceCollections]
   );
-  const activeScopeLabel = sourceCollectionScopeLabel(categories, activeSourceCollections);
+  const executedRequest = aiSearchState.kind !== "idle"
+    ? aiSearchState.request
+    : documentSearchState.kind !== "idle"
+      ? documentSearchState.request
+      : null;
+  const completedSourceCollections = aiSearchState.kind === "results" || aiSearchState.kind === "empty"
+    ? aiSearchState.response.effective_source_collections
+    : documentSearchState.kind === "results" || documentSearchState.kind === "empty"
+      ? documentSearchState.response.effective_source_collections
+      : null;
+  const displayedSourceCollections = completedSourceCollections ?? executedRequest?.sourceCollections ?? activeSourceCollections;
+  const displayedQuery = executedRequest?.query ?? query;
+  const displayedTitleOnly = executedRequest?.titleOnly ?? titleOnly;
+  const displayedCategory = executedRequest?.categoryLabel ?? activeCategory;
+  const displayedScopeLabel = sourceCollectionScopeLabel(categories, displayedSourceCollections);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -139,7 +153,6 @@ export default function DocumentsPage() {
     const initialQuery = params.get("query") ?? params.get("question");
     if (initialQuery?.trim()) {
       setQuery(initialQuery.trim());
-      setSubmittedQuery(initialQuery.trim());
     }
   }, [categories]);
 
@@ -147,7 +160,7 @@ export default function DocumentsPage() {
     if (hasExplicitSearch) {
       return documentResults;
     }
-    const normalizedQuery = submittedQuery.trim().toLowerCase();
+    const normalizedQuery = query.trim().toLowerCase();
     return documentResults.filter((item) => {
       const categoryMatched =
         activeCategory === ALL_DOCUMENTS_CATEGORY ||
@@ -157,24 +170,23 @@ export default function DocumentsPage() {
       const queryMatched = normalizedQuery.length === 0 || text.toLowerCase().includes(normalizedQuery);
       return categoryMatched && queryMatched;
     });
-  }, [activeCategory, documentResults, hasExplicitSearch, submittedQuery, titleOnly]);
+  }, [activeCategory, documentResults, hasExplicitSearch, query, titleOnly]);
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await runDocumentSearch({
-      query: query.trim() || "劳动争议司法案件解释",
+    await runDocumentSearch(createSearchRequestSnapshot({
+      query: query.trim() || DEFAULT_DOCUMENT_QUERY,
       titleOnly,
-      sourceCollections: [...activeSourceCollections]
-    });
+      sourceCollections: activeSourceCollections,
+      categoryLabel: activeCategory
+    }));
   }
 
-  async function runDocumentSearch(request: DocumentSearchRequest) {
+  async function runDocumentSearch(request: SearchRequestSnapshot) {
     if (searchRunning) {
       return;
     }
-    setLastDocumentSearchRequest(request);
-    setSubmittedQuery(request.query);
-    setDocumentSearchState({ kind: "searching" });
+    setDocumentSearchState({ kind: "searching", request });
     setAiSearchState({ kind: "idle" });
     setActionNotice("");
     try {
@@ -185,7 +197,7 @@ export default function DocumentsPage() {
         sourceCollections: request.sourceCollections
       });
       const mappedResults = documentSearchResponseToDocumentResults(response);
-      setDocumentSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", response });
+      setDocumentSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", request, response });
       if (mappedResults.length > 0) {
         setSelectedDocumentId(mappedResults[0].id);
         setDetailOpen(true);
@@ -193,28 +205,28 @@ export default function DocumentsPage() {
     } catch {
       setDocumentSearchState({
         kind: "error",
+        request,
         message: "文档检索失败：请确认知识库检索服务可用后重试。"
       });
     }
   }
 
-  async function runAiDocumentSearch(nextQuery: string) {
+  async function runAiDocumentSearch(request: SearchRequestSnapshot) {
     if (searchRunning) {
       return;
     }
-    setSubmittedQuery(nextQuery);
     setDocumentSearchState({ kind: "idle" });
-    setAiSearchState({ kind: "searching" });
+    setAiSearchState({ kind: "searching", request });
     setActionNotice("");
     try {
       const response = await runKnowledgeQuery({
-        question: nextQuery,
+        question: request.query,
         top_k: 5,
-        title_only: titleOnly,
-        source_collections: activeSourceCollections
+        title_only: request.titleOnly,
+        source_collections: request.sourceCollections
       });
       const mappedResults = queryResponseToDocumentResults(response);
-      setAiSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", response });
+      setAiSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", request, response });
       if (mappedResults.length > 0) {
         setSelectedDocumentId(mappedResults[0].id);
         setDetailOpen(true);
@@ -222,6 +234,7 @@ export default function DocumentsPage() {
     } catch {
       setAiSearchState({
         kind: "error",
+        request,
         message: "AI+ 审证未完成：请确认问答服务可用后重试。"
       });
     }
@@ -301,7 +314,7 @@ export default function DocumentsPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="劳动争议司法案件解释"
+              placeholder={DEFAULT_DOCUMENT_QUERY}
             />
           </label>
           <label className="replica-doc-title-only">
@@ -321,7 +334,12 @@ export default function DocumentsPage() {
           type="button"
           className="replica-doc-ai-button"
           disabled={searchRunning}
-          onClick={() => void runAiDocumentSearch(query.trim() || submittedQuery)}
+          onClick={() => void runAiDocumentSearch(createSearchRequestSnapshot({
+            query: query.trim() || DEFAULT_DOCUMENT_QUERY,
+            titleOnly,
+            sourceCollections: activeSourceCollections,
+            categoryLabel: activeCategory
+          }))}
         >
           <span aria-hidden="true">AI</span>
           检索AI+
@@ -342,7 +360,6 @@ export default function DocumentsPage() {
             {searchHistory.slice(0, 5).map((history) => (
               <button key={history} type="button" onClick={() => {
                 setQuery(history);
-                setSubmittedQuery(history);
               }}>
                 {history}
               </button>
@@ -397,40 +414,44 @@ export default function DocumentsPage() {
         </div>
         {actionNotice ? <ReplicaNotice>{actionNotice}</ReplicaNotice> : null}
         {documentSearchState.kind === "empty" ? (
-          <ReplicaNotice>未找到匹配文档</ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="文档检索空状态">
+            <ReplicaNotice>未找到匹配文档</ReplicaNotice>
+          </div>
         ) : null}
         {documentSearchState.kind === "error" ? (
           <div role="alert">
             <ReplicaNotice>{documentSearchState.message}</ReplicaNotice>
             <button
               type="button"
-              disabled={!lastDocumentSearchRequest || searchRunning}
-              onClick={() => {
-                if (lastDocumentSearchRequest) {
-                  void runDocumentSearch(lastDocumentSearchRequest);
-                }
-              }}
+              disabled={searchRunning}
+              onClick={() => void runDocumentSearch(documentSearchState.request)}
             >
               重试检索
             </button>
           </div>
         ) : null}
         {documentSearchResponse ? (
-          <ReplicaNotice>
-            文档检索 provider_call：{documentSearchResponse.boundaries.provider_call ? "是" : "否"}
-          </ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="文档检索完成状态">
+            <ReplicaNotice>
+              文档检索 provider_call：{documentSearchResponse.boundaries.provider_call ? "是" : "否"}
+            </ReplicaNotice>
+          </div>
         ) : null}
         {aiSearchState.kind === "empty" ? (
-          <ReplicaNotice>AI+ 已完成审证，但未返回可展示的引用文档。</ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="AI+ 空状态">
+            <ReplicaNotice>AI+ 已完成审证，但未返回可展示的引用文档。</ReplicaNotice>
+          </div>
         ) : null}
         {aiSearchState.kind === "error" ? (
-          <ReplicaNotice>{aiSearchState.message}</ReplicaNotice>
+          <div role="alert">
+            <ReplicaNotice>{aiSearchState.message}</ReplicaNotice>
+          </div>
         ) : null}
         {aiSearchResponse ? (
-          <>
+          <div role="status" aria-live="polite" aria-label="AI+ 完成状态">
             <ReplicaNotice>AI+ provider_call：当前查询契约未独立提供</ReplicaNotice>
             <ReplicaNotice>AI+ generation_status：{aiSearchResponse.generation_status}</ReplicaNotice>
-          </>
+          </div>
         ) : null}
         <div className="replica-doc-results-shell">
           <div className="replica-doc-two-column-list">
@@ -475,7 +496,7 @@ export default function DocumentsPage() {
                 ) : (
                   <button type="button" onClick={() => recordDocumentAction(selectedDocument, "打开文档")}>打开文档</button>
                 )}
-                <Link href={documentChatHref(selectedDocument, submittedQuery)}>加入对话</Link>
+                <Link href={documentChatHref(selectedDocument, displayedQuery)}>加入对话</Link>
               </div>
             </aside>
           ) : null}
@@ -483,11 +504,11 @@ export default function DocumentsPage() {
       </section>
 
       <section className="replica-doc-statusline" aria-label="当前检索状态">
-        <span>{activeCategory}</span>
+        <span>{displayedCategory}</span>
         <strong>{documentSearchStatusLabel(documentSearchState, aiSearchState, filteredResults.length)}</strong>
-        <span>{titleOnly ? "仅标题" : "全文检索"}</span>
-        <span>关键词：{submittedQuery}</span>
-        <span>范围：{activeScopeLabel}</span>
+        <span>{displayedTitleOnly ? "仅标题" : "全文检索"}</span>
+        <span>关键词：{displayedQuery}</span>
+        <span>范围：{displayedScopeLabel}</span>
         {categories.length > 0 ? (
           <span>文档库：{categories.length} 类 / {categories.reduce((sum, item) => sum + item.count, 0).toLocaleString()} 份</span>
         ) : null}
@@ -515,10 +536,10 @@ export default function DocumentsPage() {
         <section className="replica-panel replica-document-results">
           <div className="replica-results-head">
             <div>
-              <p className="replica-kicker">{activeCategory}</p>
+              <p className="replica-kicker">{displayedCategory}</p>
               <h2>检索结果</h2>
             </div>
-            <span>关键词：{submittedQuery}</span>
+            <span>关键词：{displayedQuery}</span>
           </div>
 
           <div className="replica-result-list">
@@ -553,6 +574,13 @@ function selectedSourceCollections(
     return [category.id.slice("source-".length) as SourceCollection];
   }
   return activeCategory === ALL_DOCUMENTS_CATEGORY ? urlSourceCollections : [];
+}
+
+function createSearchRequestSnapshot(request: SearchRequestSnapshot): SearchRequestSnapshot {
+  return Object.freeze({
+    ...request,
+    sourceCollections: Object.freeze([...request.sourceCollections])
+  });
 }
 
 function documentSearchStatusLabel(
@@ -623,9 +651,9 @@ function categoryToDirectoryPreview(
   };
 }
 
-function documentChatHref(item: DocumentPreview, submittedQuery: string): string {
+function documentChatHref(item: DocumentPreview, executedQuery: string): string {
   const params = new URLSearchParams();
-  params.set("question", submittedQuery || item.title);
+  params.set("question", executedQuery || item.title);
   if (item.sourceCollection) {
     params.set("source_collection", item.sourceCollection);
   }
