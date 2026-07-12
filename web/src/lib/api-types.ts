@@ -555,6 +555,8 @@ export type KnowledgeBaseCatalogResponse = {
   };
   readonly store: {
     readonly ready: boolean;
+    readonly catalog_ready: boolean;
+    readonly metrics_ready: boolean;
     readonly backend: string;
   };
   readonly boundaries: {

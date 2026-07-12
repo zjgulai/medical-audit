@@ -1,12 +1,24 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ReplicaRuntimeResult } from "@/components/replica/use-replica-runtime";
+import type { ReplicaKnowledgeBaseData } from "@/lib/replica-adapters";
 
 import KnowledgeBasePage from "./page";
 
+const runtimeMock = vi.hoisted(() => ({
+  current: null as unknown as ReplicaRuntimeResult<ReplicaKnowledgeBaseData>
+}));
+
 vi.mock("@/components/replica/use-replica-runtime", () => ({
-  useReplicaKnowledgeBaseData: () => ({
+  useReplicaKnowledgeBaseData: () => runtimeMock.current
+}));
+
+function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseData> {
+  return {
     apiReadsEnabled: true,
     source: "api",
+    outcome: "ready",
     status: "ready",
     issues: [],
     data: {
@@ -16,38 +28,89 @@ vi.mock("@/components/replica/use-replica-runtime", () => ({
           name: "医保法规库",
           scope: "公开知识库",
           owner: "审计中心",
-          documentCount: 128,
-          chunkCount: 49051,
-          appCount: 3,
-          updatedAt: "2026-07-08",
+          documentCount: 12,
+          chunkCount: 120,
+          appCount: 2,
+          updatedAt: "active",
           description: "医保法规、政策解释和处罚依据。",
           tags: ["医保", "法规"]
         }
       ],
       sourceGroups: [
         {
-          id: "medical",
           title: "医疗医保",
-          description: "医保审计相关知识库",
           options: [
             {
               value: "medical-insurance-laws",
               label: "医保法规库",
-              description: "医保法规、政策解释和处罚依据。"
+              description: "医保法规、政策解释和处罚依据。",
+              scope: "系统",
+              queryable: true
             }
           ]
         }
       ],
-      readableSourceCollections: ["medical-insurance-laws"],
+      readableSourceCollections: ["医保法规库"],
       canUploadPersonal: true,
       currentSearchEmbeddingCount: 49051,
-      metricsSource: "knowledge-base-catalog"
+      metricsSource: "knowledge-base-catalog",
+      summary: {
+        sourceCollectionCount: 1,
+        queryableCollectionCount: 1,
+        totalDocumentCount: 12,
+        totalChunkCount: 120,
+        totalEmbeddingCount: 120,
+        currentSearchEmbeddingCount: 49051,
+        candidateChunkCount: 0,
+        domainCounts: { 医保: 1 }
+      },
+      store: {
+        ready: true,
+        catalogReady: true,
+        metricsReady: true,
+        backend: "runtime_state_and_postgres_catalog"
+      },
+      boundaries: {
+        productionWrite: false,
+        providerCall: false,
+        databaseWrite: false,
+        objectStorageWrite: false,
+        queryHistoryWrite: false,
+        source: "runtime_state_and_postgres_catalog"
+      }
     }
-  })
-}));
+  };
+}
+
+function makeUnavailableRuntime(
+  status: "empty" | "error"
+): ReplicaRuntimeResult<ReplicaKnowledgeBaseData> {
+  return {
+    apiReadsEnabled: true,
+    source: "api",
+    outcome: status,
+    status,
+    issues: [],
+    data: {
+      knowledgeBases: [],
+      sourceGroups: [],
+      readableSourceCollections: [],
+      canUploadPersonal: false,
+      currentSearchEmbeddingCount: null,
+      metricsSource: "unavailable",
+      summary: null,
+      store: null,
+      boundaries: null
+    }
+  };
+}
+
+beforeEach(() => {
+  runtimeMock.current = makeMetricsReadyRuntime();
+});
 
 describe("KnowledgeBasePage", () => {
-  it("links a knowledge base into documents and chat with source context", () => {
+  it("renders metrics-ready totals and preserves source-scoped links", () => {
     render(<KnowledgeBasePage />);
 
     expect(screen.getByRole("link", { name: "打开目录" })).toHaveAttribute(
@@ -71,7 +134,76 @@ describe("KnowledgeBasePage", () => {
       "/graph?source_collection=medical-insurance-laws"
     );
     expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("120").length).toBeGreaterThan(0);
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
-    expect(screen.queryByText("0 个片段")).not.toBeInTheDocument();
+  });
+
+  it("keeps registry cards while marking every unavailable metric as pending sync", () => {
+    const ready = makeMetricsReadyRuntime();
+    runtimeMock.current = {
+      ...ready,
+      outcome: "degraded",
+      status: "degraded",
+      data: {
+        ...ready.data,
+        knowledgeBases: ready.data.knowledgeBases.map((item) => ({
+          ...item,
+          documentCount: null,
+          chunkCount: null,
+          appCount: null
+        })),
+        currentSearchEmbeddingCount: null,
+        metricsSource: "unavailable",
+        summary: {
+          ...ready.data.summary!,
+          totalDocumentCount: null,
+          totalChunkCount: null,
+          totalEmbeddingCount: null,
+          currentSearchEmbeddingCount: null,
+          candidateChunkCount: null
+        },
+        store: {
+          ready: false,
+          catalogReady: true,
+          metricsReady: false,
+          backend: "runtime_state_and_registry_only"
+        },
+        boundaries: {
+          ...ready.data.boundaries!,
+          source: "runtime_state_and_registry_only"
+        }
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    expect(screen.getByRole("main")).toHaveAttribute("data-replica-status", "degraded");
+    const cardHeading = screen.getAllByRole("heading", { name: "医保法规库", level: 2 })[0];
+    const card = cardHeading.closest("article");
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+    expect(within(card as HTMLElement).queryByText(/^0$/)).not.toBeInTheDocument();
+    expect(within(card as HTMLElement).queryByText("0 个片段")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("uses a catalog-empty message instead of search-no-result copy", () => {
+    runtimeMock.current = makeUnavailableRuntime("empty");
+
+    render(<KnowledgeBasePage />);
+
+    expect(screen.getByText("暂无可用知识库")).toBeInTheDocument();
+    expect(screen.queryByText("未找到知识库")).not.toBeInTheDocument();
+    expect(screen.queryByText("知识库读取失败")).not.toBeInTheDocument();
+  });
+
+  it("uses a distinct API failure message", () => {
+    runtimeMock.current = makeUnavailableRuntime("error");
+
+    render(<KnowledgeBasePage />);
+
+    expect(screen.getByText("知识库读取失败")).toBeInTheDocument();
+    expect(screen.queryByText("暂无可用知识库")).not.toBeInTheDocument();
+    expect(screen.queryByText("未找到知识库")).not.toBeInTheDocument();
   });
 });

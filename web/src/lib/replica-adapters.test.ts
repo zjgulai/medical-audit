@@ -133,13 +133,18 @@ const knowledgeBaseCatalog: KnowledgeBaseCatalogResponse = {
     total_document_count: 12,
     total_chunk_count: 120,
     total_embedding_count: 120,
-    current_search_embedding_count: 120,
+    current_search_embedding_count: 49051,
     candidate_chunk_count: 0,
     domain_counts: { 医保: 1 }
   },
   items: [catalogItem],
   search_backend: { ready: true, backend: "postgres", details: {} },
-  store: { ready: true, backend: "runtime_state_and_postgres_catalog" },
+  store: {
+    ready: true,
+    catalog_ready: true,
+    metrics_ready: true,
+    backend: "runtime_state_and_postgres_catalog"
+  },
   boundaries: {
     production_write: false,
     provider_call: false,
@@ -200,7 +205,7 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
     source_collection_count: 1,
     queryable_collection_count: 1,
     total_document_count: 0,
-    total_chunk_count: 120,
+    total_chunk_count: 0,
     total_embedding_count: 0,
     current_search_embedding_count: 0,
     candidate_chunk_count: 0,
@@ -211,7 +216,7 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
       ...catalogItem,
       metrics: {
         document_count: 0,
-        chunk_count: 120,
+        chunk_count: 0,
         character_count: 0,
         linked_app_count: 0,
         embedding_count: 0,
@@ -220,11 +225,17 @@ const registryOnlyKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
       },
       index: {
         ...catalogItem.index,
-        search_backend_ready: false
+        search_backend_ready: true
       }
     }
   ],
-  search_backend: { ready: false, backend: "unavailable", details: {} },
+  search_backend: { ready: true, backend: "postgres", details: {} },
+  store: {
+    ready: false,
+    catalog_ready: true,
+    metrics_ready: false,
+    backend: "runtime_state_and_registry_only"
+  },
   boundaries: {
     ...knowledgeBaseCatalog.boundaries,
     source: "runtime_state_and_registry_only"
@@ -238,6 +249,12 @@ const readyZeroMetricKnowledgeCatalog: KnowledgeBaseCatalogResponse = {
     total_chunk_count: 0
   },
   search_backend: { ready: true, backend: "postgres", details: {} },
+  store: {
+    ready: true,
+    catalog_ready: true,
+    metrics_ready: true,
+    backend: "runtime_state_and_postgres_catalog"
+  },
   items: registryOnlyKnowledgeCatalog.items.map((item) => ({
     ...item,
     metrics: { ...item.metrics, chunk_count: 0 },
@@ -501,10 +518,36 @@ describe("replica backend read adapters", () => {
     expect(result.source).toBe("api");
     expect(result.outcome).toBe("degraded");
     expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.data.knowledgeBases[0]?.documentCount).toBeNull();
     expect(result.data.knowledgeBases[0]?.chunkCount).toBeNull();
+    expect(result.data.knowledgeBases[0]?.appCount).toBeNull();
     expect(result.data.knowledgeBases[0]?.tags.some((tag) => tag.includes("chunks"))).toBe(false);
     expect(result.data.currentSearchEmbeddingCount).toBeNull();
+    expect(result.data.summary).toEqual({
+      sourceCollectionCount: 1,
+      queryableCollectionCount: 1,
+      totalDocumentCount: null,
+      totalChunkCount: null,
+      totalEmbeddingCount: null,
+      currentSearchEmbeddingCount: null,
+      candidateChunkCount: null,
+      domainCounts: { 医保: 1 }
+    });
     expect(result.data.metricsSource).toBe("unavailable");
+    expect(result.data.store).toEqual({
+      ready: false,
+      catalogReady: true,
+      metricsReady: false,
+      backend: "runtime_state_and_registry_only"
+    });
+    expect(result.data.boundaries).toEqual({
+      productionWrite: false,
+      providerCall: false,
+      databaseWrite: false,
+      objectStorageWrite: false,
+      queryHistoryWrite: false,
+      source: "runtime_state_and_registry_only"
+    });
   });
 
   it("treats registry-only provenance as degraded even when readiness flags are true", async () => {
@@ -568,9 +611,35 @@ describe("replica backend read adapters", () => {
     expect(result.source).toBe("api");
     expect(result.outcome).toBe("ready");
     expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
+    expect(result.data.knowledgeBases[0]?.documentCount).toBe(12);
     expect(result.data.knowledgeBases[0]?.chunkCount).toBe(120);
-    expect(result.data.currentSearchEmbeddingCount).toBe(120);
+    expect(result.data.knowledgeBases[0]?.appCount).toBe(2);
+    expect(result.data.currentSearchEmbeddingCount).toBe(49051);
+    expect(result.data.summary).toEqual({
+      sourceCollectionCount: 1,
+      queryableCollectionCount: 1,
+      totalDocumentCount: 12,
+      totalChunkCount: 120,
+      totalEmbeddingCount: 120,
+      currentSearchEmbeddingCount: 49051,
+      candidateChunkCount: 0,
+      domainCounts: { 医保: 1 }
+    });
     expect(result.data.metricsSource).toBe("knowledge-base-catalog");
+    expect(result.data.store).toEqual({
+      ready: true,
+      catalogReady: true,
+      metricsReady: true,
+      backend: "runtime_state_and_postgres_catalog"
+    });
+    expect(result.data.boundaries).toEqual({
+      productionWrite: false,
+      providerCall: false,
+      databaseWrite: false,
+      objectStorageWrite: false,
+      queryHistoryWrite: false,
+      source: "runtime_state_and_postgres_catalog"
+    });
     expect(fetchDocumentPermissions).toHaveBeenCalledTimes(1);
     expect(fetchKnowledgeBaseCatalog).toHaveBeenCalledTimes(1);
     expect(fetchDocumentSourceCollections).toHaveBeenCalledTimes(1);

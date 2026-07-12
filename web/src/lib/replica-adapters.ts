@@ -126,13 +126,52 @@ export type ReplicaAgentsData = {
   readonly categories: readonly ReferenceAgentCategory[];
 };
 
+export type ReplicaKnowledgeBaseItem = Omit<
+  ReferenceKnowledgeBase,
+  "documentCount" | "chunkCount" | "appCount"
+> & {
+  readonly documentCount: number | null;
+  readonly chunkCount: number | null;
+  readonly appCount: number | null;
+};
+
+export type ReplicaKnowledgeBaseSummary = {
+  readonly sourceCollectionCount: number;
+  readonly queryableCollectionCount: number;
+  readonly totalDocumentCount: number | null;
+  readonly totalChunkCount: number | null;
+  readonly totalEmbeddingCount: number | null;
+  readonly currentSearchEmbeddingCount: number | null;
+  readonly candidateChunkCount: number | null;
+  readonly domainCounts: Readonly<Record<string, number>>;
+};
+
+export type ReplicaKnowledgeBaseStore = {
+  readonly ready: boolean;
+  readonly catalogReady: boolean;
+  readonly metricsReady: boolean;
+  readonly backend: string;
+};
+
+export type ReplicaKnowledgeBaseBoundaries = {
+  readonly productionWrite: false;
+  readonly providerCall: false;
+  readonly databaseWrite: false;
+  readonly objectStorageWrite: false;
+  readonly queryHistoryWrite: false;
+  readonly source: KnowledgeBaseCatalogResponse["boundaries"]["source"];
+};
+
 export type ReplicaKnowledgeBaseData = {
-  readonly knowledgeBases: readonly ReferenceKnowledgeBase[];
+  readonly knowledgeBases: readonly ReplicaKnowledgeBaseItem[];
   readonly sourceGroups: readonly SourceCollectionGroup[];
   readonly readableSourceCollections: readonly string[];
   readonly canUploadPersonal: boolean;
   readonly currentSearchEmbeddingCount: number | null;
   readonly metricsSource: "knowledge-base-catalog" | "search-backend" | "unavailable";
+  readonly summary: ReplicaKnowledgeBaseSummary | null;
+  readonly store: ReplicaKnowledgeBaseStore | null;
+  readonly boundaries: ReplicaKnowledgeBaseBoundaries | null;
 };
 
 export type ReplicaDocumentsData = {
@@ -374,8 +413,8 @@ function toKnowledgeBaseScope(scope: string): ReferenceKnowledgeBase["scope"] {
 function mapKnowledgeBasesFromSourceGroups(
   groups: readonly SourceCollectionGroup[],
   catalogItems: readonly DocumentSourceCollectionCatalogItem[] | null | undefined,
-  chunkMetricsAvailable: boolean
-): readonly ReferenceKnowledgeBase[] {
+  metricsReady: boolean
+): readonly ReplicaKnowledgeBaseItem[] {
   const itemBySource = new Map(
     (catalogItems ?? []).map((item) => [item.source_collection, item])
   );
@@ -383,9 +422,9 @@ function mapKnowledgeBasesFromSourceGroups(
   return groups.flatMap((group) =>
     group.options.map((option) => {
       const item = itemBySource.get(option.value);
-      const documentCount = item?.metrics.document_count ?? item?.metrics.chunk_count ?? 0;
-      const chunkCount = chunkMetricsAvailable ? item?.metrics.chunk_count ?? 0 : null;
-      const appCount = item?.metrics.linked_app_count ?? 0;
+      const documentCount = metricsReady ? item?.metrics.document_count ?? null : null;
+      const chunkCount = metricsReady ? item?.metrics.chunk_count ?? null : null;
+      const appCount = metricsReady ? item?.metrics.linked_app_count ?? null : null;
       return {
         id: `kb-${option.value}`,
         name: option.label,
@@ -399,14 +438,62 @@ function mapKnowledgeBasesFromSourceGroups(
         tags: [
           group.title,
           option.queryable ? "可检索" : "待接入",
-          item?.evidence_group || option.scope,
-          typeof chunkCount === "number" && chunkCount > 0
-            ? `${chunkCount.toLocaleString("zh-CN")} chunks`
-            : ""
+          item?.evidence_group || option.scope
         ].filter(Boolean)
       };
     })
   );
+}
+
+function mapKnowledgeBaseSummary(
+  catalog: KnowledgeBaseCatalogResponse | null,
+  metricsReady: boolean
+): ReplicaKnowledgeBaseSummary | null {
+  if (!catalog) {
+    return null;
+  }
+  return {
+    sourceCollectionCount: catalog.summary.source_collection_count,
+    queryableCollectionCount: catalog.summary.queryable_collection_count,
+    totalDocumentCount: metricsReady ? catalog.summary.total_document_count : null,
+    totalChunkCount: metricsReady ? catalog.summary.total_chunk_count : null,
+    totalEmbeddingCount: metricsReady ? catalog.summary.total_embedding_count : null,
+    currentSearchEmbeddingCount: metricsReady
+      ? catalog.summary.current_search_embedding_count
+      : null,
+    candidateChunkCount: metricsReady ? catalog.summary.candidate_chunk_count : null,
+    domainCounts: catalog.summary.domain_counts
+  };
+}
+
+function mapKnowledgeBaseStore(
+  catalog: KnowledgeBaseCatalogResponse | null
+): ReplicaKnowledgeBaseStore | null {
+  if (!catalog) {
+    return null;
+  }
+  return {
+    ready: catalog.store.ready,
+    catalogReady: catalog.store.catalog_ready,
+    metricsReady: catalog.store.metrics_ready,
+    backend: catalog.store.backend
+  };
+}
+
+function mapKnowledgeBaseBoundaries(
+  catalog: KnowledgeBaseCatalogResponse | null
+): ReplicaKnowledgeBaseBoundaries | null {
+  if (!catalog) {
+    return null;
+  }
+  return {
+    productionWrite: catalog.boundaries.production_write,
+    providerCall: catalog.boundaries.provider_call,
+    databaseWrite: catalog.boundaries.database_write,
+    objectStorageWrite: catalog.boundaries.object_storage_write,
+    queryHistoryWrite: catalog.boundaries.query_history_write,
+    source: catalog.boundaries.source
+  };
 }
 
 function mapAnalysisUploads(
@@ -737,7 +824,10 @@ export async function loadReplicaKnowledgeBaseData(
         readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
         canUploadPersonal: true,
         currentSearchEmbeddingCount: null,
-        metricsSource: "unavailable"
+        metricsSource: "unavailable",
+        summary: null,
+        store: null,
+        boundaries: null
       },
       issues
     };
@@ -753,7 +843,10 @@ export async function loadReplicaKnowledgeBaseData(
         readableSourceCollections: [],
         canUploadPersonal: false,
         currentSearchEmbeddingCount: null,
-        metricsSource: "unavailable"
+        metricsSource: "unavailable",
+        summary: null,
+        store: null,
+        boundaries: null
       },
       issues
     };
@@ -776,35 +869,35 @@ export async function loadReplicaKnowledgeBaseData(
     ? sourceCollectionCatalogToGroups(selectableCatalogItems)
     : [];
   const registryOnly = knowledgeCatalog?.boundaries.source === "runtime_state_and_registry_only";
+  const knowledgeMetricsReady = Boolean(
+    knowledgeCatalog?.store.metrics_ready && !registryOnly
+  );
   const knowledgeBases = mapKnowledgeBasesFromSourceGroups(
     sourceGroups,
     catalog?.items,
-    !registryOnly
+    knowledgeMetricsReady
   );
   const documentCatalogUploadPermissions = sourceCollectionCatalog?.upload_permissions ?? null;
-  const knowledgeMetricsReady = Boolean(
-    knowledgeCatalog &&
-    knowledgeCatalog.store.ready &&
-    knowledgeCatalog.search_backend.ready &&
-    !registryOnly &&
-    knowledgeCatalog.items.every((item) => item.index.search_backend_ready)
-  );
   const searchBackendEmbeddingCount = sourceCollectionCatalog?.search_backend.details.matching_embedding_count;
-  const currentSearchEmbeddingCount = registryOnly
-    ? null
-    : knowledgeMetricsReady
-      ? knowledgeCatalog?.summary.current_search_embedding_count ?? null
-      : sourceCollectionCatalog?.search_backend.ready && typeof searchBackendEmbeddingCount === "number"
-        ? searchBackendEmbeddingCount
-        : null;
+  const currentSearchEmbeddingCount = knowledgeCatalog
+    ? knowledgeMetricsReady
+      ? knowledgeCatalog.summary.current_search_embedding_count
+      : null
+    : sourceCollectionCatalog?.search_backend.ready && typeof searchBackendEmbeddingCount === "number"
+      ? searchBackendEmbeddingCount
+      : null;
   const readinessGap = Boolean(
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
+      !knowledgeCatalog.store.catalog_ready ||
+      !knowledgeCatalog.store.metrics_ready ||
       !knowledgeCatalog.search_backend.ready ||
       registryOnly ||
       knowledgeCatalog.items.some((item) => !item.index.search_backend_ready)
     )) ||
-    (sourceCollectionCatalog && !sourceCollectionCatalog.search_backend.ready)
+    (!knowledgeCatalog && sourceCollectionCatalog && (
+      !sourceCollectionCatalog.search_backend.ready || sourceGroups.length > 0
+    ))
   );
 
   if (readinessGap) {
@@ -834,13 +927,16 @@ export async function loadReplicaKnowledgeBaseData(
         permissions?.upload_permissions.can_upload_personal ??
         false,
       currentSearchEmbeddingCount,
-      metricsSource: registryOnly
-        ? "unavailable"
-        : knowledgeMetricsReady
+      metricsSource: knowledgeCatalog
+        ? knowledgeMetricsReady
           ? "knowledge-base-catalog"
-          : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
-            ? "search-backend"
-            : "unavailable"
+          : "unavailable"
+        : sourceCollectionCatalog?.search_backend.ready && currentSearchEmbeddingCount !== null
+          ? "search-backend"
+          : "unavailable",
+      summary: mapKnowledgeBaseSummary(knowledgeCatalog, knowledgeMetricsReady),
+      store: mapKnowledgeBaseStore(knowledgeCatalog),
+      boundaries: mapKnowledgeBaseBoundaries(knowledgeCatalog)
     },
     issues
   };

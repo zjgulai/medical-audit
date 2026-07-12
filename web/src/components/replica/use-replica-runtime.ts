@@ -185,7 +185,10 @@ const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
     readableSourceCollections: referenceKnowledgeBases.map((item) => item.name),
     canUploadPersonal: true,
     currentSearchEmbeddingCount: null,
-    metricsSource: "unavailable"
+    metricsSource: "unavailable",
+    summary: null,
+    store: null,
+    boundaries: null
   },
   issues: [
     {
@@ -305,7 +308,10 @@ const knowledgeBaseEmpty: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
     readableSourceCollections: [],
     canUploadPersonal: false,
     currentSearchEmbeddingCount: null,
-    metricsSource: "unavailable"
+    metricsSource: "unavailable",
+    summary: null,
+    store: null,
+    boundaries: null
   },
   issues: []
 };

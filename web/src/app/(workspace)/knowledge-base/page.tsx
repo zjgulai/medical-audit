@@ -12,7 +12,7 @@ import {
 } from "@/components/replica/replica-page-kit";
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
 import type { SourceCollection } from "@/lib/api-types";
-import type { ReferenceKnowledgeBase } from "@/lib/reference-replica-data";
+import type { ReplicaKnowledgeBaseItem } from "@/lib/replica-adapters";
 import { isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
 type ProductKnowledgeCategoryId =
@@ -29,7 +29,7 @@ type ProductKnowledgeCategory = {
   readonly title: string;
   readonly description: string;
   readonly tone: "blue" | "green" | "amber" | "rose" | "slate" | "cyan";
-  readonly items: readonly ReferenceKnowledgeBase[];
+  readonly items: readonly ReplicaKnowledgeBaseItem[];
 };
 
 const productCategoryMeta: readonly Omit<ProductKnowledgeCategory, "items">[] = [
@@ -92,7 +92,7 @@ const knowledgeBaseSourceCollectionMap: Record<string, readonly SourceCollection
   "kb-project-village": ["other-agriculture-water"]
 };
 
-function categoryForKnowledgeBase(item: ReferenceKnowledgeBase): ProductKnowledgeCategoryId {
+function categoryForKnowledgeBase(item: ReplicaKnowledgeBaseItem): ProductKnowledgeCategoryId {
   const sources = sourceCollectionsFromKnowledgeBaseId(item.id);
   const text = `${sources.join(" ")} ${item.id} ${item.name} ${item.scope} ${item.description} ${item.tags.join(" ")}`;
 
@@ -114,37 +114,44 @@ function categoryForKnowledgeBase(item: ReferenceKnowledgeBase): ProductKnowledg
   return "national";
 }
 
-function buildProductCategories(items: readonly ReferenceKnowledgeBase[]): readonly ProductKnowledgeCategory[] {
+function buildProductCategories(items: readonly ReplicaKnowledgeBaseItem[]): readonly ProductKnowledgeCategory[] {
   return productCategoryMeta.map((category) => ({
     ...category,
     items: items.filter((item) => categoryForKnowledgeBase(item) === category.id)
   }));
 }
 
-function matchesKnowledgeBase(item: ReferenceKnowledgeBase, query: string) {
+function matchesKnowledgeBase(item: ReplicaKnowledgeBaseItem, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
   return normalizedQuery.length === 0 ||
     `${item.name} ${item.scope} ${item.owner} ${item.description} ${item.tags.join(" ")}`.toLowerCase().includes(normalizedQuery);
 }
 
-function chunkCountForItem(item: ReferenceKnowledgeBase): number | null {
+function documentCountForItem(item: ReplicaKnowledgeBaseItem): number | null {
+  return typeof item.documentCount === "number" && item.documentCount >= 0
+    ? item.documentCount
+    : null;
+}
+
+function chunkCountForItem(item: ReplicaKnowledgeBaseItem): number | null {
   return typeof item.chunkCount === "number" && item.chunkCount >= 0 ? item.chunkCount : null;
 }
 
-function sumDocuments(items: readonly ReferenceKnowledgeBase[]) {
-  return items.reduce((sum, item) => sum + item.documentCount, 0);
+function sumDocuments(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
+  const counts = items.map(documentCountForItem).filter((value): value is number => value !== null);
+  return counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null;
 }
 
-function sumChunks(items: readonly ReferenceKnowledgeBase[]) {
+function sumChunks(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
   const counts = items.map(chunkCountForItem).filter((value): value is number => value !== null);
   return counts.length > 0 ? counts.reduce((sum, value) => sum + value, 0) : null;
 }
 
-function newestUpdatedAt(items: readonly ReferenceKnowledgeBase[]) {
-  return items.find((item) => item.documentCount > 0)?.updatedAt ?? "待同步";
+function newestUpdatedAt(items: readonly ReplicaKnowledgeBaseItem[]) {
+  return items.find((item) => (documentCountForItem(item) ?? 0) > 0)?.updatedAt ?? "待同步";
 }
 
-function sourceCollectionsFromKnowledgeBases(items: readonly ReferenceKnowledgeBase[]): readonly SourceCollection[] {
+function sourceCollectionsFromKnowledgeBases(items: readonly ReplicaKnowledgeBaseItem[]): readonly SourceCollection[] {
   return Array.from(
     new Set(
       items
@@ -170,8 +177,12 @@ export default function KnowledgeBasePage() {
     return scopedItems.filter((item) => matchesKnowledgeBase(item, query));
   }, [activeCategory, knowledgeBases, productCategories, query]);
 
-  const totalDocuments = sumDocuments(knowledgeBases);
-  const totalChunks = knowledgeBaseData.data.currentSearchEmbeddingCount ?? sumChunks(knowledgeBases);
+  const totalDocuments = knowledgeBaseData.data.summary?.totalDocumentCount ??
+    (knowledgeBaseData.source === "fixture" ? sumDocuments(knowledgeBases) : null);
+  const totalChunks = knowledgeBaseData.data.summary?.currentSearchEmbeddingCount ??
+    (knowledgeBaseData.source === "fixture"
+      ? knowledgeBaseData.data.currentSearchEmbeddingCount ?? sumChunks(knowledgeBases)
+      : null);
   const selectedKnowledgeBase =
     knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ??
     activeItems[0] ??
@@ -186,7 +197,15 @@ export default function KnowledgeBasePage() {
   const activeCategoryDocumentsHref = knowledgeBaseCategoryDocumentsHref(activeCategorySourceCollections);
   const activeCategoryGraphHref = knowledgeBaseCategoryGraphHref(activeCategorySourceCollections);
 
-  function recordKnowledgeBaseAction(item: ReferenceKnowledgeBase, action: string) {
+  const unavailableState = knowledgeBaseData.status === "loading"
+    ? { title: "知识库加载中", description: "正在读取当前可访问的知识库目录。" }
+    : knowledgeBaseData.status === "error"
+      ? { title: "知识库读取失败", description: "当前无法读取知识库目录，请稍后重试。" }
+      : knowledgeBaseData.status === "empty" || knowledgeBases.length === 0
+        ? { title: "暂无可用知识库", description: "当前角色下没有可读取的知识库目录。" }
+        : null;
+
+  function recordKnowledgeBaseAction(item: ReplicaKnowledgeBaseItem, action: string) {
     setSelectedKnowledgeBaseId(item.id);
     setDetailOpen(true);
     setNotice(`${action}「${item.name}」已准备好，请在右侧查看分类、权限和可调用入口。`);
@@ -224,12 +243,12 @@ export default function KnowledgeBasePage() {
         </article>
         <article>
           <span>文档数</span>
-          <strong>{totalDocuments.toLocaleString()}</strong>
+          <strong>{formatDocumentCount(totalDocuments, false)}</strong>
           <p>{knowledgeBaseData.source === "fixture" ? "本地静态目录" : "来自当前后端目录"}</p>
         </article>
         <article>
           <span>知识片段</span>
-          <strong>{totalChunks !== null ? totalChunks.toLocaleString() : "待同步"}</strong>
+          <strong>{formatChunkCount(totalChunks, false)}</strong>
           <p>当前检索索引中的可用向量数量</p>
         </article>
         <article>
@@ -274,7 +293,7 @@ export default function KnowledgeBasePage() {
               <span>{category.title}</span>
               <strong>{category.items.length}</strong>
               <p>{category.description}</p>
-              <small>{sumDocuments(category.items).toLocaleString()} 份文档 · {formatChunkCount(sumChunks(category.items))}</small>
+              <small>{formatDocumentCount(sumDocuments(category.items))} · {formatChunkCount(sumChunks(category.items))}</small>
             </button>
           ))}
         </div>
@@ -294,7 +313,9 @@ export default function KnowledgeBasePage() {
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
 
-        {activeItems.length === 0 ? (
+        {unavailableState ? (
+          <ReplicaEmptyState title={unavailableState.title} description={unavailableState.description} />
+        ) : activeItems.length === 0 ? (
           <ReplicaEmptyState title="未找到知识库" description="调整关键词或切换分类后重试。" />
         ) : (
           <div className="replica-kb-workbench">
@@ -316,7 +337,7 @@ export default function KnowledgeBasePage() {
                   <dl className="replica-kb-stats">
                     <div>
                       <dt>文档数</dt>
-                      <dd>{item.documentCount.toLocaleString()}</dd>
+                      <dd>{formatDocumentCount(documentCountForItem(item), false)}</dd>
                     </div>
                     <div>
                       <dt>知识片段</dt>
@@ -347,7 +368,7 @@ export default function KnowledgeBasePage() {
                   </div>
                   <div>
                     <dt>文档数</dt>
-                    <dd>{selectedKnowledgeBase.documentCount.toLocaleString()}</dd>
+                    <dd>{formatDocumentCount(documentCountForItem(selectedKnowledgeBase), false)}</dd>
                   </div>
                   <div>
                     <dt>知识片段</dt>
@@ -400,9 +421,16 @@ export default function KnowledgeBasePage() {
 
 function formatChunkCount(value: number | null, includeUnit = true): string {
   if (value === null) {
-    return "待归集";
+    return "待同步";
   }
   return `${value.toLocaleString()}${includeUnit ? " 个片段" : ""}`;
+}
+
+function formatDocumentCount(value: number | null, includeUnit = true): string {
+  if (value === null) {
+    return "待同步";
+  }
+  return `${value.toLocaleString()}${includeUnit ? " 份文档" : ""}`;
 }
 
 function sourceCollectionsFromKnowledgeBaseId(id: string): readonly SourceCollection[] {
@@ -414,7 +442,7 @@ function sourceCollectionsFromKnowledgeBaseId(id: string): readonly SourceCollec
   return isSourceCollectionValue(sourceCollection) ? [sourceCollection] : [];
 }
 
-function knowledgeBaseDocumentsHref(item: ReferenceKnowledgeBase): string {
+function knowledgeBaseDocumentsHref(item: ReplicaKnowledgeBaseItem): string {
   return knowledgeBaseCategoryDocumentsHref(sourceCollectionsFromKnowledgeBaseId(item.id));
 }
 
@@ -422,7 +450,7 @@ function knowledgeBaseCategoryDocumentsHref(sourceCollections: readonly SourceCo
   return routeWithSourceCollections("/documents", sourceCollections);
 }
 
-function knowledgeBaseGraphHref(item: ReferenceKnowledgeBase): string {
+function knowledgeBaseGraphHref(item: ReplicaKnowledgeBaseItem): string {
   return knowledgeBaseCategoryGraphHref(sourceCollectionsFromKnowledgeBaseId(item.id));
 }
 
@@ -441,7 +469,7 @@ function routeWithSourceCollections(route: "/documents" | "/graph", sourceCollec
   return `${route}?${params.toString()}`;
 }
 
-function knowledgeBaseChatHref(item: ReferenceKnowledgeBase): string {
+function knowledgeBaseChatHref(item: ReplicaKnowledgeBaseItem): string {
   const params = new URLSearchParams();
   params.set("question", `请基于「${item.name}」回答审计问题`);
   for (const sourceCollection of sourceCollectionsFromKnowledgeBaseId(item.id)) {
