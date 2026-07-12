@@ -8,7 +8,6 @@ from uuid import uuid4
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from medical_audit_kb.db.models import AuditProjectMember, Base, utc_now
@@ -343,17 +342,14 @@ def visible_project_keys(
             default_visible.add(project_key)
 
     custom_visible: set[str] = set()
-    try:
-        for project_key in _PROJECT_KEYS:
-            custom_members = store.list_members(project_key)
-            if any(
-                member.get("status") == "在项目中"
-                and _member_user_identifier(member) == normalized_user_identifier
-                for member in custom_members
-            ):
-                custom_visible.add(project_key)
-    except SQLAlchemyError:
-        return frozenset(default_visible)
+    for project_key in _PROJECT_KEYS:
+        custom_members = store.list_members(project_key)
+        if any(
+            member.get("status") == "在项目中"
+            and _member_user_identifier(member) == normalized_user_identifier
+            for member in custom_members
+        ):
+            custom_visible.add(project_key)
     return frozenset(default_visible | custom_visible)
 
 

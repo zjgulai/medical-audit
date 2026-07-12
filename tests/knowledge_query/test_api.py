@@ -1637,6 +1637,116 @@ def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: 
     assert creator_dashboard_response.json()["project"]["status"] == "待开始"
 
 
+def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Path) -> None:
+    class SplitFailureProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("member visibility unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            return {"SELF-CHECK-FUND-20260607": 99}
+
+    class ReadyAuditFindingStore:
+        def list_findings(self, *, limit: int) -> list[dict[str, object]]:
+            return []
+
+    state = _api_state(tmp_path)
+    state.project_member_store = SplitFailureProjectMemberStore()
+    state.audit_finding_store = ReadyAuditFindingStore()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    visible_headers = (
+        {"X-User-Id": "owner-self-check", "X-Role": "member"},
+        {"X-User-Id": "auditor-self-check", "X-Role": "member"},
+    )
+
+    for headers in visible_headers:
+        list_response = client.get("/projects", headers=headers)
+        assert list_response.status_code == 200
+        assert [item["id"] for item in list_response.json()["items"]] == [
+            "SELF-CHECK-FUND-20260607"
+        ]
+        assert list_response.json()["items"][0]["member_count"] == 3
+        assert list_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        detail_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607",
+            headers=headers,
+        )
+        assert detail_response.status_code == 200
+        assert detail_response.json()["item"]["member_count"] == 3
+        assert detail_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        members_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607/members",
+            headers=headers,
+        )
+        assert members_response.status_code == 200
+        assert len(members_response.json()["items"]) == 3
+        assert all(
+            item["source"] == "system-default"
+            for item in members_response.json()["items"]
+        )
+        assert members_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        dashboard_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607/dashboard",
+            headers=headers,
+        )
+        assert dashboard_response.status_code == 200
+        assert dashboard_response.json()["project"]["member_count"] == 3
+        assert dashboard_response.json()["store"]["backend"] == {
+            "project_members": "unavailable",
+            "audit_findings": "ReadyAuditFindingStore",
+        }
+        assert dashboard_response.json()["store"]["ready"] is True
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+    for user_identifier in ("unrelated-member", "custom-member"):
+        headers = {"X-User-Id": user_identifier, "X-Role": "member"}
+        response = client.get("/projects", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+        assert response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        for route in (
+            "/projects/SELF-CHECK-FUND-20260607",
+            "/projects/SELF-CHECK-FUND-20260607/members",
+            "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        ):
+            assert client.get(route, headers=headers).status_code == 404
+
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    assert admin_response.status_code == 200
+    assert len(admin_response.json()["items"]) == 4
+    assert admin_response.json()["store"] == {
+        "ready": True,
+        "backend": "SplitFailureProjectMemberStore",
+    }
+
+
 def test_projects_api_admin_visibility_helper_does_not_read_store() -> None:
     class ExplodingProjectMemberStore:
         def list_members(self, project_key: str) -> list[dict[str, object]]:
