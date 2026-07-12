@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
@@ -220,6 +221,16 @@ function renderWorkbench() {
     <AuditUserProvider>
       <ReplicaReportWorkbench />
     </AuditUserProvider>
+  );
+}
+
+function renderStrictWorkbench() {
+  return render(
+    <StrictMode>
+      <AuditUserProvider>
+        <ReplicaReportWorkbench />
+      </AuditUserProvider>
+    </StrictMode>
   );
 }
 
@@ -471,6 +482,28 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
   });
 
+  it("restores draft results and controls after a StrictMode lifecycle replay", async () => {
+    const pendingDraft = deferred<ReportDraftCreateResponse>();
+    createReportDraftMock.mockReturnValue(pendingDraft.promise);
+    renderStrictWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "StrictMode 待复核" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "人工复核意见" })).toBeDisabled();
+    await act(async () => pendingDraft.resolve(draftResponse()));
+
+    expect(await screen.findByText("草稿已进入待复核队列")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "人工复核意见" })).toBeEnabled();
+    for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
+      expect(button).toBeEnabled();
+    }
+  });
+
   it("keeps the POST lock across a role change and releases it only after settle", async () => {
     const firstDraft = deferred<ReportDraftCreateResponse>();
     createReportDraftMock.mockReturnValue(firstDraft.promise);
@@ -672,6 +705,42 @@ describe("ReplicaReportWorkbench", () => {
     downloadAuditArtifactMock.mockRejectedValueOnce(new Error("download denied"));
     fireEvent.click(screen.getByRole("button", { name: "下载任务 DOCX" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("文件下载失败");
+  });
+
+  it("unlocks StrictMode downloads after success and reports a later failure", async () => {
+    const blocked = reportEntry("strict-report", "门禁阻断", {
+      page: "/pages/review-tasks",
+      task_docx: "/review-tasks/strict-report/export?format=docx",
+      report_docx: null,
+      report_markdown: null,
+      report_json: null
+    });
+    fetchReportWorkbenchMock.mockResolvedValue(reportResponse({ entries: [blocked] }));
+    const artifact = deferred<{ readonly blob: Blob; readonly filename: string }>();
+    downloadAuditArtifactMock.mockReturnValueOnce(artifact.promise);
+    const createObjectURL = vi.fn(() => "blob:strict-report-download");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    renderStrictWorkbench();
+
+    fireEvent.click(await screen.findByRole("button", { name: "下载任务 DOCX" }));
+    await act(async () => artifact.resolve({
+      blob: new Blob(["strict-artifact"], { type: "application/octet-stream" }),
+      filename: "strict-report.docx"
+    }));
+
+    await waitFor(() => {
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:strict-report-download");
+      expect(screen.getByRole("button", { name: "下载任务 DOCX" })).toBeEnabled();
+    });
+
+    downloadAuditArtifactMock.mockRejectedValueOnce(new Error("strict download denied"));
+    fireEvent.click(screen.getByRole("button", { name: "下载任务 DOCX" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("文件下载失败");
+    expect(screen.getByRole("button", { name: "下载任务 DOCX" })).toBeEnabled();
   });
 
   it.each(["role-change", "unmount"] as const)(

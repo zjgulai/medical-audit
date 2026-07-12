@@ -495,9 +495,12 @@ export function ReplicaReportWorkbench() {
     loadWorkbench(auditUser.role);
   }, [abortPendingDownload, auditUser.role, loadWorkbench]);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    abortPendingDownload(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortPendingDownload(false);
+    };
   }, [abortPendingDownload]);
 
   const roleReportState = reportState.role === auditUser.role
