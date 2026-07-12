@@ -42,6 +42,21 @@ describe("LoginPage", () => {
     expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
+  it("keeps the information-center link connected to visible support guidance", () => {
+    render(<LoginPage />);
+
+    const supportLink = screen.getByRole("link", { name: "联系信息中心" });
+    if (!(supportLink instanceof HTMLAnchorElement)) {
+      throw new TypeError("Expected the information-center link to be an anchor");
+    }
+    const supportHash = new URL(supportLink.href).hash;
+    const supportTarget = document.querySelector(supportHash);
+
+    expect(supportHash).toBe("#support");
+    expect(supportTarget).not.toBeNull();
+    expect(supportTarget).toBeVisible();
+  });
+
   it("uses the compact card layout requested by the PPT feedback", () => {
     const shellRule = cssRuleFor(".audit-login-shell-compact");
     expect(shellRule).toContain("#f7fafc");

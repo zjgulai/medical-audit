@@ -94,6 +94,10 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
           <button className="audit-focus-ring audit-btn audit-btn-primary mt-7 w-full" type="submit">
             登录
           </button>
+
+          <p id="support" className="audit-login-support">
+            账号由医院信息中心统一开通，如需协助，请联系院内管理员。
+          </p>
         </form>
       </section>
     </main>
