@@ -1,7 +1,10 @@
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from threading import Barrier
+from time import sleep
 from typing import cast
 from uuid import UUID
 from zipfile import ZipFile
@@ -18,6 +21,7 @@ from medical_audit_kb.api.auth_user_store import SqlAlchemyAuthUserStore
 from medical_audit_kb.api.project_member_store import InMemoryProjectMemberStore
 from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
 from medical_audit_kb.api.review_task_store import (
+    InMemoryReviewTaskStore,
     JsonFileReviewTaskStore,
     SqlAlchemyReviewTaskStore,
 )
@@ -531,17 +535,21 @@ def test_report_template_draft_persists_controlled_review_task_for_allowed_roles
 
     assert response.status_code == 200
     body = response.json()
-    assert body == {
-        "format": "report-template-draft-v1",
-        "task_id": "review-task-0001",
-        "template_id": "workpaper-summary-risk",
-        "category_id": "workpaper",
-        "project_key": "SELF-CHECK-FUND-20260607",
-        "project_href": "/projects?project=SELF-CHECK-FUND-20260607",
-        "status": "pending-review",
-        "store": {"ready": True, "backend": "JsonFileReviewTaskStore"},
-        "formal_report_created": False,
-        "provider_call": False,
+    assert body["format"] == "report-template-draft-v1"
+    assert body["task_id"].startswith("report-draft-")
+    assert len(body["task_id"]) <= 64
+    assert body["template_id"] == "workpaper-summary-risk"
+    assert body["category_id"] == "workpaper"
+    assert body["project_key"] == "SELF-CHECK-FUND-20260607"
+    assert body["project_href"] == "/projects?project=SELF-CHECK-FUND-20260607"
+    assert body["status"] == "pending-review"
+    assert body["store"] == {"ready": True, "backend": "JsonFileReviewTaskStore"}
+    assert body["formal_report_created"] is False
+    assert body["provider_call"] is False
+    assert body["audit"] == {
+        "status": "ready",
+        "intent_recorded": True,
+        "completion_recorded": True,
     }
     task = _review_tasks(state)[0]
     assert task["source"] == "report-template-draft"
@@ -560,7 +568,10 @@ def test_report_template_draft_persists_controlled_review_task_for_allowed_roles
         "user_identifier": user_identifier,
         "field_values": {"人工复核意见": sensitive_value},
     }
-    assert state.operation_logs[-1]["action"] == "report-template-draft-create"
+    assert [log["action"] for log in state.operation_logs[-2:]] == [
+        "report-template-draft-create-intent",
+        "report-template-draft-create-completed",
+    ]
     assert state.operation_logs[-1]["payload"]["field_count"] == 1
     serialized_operation = json.dumps(state.operation_logs[-1], ensure_ascii=False)
     assert sensitive_value not in serialized_operation
@@ -614,6 +625,15 @@ def test_report_template_draft_rejects_unknown_template_and_field_without_task(
             },
         },
     )
+    too_many_fields = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {f"field-{index}": "value" for index in range(33)},
+        },
+    )
 
     assert unknown_template.status_code == 404
     assert unknown_template.json()["detail"] == "report template not found"
@@ -623,6 +643,8 @@ def test_report_template_draft_rejects_unknown_template_and_field_without_task(
     )
     assert nested_field_value.status_code == 422
     assert normalized_key_collision.status_code == 422
+    assert too_many_fields.status_code == 422
+    assert too_many_fields.json()["detail"][0]["type"] == "too_long"
     assert _review_tasks(state) == []
     assert all(log["action"] != "authorization-denied" for log in state.operation_logs)
 
@@ -774,7 +796,116 @@ def test_report_template_draft_rejects_visible_technician_and_safely_audits(
     assert "field_values" not in serialized_denial
 
 
-def test_report_template_draft_uses_default_visibility_when_sql_store_fails(
+def test_report_template_draft_does_not_invert_missing_assignment_technician(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.auth_user_store.add_user(
+        {
+            "user_key": "profile-without-assignment",
+            "display_name": "无角色分配技术人员",
+            "status": "active",
+        }
+    )
+    member_store = InMemoryProjectMemberStore()
+    member_store.add_member(
+        "SELF-CHECK-FUND-20260607",
+        {
+            "user_identifier": "profile-without-assignment",
+            "name": "无角色分配技术人员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    state.project_member_store = member_store
+    client = TestClient(create_app(state))
+    headers = {
+        "X-User-Id": "profile-without-assignment",
+        "X-Role": "technician",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+    }
+
+    session_response = client.get("/auth/session", headers=headers)
+    create_response = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "不得越权"},
+        },
+    )
+
+    assert session_response.status_code == 200
+    assert session_response.json()["role"] == "member"
+    assert session_response.json()["auth_source"] == (
+        "persistent_profile_without_project_role"
+    )
+    assert "create_report_draft" not in session_response.json()["permissions"]
+    assert create_response.status_code == 403
+    assert _review_tasks(state) == []
+
+
+@pytest.mark.parametrize(
+    ("assigned_role", "expected_status"),
+    (("technician", 403), ("member", 200), ("director", 200)),
+)
+def test_report_template_draft_uses_explicit_project_assignment_permissions(
+    tmp_path: Path,
+    assigned_role: str,
+    expected_status: int,
+) -> None:
+    user_identifier = f"assigned-{assigned_role}"
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.auth_user_store.add_user(
+        {"user_key": user_identifier, "display_name": user_identifier, "status": "active"}
+    )
+    state.auth_user_store.assign_role(
+        user_identifier,
+        {
+            "role": assigned_role,
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    )
+    member_store = InMemoryProjectMemberStore()
+    member_store.add_member(
+        "SELF-CHECK-FUND-20260607",
+        {
+            "user_identifier": user_identifier,
+            "name": user_identifier,
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+        },
+    )
+    state.project_member_store = member_store
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": user_identifier, "X-Role": "technician"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": assigned_role},
+        },
+    )
+
+    assert response.status_code == expected_status
+    assert len(_review_tasks(state)) == (1 if expected_status == 200 else 0)
+
+
+def test_report_template_draft_fails_closed_when_project_member_store_fails(
     tmp_path: Path,
 ) -> None:
     class FailingProjectMemberStore:
@@ -805,9 +936,476 @@ def test_report_template_draft_uses_default_visibility_when_sql_store_fails(
         },
     )
 
+    assert response.status_code == 503
+    assert response.json()["detail"] == "project membership store is unavailable"
+    assert _review_tasks(state) == []
+    assert state.operation_logs[-1]["action"] == "report-template-draft-create-unavailable"
+    assert "field_values" not in json.dumps(state.operation_logs[-1], ensure_ascii=False)
+
+
+def test_report_template_draft_admin_does_not_require_member_store_read(tmp_path: Path) -> None:
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("project member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = FailingProjectMemberStore()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-admin", "X-Role": "admin"},
+        json={
+            "template_id": "workpaper-category-review",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"需下钻明细": "待复核"},
+        },
+    )
+
     assert response.status_code == 200
-    assert response.json()["task_id"] == "review-task-0001"
-    assert _review_tasks(state)[0]["source"] == "report-template-draft"
+    assert len(_review_tasks(state)) == 1
+
+
+def test_project_report_draft_guard_filters_lists_and_hides_all_task_resources(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    sentinel = "SENTINEL-PROJECT-DRAFT-MUST-NOT-LEAK"
+    create_response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sentinel},
+        },
+    )
+    assert create_response.status_code == 200
+    task_id = create_response.json()["task_id"]
+    unrelated_headers = {"X-User-Id": "unrelated-member", "X-Role": "member"}
+
+    page_response = client.get("/pages/review-tasks", headers=unrelated_headers)
+    workbench_response = client.get("/reports/workbench", headers=unrelated_headers)
+
+    assert page_response.status_code == 200
+    assert task_id not in page_response.text
+    assert "费用汇总风险底稿" not in page_response.text
+    assert sentinel not in page_response.text
+    assert workbench_response.status_code == 200
+    workbench_serialized = json.dumps(workbench_response.json(), ensure_ascii=False)
+    assert task_id not in workbench_serialized
+    assert "SELF-CHECK-FUND-20260607" not in workbench_serialized
+    assert sentinel not in workbench_serialized
+
+    direct_responses = (
+        client.get(f"/review-tasks/{task_id}/export", headers=unrelated_headers),
+        client.get(f"/review-tasks/{task_id}/report-draft", headers=unrelated_headers),
+        client.get(f"/review-tasks/{task_id}/signed-report", headers=unrelated_headers),
+        client.get(
+            f"/review-tasks/{task_id}/rectification/export",
+            headers=unrelated_headers,
+        ),
+        client.get(
+            f"/review-tasks/{task_id}/attachments/attachment-hidden/download",
+            headers=unrelated_headers,
+        ),
+        client.get(f"/review-tasks/{task_id}/export"),
+    )
+    write_responses = (
+        client.post(
+            f"/pages/review-tasks/{task_id}/status",
+            headers=unrelated_headers,
+            data={"status": "closed"},
+            follow_redirects=False,
+        ),
+        client.post(
+            f"/pages/review-tasks/{task_id}/attachments",
+            headers=unrelated_headers,
+            files={"attachment_file": ("hidden.txt", b"hidden", "text/plain")},
+            follow_redirects=False,
+        ),
+        client.post(
+            f"/pages/review-tasks/{task_id}/report-signoff",
+            headers=unrelated_headers,
+            data={"signed_by": "unrelated"},
+            follow_redirects=False,
+        ),
+        client.post(
+            f"/pages/review-tasks/{task_id}/rectification",
+            headers=unrelated_headers,
+            data={"rectification_status": "pending-rectification"},
+            follow_redirects=False,
+        ),
+    )
+    for response in (*direct_responses, *write_responses):
+        assert response.status_code == 404
+        assert response.json()["detail"] == "review task not found"
+
+    assert len(_review_tasks(state)) == 1
+    denial_logs = [
+        log for log in state.operation_logs if log["action"] == "authorization-denied"
+    ]
+    assert len(denial_logs) >= 10
+    serialized_denials = json.dumps(denial_logs, ensure_ascii=False)
+    assert sentinel not in serialized_denials
+    assert "field_values" not in serialized_denials
+
+
+def test_project_report_draft_resource_guard_fails_closed_on_member_store_error(
+    tmp_path: Path,
+) -> None:
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("project member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    create_response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-admin", "X-Role": "admin"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "受控草稿"},
+        },
+    )
+    task_id = create_response.json()["task_id"]
+    state.project_member_store = FailingProjectMemberStore()
+
+    member_response = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    member_list_response = client.get(
+        "/pages/review-tasks",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    admin_response = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers={"X-User-Id": "next-admin", "X-Role": "admin"},
+    )
+
+    assert member_response.status_code == 503
+    assert member_response.json()["detail"] == "project membership store is unavailable"
+    assert member_list_response.status_code == 503
+    assert admin_response.status_code == 200
+    availability_logs = [
+        log
+        for log in state.operation_logs
+        if log["action"] == "review-task-project-visibility-unavailable"
+    ]
+    assert len(availability_logs) == 2
+    assert "field_values" not in json.dumps(availability_logs, ensure_ascii=False)
+
+
+def test_controlled_auth_legacy_review_task_is_admin_or_creator_only(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(
+        tasks=[
+            {
+                "task_id": "legacy-controlled-task",
+                "created_at": "2026-07-12T00:00:00Z",
+                "updated_at": "2026-07-12T00:00:00Z",
+                "status": "pending-review",
+                "status_label": "待复核",
+                "question": "受控 legacy task",
+                "citation_count": 0,
+                "review_gate": "待人工复核",
+                "confidence_label": "待复核",
+                "fallback_label": "legacy",
+                "created_by": "legacy-creator",
+                "assigned_to": "",
+                "reviewer_note": "",
+                "conclusion": "",
+                "source": "legacy-test",
+                "dossier": {"format": "audit-finding-dossier-v1"},
+            }
+        ]
+    )
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+
+    def headers(user_identifier: str, role: str) -> dict[str, str]:
+        return {
+            "X-User-Id": user_identifier,
+            "X-Role": role,
+            "X-Tenant-Id": "hospital-demo",
+        }
+
+    creator_response = client.get(
+        "/review-tasks/legacy-controlled-task/export",
+        headers=headers("legacy-creator", "member"),
+    )
+    admin_response = client.get(
+        "/review-tasks/legacy-controlled-task/export",
+        headers=headers("next-admin", "admin"),
+    )
+    unrelated_response = client.get(
+        "/review-tasks/legacy-controlled-task/export",
+        headers=headers("unrelated-member", "member"),
+    )
+    unrelated_page = client.get(
+        "/pages/review-tasks",
+        headers=headers("unrelated-member", "member"),
+    )
+    unrelated_workbench = client.get(
+        "/reports/workbench",
+        headers=headers("unrelated-member", "member"),
+    )
+
+    assert creator_response.status_code == 200
+    assert admin_response.status_code == 200
+    assert unrelated_response.status_code == 404
+    assert "legacy-controlled-task" not in unrelated_page.text
+    assert unrelated_workbench.json()["report_entries"] == []
+
+
+def test_report_template_draft_owner_can_export_json_markdown_and_docx(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    create_response = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {
+                "费用分类汇总": "住院费用汇总",
+                "人工复核意见": "待核验基金支付结构",
+            },
+        },
+    )
+    assert create_response.status_code == 200
+    task_id = create_response.json()["task_id"]
+
+    json_response = client.get(f"/review-tasks/{task_id}/export", headers=headers)
+    markdown_response = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers=headers,
+        params={"format": "markdown"},
+    )
+    docx_response = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers=headers,
+        params={"format": "docx"},
+    )
+    page_response = client.get("/pages/review-tasks", headers=headers)
+    workbench_response = client.get("/reports/workbench", headers=headers)
+
+    assert json_response.status_code == 200
+    json_body = json_response.json()
+    assert json_body["dossier"]["format"] == "report-template-draft-dossier-v1"
+    assert json_body["dossier"]["report_template_draft"]["template_id"] == (
+        "workpaper-summary-risk"
+    )
+    assert markdown_response.status_code == 200
+    assert "# AuditScope 模板底稿草稿" in markdown_response.text
+    assert "费用汇总风险底稿" in markdown_response.text
+    assert "住院费用汇总" in markdown_response.text
+    assert docx_response.status_code == 200
+    assert "AuditScope 模板底稿草稿" in _docx_document_xml(docx_response.content)
+    assert task_id in page_response.text
+    task_docx_href = workbench_response.json()["report_entries"][0]["download_links"][
+        "task_docx"
+    ]
+    task_docx_response = client.get(task_docx_href, headers=headers)
+    assert task_docx_response.status_code == 200
+
+
+def test_report_template_draft_intent_audit_failure_creates_no_task(tmp_path: Path) -> None:
+    class FailingAuditLogStore:
+        def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+            raise SQLAlchemyError("audit store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_log_store = FailingAuditLogStore()
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    sentinel = "SENTINEL-INTENT-AUDIT-FAILURE"
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sentinel},
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "report draft audit is unavailable"
+    assert _review_tasks(state) == []
+    assert state.operation_logs[-1]["action"] == "report-template-draft-create-unavailable"
+    serialized_logs = json.dumps(state.operation_logs, ensure_ascii=False)
+    assert sentinel not in serialized_logs
+    assert "field_values" not in serialized_logs
+
+
+def test_report_template_draft_completion_audit_failure_returns_degraded_success(
+    tmp_path: Path,
+) -> None:
+    class CompletionFailingAuditLogStore:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+            self.calls += 1
+            if self.calls == 1:
+                return {"action": action, "payload": dict(payload)}
+            raise SQLAlchemyError("completion audit unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_log_store = CompletionFailingAuditLogStore()
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    sentinel = "SENTINEL-COMPLETION-AUDIT-FAILURE"
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": sentinel},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["audit"] == {
+        "status": "degraded",
+        "intent_recorded": True,
+        "completion_recorded": False,
+    }
+    assert response.json()["formal_report_created"] is False
+    assert response.json()["provider_call"] is False
+    assert len(_review_tasks(state)) == 1
+    assert state.operation_logs[-1]["action"] == (
+        "report-template-draft-create-audit-degraded"
+    )
+    serialized_logs = json.dumps(state.operation_logs, ensure_ascii=False)
+    assert sentinel not in serialized_logs
+    assert "field_values" not in serialized_logs
+
+
+def test_report_template_draft_concurrent_requests_use_distinct_ids_and_persist_both(
+    tmp_path: Path,
+) -> None:
+    class InterleavingReviewTaskStore:
+        def __init__(self) -> None:
+            self.delegate = InMemoryReviewTaskStore()
+            self.barrier = Barrier(2)
+
+        def list_tasks(self) -> list[dict[str, object]]:
+            return self.delegate.list_tasks()
+
+        def next_task_id(self) -> str:
+            return self.delegate.next_task_id()
+
+        def add_task(self, task: dict[str, object]) -> dict[str, object]:
+            self.barrier.wait(timeout=5)
+            return self.delegate.add_task(task)
+
+        def get_task(self, task_id: str) -> dict[str, object]:
+            return self.delegate.get_task(task_id)
+
+        def update_task(
+            self,
+            task_id: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            return self.delegate.update_task(task_id, values)
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = InterleavingReviewTaskStore()
+    app = create_app(state)
+
+    def create(index: int) -> object:
+        with TestClient(app) as client:
+            return client.post(
+                "/reports/drafts",
+                headers={"X-User-Id": "next-member", "X-Role": "member"},
+                json={
+                    "template_id": "workpaper-summary-risk",
+                    "project_key": "SELF-CHECK-FUND-20260607",
+                    "field_values": {"人工复核意见": f"draft-{index}"},
+                },
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(create, (1, 2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    task_ids = [response.json()["task_id"] for response in responses]
+    assert len(set(task_ids)) == 2
+    assert all(task_id.startswith("report-draft-") for task_id in task_ids)
+    assert {str(task["task_id"]) for task in _review_tasks(state)} == set(task_ids)
+
+
+def test_review_task_stores_serialize_same_instance_concurrent_writes(tmp_path: Path) -> None:
+    class SlowJsonFileReviewTaskStore(JsonFileReviewTaskStore):
+        def _write_tasks(self, tasks: list[dict[str, object]]) -> None:
+            sleep(0.05)
+            super()._write_tasks(tasks)
+
+    json_store = SlowJsonFileReviewTaskStore(tmp_path / "concurrent-review-tasks.json")
+    json_barrier = Barrier(2)
+
+    def add_json(index: int) -> None:
+        json_barrier.wait(timeout=5)
+        json_store.add_task({"task_id": f"concurrent-json-{index}"})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(add_json, (1, 2)))
+
+    assert {task["task_id"] for task in json_store.list_tasks()} == {
+        "concurrent-json-1",
+        "concurrent-json-2",
+    }
+
+    memory_store = InMemoryReviewTaskStore()
+    memory_barrier = Barrier(2)
+
+    def add_duplicate_memory(_: int) -> str:
+        memory_barrier.wait(timeout=5)
+        try:
+            memory_store.add_task({"task_id": "same-memory-id"})
+        except ValueError:
+            return "duplicate"
+        return "created"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(add_duplicate_memory, (1, 2)))
+
+    assert sorted(outcomes) == ["created", "duplicate"]
+    assert len(memory_store.list_tasks()) == 1
 
 
 def test_chat_dossier_export_fails_when_backend_is_not_ready(tmp_path: Path) -> None:

@@ -11,9 +11,9 @@ from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, 
 from medical_audit_kb.api.auth import (
     HospitalRole,
     Permission,
-    has_permission,
     normalize_hospital_role,
     resolve_authenticated_user,
+    user_has_permission,
 )
 from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
@@ -679,7 +679,7 @@ async def upload_document(
     )
     role = user.legacy_api_role
     permissions = _upload_permissions(role)
-    if not has_permission(user.role, Permission.UPLOAD_PERSONAL_DOCUMENT):
+    if not user_has_permission(user, Permission.UPLOAD_PERSONAL_DOCUMENT):
         raise HTTPException(status_code=403, detail="upload_personal_document is not allowed")
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
