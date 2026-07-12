@@ -103,7 +103,8 @@ function expectDefinition(
 
 describe("ReplicaAnalyticsWorkbench", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    fetchHistoryMock.mockReset();
+    uploadMock.mockReset();
     fetchHistoryMock.mockResolvedValue(historyReady);
     uploadMock.mockResolvedValue(uploadResult);
   });
@@ -191,6 +192,21 @@ describe("ReplicaAnalyticsWorkbench", () => {
     );
   });
 
+  it("clears evidence from file A as soon as file B is selected without uploading B", async () => {
+    render(<ReplicaAnalyticsWorkbench />);
+    chooseFile("文件A.xlsx");
+    fireEvent.click(screen.getByRole("button", { name: "上传并分析" }));
+    expect(await screen.findByRole("region", { name: "本次分析结果" })).toHaveTextContent(
+      "本次收费.xlsx"
+    );
+
+    chooseFile("文件B.csv");
+
+    expect(screen.getByText("已选择：文件B.csv（尚未上传）")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "本次分析结果" })).not.toBeInTheDocument();
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+  });
+
   it("states when an analysis was not retained and never invents a profile after upload failure", async () => {
     uploadMock
       .mockResolvedValueOnce({
@@ -238,6 +254,12 @@ describe("ReplicaAnalyticsWorkbench", () => {
     expectDefinition(historyItem, "重复行", "0");
     expectDefinition(historyItem, "分析状态", "parsed");
     expectDefinition(historyItem, "保留状态", "retained");
+    expect(within(historyItem).queryByText("next-admin")).not.toBeInTheDocument();
+    expect(
+      within(historyItem).queryByText("2026/07/12/upload-history-1.csv")
+    ).not.toBeInTheDocument();
+    expect(within(historyItem).queryByText("b".repeat(64))).not.toBeInTheDocument();
+    expectDefinition(historyItem, "sha256（截断）", "bbbbbbbbbbbb…bbbbbb");
 
     fireEvent.click(within(history).getByRole("button", { name: "刷新历史" }));
     expect(await within(history).findByText("历史存储未就绪")).toBeInTheDocument();

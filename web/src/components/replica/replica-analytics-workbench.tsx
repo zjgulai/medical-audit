@@ -22,6 +22,10 @@ function errorMessage(error: unknown): string {
     : "表格上传分析失败，请稍后重试。";
 }
 
+function truncatedSha256(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
+}
+
 export function ReplicaAnalyticsWorkbench() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -66,6 +70,7 @@ export function ReplicaAnalyticsWorkbench() {
   function chooseFile(file: File | null) {
     setSelectedFile(file);
     setUploadError(null);
+    setUploadResult(null);
   }
 
   async function submitUpload() {
@@ -313,10 +318,8 @@ function HistoryPanel({
                     <Definition term="重复行" value={String(item.duplicate_row_count)} />
                     <Definition term="分析状态" value={item.status} />
                     <Definition term="保留状态" value={item.retention_status} />
-                    <Definition term="created_by" value={item.created_by ?? "未记录"} />
                     <Definition term="created_at" value={item.created_at} />
-                    <Definition term="storage_path" value={item.storage_path} />
-                    <Definition term="sha256" value={item.sha256} />
+                    <Definition term="sha256（截断）" value={truncatedSha256(item.sha256)} />
                   </dl>
                   {item.audit_signals.length > 0 ? (
                     <p>审计信号：{item.audit_signals.join("、")}</p>
