@@ -683,6 +683,8 @@ export async function loadReplicaAgentsData(
 export async function loadReplicaAgentMarketData(
   _client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
+  void _client;
+
   const issues: ReplicaAdapterIssue[] = [
     issue(
       "agent-market",
