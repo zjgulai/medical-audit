@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
-from medical_audit_kb.api.auth import HospitalRole, resolve_authenticated_user
+from medical_audit_kb.api.auth import (
+    AuthenticatedUser,
+    HospitalRole,
+    record_authorization_denied,
+    resolve_authenticated_user,
+)
+from medical_audit_kb.api.project_member_store import (
+    project_exists,
+    project_payloads_with_member_counts,
+    visible_project_keys,
+)
 from medical_audit_kb.api.routes_knowledge_base import build_knowledge_base_catalog_response
 
 router = APIRouter()
@@ -734,41 +745,93 @@ ARCHIVE_TIMELINE: tuple[dict[str, object], ...] = (
 @router.get("/graph/workbench")
 def graph_workbench(
     state: Annotated[ApiState, Depends(get_api_state)],
+    view: Annotated[Literal["knowledge", "project"], Query()] = "knowledge",
+    project_key: Annotated[str | None, Query(max_length=128)] = None,
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
+    normalized_project_key = (project_key or "").strip()
+    if view == "project" and not normalized_project_key:
+        raise HTTPException(
+            status_code=422,
+            detail="project_key is required for project graph view",
+        )
+    if view == "knowledge" and normalized_project_key:
+        raise HTTPException(
+            status_code=422,
+            detail="project_key is not allowed for knowledge graph view",
+        )
+
     user = resolve_authenticated_user(
         state,
         x_user_id=x_user_id,
         x_role=x_role,
         default_role=HospitalRole.MEMBER,
+        project_key=normalized_project_key or None,
     )
-    graph = _knowledge_catalog_graph(state=state, role=user.legacy_api_role)
-    metrics = _graph_metrics(graph["nodes"], graph["relations"])
-    record_operation(
+    if view == "knowledge":
+        graph = _knowledge_catalog_graph(state=state, role=user.legacy_api_role)
+        graph_id = "SELF-CHECK-FUND-20260607"
+        graph_title = "医保基金使用合规专项图谱"
+        graph_scope = (
+            "基于当前可查询知识库目录，将医疗医保、政策、管理和公共专题知识组织成可审证关系图。"
+        )
+        evidence_chain_status = "catalog"
+        evidence_grade = "local-readonly-api"
+        store: dict[str, object] = {
+            "ready": True,
+            "backend": "KnowledgeCatalogGraphBuilder",
+        }
+        response_project_key: str | None = None
+    else:
+        _authorize_project_graph(
+            state=state,
+            user=user,
+            project_key=normalized_project_key,
+        )
+        graph = _project_evidence_graph(
+            state=state,
+            project_key=normalized_project_key,
+        )
+        graph_id = normalized_project_key
+        graph_title = f"{graph['project_name']}项目证据链"
+        graph_scope = "仅组织当前项目已持久化的疑点、复核、报告和整改证据。"
+        evidence_chain_status = str(graph["evidence_chain_status"])
+        evidence_grade = "live-store-readonly"
+        store = cast(dict[str, object], graph["store"])
+        response_project_key = normalized_project_key
+
+    nodes = cast(list[dict[str, object]], graph["nodes"])
+    relations = cast(list[dict[str, object]], graph["relations"])
+    metrics = _graph_metrics(nodes, relations)
+    _record_graph_operation(
         state,
         "graph-workbench-view",
         {
+            "view": view,
+            "project_key": response_project_key,
             "node_count": metrics["node_count"],
             "relation_count": metrics["relation_count"],
             "strong_relation_count": metrics["strong_relation_count"],
             "pending_relation_count": metrics["pending_relation_count"],
+            "evidence_chain_status": evidence_chain_status,
         },
     )
     return {
         "format": "graph-workbench-v1",
         "generated_at": _utc_now_iso(),
-        "graph_id": "SELF-CHECK-FUND-20260607",
-        "graph_title": "医保基金使用合规专项图谱",
-        "graph_scope": (
-            "基于当前可查询知识库目录，将医疗医保、政策、管理和公共专题知识组织成可审证关系图。"
-        ),
-        "nodes": graph["nodes"],
-        "relations": graph["relations"],
+        "graph_id": graph_id,
+        "graph_title": graph_title,
+        "graph_scope": graph_scope,
+        "view": view,
+        "project_key": response_project_key,
+        "nodes": nodes,
+        "relations": relations,
         "metrics": metrics,
-        "evidence_grade": "local-readonly-api",
+        "evidence_chain_status": evidence_chain_status,
+        "evidence_grade": evidence_grade,
         "production_side_effect": "none",
-        "store": {"ready": True, "backend": "KnowledgeCatalogGraphBuilder"},
+        "store": store,
     }
 
 
@@ -875,7 +938,390 @@ def archive_workbench(
     }
 
 
-def _knowledge_catalog_graph(*, state: ApiState, role: str) -> dict[str, list[dict[str, object]]]:
+def _authorize_project_graph(
+    *,
+    state: ApiState,
+    user: AuthenticatedUser,
+    project_key: str,
+) -> None:
+    if not project_exists(project_key):
+        raise HTTPException(status_code=404, detail="project not found")
+    if user.user_identifier == "anonymous":
+        _record_project_graph_denial(state=state, user=user)
+        raise HTTPException(status_code=404, detail="project not found")
+    if user.role is HospitalRole.ADMIN:
+        return
+
+    member_store = state.project_member_store
+    if member_store is None:
+        raise HTTPException(status_code=503, detail="project member store is not available")
+    try:
+        visible_keys = visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=False,
+            store=member_store,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="project member store is not available",
+        ) from exc
+    if project_key not in visible_keys:
+        _record_project_graph_denial(state=state, user=user)
+        raise HTTPException(status_code=404, detail="project not found")
+
+
+def _record_project_graph_denial(
+    *,
+    state: ApiState,
+    user: AuthenticatedUser,
+) -> None:
+    record_authorization_denied(
+        state,
+        attempted_action="graph-project-view",
+        permission="view_project_graph",
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type=user.auth_scope_type,
+        auth_scope_key=user.auth_scope_key,
+        status_code=404,
+        reason="project not found",
+    )
+
+
+def _project_evidence_graph(
+    *,
+    state: ApiState,
+    project_key: str,
+) -> dict[str, object]:
+    finding_store = state.audit_finding_store
+    review_store = state.review_task_store
+    if finding_store is None:
+        raise HTTPException(status_code=503, detail="audit finding store is not available")
+    if review_store is None:
+        raise HTTPException(status_code=503, detail="review task store is not available")
+    try:
+        findings = finding_store.list_findings(project_key=project_key, limit=100)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="audit finding store is not available",
+        ) from exc
+    try:
+        all_review_tasks = review_store.list_tasks()
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="review task store is not available",
+        ) from exc
+
+    project = next(
+        item
+        for item in project_payloads_with_member_counts({})
+        if str(item["id"]) == project_key
+    )
+    project_name = str(project["name"])
+    project_findings = [
+        finding
+        for finding in findings
+        if str(finding.get("project_key") or "").strip() == project_key
+    ]
+    review_tasks_by_id = {
+        task_id: task
+        for task in all_review_tasks
+        if (task_id := str(task.get("task_id") or "").strip())
+    }
+    linked_review_task_ids = {
+        task_id
+        for finding in project_findings
+        if (task_id := str(finding.get("review_task_id") or "").strip())
+    }
+    template_review_task_ids = {
+        task_id
+        for task_id, task in review_tasks_by_id.items()
+        if _template_draft_project_key(task) == project_key
+    }
+    selected_review_task_ids = linked_review_task_ids | template_review_task_ids
+    selected_review_tasks = {
+        task_id: review_tasks_by_id[task_id]
+        for task_id in selected_review_task_ids
+        if task_id in review_tasks_by_id
+    }
+
+    evidence_count = len(project_findings) + len(template_review_task_ids)
+    if evidence_count:
+        project_description = (
+            f"当前项目已归集 {len(project_findings)} 条疑点和 "
+            f"{len(template_review_task_ids)} 份项目模板草稿。"
+        )
+        project_metric = f"{evidence_count} 条项目证据"
+    else:
+        project_description = "当前项目已归集 0 条项目证据，尚无疑点或报告模板草稿。"
+        project_metric = "0 条项目证据"
+    nodes: list[dict[str, object]] = [
+        {
+            "id": f"project:{project_key}",
+            "label": project_name,
+            "kind": "项目",
+            "status": str(project["status"]),
+            "description": project_description,
+            "metric": project_metric,
+            "href": f"/projects?project={project_key}",
+            "x": 100,
+            "y": 250,
+        }
+    ]
+    relations: list[dict[str, object]] = []
+
+    for index, finding in enumerate(
+        sorted(project_findings, key=lambda item: str(item.get("finding_key") or ""))
+    ):
+        finding_key = str(finding.get("finding_key") or "").strip()
+        if not finding_key:
+            continue
+        finding_node_id = f"finding:{finding_key}"
+        severity = str(finding.get("severity") or "未分级")
+        review_status = str(finding.get("review_status") or "未复核")
+        evidence_items = finding.get("evidence_items")
+        evidence_item_count = len(evidence_items) if isinstance(evidence_items, list) else 0
+        nodes.append(
+            {
+                "id": finding_node_id,
+                "label": f"疑点 {finding_key}",
+                "kind": "疑点",
+                "status": review_status,
+                "description": f"项目疑点已持久化；严重程度 {severity}，复核状态 {review_status}。",
+                "metric": f"{evidence_item_count} 项证据",
+                "href": "/findings",
+                "x": 300,
+                "y": 100 + (index * 140),
+            }
+        )
+        relations.append(
+            {
+                "id": f"project-finding:{finding_key}",
+                "sourceId": f"project:{project_key}",
+                "targetId": finding_node_id,
+                "source": project_key,
+                "relation": "发现",
+                "target": finding_key,
+                "evidence": (
+                    f"{str(finding.get('audit_task_key') or 'audit-task')} · "
+                    f"{str(finding.get('rule_version_key') or 'rule-version')}"
+                ),
+                "strength": "强",
+            }
+        )
+        review_task_id = str(finding.get("review_task_id") or "").strip()
+        if review_task_id in selected_review_tasks:
+            relations.append(
+                {
+                    "id": f"finding-review:{finding_key}:{review_task_id}",
+                    "sourceId": finding_node_id,
+                    "targetId": f"review:{review_task_id}",
+                    "source": finding_key,
+                    "relation": "生成",
+                    "target": review_task_id,
+                    "evidence": "疑点记录的 review_task_id",
+                    "strength": "强",
+                }
+            )
+
+    for index, task_id in enumerate(sorted(selected_review_tasks)):
+        task = selected_review_tasks[task_id]
+        status = str(task.get("status_label") or task.get("status") or "待复核")
+        citation_count = _graph_non_negative_int(task.get("citation_count"))
+        nodes.append(
+            {
+                "id": f"review:{task_id}",
+                "label": f"复核任务 {task_id}",
+                "kind": "复核",
+                "status": status,
+                "description": "项目疑点或项目模板草稿关联的持久化复核任务。",
+                "metric": f"{citation_count} 项引用",
+                "href": "/findings",
+                "x": 520,
+                "y": 100 + (index * 140),
+            }
+        )
+        if task_id in template_review_task_ids and task_id not in linked_review_task_ids:
+            relations.append(
+                {
+                    "id": f"project-review:{task_id}",
+                    "sourceId": f"project:{project_key}",
+                    "targetId": f"review:{task_id}",
+                    "source": project_key,
+                    "relation": "归集",
+                    "target": task_id,
+                    "evidence": "report_template_draft.project_key",
+                    "strength": "强",
+                }
+            )
+
+        report_state = _project_report_state(task=task, project_key=project_key)
+        if report_state is None:
+            continue
+        report_node_id = f"report:{task_id}"
+        nodes.append(
+            {
+                "id": report_node_id,
+                "label": f"报告 {task_id}",
+                "kind": "报告",
+                "status": report_state["status"],
+                "description": "当前项目复核任务已持久化报告草稿或正式签发状态。",
+                "metric": report_state["metric"],
+                "href": "/reports",
+                "x": 740,
+                "y": 100 + (index * 140),
+            }
+        )
+        relations.append(
+            {
+                "id": f"review-report:{task_id}",
+                "sourceId": f"review:{task_id}",
+                "targetId": report_node_id,
+                "source": task_id,
+                "relation": "形成",
+                "target": task_id,
+                "evidence": str(report_state["evidence"]),
+                "strength": "强" if report_state["status"] == "已签发" else "中",
+            }
+        )
+
+        rectification = _graph_dict(_graph_dict(task.get("dossier")).get("rectification"))
+        rectification_id = str(rectification.get("rectification_id") or "").strip()
+        rectification_status = str(rectification.get("status") or "").strip()
+        if not rectification_id or rectification_status in {"", "not-created"}:
+            continue
+        events = rectification.get("events")
+        event_count = len(events) if isinstance(events, list) else 0
+        remediation_node_id = f"remediation:{rectification_id}"
+        nodes.append(
+            {
+                "id": remediation_node_id,
+                "label": f"整改 {rectification_id}",
+                "kind": "整改",
+                "status": rectification_status,
+                "description": "正式报告链路已持久化整改跟踪状态。",
+                "metric": f"{event_count} 条事件",
+                "href": "/remediation",
+                "x": 960,
+                "y": 100 + (index * 140),
+            }
+        )
+        relations.append(
+            {
+                "id": f"report-remediation:{task_id}:{rectification_id}",
+                "sourceId": report_node_id,
+                "targetId": remediation_node_id,
+                "source": task_id,
+                "relation": "整改",
+                "target": rectification_id,
+                "evidence": "rectification.status",
+                "strength": "强",
+            }
+        )
+
+    return {
+        "project_name": project_name,
+        "nodes": nodes,
+        "relations": relations,
+        "evidence_chain_status": "ready" if len(nodes) > 1 else "empty",
+        "store": {
+            "ready": True,
+            "backend": {
+                "audit_findings": finding_store.__class__.__name__,
+                "review_tasks": review_store.__class__.__name__,
+            },
+        },
+    }
+
+
+def _template_draft_project_key(task: dict[str, object]) -> str | None:
+    dossier = _graph_dict(task.get("dossier"))
+    template_draft = _graph_dict(dossier.get("report_template_draft"))
+    project_key = str(template_draft.get("project_key") or "").strip()
+    return project_key or None
+
+
+def _project_report_state(
+    *,
+    task: dict[str, object],
+    project_key: str,
+) -> dict[str, str] | None:
+    dossier = _graph_dict(task.get("dossier"))
+    signed_report = _graph_dict(dossier.get("signed_report"))
+    report_id = str(signed_report.get("report_id") or "").strip()
+    if str(signed_report.get("status") or "").strip() == "signed" and report_id:
+        return {
+            "status": "已签发",
+            "metric": report_id,
+            "evidence": "signed_report.status",
+        }
+
+    report_draft = _graph_dict(dossier.get("report_draft"))
+    if any(
+        str(report_draft.get(field) or "").strip()
+        for field in ("title", "summary", "rectification_request")
+    ):
+        return {
+            "status": "草稿",
+            "metric": "报告草稿已记录",
+            "evidence": "dossier.report_draft",
+        }
+
+    template_draft = _graph_dict(dossier.get("report_template_draft"))
+    template_id = str(template_draft.get("template_id") or "").strip()
+    if (
+        _template_draft_project_key(task) == project_key
+        and str(template_draft.get("status") or "").strip() == "draft"
+        and template_id
+    ):
+        return {
+            "status": "草稿",
+            "metric": template_id,
+            "evidence": "dossier.report_template_draft",
+        }
+    return None
+
+
+def _graph_dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return cast(dict[str, object], value)
+    return {}
+
+
+def _graph_non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return max(value, 0)
+    return 0
+
+
+def _record_graph_operation(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> None:
+    try:
+        record_operation(state, action, payload)
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": f"{action}-audit-degraded",
+                "payload": {
+                    **payload,
+                    "error_type": type(exc).__name__,
+                },
+            }
+        )
+
+
+def _knowledge_catalog_graph(*, state: ApiState, role: str) -> dict[str, object]:
     catalog = build_knowledge_base_catalog_response(state=state, role=role)
     items = catalog.items
     nodes: list[dict[str, object]] = [

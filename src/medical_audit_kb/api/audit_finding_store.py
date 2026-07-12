@@ -79,7 +79,7 @@ class SqlAlchemyAuditFindingStore:
                 select(AuditFinding)
                 .options(
                     selectinload(AuditFinding.audit_run),
-                    selectinload(AuditFinding.audit_task),
+                    selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
                     selectinload(AuditFinding.rule_version),
                     selectinload(AuditFinding.evidence_items),
                 )
@@ -185,7 +185,7 @@ class SqlAlchemyAuditFindingStore:
                     select(AuditFinding)
                     .options(
                         selectinload(AuditFinding.audit_run),
-                        selectinload(AuditFinding.audit_task),
+                        selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
                         selectinload(AuditFinding.rule_version),
                         selectinload(AuditFinding.evidence_items),
                     )
@@ -225,7 +225,7 @@ def _load_finding(session: Session, finding_key: str) -> AuditFinding | None:
         select(AuditFinding)
         .options(
             selectinload(AuditFinding.audit_run),
-            selectinload(AuditFinding.audit_task),
+            selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
             selectinload(AuditFinding.rule_version),
             selectinload(AuditFinding.evidence_items),
         )
@@ -250,6 +250,7 @@ def _finding_to_payload(session: Session, finding: AuditFinding) -> dict[str, ob
         "updated_at": _datetime_to_iso(finding.updated_at),
         "audit_run_key": _audit_run_key(finding.audit_run),
         "audit_task_key": _audit_task_key(finding.audit_task),
+        "project_key": _project_key(finding.audit_task),
         "rule_key": _rule_key(finding.rule_version),
         "rule_version_key": _rule_version_key(finding.rule_version),
         "evidence_items": [
@@ -291,6 +292,12 @@ def _audit_run_key(audit_run: AuditRun | None) -> str | None:
 
 def _audit_task_key(audit_task: AuditTask | None) -> str | None:
     return audit_task.task_key if audit_task is not None else None
+
+
+def _project_key(audit_task: AuditTask | None) -> str | None:
+    if audit_task is None or audit_task.project is None:
+        return None
+    return audit_task.project.project_key
 
 
 def _rule_key(rule_version: RuleVersion | None) -> str | None:

@@ -44,6 +44,7 @@ from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
     SqlAlchemyQueryHistoryStore,
 )
+from medical_audit_kb.api.review_task_store import SqlAlchemyReviewTaskStore
 from medical_audit_kb.api.routes_documents import DocumentUploadItem
 from medical_audit_kb.core.config import (
     DocumentStorageSettings,
@@ -60,6 +61,7 @@ from medical_audit_kb.db.models import (
     AuditRule,
     AuditRun,
     AuditTask,
+    ReviewTask,
     RuleVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
@@ -2027,6 +2029,409 @@ def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) 
     assert [item["finding_key"] for item in self_items] == ["finding-self-sql"]
     assert [item["finding_key"] for item in catalog_items] == ["finding-catalog-sql"]
     assert missing_items == []
+
+
+def test_audit_finding_store_project_contract_is_stable_across_reads(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-finding-contract.db'}"
+    store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+
+    listed = store.list_findings(
+        project_key="SELF-CHECK-FUND-20260607",
+        limit=10,
+    )
+    loaded = store.get_finding("finding-self-sql")
+    synced = store.sync_review_task_status("review-self-sql", "confirmed-violation")
+
+    assert [item["project_key"] for item in listed] == ["SELF-CHECK-FUND-20260607"]
+    assert loaded["project_key"] == "SELF-CHECK-FUND-20260607"
+    assert [item["project_key"] for item in synced] == ["SELF-CHECK-FUND-20260607"]
+
+
+def test_graph_workbench_defaults_to_knowledge_catalog_without_project_store_reads(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    member_store = _RecordingProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.project_member_store = member_store
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["view"] == "knowledge"
+    assert body["project_key"] is None
+    assert body["evidence_chain_status"] == "catalog"
+    assert body["production_side_effect"] == "none"
+    assert "graph-node-project" in {node["id"] for node in body["nodes"]}
+    assert any(str(node["href"]).startswith("/knowledge-base") for node in body["nodes"])
+    assert member_store.list_reads == 0
+    assert finding_store.requested_project_keys == []
+    assert review_store.list_calls == 0
+    assert state.operation_logs[-1]["payload"]["view"] == "knowledge"
+    assert state.operation_logs[-1]["payload"]["project_key"] is None
+
+
+def test_graph_workbench_rejects_invalid_view_project_pairs_before_data_reads(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    member_store = _RecordingProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.project_member_store = member_store
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    missing = client.get("/graph/workbench?view=project")
+    blank = client.get("/graph/workbench?view=project&project_key=%20%20")
+    forbidden = client.get(
+        "/graph/workbench?view=knowledge&project_key=SELF-CHECK-FUND-20260607"
+    )
+    invalid_view = client.get("/graph/workbench?view=workflow")
+    too_long = client.get(
+        f"/graph/workbench?view=project&project_key={'P' * 129}"
+    )
+
+    assert missing.status_code == 422
+    assert missing.json()["detail"] == "project_key is required for project graph view"
+    assert blank.status_code == 422
+    assert blank.json()["detail"] == "project_key is required for project graph view"
+    assert forbidden.status_code == 422
+    assert forbidden.json()["detail"] == (
+        "project_key is not allowed for knowledge graph view"
+    )
+    assert invalid_view.status_code == 422
+    assert too_long.status_code == 422
+    assert member_store.list_reads == 0
+    assert finding_store.requested_project_keys == []
+    assert review_store.list_calls == 0
+    assert not any(log["action"] == "graph-workbench-view" for log in state.operation_logs)
+
+
+def test_project_graph_authorizes_exact_project_scope_and_hides_unrelated_projects(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'graph-auth.db'}",
+        create_schema=True,
+    )
+    state.project_member_store = InMemoryProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    state.auth_user_store.add_user(
+        {
+            "user_key": "graph-project-admin",
+            "display_name": "图谱项目管理员",
+            "department_key": "audit-office",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "graph-project-admin",
+        {
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    )
+    state.auth_user_store.add_user(
+        {
+            "user_key": "graph-department-admin",
+            "display_name": "图谱科室管理员",
+            "department_key": "audit-office",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "graph-department-admin",
+        {
+            "role": "admin",
+            "scope_type": "department",
+            "scope_key": "audit-office",
+        },
+    )
+    client = TestClient(create_app(state))
+
+    visible_member = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    unrelated = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
+    scoped_allowed = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "graph-project-admin", "X-Role": "member"},
+    )
+    scoped_other = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "graph-project-admin", "X-Role": "admin"},
+    )
+    department_scoped = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "graph-department-admin", "X-Role": "admin"},
+    )
+    unknown = client.get(
+        "/graph/workbench?view=project&project_key=UNKNOWN-PROJECT",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+
+    assert visible_member.status_code == 200
+    assert unrelated.status_code == 404
+    assert unrelated.json()["detail"] == "project not found"
+    assert scoped_allowed.status_code == 200
+    assert scoped_other.status_code == 404
+    assert department_scoped.status_code == 404
+    assert unknown.status_code == 404
+    assert finding_store.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607",
+        "SELF-CHECK-FUND-20260607",
+    ]
+    assert review_store.list_calls == 2
+    denial_logs = [
+        log for log in state.operation_logs if log["action"] == "authorization-denied"
+    ]
+    assert len(denial_logs) == 3
+    assert all("finding" not in json.dumps(log).lower() for log in denial_logs)
+    assert all("task" not in json.dumps(log).lower() for log in denial_logs)
+    success_logs = [
+        log for log in state.operation_logs if log["action"] == "graph-workbench-view"
+    ]
+    assert [log["payload"]["project_key"] for log in success_logs] == [
+        "SELF-CHECK-FUND-20260607",
+        "SELF-CHECK-FUND-20260607",
+    ]
+
+
+def test_project_graph_fails_closed_when_required_stores_are_unavailable(
+    tmp_path: Path,
+) -> None:
+    class FailingProjectMemberStore(_RecordingProjectMemberStore):
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            self.list_reads += 1
+            raise SQLAlchemyError("project member store unavailable")
+
+    class FailingFindingStore(_RecordingGraphFindingStore):
+        def list_findings(
+            self,
+            *,
+            review_status: str | None = None,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
+            raise SQLAlchemyError("finding store unavailable")
+
+    class FailingReviewTaskStore(_RecordingGraphReviewTaskStore):
+        def list_tasks(self) -> list[dict[str, object]]:
+            self.list_calls += 1
+            raise SQLAlchemyError("review task store unavailable")
+
+    route = "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607"
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+
+    missing_member_state = _api_state(tmp_path / "missing-member")
+    missing_member_state.project_member_store = None
+    missing_member_finding = _RecordingGraphFindingStore()
+    missing_member_review = _RecordingGraphReviewTaskStore()
+    missing_member_state.audit_finding_store = missing_member_finding  # type: ignore[assignment]
+    missing_member_state.review_task_store = missing_member_review
+    missing_member = TestClient(create_app(missing_member_state)).get(route, headers=headers)
+
+    failing_member_state = _api_state(tmp_path / "failing-member")
+    failing_member_state.project_member_store = FailingProjectMemberStore()
+    failing_member_finding = _RecordingGraphFindingStore()
+    failing_member_review = _RecordingGraphReviewTaskStore()
+    failing_member_state.audit_finding_store = failing_member_finding  # type: ignore[assignment]
+    failing_member_state.review_task_store = failing_member_review
+    failing_member = TestClient(create_app(failing_member_state)).get(route, headers=headers)
+
+    missing_finding_state = _api_state(tmp_path / "missing-finding")
+    missing_finding_state.project_member_store = InMemoryProjectMemberStore()
+    missing_finding_state.audit_finding_store = None
+    missing_finding_review = _RecordingGraphReviewTaskStore()
+    missing_finding_state.review_task_store = missing_finding_review
+    missing_finding = TestClient(create_app(missing_finding_state)).get(route, headers=headers)
+
+    missing_review_state = _api_state(tmp_path / "missing-review")
+    missing_review_state.project_member_store = InMemoryProjectMemberStore()
+    missing_review_finding = _RecordingGraphFindingStore()
+    missing_review_state.audit_finding_store = missing_review_finding  # type: ignore[assignment]
+    missing_review_state.review_task_store = None
+    missing_review = TestClient(create_app(missing_review_state)).get(route, headers=headers)
+
+    failing_finding_state = _api_state(tmp_path / "failing-finding")
+    failing_finding_state.project_member_store = InMemoryProjectMemberStore()
+    failing_finding = FailingFindingStore()
+    failing_finding_state.audit_finding_store = failing_finding  # type: ignore[assignment]
+    failing_finding_state.review_task_store = _RecordingGraphReviewTaskStore()
+    finding_error = TestClient(create_app(failing_finding_state)).get(route, headers=headers)
+
+    failing_review_state = _api_state(tmp_path / "failing-review")
+    failing_review_state.project_member_store = InMemoryProjectMemberStore()
+    failing_review_finding = _RecordingGraphFindingStore()
+    failing_review_state.audit_finding_store = failing_review_finding  # type: ignore[assignment]
+    failing_review_store = FailingReviewTaskStore()
+    failing_review_state.review_task_store = failing_review_store
+    review_error = TestClient(create_app(failing_review_state)).get(route, headers=headers)
+
+    assert missing_member.status_code == 503
+    assert failing_member.status_code == 503
+    assert missing_member_finding.requested_project_keys == []
+    assert missing_member_review.list_calls == 0
+    assert failing_member_finding.requested_project_keys == []
+    assert failing_member_review.list_calls == 0
+    assert missing_finding.status_code == 503
+    assert missing_finding_review.list_calls == 0
+    assert missing_review.status_code == 503
+    assert missing_review_finding.requested_project_keys == []
+    assert finding_error.status_code == 503
+    assert review_error.status_code == 503
+    assert failing_review_finding.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607"
+    ]
+    assert failing_review_store.list_calls == 1
+
+
+def test_project_graph_admin_can_read_known_project_without_member_store(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = None
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["project_key"] == "CATALOG-LIMIT-202606"
+    assert finding_store.requested_project_keys == ["CATALOG-LIMIT-202606"]
+    assert review_store.list_calls == 1
+
+
+def test_project_graph_builds_only_exact_persisted_evidence_chain(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-graph.db'}"
+    finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+    review_store = _CountingSqlAlchemyReviewTaskStore(database_url)
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    self_response = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    catalog_response = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert self_response.status_code == 200
+    assert catalog_response.status_code == 200
+    assert review_store.list_calls == 2
+    self_body = self_response.json()
+    catalog_body = catalog_response.json()
+    assert self_body["view"] == "project"
+    assert self_body["project_key"] == "SELF-CHECK-FUND-20260607"
+    assert self_body["evidence_chain_status"] == "ready"
+    assert self_body["evidence_grade"] == "live-store-readonly"
+    assert self_body["store"] == {
+        "ready": True,
+        "backend": {
+            "audit_findings": "SqlAlchemyAuditFindingStore",
+            "review_tasks": "_CountingSqlAlchemyReviewTaskStore",
+        },
+    }
+    self_ids = {node["id"] for node in self_body["nodes"]}
+    catalog_ids = {node["id"] for node in catalog_body["nodes"]}
+    assert {
+        "project:SELF-CHECK-FUND-20260607",
+        "finding:finding-self-sql",
+        "review:review-self-sql",
+        "report:review-self-sql",
+        "remediation:rectification-self-sql",
+        "review:report-draft-self-sql",
+        "report:report-draft-self-sql",
+    } <= self_ids
+    assert {
+        "project:CATALOG-LIMIT-202606",
+        "finding:finding-catalog-sql",
+        "review:review-catalog-sql",
+        "report:review-catalog-sql",
+        "remediation:rectification-catalog-sql",
+        "review:report-draft-catalog-sql",
+        "report:report-draft-catalog-sql",
+    } <= catalog_ids
+    assert not any("catalog" in node_id.lower() for node_id in self_ids)
+    assert not any("self" in node_id.lower() for node_id in catalog_ids)
+    assert "review:legacy-project-string-sql" not in self_ids | catalog_ids
+    assert "report:legacy-project-string-sql" not in self_ids | catalog_ids
+    assert all(
+        str(node["href"]).startswith(
+            ("/projects?project=", "/findings", "/reports", "/remediation")
+        )
+        for node in [*self_body["nodes"], *catalog_body["nodes"]]
+    )
+    serialized = json.dumps([self_body, catalog_body], ensure_ascii=False)
+    assert "SENSITIVE-GRAPH-BODY" not in serialized
+    assert "field_values" not in serialized
+    success_payload = state.operation_logs[-1]["payload"]
+    assert success_payload["view"] == "project"
+    assert success_payload["project_key"] == "CATALOG-LIMIT-202606"
+    assert success_payload["node_count"] == len(catalog_body["nodes"])
+    assert "finding" not in success_payload
+    assert "task" not in success_payload
+
+
+def test_project_graph_empty_chain_is_distinct_from_unavailable_store(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore()  # type: ignore[assignment]
+    state.review_task_store = _RecordingGraphReviewTaskStore()
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["evidence_chain_status"] == "empty"
+    assert body["relations"] == []
+    assert [node["id"] for node in body["nodes"]] == [
+        "project:SELF-CHECK-FUND-20260607"
+    ]
+    assert body["nodes"][0]["metric"] == "0 条项目证据"
+    assert "0 条项目证据" in body["nodes"][0]["description"]
+    assert body["store"]["ready"] is True
 
 
 def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Path) -> None:
@@ -5003,6 +5408,66 @@ def _seed_legacy_project_members(
         session.commit()
 
 
+class _RecordingProjectMemberStore:
+    def __init__(self) -> None:
+        self.list_reads = 0
+
+    def list_members(self, project_key: str) -> list[dict[str, object]]:
+        self.list_reads += 1
+        return []
+
+    def add_member(
+        self,
+        project_key: str,
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        raise AssertionError("graph tests do not add project members")
+
+    def member_counts(self) -> dict[str, int]:
+        raise AssertionError("graph tests do not read member counts")
+
+
+class _RecordingGraphFindingStore:
+    def __init__(
+        self,
+        items_by_project: dict[str, list[dict[str, object]]] | None = None,
+    ) -> None:
+        self.items_by_project = items_by_project or {}
+        self.requested_project_keys: list[str | None] = []
+
+    def list_findings(
+        self,
+        *,
+        review_status: str | None = None,
+        project_key: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        self.requested_project_keys.append(project_key)
+        assert review_status is None
+        assert project_key is not None
+        return [dict(item) for item in self.items_by_project.get(project_key, [])[:limit]]
+
+
+class _RecordingGraphReviewTaskStore:
+    def __init__(self, tasks: list[dict[str, object]] | None = None) -> None:
+        self.tasks = tasks or []
+        self.list_calls = 0
+
+    def list_tasks(self) -> list[dict[str, object]]:
+        self.list_calls += 1
+        return [dict(task) for task in self.tasks]
+
+
+class _CountingSqlAlchemyReviewTaskStore:
+    def __init__(self, database_url: str) -> None:
+        self._store = SqlAlchemyReviewTaskStore(database_url)
+        self.list_calls = 0
+
+    def list_tasks(self) -> list[dict[str, object]]:
+        self.list_calls += 1
+        return self._store.list_tasks()
+
+
 def _seed_project_findings(database_url: str) -> None:
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
     with Session(engine) as session:
@@ -5031,6 +5496,68 @@ def _seed_project_findings(database_url: str) -> None:
             ("self", "SELF-CHECK-FUND-20260607"),
             ("catalog", "CATALOG-LIMIT-202606"),
         ):
+            linked_review_task = ReviewTask(
+                external_task_id=f"review-{suffix}-sql",
+                question=f"{suffix} SENSITIVE-GRAPH-BODY question",
+                status="confirmed-violation",
+                status_label="确认违规",
+                citation_count=1,
+                review_gate="负责人确认",
+                confidence_label="high",
+                fallback_label="manual-review",
+                reviewer_note="SENSITIVE-GRAPH-BODY reviewer note",
+                conclusion="SENSITIVE-GRAPH-BODY conclusion",
+                created_by="unit-test",
+                assigned_to="unit-test",
+                source="chat-dossier",
+                dossier={
+                    "report_draft": {
+                        "title": f"{suffix} SENSITIVE-GRAPH-BODY report",
+                        "summary": "SENSITIVE-GRAPH-BODY summary",
+                        "rectification_request": "SENSITIVE-GRAPH-BODY request",
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": f"signed-report-{suffix}-sql",
+                        "content_sha256": f"sha256-{suffix}",
+                        "content": "SENSITIVE-GRAPH-BODY signed content",
+                    },
+                    "rectification": {
+                        "rectification_id": f"rectification-{suffix}-sql",
+                        "status": "in-progress",
+                        "progress_note": "SENSITIVE-GRAPH-BODY progress",
+                    },
+                },
+            )
+            session.add(linked_review_task)
+            session.flush()
+            session.add(
+                ReviewTask(
+                    external_task_id=f"report-draft-{suffix}-sql",
+                    question="SENSITIVE-GRAPH-BODY template question",
+                    status="pending-review",
+                    status_label="待复核",
+                    citation_count=0,
+                    review_gate="manual-review",
+                    confidence_label="pending",
+                    fallback_label="manual-review",
+                    reviewer_note="",
+                    conclusion="",
+                    created_by="unit-test",
+                    assigned_to=None,
+                    source="report-template-draft",
+                    dossier={
+                        "report_template_draft": {
+                            "status": "draft",
+                            "template_id": f"workpaper-{suffix}",
+                            "project_key": project_key,
+                            "field_values": {
+                                "sensitive": "SENSITIVE-GRAPH-BODY field value"
+                            },
+                        }
+                    },
+                )
+            )
             project = AuditProject(
                 project_key=project_key,
                 name=f"{suffix} project",
@@ -5086,9 +5613,36 @@ def _seed_project_findings(database_url: str) -> None:
                     source_record_locator={"project_key": project_key},
                     calculation_trace={},
                     review_status="pending-review",
+                    review_task_id=linked_review_task.id,
                     extra_metadata={"owner": f"{suffix}-owner"},
                 )
             )
+        session.add(
+            ReviewTask(
+                external_task_id="legacy-project-string-sql",
+                question=(
+                    "SELF-CHECK-FUND-20260607 and CATALOG-LIMIT-202606 are text only"
+                ),
+                status="confirmed-violation",
+                status_label="确认违规",
+                citation_count=0,
+                review_gate="manual-review",
+                confidence_label="pending",
+                fallback_label="manual-review",
+                reviewer_note="",
+                conclusion="",
+                created_by="unit-test",
+                assigned_to=None,
+                source="legacy",
+                dossier={
+                    "metadata": {
+                        "project_key": "SELF-CHECK-FUND-20260607",
+                        "project_hint": "CATALOG-LIMIT-202606",
+                    },
+                    "report_draft": {"title": "SENSITIVE-GRAPH-BODY legacy report"},
+                },
+            )
+        )
         session.commit()
 
 
