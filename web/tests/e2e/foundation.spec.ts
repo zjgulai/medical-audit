@@ -189,6 +189,9 @@ async function mockReplicaBackend(page: Page) {
     graph_id: "SELF-CHECK-FUND-20260607",
     graph_title: "医保基金使用合规专项图谱",
     graph_scope: "基于当前可查询知识库目录，将医疗医保和政策知识组织成可审证关系图。",
+    view: "knowledge",
+    project_key: null,
+    evidence_chain_status: "catalog",
     nodes: [
       {
         id: "graph-node-project",
@@ -324,12 +327,14 @@ const sidebarRoutes = [
   { href: "/agent-market", label: "智能体广场", heading: "智能体广场" },
   { href: "/knowledge-base", label: "知识库", heading: "知识库分类" },
   { href: "/documents", label: "文档检索", heading: "文档检索" },
-  { href: "/analytics", label: "AI数据分析", heading: "AI数据分析" },
-  { href: "/graph", label: "知识图谱", heading: "知识图谱" },
-  { href: "/reports", label: "审计底稿/报告", heading: "审计底稿/报告" },
-  { href: "/projects", label: "项目管理", heading: "项目管理" },
-  { href: "/medical-audit", label: "医保审计专题", heading: "医保审计" }
+  { href: "/analytics", label: "AI数据分析", heading: "表格分析工作台" },
+  { href: "/graph", label: "知识图谱", heading: "知识依据与项目证据链" },
+  { href: "/reports", label: "审计底稿/报告", heading: "审计底稿与报告台账" },
+  { href: "/projects", label: "项目管理", heading: "项目协作工作台" }
 ] as const;
+
+const topicRoute = { href: "/medical-audit", label: "医保审计专题", heading: "医保审计" } as const;
+const portalRoutes = [...sidebarRoutes, topicRoute] as const;
 
 async function expectNoBrokenImages(page: Page) {
   await page.waitForFunction(() =>
@@ -351,6 +356,10 @@ test("replica shell renders the restored sidebar navigation", async ({ page }) =
   await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toHaveAttribute("href", "/chat");
   await expect(page.getByTestId("auditscope-brand-logo")).toBeVisible();
   await expect(navigation.getByRole("link")).toHaveCount(sidebarRoutes.length);
+  await expect(page.getByRole("link", { name: "打开医保审计专题", exact: true })).toHaveAttribute(
+    "href",
+    topicRoute.href
+  );
 
   for (const route of sidebarRoutes) {
     await expect(navigation.getByRole("link", { name: route.label })).toHaveAttribute("href", route.href);
@@ -367,6 +376,14 @@ test("all restored sidebar pages expose their current product skeleton", async (
     );
     await expectNoBrokenImages(page);
   }
+
+  await page.goto(topicRoute.href);
+  await expect(page.getByRole("heading", { name: topicRoute.heading, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开医保审计专题", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  await expectNoBrokenImages(page);
 });
 
 test("workspace keeps its redirect while compatibility routes render current product pages", async ({ page }) => {
@@ -406,7 +423,7 @@ test("compatibility route CTAs keep the medical audit workflow reachable", async
   await page.goto("/fund-compliance/review");
   await page.getByRole("link", { name: "进入分析" }).first().click();
   await expect(page).toHaveURL(/\/analytics\?template=medical-expense-summary$/);
-  await expect(page.getByRole("heading", { name: "AI数据分析", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
 
   await page.goto("/guided-check");
   await page.getByRole("link", { name: "进入 AI 对话" }).click();
@@ -422,17 +439,21 @@ test("document search, preview modules and medical audit keep core interactions 
   await expect(page.getByText("medical-insurance-laws").first()).toBeVisible();
 
   await page.goto("/analytics");
-  await expect(page.getByLabel("AI数据分析开通说明")).toBeVisible();
-  await expect(page.getByText("内测中")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "上传表格", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "分析历史", exact: true })).toBeVisible();
 
   await page.goto("/graph");
-  await expect(page.getByLabel("知识图谱工作台")).toBeVisible();
+  await expect(page.getByLabel("知识依据图谱工作台")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "知识依据" })).toHaveAttribute("aria-selected", "true");
 
   await page.goto("/reports");
-  await expect(page.getByLabel("审计底稿/报告开通说明")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "报表分类目录" })).toBeVisible();
 
   await page.goto("/projects");
-  await expect(page.getByLabel("项目管理开通说明")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "项目协作工作台", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "项目状态" })).toBeVisible();
 
   await page.goto("/medical-audit");
   await page.getByRole("tab", { name: "费用汇总表" }).click();
@@ -443,7 +464,7 @@ test("portal pages render without placeholder text or mobile page overflow", asy
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 1000 });
 
-  for (const route of sidebarRoutes) {
+  for (const route of portalRoutes) {
     await page.goto(route.href);
     await expect(page.locator("h1"), `${route.href} h1 count`).toHaveCount(1);
 

@@ -1773,6 +1773,20 @@ def test_local_fullstack_e2e_runs_playwright_serially_for_stable_route_compilati
     assert 'command = [pnpm, "--dir", "web", "e2e", "--workers=1"]' in script_text
 
 
+def test_local_fullstack_e2e_configures_in_memory_report_store(tmp_path: Path) -> None:
+    module = _load_script_module(
+        "run_local_fullstack_e2e_report_store",
+        Path("scripts/run-local-fullstack-e2e.py"),
+    )
+
+    state = module._api_state(tmp_path)
+
+    assert state.review_task_store is not None
+    assert state.review_task_store.__class__.__name__ == "InMemoryReviewTaskStore"
+    assert state.audit_finding_store is None
+    assert state.audit_log_store is None
+
+
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
     module = _load_script_module(
         "audit_tencent_cloud_deployment_state_missing_backup",
