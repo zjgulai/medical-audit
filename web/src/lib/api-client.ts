@@ -15,6 +15,7 @@ import type {
   AgentPromptVersionsResponse,
   AgentsResponse,
   ArchiveWorkbenchResponse,
+  AuditArtifactDownload,
   AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
@@ -45,6 +46,8 @@ import type {
   QueryRequest,
   QueryResponse,
   RemediationWorkbenchResponse,
+  ReportDraftCreateRequest,
+  ReportDraftCreateResponse,
   ReportWorkbenchResponse,
   RulesWorkbenchResponse,
   SearchBackendStatusResponse,
@@ -271,6 +274,79 @@ export function addMedicalAuditFindingToReport(
 
 export function fetchReportWorkbench(): Promise<ReportWorkbenchResponse> {
   return getJsonWithAuditHeaders<ReportWorkbenchResponse>("/api/v1/reports/workbench");
+}
+
+export function createReportDraft(
+  payload: ReportDraftCreateRequest
+): Promise<ReportDraftCreateResponse> {
+  return postJson<ReportDraftCreateResponse>(
+    "/api/v1/reports/drafts",
+    payload,
+    auditProjectClientHeaders(payload.project_key)
+  );
+}
+
+function safeArtifactFilename(value: string): string | null {
+  const basename = value.replaceAll("\\", "/").split("/").at(-1) ?? "";
+  const sanitized = basename
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[:*?"<>|]/g, "-")
+    .replace(/^[.\s]+/, "")
+    .trim();
+  return sanitized && sanitized !== "." && sanitized !== ".." ? sanitized.slice(0, 180) : null;
+}
+
+function contentDispositionFilename(disposition: string): string | null {
+  const encodedMatch = /filename\*\s*=\s*(?:UTF-8'[^']*')?([^;]+)/i.exec(disposition);
+  if (encodedMatch?.[1]) {
+    const encoded = encodedMatch[1].trim().replace(/^"|"$/g, "");
+    try {
+      const decoded = safeArtifactFilename(decodeURIComponent(encoded));
+      if (decoded) return decoded;
+    } catch {
+      // Fall through to the plain filename or a deterministic format fallback.
+    }
+  }
+  const plainMatch = /filename\s*=\s*"?([^";]+)"?/i.exec(disposition);
+  return plainMatch?.[1] ? safeArtifactFilename(plainMatch[1]) : null;
+}
+
+function artifactFallbackFilename(path: URL, contentType: string): string {
+  const format = path.searchParams.get("format")?.toLowerCase();
+  if (format === "docx" || contentType.includes("wordprocessingml")) return "audit-artifact.docx";
+  if (format === "markdown" || contentType.includes("markdown")) return "audit-artifact.md";
+  if (format === "json" || contentType.includes("json")) return "audit-artifact.json";
+  return "audit-artifact.bin";
+}
+
+export async function downloadAuditArtifact(path: string): Promise<AuditArtifactDownload> {
+  assertBackendProxyClientRuntime();
+  const parsed = new URL(path, window.location.origin);
+  if (
+    !path.startsWith("/review-tasks/") ||
+    parsed.origin !== window.location.origin ||
+    !parsed.pathname.startsWith("/review-tasks/")
+  ) {
+    throw new Error("Audit artifact path must be an internal /review-tasks/ path");
+  }
+
+  const response = await fetch(path, {
+    headers: {
+      Accept: "application/octet-stream",
+      ...auditClientHeaders()
+    },
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
+  }
+
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const contentType = response.headers.get("Content-Type") ?? "";
+  return {
+    blob: await response.blob(),
+    filename: contentDispositionFilename(disposition) ?? artifactFallbackFilename(parsed, contentType)
+  };
 }
 
 export function fetchGraphWorkbench(): Promise<GraphWorkbenchResponse> {

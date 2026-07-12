@@ -526,6 +526,14 @@ describe("api-client", () => {
           format: "report-workbench-v1",
           generated_at: "2026-06-21T00:00:00Z",
           template_registry_status: "active",
+          template_categories: [
+            { id: "plan", label: "计划类", availability: "awaiting-business-template" },
+            { id: "workpaper", label: "底稿类", availability: "active" },
+            { id: "evidence", label: "取证类", availability: "awaiting-business-template" },
+            { id: "confirmation", label: "函证类", availability: "awaiting-business-template" },
+            { id: "report", label: "报告类", availability: "awaiting-business-template" },
+            { id: "remediation", label: "整改类", availability: "awaiting-business-template" }
+          ],
           workpaper_templates: [],
           report_entries: [],
           report_evidence_sources: [],
@@ -553,6 +561,170 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.format).toBe("report-workbench-v1");
+  });
+
+  it("creates a controlled report draft with project-scoped identity headers", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly createReportDraft?: (payload: {
+        readonly template_id: string;
+        readonly project_key: string;
+        readonly field_values: Readonly<Record<string, string>>;
+      }) => Promise<{ readonly task_id: string }>;
+    };
+    expect(client.createReportDraft).toBeTypeOf("function");
+    if (!client.createReportDraft) return;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "report-template-draft-v1",
+          task_id: "report-draft-123",
+          template_id: "workpaper-summary-risk",
+          category_id: "workpaper",
+          project_key: "PROJECT-A",
+          project_href: "/projects?project=PROJECT-A",
+          status: "pending-review",
+          store: { ready: true, backend: "JsonFileReviewTaskStore" },
+          formal_report_created: false,
+          provider_call: false,
+          audit: {
+            status: "ready",
+            durability: "durable",
+            local_only: false,
+            intent_recorded: true,
+            completion_recorded: true
+          }
+        })
+      }))
+    );
+    const payload = {
+      template_id: "workpaper-summary-risk",
+      project_key: "PROJECT-A",
+      field_values: { 人工复核意见: "待主任复核" }
+    } as const;
+
+    const result = await client.createReportDraft(payload);
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/reports/drafts", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Key": "PROJECT-A",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store"
+    });
+    expect(result.task_id).toBe("report-draft-123");
+  });
+
+  it("downloads only internal review-task artifacts with authenticated headers and a response filename", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact?: (
+        path: string
+      ) => Promise<{ readonly blob: Blob; readonly filename: string }>;
+    };
+    expect(client.downloadAuditArtifact).toBeTypeOf("function");
+    if (!client.downloadAuditArtifact) return;
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="review-task-001.docx"',
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      }),
+      blob: async () => new Blob(["document"], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(client.downloadAuditArtifact("https://attacker.invalid/steal")).rejects.toThrow(
+      "Audit artifact path must be an internal /review-tasks/ path"
+    );
+    await expect(client.downloadAuditArtifact("/api/v1/documents/secret")).rejects.toThrow(
+      "Audit artifact path must be an internal /review-tasks/ path"
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const result = await client.downloadAuditArtifact(
+      "/review-tasks/review-task-001/export?format=docx"
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/review-tasks/review-task-001/export?format=docx",
+      {
+        headers: {
+          Accept: "application/octet-stream",
+          "X-Role": "admin",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-admin"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.filename).toBe("review-task-001.docx");
+    expect(result.blob).toBeInstanceOf(Blob);
+  });
+
+  it("surfaces authenticated artifact download failures with method, path and status", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact?: (path: string) => Promise<unknown>;
+    };
+    expect(client.downloadAuditArtifact).toBeTypeOf("function");
+    if (!client.downloadAuditArtifact) return;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 403 }))
+    );
+
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/review-task-001/export?format=docx")
+    ).rejects.toThrow(
+      "Backend request failed: GET /review-tasks/review-task-001/export?format=docx returned 403"
+    );
+  });
+
+  it("decodes RFC 5987 artifact filenames and uses path-safe format fallbacks", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact: (
+        path: string
+      ) => Promise<{ readonly blob: Blob; readonly filename: string }>;
+    };
+    const response = (disposition: string | null, contentType: string) => ({
+      ok: true,
+      headers: new Headers({
+        ...(disposition ? { "Content-Disposition": disposition } : {}),
+        "Content-Type": contentType
+      }),
+      blob: async () => new Blob(["artifact"], { type: contentType })
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(
+          "attachment; filename*=UTF-8''%E5%8C%BB%E4%BF%9D%E5%BA%95%E7%A8%BF.docx",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
+        .mockResolvedValueOnce(response(
+          'attachment; filename="../../secret.docx"',
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
+        .mockResolvedValueOnce(response(null, "text/markdown"))
+    );
+
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-1/export?format=docx")
+    ).resolves.toMatchObject({ filename: "医保底稿.docx" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-2/export?format=docx")
+    ).resolves.toMatchObject({ filename: "secret.docx" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-3/export?format=markdown")
+    ).resolves.toMatchObject({ filename: "audit-artifact.md" });
   });
 
   it("fetches graph workbench through the versioned API proxy", async () => {

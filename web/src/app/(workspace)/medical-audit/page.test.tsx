@@ -142,9 +142,18 @@ const reportWorkbenchResponse: ReportWorkbenchResponse = {
   format: "report-workbench-v1",
   generated_at: "2026-07-07T02:30:00Z",
   template_registry_status: "active",
+  template_categories: [
+    { id: "plan", label: "计划类", availability: "awaiting-business-template" },
+    { id: "workpaper", label: "底稿类", availability: "active" },
+    { id: "evidence", label: "取证类", availability: "awaiting-business-template" },
+    { id: "confirmation", label: "函证类", availability: "awaiting-business-template" },
+    { id: "report", label: "报告类", availability: "awaiting-business-template" },
+    { id: "remediation", label: "整改类", availability: "awaiting-business-template" }
+  ],
   workpaper_templates: [
     {
       id: "template-fee-summary",
+      category_id: "workpaper",
       name: "医保费用汇总表",
       source_template_id: "table1",
       source_table: "fee_summary",

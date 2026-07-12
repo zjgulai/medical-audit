@@ -937,8 +937,15 @@ export type MedicalAuditWorkflowActionResponse = {
   readonly audit_event?: Record<string, unknown> | null;
 };
 
+export type ReportTemplateCategory = {
+  readonly id: "plan" | "workpaper" | "evidence" | "confirmation" | "report" | "remediation";
+  readonly label: string;
+  readonly availability: "active" | "awaiting-business-template";
+};
+
 export type WorkpaperTemplateRegistryItem = {
   readonly id: string;
+  readonly category_id: ReportTemplateCategory["id"];
   readonly name: string;
   readonly source_template_id: string;
   readonly source_table: string;
@@ -989,6 +996,7 @@ export type ReportWorkbenchResponse = {
   readonly format: "report-workbench-v1";
   readonly generated_at: string;
   readonly template_registry_status: string;
+  readonly template_categories: readonly ReportTemplateCategory[];
   readonly workpaper_templates: readonly WorkpaperTemplateRegistryItem[];
   readonly report_entries: readonly ReportWorkbenchEntry[];
   readonly report_evidence_sources: readonly ReportWorkbenchEvidenceSource[];
@@ -1003,6 +1011,40 @@ export type ReportWorkbenchResponse = {
     readonly ready: boolean;
     readonly backend: string;
   };
+};
+
+export type ReportDraftCreateRequest = {
+  readonly template_id: string;
+  readonly project_key: string;
+  readonly field_values: Readonly<Record<string, string>>;
+};
+
+export type ReportDraftCreateResponse = {
+  readonly format: "report-template-draft-v1";
+  readonly task_id: string;
+  readonly template_id: string;
+  readonly category_id: ReportTemplateCategory["id"];
+  readonly project_key: string;
+  readonly project_href: string;
+  readonly status: "pending-review";
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly formal_report_created: false;
+  readonly provider_call: false;
+  readonly audit: {
+    readonly status: "ready" | "local-only" | "degraded";
+    readonly durability: "durable" | "local-only" | "intent-only";
+    readonly local_only: boolean;
+    readonly intent_recorded: boolean;
+    readonly completion_recorded: boolean;
+  };
+};
+
+export type AuditArtifactDownload = {
+  readonly blob: Blob;
+  readonly filename: string;
 };
 
 export type ApiAgentCategory = "效率类" | "业务类" | "研究类";
