@@ -9974,7 +9974,6 @@ button.replica-graph-node.is-selected {
 /* Task 8: clinical-ledger controls for knowledge and project evidence graph views. */
 .replica-graph-dual-view {
   min-width: 0;
-  overflow-x: hidden;
 }
 
 .replica-graph-dual-view .replica-secondary-button.is-disabled {
@@ -10133,6 +10132,49 @@ button.replica-graph-node.is-selected {
   min-width: 0;
 }
 
+.replica-graph-dual-view .replica-graph-map {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  align-items: stretch;
+  min-height: 0;
+  overflow: visible;
+  border: 1px solid #dbe6f3;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.replica-graph-dual-view .replica-graph-map-summary {
+  position: static;
+  grid-column: 1 / -1;
+  max-width: none;
+}
+
+.replica-graph-dual-view .replica-graph-core {
+  position: static;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 86px;
+  transform: none;
+  cursor: pointer;
+}
+
+.replica-graph-dual-view .replica-graph-node {
+  position: static;
+  inset: auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 72px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.replica-graph-dual-view .replica-graph-relation-panel {
+  position: relative;
+  top: auto;
+}
+
 .replica-graph-evidence-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -10252,6 +10294,15 @@ button.replica-graph-node.is-selected {
 
   .replica-graph-evidence-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .replica-graph-dual-view .replica-graph-map {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 11px;
+  }
+
+  .replica-graph-dual-view .replica-graph-core {
+    grid-column: auto;
   }
 
   .replica-graph-state {

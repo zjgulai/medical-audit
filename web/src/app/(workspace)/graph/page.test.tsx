@@ -265,6 +265,21 @@ describe("GraphPage", () => {
     expect(screen.getByText("业务流程图谱：等待医院流程输入")).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("supports arrow-key navigation between graph tabs", async () => {
+    render(<GraphPage />);
+    const knowledgeTab = await screen.findByRole("tab", { name: "知识依据" });
+    const projectTab = screen.getByRole("tab", { name: "项目证据链" });
+
+    knowledgeTab.focus();
+    fireEvent.keyDown(knowledgeTab, { key: "ArrowRight" });
+    expect(projectTab).toHaveFocus();
+    expect(projectTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(projectTab, { key: "ArrowLeft" });
+    expect(knowledgeTab).toHaveFocus();
+    expect(knowledgeTab).toHaveAttribute("aria-selected", "true");
+  });
+
   it("keeps knowledge source scope in documents and chat links", async () => {
     window.history.pushState({}, "", "/graph?source_collection=medical-insurance-laws");
     render(<GraphPage />);
@@ -326,7 +341,7 @@ describe("GraphPage", () => {
     expect(screen.queryByText(/乡村振兴|县级财政专户|建设运维单位/)).not.toBeInTheDocument();
   });
 
-  it("renders only response-backed visual relation lines", async () => {
+  it("does not invent topology lines for response relations", async () => {
     const { container } = render(<GraphPage />);
 
     await screen.findByText("local-readonly-api");
@@ -339,7 +354,54 @@ describe("GraphPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "项目证据链" }));
 
     expect(await screen.findByText("PROJECT-A 项目证据链")).toBeInTheDocument();
-    expect(container.querySelectorAll(".replica-graph-line")).toHaveLength(1);
+    expect(container.querySelectorAll(".replica-graph-line")).toHaveLength(0);
+    expect(within(screen.getByLabelText("关系证据")).getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("keeps every returned project node and relation accessible", async () => {
+    apiMocks.fetchGraphWorkbench.mockImplementation(async (options?: { view?: string; projectKey?: string }) => {
+      if (options?.view !== "project") return knowledgeGraph();
+      const projectKey = options.projectKey ?? "";
+      const base = projectGraph(projectKey);
+      const root = base.nodes[0];
+      const evidenceNodes = Array.from({ length: 9 }, (_, index) => ({
+        id: `finding:${projectKey}-F${index + 1}`,
+        label: `疑点 ${projectKey}-F${index + 1}`,
+        kind: "疑点" as const,
+        metric: `${index + 1} 项证据`,
+        status: "待复核" as const,
+        description: `项目证据节点 ${index + 1}`,
+        href: "/findings",
+        x: 320,
+        y: 120
+      }));
+      const relations = evidenceNodes.map((node, index) => ({
+        id: `project-finding:${projectKey}-${index + 1}`,
+        sourceId: root.id,
+        targetId: node.id,
+        source: projectKey,
+        relation: "发现",
+        target: node.label,
+        evidence: `项目证据 ${index + 1}`,
+        strength: "强" as const
+      }));
+      return {
+        ...base,
+        nodes: [root, ...evidenceNodes],
+        relations,
+        metrics: graphMetrics(10, 9)
+      };
+    });
+    render(<GraphPage />);
+    await screen.findByRole("option", { name: "PROJECT-A 项目" });
+    fireEvent.change(screen.getByRole("combobox", { name: "证据链所属项目" }), {
+      target: { value: "PROJECT-A" }
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "项目证据链" }));
+
+    const graphMap = await screen.findByLabelText("图谱节点");
+    expect(within(graphMap).getByRole("button", { name: /疑点 PROJECT-A-F9/ })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("关系证据")).getByRole("button", { name: /项目证据 9/ })).toBeInTheDocument();
   });
 
   it("isolates stale project responses across project and role changes", async () => {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import {
   ReplicaEmptyState,
@@ -222,7 +223,7 @@ function GraphReadySurface({
   readonly onSelectRelation: (relationId: string, targetId: string) => void;
 }) {
   const centerNode = graph.nodes[0];
-  const displayNodes = graph.nodes.filter((node) => node.id !== centerNode?.id).slice(0, 6);
+  const displayNodes = graph.nodes.filter((node) => node.id !== centerNode?.id);
   const selectedNode = graph.nodes.find((node) => node.id === selectedNodeId) ?? centerNode;
   const selectedRelation = graph.relations.find((relation) => relation.id === selectedRelationId) ?? graph.relations[0];
   const selectedNodeSources = graph.view === "knowledge"
@@ -233,7 +234,6 @@ function GraphReadySurface({
       ? sourceCollections.map(sourceCollectionLabel).join("、")
       : "全部知识库"
     : graph.projectKey ?? "未选择项目";
-  const relationLabels = graph.relations.slice(0, 3);
 
   return (
     <>
@@ -284,8 +284,8 @@ function GraphReadySurface({
 
         <div className="replica-graph-map" aria-label="图谱节点">
           <div className="replica-graph-map-summary">
-            <strong>只读关系视图</strong>
-            <span>点击节点后，右侧展示真实来源和受控入口。</span>
+            <strong>证据节点索引 · {graph.nodes.length} 个</strong>
+            <span>完整展示响应节点；关系方向以右侧证据清单为准。</span>
           </div>
           {centerNode ? (
             <button
@@ -297,26 +297,11 @@ function GraphReadySurface({
               <strong>{centerNode.label}</strong>
             </button>
           ) : null}
-          {relationLabels.map((relation, index) => (
-            <div
-              className={`replica-graph-line line-${String.fromCharCode(97 + index)}`}
-              key={`line:${relation.id}`}
-              aria-hidden="true"
-            />
-          ))}
-          {relationLabels.map((relation, index) => (
-            <span
-              className={`replica-graph-relation-label relation-${String.fromCharCode(97 + index)}`}
-              key={relation.id}
-            >
-              {relation.relation}
-            </span>
-          ))}
-          {displayNodes.map((node, index) => (
+          {displayNodes.map((node) => (
             <button
               key={node.id}
               type="button"
-              className={`replica-graph-node node-${(index % 6) + 1} ${selectedNode?.id === node.id ? "is-selected" : ""}`}
+              className={`replica-graph-node ${selectedNode?.id === node.id ? "is-selected" : ""}`}
               onClick={() => onSelectNode(node.id)}
             >
               <span>{node.kind}</span>
@@ -330,7 +315,7 @@ function GraphReadySurface({
           <h2>{selectedRelation ? `${selectedRelation.source} ${selectedRelation.relation}` : "暂无关系"}</h2>
           <p>{selectedRelation?.evidence ?? "当前节点尚未形成可展示的关系证据。"}</p>
           <div className="replica-graph-relation-list">
-            {graph.relations.slice(0, 8).map((relation) => (
+            {graph.relations.map((relation) => (
               <button
                 key={relation.id}
                 type="button"
@@ -357,6 +342,8 @@ export default function GraphPage() {
   const roleGenerationRef = useRef(0);
   const projectGenerationRef = useRef(0);
   const selectedProjectKeyRef = useRef("");
+  const knowledgeTabRef = useRef<HTMLButtonElement>(null);
+  const projectTabRef = useRef<HTMLButtonElement>(null);
   const [activeView, setActiveView] = useState<GraphView>("knowledge");
   const [selectedProjectKey, setSelectedProjectKey] = useState("");
   const [selectedSourceCollections, setSelectedSourceCollections] = useState<readonly SourceCollection[]>([]);
@@ -493,6 +480,23 @@ export default function GraphPage() {
     }
   }
 
+  function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>, currentView: GraphView): void {
+    let nextView: GraphView | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextView = currentView === "knowledge" ? "project" : "knowledge";
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextView = currentView === "knowledge" ? "project" : "knowledge";
+    } else if (event.key === "Home") {
+      nextView = "knowledge";
+    } else if (event.key === "End") {
+      nextView = "project";
+    }
+    if (nextView === null) return;
+    event.preventDefault();
+    changeView(nextView);
+    (nextView === "knowledge" ? knowledgeTabRef : projectTabRef).current?.focus();
+  }
+
   function changeProject(projectKey: string): void {
     if (projectKey === selectedProjectKey) return;
     ++projectGenerationRef.current;
@@ -558,23 +562,29 @@ export default function GraphPage() {
       <section className="replica-graph-view-control" aria-label="图谱视图控制">
         <div className="replica-graph-tabs" role="tablist" aria-label="图谱视图">
           <button
+            ref={knowledgeTabRef}
             id="graph-tab-knowledge"
             type="button"
             role="tab"
             aria-controls="graph-panel-knowledge"
             aria-selected={activeView === "knowledge"}
+            tabIndex={activeView === "knowledge" ? 0 : -1}
             onClick={() => changeView("knowledge")}
+            onKeyDown={(event) => moveTabFocus(event, "knowledge")}
           >
             <span aria-hidden="true">01</span>
             知识依据
           </button>
           <button
+            ref={projectTabRef}
             id="graph-tab-project"
             type="button"
             role="tab"
             aria-controls="graph-panel-project"
             aria-selected={activeView === "project"}
+            tabIndex={activeView === "project" ? 0 : -1}
             onClick={() => changeView("project")}
+            onKeyDown={(event) => moveTabFocus(event, "project")}
           >
             <span aria-hidden="true">02</span>
             项目证据链
