@@ -14,85 +14,13 @@ import type { DocumentSearchResponse, QueryResponse, SourceCollection } from "@/
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
 import { FALLBACK_SOURCE_COLLECTION_GROUPS, isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
-const documentLibraryTiles = [
-  { id: "law", label: "法律法规库", count: 3833, icon: "gavel" },
-  { id: "policy", label: "政策文件库", count: 0, icon: "badge" },
-  { id: "research", label: "研究报告库", count: 0, icon: "report" },
-  { id: "case", label: "审计案例库", count: 0, icon: "archive" },
-  { id: "faq", label: "常见问题库", count: 10, icon: "help" },
-  { id: "hot", label: "热点事件库", count: 0, icon: "target" },
-  { id: "book", label: "书本期刊库", count: 0, icon: "book" }
-] as const;
-
-const featuredDocuments = [
-  {
-    id: "doc-ledger",
-    title: "雨丰民生25年流水.xlsx",
-    source: "项目材料",
-    updatedAt: "2026-06-09 07:57:00"
-  },
-  {
-    id: "doc-finance-report",
-    title: "10.深圳雨丰农业科技有限公司-2026年2月财务报表.xlsx",
-    source: "财务报表",
-    updatedAt: "2026-06-09 07:56:51"
-  },
-  {
-    id: "doc-reject",
-    title: "18_投标被否决原因统计表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:56:03"
-  },
-  {
-    id: "doc-contract",
-    title: "17_中标合同关键条款比对表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:56:02"
-  },
-  {
-    id: "doc-exception",
-    title: "19_异常情况处理记录表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:56:02"
-  },
-  {
-    id: "doc-complaint",
-    title: "20_投诉与质疑处理台账.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:56:02"
-  },
-  {
-    id: "doc-qualification",
-    title: "14_投标人资格审核表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:55:57"
-  },
-  {
-    id: "doc-members",
-    title: "15_评标委员会成员信息表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:55:57"
-  },
-  {
-    id: "doc-timeline",
-    title: "16_招标流程时间节点表.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:55:57"
-  },
-  {
-    id: "doc-rules",
-    title: "10_相关法律法规及管理制度.pdf",
-    source: "招标人违法确定中标人V2",
-    updatedAt: "2026-05-13 10:55:56"
-  }
-] as const;
+const documentLibraryIcons = ["gavel", "badge", "report", "archive", "help", "target", "book"] as const;
 const sourceCollectionFallbackLabelByValue = new Map<SourceCollection, string>(
   FALLBACK_SOURCE_COLLECTION_GROUPS.flatMap((group) =>
     group.options.map((option) => [option.value, option.label] as const)
   )
 );
 
-const defaultSearchHistory = ["投标", "招标投标法", "集中采购目录", "审计", "智能科技的CEO是谁"];
 const ALL_DOCUMENTS_CATEGORY = "全部文档";
 
 type DocumentPreview = ReferenceDocumentResult & {
@@ -101,11 +29,37 @@ type DocumentPreview = ReferenceDocumentResult & {
   readonly sourceCollection?: string;
 };
 
+type DocumentSearchState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "searching" }
+  | { readonly kind: "results"; readonly response: DocumentSearchResponse }
+  | { readonly kind: "empty"; readonly response: DocumentSearchResponse }
+  | { readonly kind: "error"; readonly message: string };
+
+type AiDocumentSearchState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "searching" }
+  | { readonly kind: "results"; readonly response: QueryResponse }
+  | { readonly kind: "empty"; readonly response: QueryResponse }
+  | { readonly kind: "error"; readonly message: string };
+
+type DocumentSearchRequest = {
+  readonly query: string;
+  readonly titleOnly: boolean;
+  readonly sourceCollections: readonly SourceCollection[];
+};
+
 export default function DocumentsPage() {
   const documentsData = useReplicaDocumentsData();
-  const categories = documentsData.data.categories;
-  const searchHistory =
-    documentsData.data.searchHistory.length > 0 ? documentsData.data.searchHistory : defaultSearchHistory;
+  const runtimeDataVisible = documentsData.status === "ready" || documentsData.status === "degraded";
+  const categories = useMemo(
+    () => runtimeDataVisible ? documentsData.data.categories : [],
+    [documentsData.data.categories, runtimeDataVisible]
+  );
+  const searchHistory = useMemo(
+    () => runtimeDataVisible ? documentsData.data.searchHistory : [],
+    [documentsData.data.searchHistory, runtimeDataVisible]
+  );
   const libraryTiles = categories.length > 0
     ? [
       {
@@ -118,23 +72,47 @@ export default function DocumentsPage() {
         id: category.id,
         label: category.name,
         count: category.count,
-        icon: documentLibraryTiles[index % documentLibraryTiles.length].icon
+        icon: documentLibraryIcons[index % documentLibraryIcons.length]
       }))
     ]
-    : documentLibraryTiles;
+    : [];
   const [query, setQuery] = useState("劳动争议司法案件解释");
   const [submittedQuery, setSubmittedQuery] = useState("劳动争议司法案件解释");
   const [titleOnly, setTitleOnly] = useState(false);
   const [activeCategory, setActiveCategory] = useState(ALL_DOCUMENTS_CATEGORY);
   const [historyVisible, setHistoryVisible] = useState(true);
-  const [notice, setNotice] = useState("");
-  const [selectedDocumentId, setSelectedDocumentId] = useState("doc-ledger");
+  const [actionNotice, setActionNotice] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [detailOpen, setDetailOpen] = useState(true);
-  const [liveResults, setLiveResults] = useState<readonly DocumentPreview[]>([]);
-  const [hasLiveSearch, setHasLiveSearch] = useState(false);
-  const [searching, setSearching] = useState(false);
+  const [documentSearchState, setDocumentSearchState] = useState<DocumentSearchState>({ kind: "idle" });
+  const [aiSearchState, setAiSearchState] = useState<AiDocumentSearchState>({ kind: "idle" });
+  const [lastDocumentSearchRequest, setLastDocumentSearchRequest] = useState<DocumentSearchRequest | null>(null);
   const [urlSourceCollections, setUrlSourceCollections] = useState<readonly SourceCollection[]>([]);
-  const documentResults = hasLiveSearch ? liveResults : documentsData.data.results;
+  const documentSearchResponse = documentSearchState.kind === "results" || documentSearchState.kind === "empty"
+    ? documentSearchState.response
+    : null;
+  const aiSearchResponse = aiSearchState.kind === "results" || aiSearchState.kind === "empty"
+    ? aiSearchState.response
+    : null;
+  const hasExplicitSearch = documentSearchState.kind !== "idle" || aiSearchState.kind !== "idle";
+  const documentResults = useMemo(
+    () => aiSearchState.kind === "results"
+      ? queryResponseToDocumentResults(aiSearchState.response)
+      : documentSearchState.kind === "results"
+        ? documentSearchResponseToDocumentResults(documentSearchState.response)
+        : !hasExplicitSearch && runtimeDataVisible && documentsData.source === "fixture"
+          ? documentsData.data.results
+          : [],
+    [
+      aiSearchState,
+      documentSearchState,
+      documentsData.data.results,
+      documentsData.source,
+      hasExplicitSearch,
+      runtimeDataVisible
+    ]
+  );
+  const searchRunning = documentSearchState.kind === "searching" || aiSearchState.kind === "searching";
   const activeSourceCollections = useMemo(
     () => selectedSourceCollections(categories, activeCategory, urlSourceCollections),
     [activeCategory, categories, urlSourceCollections]
@@ -166,7 +144,7 @@ export default function DocumentsPage() {
   }, [categories]);
 
   const filteredResults = useMemo(() => {
-    if (hasLiveSearch) {
+    if (hasExplicitSearch) {
       return documentResults;
     }
     const normalizedQuery = submittedQuery.trim().toLowerCase();
@@ -179,47 +157,54 @@ export default function DocumentsPage() {
       const queryMatched = normalizedQuery.length === 0 || text.toLowerCase().includes(normalizedQuery);
       return categoryMatched && queryMatched;
     });
-  }, [activeCategory, documentResults, hasLiveSearch, submittedQuery, titleOnly]);
+  }, [activeCategory, documentResults, hasExplicitSearch, submittedQuery, titleOnly]);
 
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await runDocumentSearch(query.trim() || "劳动争议司法案件解释");
+    await runDocumentSearch({
+      query: query.trim() || "劳动争议司法案件解释",
+      titleOnly,
+      sourceCollections: [...activeSourceCollections]
+    });
   }
 
-  async function runDocumentSearch(nextQuery: string) {
-    setSubmittedQuery(nextQuery);
-    setSearching(true);
-    setNotice("");
+  async function runDocumentSearch(request: DocumentSearchRequest) {
+    if (searchRunning) {
+      return;
+    }
+    setLastDocumentSearchRequest(request);
+    setSubmittedQuery(request.query);
+    setDocumentSearchState({ kind: "searching" });
+    setAiSearchState({ kind: "idle" });
+    setActionNotice("");
     try {
       const response = await searchDocuments({
-        query: nextQuery,
+        query: request.query,
         limit: 10,
-        titleOnly,
-        sourceCollections: activeSourceCollections
+        titleOnly: request.titleOnly,
+        sourceCollections: request.sourceCollections
       });
       const mappedResults = documentSearchResponseToDocumentResults(response);
-      setLiveResults(mappedResults);
-      setHasLiveSearch(true);
+      setDocumentSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", response });
       if (mappedResults.length > 0) {
         setSelectedDocumentId(mappedResults[0].id);
         setDetailOpen(true);
       }
-      if (mappedResults.length === 0) {
-        setNotice("已完成检索，但未返回可展示的引用文档。");
-      }
     } catch {
-      setLiveResults([]);
-      setHasLiveSearch(true);
-      setNotice("检索未完成：请确认知识库检索服务可用后重试。");
-    } finally {
-      setSearching(false);
+      setDocumentSearchState({
+        kind: "error",
+        message: "文档检索失败：请确认知识库检索服务可用后重试。"
+      });
     }
   }
 
   async function runAiDocumentSearch(nextQuery: string) {
+    if (searchRunning) {
+      return;
+    }
     setSubmittedQuery(nextQuery);
-    setSearching(true);
-    setNotice("");
+    setAiSearchState({ kind: "searching" });
+    setActionNotice("");
     try {
       const response = await runKnowledgeQuery({
         question: nextQuery,
@@ -228,21 +213,16 @@ export default function DocumentsPage() {
         source_collections: activeSourceCollections
       });
       const mappedResults = queryResponseToDocumentResults(response);
-      setLiveResults(mappedResults);
-      setHasLiveSearch(true);
+      setAiSearchState({ kind: mappedResults.length > 0 ? "results" : "empty", response });
       if (mappedResults.length > 0) {
         setSelectedDocumentId(mappedResults[0].id);
         setDetailOpen(true);
       }
-      if (mappedResults.length === 0) {
-        setNotice("AI+ 已完成审证，但未返回可展示的引用文档。");
-      }
     } catch {
-      setLiveResults([]);
-      setHasLiveSearch(true);
-      setNotice("AI+ 审证未完成：请确认问答服务可用后重试。");
-    } finally {
-      setSearching(false);
+      setAiSearchState({
+        kind: "error",
+        message: "AI+ 审证未完成：请确认问答服务可用后重试。"
+      });
     }
   }
 
@@ -251,7 +231,7 @@ export default function DocumentsPage() {
     [categories]
   );
   const shouldShowApiDirectory =
-    !hasLiveSearch &&
+    !hasExplicitSearch &&
     documentsData.source !== "fixture" &&
     apiDirectoryDocuments.length > 0;
   const shownFeaturedDocuments: readonly DocumentPreview[] = shouldShowApiDirectory
@@ -268,12 +248,7 @@ export default function DocumentsPage() {
         sourceCollection: (item as DocumentPreview).sourceCollection,
         previewType: "检索命中" as const
       })).slice(0, 10) as readonly DocumentPreview[])
-      : featuredDocuments.map((item) => ({
-      ...item,
-      category: "对话文档",
-      excerpt: "来自历史对话和项目材料，可继续进入证据核验或加入 AI 对话上下文。",
-      previewType: "对话文档" as const
-    }));
+      : [];
 
   const selectedDocument =
     shownFeaturedDocuments.find((item) => item.id === selectedDocumentId) ??
@@ -286,7 +261,7 @@ export default function DocumentsPage() {
       window.location.assign(item.previewUrl);
       return;
     }
-    setNotice(buildReplicaLocalGateNotice({
+    setActionNotice(buildReplicaLocalGateNotice({
       action: `${action}「${item.title}」`,
       nextStep: "文档详情 API"
     }));
@@ -336,14 +311,15 @@ export default function DocumentsPage() {
             />
             <span>仅标题</span>
           </label>
-          <button type="submit" className="replica-doc-search-submit">
+          <button type="submit" className="replica-doc-search-submit" disabled={searchRunning}>
             <span className="replica-doc-search-icon" aria-hidden="true" />
-            {searching ? "搜索中" : "搜索"}
+            {documentSearchState.kind === "searching" ? "搜索中" : "搜索"}
           </button>
         </form>
         <button
           type="button"
           className="replica-doc-ai-button"
+          disabled={searchRunning}
           onClick={() => void runAiDocumentSearch(query.trim() || submittedQuery)}
         >
           <span aria-hidden="true">AI</span>
@@ -358,7 +334,9 @@ export default function DocumentsPage() {
             <span aria-hidden="true" />
           </button>
         </div>
-        {historyVisible ? (
+        {documentsData.status === "error" ? (
+          <ReplicaNotice>搜索历史读取失败</ReplicaNotice>
+        ) : historyVisible && searchHistory.length > 0 ? (
           <div className="replica-doc-history-chips">
             {searchHistory.slice(0, 5).map((history) => (
               <button key={history} type="button" onClick={() => {
@@ -369,6 +347,8 @@ export default function DocumentsPage() {
               </button>
             ))}
           </div>
+        ) : historyVisible ? (
+          <ReplicaNotice>暂无搜索历史</ReplicaNotice>
         ) : (
           <ReplicaNotice>
             {buildReplicaLocalGateNotice({
@@ -380,6 +360,8 @@ export default function DocumentsPage() {
       </section>
 
       <section className="replica-doc-library-band" aria-label="文档库分类">
+        {documentsData.status === "empty" ? <ReplicaNotice>暂无可用文档目录</ReplicaNotice> : null}
+        {documentsData.status === "error" ? <ReplicaNotice>文档目录读取失败</ReplicaNotice> : null}
         {libraryTiles.map((tile) => (
           <button
             key={tile.id}
@@ -403,7 +385,7 @@ export default function DocumentsPage() {
           <button
             type="button"
             aria-label="查看全部对话文档"
-            onClick={() => setNotice(buildReplicaLocalGateNotice({
+            onClick={() => setActionNotice(buildReplicaLocalGateNotice({
               action: "查看全部对话文档",
               nextStep: "文档列表分页 API"
             }))}
@@ -412,7 +394,43 @@ export default function DocumentsPage() {
             <span aria-hidden="true">›</span>
           </button>
         </div>
-        {notice ? <ReplicaNotice>{notice}</ReplicaNotice> : null}
+        {actionNotice ? <ReplicaNotice>{actionNotice}</ReplicaNotice> : null}
+        {documentSearchState.kind === "empty" ? (
+          <ReplicaNotice>未找到匹配文档</ReplicaNotice>
+        ) : null}
+        {documentSearchState.kind === "error" ? (
+          <div role="alert">
+            <ReplicaNotice>{documentSearchState.message}</ReplicaNotice>
+            <button
+              type="button"
+              disabled={!lastDocumentSearchRequest || searchRunning}
+              onClick={() => {
+                if (lastDocumentSearchRequest) {
+                  void runDocumentSearch(lastDocumentSearchRequest);
+                }
+              }}
+            >
+              重试检索
+            </button>
+          </div>
+        ) : null}
+        {documentSearchResponse ? (
+          <ReplicaNotice>
+            文档检索 provider_call：{documentSearchResponse.boundaries.provider_call ? "是" : "否"}
+          </ReplicaNotice>
+        ) : null}
+        {aiSearchState.kind === "empty" ? (
+          <ReplicaNotice>AI+ 已完成审证，但未返回可展示的引用文档。</ReplicaNotice>
+        ) : null}
+        {aiSearchState.kind === "error" ? (
+          <ReplicaNotice>{aiSearchState.message}</ReplicaNotice>
+        ) : null}
+        {aiSearchResponse ? (
+          <>
+            <ReplicaNotice>AI+ provider_call：当前查询契约未独立提供</ReplicaNotice>
+            <ReplicaNotice>AI+ generation_status：{aiSearchResponse.generation_status}</ReplicaNotice>
+          </>
+        ) : null}
         <div className="replica-doc-results-shell">
           <div className="replica-doc-two-column-list">
             {shownFeaturedDocuments.map((item) => (
@@ -451,7 +469,11 @@ export default function DocumentsPage() {
                 </div>
               </dl>
               <div className="replica-doc-detail-actions">
-                <button type="button" onClick={() => recordDocumentAction(selectedDocument, "打开文档")}>打开文档</button>
+                {selectedDocument.previewUrl ? (
+                  <Link href={selectedDocument.previewUrl}>打开文档</Link>
+                ) : (
+                  <button type="button" onClick={() => recordDocumentAction(selectedDocument, "打开文档")}>打开文档</button>
+                )}
                 <Link href={documentChatHref(selectedDocument, submittedQuery)}>加入对话</Link>
               </div>
             </aside>
@@ -461,11 +483,13 @@ export default function DocumentsPage() {
 
       <section className="replica-doc-statusline" aria-label="当前检索状态">
         <span>{activeCategory}</span>
-        <strong>{filteredResults.length} 条匹配</strong>
+        <strong>{documentSearchStatusLabel(documentSearchState, aiSearchState, filteredResults.length)}</strong>
         <span>{titleOnly ? "仅标题" : "全文检索"}</span>
         <span>关键词：{submittedQuery}</span>
         <span>范围：{activeScopeLabel}</span>
-        <span>文档库：{categories.length} 类 / {categories.reduce((sum, item) => sum + item.count, 0).toLocaleString()} 份</span>
+        {categories.length > 0 ? (
+          <span>文档库：{categories.length} 类 / {categories.reduce((sum, item) => sum + item.count, 0).toLocaleString()} 份</span>
+        ) : null}
       </section>
 
       <section className="replica-document-layout replica-doc-legacy-results" aria-label="检索命中明细">
@@ -497,7 +521,7 @@ export default function DocumentsPage() {
           </div>
 
           <div className="replica-result-list">
-            {(filteredResults.length > 0 ? filteredResults : documentResults).map((item) => (
+            {filteredResults.map((item) => (
               <article key={item.id} className="replica-result-card">
                 <div className="replica-result-card-top">
                   <span>{item.category}</span>
@@ -507,7 +531,7 @@ export default function DocumentsPage() {
                 <p>{item.excerpt}</p>
                 <div>
                   <strong>{item.source}</strong>
-                  <span>{filteredResults.length > 0 ? "命中结果" : "推荐文档"}</span>
+                  <span>{hasExplicitSearch ? "命中结果" : "fixture 文档"}</span>
                 </div>
               </article>
             ))}
@@ -528,6 +552,23 @@ function selectedSourceCollections(
     return [category.id.slice("source-".length) as SourceCollection];
   }
   return activeCategory === ALL_DOCUMENTS_CATEGORY ? urlSourceCollections : [];
+}
+
+function documentSearchStatusLabel(
+  documentState: DocumentSearchState,
+  aiState: AiDocumentSearchState,
+  resultCount: number
+): string {
+  if (documentState.kind === "searching" || aiState.kind === "searching") {
+    return "检索中";
+  }
+  if (documentState.kind === "error" || aiState.kind === "error") {
+    return "检索失败";
+  }
+  if (documentState.kind !== "idle" || aiState.kind !== "idle") {
+    return `${resultCount} 条匹配`;
+  }
+  return "尚未检索";
 }
 
 function normalizeSourceCollectionParams(values: readonly string[]): readonly SourceCollection[] {
