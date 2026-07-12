@@ -1931,6 +1931,146 @@ def test_document_source_and_knowledge_base_catalog_replace_nonfinite_diagnostic
         }
 
 
+def test_document_source_and_knowledge_base_catalog_normalize_prefixed_url_candidates(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "prefixed_empty_host_url": (
+            " \x00https://?token=dummy-prefixed-empty-token-sentinel"
+            "#password=dummy-prefixed-empty-password-sentinel"
+        ),
+        "prefixed_protocol_relative_url": (
+            " \t//dummy-prefixed-user-sentinel:dummy-prefixed-pass-sentinel@"
+            "example.invalid/path?safe=ok&token=dummy-prefixed-query-token-sentinel"
+            "#password=dummy-prefixed-fragment-password-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "prefixed_empty_host_url": "<redacted-invalid-url>",
+            "prefixed_protocol_relative_url": "//example.invalid/path?safe=ok",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-prefixed-empty-token-sentinel",
+            "dummy-prefixed-empty-password-sentinel",
+            "dummy-prefixed-user-sentinel",
+            "dummy-prefixed-pass-sentinel",
+            "dummy-prefixed-query-token-sentinel",
+            "dummy-prefixed-fragment-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_fail_closed_beyond_decode_cap(
+    tmp_path: Path,
+) -> None:
+    overencoded_token_key = "To%4beN"
+    overencoded_password_fragment = "Pa%73sWoRd"
+    for _ in range(5):
+        overencoded_token_key = overencoded_token_key.replace("%", "%25")
+        overencoded_password_fragment = overencoded_password_fragment.replace("%", "%25")
+
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "overencoded_url": (
+            "https://example.invalid/path?safe=ok"
+            f"&{overencoded_token_key}=dummy-overencoded-query-sentinel"
+            f"#{overencoded_password_fragment}=dummy-overencoded-fragment-sentinel"
+        ),
+        "double_encoded_url": (
+            "https://example.invalid/path?safe=ok"
+            "&to%256ben=dummy-double-encoded-query-sentinel"
+            "#Pa%2573sword=dummy-double-encoded-fragment-sentinel"
+        ),
+        "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "overencoded_url": "https://example.invalid/path?safe=ok",
+            "double_encoded_url": "https://example.invalid/path?safe=ok",
+            "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-overencoded-query-sentinel",
+            "dummy-overencoded-fragment-sentinel",
+            "dummy-double-encoded-query-sentinel",
+            "dummy-double-encoded-fragment-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_normalize_embedded_url_controls(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "embedded_tab_url": (
+            "h\tttps://?token=dummy-embedded-tab-token-sentinel"
+            "#password=dummy-embedded-tab-password-sentinel"
+        ),
+        "embedded_carriage_return_url": (
+            "ht\rtps://?token=dummy-embedded-cr-token-sentinel"
+            "#password=dummy-embedded-cr-password-sentinel"
+        ),
+        "embedded_line_feed_url": (
+            "htt\nps://?token=dummy-embedded-lf-token-sentinel"
+            "#password=dummy-embedded-lf-password-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "embedded_tab_url": "<redacted-invalid-url>",
+            "embedded_carriage_return_url": "<redacted-invalid-url>",
+            "embedded_line_feed_url": "<redacted-invalid-url>",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-embedded-tab-token-sentinel",
+            "dummy-embedded-tab-password-sentinel",
+            "dummy-embedded-cr-token-sentinel",
+            "dummy-embedded-cr-password-sentinel",
+            "dummy-embedded-lf-token-sentinel",
+            "dummy-embedded-lf-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
 def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))

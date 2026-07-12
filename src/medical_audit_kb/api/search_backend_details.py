@@ -13,6 +13,8 @@ SENSITIVE_KEY_FRAGMENTS = (
     "credential",
 )
 SENSITIVE_MATCH_UNQUOTE_MAX_ROUNDS = 4
+LEADING_C0_CONTROL_AND_SPACE = "".join(chr(codepoint) for codepoint in range(0x21))
+GLOBAL_URL_CONTROL_CHARACTERS = ("\t", "\r", "\n")
 
 _INVALID_URL_SENTINEL = "<redacted-invalid-url>"
 _UNSUPPORTED_VALUE_SENTINEL = "<unsupported-diagnostic-value>"
@@ -45,13 +47,14 @@ def safe_search_backend_value(value: object) -> object:
 
 
 def redact_url_credentials_and_sensitive_query(value: str) -> str:
+    candidate = _normalize_url_candidate(value)
     try:
-        parsed = urlsplit(value)
+        parsed = urlsplit(candidate)
     except ValueError:
         return _INVALID_URL_SENTINEL
 
-    explicit_authority = value.startswith("//") or (
-        bool(parsed.scheme) and value.lower().startswith(f"{parsed.scheme.lower()}://")
+    explicit_authority = candidate.startswith("//") or (
+        bool(parsed.scheme) and candidate.lower().startswith(f"{parsed.scheme.lower()}://")
     )
     if not parsed.netloc:
         if explicit_authority:
@@ -80,21 +83,34 @@ def redact_url_credentials_and_sensitive_query(value: str) -> str:
     return urlunsplit((parsed.scheme, netloc, parsed.path, safe_query, fragment))
 
 
+def _normalize_url_candidate(value: str) -> str:
+    candidate = value.lstrip(LEADING_C0_CONTROL_AND_SPACE)
+    for character in GLOBAL_URL_CONTROL_CHARACTERS:
+        candidate = candidate.replace(character, "")
+    return candidate
+
+
 def _is_sensitive_key(key: str) -> bool:
-    lowered = _canonicalize_for_sensitive_matching(key).lower()
+    canonical, stable = _canonicalize_for_sensitive_matching(key)
+    if not stable:
+        return True
+    lowered = canonical.lower()
     return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
 
 
 def _contains_sensitive_fragment(value: str) -> bool:
-    lowered = _canonicalize_for_sensitive_matching(value).lower()
+    canonical, stable = _canonicalize_for_sensitive_matching(value)
+    if not stable:
+        return True
+    lowered = canonical.lower()
     return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
 
 
-def _canonicalize_for_sensitive_matching(value: str) -> str:
+def _canonicalize_for_sensitive_matching(value: str) -> tuple[str, bool]:
     current = value
     for _ in range(SENSITIVE_MATCH_UNQUOTE_MAX_ROUNDS):
         decoded = unquote(current)
         if decoded == current:
-            break
+            return (current, True)
         current = decoded
-    return current
+    return (current, unquote(current) == current)
