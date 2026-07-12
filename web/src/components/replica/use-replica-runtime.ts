@@ -42,7 +42,6 @@ import type {
 } from "@/lib/replica-adapters";
 import {
   referenceAgents,
-  referenceAnalysisDatasets,
   referenceDocumentCategories,
   referenceDocumentResults,
   referenceGraphNodes,
@@ -211,16 +210,17 @@ const documentsFallback: ReplicaAdapterResult<ReplicaDocumentsData> = {
 };
 
 const analyticsFallback: ReplicaAdapterResult<ReplicaAnalyticsData> = {
-  source: "fixture",
-  outcome: "ready",
+  source: "api",
+  outcome: "empty",
   data: {
-    datasets: referenceAnalysisDatasets
+    datasets: [],
+    store: null
   },
   issues: [
     {
       surface: "analytics",
-      code: "mutation-gated",
-      message: "Upload and generation actions remain local."
+      code: "partial-schema-gap",
+      message: "Analysis upload history API is not configured; no fixture data was substituted."
     }
   ]
 };
@@ -326,7 +326,7 @@ const documentsEmpty: ReplicaAdapterResult<ReplicaDocumentsData> = {
 const analyticsEmpty: ReplicaAdapterResult<ReplicaAnalyticsData> = {
   source: "api",
   outcome: "empty",
-  data: { datasets: [] },
+  data: { datasets: [], store: null },
   issues: analyticsFallback.issues
 };
 

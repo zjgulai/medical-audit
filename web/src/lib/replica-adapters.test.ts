@@ -7,10 +7,12 @@ import type {
   GraphWorkbenchResponse,
   KnowledgeBaseCatalogItem,
   KnowledgeBaseCatalogResponse,
-  QueryHistoryResponse
+  QueryHistoryResponse,
+  TableAnalysisUploadHistoryResponse
 } from "./api-types";
 import {
   loadReplicaAgentMarketData,
+  loadReplicaAnalyticsData,
   loadReplicaChatData,
   loadReplicaDocumentsData,
   loadReplicaGraphData,
@@ -726,5 +728,61 @@ describe("replica backend read adapters", () => {
     expect(result.data.relations[0]?.target).toBe("医疗医保知识");
     expect(result.issues).toEqual([]);
     expect(fetchGraphWorkbench).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not substitute reference analytics datasets when the API read is disabled or fails", async () => {
+    const disabled = await loadReplicaAnalyticsData();
+    const failed = await loadReplicaAnalyticsData({
+      fetchAnalysisUploadHistory: vi.fn(async () => {
+        throw new Error("history unavailable");
+      })
+    });
+
+    expect(disabled.source).toBe("api");
+    expect(disabled.outcome).toBe("empty");
+    expect(disabled.data).toEqual({ datasets: [], store: null });
+    expect(disabled.issues.some((item) => item.code === "mutation-gated")).toBe(false);
+    expect(failed.source).toBe("api");
+    expect(failed.outcome).toBe("error");
+    expect(failed.data).toEqual({ datasets: [], store: null });
+  });
+
+  it("maps real analytics history status and store readiness without fixture fallback", async () => {
+    const response: TableAnalysisUploadHistoryResponse = {
+      items: [
+        {
+          id: "analytics-real-1",
+          name: "真实收费.csv",
+          extension: "csv",
+          size_bytes: 0,
+          size_kb: 0,
+          sha256: "c".repeat(64),
+          storage_path: "2026/07/12/analytics-real-1.csv",
+          sheet_name: null,
+          row_count: 0,
+          column_count: 0,
+          empty_cell_count: 0,
+          duplicate_row_count: 0,
+          status: "parsed",
+          created_by: null,
+          created_at: "2026-07-12T10:00:00Z",
+          retention_status: "retained",
+          audit_signals: []
+        }
+      ],
+      store: { ready: false, backend: "none" }
+    };
+
+    const result = await loadReplicaAnalyticsData({
+      fetchAnalysisUploadHistory: vi.fn(async () => response)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.store).toEqual(response.store);
+    expect(result.data.datasets).toEqual([
+      expect.objectContaining({ id: "analytics-real-1", rows: 0, columns: 0, status: "已解析" })
+    ]);
+    expect(result.data.datasets.some((item) => item.name.includes("参考"))).toBe(false);
   });
 });

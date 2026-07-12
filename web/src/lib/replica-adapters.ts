@@ -15,7 +15,6 @@ import type {
 } from "./api-types";
 import {
   referenceAgents,
-  referenceAnalysisDatasets,
   referenceDocumentCategories,
   referenceDocumentResults,
   referenceGraphNodes,
@@ -182,6 +181,7 @@ export type ReplicaDocumentsData = {
 
 export type ReplicaAnalyticsData = {
   readonly datasets: readonly ReferenceAnalysisDataset[];
+  readonly store: TableAnalysisUploadHistoryResponse["store"] | null;
 };
 
 export type ReplicaGraphData = {
@@ -504,7 +504,7 @@ function mapAnalysisUploads(
     name: item.name,
     rows: item.row_count,
     columns: item.column_count,
-    status: item.status === "retained" ? "已解析" : item.status,
+    status: item.status === "parsed" ? "已解析" : item.status,
     insight:
       item.audit_signals[0] ??
       `已读取 ${item.row_count} 行、${item.column_count} 列，可进入本地字段画像。`
@@ -1013,13 +1013,7 @@ export async function loadReplicaDocumentsData(
 export async function loadReplicaAnalyticsData(
   client: ReplicaAnalyticsClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAnalyticsData>> {
-  const issues: ReplicaAdapterIssue[] = [
-    issue(
-      "analytics",
-      "mutation-gated",
-      "Upload, chart generation, and provider analysis actions remain disabled until write gates are approved."
-    )
-  ];
+  const issues: ReplicaAdapterIssue[] = [];
   const uploadHistoryRead = await readOptionalApi(
     "analytics",
     "analysis-upload-history",
@@ -1028,16 +1022,21 @@ export async function loadReplicaAnalyticsData(
   );
 
   if (uploadHistoryRead.kind === "disabled") {
+    issues.push(issue(
+      "analytics",
+      "partial-schema-gap",
+      "Analysis upload history API is not configured; no fixture data was substituted."
+    ));
     return {
-      source: "fixture",
-      outcome: "ready",
-      data: { datasets: referenceAnalysisDatasets },
+      source: "api",
+      outcome: "empty",
+      data: { datasets: [], store: null },
       issues
     };
   }
 
   if (uploadHistoryRead.kind === "failure") {
-    return { source: "api", outcome: "error", data: { datasets: [] }, issues };
+    return { source: "api", outcome: "error", data: { datasets: [], store: null }, issues };
   }
 
   const uploadHistory = uploadHistoryRead.value;
@@ -1050,7 +1049,7 @@ export async function loadReplicaAnalyticsData(
   return {
     source: "api",
     outcome: degraded ? "degraded" : datasets.length > 0 ? "ready" : "empty",
-    data: { datasets },
+    data: { datasets, store: uploadHistory.store },
     issues
   };
 }

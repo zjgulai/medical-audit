@@ -825,6 +825,49 @@ describe("api-client", () => {
     expect(result.retention_status).toBe("retained");
   });
 
+  it.each([
+    [413, "uploaded table file is too large"],
+    [422, "unsupported table file extension"]
+  ])("surfaces FastAPI string detail for analytics upload status %s", async (status, detail) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status,
+        json: async () => ({ detail })
+      }))
+    );
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(detail);
+  });
+
+  it("keeps generic method, path and status context for non-validation upload failures", async () => {
+    const json = vi.fn(async () => ({ detail: "do not expose this body" }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json })));
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/analytics/table-upload returned 500"
+    );
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("falls back safely when a validation error body cannot be parsed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => {
+          throw new SyntaxError("invalid json");
+        }
+      }))
+    );
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/analytics/table-upload returned 422"
+    );
+  });
+
   it("fetches analysis upload history through the versioned API proxy", async () => {
     vi.stubGlobal(
       "fetch",

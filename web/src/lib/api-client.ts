@@ -136,6 +136,26 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 413 || response.status === 422) {
+      let detail: string | null = null;
+      try {
+        const payload = await response.json() as unknown;
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "detail" in payload &&
+          typeof payload.detail === "string" &&
+          payload.detail.trim().length > 0
+        ) {
+          detail = payload.detail.trim();
+        }
+      } catch {
+        // The generic error below preserves method, path, and status when the body is not JSON.
+      }
+      if (detail) {
+        throw new Error(detail);
+      }
+    }
     throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
   }
 
