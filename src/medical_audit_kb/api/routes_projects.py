@@ -273,8 +273,18 @@ def project_dashboard(
         member_store_ready = False
         member_store_backend = "unavailable"
 
-    findings, finding_store_payload = _dashboard_findings(state)
+    findings, finding_store_payload = _dashboard_findings(state, project_key)
     stats = _dashboard_finding_stats(findings)
+    audit_findings_ready = bool(finding_store_payload["ready"])
+    if member_store_ready and audit_findings_ready:
+        store_status = "ready"
+        evidence_grade = "live-db-connected"
+    elif member_store_ready or audit_findings_ready:
+        store_status = "partial"
+        evidence_grade = "partial-live-db-connected"
+    else:
+        store_status = "unavailable"
+        evidence_grade = "backend-defaults"
     response: dict[str, object] = {
         "format": "project-dashboard-v1",
         "project": project,
@@ -283,14 +293,13 @@ def project_dashboard(
         "activities": _dashboard_activities(stats, findings, member_store_ready),
         "status_distribution": _dashboard_status_distribution(findings),
         "member_workloads": _dashboard_member_workloads(members, findings),
-        "evidence_grade": (
-            "live-db-connected"
-            if bool(finding_store_payload["ready"]) or member_store_ready
-            else "backend-defaults"
-        ),
+        "evidence_grade": evidence_grade,
         "production_side_effect": "none",
         "store": {
-            "ready": member_store_ready or bool(finding_store_payload["ready"]),
+            "ready": member_store_ready and audit_findings_ready,
+            "project_members_ready": member_store_ready,
+            "audit_findings_ready": audit_findings_ready,
+            "status": store_status,
             "backend": {
                 "project_members": member_store_backend,
                 "audit_findings": finding_store_payload["backend"],
@@ -421,11 +430,17 @@ def _project_member_store(state: ApiState) -> ProjectMemberStore:
     return state.project_member_store
 
 
-def _dashboard_findings(state: ApiState) -> tuple[list[dict[str, object]], dict[str, object]]:
+def _dashboard_findings(
+    state: ApiState,
+    project_key: str,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     if state.audit_finding_store is None:
         return [], {"ready": False, "backend": "none"}
     try:
-        findings = state.audit_finding_store.list_findings(limit=100)
+        findings = state.audit_finding_store.list_findings(
+            project_key=project_key,
+            limit=100,
+        )
     except SQLAlchemyError:
         return [], {"ready": False, "backend": "unavailable"}
     return findings, {"ready": True, "backend": state.audit_finding_store.__class__.__name__}

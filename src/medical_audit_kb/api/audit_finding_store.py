@@ -71,6 +71,7 @@ class SqlAlchemyAuditFindingStore:
         self,
         *,
         review_status: str | None = None,
+        project_key: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
         with self._session_factory() as session:
@@ -87,6 +88,12 @@ class SqlAlchemyAuditFindingStore:
             )
             if review_status is not None:
                 statement = statement.where(AuditFinding.review_status == review_status)
+            if project_key is not None:
+                statement = (
+                    statement.join(AuditFinding.audit_task)
+                    .join(AuditTask.project)
+                    .where(AuditProject.project_key == project_key)
+                )
             return [_finding_to_payload(session, finding) for finding in session.scalars(statement)]
 
     def generation_readiness(self) -> dict[str, object]:

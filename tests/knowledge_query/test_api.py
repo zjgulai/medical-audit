@@ -7,7 +7,9 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
+from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.analytics_upload_store import (
@@ -16,6 +18,7 @@ from medical_audit_kb.api.analytics_upload_store import (
     SqlAlchemyAnalyticsUploadStore,
 )
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.auth_user_store import (
     AUTH_ROLE_ASSIGNMENT_ID_PREFIX,
     AUTH_USER_ID_PREFIX,
@@ -45,6 +48,15 @@ from medical_audit_kb.core.config import (
     DocumentUploadIndexingSettings,
     KnowledgeQuerySettings,
     ModelProviderSettings,
+)
+from medical_audit_kb.db.models import (
+    AuditDataSnapshot,
+    AuditFinding,
+    AuditProject,
+    AuditRule,
+    AuditRun,
+    AuditTask,
+    RuleVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -1634,7 +1646,148 @@ def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: 
     assert creator_detail_response.status_code == 200
     assert creator_detail_response.json()["item"]["status"] == "待开始"
     assert creator_dashboard_response.status_code == 200
-    assert creator_dashboard_response.json()["project"]["status"] == "待开始"
+    creator_dashboard = creator_dashboard_response.json()
+    assert creator_dashboard["project"]["status"] == "待开始"
+    assert creator_dashboard["evidence_grade"] == "backend-defaults"
+    assert creator_dashboard["store"] == {
+        "ready": False,
+        "project_members_ready": False,
+        "audit_findings_ready": False,
+        "status": "unavailable",
+        "backend": {
+            "project_members": "unavailable",
+            "audit_findings": "unavailable",
+        },
+    }
+
+
+def test_project_dashboard_scopes_findings_and_publishes_full_readiness(
+    tmp_path: Path,
+) -> None:
+    class ProjectScopedAuditFindingStore:
+        def __init__(self) -> None:
+            self.requested_project_keys: list[str | None] = []
+            self.items = {
+                "SELF-CHECK-FUND-20260607": [
+                    {
+                        "finding_key": "finding-self-001",
+                        "status": "open",
+                        "finding_type": "self-check",
+                        "severity": "high",
+                        "review_status": "pending-review",
+                        "review_task_id": "review-self-001",
+                        "metadata": {"owner": "SELF负责人"},
+                    }
+                ],
+                "CATALOG-LIMIT-202606": [
+                    {
+                        "finding_key": "finding-catalog-001",
+                        "status": "open",
+                        "finding_type": "catalog",
+                        "severity": "medium",
+                        "review_status": "needs-evidence",
+                        "review_task_id": None,
+                        "metadata": {"owner": "CATALOG负责人"},
+                    },
+                    {
+                        "finding_key": "finding-catalog-002",
+                        "status": "open",
+                        "finding_type": "catalog",
+                        "severity": "low",
+                        "review_status": "pending-review",
+                        "review_task_id": None,
+                        "metadata": {"owner": "CATALOG负责人"},
+                    },
+                ],
+            }
+
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
+            assert project_key is not None
+            return [dict(item) for item in self.items.get(project_key, [])[:limit]]
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    finding_store = ProjectScopedAuditFindingStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    self_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=headers,
+    )
+    catalog_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers=headers,
+    )
+
+    assert self_response.status_code == 200
+    assert catalog_response.status_code == 200
+    assert finding_store.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607",
+        "CATALOG-LIMIT-202606",
+    ]
+    self_body = self_response.json()
+    catalog_body = catalog_response.json()
+    assert [item["id"] for item in self_body["queue"]] == ["finding-self-001"]
+    assert [item["id"] for item in catalog_body["queue"]] == [
+        "finding-catalog-001",
+        "finding-catalog-002",
+    ]
+    assert {item["key"]: item["value"] for item in self_body["metrics"]}[
+        "open_findings"
+    ] == "1"
+    assert {item["key"]: item["value"] for item in catalog_body["metrics"]}[
+        "open_findings"
+    ] == "2"
+    assert "CATALOG负责人" not in {
+        item["name"] for item in self_body["member_workloads"]
+    }
+    assert "SELF负责人" not in {
+        item["name"] for item in catalog_body["member_workloads"]
+    }
+    assert self_body["evidence_grade"] == "live-db-connected"
+    assert self_body["store"] == {
+        "ready": True,
+        "project_members_ready": True,
+        "audit_findings_ready": True,
+        "status": "ready",
+        "backend": {
+            "project_members": "InMemoryProjectMemberStore",
+            "audit_findings": "ProjectScopedAuditFindingStore",
+        },
+    }
+
+
+def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-findings.db'}"
+    store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+
+    global_items = store.list_findings(limit=10)
+    self_items = store.list_findings(
+        project_key="SELF-CHECK-FUND-20260607",
+        limit=10,
+    )
+    catalog_items = store.list_findings(
+        project_key="CATALOG-LIMIT-202606",
+        limit=10,
+    )
+    missing_items = store.list_findings(project_key="UNKNOWN-PROJECT", limit=10)
+
+    assert {item["finding_key"] for item in global_items} == {
+        "finding-self-sql",
+        "finding-catalog-sql",
+    }
+    assert [item["finding_key"] for item in self_items] == ["finding-self-sql"]
+    assert [item["finding_key"] for item in catalog_items] == ["finding-catalog-sql"]
+    assert missing_items == []
 
 
 def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Path) -> None:
@@ -1653,12 +1806,22 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
             return {"SELF-CHECK-FUND-20260607": 99}
 
     class ReadyAuditFindingStore:
-        def list_findings(self, *, limit: int) -> list[dict[str, object]]:
+        def __init__(self) -> None:
+            self.requested_project_keys: list[str | None] = []
+
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
             return []
 
     state = _api_state(tmp_path)
     state.project_member_store = SplitFailureProjectMemberStore()
-    state.audit_finding_store = ReadyAuditFindingStore()  # type: ignore[assignment]
+    finding_store = ReadyAuditFindingStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
     client = TestClient(create_app(state))
     visible_headers = (
         {"X-User-Id": "owner-self-check", "X-Role": "member"},
@@ -1716,7 +1879,12 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
             "project_members": "unavailable",
             "audit_findings": "ReadyAuditFindingStore",
         }
-        assert dashboard_response.json()["store"]["ready"] is True
+        assert dashboard_response.json()["store"]["ready"] is False
+        assert dashboard_response.json()["store"]["project_members_ready"] is False
+        assert dashboard_response.json()["store"]["audit_findings_ready"] is True
+        assert dashboard_response.json()["store"]["status"] == "partial"
+        assert dashboard_response.json()["evidence_grade"] == "partial-live-db-connected"
+        assert finding_store.requested_project_keys[-1] == "SELF-CHECK-FUND-20260607"
         assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
 
     for user_identifier in ("unrelated-member", "custom-member"):
@@ -4541,6 +4709,95 @@ def test_index_evaluation_run_requires_ready_search_backend(tmp_path: Path) -> N
 
     assert response.status_code == 409
     assert "search backend is not ready" in response.json()["detail"]
+
+
+def _seed_project_findings(database_url: str) -> None:
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        rule = AuditRule(
+            rule_key="PROJECT-SCOPE-RULE",
+            scenario_key="project-scope-test",
+            name="项目隔离测试规则",
+            status="active",
+            owner="unit-test",
+        )
+        session.add(rule)
+        session.flush()
+        rule_version = RuleVersion(
+            audit_rule_id=rule.id,
+            version_key="PROJECT-SCOPE-RULE@v1",
+            rule_key=rule.rule_key,
+            status="active",
+            logic={"fixture": True},
+            evidence_links={},
+            created_by="unit-test",
+        )
+        session.add(rule_version)
+        session.flush()
+
+        for suffix, project_key in (
+            ("self", "SELF-CHECK-FUND-20260607"),
+            ("catalog", "CATALOG-LIMIT-202606"),
+        ):
+            project = AuditProject(
+                project_key=project_key,
+                name=f"{suffix} project",
+                scenario_key="project-scope-test",
+                status="active",
+                created_by="unit-test",
+            )
+            session.add(project)
+            session.flush()
+            snapshot = AuditDataSnapshot(
+                snapshot_key=f"snapshot-{suffix}",
+                project_id=project.id,
+                source_batch_key=f"batch-{suffix}",
+                time_range={},
+                row_counts={"fixture": 1},
+                checksum=f"sha256:{suffix}",
+                status="validated",
+            )
+            session.add(snapshot)
+            session.flush()
+            task = AuditTask(
+                task_key=f"task-{suffix}",
+                project_id=project.id,
+                snapshot_id=snapshot.id,
+                topic=f"{suffix} topic",
+                department_scope={},
+                date_range={},
+                status="ready",
+                created_by="unit-test",
+            )
+            session.add(task)
+            session.flush()
+            run = AuditRun(
+                run_key=f"run-{suffix}",
+                audit_task_id=task.id,
+                snapshot_id=snapshot.id,
+                rule_version_key=rule_version.version_key,
+                status="succeeded",
+                summary={"fixture": True},
+            )
+            session.add(run)
+            session.flush()
+            session.add(
+                AuditFinding(
+                    finding_key=f"finding-{suffix}-sql",
+                    audit_run_id=run.id,
+                    audit_task_id=task.id,
+                    rule_version_id=rule_version.id,
+                    snapshot_id=snapshot.id,
+                    status="open",
+                    finding_type="project-scope-test",
+                    severity="medium",
+                    source_record_locator={"project_key": project_key},
+                    calculation_trace={},
+                    review_status="pending-review",
+                    extra_metadata={"owner": f"{suffix}-owner"},
+                )
+            )
+        session.commit()
 
 
 def _api_state(tmp_path: Path) -> ApiState:
