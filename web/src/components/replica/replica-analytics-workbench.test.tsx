@@ -26,7 +26,6 @@ const historyReady: TableAnalysisUploadHistoryResponse = {
       size_bytes: 0,
       size_kb: 0,
       sha256: "b".repeat(64),
-      storage_path: "2026/07/12/upload-history-1.csv",
       sheet_name: null,
       row_count: 0,
       column_count: 0,
@@ -255,9 +254,6 @@ describe("ReplicaAnalyticsWorkbench", () => {
     expectDefinition(historyItem, "分析状态", "parsed");
     expectDefinition(historyItem, "保留状态", "retained");
     expect(within(historyItem).queryByText("next-admin")).not.toBeInTheDocument();
-    expect(
-      within(historyItem).queryByText("2026/07/12/upload-history-1.csv")
-    ).not.toBeInTheDocument();
     expect(within(historyItem).queryByText("b".repeat(64))).not.toBeInTheDocument();
     expectDefinition(historyItem, "sha256（截断）", "bbbbbbbbbbbb…bbbbbb");
 

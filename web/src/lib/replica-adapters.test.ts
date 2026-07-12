@@ -904,7 +904,6 @@ describe("replica backend read adapters", () => {
           size_bytes: 0,
           size_kb: 0,
           sha256: "c".repeat(64),
-          storage_path: "2026/07/12/analytics-real-1.csv",
           sheet_name: null,
           row_count: 0,
           column_count: 0,

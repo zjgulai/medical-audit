@@ -81,5 +81,8 @@ describe("LoginPage", () => {
 
     rerender(<LoginSurface redirectTo="//outside.example" />);
     expect(screen.getByRole("button", { name: "登录" }).closest("form")).toHaveAttribute("action", "/workspace");
+
+    rerender(<LoginSurface redirectTo="/\\outside.example/path" />);
+    expect(screen.getByRole("button", { name: "登录" }).closest("form")).toHaveAttribute("action", "/workspace");
   });
 });

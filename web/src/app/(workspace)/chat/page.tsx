@@ -196,14 +196,15 @@ function ChatPortalContent() {
   }, []);
 
   useEffect(() => {
-    if (!requestedAgentId || selectedAgent) {
+    if (!requestedAgentId) {
+      setSelectedAgent(null);
       return;
     }
     const matched = chatData.data.agents.find((agent) => agent.id === requestedAgentId);
     if (matched) {
-      setSelectedAgent(matched);
+      setSelectedAgent((current) => current?.id === matched.id ? current : matched);
     }
-  }, [chatData.data.agents, requestedAgentId, selectedAgent]);
+  }, [chatData.data.agents, requestedAgentId]);
 
   useEffect(() => {
     if (!requestedQuestion || appliedUrlQuestionRef.current === requestedQuestion) {

@@ -143,7 +143,10 @@ def build_knowledge_base_catalog_response(
                 evidence_group=definition.evidence_group,
                 description=definition.description,
                 audit_hint=definition.audit_hint,
-                access=permission.access,
+                access=cast(
+                    Literal["read", "explicit-owner-read", "explicit-read-all"],
+                    permission.access,
+                ),
                 product_queryable=definition.product_queryable,
                 queryable=queryable,
                 metrics=metrics,
@@ -374,12 +377,12 @@ def _metrics_from_postgres(
               (SELECT COUNT(*) FROM chunk_embeddings)::bigint AS chunk_embeddings
             """
         )
-        row = cursor.fetchone()
-        if row is not None:
+        totals_row = cursor.fetchone()
+        if totals_row is not None:
             totals = {
-                "source_documents": _int_value(row.get("source_documents")),
-                "document_chunks": _int_value(row.get("document_chunks")),
-                "chunk_embeddings": _int_value(row.get("chunk_embeddings")),
+                "source_documents": _int_value(totals_row.get("source_documents")),
+                "document_chunks": _int_value(totals_row.get("document_chunks")),
+                "chunk_embeddings": _int_value(totals_row.get("chunk_embeddings")),
             }
     return metrics_by_collection, totals, latest_by_collection
 

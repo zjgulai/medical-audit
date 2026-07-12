@@ -70,6 +70,19 @@ describe("ReplicaShell", () => {
     expect(within(screen.getByLabelText("打开页面")).getByText("医保审计专题")).toBeInTheDocument();
   });
 
+  it("marks the project route so floating history stays clear of row actions", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    usePathnameMock.mockReturnValue("/projects");
+
+    const { container } = render(
+      <ReplicaShell>
+        <main>项目内容</main>
+      </ReplicaShell>
+    );
+
+    expect(container.firstElementChild).toHaveClass("replica-project-shell");
+  });
+
   it("renders history items as deterministic chat links", () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
 
@@ -82,6 +95,8 @@ describe("ReplicaShell", () => {
     const historyTrigger = screen.getByRole("button", { name: "打开历史对话" });
     expect(historyTrigger).toHaveTextContent("历史对话");
     fireEvent.click(historyTrigger);
+
+    expect(screen.getByRole("button", { name: "收起历史对话" })).toHaveAttribute("aria-expanded", "true");
 
     expect(screen.getByRole("link", { name: "打开历史对话：中标候选人名单表" })).toHaveAttribute(
       "href",

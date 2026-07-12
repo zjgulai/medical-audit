@@ -397,7 +397,6 @@ export type TableAnalysisUploadHistoryItem = {
   readonly size_bytes: number;
   readonly size_kb: number;
   readonly sha256: string;
-  readonly storage_path: string;
   readonly sheet_name: string | null;
   readonly row_count: number;
   readonly column_count: number;

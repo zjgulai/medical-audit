@@ -1625,9 +1625,9 @@ select {
 
 .replica-brand-text {
   display: block;
-  max-width: 132px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -1822,6 +1822,18 @@ select {
 .replica-history-fab:hover {
   border-color: var(--replica-primary-line);
   background: var(--replica-primary-soft);
+}
+
+@media (min-width: 901px) {
+  .replica-project-shell .replica-history-fab {
+    top: 54px;
+    bottom: auto;
+  }
+
+  .replica-project-shell .replica-history-drawer {
+    top: 108px;
+    bottom: auto;
+  }
 }
 
 .replica-history-drawer {
@@ -5719,6 +5731,16 @@ select {
     display: none;
   }
 
+  .replica-project-shell .replica-history-fab {
+    right: auto;
+    left: 16px;
+  }
+
+  .replica-project-shell .replica-history-drawer {
+    right: auto;
+    left: 16px;
+  }
+
   .replica-topic-entry,
   .replica-sidebar-collapsed .replica-topic-entry {
     position: static;
@@ -6146,7 +6168,7 @@ select {
 .replica-brand {
   height: 64px;
   padding: 0 18px;
-  font-size: 21px;
+  font-size: 16px;
 }
 
 .replica-brand-mark {
@@ -9435,6 +9457,26 @@ button.replica-graph-node.is-selected {
   background: #f7f9fc;
   color: #6a788b;
   font-weight: 700;
+}
+
+.replica-project-workbench .replica-project-table th:last-child,
+.replica-project-workbench .replica-project-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  min-width: 104px;
+  background: #ffffff;
+  box-shadow: -12px 0 18px -18px rgb(32 55 82 / 0.5);
+}
+
+.replica-project-workbench .replica-project-table th:last-child {
+  z-index: 2;
+  background: #f7f9fc;
+}
+
+.replica-project-workbench .replica-project-table tbody tr:hover td:last-child,
+.replica-project-workbench .replica-project-table tbody tr[data-selected="true"] td:last-child {
+  background: #f3f7fd;
 }
 
 .replica-project-workbench .replica-project-table tbody tr {

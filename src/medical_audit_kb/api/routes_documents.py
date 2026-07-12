@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
@@ -1394,7 +1394,10 @@ def _source_collection_catalog_response(
                 evidence_group=definition.evidence_group,
                 description=definition.description,
                 audit_hint=definition.audit_hint,
-                access=permission.access,
+                access=cast(
+                    Literal["read", "explicit-owner-read", "explicit-read-all"],
+                    permission.access,
+                ),
                 product_queryable=definition.product_queryable,
                 queryable=definition.product_queryable and state.search_engine is not None,
                 metrics=_source_collection_metrics(definition.collection, state),

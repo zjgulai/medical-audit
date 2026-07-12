@@ -28,6 +28,7 @@ class Permission(StrEnum):
     MANAGE_PROJECT_MEMBERS = "manage_project_members"
     MANAGE_INDEX = "manage_index"
     READ_AUDIT_LOGS = "read_audit_logs"
+    READ_ALL_ANALYTICS_UPLOADS = "read_all_analytics_uploads"
     SIGN_REPORTS = "sign_reports"
     CREATE_REPORT_DRAFT = "create_report_draft"
 
@@ -79,6 +80,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.MANAGE_PROJECT_MEMBERS,
             Permission.MANAGE_INDEX,
             Permission.READ_AUDIT_LOGS,
+            Permission.READ_ALL_ANALYTICS_UPLOADS,
             Permission.CREATE_REPORT_DRAFT,
         }
     ),

@@ -1227,7 +1227,6 @@ describe("api-client", () => {
               size_bytes: 128,
               size_kb: 1,
               sha256: "b".repeat(64),
-              storage_path: "2026/06/15/analytics-upload-001.csv",
               sheet_name: null,
               row_count: 3,
               column_count: 5,
@@ -1257,6 +1256,7 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("analytics-upload-001");
+    expect(result.items[0]).not.toHaveProperty("storage_path");
   });
 
   it("fetches document permissions through the versioned API proxy", async () => {

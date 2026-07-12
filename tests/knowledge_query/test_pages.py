@@ -351,6 +351,41 @@ def test_chat_page_records_selected_agent_invocation_without_export_duplication(
     assert state.operation_logs[-1]["action"] == "chat-dossier-export"
 
 
+def test_chat_page_rejects_project_agent_without_current_project_scope(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = SqlAlchemyAgentStore(
+        f"sqlite:///{tmp_path / 'page-project-agent-scope.db'}",
+        create_schema=True,
+    )
+    project_agent = state.agent_store.add_agent(
+        {
+            "name": "项目级页面助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "仅允许在当前项目空间使用。",
+            "knowledge_base": "项目默认知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+            "created_by": "unit-test",
+        }
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/pages/chat",
+        params={
+            "question": "医保基金审核依据",
+            "agent": project_agent["id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "选择项目级智能体时必须提供当前项目空间。" in response.text
+    assert state.agent_store.list_invocations(str(project_agent["id"])) == []
+
+
 def test_chat_dossier_export_returns_json_download_and_records_log(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))

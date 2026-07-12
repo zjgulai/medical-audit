@@ -558,9 +558,24 @@ def _enforce_agent_project_scope(
     attempted_action: str,
 ) -> None:
     normalized_project = _normalize_project_name(request_project_name)
-    if not normalized_project or str(agent.get("visibility_scope") or "project") != "project":
+    if str(agent.get("visibility_scope") or "project") != "project":
         return
     agent_project_name = str(agent.get("project_name") or "").strip()
+    if not normalized_project:
+        record_operation(
+            state,
+            "agent-project-scope-denied",
+            {
+                "agent_id": str(agent.get("id") or ""),
+                "agent_project_name": agent_project_name,
+                "request_project_name": "",
+                "attempted_action": attempted_action,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="agent project scope requires current project",
+        )
     if agent_project_name == normalized_project:
         return
     record_operation(

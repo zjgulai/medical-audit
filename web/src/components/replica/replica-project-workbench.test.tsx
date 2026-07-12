@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +34,7 @@ const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchProjectMembersMock = vi.mocked(fetchProjectMembers);
 const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
 const createProjectMemberMock = vi.mocked(createProjectMember);
+const globalsCss = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf-8");
 
 const projectStatuses: readonly ApiProjectStatus[] = ["待开始", "进行中", "已完成", "已归档"];
 
@@ -186,6 +190,12 @@ beforeEach(() => {
 });
 
 describe("ReplicaProjectWorkbench", () => {
+  it("keeps project row actions visible in horizontally constrained tables", () => {
+    expect(globalsCss).toMatch(
+      /\.replica-project-workbench \.replica-project-table th:last-child,\s*\.replica-project-workbench \.replica-project-table td:last-child\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s
+    );
+  });
+
   it("renders the API project list, canonical status filter and truthful zero", async () => {
     const alpha = project("ALPHA", "Alpha项目", "进行中", 2);
     const done = project("DONE", "已完成项目", "已完成", 0);

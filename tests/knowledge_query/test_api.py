@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -54,6 +55,7 @@ from medical_audit_kb.core.config import (
     ModelProviderSettings,
 )
 from medical_audit_kb.db.models import (
+    AnalyticsUploadRecord,
     AuditDataSnapshot,
     AuditFinding,
     AuditProject,
@@ -525,7 +527,11 @@ def test_permission_resolver_prefers_persisted_global_role(tmp_path: Path) -> No
 
     agent_response = client.post(
         "/agents",
-        headers={"X-User-Id": "persistent-technician", "X-Role": "member"},
+        headers={
+            "X-User-Id": "persistent-technician",
+            "X-Role": "member",
+            "X-Project-Name": PROJECT_NAME_HEADER,
+        },
         json={
             "name": "持久化权限助手",
             "category": "业务类",
@@ -798,7 +804,11 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
 
     create_response = client.post(
         "/agents",
-        headers={"X-User-Id": "director-1", "X-Role": "director"},
+        headers={
+            "X-User-Id": "director-1",
+            "X-Role": "director",
+            "X-Project-Name": urllib.parse.quote("医保目录限制条件核验"),
+        },
         json={
             "name": "目录限制核验助手",
             "category": "业务类",
@@ -825,7 +835,10 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     second_state = _api_state(tmp_path / "second")
     second_state.agent_store = SqlAlchemyAgentStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_items = second_client.get("/agents").json()["items"]
+    persisted_items = second_client.get(
+        "/agents",
+        headers={"X-Project-Name": urllib.parse.quote("医保目录限制条件核验")},
+    ).json()["items"]
 
     assert persisted_items[0]["id"] == created["id"]
     assert persisted_items[0]["name"] == "目录限制核验助手"
@@ -1092,8 +1105,16 @@ def test_agents_api_restricts_prompt_activation_to_admin_and_director(
     state = _api_state(tmp_path)
     state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
     client = TestClient(create_app(state))
-    technician_headers = {"X-User-Id": "technician-1", "X-Role": "technician"}
-    director_headers = {"X-User-Id": "director-1", "X-Role": "director"}
+    technician_headers = {
+        "X-User-Id": "technician-1",
+        "X-Role": "technician",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
+    director_headers = {
+        "X-User-Id": "director-1",
+        "X-Role": "director",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
 
     create_response = client.post(
         "/agents",
@@ -1200,7 +1221,9 @@ def test_agents_api_filters_project_scope_and_blocks_cross_project_invocation(
 
     project_a_list = client.get("/agents", headers=project_a_headers)
     project_b_list = client.get("/agents", headers=project_b_headers)
+    missing_scope_list = client.get("/agents")
     blocked_detail = client.get(f"/agents/{agent_id}", headers=project_b_headers)
+    missing_scope_detail = client.get(f"/agents/{agent_id}")
     blocked_invocation = client.post(
         f"/agents/{agent_id}/invocations",
         headers={**project_b_headers, "X-User-Id": "member-2", "X-Role": "member"},
@@ -1211,14 +1234,37 @@ def test_agents_api_filters_project_scope_and_blocks_cross_project_invocation(
         headers={**project_a_headers, "X-User-Id": "member-1", "X-Role": "member"},
         json={"invocation_source": "agent-workspace", "question": "本项目调用"},
     )
+    missing_scope_invocation = client.post(
+        f"/agents/{agent_id}/invocations",
+        headers={"X-User-Id": "member-3", "X-Role": "member"},
+        json={"invocation_source": "agent-workspace", "question": "缺少项目范围调用"},
+    )
+    missing_scope_create = client.post(
+        "/agents",
+        headers={"X-User-Id": "admin-3", "X-Role": "admin"},
+        json={
+            "name": "缺少项目范围的助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "不得在缺少当前项目时创建。",
+            "knowledge_base": "项目默认知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+        },
+    )
 
     assert create_response.status_code == 200
     assert agent_id in {item["id"] for item in project_a_list.json()["items"]}
     assert agent_id not in {item["id"] for item in project_b_list.json()["items"]}
+    assert agent_id not in {item["id"] for item in missing_scope_list.json()["items"]}
     assert "agent-citation-check" in {item["id"] for item in project_b_list.json()["items"]}
     assert blocked_detail.status_code == 403
     assert blocked_detail.json()["detail"] == "agent project scope does not match current project"
+    assert missing_scope_detail.status_code == 403
+    assert missing_scope_detail.json()["detail"] == "agent project scope requires current project"
     assert blocked_invocation.status_code == 403
+    assert missing_scope_invocation.status_code == 403
+    assert missing_scope_create.status_code == 403
     assert allowed_invocation.status_code == 200
     assert allowed_invocation.json()["item"]["question"] == "本项目调用"
     assert any(entry["action"] == "agent-project-scope-denied" for entry in state.operation_logs)
@@ -2006,6 +2052,52 @@ def test_project_dashboard_scopes_findings_and_publishes_full_readiness(
     }
 
 
+def test_project_dashboard_keeps_explicitly_closed_findings_out_of_open_metric(
+    tmp_path: Path,
+) -> None:
+    class ClosedAndLegacyFindingStore:
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            assert project_key is not None
+            status = "closed" if project_key == "SELF-CHECK-FUND-20260607" else None
+            return [
+                {
+                    "finding_key": f"finding-{project_key}",
+                    "status": status,
+                    "severity": "medium",
+                    "review_status": "confirmed-violation",
+                    "review_task_id": None,
+                    "metadata": {},
+                }
+            ][:limit]
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = ClosedAndLegacyFindingStore()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    closed_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=headers,
+    )
+    legacy_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers=headers,
+    )
+
+    assert closed_response.status_code == 200
+    assert legacy_response.status_code == 200
+    closed_metrics = {item["key"]: item["value"] for item in closed_response.json()["metrics"]}
+    legacy_metrics = {item["key"]: item["value"] for item in legacy_response.json()["metrics"]}
+    assert closed_metrics["open_findings"] == "0"
+    assert legacy_metrics["open_findings"] == "1"
+
+
 def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'project-findings.db'}"
     store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
@@ -2663,6 +2755,76 @@ def test_project_graph_rejects_duplicate_review_task_ids_without_data_leakage(
     assert review_store.list_calls == 1
 
 
+def test_project_graph_rejects_linked_review_task_with_conflicting_project_scope(
+    tmp_path: Path,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_store = _RecordingGraphFindingStore(
+        {
+            project_key: [
+                {
+                    "project_key": project_key,
+                    "finding_key": "finding-conflicting-review-project",
+                    "severity": "high",
+                    "review_status": "confirmed-violation",
+                    "review_task_id": "review-conflicting-project",
+                    "audit_task_key": "task-conflicting-project",
+                    "rule_version_key": "CONFLICTING-PROJECT@v1",
+                    "evidence_items": [],
+                }
+            ]
+        }
+    )
+    review_store = _RecordingGraphReviewTaskStore(
+        [
+            {
+                "task_id": "review-conflicting-project",
+                "status": "confirmed-violation",
+                "status_label": "确认违规",
+                "citation_count": 1,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": "CROSS-PROJECT-REPORT-MARKER",
+                        "project_key": "CATALOG-LIMIT-202606",
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": "CROSS-PROJECT-REPORT-MARKER",
+                        "content_sha256": "CROSS-PROJECT-HASH",
+                        "content": "CROSS-PROJECT-CONTENT",
+                    },
+                    "rectification": {
+                        "rectification_id": "CROSS-PROJECT-RECTIFICATION-MARKER",
+                        "status": "accepted",
+                    },
+                },
+            }
+        ]
+    )
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "review task project scope conflicts with linked finding"
+    serialized = json.dumps(
+        {"response": response.json(), "operation_logs": state.operation_logs},
+        ensure_ascii=False,
+    )
+    assert "CROSS-PROJECT-REPORT-MARKER" not in serialized
+    assert "CROSS-PROJECT-RECTIFICATION-MARKER" not in serialized
+    assert "CROSS-PROJECT-CONTENT" not in serialized
+    assert not any(log["action"] == "graph-workbench-view" for log in state.operation_logs)
+
+
 def test_project_graph_ignores_blank_review_task_ids_and_fails_fast_on_malformed_rows(
     tmp_path: Path,
 ) -> None:
@@ -2998,9 +3160,11 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
         create_schema=True,
     )
     client = TestClient(create_app(state))
+    headers = {"X-User-Id": "analytics-owner", "X-Role": "member"}
 
     response = client.post(
         "/analytics/table-upload",
+        headers=headers,
         files={
             "file": (
                 "charge-sample.csv",
@@ -3041,7 +3205,7 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert state.operation_logs[-1]["action"] == "analytics-table-upload"
     assert state.operation_logs[-1]["payload"]["retention_status"] == "retained"
 
-    history_response = client.get("/analytics/table-uploads")
+    history_response = client.get("/analytics/table-uploads", headers=headers)
     assert history_response.status_code == 200
     history_body = history_response.json()
     assert history_body["store"]["backend"] == "SqlAlchemyAnalyticsUploadStore"
@@ -3049,8 +3213,10 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert history_body["items"][0]["sha256"] == body["sha256"]
     assert history_body["items"][0]["row_count"] == 3
     assert history_body["items"][0]["column_count"] == 5
+    assert "storage_path" not in history_body["items"][0]
 
-    retained_path = tmp_path / "retained-uploads" / history_body["items"][0]["storage_path"]
+    retained_record = state.analytics_upload_store.list_uploads(created_by="analytics-owner")[0]
+    retained_path = tmp_path / "retained-uploads" / str(retained_record["storage_path"])
     assert retained_path.exists()
     assert retained_path.read_text(encoding="utf-8").startswith("patient_id,visit_date")
 
@@ -3060,7 +3226,10 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
         upload_root=tmp_path / "retained-uploads",
     )
     second_client = TestClient(create_app(second_state))
-    persisted_items = second_client.get("/analytics/table-uploads").json()["items"]
+    persisted_items = second_client.get(
+        "/analytics/table-uploads",
+        headers=headers,
+    ).json()["items"]
     assert persisted_items[0]["id"] == body["upload_id"]
 
 
@@ -3108,6 +3277,71 @@ def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) ->
 
     assert response.status_code == 422
     assert response.json()["detail"] == "unsupported table file extension"
+
+
+def test_analytics_upload_history_is_owner_scoped_and_redacts_storage_path(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.analytics_upload_store = InMemoryAnalyticsUploadStore(
+        upload_root=tmp_path / "retained-uploads"
+    )
+    client = TestClient(create_app(state))
+
+    for user_identifier, file_name in (
+        ("analytics-owner-a", "owner-a.csv"),
+        ("analytics-owner-b", "owner-b.csv"),
+    ):
+        response = client.post(
+            "/analytics/table-upload",
+            headers={"X-User-Id": user_identifier, "X-Role": "member"},
+            files={"file": (file_name, "item,amount\nA,10", "text/csv")},
+        )
+        assert response.status_code == 200
+
+    missing_identity = client.get("/analytics/table-uploads")
+    owner_history = client.get(
+        "/analytics/table-uploads",
+        headers={"X-User-Id": "analytics-owner-a", "X-Role": "member"},
+    )
+    admin_history = client.get(
+        "/analytics/table-uploads",
+        headers={"X-User-Id": "analytics-admin", "X-Role": "admin"},
+    )
+
+    assert missing_identity.status_code == 401
+    assert owner_history.status_code == 200
+    assert [item["name"] for item in owner_history.json()["items"]] == ["owner-a.csv"]
+    assert admin_history.status_code == 200
+    assert {item["name"] for item in admin_history.json()["items"]} == {
+        "owner-a.csv",
+        "owner-b.csv",
+    }
+    assert "storage_path" not in json.dumps(owner_history.json())
+    assert "storage_path" not in json.dumps(admin_history.json())
+
+
+def test_sql_analytics_upload_removes_retained_file_when_database_write_fails(
+    tmp_path: Path,
+) -> None:
+    upload_root = tmp_path / "retained-uploads"
+    store = SqlAlchemyAnalyticsUploadStore(
+        database_url=f"sqlite:///{tmp_path / 'analytics-write-failure.db'}",
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    AnalyticsUploadRecord.__table__.drop(store._engine)
+
+    with pytest.raises(SQLAlchemyError):
+        store.add_upload(
+            file_name="must-not-remain.csv",
+            extension="csv",
+            content=b"item,amount\nA,10",
+            analysis_summary={"status": "parsed"},
+            created_by="analytics-owner-a",
+        )
+
+    assert list(upload_root.rglob("*.csv")) == []
 
 
 def test_documents_governance_status_is_redacted_get_only(
@@ -4446,6 +4680,16 @@ def test_query_endpoint_records_installed_catalog_agent_invocation(tmp_path: Pat
     assert create_response.status_code == 200
     agent_id = str(create_response.json()["item"]["id"])
 
+    missing_scope_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "agent": agent_id,
+        },
+    )
+
     response = client.post(
         "/query",
         headers={
@@ -4462,6 +4706,8 @@ def test_query_endpoint_records_installed_catalog_agent_invocation(tmp_path: Pat
         },
     )
 
+    assert missing_scope_response.status_code == 403
+    assert missing_scope_response.json()["detail"] == "agent project scope requires current project"
     assert response.status_code == 200
     body = response.json()
     assert body["agent_invocation_id"]

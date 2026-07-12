@@ -14,7 +14,16 @@ function safeRedirectPath(value: string | null | undefined): string | null {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return null;
   }
-  return value;
+  try {
+    const baseUrl = "https://audit.invalid";
+    const parsed = new URL(value, baseUrl);
+    if (parsed.origin !== baseUrl) {
+      return null;
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 function resolveRedirectPath(redirectTo: string | undefined): string {

@@ -1809,9 +1809,21 @@ def _agent_project_scope_error(
     attempted_action: str,
 ) -> str | None:
     normalized_project = _normalize_project_name(request_project_name)
-    if not normalized_project or str(agent.get("visibility_scope") or "project") != "project":
+    if str(agent.get("visibility_scope") or "project") != "project":
         return None
     agent_project_name = str(agent.get("project_name") or "").strip()
+    if not normalized_project:
+        record_operation(
+            state,
+            "agent-project-scope-denied",
+            {
+                "agent_id": str(agent.get("id") or ""),
+                "agent_project_name": agent_project_name,
+                "request_project_name": "",
+                "attempted_action": attempted_action,
+            },
+        )
+        return "选择项目级智能体时必须提供当前项目空间。"
     if agent_project_name == normalized_project:
         return None
     record_operation(

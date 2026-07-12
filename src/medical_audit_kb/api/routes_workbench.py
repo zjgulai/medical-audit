@@ -1051,6 +1051,16 @@ def _project_evidence_graph(
         for task_id, task in review_tasks_by_id.items()
         if _template_draft_project_key(task) == project_key
     }
+    for task_id in linked_review_task_ids:
+        task = review_tasks_by_id.get(task_id)
+        if task is None:
+            continue
+        task_project_key = _template_draft_project_key(task)
+        if task_project_key is not None and task_project_key != project_key:
+            raise HTTPException(
+                status_code=503,
+                detail="review task project scope conflicts with linked finding",
+            )
     selected_review_task_ids = linked_review_task_ids | template_review_task_ids
     selected_review_tasks = {
         task_id: review_tasks_by_id[task_id]

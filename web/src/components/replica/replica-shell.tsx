@@ -35,10 +35,11 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
   const activeTagLabel = activeItem?.id === "chat" ? "新对话" : activeItem?.label ?? "新对话";
   const isActiveTagClosed = closedTagPath === pathname;
   const isChatRoute = isActivePath(pathname, "/chat");
+  const isProjectRoute = isActivePath(pathname, "/projects");
 
   return (
     <div
-      className={`replica-app-shell ${collapsed ? "replica-sidebar-collapsed" : ""} ${isChatRoute ? "replica-chat-shell" : ""}`}
+      className={`replica-app-shell ${collapsed ? "replica-sidebar-collapsed" : ""} ${isChatRoute ? "replica-chat-shell" : ""} ${isProjectRoute ? "replica-project-shell" : ""}`}
       data-replica-source={shellData.source}
       data-replica-status={shellData.status}
     >
@@ -124,7 +125,7 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
         type="button"
         className="replica-history-fab"
         aria-expanded={historyOpen}
-        aria-label="打开历史对话"
+        aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
         onClick={() => setHistoryOpen((open) => !open)}
       >
         <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
