@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -17,6 +17,10 @@ PROJECT_MEMBER_STATUSES = ("在项目中", "待确认")
 PROJECT_STATUSES = ("待开始", "进行中", "已完成", "已归档")
 PROJECT_MEMBER_ID_PREFIX = "member-custom-"
 
+
+class ProjectMemberIdentityConflictError(ValueError):
+    pass
+
 DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
     {
         "id": "SELF-CHECK-FUND-20260607",
@@ -25,7 +29,7 @@ DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
         "organization_name": "单院医保内审试运行",
         "member_count": 3,
         "creator": "项目负责人",
-        "creator_user_identifier": "owner-self-check",
+        "creator_user_identifier": "next-director",
         "created_at": "2026-06-07",
         "status": "进行中",
         "operation_label": "进入项目",
@@ -76,7 +80,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
     "SELF-CHECK-FUND-20260607": (
         {
             "id": "member-auditor",
-            "user_identifier": "auditor-self-check",
+            "user_identifier": "next-member",
             "name": "审计员",
             "role": "审计员",
             "department": "内审部",
@@ -84,7 +88,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-owner",
-            "user_identifier": "owner-self-check",
+            "user_identifier": "next-director",
             "name": "项目负责人",
             "role": "项目负责人",
             "department": "内审部",
@@ -92,7 +96,7 @@ DEFAULT_PROJECT_MEMBERS_BY_PROJECT: dict[str, tuple[dict[str, object], ...]] = {
         },
         {
             "id": "member-it",
-            "user_identifier": "it-self-check",
+            "user_identifier": "next-technician",
             "name": "信息科接口人",
             "role": "信息科",
             "department": "信息科",
@@ -234,6 +238,7 @@ class SqlAlchemyProjectMemberStore:
                 .order_by(
                     AuditProjectMember.updated_at.desc(),
                     AuditProjectMember.created_at.desc(),
+                    AuditProjectMember.member_key.desc(),
                 )
             )
             return [_member_to_payload(member) for member in session.scalars(statement).all()]
@@ -241,31 +246,59 @@ class SqlAlchemyProjectMemberStore:
     def add_member(self, project_key: str, values: dict[str, object]) -> dict[str, object]:
         now = utc_now()
         metadata = _member_metadata(values)
-        member = AuditProjectMember(
-            member_key=_new_member_key(),
-            project_key=project_key,
-            name=str(values["name"]),
-            role=str(values["role"]),
-            department=str(values["department"]),
-            status=str(values.get("status", "待确认")),
-            created_by=_optional_str(values.get("created_by")),
-            extra_metadata=metadata,
-            created_at=now,
-            updated_at=now,
-        )
         with self._session_factory.begin() as session:
+            existing_members = [
+                _member_to_payload(member)
+                for member in session.scalars(
+                    select(AuditProjectMember)
+                    .where(AuditProjectMember.project_key == project_key)
+                    .order_by(
+                        AuditProjectMember.updated_at.desc(),
+                        AuditProjectMember.created_at.desc(),
+                        AuditProjectMember.member_key.desc(),
+                    )
+                ).all()
+            ]
+            # Application-level gate only; this batch adds no database uniqueness constraint.
+            _ensure_project_member_identity_available(
+                project_key,
+                str(metadata["user_identifier"]),
+                existing_members,
+            )
+            member = AuditProjectMember(
+                member_key=_new_member_key(),
+                project_key=project_key,
+                name=str(values["name"]),
+                role=str(values["role"]),
+                department=str(values["department"]),
+                status=str(values.get("status", "待确认")),
+                created_by=_optional_str(values.get("created_by")),
+                extra_metadata=metadata,
+                created_at=now,
+                updated_at=now,
+            )
             session.add(member)
             session.flush()
             return _member_to_payload(member)
 
     def member_counts(self) -> dict[str, int]:
         with self._session_factory() as session:
-            rows = session.execute(
-                select(AuditProjectMember.project_key, func.count(AuditProjectMember.id)).group_by(
-                    AuditProjectMember.project_key
+            members_by_project: dict[str, list[dict[str, object]]] = {}
+            for member in session.scalars(
+                select(AuditProjectMember).order_by(
+                    AuditProjectMember.project_key.asc(),
+                    AuditProjectMember.updated_at.desc(),
+                    AuditProjectMember.created_at.desc(),
+                    AuditProjectMember.member_key.desc(),
                 )
-            )
-            return {str(project_key): int(count) for project_key, count in rows.all()}
+            ):
+                members_by_project.setdefault(member.project_key, []).append(
+                    _member_to_payload(member)
+                )
+            return {
+                project_key: len(_effective_custom_project_members(project_key, members))
+                for project_key, members in members_by_project.items()
+            }
 
 
 @dataclass(slots=True)
@@ -278,6 +311,11 @@ class InMemoryProjectMemberStore:
     def add_member(self, project_key: str, values: dict[str, object]) -> dict[str, object]:
         now = _datetime_to_iso(utc_now())
         metadata = _member_metadata(values)
+        _ensure_project_member_identity_available(
+            project_key,
+            str(metadata["user_identifier"]),
+            self.members.get(project_key, []),
+        )
         member: dict[str, object] = {
             "id": _new_member_key(),
             "project_key": project_key,
@@ -296,7 +334,10 @@ class InMemoryProjectMemberStore:
         return copy.deepcopy(member)
 
     def member_counts(self) -> dict[str, int]:
-        return {project_key: len(members) for project_key, members in self.members.items()}
+        return {
+            project_key: len(_effective_custom_project_members(project_key, members))
+            for project_key, members in self.members.items()
+        }
 
 
 def project_exists(project_key: str) -> bool:
@@ -343,7 +384,10 @@ def visible_project_keys(
 
     custom_visible: set[str] = set()
     for project_key in _PROJECT_KEYS:
-        custom_members = store.list_members(project_key)
+        custom_members = _effective_custom_project_members(
+            project_key,
+            store.list_members(project_key),
+        )
         if any(
             member.get("status") == "在项目中"
             and _member_user_identifier(member) == normalized_user_identifier
@@ -361,13 +405,15 @@ def combined_project_members(
     project_key: str,
     custom_members: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    seen_ids = {str(member.get("id")) for member in custom_members}
+    effective_custom_members = _effective_custom_project_members(
+        project_key,
+        custom_members,
+    )
     defaults = [
         _default_member_payload(project_key, member)
         for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT.get(project_key, ())
-        if str(member["id"]) not in seen_ids
     ]
-    return [*custom_members, *defaults]
+    return [*effective_custom_members, *defaults]
 
 
 def validate_project_member_role(role: str) -> str:
@@ -384,6 +430,50 @@ def validate_project_member_status(status: str) -> str:
 
 def _default_member_count(project_key: str) -> int:
     return len(DEFAULT_PROJECT_MEMBERS_BY_PROJECT.get(project_key, ()))
+
+
+def _effective_custom_project_members(
+    project_key: str,
+    custom_members: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    default_members = DEFAULT_PROJECT_MEMBERS_BY_PROJECT.get(project_key, ())
+    seen_identifiers = {
+        user_identifier
+        for member in default_members
+        if (user_identifier := _member_user_identifier(member)) is not None
+    }
+    seen_record_ids = {
+        record_id
+        for member in default_members
+        if (record_id := _optional_str(member.get("id"))) is not None
+    }
+    effective_members: list[dict[str, object]] = []
+    for member in custom_members:
+        user_identifier = _member_user_identifier(member)
+        record_id = _optional_str(member.get("id"))
+        if user_identifier is not None and user_identifier in seen_identifiers:
+            continue
+        if record_id is not None and record_id in seen_record_ids:
+            continue
+        if user_identifier is not None:
+            seen_identifiers.add(user_identifier)
+        if record_id is not None:
+            seen_record_ids.add(record_id)
+        effective_members.append(member)
+    return effective_members
+
+
+def _ensure_project_member_identity_available(
+    project_key: str,
+    user_identifier: str,
+    custom_members: list[dict[str, object]],
+) -> None:
+    default_members = DEFAULT_PROJECT_MEMBERS_BY_PROJECT.get(project_key, ())
+    if any(
+        _member_user_identifier(member) == user_identifier
+        for member in (*default_members, *custom_members)
+    ):
+        raise ProjectMemberIdentityConflictError(user_identifier)
 
 
 def _default_member_payload(

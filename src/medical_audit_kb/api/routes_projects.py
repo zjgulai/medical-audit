@@ -19,6 +19,7 @@ from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_STATUSES,
     PROJECT_STATUSES,
     InMemoryProjectMemberStore,
+    ProjectMemberIdentityConflictError,
     ProjectMemberStore,
     combined_project_members,
     project_exists,
@@ -345,6 +346,11 @@ def create_project_member(
     values["created_by"] = user.user_identifier
     try:
         member = _project_member_store(state).add_member(project_key, values)
+    except ProjectMemberIdentityConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="project member identity already exists",
+        ) from exc
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=409,

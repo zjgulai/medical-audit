@@ -1,5 +1,6 @@
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -32,6 +33,8 @@ from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
 )
 from medical_audit_kb.api.project_member_store import (
+    DEFAULT_PROJECT_MEMBERS_BY_PROJECT,
+    DEFAULT_PROJECT_PAYLOADS,
     PROJECT_MEMBER_ID_PREFIX,
     InMemoryProjectMemberStore,
     SqlAlchemyProjectMemberStore,
@@ -53,6 +56,7 @@ from medical_audit_kb.db.models import (
     AuditDataSnapshot,
     AuditFinding,
     AuditProject,
+    AuditProjectMember,
     AuditRule,
     AuditRun,
     AuditTask,
@@ -1279,13 +1283,17 @@ def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
         "/projects",
         headers={"X-User-Id": "expert-catalog"},
     )
+    self_creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "next-director", "X-Role": "director"},
+    )
     active_member_response = client.get(
         "/projects",
-        headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
     )
     pending_member_response = client.get(
         "/projects",
-        headers={"X-User-Id": "it-self-check", "X-Role": "member"},
+        headers={"X-User-Id": "next-technician", "X-Role": "technician"},
     )
     unrelated_response = client.get(
         "/projects",
@@ -1311,7 +1319,7 @@ def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
     assert {
         item["id"]: item["creator_user_identifier"] for item in projects_body["items"]
     } == {
-        "SELF-CHECK-FUND-20260607": "owner-self-check",
+        "SELF-CHECK-FUND-20260607": "next-director",
         "CATALOG-LIMIT-202606": "expert-catalog",
         "OUTPATIENT-DOSE-202606": "auditor-outpatient-dose",
         "KB-GOVERNANCE-202606": "it-kb-governance",
@@ -1324,6 +1332,9 @@ def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
     assert [item["id"] for item in creator_response.json()["items"]] == [
         "CATALOG-LIMIT-202606"
     ]
+    assert [item["id"] for item in self_creator_response.json()["items"]] == [
+        "SELF-CHECK-FUND-20260607"
+    ]
     assert [item["id"] for item in active_member_response.json()["items"]] == [
         "SELF-CHECK-FUND-20260607"
     ]
@@ -1331,6 +1342,22 @@ def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
     assert unrelated_response.json()["items"] == []
     assert state.operation_logs[-1]["payload"]["actor"] == "unrelated-member"
     assert state.operation_logs[-1]["payload"]["visible_project_count"] == 0
+
+
+def test_default_project_creators_are_active_members() -> None:
+    for project in DEFAULT_PROJECT_PAYLOADS:
+        project_key = str(project["id"])
+        creator_user_identifier = project["creator_user_identifier"]
+        member_identifiers = [
+            member["user_identifier"]
+            for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
+        ]
+        assert len(member_identifiers) == len(set(member_identifiers))
+        assert any(
+            member["user_identifier"] == creator_user_identifier
+            and member["status"] == "在项目中"
+            for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
+        )
 
 
 def test_projects_api_protects_project_detail_members_and_dashboard(
@@ -1351,15 +1378,15 @@ def test_projects_api_protects_project_detail_members_and_dashboard(
     for route in routes:
         creator_response = client.get(
             route,
-            headers={"X-User-Id": "owner-self-check"},
+            headers={"X-User-Id": "next-director", "X-Role": "director"},
         )
         active_member_response = client.get(
             route,
-            headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+            headers={"X-User-Id": "next-member", "X-Role": "member"},
         )
         pending_member_response = client.get(
             route,
-            headers={"X-User-Id": "it-self-check", "X-Role": "member"},
+            headers={"X-User-Id": "next-technician", "X-Role": "technician"},
         )
         unrelated_response = client.get(
             route,
@@ -1377,10 +1404,10 @@ def test_projects_api_protects_project_detail_members_and_dashboard(
 
     members = client.get(
         "/projects/SELF-CHECK-FUND-20260607/members",
-        headers={"X-User-Id": "auditor-self-check", "X-Role": "member"},
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
     ).json()["items"]
-    assert members[0]["user_identifier"] == "auditor-self-check"
-    assert state.operation_logs[-1]["payload"]["actor"] == "auditor-self-check"
+    assert members[0]["user_identifier"] == "next-member"
+    assert state.operation_logs[-1]["payload"]["actor"] == "next-member"
 
     admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
     for route in (
@@ -1592,6 +1619,211 @@ def test_projects_api_keeps_pending_custom_member_invisible_and_matches_in_memor
         "/projects/OUTPATIENT-DOSE-202606",
         headers=pending_headers,
     ).status_code == 404
+
+
+@pytest.mark.parametrize("store_kind", ("memory", "sql"))
+def test_projects_api_rejects_duplicate_project_member_identities(
+    tmp_path: Path,
+    store_kind: str,
+) -> None:
+    state = _api_state(tmp_path)
+    if store_kind == "memory":
+        state.project_member_store = InMemoryProjectMemberStore()
+    else:
+        state.project_member_store = SqlAlchemyProjectMemberStore(
+            f"sqlite:///{tmp_path / 'project-member-conflicts.db'}",
+            create_schema=True,
+        )
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    default_conflict = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "next-member",
+            "name": "重复默认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_default_conflict = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "next-technician",
+            "name": "重复待确认默认成员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    active_create = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-active-first",
+            "name": "先激活成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "IDENTITY-ACTIVE",
+                "user_identifier": "spoofed-active-identity",
+            },
+        },
+    )
+    active_then_pending = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "  duplicate-active-first  ",
+            "name": "后待确认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_create = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-pending-first",
+            "name": "先待确认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_then_active = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-pending-first",
+            "name": "后激活成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+        },
+    )
+
+    assert default_conflict.status_code == 409
+    assert default_conflict.json()["detail"] == "project member identity already exists"
+    assert pending_default_conflict.status_code == 409
+    assert (
+        pending_default_conflict.json()["detail"]
+        == "project member identity already exists"
+    )
+    assert active_create.status_code == 200
+    assert active_create.json()["item"]["user_identifier"] == "duplicate-active-first"
+    assert active_create.json()["item"]["metadata"] == {
+        "ticket": "IDENTITY-ACTIVE",
+        "user_identifier": "duplicate-active-first",
+    }
+    assert active_then_pending.status_code == 409
+    assert active_then_pending.json()["detail"] == "project member identity already exists"
+    assert pending_create.status_code == 200
+    assert pending_then_active.status_code == 409
+    assert pending_then_active.json()["detail"] == "project member identity already exists"
+
+    members = client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+    ).json()["items"]
+    assert sum(
+        item["user_identifier"] == "duplicate-active-first" for item in members
+    ) == 1
+    assert sum(
+        item["user_identifier"] == "duplicate-pending-first" for item in members
+    ) == 1
+
+
+@pytest.mark.parametrize("store_kind", ("memory", "sql"))
+def test_project_member_reads_dedupe_legacy_identities_consistently(
+    tmp_path: Path,
+    store_kind: str,
+) -> None:
+    project_key = "CATALOG-LIMIT-202606"
+    raw_members = [
+        _legacy_project_member(
+            "custom-default-duplicate",
+            "expert-catalog",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-shared-new",
+            "legacy-shared",
+            "待确认",
+        ),
+        _legacy_project_member(
+            "custom-shared-old",
+            "legacy-shared",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-active-new",
+            "legacy-active",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-active-old",
+            "legacy-active",
+            "待确认",
+        ),
+        _legacy_project_member("legacy-identityless-one", None, "在项目中"),
+        _legacy_project_member("legacy-identityless-two", None, "待确认"),
+    ]
+    state = _api_state(tmp_path)
+    if store_kind == "memory":
+        store: InMemoryProjectMemberStore | SqlAlchemyProjectMemberStore = (
+            InMemoryProjectMemberStore(members={project_key: raw_members})
+        )
+    else:
+        database_url = f"sqlite:///{tmp_path / 'legacy-project-members.db'}"
+        store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+        _seed_legacy_project_members(database_url, project_key, raw_members)
+    state.project_member_store = store
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    members_response = client.get(
+        f"/projects/{project_key}/members",
+        headers=admin_headers,
+    )
+    projects_response = client.get("/projects", headers=admin_headers)
+    shared_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "legacy-shared", "X-Role": "member"},
+    )
+    active_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "legacy-active", "X-Role": "member"},
+    )
+    default_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert members_response.status_code == 200
+    member_ids = {item["id"] for item in members_response.json()["items"]}
+    assert len(member_ids) == 8
+    assert "custom-default-duplicate" not in member_ids
+    assert "custom-shared-new" in member_ids
+    assert "custom-shared-old" not in member_ids
+    assert "custom-active-new" in member_ids
+    assert "custom-active-old" not in member_ids
+    assert {"legacy-identityless-one", "legacy-identityless-two"} <= member_ids
+    catalog_project = next(
+        item
+        for item in projects_response.json()["items"]
+        if item["id"] == project_key
+    )
+    assert catalog_project["member_count"] == 8
+    assert store.member_counts()[project_key] == 4
+    assert shared_response.json()["items"] == []
+    assert [item["id"] for item in active_response.json()["items"]] == [project_key]
+    assert [item["id"] for item in default_response.json()["items"]] == [project_key]
 
 
 def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: Path) -> None:
@@ -1824,8 +2056,8 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
     state.audit_finding_store = finding_store  # type: ignore[assignment]
     client = TestClient(create_app(state))
     visible_headers = (
-        {"X-User-Id": "owner-self-check", "X-Role": "member"},
-        {"X-User-Id": "auditor-self-check", "X-Role": "member"},
+        {"X-User-Id": "next-director", "X-Role": "director"},
+        {"X-User-Id": "next-member", "X-Role": "member"},
     )
 
     for headers in visible_headers:
@@ -4709,6 +4941,59 @@ def test_index_evaluation_run_requires_ready_search_backend(tmp_path: Path) -> N
 
     assert response.status_code == 409
     assert "search backend is not ready" in response.json()["detail"]
+
+
+def _legacy_project_member(
+    member_key: str,
+    user_identifier: str | None,
+    status: str,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {"fixture": "legacy-duplicate"}
+    if user_identifier is not None:
+        metadata["user_identifier"] = user_identifier
+    member: dict[str, object] = {
+        "id": member_key,
+        "project_key": "CATALOG-LIMIT-202606",
+        "name": member_key,
+        "role": "审计员",
+        "department": "内审部",
+        "status": status,
+        "created_by": "legacy-import",
+        "source": "custom",
+        "metadata": metadata,
+    }
+    if user_identifier is not None:
+        member["user_identifier"] = user_identifier
+    return member
+
+
+def _seed_legacy_project_members(
+    database_url: str,
+    project_key: str,
+    raw_members: list[dict[str, object]],
+) -> None:
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    newest_timestamp = datetime(2026, 7, 12, 12, 0, tzinfo=UTC)
+    with Session(engine) as session:
+        for index, member in enumerate(raw_members):
+            timestamp = newest_timestamp - timedelta(minutes=index)
+            metadata = member["metadata"]
+            assert isinstance(metadata, dict)
+            session.add(
+                AuditProjectMember(
+                    member_key=str(member["id"]),
+                    project_key=project_key,
+                    name=str(member["name"]),
+                    role=str(member["role"]),
+                    department=str(member["department"]),
+                    status=str(member["status"]),
+                    created_by=str(member["created_by"]),
+                    extra_metadata=dict(metadata),
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+            )
+        session.commit()
 
 
 def _seed_project_findings(database_url: str) -> None:
