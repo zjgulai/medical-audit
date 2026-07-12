@@ -238,11 +238,12 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const pageStartIndex = (safePage - 1) * AGENT_PAGE_SIZE;
   const pageEndIndex = Math.min(filteredAgents.length, pageStartIndex + AGENT_PAGE_SIZE);
   const visibleAgents = filteredAgents.slice(pageStartIndex, pageEndIndex);
-  const selectedAgent =
-    sourceAgents.find((agent) => agent.id === selectedAgentId) ??
-    visibleAgents[0] ??
-    filteredAgents[0] ??
-    sourceAgents[0];
+  const selectedAgent = isMine
+    ? visibleAgents.find((agent) => agent.id === selectedAgentId) ?? visibleAgents[0]
+    : sourceAgents.find((agent) => agent.id === selectedAgentId) ??
+      visibleAgents[0] ??
+      filteredAgents[0] ??
+      sourceAgents[0];
   const actionPanel = (isMine ? mineActionPanels : marketActionPanels)[activeAction];
   const isSelectedAgentFavorite = selectedAgent ? favoriteAgentIds.has(selectedAgent.id) : false;
 

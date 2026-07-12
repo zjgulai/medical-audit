@@ -138,7 +138,7 @@ const chatFallback: ReplicaAdapterResult<ReplicaChatData> = {
   source: "fixture",
   outcome: "ready",
   data: {
-    agents: referenceAgents.slice(0, 4),
+    agents: referenceAgents,
     historyItems: referenceHistoryItems,
     documentResults: referenceDocumentResults
   },

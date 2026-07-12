@@ -114,8 +114,8 @@ describe("ReplicaAgentDirectory", () => {
     render(<ReplicaAgentDirectory mode="market" />);
 
     const firstPageNames = screen.getAllByRole("button", { name: /^详情：/ }).map((button) => button.getAttribute("aria-label"));
-    const originalWidth = window.innerWidth;
-    const originalHeight = window.innerHeight;
+    const originalWidthDescriptor = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const originalHeightDescriptor = Object.getOwnPropertyDescriptor(window, "innerHeight");
     try {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 360 });
       Object.defineProperty(window, "innerHeight", { configurable: true, value: 520 });
@@ -126,8 +126,16 @@ describe("ReplicaAgentDirectory", () => {
       );
       expect(screen.getByText("每页 12 个")).toBeInTheDocument();
     } finally {
-      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
-      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+      if (originalWidthDescriptor) {
+        Object.defineProperty(window, "innerWidth", originalWidthDescriptor);
+      } else {
+        Reflect.deleteProperty(window, "innerWidth");
+      }
+      if (originalHeightDescriptor) {
+        Object.defineProperty(window, "innerHeight", originalHeightDescriptor);
+      } else {
+        Reflect.deleteProperty(window, "innerHeight");
+      }
     }
   });
 
@@ -170,6 +178,27 @@ describe("ReplicaAgentDirectory", () => {
         name: "立即使用：医保核验"
       })
     ).toHaveAttribute("href", "/chat?agent=template-medical-fund");
+  });
+
+  it("moves the personal agent detail to the first visible agent on the next page", () => {
+    render(<ReplicaAgentDirectory mode="mine" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "查看详情：数据核验" }));
+    expect(
+      within(screen.getByRole("complementary", { name: "我的智能体详情" })).getByRole("link", {
+        name: "立即使用：数据核验"
+      })
+    ).toHaveAttribute("href", "/chat?agent=template-data");
+
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    const detail = screen.getByRole("complementary", { name: "我的智能体详情" });
+    expect(within(detail).getByRole("heading", { name: "档案核验" })).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "立即使用：档案核验" })).toHaveAttribute(
+      "href",
+      "/chat?agent=template-archive"
+    );
+    expect(within(detail).queryByRole("link", { name: "立即使用：数据核验" })).not.toBeInTheDocument();
   });
 
   it("opens prompt details and installs a market template through the audit agent API", async () => {

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentsResponse, AuditAgentApiItem, QueryHistoryResponse } from "@/lib/api-types";
 
@@ -95,6 +95,10 @@ const emptyQueryHistory: QueryHistoryResponse = {
 };
 
 describe("ChatPortalPage", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
@@ -349,6 +353,30 @@ describe("ChatPortalPage", () => {
         expect.objectContaining({
           question: "请执行档案复核",
           agent: "fifth-id"
+        })
+      );
+    });
+  });
+
+  it("selects the fifth fixture agent from the chat URL when replica API reads are disabled", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("agent=board-extract"));
+
+    render(<ChatPortalPage />);
+
+    expect(await screen.findByRole("button", { name: /会议要素提取/ })).toBeInTheDocument();
+    expect(apiMocks.fetchAgents).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "请提取会议要素" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: "请提取会议要素",
+          agent: "board-extract"
         })
       );
     });
