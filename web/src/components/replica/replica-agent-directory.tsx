@@ -323,8 +323,8 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
         topic: agent.topic,
         prompt: buildMarketAgentPrompt(agent),
         knowledge_base: isExtensionValidation ? "未绑定知识库" : "医保基金合规知识库",
-        project_name: isExtensionValidation ? "扩展验证包（未绑定项目）" : DEFAULT_AUDIT_PROJECT_NAME,
-        visibility_scope: isExtensionValidation ? "system" : "project",
+        project_name: DEFAULT_AUDIT_PROJECT_NAME,
+        visibility_scope: "project",
         allowed_roles: ["admin", "technician", "director", "member"],
         metadata: {
           source: "agent-market",

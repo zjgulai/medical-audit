@@ -284,8 +284,8 @@ describe("ReplicaAgentDirectory", () => {
           expect.objectContaining({
             name,
             knowledge_base: "未绑定知识库",
-            project_name: "扩展验证包（未绑定项目）",
-            visibility_scope: "system",
+            project_name: "医保基金使用合规专项自查",
+            visibility_scope: "project",
             metadata: expect.objectContaining({
               template_id: id,
               template_scope: "extension-validation"
