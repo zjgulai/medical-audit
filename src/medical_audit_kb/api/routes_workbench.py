@@ -1040,11 +1040,7 @@ def _project_evidence_graph(
         for finding in findings
         if str(finding.get("project_key") or "").strip() == project_key
     ]
-    review_tasks_by_id = {
-        task_id: task
-        for task in all_review_tasks
-        if (task_id := str(task.get("task_id") or "").strip())
-    }
+    review_tasks_by_id = _index_project_review_tasks(all_review_tasks)
     linked_review_task_ids = {
         task_id
         for finding in project_findings
@@ -1275,6 +1271,23 @@ def _template_draft_project_key(task: dict[str, object]) -> str | None:
     template_draft = _graph_dict(dossier.get("report_template_draft"))
     project_key = str(template_draft.get("project_key") or "").strip()
     return project_key or None
+
+
+def _index_project_review_tasks(
+    tasks: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    tasks_by_id: dict[str, dict[str, object]] = {}
+    for task in tasks:
+        task_id = str(task.get("task_id") or "").strip()
+        if not task_id:
+            continue
+        if task_id in tasks_by_id:
+            raise HTTPException(
+                status_code=503,
+                detail="review task store contains duplicate task ids",
+            )
+        tasks_by_id[task_id] = task
+    return tasks_by_id
 
 
 def _project_finding_node_status(review_status: str) -> str:

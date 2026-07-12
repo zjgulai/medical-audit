@@ -2576,6 +2576,155 @@ def test_project_graph_normalizes_business_statuses_and_requires_canonical_signe
     assert "SENSITIVE-CANONICAL-SIGNED-CONTENT" not in serialized
 
 
+@pytest.mark.parametrize(
+    "duplicate_project_key",
+    ("CATALOG-LIMIT-202606", "SELF-CHECK-FUND-20260607"),
+    ids=("cross-project", "same-project"),
+)
+def test_project_graph_rejects_duplicate_review_task_ids_without_data_leakage(
+    tmp_path: Path,
+    duplicate_project_key: str,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_store = _RecordingGraphFindingStore(
+        {
+            project_key: [
+                {
+                    "project_key": project_key,
+                    "finding_key": "finding-duplicate-review-id",
+                    "severity": "high",
+                    "review_status": "pending-review",
+                    "review_task_id": "review-duplicate-id",
+                    "audit_task_key": "task-duplicate-id",
+                    "rule_version_key": "DUPLICATE-ID-RULE@v1",
+                    "evidence_items": [],
+                }
+            ]
+        }
+    )
+    review_store = _RecordingGraphReviewTaskStore(
+        [
+            {
+                "task_id": "review-duplicate-id",
+                "status": "pending-review",
+                "status_label": "待复核",
+                "citation_count": 0,
+                "dossier": {"report_draft": {"title": "A report draft"}},
+            },
+            {
+                "task_id": "review-duplicate-id",
+                "status": "confirmed-violation",
+                "status_label": "确认违规",
+                "citation_count": 1,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": "B-REPORT-MARKER",
+                        "project_key": duplicate_project_key,
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": "B-REPORT-MARKER",
+                        "content_sha256": "B-HASH-MARKER",
+                        "content": "B-CONTENT-MARKER",
+                    },
+                    "rectification": {
+                        "rectification_id": "B-RECTIFICATION-MARKER",
+                        "status": "accepted",
+                    },
+                },
+            },
+        ]
+    )
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "review task store contains duplicate task ids"
+    serialized = json.dumps(
+        {"response": response.json(), "operation_logs": state.operation_logs},
+        ensure_ascii=False,
+    )
+    assert "B-REPORT-MARKER" not in serialized
+    assert "B-RECTIFICATION-MARKER" not in serialized
+    assert "B-CONTENT-MARKER" not in serialized
+    assert not any(
+        log["action"] == "graph-workbench-view" for log in state.operation_logs
+    )
+    assert finding_store.requested_project_keys == [project_key]
+    assert review_store.list_calls == 1
+
+
+def test_project_graph_ignores_blank_review_task_ids_and_fails_fast_on_malformed_rows(
+    tmp_path: Path,
+) -> None:
+    class RawReviewTaskStore:
+        def __init__(self, rows: list[object]) -> None:
+            self.rows = rows
+            self.list_calls = 0
+
+        def list_tasks(self) -> list[dict[str, object]]:
+            self.list_calls += 1
+            return self.rows  # type: ignore[return-value]
+
+    project_key = "SELF-CHECK-FUND-20260607"
+    state = _api_state(tmp_path / "blank")
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore()  # type: ignore[assignment]
+    blank_store = RawReviewTaskStore(
+        [
+            {
+                "task_id": "   ",
+                "dossier": {
+                    "report_template_draft": {
+                        "project_key": project_key,
+                        "template_id": "BLANK-ID-MARKER",
+                        "status": "draft",
+                    }
+                },
+            }
+        ]
+    )
+    state.review_task_store = blank_store  # type: ignore[assignment]
+    response = TestClient(create_app(state)).get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["evidence_chain_status"] == "empty"
+    assert "BLANK-ID-MARKER" not in response.text
+    assert blank_store.list_calls == 1
+
+    malformed_state = _api_state(tmp_path / "malformed")
+    malformed_state.project_member_store = InMemoryProjectMemberStore()
+    malformed_state.audit_finding_store = (  # type: ignore[assignment]
+        _RecordingGraphFindingStore()
+    )
+    malformed_store = RawReviewTaskStore(["malformed-row"])
+    malformed_state.review_task_store = malformed_store  # type: ignore[assignment]
+    malformed_client = TestClient(create_app(malformed_state))
+
+    with pytest.raises(AttributeError):
+        malformed_client.get(
+            f"/graph/workbench?view=project&project_key={project_key}",
+            headers={"X-User-Id": "next-member", "X-Role": "member"},
+        )
+    assert malformed_store.list_calls == 1
+    assert not any(
+        log["action"] == "graph-workbench-view"
+        for log in malformed_state.operation_logs
+    )
+
+
 def test_project_graph_empty_chain_is_distinct_from_unavailable_store(
     tmp_path: Path,
 ) -> None:
