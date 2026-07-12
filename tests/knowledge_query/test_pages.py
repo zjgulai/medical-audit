@@ -7,6 +7,7 @@ from threading import Barrier
 from time import sleep
 from typing import cast
 from uuid import UUID
+from xml.etree import ElementTree
 from zipfile import ZipFile
 
 import pytest
@@ -1808,7 +1809,20 @@ def test_template_renderer_contains_untrusted_multiline_values_as_structure_safe
     state.project_member_store = InMemoryProjectMemberStore()
     client = TestClient(create_app(state), raise_server_exceptions=False)
     headers = {"X-User-Id": "next-member", "X-Role": "member"}
-    untrusted = "line one\n# Injected Heading\n```\nmalicious fence\n```"
+    untrusted_lines = (
+        "line one",
+        "# Injected Heading",
+        "## Injected Heading 2",
+        "### Injected Heading 3",
+        "> Injected Quote",
+        "- Injected List",
+        "```",
+        "malicious fence",
+        "```",
+        "| injected | table |",
+        "| --- | --- |",
+    )
+    untrusted = "\n".join(untrusted_lines)
     create_response = client.post(
         "/reports/drafts",
         headers=headers,
@@ -1832,14 +1846,26 @@ def test_template_renderer_contains_untrusted_multiline_values_as_structure_safe
     )
 
     assert markdown.status_code == 200
+    for line in untrusted_lines:
+        assert f"DATA | {line}" in markdown.text
     assert "\n# Injected Heading\n" not in markdown.text
+    assert "\n## Injected Heading 2\n" not in markdown.text
+    assert "\n### Injected Heading 3\n" not in markdown.text
+    assert "\n> Injected Quote\n" not in markdown.text
+    assert "\n- Injected List\n" not in markdown.text
     assert "\n```\n" not in markdown.text
-    assert "    # Injected Heading" in markdown.text
-    assert "    ```" in markdown.text
     assert docx.status_code == 200
-    document_xml = _docx_document_xml(docx.content)
-    assert "Injected Heading" in document_xml
-    assert "malicious fence" in document_xml
+    paragraphs = _docx_paragraph_text_and_style(docx.content)
+    unsafe_styles = {"Heading1", "Heading2", "Heading3", "Quote", "ListParagraph"}
+    for raw_line in untrusted_lines[1:7]:
+        expected_text = f"DATA | {raw_line}"
+        matches = [(text, style) for text, style in paragraphs if text == expected_text]
+        assert matches
+        assert all(style not in unsafe_styles for _, style in matches)
+    for literal_line in untrusted_lines[7:]:
+        assert any(text == f"DATA | {literal_line}" for text, _ in paragraphs)
+    assert ("AuditScope 模板底稿草稿", "Heading1") in paragraphs
+    assert ("受控模板字段", "Heading2") in paragraphs
 
 
 def test_report_template_draft_concurrent_requests_use_distinct_ids_and_persist_both(
@@ -3330,6 +3356,26 @@ def _docx_document_xml(content: bytes) -> str:
         assert "[Content_Types].xml" in names
         assert "word/document.xml" in names
         return archive.read("word/document.xml").decode("utf-8")
+
+
+def _docx_paragraph_text_and_style(content: bytes) -> list[tuple[str, str | None]]:
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    root = ElementTree.fromstring(_docx_document_xml(content))
+    paragraphs: list[tuple[str, str | None]] = []
+    for paragraph in root.findall(f".//{{{namespace}}}p"):
+        text = "".join(
+            node.text or "" for node in paragraph.findall(f".//{{{namespace}}}t")
+        )
+        style_node = paragraph.find(
+            f"./{{{namespace}}}pPr/{{{namespace}}}pStyle"
+        )
+        style = (
+            style_node.attrib.get(f"{{{namespace}}}val")
+            if style_node is not None
+            else None
+        )
+        paragraphs.append((text, style))
+    return paragraphs
 
 
 def _seed_charge_rule_001_findings(database_url: str) -> None:

@@ -3037,7 +3037,7 @@ def _render_report_template_draft_dossier_markdown(dossier: dict[str, object]) -
         for key, value in field_values.items():
             lines.append(f"- {key}：")
             value_lines = str(value).splitlines() or [""]
-            lines.extend(f"    {line}" for line in value_lines)
+            lines.extend(f"DATA | {line}" for line in value_lines)
     else:
         lines.append("- 未填写模板字段。")
     lines.extend(
