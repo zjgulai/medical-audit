@@ -283,6 +283,9 @@ describe("ReplicaAgentDirectory", () => {
         expect(createAuditAgent).toHaveBeenLastCalledWith(
           expect.objectContaining({
             name,
+            knowledge_base: "未绑定知识库",
+            project_name: "扩展验证包（未绑定项目）",
+            visibility_scope: "system",
             metadata: expect.objectContaining({
               template_id: id,
               template_scope: "extension-validation"
@@ -325,5 +328,41 @@ describe("ReplicaAgentDirectory", () => {
       "href",
       `/chat?agent=installed-${secondAgent.id}`
     );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭智能体详情" }));
+    fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
+      target: { value: firstAgent.name }
+    });
+    fireEvent.click(screen.getByRole("button", { name: `详情：${firstAgent.name}` }));
+    expect(
+      within(screen.getByRole("dialog", { name: firstAgent.name })).getByRole("link", { name: "进入 AI 对话" })
+    ).toHaveAttribute("href", `/chat?agent=installed-${firstAgent.id}`);
+  });
+
+  it("blocks a second template install while another install is pending", () => {
+    const [firstAgent, secondAgent] = auditExtensionValidationCatalog;
+    vi.mocked(createAuditAgent).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof createAuditAgent>>>(() => undefined)
+    );
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
+      target: { value: firstAgent.name }
+    });
+    fireEvent.click(screen.getByRole("button", { name: `详情：${firstAgent.name}` }));
+    let dialog = screen.getByRole("dialog", { name: firstAgent.name });
+    fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${firstAgent.name}` }));
+    expect(createAuditAgent).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "关闭智能体详情" }));
+    fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
+      target: { value: secondAgent.name }
+    });
+    fireEvent.click(screen.getByRole("button", { name: `详情：${secondAgent.name}` }));
+    dialog = screen.getByRole("dialog", { name: secondAgent.name });
+
+    expect(within(dialog).getByRole("button", { name: `加入我的智能体：${secondAgent.name}` })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${secondAgent.name}` }));
+    expect(createAuditAgent).toHaveBeenCalledTimes(1);
   });
 });

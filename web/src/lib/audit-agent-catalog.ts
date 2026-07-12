@@ -106,14 +106,14 @@ export const auditExtensionValidationCatalog: readonly ReferenceAgentCard[] = ((
     }
   }
 
-  return EXTENSION_VALIDATION_KEYS.flatMap(([category, title], keyIndex) => {
+  return EXTENSION_VALIDATION_KEYS.map(([category, title], keyIndex) => {
     const selected = selectedRows.get(makeStableKey(category, title));
     if (!selected) {
-      return [];
+      throw new Error(`Missing approved extension agent catalog row: ${category} / ${title}`);
     }
     const normalizedTitle = normalizeText(selected.row.title);
     const templateKey = `audit-agent-prompts-0613-${String(selected.index + 1).padStart(3, "0")}`;
-    return [{
+    return {
       id: templateKey,
       name: normalizedTitle,
       category: normalizeText(selected.row.category),
@@ -127,7 +127,7 @@ export const auditExtensionValidationCatalog: readonly ReferenceAgentCard[] = ((
       avatarSeed: `${selected.row.category}-${selected.row.title}`,
       templateKey,
       catalogScope: "extension-validation" as const
-    }];
+    };
   });
 })();
 

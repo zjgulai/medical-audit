@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { useReplicaAgentsData } from "./use-replica-runtime";
@@ -210,6 +210,7 @@ function DigitalHumanAvatar({
 }
 
 export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
+  const installInFlightRef = useRef(false);
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<AgentFilter>("全部");
   const [notice, setNotice] = useState("");
@@ -217,10 +218,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [detailOpen, setDetailOpen] = useState(() => mode === "mine");
   const [activeAction, setActiveAction] = useState<AgentAction>("查看详情");
   const [installingAgentId, setInstallingAgentId] = useState("");
-  const [installedAgent, setInstalledAgent] = useState<{
-    readonly templateId: string;
-    readonly agentId: string;
-  } | null>(null);
+  const [installedAgentIds, setInstalledAgentIds] = useState<ReadonlyMap<string, string>>(
+    () => new Map()
+  );
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const agentData = useReplicaAgentsData(mode);
@@ -247,9 +247,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       visibleAgents[0] ??
       filteredAgents[0] ??
       sourceAgents[0];
-  const installedAgentId = selectedAgent && installedAgent?.templateId === selectedAgent.id
-    ? installedAgent.agentId
-    : "";
+  const installedAgentId = selectedAgent ? installedAgentIds.get(selectedAgent.id) ?? "" : "";
   const actionPanel = (isMine ? mineActionPanels : marketActionPanels)[activeAction];
   const isSelectedAgentFavorite = selectedAgent ? favoriteAgentIds.has(selectedAgent.id) : false;
 
@@ -303,12 +301,20 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   }
 
   async function installMarketAgent(agent: ReferenceAgentCard) {
+    if (installInFlightRef.current) return;
+    installInFlightRef.current = true;
     setSelectedAgentId(agent.id);
     setDetailOpen(true);
     setActiveAction("创建副本");
     setInstallingAgentId(agent.id);
-    setInstalledAgent(null);
+    setInstalledAgentIds((previous) => {
+      const next = new Map(previous);
+      next.delete(agent.id);
+      return next;
+    });
     setNotice("");
+
+    const isExtensionValidation = agent.catalogScope === "extension-validation";
 
     try {
       const response = await createAuditAgent({
@@ -316,9 +322,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
         category: toApiAgentCategory(agent.category),
         topic: agent.topic,
         prompt: buildMarketAgentPrompt(agent),
-        knowledge_base: "医保基金合规知识库",
-        project_name: DEFAULT_AUDIT_PROJECT_NAME,
-        visibility_scope: "project",
+        knowledge_base: isExtensionValidation ? "未绑定知识库" : "医保基金合规知识库",
+        project_name: isExtensionValidation ? "扩展验证包（未绑定项目）" : DEFAULT_AUDIT_PROJECT_NAME,
+        visibility_scope: isExtensionValidation ? "system" : "project",
         allowed_roles: ["admin", "technician", "director", "member"],
         metadata: {
           source: "agent-market",
@@ -334,11 +340,12 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_source_file: agent.sourceFile
         }
       });
-      setInstalledAgent({ templateId: agent.id, agentId: response.item.id });
+      setInstalledAgentIds((previous) => new Map(previous).set(agent.id, response.item.id));
       setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
     } catch {
       setNotice("安装未完成：智能体创建接口暂不可用，请稍后重试。");
     } finally {
+      installInFlightRef.current = false;
       setInstallingAgentId("");
     }
   }
@@ -364,7 +371,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            disabled={!isMine && selectedAgent ? installingAgentId === selectedAgent.id : false}
+            disabled={!isMine && installingAgentId.length > 0}
             onClick={() => {
               if (isMine || !selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
@@ -376,7 +383,11 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
               void installMarketAgent(selectedAgent);
             }}
           >
-            {isMine ? "+ 创建智能体" : installingAgentId === selectedAgent?.id ? "加入中" : "加入我的智能体"}
+            {isMine
+              ? "+ 创建智能体"
+              : installingAgentId.length > 0
+                ? installingAgentId === selectedAgent?.id ? "加入中" : "其他模板加入中"
+                : "加入我的智能体"}
           </button>
         }
       />
@@ -620,11 +631,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             <div className="replica-agent-detail-actions is-dialog-actions">
               <button
                 type="button"
-                disabled={installingAgentId === selectedAgent.id}
+                disabled={installingAgentId.length > 0}
                 aria-label={`加入我的智能体：${selectedAgent.name}`}
                 onClick={() => void installMarketAgent(selectedAgent)}
               >
-                {installingAgentId === selectedAgent.id ? "安装中" : "加入我的智能体"}
+                {installingAgentId.length > 0
+                  ? installingAgentId === selectedAgent.id ? "安装中" : "其他模板安装中"
+                  : "加入我的智能体"}
               </button>
               {installedAgentId ? (
                 <Link className="replica-card-detail-button" href={`/chat?agent=${encodeURIComponent(installedAgentId)}`}>
