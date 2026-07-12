@@ -13,6 +13,7 @@ import type {
   ReportWorkbenchResponse,
   TableAnalysisUploadHistoryResponse
 } from "./api-types";
+import { getAuditAgentMarketCatalog } from "./audit-agent-catalog";
 import {
   referenceAgents,
   referenceDocumentCategories,
@@ -21,7 +22,6 @@ import {
   referenceGraphRelations,
   referenceHistoryItems,
   referenceKnowledgeBases,
-  referenceMarketAgents,
   referenceNavigation,
   referenceProjects,
   referenceReportRecords,
@@ -815,6 +815,7 @@ export async function loadReplicaAgentMarketData(
   _client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
   void _client;
+  const marketAgents = getAuditAgentMarketCatalog();
 
   const issues: ReplicaAdapterIssue[] = [
     issue(
@@ -828,8 +829,8 @@ export async function loadReplicaAgentMarketData(
     source: "catalog",
     outcome: "ready",
     data: {
-      agents: referenceMarketAgents,
-      categories: uniqueAgentCategories(referenceMarketAgents)
+      agents: marketAgents,
+      categories: uniqueAgentCategories(marketAgents)
     },
     issues
   };

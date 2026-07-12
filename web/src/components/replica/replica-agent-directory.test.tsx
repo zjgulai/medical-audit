@@ -1,65 +1,79 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAuditAgent } from "@/lib/api-client";
 import type { AgentCreateRequest } from "@/lib/api-types";
+import { auditExtensionValidationCatalog } from "@/lib/audit-agent-catalog";
 import type { ReferenceAgentCard } from "@/lib/reference-replica-data";
 
 import { ReplicaAgentDirectory } from "./replica-agent-directory";
 
 vi.mock("@/lib/api-client", () => ({
-  createAuditAgent: vi.fn(async (payload: AgentCreateRequest) => ({
-    item: {
-      id: "agent-installed-001",
-      name: payload.name,
-      category: payload.category,
-      topic: payload.topic,
-      prompt: payload.prompt,
-      knowledge_base: payload.knowledge_base,
-      project_name: payload.project_name,
-      status: "active",
-      prompt_version: 1,
-      prompt_version_key: "agent-installed-001@v1",
-      visibility_scope: "project",
-      allowed_roles: payload.allowed_roles,
-      prompt_versions: [],
-      created_by: "next-admin",
-      updated_at: "2026-07-06T00:00:00Z",
-      source: "custom",
-      metadata: payload.metadata
-    },
-    store: { ready: true, backend: "SqlAlchemyAgentStore" }
-  }))
-}));
-
-vi.mock("./use-replica-runtime", () => ({
-  useReplicaAgentsData: () => ({
-    apiReadsEnabled: false,
-    source: "fixture",
-    status: "ready",
-    issues: [],
-    data: {
-      categories: ["财务收支审计", "采购招标审计", "工程审计"],
-      agents: [
-        makeAgent("template-medical-fund", "医保核验", "财务收支审计", "医保基金使用合规"),
-        makeAgent("template-travel", "出国核验", "财务收支审计", "财务收支审计"),
-        makeAgent("template meeting/2026", "会议核验", "财务收支审计", "会议费审计"),
-        makeAgent("template-procurement", "招标核验", "采购招标审计", "采购招标审计"),
-        makeAgent("template-bid", "定标核验", "采购招标审计", "定标复核"),
-        makeAgent("template-engineering", "工程核验", "工程审计", "工程审计"),
-        makeAgent("template-asset", "资产核验", "固定资产审计", "资产审计"),
-        makeAgent("template-research", "科研核验", "审计科研", "审计科研"),
-        makeAgent("template-contract", "合同核验", "采购招标审计", "合同审计"),
-        makeAgent("template-invoice", "发票核验", "财务收支审计", "票据审计"),
-        makeAgent("template-budget", "预算核验", "财务收支审计", "预算执行审计"),
-        makeAgent("template-data", "数据核验", "工具智能体", "数据质量审计"),
-        makeAgent("template-archive", "档案核验", "工具智能体", "档案完整性审计")
-      ]
-    }
+  createAuditAgent: vi.fn(async (payload: AgentCreateRequest) => {
+    const templateId = String(payload.metadata?.template_id ?? "unknown-template");
+    const installedId = `installed-${templateId}`;
+    return {
+      item: {
+        id: installedId,
+        name: payload.name,
+        category: payload.category,
+        topic: payload.topic,
+        prompt: payload.prompt,
+        knowledge_base: payload.knowledge_base,
+        project_name: payload.project_name,
+        status: "active",
+        prompt_version: 1,
+        prompt_version_key: `${installedId}@v1`,
+        visibility_scope: "project",
+        allowed_roles: payload.allowed_roles,
+        prompt_versions: [],
+        created_by: "next-admin",
+        updated_at: "2026-07-06T00:00:00Z",
+        source: "custom",
+        metadata: payload.metadata
+      },
+      store: { ready: true, backend: "SqlAlchemyAgentStore" }
+    };
   })
 }));
 
-function makeAgent(id: string, name: string, category: string, topic: string): ReferenceAgentCard {
+vi.mock("./use-replica-runtime", async () => {
+  const { auditExtensionValidationCatalog: extensionCatalog } = await import("@/lib/audit-agent-catalog");
+  return {
+    useReplicaAgentsData: () => ({
+      apiReadsEnabled: false,
+      source: "fixture",
+      status: "ready",
+      issues: [],
+      data: {
+        categories: ["财务收支审计", "采购招标审计", "工程审计"],
+        agents: [
+          makeAgent("template-medical-fund", "医保核验", "财务收支审计", "医保基金使用合规"),
+          makeAgent("template-travel", "出国核验", "财务收支审计", "财务收支审计"),
+          makeAgent("template meeting/2026", "会议核验", "财务收支审计", "会议费审计"),
+          makeAgent("template-procurement", "招标核验", "采购招标审计", "采购招标审计"),
+          makeAgent("template-bid", "定标核验", "采购招标审计", "定标复核"),
+          makeAgent("template-engineering", "工程核验", "工程审计", "工程审计"),
+          makeAgent("template-asset", "资产核验", "固定资产审计", "资产审计"),
+          makeAgent("template-research", "科研核验", "审计科研", "审计科研"),
+          makeAgent("template-contract", "合同核验", "采购招标审计", "合同审计"),
+          makeAgent("template-invoice", "发票核验", "财务收支审计", "票据审计"),
+          makeAgent("template-budget", "预算核验", "财务收支审计", "预算执行审计"),
+          makeAgent("template-data", "数据核验", "工具智能体", "数据质量审计"),
+          makeAgent("template-archive", "档案核验", "工具智能体", "档案完整性审计"),
+          ...extensionCatalog
+        ]
+      }
+    })
+  };
+});
+
+function makeAgent(
+  id: string,
+  name: string,
+  category: string,
+  topic: string
+): ReferenceAgentCard {
   return {
     id,
     name,
@@ -77,6 +91,10 @@ function makeAgent(id: string, name: string, category: string, topic: string): R
 }
 
 describe("ReplicaAgentDirectory", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("shows exactly twelve agents on page one and the thirteenth on page two", () => {
     render(<ReplicaAgentDirectory mode="market" />);
 
@@ -102,7 +120,7 @@ describe("ReplicaAgentDirectory", () => {
     expect(screen.queryByRole("button", { name: "详情：档案核验" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getAllByRole("button", { name: /^详情：/ })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^详情：/ })).toHaveLength(4);
     expect(screen.getByRole("button", { name: "详情：档案核验" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /采购招标审计/ }));
@@ -238,11 +256,44 @@ describe("ReplicaAgentDirectory", () => {
     });
     expect(await screen.findByText(/已安装「医保核验」/)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "进入 AI 对话" }).map((item) => item.getAttribute("href"))).toContain(
-      "/chat?agent=agent-installed-001"
+      "/chat?agent=installed-template-medical-fund"
     );
     expect(within(screen.getByRole("dialog", { name: "医保核验" })).getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
       "href",
-      "/chat?agent=agent-installed-001"
+      "/chat?agent=installed-template-medical-fund"
     );
   });
+
+  it.each(auditExtensionValidationCatalog.map(({ id, name }) => ({ id, name })))(
+    "labels, opens, installs and links extension template $name",
+    async ({ id, name }) => {
+      render(<ReplicaAgentDirectory mode="market" />);
+
+      fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), { target: { value: name } });
+      const card = screen.getByRole("article");
+      expect(within(card).getByLabelText(`扩展验证包：${name}`)).toHaveTextContent("扩展验证包");
+
+      fireEvent.click(within(card).getByRole("button", { name: `详情：${name}` }));
+      const dialog = screen.getByRole("dialog", { name });
+      expect(within(dialog).getByText("扩展验证包")).toBeInTheDocument();
+
+      fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${name}` }));
+
+      await waitFor(() => {
+        expect(createAuditAgent).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            name,
+            metadata: expect.objectContaining({
+              template_id: id,
+              template_scope: "extension-validation"
+            })
+          })
+        );
+      });
+      expect(within(dialog).getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+        "href",
+        `/chat?agent=installed-${id}`
+      );
+    }
+  );
 });

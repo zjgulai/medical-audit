@@ -180,11 +180,34 @@ describe("use-replica-runtime", () => {
   });
 
   it("keeps the medical agent marketplace on the version-controlled catalog", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
     render(<AgentsRuntimeProbe mode="market" />);
 
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
     expect(fetchAgents).not.toHaveBeenCalled();
+  });
+
+  it("switches the opt-in extension pack on and off without leaking module-cached catalog state", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
+    const { rerender } = render(<AgentsRuntimeProbe mode="market" />);
+
+    expect(screen.getByText("引用依据核验助手")).toBeInTheDocument();
+    expect(screen.queryByText("超标准举办会议")).not.toBeInTheDocument();
+
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "1");
+    rerender(<AgentsRuntimeProbe mode="market" />);
+
+    expect(screen.getByText("超标准举办会议")).toBeInTheDocument();
+    expect(screen.getByText("违法订立与招投标文件不符的合同或协议")).toBeInTheDocument();
+    expect(screen.getByText("未经批准，擅自改变工程建设项目招标方式")).toBeInTheDocument();
+    expect(fetchAgents).not.toHaveBeenCalled();
+
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
+    rerender(<AgentsRuntimeProbe mode="market" />);
+
+    expect(screen.queryByText("超标准举办会议")).not.toBeInTheDocument();
+    expect(screen.getByText("引用依据核验助手")).toBeInTheDocument();
   });
 
   it("switches from disabled fixtures to enabled loading data on the first mounted rerender", () => {

@@ -1,4 +1,4 @@
-import { auditAgentCatalog } from "./audit-agent-catalog";
+import { medicalAuditAgentCatalog } from "./audit-agent-catalog";
 
 export type ReferenceNavigationItem = {
   readonly id: string;
@@ -37,6 +37,7 @@ export type ReferenceAgentCard = {
   readonly sourceFile?: string;
   readonly avatarSeed?: string;
   readonly templateKey?: string;
+  readonly catalogScope?: "medical-default" | "extension-validation";
 };
 
 export type ReferenceKnowledgeBase = {
@@ -309,7 +310,7 @@ export const referenceAgents: readonly ReferenceAgentCard[] = [
   }
 ];
 
-export const referenceMarketAgents: readonly ReferenceAgentCard[] = auditAgentCatalog;
+export const referenceMarketAgents: readonly ReferenceAgentCard[] = medicalAuditAgentCatalog;
 
 export const referenceKnowledgeBases: readonly ReferenceKnowledgeBase[] = [
   {

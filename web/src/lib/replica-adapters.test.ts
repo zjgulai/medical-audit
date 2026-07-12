@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   AgentsResponse,
@@ -366,7 +366,12 @@ const graphWorkbench: GraphWorkbenchResponse = {
 };
 
 describe("loadReplicaAgentMarketData", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("keeps the market catalog independent from personal agent API reads", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
     const fetchAgents = vi.fn(async (): Promise<AgentsResponse> => ({
       items: [
         {
@@ -398,17 +403,30 @@ describe("loadReplicaAgentMarketData", () => {
     expect(fetchAgents).not.toHaveBeenCalled();
     expect(result.source).toBe("catalog");
     expect(result.outcome).toBe("ready");
-    expect(result.data.agents).toHaveLength(referenceMarketAgents.length);
-    expect(result.data.categories).toEqual([
-      "财务收支审计",
-      "采购招标审计",
-      "工程审计",
-      "工具智能体",
-      "固定资产审计",
-      "审计科研"
+    expect(result.data.agents).toEqual(referenceMarketAgents);
+    expect(result.data.agents.map((agent) => agent.id)).toEqual([
+      "agent-citation-check",
+      "agent-duplicate-charge",
+      "agent-report-draft"
     ]);
-    expect(result.data.categories).not.toContain("业务类");
+    expect(result.data.categories).toEqual(["业务类", "效率类"]);
     expect(result.data.agents.some((agent) => agent.id === "seed-legacy-business")).toBe(false);
+  });
+
+  it("appends exactly three extension validation agents only under the opt-in flag", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "1");
+
+    const result = await loadReplicaAgentMarketData();
+
+    expect(result.source).toBe("catalog");
+    expect(result.outcome).toBe("ready");
+    expect(result.data.agents).toHaveLength(6);
+    expect(result.data.agents.slice(3).map((agent) => [agent.category, agent.name])).toEqual([
+      ["财务收支审计", "超标准举办会议"],
+      ["采购招标审计", "违法订立与招投标文件不符的合同或协议"],
+      ["工程审计", "未经批准，擅自改变工程建设项目招标方式"]
+    ]);
+    expect(result.data.agents.slice(3).every((agent) => agent.catalogScope === "extension-validation")).toBe(true);
   });
 });
 

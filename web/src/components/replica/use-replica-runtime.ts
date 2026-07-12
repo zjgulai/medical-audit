@@ -15,6 +15,11 @@ import {
   fetchReportWorkbench
 } from "@/lib/api-client";
 import {
+  auditExtensionValidationCatalog,
+  isAuditExtensionValidationPackEnabled,
+  medicalAuditAgentCatalog
+} from "@/lib/audit-agent-catalog";
+import {
   loadReplicaAgentMarketData,
   loadReplicaAgentsData,
   loadReplicaAnalyticsData,
@@ -48,7 +53,6 @@ import {
   referenceGraphRelations,
   referenceHistoryItems,
   referenceKnowledgeBases,
-  referenceMarketAgents,
   referenceNavigation,
   referenceProjects,
   referenceReportRecords,
@@ -154,23 +158,31 @@ const mineAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
   issues: []
 };
 
-const marketAgentCategories = Array.from(new Set(referenceMarketAgents.map((agent) => agent.category)));
+function makeMarketAgentsCatalogResult(
+  agents: readonly ReplicaAgentsData["agents"][number][]
+): ReplicaAdapterResult<ReplicaAgentsData> {
+  return {
+    source: "catalog",
+    outcome: "ready",
+    data: {
+      agents,
+      categories: Array.from(new Set(agents.map((agent) => agent.category)))
+    },
+    issues: [
+      {
+        surface: "agent-market",
+        code: "mutation-gated",
+        message: "Marketplace copy and install actions remain local."
+      }
+    ]
+  };
+}
 
-const marketAgentsFallback: ReplicaAdapterResult<ReplicaAgentsData> = {
-  source: "catalog",
-  outcome: "ready",
-  data: {
-    agents: referenceMarketAgents,
-    categories: marketAgentCategories
-  },
-  issues: [
-    {
-      surface: "agent-market",
-      code: "mutation-gated",
-      message: "Marketplace copy and install actions remain local."
-    }
-  ]
-};
+const medicalMarketAgentsFallback = makeMarketAgentsCatalogResult(medicalAuditAgentCatalog);
+const extensionMarketAgentsFallback = makeMarketAgentsCatalogResult([
+  ...medicalAuditAgentCatalog,
+  ...auditExtensionValidationCatalog
+]);
 
 const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
   source: "fixture",
@@ -457,6 +469,9 @@ export function useReplicaChatData(): ReplicaRuntimeResult<ReplicaChatData> {
 }
 
 export function useReplicaAgentsData(mode: "mine" | "market"): ReplicaRuntimeResult<ReplicaAgentsData> {
+  const marketAgentsFallback = isAuditExtensionValidationPackEnabled()
+    ? extensionMarketAgentsFallback
+    : medicalMarketAgentsFallback;
   const fallback = mode === "mine" ? mineAgentsFallback : marketAgentsFallback;
   const emptyResult = mode === "mine" ? mineAgentsEmpty : marketAgentsFallback;
   const loader = mode === "mine" ? loadReplicaAgentsData : loadReplicaAgentMarketData;

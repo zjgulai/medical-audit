@@ -319,6 +319,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_original_category: agent.category,
           template_summary: agent.summary,
           template_project: agent.project,
+          template_scope: agent.catalogScope,
           avatar_initial: agent.initial,
           avatar_tone: agent.tone,
           avatar_kind: "digital-human",
@@ -426,6 +427,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                     <div className="replica-directory-title">
                       <h2>{agent.name}</h2>
                       <span>{agent.category}</span>
+                      {!isMine && agent.catalogScope === "extension-validation" ? (
+                        <span aria-label={`扩展验证包：${agent.name}`}>扩展验证包</span>
+                      ) : null}
                     </div>
                     <p>{agent.summary}</p>
                     <dl className="replica-directory-meta">
@@ -595,6 +599,12 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                 <dt>来源</dt>
                 <dd>{selectedAgent.sourceFile || "提示词分类0613"}</dd>
               </div>
+              {selectedAgent.catalogScope === "extension-validation" ? (
+                <div>
+                  <dt>范围</dt>
+                  <dd>扩展验证包</dd>
+                </div>
+              ) : null}
             </dl>
             <section className="replica-agent-prompt-panel" aria-label={`${selectedAgent.name}提示词`}>
               <h3>提示词</h3>

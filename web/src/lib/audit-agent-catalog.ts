@@ -12,7 +12,12 @@ type RawAuditAgentPrompt = {
   readonly source?: string;
 };
 
-const agentTones: readonly ReferenceAgentCard["tone"][] = ["blue", "cyan", "rose", "amber", "slate"];
+const EXTENSION_VALIDATION_KEYS = [
+  ["财务收支审计", "超标准举办会议"],
+  ["采购招标审计", "违法订立与招投标文件不符的合同或协议"],
+  ["工程审计", "未经批准，擅自改变工程建设项目招标方式"]
+] as const;
+const extensionAgentTones: readonly ReferenceAgentCard["tone"][] = ["amber", "rose", "slate"];
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "")
@@ -32,53 +37,6 @@ function compactText(value: string, maxLength: number): string {
   return `${chars.slice(0, Math.max(0, maxLength - 1)).join("")}…`;
 }
 
-function makeAgentName(title: string, category: string): string {
-  const candidates = [
-    title,
-    title.replace(/^违反/, "").replace(/^违规/, ""),
-    title.replace(/相关规定/g, "").replace(/有关规定/g, ""),
-    title
-      .replace(/^违反/, "")
-      .replace(/^违规/, "")
-      .replace(/相关规定/g, "")
-      .replace(/有关规定/g, "")
-      .replace(/符合性审计/g, "符合")
-      .replace(/审计程序/g, "")
-      .replace(/审计/g, "")
-  ];
-  let fallback = "";
-
-  for (const candidate of candidates) {
-    const base = normalizeText(candidate)
-      .replace(/[“”"《》【】（）()]/g, "")
-      .replace(/^\d+[、.)．]\s*/g, "")
-      .replace(/管理管理/g, "管理")
-      .trim();
-    const clipped = base.replace(/[，,、。；;：:].*$/g, "").trim();
-    const normalized = Array.from(clipped).length >= 5
-      ? clipped
-      : base.replace(/[，,、。；;：:]/g, "").trim();
-    const chars = Array.from(normalized);
-    if (chars.length >= 5 && chars.length <= 10) {
-      return normalized;
-    }
-    if (chars.length > 10 && !fallback) {
-      fallback = chars.slice(0, 10).join("");
-    }
-  }
-
-  const categoryFallback = `${category.replace(/审计/g, "")}核验`;
-  return fallback || (Array.from(categoryFallback).length >= 5 ? categoryFallback : `${categoryFallback}助手`);
-}
-
-function makeInitial(name: string): string {
-  const chars = Array.from(name.trim());
-  if (chars.length === 0) {
-    return "审";
-  }
-  return chars.slice(0, 1).join("");
-}
-
 function makeSummary(row: RawAuditAgentPrompt): string {
   const intro = normalizeText(row.intro);
   if (intro) {
@@ -87,67 +45,103 @@ function makeSummary(row: RawAuditAgentPrompt): string {
   return compactText(row.prompt ?? `${row.category}审计助手`, 84);
 }
 
-function makeStableKey(row: RawAuditAgentPrompt): string {
-  return `${normalizeText(row.category)}::${normalizeText(row.title)}`;
+function makeStableKey(category: string, title: string): string {
+  return `${normalizeText(category)}::${normalizeText(title)}`;
 }
 
-function makeUniqueAgentName(
-  name: string,
-  row: RawAuditAgentPrompt,
-  usedNames: Map<string, number>
-): string {
-  const count = usedNames.get(name) ?? 0;
-  if (count === 0) {
-    usedNames.set(name, 1);
-    return name;
+export const medicalAuditAgentCatalog: readonly ReferenceAgentCard[] = [
+  {
+    id: "agent-citation-check",
+    name: "引用依据核验助手",
+    category: "业务类",
+    summary: "只基于命中的法规、目录、规则和风险清单回答；没有引用时输出待补证据。",
+    project: "医保基金使用合规专项自查",
+    topic: "医保基金使用合规",
+    initial: "引",
+    tone: "blue",
+    prompt: "只基于命中的法规、目录、规则和风险清单回答；没有引用时输出待补证据。",
+    sourceFile: "src/medical_audit_kb/api/agent_store.py",
+    avatarSeed: "agent-citation-check",
+    templateKey: "agent-citation-check@v1",
+    catalogScope: "medical-default"
+  },
+  {
+    id: "agent-duplicate-charge",
+    name: "重复收费复核助手",
+    category: "业务类",
+    summary: "围绕同就诊、同项目、同日期的重复收费线索，列出应核验的执行记录、数量和例外情形。",
+    project: "医保基金使用合规专项自查",
+    topic: "收费明细复核",
+    initial: "重",
+    tone: "cyan",
+    prompt: "围绕同就诊、同项目、同日期的重复收费线索，列出应核验的执行记录、数量和例外情形。",
+    sourceFile: "src/medical_audit_kb/api/agent_store.py",
+    avatarSeed: "agent-duplicate-charge",
+    templateKey: "agent-duplicate-charge@v1",
+    catalogScope: "medical-default"
+  },
+  {
+    id: "agent-report-draft",
+    name: "底稿摘要助手",
+    category: "效率类",
+    summary: "把已复核的引用、疑点和附件清单整理为底稿摘要，保留待人工确认标记。",
+    project: "医保基金使用合规专项自查",
+    topic: "审计底稿",
+    initial: "底",
+    tone: "slate",
+    prompt: "把已复核的引用、疑点和附件清单整理为底稿摘要，保留待人工确认标记。",
+    sourceFile: "src/medical_audit_kb/api/agent_store.py",
+    avatarSeed: "agent-report-draft",
+    templateKey: "agent-report-draft@v1",
+    catalogScope: "medical-default"
+  }
+];
+
+export const auditExtensionValidationCatalog: readonly ReferenceAgentCard[] = (() => {
+  const selectedRows = new Map<string, { readonly index: number; readonly row: RawAuditAgentPrompt }>();
+  for (const [index, row] of (rawAgentPrompts as readonly RawAuditAgentPrompt[]).entries()) {
+    const key = makeStableKey(row.category, row.title);
+    if (!selectedRows.has(key)) {
+      selectedRows.set(key, { index, row });
+    }
   }
 
-  const suffixSeed = Array.from(normalizeText(row.title).replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "")).slice(-2).join("");
-  let suffix = suffixSeed || String(count + 1);
-  let candidate = "";
-  let nextCount = count + 1;
-
-  do {
-    const baseLength = Math.max(5, 10 - Array.from(suffix).length);
-    candidate = `${Array.from(name).slice(0, baseLength).join("")}${suffix}`;
-    if (!usedNames.has(candidate)) {
-      usedNames.set(name, nextCount);
-      usedNames.set(candidate, 1);
-      return candidate;
-    }
-    nextCount += 1;
-    suffix = String(nextCount);
-  } while (nextCount < 100);
-
-  usedNames.set(name, nextCount);
-  return `${Array.from(name).slice(0, 8).join("")}${nextCount}`;
-}
-
-export const auditAgentCatalog: readonly ReferenceAgentCard[] = (() => {
-  const seen = new Set<string>();
-  const usedNames = new Map<string, number>();
-  return (rawAgentPrompts as readonly RawAuditAgentPrompt[]).flatMap((row, index) => {
-    const key = makeStableKey(row);
-    if (seen.has(key)) {
+  return EXTENSION_VALIDATION_KEYS.flatMap(([category, title], keyIndex) => {
+    const selected = selectedRows.get(makeStableKey(category, title));
+    if (!selected) {
       return [];
     }
-    seen.add(key);
-
-    const name = makeUniqueAgentName(makeAgentName(row.title, row.category), row, usedNames);
-    const templateKey = `audit-agent-prompts-0613-${String(index + 1).padStart(3, "0")}`;
+    const normalizedTitle = normalizeText(selected.row.title);
+    const templateKey = `audit-agent-prompts-0613-${String(selected.index + 1).padStart(3, "0")}`;
     return [{
       id: templateKey,
-      name,
-      category: normalizeText(row.category) || "其他分类",
-      summary: makeSummary(row),
+      name: normalizedTitle,
+      category: normalizeText(selected.row.category),
+      summary: makeSummary(selected.row),
       project: "智能体广场",
-      topic: normalizeText(row.category),
-      initial: makeInitial(name),
-      tone: agentTones[index % agentTones.length],
-      prompt: normalizeText(row.prompt),
-      sourceFile: normalizeText(row.source),
-      avatarSeed: `${row.category}-${row.title}`,
-      templateKey
+      topic: normalizeText(selected.row.scene) || normalizeText(selected.row.category),
+      initial: Array.from(normalizedTitle)[0] ?? "审",
+      tone: extensionAgentTones[keyIndex],
+      prompt: normalizeText(selected.row.prompt),
+      sourceFile: normalizeText(selected.row.source),
+      avatarSeed: `${selected.row.category}-${selected.row.title}`,
+      templateKey,
+      catalogScope: "extension-validation" as const
     }];
   });
 })();
+
+const agentMarketCatalogWithExtension: readonly ReferenceAgentCard[] = [
+  ...medicalAuditAgentCatalog,
+  ...auditExtensionValidationCatalog
+];
+
+export function isAuditExtensionValidationPackEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK === "1";
+}
+
+export function getAuditAgentMarketCatalog(): readonly ReferenceAgentCard[] {
+  return isAuditExtensionValidationPackEnabled()
+    ? agentMarketCatalogWithExtension
+    : medicalAuditAgentCatalog;
+}
