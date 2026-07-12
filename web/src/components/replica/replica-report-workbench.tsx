@@ -134,6 +134,9 @@ function DraftPanel({
     (count, field) => count + ((fieldValues[field] ?? "").trim() ? 1 : 0),
     0
   );
+  const boundaryAnomaly = result !== null && (
+    result.formal_report_created !== false || result.provider_call !== false
+  );
   return (
     <section className="replica-report-draft-panel" aria-labelledby="report-draft-title">
       <div className="replica-report-section-heading">
@@ -176,14 +179,25 @@ function DraftPanel({
             <strong>{result.task_id}</strong>
           </div>
           <ul>
-            <li>未生成正式报告</li>
-            <li>未调用外部 provider</li>
+            <li>
+              <span>formal_report_created={String(result.formal_report_created)}</span>
+              {result.formal_report_created === false ? <span>未生成正式报告</span> : null}
+            </li>
+            <li>
+              <span>provider_call={String(result.provider_call)}</span>
+              {result.provider_call === false ? <span>未调用外部 provider</span> : null}
+            </li>
             <li>
               审计记录：{result.audit.durability}
               {result.audit.status === "degraded" ? "（降级）" : ""}
               {result.audit.status === "local-only" ? "（本地）" : ""}
             </li>
           </ul>
+          {boundaryAnomaly ? (
+            <p className="replica-report-error" role="alert">
+              草稿响应违反无副作用边界，请勿将其视为安全草稿。
+            </p>
+          ) : null}
           <Link href={result.project_href}>转入项目管理</Link>
         </div>
       ) : null}
@@ -265,7 +279,7 @@ function ReportLedger({
                   <td>{entry.owner}</td>
                   <td>
                     <nav aria-label={`${entry.title}操作`}>
-                      <Link href={entry.download_links.page}>查看任务</Link>
+                      <span>详情请从项目管理进入</span>
                       <AuthenticatedDownloadLink
                         href={entry.download_links.task_docx}
                         label="下载任务 DOCX"
@@ -325,7 +339,7 @@ function EvidenceLedger({ sources }: { readonly sources: readonly ReportWorkbenc
                 <span>{source.kind} · {source.reference}</span>
               </div>
               <span>{source.status}</span>
-              <Link href={source.href}>查看证据</Link>
+              <span>证据详情由项目任务承载</span>
             </li>
           ))}
         </ul>

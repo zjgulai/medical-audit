@@ -282,8 +282,31 @@ describe("ReplicaReportWorkbench", () => {
     expect(handoff).toHaveAttribute("href", "/projects?project=ALPHA");
     expect(screen.getByText("未生成正式报告")).toBeInTheDocument();
     expect(screen.getByText("未调用外部 provider")).toBeInTheDocument();
+    expect(screen.getByText("formal_report_created=false")).toBeInTheDocument();
+    expect(screen.getByText("provider_call=false")).toBeInTheDocument();
     expect(screen.getByText("审计记录：intent-only（降级）")).toBeInTheDocument();
     expect(screen.queryByText("正式报告已生成")).not.toBeInTheDocument();
+  });
+
+  it("surfaces runtime boundary anomalies instead of repeating false claims", async () => {
+    const anomalousResponse = {
+      ...draftResponse(),
+      formal_report_created: true,
+      provider_call: true
+    } as unknown as ReportDraftCreateResponse;
+    createReportDraftMock.mockResolvedValue(anomalousResponse);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "待主任复核" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+
+    expect(await screen.findByText("formal_report_created=true")).toBeInTheDocument();
+    expect(screen.getByText("provider_call=true")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("草稿响应违反无副作用边界");
+    expect(screen.queryByText("未生成正式报告")).not.toBeInTheDocument();
+    expect(screen.queryByText("未调用外部 provider")).not.toBeInTheDocument();
   });
 
   it("renders report metrics, evidence, gate status and only non-null controlled downloads", async () => {
@@ -324,16 +347,17 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.getByText("workpaper-001")).toBeInTheDocument();
 
     const blockedRow = screen.getByRole("row", { name: /医保费用补证底稿/ });
-    expect(within(blockedRow).getByRole("link", { name: "查看任务" })).toHaveAttribute(
-      "href",
-      "/pages/review-tasks"
-    );
+    expect(within(blockedRow).queryByRole("link", { name: "查看任务" })).not.toBeInTheDocument();
+    expect(within(blockedRow).getByText("详情请从项目管理进入")).toBeInTheDocument();
     expect(within(blockedRow).getByRole("link", { name: "下载任务 DOCX" })).toHaveAttribute(
       "href",
       "/review-tasks/blocked-report/export?format=docx"
     );
     expect(within(blockedRow).queryByRole("link", { name: "下载报告 DOCX" })).not.toBeInTheDocument();
     expect(within(blockedRow).queryByRole("link", { name: "下载报告 Markdown" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "查看证据" })).not.toBeInTheDocument();
+    expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
+    expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /签发/ })).not.toBeInTheDocument();
   });
 
