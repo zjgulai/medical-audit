@@ -56,6 +56,30 @@ import type {
 } from "./api-types";
 import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
 
+export class BackendRequestError extends Error {
+  readonly method: "POST";
+  readonly path: string;
+  readonly status: number;
+  readonly detail: string | null;
+
+  constructor(options: {
+    readonly path: string;
+    readonly status: number;
+    readonly detail: string | null;
+  }) {
+    super(`Backend request failed: POST ${options.path} returned ${options.status}`);
+    this.name = "BackendRequestError";
+    this.method = "POST";
+    this.path = options.path;
+    this.status = options.status;
+    this.detail = options.detail;
+  }
+}
+
+export function isBackendRequestError(error: unknown): error is BackendRequestError {
+  return error instanceof BackendRequestError;
+}
+
 function assertBackendProxyClientRuntime(): void {
   if (typeof window === "undefined") {
     throw new Error(
@@ -119,7 +143,21 @@ async function postJson<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
+    let detail: string | null = null;
+    try {
+      const errorPayload = await response.json() as unknown;
+      if (
+        typeof errorPayload === "object" &&
+        errorPayload !== null &&
+        "detail" in errorPayload &&
+        typeof errorPayload.detail === "string"
+      ) {
+        detail = errorPayload.detail.trim() || null;
+      }
+    } catch {
+      // Preserve the stable generic error contract when the body is absent or invalid JSON.
+    }
+    throw new BackendRequestError({ path, status: response.status, detail });
   }
 
   return (await response.json()) as T;
@@ -307,7 +345,11 @@ function contentDispositionFilename(disposition: string): string | null {
       // Fall through to the plain filename or a deterministic format fallback.
     }
   }
-  const plainMatch = /filename\s*=\s*"?([^";]+)"?/i.exec(disposition);
+  const quotedMatch = /filename\s*=\s*"((?:\\.|[^"])*)"/i.exec(disposition);
+  if (quotedMatch?.[1]) {
+    return safeArtifactFilename(quotedMatch[1].replace(/\\(.)/g, "$1"));
+  }
+  const plainMatch = /filename\s*=\s*([^;]+)/i.exec(disposition);
   return plainMatch?.[1] ? safeArtifactFilename(plainMatch[1]) : null;
 }
 
@@ -319,7 +361,10 @@ function artifactFallbackFilename(path: URL, contentType: string): string {
   return "audit-artifact.bin";
 }
 
-export async function downloadAuditArtifact(path: string): Promise<AuditArtifactDownload> {
+export async function downloadAuditArtifact(
+  path: string,
+  options: { readonly signal?: AbortSignal } = {}
+): Promise<AuditArtifactDownload> {
   assertBackendProxyClientRuntime();
   const parsed = new URL(path, window.location.origin);
   if (
@@ -335,7 +380,8 @@ export async function downloadAuditArtifact(path: string): Promise<AuditArtifact
       Accept: "application/octet-stream",
       ...auditClientHeaders()
     },
-    cache: "no-store"
+    cache: "no-store",
+    ...(options.signal ? { signal: options.signal } : {})
   });
   if (!response.ok) {
     throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);

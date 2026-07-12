@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 import {
@@ -25,7 +25,10 @@ vi.mock("@/lib/api-client", () => ({
   createReportDraft: vi.fn(),
   downloadAuditArtifact: vi.fn(),
   fetchProjects: vi.fn(),
-  fetchReportWorkbench: vi.fn()
+  fetchReportWorkbench: vi.fn(),
+  isBackendRequestError: (error: unknown) => (
+    error instanceof Error && error.name === "BackendRequestError" && "status" in error
+  )
 }));
 
 const createReportDraftMock = vi.mocked(createReportDraft);
@@ -140,6 +143,7 @@ function reportResponse(options: {
   readonly entries?: readonly ReportWorkbenchEntry[];
   readonly ready?: boolean;
   readonly evidence?: ReportWorkbenchResponse["report_evidence_sources"];
+  readonly backend?: string;
 } = {}): ReportWorkbenchResponse {
   const entries = options.entries ?? [];
   return {
@@ -159,7 +163,7 @@ function reportResponse(options: {
     },
     store: {
       ready: options.ready ?? true,
-      backend: options.ready === false ? "unavailable" : "JsonFileReviewTaskStore"
+      backend: options.backend ?? (options.ready === false ? "unavailable" : "JsonFileReviewTaskStore")
     }
   };
 }
@@ -198,6 +202,19 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function backendRequestError(status: number, detail: string | null = null): Error {
+  return Object.assign(
+    new Error(`Backend request failed: POST /api/v1/reports/drafts returned ${status}`),
+    {
+      name: "BackendRequestError",
+      method: "POST",
+      path: "/api/v1/reports/drafts",
+      status,
+      detail
+    }
+  );
+}
+
 function renderWorkbench() {
   return render(
     <AuditUserProvider>
@@ -229,7 +246,27 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("ReplicaReportWorkbench", () => {
+  it("requires an explicit ready project before a template can be opened", async () => {
+    renderWorkbench();
+
+    expect(await screen.findByRole("heading", { name: "六类模板目录", level: 2 })).toBeInTheDocument();
+    expect(screen.getByText("请先选择项目后填写模板")).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button", { name: /^填写模板：/ });
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) expect(button).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
+      target: { value: "ALPHA" }
+    });
+    for (const button of buttons) expect(button).toBeEnabled();
+  });
+
   it("renders dynamic evidence fields and submits only non-empty allowed values exactly once", async () => {
     const draft = deferred<ReportDraftCreateResponse>();
     createReportDraftMock.mockReturnValue(draft.promise);
@@ -240,10 +277,13 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.getByRole("textbox", { name: "费用分类汇总" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "支付分项合计" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "人工复核意见" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "费用分类汇总" })).toHaveAttribute("maxLength", "4000");
+    expect(screen.getAllByText("0 / 4000")).toHaveLength(3);
 
     fireEvent.change(screen.getByRole("textbox", { name: "费用分类汇总" }), {
       target: { value: "门诊费用 120 万元" }
     });
+    expect(screen.getByText("11 / 4000")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
       target: { value: "   " }
     });
@@ -305,6 +345,12 @@ describe("ReplicaReportWorkbench", () => {
     expect(await screen.findByText("formal_report_created=true")).toBeInTheDocument();
     expect(screen.getByText("provider_call=true")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("草稿响应违反无副作用边界");
+    expect(screen.queryByText("草稿已进入待复核队列")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "转入项目管理" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "前往项目核查异常" })).toHaveAttribute(
+      "href",
+      "/projects?project=ALPHA"
+    );
     expect(screen.queryByText("未生成正式报告")).not.toBeInTheDocument();
     expect(screen.queryByText("未调用外部 provider")).not.toBeInTheDocument();
   });
@@ -349,12 +395,10 @@ describe("ReplicaReportWorkbench", () => {
     const blockedRow = screen.getByRole("row", { name: /医保费用补证底稿/ });
     expect(within(blockedRow).queryByRole("link", { name: "查看任务" })).not.toBeInTheDocument();
     expect(within(blockedRow).getByText("详情请从项目管理进入")).toBeInTheDocument();
-    expect(within(blockedRow).getByRole("link", { name: "下载任务 DOCX" })).toHaveAttribute(
-      "href",
-      "/review-tasks/blocked-report/export?format=docx"
-    );
-    expect(within(blockedRow).queryByRole("link", { name: "下载报告 DOCX" })).not.toBeInTheDocument();
-    expect(within(blockedRow).queryByRole("link", { name: "下载报告 Markdown" })).not.toBeInTheDocument();
+    expect(within(blockedRow).getByRole("button", { name: "下载任务 DOCX" })).toBeEnabled();
+    expect(within(blockedRow).queryByRole("button", { name: "下载报告 DOCX" })).not.toBeInTheDocument();
+    expect(within(blockedRow).queryByRole("button", { name: "下载报告 Markdown" })).not.toBeInTheDocument();
+    expect(within(blockedRow).queryByRole("link", { name: /下载/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "查看证据" })).not.toBeInTheDocument();
     expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
     expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
@@ -366,6 +410,8 @@ describe("ReplicaReportWorkbench", () => {
     renderWorkbench();
 
     expect(await screen.findByText("当前角色无权新建底稿草稿")).toBeInTheDocument();
+    expect(screen.getByText("当前身份只读")).toBeInTheDocument();
+    expect(screen.queryByText("草稿可创建")).not.toBeInTheDocument();
     const activeButtons = screen.getAllByRole("button", { name: /^填写模板：/ });
     expect(activeButtons).toHaveLength(3);
     for (const button of activeButtons) expect(button).toBeDisabled();
@@ -376,7 +422,7 @@ describe("ReplicaReportWorkbench", () => {
     const firstProjects = deferred<ProjectsResponse>();
     fetchReportWorkbenchMock
       .mockReturnValueOnce(firstReport.promise)
-      .mockResolvedValueOnce(reportResponse());
+      .mockResolvedValueOnce(reportResponse({ backend: "FreshReviewTaskStore" }));
     fetchProjectsMock
       .mockReturnValueOnce(firstProjects.promise)
       .mockResolvedValueOnce(projectsResponse([betaProject]));
@@ -388,64 +434,193 @@ describe("ReplicaReportWorkbench", () => {
     });
     act(() => writeAuditClientRole("member"));
     expect(await screen.findByRole("option", { name: "Beta 收费专项" })).toBeInTheDocument();
+    expect(screen.getByText("FreshReviewTaskStore")).toBeInTheDocument();
 
     await act(async () => {
-      firstReport.resolve(reportResponse());
+      firstReport.resolve(reportResponse({ backend: "StaleReviewTaskStore" }));
       firstProjects.resolve(projectsResponse([alphaProject]));
     });
     expect(screen.queryByRole("option", { name: "Alpha 医保专项" })).not.toBeInTheDocument();
+    expect(screen.queryByText("StaleReviewTaskStore")).not.toBeInTheDocument();
   });
 
-  it.each(["project", "template", "role"] as const)(
-    "invalidates a pending draft when the %s context changes",
-    async (context) => {
-      const pendingDraft = deferred<ReportDraftCreateResponse>();
-      createReportDraftMock.mockReturnValue(pendingDraft.promise);
-      renderWorkbench();
-      await selectTemplateAndProject();
-      fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
-        target: { value: "待复核" }
-      });
-      fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
-      if (context === "project") {
-        fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
-          target: { value: "BETA" }
-        });
-      } else if (context === "template") {
-        fireEvent.click(screen.getByRole("button", { name: "填写模板：分类费用复核清单" }));
-      } else {
-        act(() => writeAuditClientRole("technician"));
-      }
+  it("locks project, template and form controls until the POST settles", async () => {
+    const pendingDraft = deferred<ReportDraftCreateResponse>();
+    createReportDraftMock.mockReturnValue(pendingDraft.promise);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    const opinion = screen.getByRole("textbox", { name: "人工复核意见" });
+    fireEvent.change(opinion, { target: { value: "待复核" } });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
 
-      await act(async () => pendingDraft.resolve(draftResponse()));
-      expect(screen.queryByRole("link", { name: "转入项目管理" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
+      expect(button).toBeDisabled();
     }
-  );
+    for (const textbox of screen.getAllByRole("textbox")) expect(textbox).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在创建草稿…" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
+      target: { value: "BETA" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "填写模板：分类费用复核清单" }));
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("ALPHA");
+    expect(screen.getByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).toBeInTheDocument();
+    expect(opinion).toHaveValue("待复核");
 
-  it("separates empty, degraded and error states without fixture fallback", async () => {
+    await act(async () => pendingDraft.resolve(draftResponse()));
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
+  });
+
+  it("keeps the POST lock across a role change and releases it only after settle", async () => {
+    const firstDraft = deferred<ReportDraftCreateResponse>();
+    createReportDraftMock.mockReturnValue(firstDraft.promise);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "旧上下文请求" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+
+    act(() => writeAuditClientRole("member"));
+    expect(await screen.findByText("上一身份的草稿请求仍在处理中")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeDisabled();
+    expect(createReportDraftMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => firstDraft.resolve(draftResponse()));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled());
+    expect(screen.queryByRole("link", { name: "转入项目管理" })).not.toBeInTheDocument();
+
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "新上下文请求" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+    expect(createReportDraftMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves unsaved fields when a project change is cancelled and clears only after confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    const opinion = screen.getByRole("textbox", { name: "人工复核意见" });
+    fireEvent.change(opinion, { target: { value: "尚未保存的项目意见" } });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
+      target: { value: "BETA" }
+    });
+    expect(confirm).toHaveBeenCalledWith("切换项目将清空当前未保存字段，是否继续？");
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("ALPHA");
+    expect(opinion).toHaveValue("尚未保存的项目意见");
+
+    confirm.mockReturnValue(true);
+    fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
+      target: { value: "BETA" }
+    });
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("BETA");
+    expect(opinion).toHaveValue("");
+  });
+
+  it("preserves unsaved fields when a template change is cancelled and clears only after confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    const opinion = screen.getByRole("textbox", { name: "人工复核意见" });
+    fireEvent.change(opinion, { target: { value: "尚未保存的模板意见" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "填写模板：分类费用复核清单" }));
+    expect(confirm).toHaveBeenCalledWith("切换模板将清空当前未保存字段，是否继续？");
+    expect(screen.getByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).toBeInTheDocument();
+    expect(opinion).toHaveValue("尚未保存的模板意见");
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "填写模板：分类费用复核清单" }));
+    expect(screen.getByRole("heading", { name: "创建草稿：分类费用复核清单" })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("尚未保存的模板意见")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [backendRequestError(422, "字段不受支持"), "模板字段校验失败：字段不受支持"],
+    [backendRequestError(403, "create_report_draft is not allowed"), "当前身份无权创建底稿草稿。"],
+    [backendRequestError(404, "project not found"), "所属项目不可见或已不存在。"],
+    [new Error("network offline"), "草稿创建失败，请稍后重试。"]
+  ] as const)("maps draft failure %# to a specific safe message", async (error, expectedMessage) => {
+    createReportDraftMock.mockRejectedValueOnce(error);
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "待复核" }
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(expectedMessage);
+  });
+
+  it("renders ready report data while the independent project lane is loading then fails", async () => {
+    const projects = deferred<ProjectsResponse>();
+    fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse());
+    fetchProjectsMock.mockReturnValueOnce(projects.promise);
+    renderWorkbench();
+
+    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(screen.getByText("报告总数")).toBeInTheDocument();
+    expect(screen.getByText("正在读取可见项目…")).toBeInTheDocument();
+
+    await act(async () => projects.reject(new Error("project api down")));
+    expect(await screen.findByRole("alert")).toHaveTextContent("项目列表读取失败");
+    expect(screen.getByText("报告总数")).toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
+  it("keeps report data visible when project storage is degraded", async () => {
+    fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse());
+    fetchProjectsMock.mockResolvedValueOnce(projectsResponse([alphaProject], false));
+    renderWorkbench();
+
+    expect(await screen.findByText("项目存储未就绪")).toBeInTheDocument();
+    expect(screen.getByText("报告总数")).toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: /^填写模板：/ })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
+  it("keeps the ready project lane visible when reports fail and retries both lanes", async () => {
+    fetchReportWorkbenchMock.mockRejectedValueOnce(new Error("report api down"));
+    fetchProjectsMock.mockResolvedValueOnce(projectsResponse());
+    renderWorkbench();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("报表工作台读取失败");
+    expect(screen.getByRole("option", { name: "Alpha 医保专项" })).toBeInTheDocument();
+    expect(screen.queryByText("报告总数")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试工作台" }));
+
+    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
+    expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps project selection visible without pretending a degraded report lane is ready", async () => {
+    fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse({ ready: false }));
+    fetchProjectsMock.mockResolvedValueOnce(projectsResponse());
+    renderWorkbench();
+
+    expect(await screen.findByText("报表数据源未就绪")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Alpha 医保专项" })).toBeInTheDocument();
+    expect(screen.queryByText("报告总数")).not.toBeInTheDocument();
+  });
+
+  it("renders truthful empty lanes without fixture fallback", async () => {
     fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse({ entries: [] }));
     fetchProjectsMock.mockResolvedValueOnce(projectsResponse([]));
-    const first = renderWorkbench();
+    renderWorkbench();
+
     expect(await screen.findByText("当前没有可见项目")).toBeInTheDocument();
     expect(screen.getByText("暂无报告台账")).toBeInTheDocument();
     expect(screen.queryByText("2026年医疗费用专项审计报告")).not.toBeInTheDocument();
-    first.unmount();
-
-    fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse({ ready: false }));
-    fetchProjectsMock.mockResolvedValueOnce(projectsResponse([alphaProject], false));
-    const second = renderWorkbench();
-    expect(await screen.findByText("报表数据源未就绪")).toBeInTheDocument();
-    expect(screen.queryByText("2026年医疗费用专项审计报告")).not.toBeInTheDocument();
-    second.unmount();
-
-    fetchReportWorkbenchMock.mockRejectedValueOnce(new Error("offline"));
-    fetchProjectsMock.mockResolvedValueOnce(projectsResponse());
-    renderWorkbench();
-    expect(await screen.findByRole("alert")).toHaveTextContent("报表工作台读取失败");
-    expect(screen.queryByText("2026年医疗费用专项审计报告")).not.toBeInTheDocument();
   });
 
-  it("downloads through the authenticated Blob path, revokes the URL and exposes failures", async () => {
+  it("downloads through a locked button without exposing the backend path as navigation", async () => {
     const blocked = reportEntry("blocked-report", "门禁阻断", {
       page: "/pages/review-tasks",
       task_docx: "/review-tasks/blocked-report/export?format=docx",
@@ -454,6 +629,8 @@ describe("ReplicaReportWorkbench", () => {
       report_json: null
     });
     fetchReportWorkbenchMock.mockResolvedValue(reportResponse({ entries: [blocked] }));
+    const artifact = deferred<{ readonly blob: Blob; readonly filename: string }>();
+    downloadAuditArtifactMock.mockReturnValueOnce(artifact.promise);
     const createObjectURL = vi.fn(() => "blob:report-download");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", {
@@ -464,22 +641,77 @@ describe("ReplicaReportWorkbench", () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     renderWorkbench();
 
-    const download = await screen.findByRole("link", { name: "下载任务 DOCX" });
-    expect(download).toHaveAttribute("href", "/review-tasks/blocked-report/export?format=docx");
+    const download = await screen.findByRole("button", { name: "下载任务 DOCX" });
+    expect(screen.queryByRole("link", { name: "下载任务 DOCX" })).not.toBeInTheDocument();
+    expect(document.querySelector('a[href^="/review-tasks/"]')).toBeNull();
+    fireEvent.contextMenu(download);
+    fireEvent.mouseDown(download, { button: 1 });
+    expect(downloadAuditArtifactMock).not.toHaveBeenCalled();
+    fireEvent.click(download);
     fireEvent.click(download);
 
+    expect(downloadAuditArtifactMock).toHaveBeenCalledTimes(1);
+    expect(downloadAuditArtifactMock).toHaveBeenCalledWith(
+      "/review-tasks/blocked-report/export?format=docx",
+      { signal: expect.any(AbortSignal) }
+    );
+    expect(screen.getByRole("button", { name: "正在下载：下载任务 DOCX" })).toBeDisabled();
+
+    await act(async () => artifact.resolve({
+      blob: new Blob(["artifact"], { type: "application/octet-stream" }),
+      filename: "review-task-001.docx"
+    }));
+
     await waitFor(() => {
-      expect(downloadAuditArtifactMock).toHaveBeenCalledWith(
-        "/review-tasks/blocked-report/export?format=docx"
-      );
       expect(createObjectURL).toHaveBeenCalledTimes(1);
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:report-download");
     });
-    expect(window.location.pathname).not.toBe("/review-tasks/blocked-report/export");
+    expect(screen.getByRole("button", { name: "下载任务 DOCX" })).toBeEnabled();
 
     downloadAuditArtifactMock.mockRejectedValueOnce(new Error("download denied"));
-    fireEvent.click(download);
+    fireEvent.click(screen.getByRole("button", { name: "下载任务 DOCX" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("文件下载失败");
   });
+
+  it.each(["role-change", "unmount"] as const)(
+    "aborts a pending download on %s and prevents a stale browser save",
+    async (mode) => {
+      const blocked = reportEntry("blocked-report", "门禁阻断", {
+        page: "/pages/review-tasks",
+        task_docx: "/review-tasks/blocked-report/export?format=docx",
+        report_docx: null,
+        report_markdown: null,
+        report_json: null
+      });
+      fetchReportWorkbenchMock.mockResolvedValue(reportResponse({ entries: [blocked] }));
+      const artifact = deferred<{ readonly blob: Blob; readonly filename: string }>();
+      let signal: AbortSignal | undefined;
+      downloadAuditArtifactMock.mockImplementation((...rawArgs) => {
+        const [, options] = rawArgs as unknown as [string, { readonly signal?: AbortSignal }];
+        signal = options?.signal;
+        return artifact.promise;
+      });
+      const createObjectURL = vi.fn(() => "blob:stale-download");
+      const revokeObjectURL = vi.fn();
+      vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+      const view = renderWorkbench();
+      fireEvent.click(await screen.findByRole("button", { name: "下载任务 DOCX" }));
+      expect(signal).toBeInstanceOf(AbortSignal);
+
+      if (mode === "role-change") {
+        act(() => writeAuditClientRole("member"));
+      } else {
+        view.unmount();
+      }
+      expect(signal?.aborted).toBe(true);
+
+      await act(async () => artifact.resolve({
+        blob: new Blob(["stale"], { type: "application/octet-stream" }),
+        filename: "stale.docx"
+      }));
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+    }
+  );
 });

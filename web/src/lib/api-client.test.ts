@@ -623,6 +623,80 @@ describe("api-client", () => {
     expect(result.task_id).toBe("report-draft-123");
   });
 
+  it.each([
+    [422, "field_values contains unsupported evidence binding", "field_values contains unsupported evidence binding"],
+    [403, "create_report_draft is not allowed", "create_report_draft is not allowed"],
+    [404, "project not found", "project not found"]
+  ] as const)(
+    "exposes structured POST status %s with a safe string detail",
+    async (status, responseDetail, expectedDetail) => {
+      const client = await import("./api-client") as unknown as {
+        readonly createReportDraft: (payload: {
+          readonly template_id: string;
+          readonly project_key: string;
+          readonly field_values: Readonly<Record<string, string>>;
+        }) => Promise<unknown>;
+        readonly isBackendRequestError?: (error: unknown) => boolean;
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: false,
+          status,
+          json: async () => ({ detail: responseDetail })
+        }))
+      );
+
+      const error = await client.createReportDraft({
+        template_id: "workpaper-summary-risk",
+        project_key: "PROJECT-A",
+        field_values: { 人工复核意见: "待复核" }
+      }).catch((caught: unknown) => caught);
+
+      expect(client.isBackendRequestError).toBeTypeOf("function");
+      expect(client.isBackendRequestError?.(error)).toBe(true);
+      expect(error).toMatchObject({
+        name: "BackendRequestError",
+        method: "POST",
+        path: "/api/v1/reports/drafts",
+        status,
+        detail: expectedDetail,
+        message: `Backend request failed: POST /api/v1/reports/drafts returned ${status}`
+      });
+    }
+  );
+
+  it("does not expose structured error-detail objects through the shared POST client", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly createReportDraft: (payload: {
+        readonly template_id: string;
+        readonly project_key: string;
+        readonly field_values: Readonly<Record<string, string>>;
+      }) => Promise<unknown>;
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => ({ detail: { field: "SENSITIVE-OBJECT-DETAIL" } })
+      }))
+    );
+
+    const error = await client.createReportDraft({
+      template_id: "workpaper-summary-risk",
+      project_key: "PROJECT-A",
+      field_values: { 人工复核意见: "待复核" }
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      name: "BackendRequestError",
+      status: 422,
+      detail: null
+    });
+    expect(JSON.stringify(error)).not.toContain("SENSITIVE-OBJECT-DETAIL");
+  });
+
   it("downloads only internal review-task artifacts with authenticated headers and a response filename", async () => {
     const client = await import("./api-client") as unknown as {
       readonly downloadAuditArtifact?: (
@@ -688,6 +762,32 @@ describe("api-client", () => {
     );
   });
 
+  it("passes an AbortSignal to the authenticated artifact request", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact: (
+        path: string,
+        options?: { readonly signal?: AbortSignal }
+      ) => Promise<unknown>;
+    };
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      blob: async () => new Blob(["artifact"], { type: "application/json" })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await client.downloadAuditArtifact(
+      "/review-tasks/review-task-001/export?format=json",
+      { signal: controller.signal }
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/review-tasks/review-task-001/export?format=json",
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
   it("decodes RFC 5987 artifact filenames and uses path-safe format fallbacks", async () => {
     const client = await import("./api-client") as unknown as {
       readonly downloadAuditArtifact: (
@@ -714,6 +814,10 @@ describe("api-client", () => {
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ))
         .mockResolvedValueOnce(response(null, "text/markdown"))
+        .mockResolvedValueOnce(response(
+          'attachment; filename="audit;report\\"final.docx"',
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
     );
 
     await expect(
@@ -725,6 +829,9 @@ describe("api-client", () => {
     await expect(
       client.downloadAuditArtifact("/review-tasks/task-3/export?format=markdown")
     ).resolves.toMatchObject({ filename: "audit-artifact.md" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-4/export?format=docx")
+    ).resolves.toMatchObject({ filename: "audit;report-final.docx" });
   });
 
   it("fetches graph workbench through the versioned API proxy", async () => {
