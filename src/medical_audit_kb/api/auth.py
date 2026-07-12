@@ -336,7 +336,7 @@ def record_authorization_denied(
     }
     try:
         record_operation(state, "authorization-denied", payload)
-    except Exception as exc:
+    except SQLAlchemyError as exc:
         state.operation_logs.append(
             {
                 "action": "authorization-denied-audit-degraded",

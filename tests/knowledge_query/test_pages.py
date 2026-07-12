@@ -547,7 +547,9 @@ def test_report_template_draft_persists_controlled_review_task_for_allowed_roles
     assert body["formal_report_created"] is False
     assert body["provider_call"] is False
     assert body["audit"] == {
-        "status": "ready",
+        "status": "local-only",
+        "durability": "local-only",
+        "local_only": True,
         "intent_recorded": True,
         "completion_recorded": True,
     }
@@ -905,6 +907,180 @@ def test_report_template_draft_uses_explicit_project_assignment_permissions(
     assert len(_review_tasks(state)) == (1 if expected_status == 200 else 0)
 
 
+def test_project_report_draft_enforces_formal_action_permissions_and_actor_binding(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    member_headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+    create_response = client.post(
+        "/reports/drafts",
+        headers=member_headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "待复核"},
+        },
+    )
+    task_id = create_response.json()["task_id"]
+
+    ordinary_update = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=member_headers,
+        data={
+            "status": "needs-evidence",
+            "reviewer_note": "普通成员补充复核意见。",
+            "conclusion": "需要继续补证。",
+            "workpaper_status": "draft",
+            "report_title": "普通成员底稿草稿",
+            "report_summary": "仅为复核草稿。",
+        },
+        follow_redirects=False,
+    )
+    assert ordinary_update.status_code == 303
+
+    member_owner_approval = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=member_headers,
+        data={
+            "status": "not-violation",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "spoofed-owner",
+            "owner_confirmed_at": "2026-07-12T12:00:00Z",
+        },
+        follow_redirects=False,
+    )
+    member_close = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=member_headers,
+        data={"status": "closed"},
+        follow_redirects=False,
+    )
+    member_signoff = client.post(
+        f"/pages/review-tasks/{task_id}/report-signoff",
+        headers=member_headers,
+        data={"signed_by": "spoofed-director"},
+        follow_redirects=False,
+    )
+    member_accepted = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=member_headers,
+        data={"rectification_status": "accepted"},
+        follow_redirects=False,
+    )
+    member_returned = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=member_headers,
+        data={"rectification_status": "returned"},
+        follow_redirects=False,
+    )
+    for response in (
+        member_owner_approval,
+        member_close,
+        member_signoff,
+        member_accepted,
+        member_returned,
+    ):
+        assert response.status_code == 403
+        assert response.json()["detail"] == "sign_reports is not allowed"
+
+    director_approval = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=director_headers,
+        data={
+            "status": "not-violation",
+            "reviewer_note": "主任完成复核。",
+            "conclusion": "未发现违规。",
+            "owner_signoff_status": "approved",
+            "owner_confirmed_by": "spoofed-owner",
+            "owner_confirmed_at": "2026-07-12T12:00:00Z",
+            "report_title": "未发现违规报告草稿",
+            "report_summary": "证据已复核。",
+        },
+        follow_redirects=False,
+    )
+    assert director_approval.status_code == 303
+    approved_dossier = _review_tasks(state)[0]["dossier"]
+    assert isinstance(approved_dossier, dict)
+    assert approved_dossier["owner_signoff"]["confirmed_by"] == "next-director"
+
+    director_signoff = client.post(
+        f"/pages/review-tasks/{task_id}/report-signoff",
+        headers=director_headers,
+        data={"signed_by": "spoofed-director", "signoff_note": "主任签发。"},
+        follow_redirects=False,
+    )
+    assert director_signoff.status_code == 303
+    signed_dossier = _review_tasks(state)[0]["dossier"]
+    assert isinstance(signed_dossier, dict)
+    assert signed_dossier["signed_report"]["signed_by"] == "next-director"
+    assert state.operation_logs[-1]["payload"]["signed_by"] == "next-director"
+
+    member_pending_rectification = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=member_headers,
+        data={
+            "rectification_status": "pending-rectification",
+            "progress_note": "普通成员发起整改。",
+        },
+        follow_redirects=False,
+    )
+    assert member_pending_rectification.status_code == 303
+
+    member_returned_after_signoff = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=member_headers,
+        data={"rectification_status": "returned"},
+        follow_redirects=False,
+    )
+    assert member_returned_after_signoff.status_code == 403
+    director_returned = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=director_headers,
+        data={"rectification_status": "returned", "progress_note": "主任退回。"},
+        follow_redirects=False,
+    )
+    assert director_returned.status_code == 303
+    member_accepted_after_signoff = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=member_headers,
+        data={"rectification_status": "accepted"},
+        follow_redirects=False,
+    )
+    assert member_accepted_after_signoff.status_code == 403
+    director_accepted = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=director_headers,
+        data={"rectification_status": "accepted", "progress_note": "主任验收。"},
+        follow_redirects=False,
+    )
+    assert director_accepted.status_code == 303
+    member_close_after_acceptance = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=member_headers,
+        data={"status": "closed"},
+        follow_redirects=False,
+    )
+    assert member_close_after_acceptance.status_code == 403
+    director_close = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=director_headers,
+        data={"status": "closed"},
+        follow_redirects=False,
+    )
+    assert director_close.status_code == 303
+    assert _review_tasks(state)[0]["status"] == "closed"
+
+    denials = [log for log in state.operation_logs if log["action"] == "authorization-denied"]
+    assert denials
+    assert {log["payload"]["permission"] for log in denials} == {"sign_reports"}
+    serialized_denials = json.dumps(denials, ensure_ascii=False)
+    assert "field_values" not in serialized_denials
+    assert "普通成员补充复核意见" not in serialized_denials
+
+
 def test_report_template_draft_fails_closed_when_project_member_store_fails(
     tmp_path: Path,
 ) -> None:
@@ -1182,6 +1358,190 @@ def test_controlled_auth_legacy_review_task_is_admin_or_creator_only(tmp_path: P
     assert unrelated_workbench.json()["report_entries"] == []
 
 
+def test_legacy_formal_actions_require_authenticated_sign_report_actor(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(
+        tasks=[
+            {
+                "task_id": "legacy-formal-task",
+                "created_at": "2026-07-12T00:00:00Z",
+                "updated_at": "2026-07-12T00:00:00Z",
+                "status": "not-violation",
+                "status_label": "未发现违规",
+                "question": "legacy formal task",
+                "citation_count": 0,
+                "review_gate": "待人工复核",
+                "confidence_label": "待复核",
+                "fallback_label": "legacy",
+                "created_by": "legacy-creator",
+                "assigned_to": "",
+                "reviewer_note": "已复核",
+                "conclusion": "未发现违规",
+                "source": "legacy-test",
+                "dossier": {"format": "audit-finding-dossier-v1"},
+            }
+        ]
+    )
+    client = TestClient(create_app(state))
+
+    approval = client.post(
+        "/pages/review-tasks/legacy-formal-task/status",
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    signoff = client.post(
+        "/pages/review-tasks/legacy-formal-task/report-signoff",
+        data={"signed_by": "anonymous-spoof"},
+        follow_redirects=False,
+    )
+    close = client.post(
+        "/pages/review-tasks/legacy-formal-task/status",
+        data={"status": "closed"},
+        follow_redirects=False,
+    )
+
+    assert [approval.status_code, signoff.status_code, close.status_code] == [403, 403, 403]
+    assert all(response.json()["detail"] == "sign_reports is not allowed" for response in (
+        approval,
+        signoff,
+        close,
+    ))
+
+
+@pytest.mark.parametrize("scope_type", ("project", "department"))
+def test_scoped_admin_cannot_bypass_controlled_legacy_task_scope(
+    tmp_path: Path,
+    scope_type: str,
+) -> None:
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(
+        tasks=[
+            {
+                "task_id": "legacy-global-task",
+                "created_at": "2026-07-12T00:00:00Z",
+                "updated_at": "2026-07-12T00:00:00Z",
+                "status": "pending-review",
+                "status_label": "待复核",
+                "question": "global legacy task",
+                "citation_count": 0,
+                "review_gate": "待人工复核",
+                "confidence_label": "待复核",
+                "fallback_label": "legacy",
+                "created_by": "legacy-creator",
+                "assigned_to": "",
+                "reviewer_note": "",
+                "conclusion": "",
+                "source": "legacy-test",
+                "dossier": {"format": "audit-finding-dossier-v1"},
+            }
+        ]
+    )
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    user_identifier = f"{scope_type}-admin"
+    state.auth_user_store.add_user(
+        {"user_key": user_identifier, "display_name": user_identifier, "status": "active"}
+    )
+    assignment: dict[str, object] = {"role": "admin", "scope_type": scope_type}
+    if scope_type == "project":
+        assignment["scope_key"] = "SELF-CHECK-FUND-20260607"
+    else:
+        assignment["scope_key"] = "audit-office"
+    state.auth_user_store.assign_role(user_identifier, assignment)
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+    headers = {
+        "X-User-Id": user_identifier,
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+    }
+
+    direct = client.get("/review-tasks/legacy-global-task/export", headers=headers)
+    listing = client.get("/reports/workbench", headers=headers)
+    write = client.post(
+        "/pages/review-tasks/legacy-global-task/status",
+        headers=headers,
+        data={"status": "needs-evidence"},
+        follow_redirects=False,
+    )
+
+    assert direct.status_code == 404
+    assert listing.json()["report_entries"] == []
+    assert write.status_code == 404
+
+
+def test_review_task_list_visibility_caches_membership_and_aggregates_hidden_audit(
+    tmp_path: Path,
+) -> None:
+    class CountingProjectMemberStore(InMemoryProjectMemberStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.list_calls = 0
+
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            self.list_calls += 1
+            return super().list_members(project_key)
+
+    tasks = []
+    for index in range(20):
+        tasks.append(
+            {
+                "task_id": f"project-cache-task-{index}",
+                "created_at": "2026-07-12T00:00:00Z",
+                "updated_at": "2026-07-12T00:00:00Z",
+                "status": "pending-review",
+                "status_label": "待复核",
+                "question": f"project task {index}",
+                "citation_count": 0,
+                "review_gate": "待人工复核",
+                "confidence_label": "待复核",
+                "fallback_label": "template",
+                "created_by": "next-member",
+                "assigned_to": "",
+                "reviewer_note": "",
+                "conclusion": "",
+                "source": "report-template-draft",
+                "dossier": {
+                    "format": "report-template-draft-dossier-v1",
+                    "report_template_draft": {
+                        "project_key": "SELF-CHECK-FUND-20260607"
+                    },
+                },
+            }
+        )
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(tasks=tasks)
+    counting_store = CountingProjectMemberStore()
+    state.project_member_store = counting_store
+    client = TestClient(create_app(state))
+
+    visible = client.get(
+        "/reports/workbench",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    assert visible.status_code == 200
+    assert len(visible.json()["report_entries"]) == 20
+    assert counting_store.list_calls <= 4
+
+    counting_store.list_calls = 0
+    state.operation_logs.clear()
+    hidden = client.get(
+        "/reports/workbench",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
+    assert hidden.status_code == 200
+    assert hidden.json()["report_entries"] == []
+    assert counting_store.list_calls <= 4
+    filtered_events = [
+        log for log in state.operation_logs if log["action"] == "review-task-list-filtered"
+    ]
+    assert len(filtered_events) == 1
+    assert filtered_events[0]["payload"]["hidden_count"] == 20
+    assert all(log["action"] != "authorization-denied" for log in state.operation_logs)
+
+
 def test_report_template_draft_owner_can_export_json_markdown_and_docx(
     tmp_path: Path,
 ) -> None:
@@ -1300,6 +1660,8 @@ def test_report_template_draft_completion_audit_failure_returns_degraded_success
     assert response.status_code == 200
     assert response.json()["audit"] == {
         "status": "degraded",
+        "durability": "intent-only",
+        "local_only": False,
         "intent_recorded": True,
         "completion_recorded": False,
     }
@@ -1312,6 +1674,172 @@ def test_report_template_draft_completion_audit_failure_returns_degraded_success
     serialized_logs = json.dumps(state.operation_logs, ensure_ascii=False)
     assert sentinel not in serialized_logs
     assert "field_values" not in serialized_logs
+
+
+def test_report_template_draft_persistent_audit_reports_durable_ready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_log_store = SqlAlchemyAuditLogStore(
+        f"sqlite:///{tmp_path / 'audit-events.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "持久审计"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["audit"] == {
+        "status": "ready",
+        "durability": "durable",
+        "local_only": False,
+        "intent_recorded": True,
+        "completion_recorded": True,
+    }
+    events = state.audit_log_store.list_events(limit=10)
+    assert {event["action"] for event in events} >= {
+        "report-template-draft-create-intent",
+        "report-template-draft-create-completed",
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    ("intent", "authorization-denial", "best-effort-availability"),
+)
+def test_non_sql_audit_programmer_errors_are_not_disguised_as_degraded(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    class ProgrammerErrorAuditStore:
+        def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("programmer error")
+
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("project member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("project member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.review_task_store = JsonFileReviewTaskStore(
+        tmp_path / f"{case}-review-tasks.json"
+    )
+    state.project_member_store = (
+        FailingProjectMemberStore()
+        if case == "best-effort-availability"
+        else InMemoryProjectMemberStore()
+    )
+    state.audit_log_store = ProgrammerErrorAuditStore()
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    if case == "authorization-denial":
+        headers = {"X-Role": "member"}
+
+    response = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "programmer error must surface"},
+        },
+    )
+
+    assert response.status_code == 500
+    assert _review_tasks(state) == []
+    assert all("degraded" not in str(log["action"]) for log in state.operation_logs)
+
+
+def test_report_and_project_task_paths_require_configured_stores(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = None
+    client = TestClient(create_app(state))
+    payload = {
+        "template_id": "workpaper-summary-risk",
+        "project_key": "SELF-CHECK-FUND-20260607",
+        "field_values": {"人工复核意见": "no implicit store"},
+    }
+
+    no_review_store_create = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json=payload,
+    )
+    state.review_task_store = InMemoryReviewTaskStore()
+    state.project_member_store = None
+    no_member_store_create = client.post(
+        "/reports/drafts",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+        json=payload,
+    )
+    state.review_task_store = None
+    no_review_store_workbench = client.get(
+        "/reports/workbench",
+        headers={"X-User-Id": "next-admin", "X-Role": "admin"},
+    )
+
+    assert no_review_store_create.status_code == 503
+    assert no_member_store_create.status_code == 503
+    assert no_review_store_workbench.status_code == 503
+    assert state.review_task_store is None
+
+
+def test_template_renderer_contains_untrusted_multiline_values_as_structure_safe_block(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    untrusted = "line one\n# Injected Heading\n```\nmalicious fence\n```"
+    create_response = client.post(
+        "/reports/drafts",
+        headers=headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": untrusted},
+        },
+    )
+    task_id = create_response.json()["task_id"]
+
+    markdown = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers=headers,
+        params={"format": "markdown"},
+    )
+    docx = client.get(
+        f"/review-tasks/{task_id}/export",
+        headers=headers,
+        params={"format": "docx"},
+    )
+
+    assert markdown.status_code == 200
+    assert "\n# Injected Heading\n" not in markdown.text
+    assert "\n```\n" not in markdown.text
+    assert "    # Injected Heading" in markdown.text
+    assert "    ```" in markdown.text
+    assert docx.status_code == 200
+    document_xml = _docx_document_xml(docx.content)
+    assert "Injected Heading" in document_xml
+    assert "malicious fence" in document_xml
 
 
 def test_report_template_draft_concurrent_requests_use_distinct_ids_and_persist_both(
@@ -1437,6 +1965,7 @@ def test_review_tasks_page_renders_empty_state(tmp_path: Path) -> None:
 def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     client = TestClient(create_app(state))
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
 
     create_response = client.post(
         "/pages/review-tasks/create",
@@ -1477,6 +2006,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert blocked_report_response.json()["detail"] == ("review task is not ready for report draft")
     blocked_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
+        headers=director_headers,
         data={"signed_by": "审计科负责人A"},
         follow_redirects=False,
     )
@@ -1484,6 +2014,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     update_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers=director_headers,
         data={
             "status": "confirmed-violation",
             "assigned_to": "审计员A",
@@ -1518,7 +2049,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert dossier["workpaper"]["status"] == "ready"
     assert dossier["workpaper"]["workpaper_id"] == "workpaper-20260604-001"
     assert dossier["owner_signoff"]["status"] == "approved"
-    assert dossier["owner_signoff"]["confirmed_by"] == "审计科负责人A"
+    assert dossier["owner_signoff"]["confirmed_by"] == "next-director"
     assert dossier["attachments"][0]["title"] == "HIS收费明细导出"
     assert dossier["attachments"][1]["title"] == "复核签字单"
     assert dossier["report_draft"]["title"] == "同就诊同项目重复收费复核报告草稿"
@@ -1570,6 +2101,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     preserve_upload_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers=director_headers,
         data={
             "status": "confirmed-violation",
             "assigned_to": "审计员A",
@@ -1725,6 +2257,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
+        headers=director_headers,
         data={
             "signed_by": "审计科负责人A",
             "signoff_note": "报告正文、附件和负责人确认已核验。",
@@ -1739,7 +2272,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert isinstance(signed_report, dict)
     assert signed_report["status"] == "signed"
     assert str(signed_report["report_id"]).startswith("signed-report-")
-    assert signed_report["signed_by"] == "审计科负责人A"
+    assert signed_report["signed_by"] == "next-director"
     assert signed_report["signoff_note"] == "报告正文、附件和负责人确认已核验。"
     signed_content = str(signed_report["content"])
     assert "# AuditScope 审计报告草稿" in signed_content
@@ -1891,6 +2424,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     blocked_close_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers=director_headers,
         data={
             "status": "closed",
             "assigned_to": "审计员A",
@@ -1924,6 +2458,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     accepted_rectification_response = client.post(
         "/pages/review-tasks/review-task-0001/rectification",
+        headers=director_headers,
         data={
             "rectification_status": "accepted",
             "responsible_department": "收费管理科",
@@ -1951,6 +2486,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     close_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers=director_headers,
         data={
             "status": "closed",
             "assigned_to": "审计员A",
@@ -1999,7 +2535,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     locked_signoff_response = client.post(
         "/pages/review-tasks/review-task-0001/report-signoff",
-        headers={"X-User-Id": "auditor-a", "X-Role": "auditor"},
+        headers=director_headers,
         data={"signed_by": "审计科负责人A"},
         follow_redirects=False,
     )
@@ -2043,7 +2579,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
 
     edit_after_close_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
-        headers={"X-User-Id": "auditor-a", "X-Role": "auditor"},
+        headers=director_headers,
         data={
             "status": "confirmed-violation",
             "assigned_to": "审计员A",
@@ -2099,7 +2635,7 @@ def test_review_task_create_update_and_export_flow(tmp_path: Path) -> None:
     assert readonly_block_payloads[0]["endpoint"] == (
         "/pages/review-tasks/review-task-0001/report-signoff"
     )
-    assert readonly_block_payloads[0]["user_identifier"] == "auditor-a"
+    assert readonly_block_payloads[0]["user_identifier"] == "next-director"
     assert readonly_block_payloads[2]["role"] == "department-head"
 
 
