@@ -80,6 +80,7 @@ describe("api-client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    window.localStorage.removeItem("medical-audit-current-role");
   });
 
   it("keeps the page backend contract aligned with proxy-local API paths", () => {
@@ -874,6 +875,61 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.format).toBe("graph-workbench-v1");
+  });
+
+  it("fetches a project evidence graph with exact encoded scope headers", async () => {
+    window.localStorage.setItem("medical-audit-current-role", "member");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "graph-workbench-v1",
+          view: "project",
+          project_key: "PROJECT / A&B",
+          evidence_chain_status: "empty"
+        })
+      }))
+    );
+
+    const result = await fetchGraphWorkbench({
+      view: "project",
+      projectKey: "PROJECT / A&B"
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/graph/workbench?view=project&project_key=PROJECT+%2F+A%26B",
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Project-Key": "PROJECT / A&B",
+          "X-Role": "member",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-member"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.view).toBe("project");
+  });
+
+  it("preserves project graph GET status and backend detail for view-specific errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "project not found" })
+      }))
+    );
+
+    await expect(fetchGraphWorkbench({ view: "project", projectKey: "PROJECT-A" })).rejects.toMatchObject({
+      name: "BackendRequestError",
+      method: "GET",
+      path: "/api/v1/graph/workbench?view=project&project_key=PROJECT-A",
+      status: 404,
+      detail: "project not found"
+    });
   });
 
   it("fetches rules workbench through the versioned API proxy", async () => {

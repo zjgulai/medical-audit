@@ -303,6 +303,9 @@ const graphWorkbench: GraphWorkbenchResponse = {
   graph_id: "medical-audit-knowledge-catalog",
   graph_title: "医疗审计知识工程",
   graph_scope: "生产知识库目录、文档检索和审计问答共同使用的知识底座。",
+  view: "knowledge",
+  project_key: null,
+  evidence_chain_status: "catalog",
   nodes: [
     {
       id: "graph-node-project",
@@ -728,6 +731,132 @@ describe("replica backend read adapters", () => {
     expect(result.data.relations[0]?.target).toBe("医疗医保知识");
     expect(result.issues).toEqual([]);
     expect(fetchGraphWorkbench).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves project evidence-chain metadata and treats a root-only chain as empty", async () => {
+    const projectGraph = {
+      ...graphWorkbench,
+      graph_id: "PROJECT-A",
+      graph_title: "项目 A 项目证据链",
+      graph_scope: "仅组织当前项目已持久化的疑点、复核、报告和整改证据。",
+      view: "project",
+      project_key: "PROJECT-A",
+      evidence_chain_status: "empty",
+      evidence_grade: "live-store-readonly",
+      nodes: [
+        {
+          ...graphWorkbench.nodes[0],
+          id: "project:PROJECT-A",
+          label: "项目 A",
+          href: "/projects?project=PROJECT-A",
+          metric: "0 条项目证据"
+        }
+      ],
+      relations: [],
+      metrics: {
+        ...graphWorkbench.metrics,
+        node_count: 1,
+        node_kind_count: 1,
+        relation_count: 0,
+        strong_relation_count: 0,
+        pending_relation_count: 0
+      },
+      store: {
+        ready: true,
+        backend: {
+          audit_findings: "SqlAlchemyAuditFindingStore",
+          review_tasks: "JsonReviewTaskStore"
+        }
+      }
+    } as unknown as GraphWorkbenchResponse;
+    const fetchGraphWorkbench = vi.fn(async () => projectGraph);
+
+    const result = await loadReplicaGraphData(
+      { fetchGraphWorkbench },
+      { view: "project", projectKey: "PROJECT-A" }
+    );
+
+    expect(fetchGraphWorkbench).toHaveBeenCalledWith({ view: "project", projectKey: "PROJECT-A" });
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("empty");
+    expect(result.data).toMatchObject({
+      view: "project",
+      projectKey: "PROJECT-A",
+      evidenceChainStatus: "empty",
+      evidenceGrade: "live-store-readonly",
+      productionSideEffect: "none",
+      store: projectGraph.store
+    });
+    expect(result.data.nodes).toHaveLength(1);
+    expect(result.data.nodes[0]?.label).toBe("项目 A");
+  });
+
+  it("never substitutes the knowledge fixture when a project graph read is disabled or fails", async () => {
+    const disabled = await loadReplicaGraphData({}, { view: "project", projectKey: "PROJECT-A" });
+    const failed = await loadReplicaGraphData(
+      {
+        fetchGraphWorkbench: vi.fn(async () => {
+          throw Object.assign(new Error("not visible"), { status: 404 });
+        })
+      },
+      { view: "project", projectKey: "PROJECT-A" }
+    );
+
+    expect(disabled.source).toBe("api");
+    expect(disabled.outcome).toBe("empty");
+    expect(disabled.data.nodes).toEqual([]);
+    expect(failed.source).toBe("api");
+    expect(failed.outcome).toBe("error");
+    expect(failed.data.nodes).toEqual([]);
+    expect(failed.issues[0]).toMatchObject({ code: "api-read-failed", status: 404 });
+  });
+
+  it("fails closed when a project graph response belongs to another project", async () => {
+    const mismatched = {
+      ...graphWorkbench,
+      view: "project",
+      project_key: "PROJECT-B",
+      evidence_chain_status: "ready",
+      evidence_grade: "live-store-readonly",
+      store: {
+        ready: true,
+        backend: { audit_findings: "SqlFindingStore", review_tasks: "JsonReviewStore" }
+      }
+    } as unknown as GraphWorkbenchResponse;
+
+    const result = await loadReplicaGraphData(
+      { fetchGraphWorkbench: vi.fn(async () => mismatched) },
+      { view: "project", projectKey: "PROJECT-A" }
+    );
+
+    expect(result.outcome).toBe("error");
+    expect(result.data.projectKey).toBe("PROJECT-A");
+    expect(result.data.nodes).toEqual([]);
+    expect(result.issues[0]?.message).toContain("did not match");
+  });
+
+  it("keeps a not-ready project store degraded without fixture substitution", async () => {
+    const degraded = {
+      ...graphWorkbench,
+      view: "project",
+      project_key: "PROJECT-A",
+      evidence_chain_status: "ready",
+      evidence_grade: "live-store-readonly",
+      store: {
+        ready: false,
+        backend: { audit_findings: "SqlFindingStore", review_tasks: "JsonReviewStore" }
+      }
+    } as unknown as GraphWorkbenchResponse;
+
+    const result = await loadReplicaGraphData(
+      { fetchGraphWorkbench: vi.fn(async () => degraded) },
+      { view: "project", projectKey: "PROJECT-A" }
+    );
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.nodes[0]?.label).toBe("医疗审计知识工程");
+    expect(result.data.nodes.some((node) => node.label.includes("乡村振兴"))).toBe(false);
   });
 
   it("does not substitute reference analytics datasets when the API read is disabled or fails", async () => {

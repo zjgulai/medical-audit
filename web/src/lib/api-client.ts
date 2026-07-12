@@ -57,19 +57,21 @@ import type {
 import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
 
 export class BackendRequestError extends Error {
-  readonly method: "POST";
+  readonly method: "GET" | "POST";
   readonly path: string;
   readonly status: number;
   readonly detail: string | null;
 
   constructor(options: {
+    readonly method?: "GET" | "POST";
     readonly path: string;
     readonly status: number;
     readonly detail: string | null;
   }) {
-    super(`Backend request failed: POST ${options.path} returned ${options.status}`);
+    const method = options.method ?? "POST";
+    super(`Backend request failed: ${method} ${options.path} returned ${options.status}`);
     this.name = "BackendRequestError";
-    this.method = "POST";
+    this.method = method;
     this.path = options.path;
     this.status = options.status;
     this.detail = options.detail;
@@ -118,7 +120,21 @@ async function getJsonWithAuditHeaders<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
+    let detail: string | null = null;
+    try {
+      const errorPayload = await response.json() as unknown;
+      if (
+        typeof errorPayload === "object" &&
+        errorPayload !== null &&
+        "detail" in errorPayload &&
+        typeof errorPayload.detail === "string"
+      ) {
+        detail = errorPayload.detail.trim() || null;
+      }
+    } catch {
+      // Preserve the stable status-bearing error contract when the body is absent or invalid JSON.
+    }
+    throw new BackendRequestError({ method: "GET", path, status: response.status, detail });
   }
 
   return (await response.json()) as T;
@@ -395,8 +411,25 @@ export async function downloadAuditArtifact(
   };
 }
 
-export function fetchGraphWorkbench(): Promise<GraphWorkbenchResponse> {
-  return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
+export function fetchGraphWorkbench(options?: {
+  readonly view?: "knowledge" | "project";
+  readonly projectKey?: string;
+}): Promise<GraphWorkbenchResponse> {
+  if (options?.view !== "project") {
+    return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
+  }
+
+  const projectKey = options.projectKey?.trim() ?? "";
+  if (!projectKey) {
+    throw new Error("projectKey is required for project graph view");
+  }
+  const params = new URLSearchParams();
+  params.set("view", "project");
+  params.set("project_key", projectKey);
+  return getJsonWithAuditHeaders<GraphWorkbenchResponse>(
+    `/api/v1/graph/workbench?${params.toString()}`,
+    auditProjectClientHeaders(projectKey)
+  );
 }
 
 export function fetchRulesWorkbench(): Promise<RulesWorkbenchResponse> {

@@ -41,7 +41,7 @@ export type GraphWorkbenchRelation = {
   readonly strength: "强" | "中" | "待补";
 };
 
-export type GraphWorkbenchResponse = {
+type GraphWorkbenchResponseBase = {
   readonly format: "graph-workbench-v1";
   readonly generated_at: string;
   readonly graph_id: string;
@@ -58,12 +58,35 @@ export type GraphWorkbenchResponse = {
     readonly pending_relation_count: number;
   };
   readonly evidence_grade: string;
-  readonly production_side_effect: "none" | string;
+  readonly production_side_effect: "none";
+};
+
+export type KnowledgeGraphWorkbenchResponse = GraphWorkbenchResponseBase & {
+  readonly view: "knowledge";
+  readonly project_key: null;
+  readonly evidence_chain_status: "catalog";
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
   };
 };
+
+export type ProjectGraphWorkbenchResponse = GraphWorkbenchResponseBase & {
+  readonly view: "project";
+  readonly project_key: string;
+  readonly evidence_chain_status: "ready" | "empty";
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: {
+      readonly audit_findings: string;
+      readonly review_tasks: string;
+    };
+  };
+};
+
+export type GraphWorkbenchResponse =
+  | KnowledgeGraphWorkbenchResponse
+  | ProjectGraphWorkbenchResponse;
 
 export type RuleLibraryApiItem = {
   readonly id: string;

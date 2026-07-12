@@ -291,6 +291,9 @@ describe("use-replica-runtime", () => {
       graph_id: "graph-seed-test",
       graph_title: "种子图谱",
       graph_scope: "只读种子拓扑",
+      view: "knowledge",
+      project_key: null,
+      evidence_chain_status: "catalog",
       nodes: [
         {
           id: "node-project",

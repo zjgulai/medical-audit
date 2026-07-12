@@ -92,6 +92,7 @@ export type ReplicaAdapterIssue = {
   readonly surface: ReplicaSurface;
   readonly code: ReplicaAdapterIssueCode;
   readonly message: string;
+  readonly status?: number;
 };
 
 export type ReplicaAdapterResult<TData> = {
@@ -185,6 +186,12 @@ export type ReplicaAnalyticsData = {
 };
 
 export type ReplicaGraphData = {
+  readonly view: "knowledge" | "project";
+  readonly projectKey: string | null;
+  readonly evidenceChainStatus: "catalog" | "ready" | "empty";
+  readonly evidenceGrade: string;
+  readonly productionSideEffect: "none";
+  readonly store: GraphWorkbenchResponse["store"];
   readonly title: string;
   readonly scope: string;
   readonly nodes: readonly ReferenceGraphNode[];
@@ -238,7 +245,10 @@ export type ReplicaAnalyticsClient = {
 };
 
 export type ReplicaGraphClient = {
-  readonly fetchGraphWorkbench?: () => Promise<GraphWorkbenchResponse>;
+  readonly fetchGraphWorkbench?: (options?: {
+    readonly view?: "knowledge" | "project";
+    readonly projectKey?: string;
+  }) => Promise<GraphWorkbenchResponse>;
 };
 
 export type ReplicaReportsClient = {
@@ -268,8 +278,8 @@ function issue(
   return { surface, code, message };
 }
 
-function isReadonlySeedBackend(backend: string): boolean {
-  return backend.startsWith("Readonly") && backend.endsWith("Seed");
+function isReadonlySeedBackend(backend: GraphWorkbenchResponse["store"]["backend"]): boolean {
+  return typeof backend === "string" && backend.startsWith("Readonly") && backend.endsWith("Seed");
 }
 
 async function readOptionalApi<TResponse>(
@@ -284,9 +294,16 @@ async function readOptionalApi<TResponse>(
 
   try {
     return { kind: "success", value: await read() };
-  } catch {
+  } catch (error) {
     const message = `API read ${readName} failed; no fixture data was substituted.`;
-    issues.push(issue(surface, "api-read-failed", message));
+    const status = typeof error === "object" && error !== null && "status" in error &&
+      typeof error.status === "number"
+      ? error.status
+      : undefined;
+    issues.push({
+      ...issue(surface, "api-read-failed", message),
+      ...(status === undefined ? {} : { status })
+    });
     return { kind: "failure", message };
   }
 }
@@ -513,6 +530,12 @@ function mapAnalysisUploads(
 
 function graphDataFallback(): ReplicaGraphData {
   return {
+    view: "knowledge",
+    projectKey: null,
+    evidenceChainStatus: "catalog",
+    evidenceGrade: "fixture-catalog",
+    productionSideEffect: "none",
+    store: { ready: true, backend: "ReferenceGraphCatalog" },
     title: "审计知识图谱",
     scope: "项目、知识库、文档、规则与疑点的只读关系视图",
     nodes: referenceGraphNodes,
@@ -527,8 +550,23 @@ function graphDataFallback(): ReplicaGraphData {
   };
 }
 
-function emptyGraphData(): ReplicaGraphData {
+function emptyGraphData(options: {
+  readonly view?: "knowledge" | "project";
+  readonly projectKey?: string;
+} = {}): ReplicaGraphData {
+  const view = options.view ?? "knowledge";
   return {
+    view,
+    projectKey: view === "project" ? options.projectKey?.trim() || null : null,
+    evidenceChainStatus: view === "project" ? "empty" : "catalog",
+    evidenceGrade: "unavailable",
+    productionSideEffect: "none",
+    store: view === "project"
+      ? {
+          ready: false,
+          backend: { audit_findings: "unavailable", review_tasks: "unavailable" }
+        }
+      : { ready: false, backend: "unavailable" },
     title: "",
     scope: "",
     nodes: [],
@@ -545,6 +583,12 @@ function emptyGraphData(): ReplicaGraphData {
 
 function mapGraphWorkbench(response: GraphWorkbenchResponse): ReplicaGraphData {
   return {
+    view: response.view,
+    projectKey: response.project_key,
+    evidenceChainStatus: response.evidence_chain_status,
+    evidenceGrade: response.evidence_grade,
+    productionSideEffect: response.production_side_effect,
+    store: response.store,
     title: response.graph_title,
     scope: response.graph_scope,
     nodes: response.nodes.map((node) => ({
@@ -1055,25 +1099,71 @@ export async function loadReplicaAnalyticsData(
 }
 
 export async function loadReplicaGraphData(
-  client: ReplicaGraphClient = {}
+  client: ReplicaGraphClient = {},
+  options: {
+    readonly view?: "knowledge" | "project";
+    readonly projectKey?: string;
+  } = {}
 ): Promise<ReplicaAdapterResult<ReplicaGraphData>> {
   const issues: ReplicaAdapterIssue[] = [];
+  const requestedView = options.view ?? "knowledge";
+  const projectKey = requestedView === "project" ? options.projectKey?.trim() ?? "" : "";
+  const requestOptions = requestedView === "project"
+    ? { view: "project" as const, projectKey }
+    : undefined;
+  const fetchGraphWorkbench = client.fetchGraphWorkbench;
   const graphRead = await readOptionalApi(
     "graph",
     "graph-workbench",
     issues,
-    client.fetchGraphWorkbench
+    fetchGraphWorkbench
+      ? () => fetchGraphWorkbench(requestOptions)
+      : undefined
   );
 
   if (graphRead.kind === "disabled") {
+    if (requestedView === "project") {
+      issues.push(issue(
+        "graph",
+        "partial-schema-gap",
+        "Project evidence graph API read is disabled; no knowledge fixture was substituted."
+      ));
+      return {
+        source: "api",
+        outcome: "empty",
+        data: emptyGraphData({ view: "project", projectKey }),
+        issues
+      };
+    }
     return { source: "fixture", outcome: "ready", data: graphDataFallback(), issues };
   }
 
   if (graphRead.kind === "failure") {
-    return { source: "api", outcome: "error", data: emptyGraphData(), issues };
+    return {
+      source: "api",
+      outcome: "error",
+      data: emptyGraphData({ view: requestedView, projectKey }),
+      issues
+    };
   }
 
   const graph = graphRead.value;
+  const mismatchedResponse = requestedView === "project"
+    ? graph.view !== "project" || graph.project_key !== projectKey
+    : graph.view !== "knowledge" || graph.project_key !== null;
+  if (mismatchedResponse) {
+    issues.push(issue(
+      "graph",
+      "api-read-failed",
+      "Graph workbench response did not match the requested view and project scope."
+    ));
+    return {
+      source: "api",
+      outcome: "error",
+      data: emptyGraphData({ view: requestedView, projectKey }),
+      issues
+    };
+  }
   const seedBackend = isReadonlySeedBackend(graph.store.backend);
 
   if (seedBackend) {
@@ -1092,7 +1182,9 @@ export async function loadReplicaGraphData(
     source: "api",
     outcome: seedBackend || !graph.store.ready
       ? "degraded"
-      : graph.nodes.length > 0
+      : graph.view === "project" && graph.evidence_chain_status === "empty"
+        ? "empty"
+        : graph.nodes.length > 0
         ? "ready"
         : "empty",
     data: mapGraphWorkbench(graph),
