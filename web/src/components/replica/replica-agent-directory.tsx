@@ -22,7 +22,7 @@ type ReplicaAgentDirectoryProps = {
 };
 
 type AgentFilter = "全部" | ReferenceAgentCategory;
-type AgentAction = "查看详情" | "编辑" | "历史版本" | "删除" | "创建副本" | "立即使用" | "配置知识" | "查看调用" | "收藏";
+type AgentAction = "查看详情" | "编辑" | "历史版本" | "删除" | "创建副本" | "配置知识" | "查看调用" | "收藏";
 type AgentActionPanel = {
   readonly title: string;
   readonly description: string;
@@ -30,6 +30,7 @@ type AgentActionPanel = {
 };
 
 const allAgentsFilter = "全部";
+const AGENT_PAGE_SIZE = 12;
 const marketCategoryOrder = [
   "财务收支审计",
   "采购招标审计",
@@ -63,11 +64,6 @@ const mineActionPanels: Record<AgentAction, AgentActionPanel> = {
     title: "创建副本",
     description: "从当前智能体生成一个个人可维护版本。",
     items: ["复制基础信息", "复用知识库", "重置调用统计"]
-  },
-  立即使用: {
-    title: "使用路径",
-    description: "进入 AI 对话或专题工作台后调用该智能体。",
-    items: ["选择项目", "确认知识库", "开始审计对话"]
   },
   配置知识: {
     title: "知识配置",
@@ -111,11 +107,6 @@ const marketActionPanels: Record<AgentAction, AgentActionPanel> = {
     title: "加入我的智能体",
     description: "加入后可以在 AI 对话中通过 @ 或 / 调用。",
     items: ["生成个人副本", "保留模板能力", "写入智能体 store"]
-  },
-  立即使用: {
-    title: "试用路径",
-    description: "先加入我的智能体，再从 AI 对话选择调用。",
-    items: ["创建副本", "选择项目", "进入 AI 对话"]
   },
   配置知识: {
     title: "接入知识",
@@ -182,12 +173,6 @@ function getCategoryCounts(agents: readonly ReferenceAgentCard[]): ReadonlyMap<s
   return counts;
 }
 
-function estimateAgentPageSize(width: number, height: number): number {
-  const columns = width >= 1360 ? 5 : width >= 1120 ? 4 : width >= 860 ? 3 : width >= 640 ? 2 : 1;
-  const rows = Math.max(2, Math.min(4, Math.floor((height - 360) / 204)));
-  return columns * rows;
-}
-
 function toApiAgentCategory(category: ReferenceAgentCategory): ApiAgentCategory {
   if (category === "工具智能体") {
     return "效率类";
@@ -235,7 +220,6 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [installedAgentId, setInstalledAgentId] = useState("");
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
   const agentData = useReplicaAgentsData(mode);
   const sourceAgents = agentData.data.agents;
   const agentFilters = useMemo(
@@ -249,10 +233,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   );
 
   const isMine = mode === "mine";
-  const pageCount = Math.max(1, Math.ceil(filteredAgents.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
-  const pageStartIndex = (safePage - 1) * pageSize;
-  const pageEndIndex = Math.min(filteredAgents.length, pageStartIndex + pageSize);
+  const pageStartIndex = (safePage - 1) * AGENT_PAGE_SIZE;
+  const pageEndIndex = Math.min(filteredAgents.length, pageStartIndex + AGENT_PAGE_SIZE);
   const visibleAgents = filteredAgents.slice(pageStartIndex, pageEndIndex);
   const selectedAgent =
     sourceAgents.find((agent) => agent.id === selectedAgentId) ??
@@ -271,21 +255,11 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeFilter, pageSize, query]);
+  }, [activeFilter, query]);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, pageCount));
   }, [pageCount]);
-
-  useEffect(() => {
-    function updatePageSize() {
-      setPageSize(estimateAgentPageSize(window.innerWidth, window.innerHeight));
-    }
-
-    updatePageSize();
-    window.addEventListener("resize", updatePageSize);
-    return () => window.removeEventListener("resize", updatePageSize);
-  }, []);
 
   function recordAction(agent: ReferenceAgentCard, action: AgentAction) {
     setSelectedAgentId(agent.id);
@@ -466,6 +440,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                     <div className="replica-card-actions">
                       {isMine ? (
                         <>
+                          <Link
+                            className="replica-personal-agent-direct-link"
+                            aria-label={`立即使用：${agent.name}`}
+                            href={`/chat?agent=${encodeURIComponent(agent.id)}`}
+                          >
+                            立即使用
+                          </Link>
                           <button
                             type="button"
                             aria-label={`查看详情：${agent.name}`}
@@ -516,7 +497,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                 <button type="button" disabled={safePage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
                   上一页
                 </button>
-                <span>每页 {pageSize} 个</span>
+                <span>每页 {AGENT_PAGE_SIZE} 个</span>
                 <strong>{safePage} / {pageCount}</strong>
                 <button type="button" disabled={safePage === pageCount} onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}>
                   下一页
@@ -557,19 +538,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                   </ul>
                 </section>
                 <div className="replica-agent-detail-actions">
-                  <button
-                    type="button"
-                    disabled={!isMine && installingAgentId === selectedAgent.id}
-                    onClick={() => {
-                      if (isMine) {
-                        recordAction(selectedAgent, "立即使用");
-                        return;
-                      }
-                      void installMarketAgent(selectedAgent);
-                    }}
+                  <Link
+                    className="replica-personal-agent-direct-link"
+                    aria-label={`立即使用：${selectedAgent.name}`}
+                    href={`/chat?agent=${encodeURIComponent(selectedAgent.id)}`}
                   >
-                    {isMine ? "立即使用" : installingAgentId === selectedAgent.id ? "安装中" : "创建副本"}
-                  </button>
+                    立即使用
+                  </Link>
                   <button type="button" onClick={() => recordAction(selectedAgent, "配置知识")}>配置知识</button>
                   <button type="button" onClick={() => recordAction(selectedAgent, "查看调用")}>调用记录</button>
                 </div>

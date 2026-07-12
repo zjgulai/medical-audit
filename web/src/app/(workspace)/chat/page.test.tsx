@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentsResponse, AuditAgentApiItem, QueryHistoryResponse } from "@/lib/api-types";
+
 import ChatPortalPage from "./page";
 
 const { useSearchParamsMock } = vi.hoisted(() => ({
@@ -9,7 +11,9 @@ const { useSearchParamsMock } = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   analyzeChatAttachment: vi.fn(),
+  fetchAgents: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
+  fetchQueryHistory: vi.fn(),
   fetchQueryModels: vi.fn(),
   runKnowledgeQuery: vi.fn()
 }));
@@ -18,46 +22,85 @@ vi.mock("next/navigation", () => ({
   useSearchParams: useSearchParamsMock
 }));
 
-vi.mock("@/components/replica/use-replica-runtime", () => ({
-  useReplicaChatData: () => ({
-    source: "api",
-    status: "ready",
-    data: {
-      agents: [
-        {
-          id: "agent-fund-helper",
-          name: "基金问答助手",
-          category: "业务类",
-          summary: "围绕医保基金审核依据回答。",
-          project: "医保基金使用合规专项自查",
-          topic: "医保基金",
-          initial: "基金",
-          tone: "blue"
-        },
-        {
-          id: "agent-data-helper",
-          name: "数据分析助手",
-          category: "效率类",
-          summary: "分析表格字段。",
-          project: "医保基金使用合规专项自查",
-          topic: "数据分析",
-          initial: "数",
-          tone: "cyan"
-        }
-      ],
-      historyItems: [],
-      documentResults: []
-    }
-  })
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api-client")>()),
+  ...apiMocks
 }));
 
-vi.mock("@/lib/api-client", () => apiMocks);
+function makeChatApiAgent(
+  id: string,
+  name: string,
+  category: AuditAgentApiItem["category"],
+  topic: string
+): AuditAgentApiItem {
+  const prompt = `请使用${name}围绕${topic}输出风险判断、证据依据和待补材料。`;
+  return {
+    id,
+    name,
+    category,
+    topic,
+    prompt,
+    knowledge_base: "医保基金合规知识库",
+    project_name: "医保基金使用合规专项自查",
+    status: "active",
+    prompt_version: 1,
+    prompt_version_key: `${id}@v1`,
+    visibility_scope: "project",
+    allowed_roles: ["admin", "technician", "director", "member"],
+    prompt_versions: [
+      {
+        version: 1,
+        prompt,
+        change_summary: "initial version",
+        is_active: true,
+        created_by: "next-admin",
+        created_at: "2026-07-06T00:00:00Z",
+        review_status: "approved",
+        review_note: "reviewed",
+        requested_by: "next-admin",
+        reviewed_by: "next-admin",
+        reviewed_at: "2026-07-06T00:00:00Z",
+        review_updated_at: "2026-07-06T00:00:00Z"
+      }
+    ],
+    created_by: "next-admin",
+    created_at: "2026-07-06T00:00:00Z",
+    updated_at: "2026-07-06T00:00:00Z",
+    source: "custom",
+    metadata: {
+      summary: `${name}用于${topic}。`,
+      description: `${name}的完整 API 测试数据。`,
+      contract_version: "audit-agent-v1"
+    }
+  };
+}
+
+function chatAgentsResponse(): AgentsResponse {
+  return {
+    items: [
+      makeChatApiAgent("agent-fund-helper", "基金问答助手", "业务类", "医保基金"),
+      makeChatApiAgent("agent-data-helper", "数据分析助手", "效率类", "数据分析"),
+      makeChatApiAgent("third-id", "第三智能体", "研究类", "科研复核"),
+      makeChatApiAgent("fourth-id", "第四智能体", "业务类", "采购复核"),
+      makeChatApiAgent("fifth-id", "第五智能体", "效率类", "档案复核")
+    ],
+    categories: ["业务类", "效率类", "研究类"],
+    store: { ready: true, backend: "SqlAlchemyAgentStore" }
+  };
+}
+
+const emptyQueryHistory: QueryHistoryResponse = {
+  items: [],
+  store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
+};
 
 describe("ChatPortalPage", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
     useSearchParamsMock.mockReturnValue(new URLSearchParams());
+    apiMocks.fetchAgents.mockResolvedValue(chatAgentsResponse());
+    apiMocks.fetchQueryHistory.mockResolvedValue(emptyQueryHistory);
     apiMocks.fetchQueryModels.mockResolvedValue({
       contract_version: "chat-model-catalog-v1",
       default_model: "kimi-2.7",
@@ -65,6 +108,7 @@ describe("ChatPortalPage", () => {
         {
           alias: "kimi-2.7",
           label: "Kimi K2.6（兼容别名）",
+          model: "kimi-k2.6",
           provider: "kimi",
           available: true,
           default: true,
@@ -237,6 +281,27 @@ describe("ChatPortalPage", () => {
     });
   });
 
+  it("does not submit on an Enter key event and submits an assigned multiline value only after clicking send", async () => {
+    render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
+    const textbox = screen.getByRole("textbox", { name: "输入相关问题以对话" });
+
+    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter" });
+    fireEvent.change(textbox, { target: { value: "第一行\n第二行" } });
+
+    expect(textbox).toHaveValue("第一行\n第二行");
+    expect(apiMocks.runKnowledgeQuery).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ question: "第一行\n第二行" })
+      );
+    });
+  });
+
   it("hydrates question, knowledge base, and agent from chat URL params", async () => {
     useSearchParamsMock.mockReturnValue(
       new URLSearchParams(
@@ -265,6 +330,30 @@ describe("ChatPortalPage", () => {
     });
   });
 
+  it("selects the fifth API agent from the chat URL through the runtime loader", async () => {
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("agent=fifth-id"));
+
+    render(<ChatPortalPage />);
+
+    expect(await screen.findByRole("button", { name: /第五智能体/ })).toBeInTheDocument();
+    expect(apiMocks.fetchAgents).toHaveBeenCalledTimes(1);
+    expect(apiMocks.fetchQueryHistory).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "请执行档案复核" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          question: "请执行档案复核",
+          agent: "fifth-id"
+        })
+      );
+    });
+  });
+
   it("falls back to the default knowledge query path when chat model aliases are unavailable", async () => {
     apiMocks.fetchQueryModels.mockResolvedValue({
       contract_version: "chat-model-catalog-v1",
@@ -273,6 +362,7 @@ describe("ChatPortalPage", () => {
         {
           alias: "kimi-2.7",
           label: "Kimi K2.6（兼容别名）",
+          model: "kimi-k2.6",
           provider: null,
           available: false,
           default: true,
@@ -359,6 +449,7 @@ describe("ChatPortalPage", () => {
         {
           alias: "kimi-2.7",
           label: "Kimi K2.6（兼容别名）",
+          model: "kimi-k2.6",
           provider: null,
           available: false,
           default: true,

@@ -2467,6 +2467,33 @@ select {
   background: var(--replica-primary-soft);
 }
 
+.replica-personal-agent-direct-link {
+  display: inline-flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--replica-primary);
+  border-radius: 6px;
+  background: var(--replica-primary);
+  color: #ffffff;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.replica-personal-agent-direct-link:hover {
+  background: #075fc4;
+  color: #ffffff;
+}
+
+.replica-personal-agent-direct-link:focus-visible {
+  outline: 3px solid rgb(11 99 206 / 0.24);
+  outline-offset: 2px;
+}
+
 .replica-card-actions .replica-card-detail-button {
   width: 100%;
   border-color: var(--replica-primary);
@@ -7184,6 +7211,11 @@ select {
   cursor: pointer;
   font-size: 13px;
   font-weight: 760;
+}
+
+.replica-agent-detail-actions > .replica-personal-agent-direct-link {
+  min-height: 40px;
+  border-radius: 9px;
 }
 
 .replica-agent-detail-actions button:first-child,

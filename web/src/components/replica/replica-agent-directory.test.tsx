@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createAuditAgent } from "@/lib/api-client";
 import type { AgentCreateRequest } from "@/lib/api-types";
+import type { ReferenceAgentCard } from "@/lib/reference-replica-data";
 
 import { ReplicaAgentDirectory } from "./replica-agent-directory";
 
@@ -42,18 +43,23 @@ vi.mock("./use-replica-runtime", () => ({
       agents: [
         makeAgent("template-medical-fund", "医保核验", "财务收支审计", "医保基金使用合规"),
         makeAgent("template-travel", "出国核验", "财务收支审计", "财务收支审计"),
-        makeAgent("template-meeting", "会议核验", "财务收支审计", "会议费审计"),
+        makeAgent("template meeting/2026", "会议核验", "财务收支审计", "会议费审计"),
         makeAgent("template-procurement", "招标核验", "采购招标审计", "采购招标审计"),
         makeAgent("template-bid", "定标核验", "采购招标审计", "定标复核"),
         makeAgent("template-engineering", "工程核验", "工程审计", "工程审计"),
         makeAgent("template-asset", "资产核验", "固定资产审计", "资产审计"),
-        makeAgent("template-research", "科研核验", "审计科研", "审计科研")
+        makeAgent("template-research", "科研核验", "审计科研", "审计科研"),
+        makeAgent("template-contract", "合同核验", "采购招标审计", "合同审计"),
+        makeAgent("template-invoice", "发票核验", "财务收支审计", "票据审计"),
+        makeAgent("template-budget", "预算核验", "财务收支审计", "预算执行审计"),
+        makeAgent("template-data", "数据核验", "工具智能体", "数据质量审计"),
+        makeAgent("template-archive", "档案核验", "工具智能体", "档案完整性审计")
       ]
     }
   })
 }));
 
-function makeAgent(id: string, name: string, category: string, topic: string) {
+function makeAgent(id: string, name: string, category: string, topic: string): ReferenceAgentCard {
   return {
     id,
     name,
@@ -64,29 +70,112 @@ function makeAgent(id: string, name: string, category: string, topic: string) {
     initial: name.slice(0, 1),
     tone: "blue",
     prompt: `## ${name}\n请围绕${topic}输出风险判断、证据依据和待补材料。`,
-    sourceFile: `${category}.ods`
+    sourceFile: `${category}.ods`,
+    avatarSeed: `${id}-avatar`,
+    templateKey: `${id}-template`
   };
 }
 
 describe("ReplicaAgentDirectory", () => {
-  it("uses prompt source categories and paginates market cards", () => {
+  it("shows exactly twelve agents on page one and the thirteenth on page two", () => {
     render(<ReplicaAgentDirectory mode="market" />);
 
     expect(screen.getByRole("button", { name: /财务收支审计/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /采购招标审计/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^业务类/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^详情：/ })).toHaveLength(6);
+
+    const firstPageNames = screen.getAllByRole("button", { name: /^详情：/ }).map((button) => button.getAttribute("aria-label"));
+    expect(firstPageNames).toEqual([
+      "详情：医保核验",
+      "详情：出国核验",
+      "详情：会议核验",
+      "详情：招标核验",
+      "详情：定标核验",
+      "详情：工程核验",
+      "详情：资产核验",
+      "详情：科研核验",
+      "详情：合同核验",
+      "详情：发票核验",
+      "详情：预算核验",
+      "详情：数据核验"
+    ]);
+    expect(screen.queryByRole("button", { name: "详情：档案核验" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getByRole("button", { name: "详情：资产核验" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^详情：/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "详情：档案核验" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /采购招标审计/ }));
     expect(screen.getByRole("button", { name: "详情：招标核验" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "详情：医保核验" })).not.toBeInTheDocument();
   });
 
+  it("keeps page size and membership stable when the window resizes", () => {
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    const firstPageNames = screen.getAllByRole("button", { name: /^详情：/ }).map((button) => button.getAttribute("aria-label"));
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 360 });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 520 });
+      fireEvent(window, new Event("resize"));
+
+      expect(screen.getAllByRole("button", { name: /^详情：/ }).map((button) => button.getAttribute("aria-label"))).toEqual(
+        firstPageNames
+      );
+      expect(screen.getByText("每页 12 个")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+    }
+  });
+
+  it("links every visible personal agent directly to chat", () => {
+    render(<ReplicaAgentDirectory mode="mine" />);
+
+    const expectedIdsByName = new Map<string, string>([
+      ["医保核验", "template-medical-fund"],
+      ["出国核验", "template-travel"],
+      ["会议核验", "template meeting/2026"],
+      ["招标核验", "template-procurement"],
+      ["定标核验", "template-bid"],
+      ["工程核验", "template-engineering"],
+      ["资产核验", "template-asset"],
+      ["科研核验", "template-research"],
+      ["合同核验", "template-contract"],
+      ["发票核验", "template-invoice"],
+      ["预算核验", "template-budget"],
+      ["数据核验", "template-data"]
+    ]);
+
+    const cards = screen.getAllByRole("article");
+    expect(cards).toHaveLength(12);
+    for (const card of cards) {
+      const name = within(card).getByRole("heading", { level: 2 }).textContent ?? "";
+      const id = expectedIdsByName.get(name);
+      expect(id).toBeDefined();
+      expect(within(card).getByRole("link", { name: `立即使用：${name}` })).toHaveAttribute(
+        "href",
+        `/chat?agent=${encodeURIComponent(id ?? "")}`
+      );
+    }
+  });
+
+  it("links the personal agent detail primary action directly to chat", () => {
+    render(<ReplicaAgentDirectory mode="mine" />);
+
+    expect(
+      within(screen.getByRole("complementary", { name: "我的智能体详情" })).getByRole("link", {
+        name: "立即使用：医保核验"
+      })
+    ).toHaveAttribute("href", "/chat?agent=template-medical-fund");
+  });
+
   it("opens prompt details and installs a market template through the audit agent API", async () => {
     render(<ReplicaAgentDirectory mode="market" />);
+
+    expect(screen.queryByRole("link", { name: /^立即使用：/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
 

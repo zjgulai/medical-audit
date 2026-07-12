@@ -602,7 +602,7 @@ export async function loadReplicaChatData(
       source: "fixture",
       outcome: "ready",
       data: {
-        agents: referenceAgents.slice(0, 4),
+        agents: referenceAgents,
         historyItems: referenceHistoryItems,
         documentResults: referenceDocumentResults
       },
@@ -622,7 +622,7 @@ export async function loadReplicaChatData(
   const agentResponse = agentRead.kind === "success" ? agentRead.value : null;
   const history = historyRead.kind === "success" ? historyRead.value : null;
   const agents = agentResponse
-    ? agentResponse.items.slice(0, 4).map((item, index) => mapAgent(item, index, "未关联项目"))
+    ? agentResponse.items.map((item, index) => mapAgent(item, index, "未关联项目"))
     : [];
   const historyItems = history ? mapQueryHistoryItems(history) : [];
   const degraded = Boolean(

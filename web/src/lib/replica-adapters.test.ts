@@ -2,19 +2,77 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   AgentsResponse,
+  AuditAgentApiItem,
   DocumentSourceCollectionCatalogResponse,
   GraphWorkbenchResponse,
   KnowledgeBaseCatalogItem,
-  KnowledgeBaseCatalogResponse
+  KnowledgeBaseCatalogResponse,
+  QueryHistoryResponse
 } from "./api-types";
 import {
   loadReplicaAgentMarketData,
+  loadReplicaChatData,
   loadReplicaDocumentsData,
   loadReplicaGraphData,
   loadReplicaKnowledgeBaseData,
   loadReplicaProjectsData
 } from "./replica-adapters";
-import { referenceMarketAgents } from "./reference-replica-data";
+import { referenceHistoryItems, referenceMarketAgents } from "./reference-replica-data";
+
+function makeApiAgent(id: string, index: number): AuditAgentApiItem {
+  return {
+    id,
+    name: `API 智能体 ${index}`,
+    category: index % 2 === 0 ? "效率类" : "业务类",
+    topic: `审计主题 ${index}`,
+    prompt: `请围绕审计主题 ${index} 输出风险判断、证据依据和待补材料。`,
+    knowledge_base: "医保基金合规知识库",
+    project_name: "医保基金使用合规专项自查",
+    status: "active",
+    prompt_version: 1,
+    prompt_version_key: `${id}@v1`,
+    visibility_scope: "project",
+    allowed_roles: ["admin", "technician", "director", "member"],
+    prompt_versions: [
+      {
+        version: 1,
+        prompt: `请围绕审计主题 ${index} 输出风险判断、证据依据和待补材料。`,
+        change_summary: "initial version",
+        is_active: true,
+        created_by: "next-admin",
+        created_at: "2026-07-06T00:00:00Z",
+        review_status: "approved",
+        review_note: "reviewed",
+        requested_by: "next-admin",
+        reviewed_by: "next-admin",
+        reviewed_at: "2026-07-06T00:00:00Z",
+        review_updated_at: "2026-07-06T00:00:00Z"
+      }
+    ],
+    created_by: "next-admin",
+    created_at: "2026-07-06T00:00:00Z",
+    updated_at: "2026-07-06T00:00:00Z",
+    source: "custom",
+    metadata: {
+      summary: `API 智能体 ${index} 的完整摘要。`,
+      description: `API 智能体 ${index} 的完整描述。`,
+      contract_version: "audit-agent-v1"
+    }
+  };
+}
+
+function makeAgentsResponse(ids: readonly string[]): AgentsResponse {
+  return {
+    items: ids.map((id, index) => makeApiAgent(id, index + 1)),
+    categories: ["业务类", "效率类", "研究类"],
+    store: { ready: true, backend: "SqlAlchemyAgentStore" }
+  };
+}
+
+const emptyQueryHistory: QueryHistoryResponse = {
+  items: [],
+  store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
+};
 
 const catalogItem: KnowledgeBaseCatalogItem = {
   source_collection: "medical-insurance-laws",
@@ -329,6 +387,51 @@ describe("loadReplicaAgentMarketData", () => {
     ]);
     expect(result.data.categories).not.toContain("业务类");
     expect(result.data.agents.some((agent) => agent.id === "seed-legacy-business")).toBe(false);
+  });
+});
+
+describe("loadReplicaChatData", () => {
+  it("maps every API agent without applying the chat presentation limit", async () => {
+    const result = await loadReplicaChatData({
+      fetchAgents: vi.fn().mockResolvedValue(
+        makeAgentsResponse(["first-id", "second-id", "third-id", "fourth-id", "fifth-id"])
+      ),
+      fetchQueryHistory: vi.fn().mockResolvedValue(emptyQueryHistory)
+    });
+
+    expect(result.outcome).toBe("ready");
+    expect(result.data.agents).toHaveLength(5);
+    expect(result.data.agents[4]).toEqual(expect.objectContaining({ id: "fifth-id", name: "API 智能体 5" }));
+  });
+
+  it("keeps successful empty API history empty", async () => {
+    const result = await loadReplicaChatData({
+      fetchQueryHistory: vi.fn().mockResolvedValue(emptyQueryHistory)
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("empty");
+    expect(result.data.historyItems).toEqual([]);
+  });
+
+  it("returns an error with no reference history when the API history read fails", async () => {
+    const result = await loadReplicaChatData({
+      fetchAgents: vi.fn().mockResolvedValue(makeAgentsResponse(["first-id"])),
+      fetchQueryHistory: vi.fn().mockRejectedValue(new Error("history unavailable"))
+    });
+
+    expect(result.source).toBe("api");
+    expect(result.outcome).toBe("error");
+    expect(result.data.historyItems).toEqual([]);
+    expect(result.data.historyItems).not.toEqual(referenceHistoryItems);
+  });
+
+  it("retains reference history only when API reads are disabled", async () => {
+    const result = await loadReplicaChatData();
+
+    expect(result.source).toBe("fixture");
+    expect(result.outcome).toBe("ready");
+    expect(result.data.historyItems).toEqual(referenceHistoryItems);
   });
 });
 
