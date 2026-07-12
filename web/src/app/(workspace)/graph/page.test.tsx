@@ -326,6 +326,22 @@ describe("GraphPage", () => {
     expect(screen.queryByText(/乡村振兴|县级财政专户|建设运维单位/)).not.toBeInTheDocument();
   });
 
+  it("renders only response-backed visual relation lines", async () => {
+    const { container } = render(<GraphPage />);
+
+    await screen.findByText("local-readonly-api");
+    expect(container.querySelectorAll(".replica-graph-line")).toHaveLength(0);
+
+    await screen.findByRole("option", { name: "PROJECT-A 项目" });
+    fireEvent.change(screen.getByRole("combobox", { name: "证据链所属项目" }), {
+      target: { value: "PROJECT-A" }
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "项目证据链" }));
+
+    expect(await screen.findByText("PROJECT-A 项目证据链")).toBeInTheDocument();
+    expect(container.querySelectorAll(".replica-graph-line")).toHaveLength(1);
+  });
+
   it("isolates stale project responses across project and role changes", async () => {
     const projectARead = deferred<GraphWorkbenchResponse>();
     const projectBRead = deferred<GraphWorkbenchResponse>();

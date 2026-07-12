@@ -297,7 +297,13 @@ function GraphReadySurface({
               <strong>{centerNode.label}</strong>
             </button>
           ) : null}
-          {["a", "b", "c"].map((suffix) => <div className={`replica-graph-line line-${suffix}`} key={suffix} aria-hidden="true" />)}
+          {relationLabels.map((relation, index) => (
+            <div
+              className={`replica-graph-line line-${String.fromCharCode(97 + index)}`}
+              key={`line:${relation.id}`}
+              aria-hidden="true"
+            />
+          ))}
           {relationLabels.map((relation, index) => (
             <span
               className={`replica-graph-relation-label relation-${String.fromCharCode(97 + index)}`}
