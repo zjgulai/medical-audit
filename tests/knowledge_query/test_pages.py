@@ -1322,6 +1322,21 @@ def test_controlled_auth_legacy_review_task_is_admin_or_creator_only(tmp_path: P
             }
         ]
     )
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.auth_user_store.add_user(
+        {
+            "user_key": "persistent-global-admin",
+            "display_name": "persistent-global-admin",
+            "status": "active",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "persistent-global-admin",
+        {"role": "admin", "scope_type": "global"},
+    )
     client = TestClient(create_app(state, enforce_controlled_api_auth=True))
 
     def headers(user_identifier: str, role: str) -> dict[str, str]:
@@ -1339,6 +1354,10 @@ def test_controlled_auth_legacy_review_task_is_admin_or_creator_only(tmp_path: P
         "/review-tasks/legacy-controlled-task/export",
         headers=headers("next-admin", "admin"),
     )
+    persistent_admin_response = client.get(
+        "/review-tasks/legacy-controlled-task/export",
+        headers=headers("persistent-global-admin", "member"),
+    )
     unrelated_response = client.get(
         "/review-tasks/legacy-controlled-task/export",
         headers=headers("unrelated-member", "member"),
@@ -1351,12 +1370,66 @@ def test_controlled_auth_legacy_review_task_is_admin_or_creator_only(tmp_path: P
         "/reports/workbench",
         headers=headers("unrelated-member", "member"),
     )
+    creator_edit = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("legacy-creator", "member"),
+        data={"status": "needs-evidence"},
+        follow_redirects=False,
+    )
+    admin_edit = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("next-admin", "admin"),
+        data={"status": "pending-review"},
+        follow_redirects=False,
+    )
+    persistent_admin_edit = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("persistent-global-admin", "member"),
+        data={"status": "needs-evidence"},
+        follow_redirects=False,
+    )
+    creator_formal = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("legacy-creator", "member"),
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    admin_formal = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("next-admin", "admin"),
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    persistent_admin_formal = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("persistent-global-admin", "member"),
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    unrelated_formal = client.post(
+        "/pages/review-tasks/legacy-controlled-task/status",
+        headers=headers("unrelated-member", "member"),
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
 
     assert creator_response.status_code == 200
     assert admin_response.status_code == 200
+    assert persistent_admin_response.status_code == 200
     assert unrelated_response.status_code == 404
     assert "legacy-controlled-task" not in unrelated_page.text
     assert unrelated_workbench.json()["report_entries"] == []
+    assert [
+        creator_edit.status_code,
+        admin_edit.status_code,
+        persistent_admin_edit.status_code,
+    ] == [303, 303, 303]
+    assert [
+        creator_formal.status_code,
+        admin_formal.status_code,
+        persistent_admin_formal.status_code,
+    ] == [403, 403, 403]
+    assert unrelated_formal.status_code == 404
 
 
 def test_legacy_formal_actions_require_authenticated_sign_report_actor(tmp_path: Path) -> None:
@@ -1407,6 +1480,201 @@ def test_legacy_formal_actions_require_authenticated_sign_report_actor(tmp_path:
         signoff,
         close,
     ))
+
+
+@pytest.mark.parametrize("auth_mode", ("header", "persistent-global"))
+def test_controlled_global_director_can_execute_only_legacy_formal_actions(
+    tmp_path: Path,
+    auth_mode: str,
+) -> None:
+    task_id = f"legacy-formal-{auth_mode}"
+    actor_id = f"legacy-{auth_mode}-director"
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(
+        tasks=[_legacy_report_ready_task(task_id)]
+    )
+    header_role = "director"
+    if auth_mode == "persistent-global":
+        state.auth_user_store = SqlAlchemyAuthUserStore(
+            f"sqlite:///{tmp_path / 'auth-users.db'}",
+            create_schema=True,
+        )
+        state.auth_user_store.add_user(
+            {"user_key": actor_id, "display_name": actor_id, "status": "active"}
+        )
+        state.auth_user_store.assign_role(
+            actor_id,
+            {"role": "director", "scope_type": "global"},
+        )
+        header_role = "member"
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+    headers = {
+        "X-User-Id": actor_id,
+        "X-Role": header_role,
+        "X-Tenant-Id": "hospital-demo",
+    }
+
+    direct = client.get(f"/review-tasks/{task_id}/export", headers=headers)
+    listing = client.get("/reports/workbench", headers=headers)
+    ordinary_edit = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=headers,
+        data={"status": "needs-evidence"},
+        follow_redirects=False,
+    )
+    attachment = client.post(
+        f"/pages/review-tasks/{task_id}/attachments",
+        headers=headers,
+        data={"attachment_title": "must stay hidden"},
+        files={"attachment_file": ("hidden.txt", b"hidden", "text/plain")},
+        follow_redirects=False,
+    )
+
+    assert direct.status_code == 404
+    assert listing.status_code == 200
+    assert listing.json()["report_entries"] == []
+    assert ordinary_edit.status_code == 404
+    assert attachment.status_code == 404
+
+    formal_payload = {
+        "status": "not-violation",
+        "reviewer_note": "全局主任完成复核。",
+        "conclusion": "未发现违规。",
+        "workpaper_status": "not-required",
+        "owner_confirmed_by": "spoofed-owner",
+        "owner_confirmed_at": "2026-07-12T12:00:00Z",
+        "report_title": "受控 legacy 报告",
+        "report_summary": "复核结论已闭合。",
+        "rectification_request": "完成整改验收后结案。",
+    }
+    rejected = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=headers,
+        data={**formal_payload, "owner_signoff_status": "rejected"},
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 303
+    rejected_dossier = cast(
+        dict[str, object], state.review_task_store.get_task(task_id)["dossier"]
+    )
+    rejected_owner = cast(dict[str, object], rejected_dossier["owner_signoff"])
+    assert rejected_owner["confirmed_by"] == actor_id
+    approved = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=headers,
+        data={**formal_payload, "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+    approved_dossier = cast(
+        dict[str, object], state.review_task_store.get_task(task_id)["dossier"]
+    )
+    approved_owner = cast(dict[str, object], approved_dossier["owner_signoff"])
+    assert approved_owner["confirmed_by"] == actor_id
+    signoff = client.post(
+        f"/pages/review-tasks/{task_id}/report-signoff",
+        headers=headers,
+        data={"signed_by": "spoofed-signer", "signoff_note": "全局主任签发。"},
+        follow_redirects=False,
+    )
+    returned = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=headers,
+        data={"rectification_status": "returned", "progress_note": "退回补充。"},
+        follow_redirects=False,
+    )
+    accepted = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=headers,
+        data={"rectification_status": "accepted", "progress_note": "整改验收。"},
+        follow_redirects=False,
+    )
+    close = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=headers,
+        data={"status": "closed"},
+        follow_redirects=False,
+    )
+
+    assert [
+        rejected.status_code,
+        approved.status_code,
+        signoff.status_code,
+        returned.status_code,
+        accepted.status_code,
+        close.status_code,
+    ] == [303, 303, 303, 303, 303, 303]
+    task = state.review_task_store.get_task(task_id)
+    dossier = cast(dict[str, object], task["dossier"])
+    signed_report = cast(dict[str, object], dossier["signed_report"])
+    rectification = cast(dict[str, object], dossier["rectification"])
+    events = cast(list[dict[str, object]], rectification["events"])
+    assert task["status"] == "closed"
+    assert signed_report["signed_by"] == actor_id
+    assert [event["actor"] for event in events[-2:]] == [actor_id, actor_id]
+    assert client.get(f"/review-tasks/{task_id}/export", headers=headers).status_code == 404
+    assert client.get("/reports/workbench", headers=headers).json()["report_entries"] == []
+
+
+@pytest.mark.parametrize("scope_type", ("project", "department"))
+def test_controlled_scoped_director_cannot_execute_legacy_formal_actions(
+    tmp_path: Path,
+    scope_type: str,
+) -> None:
+    task_id = f"legacy-scoped-{scope_type}"
+    actor_id = f"legacy-{scope_type}-director"
+    state = _api_state(tmp_path)
+    state.review_task_store = InMemoryReviewTaskStore(
+        tasks=[_legacy_report_ready_task(task_id)]
+    )
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.auth_user_store.add_user(
+        {"user_key": actor_id, "display_name": actor_id, "status": "active"}
+    )
+    state.auth_user_store.assign_role(
+        actor_id,
+        {
+            "role": "director",
+            "scope_type": scope_type,
+            "scope_key": "SELF-CHECK-FUND-20260607"
+            if scope_type == "project"
+            else "audit-office",
+        },
+    )
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+    headers = {
+        "X-User-Id": actor_id,
+        "X-Role": "director",
+        "X-Tenant-Id": "hospital-demo",
+        "X-Project-Key": "SELF-CHECK-FUND-20260607",
+    }
+
+    direct = client.get(f"/review-tasks/{task_id}/export", headers=headers)
+    listing = client.get("/reports/workbench", headers=headers)
+    approved = client.post(
+        f"/pages/review-tasks/{task_id}/status",
+        headers=headers,
+        data={"status": "not-violation", "owner_signoff_status": "approved"},
+        follow_redirects=False,
+    )
+    signoff = client.post(
+        f"/pages/review-tasks/{task_id}/report-signoff",
+        headers=headers,
+        follow_redirects=False,
+    )
+    accepted = client.post(
+        f"/pages/review-tasks/{task_id}/rectification",
+        headers=headers,
+        data={"rectification_status": "accepted"},
+        follow_redirects=False,
+    )
+
+    assert direct.status_code == 404
+    assert listing.json()["report_entries"] == []
+    assert [approved.status_code, signoff.status_code, accepted.status_code] == [404, 404, 404]
 
 
 @pytest.mark.parametrize("scope_type", ("project", "department"))
@@ -3348,6 +3616,48 @@ def _api_state(tmp_path: Path) -> ApiState:
 def _review_tasks(state: ApiState) -> list[dict[str, object]]:
     assert state.review_task_store is not None
     return state.review_task_store.list_tasks()
+
+
+def _legacy_report_ready_task(task_id: str) -> dict[str, object]:
+    return {
+        "task_id": task_id,
+        "created_at": "2026-07-12T00:00:00Z",
+        "updated_at": "2026-07-12T00:00:00Z",
+        "status": "not-violation",
+        "status_label": "未发现违规",
+        "question": "controlled legacy formal task",
+        "citation_count": 0,
+        "review_gate": "待人工复核",
+        "confidence_label": "待复核",
+        "fallback_label": "legacy",
+        "created_by": "legacy-creator",
+        "assigned_to": "",
+        "reviewer_note": "已复核",
+        "conclusion": "未发现违规",
+        "source": "legacy-test",
+        "dossier": {
+            "format": "audit-finding-dossier-v1",
+            "workpaper": {
+                "status": "not-required",
+                "status_label": "无需底稿",
+                "workpaper_id": "",
+                "note": "",
+            },
+            "owner_signoff": {
+                "status": "not-requested",
+                "status_label": "未提交确认",
+                "confirmed_by": "",
+                "confirmed_at": "",
+            },
+            "attachments": [],
+            "report_draft": {
+                "title": "受控 legacy 报告",
+                "summary": "复核结论已闭合。",
+                "rectification_request": "完成整改验收后结案。",
+                "updated_at": "2026-07-12T00:00:00Z",
+            },
+        },
+    }
 
 
 def _docx_document_xml(content: bytes) -> str:

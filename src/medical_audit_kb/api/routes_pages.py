@@ -978,13 +978,41 @@ async def update_review_task_status_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    existing_task = _visible_review_task_by_id(
-        state,
-        task_id,
-        request=request,
-        attempted_action="review-task-status-update",
-    )
     form = await _urlencoded_form(request)
+    status = _form_required_str(form, "status")
+    if status not in REVIEW_TASK_STATUS_LABELS:
+        raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
+    owner_signoff_status = _form_optional_str(form, "owner_signoff_status")
+    owner_confirmed_by = _form_optional_str(form, "owner_confirmed_by")
+    owner_confirmed_at = _form_optional_str(form, "owner_confirmed_at")
+    is_formal_action = (
+        status == "closed"
+        or owner_signoff_status in {"approved", "rejected"}
+        or bool(owner_confirmed_by)
+        or bool(owner_confirmed_at)
+    )
+    formal_actor: AuthenticatedUser | None
+    if is_formal_action:
+        existing_task, formal_actor = _visible_review_task_for_formal_action(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-status-update",
+        )
+        if (
+            owner_signoff_status in {"approved", "rejected"}
+            or owner_confirmed_by
+            or owner_confirmed_at
+        ):
+            form = {**form, "owner_confirmed_by": (formal_actor.user_identifier,)}
+    else:
+        existing_task = _visible_review_task_by_id(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-status-update",
+        )
+        formal_actor = None
     _ensure_review_task_writable(
         state,
         existing_task,
@@ -992,28 +1020,6 @@ async def update_review_task_status_page(
         attempted_action="review-task-status-update",
         endpoint=f"/pages/review-tasks/{task_id}/status",
     )
-    status = _form_required_str(form, "status")
-    if status not in REVIEW_TASK_STATUS_LABELS:
-        raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
-    owner_signoff_status = _form_optional_str(form, "owner_signoff_status")
-    owner_confirmed_by = _form_optional_str(form, "owner_confirmed_by")
-    owner_confirmed_at = _form_optional_str(form, "owner_confirmed_at")
-    formal_actor: AuthenticatedUser | None = None
-    if (
-        status == "closed"
-        or owner_signoff_status in {"approved", "rejected"}
-        or bool(owner_confirmed_by)
-        or bool(owner_confirmed_at)
-    ):
-        formal_actor = _require_review_task_permission(
-            state,
-            existing_task,
-            request=request,
-            permission=Permission.SIGN_REPORTS,
-            attempted_action="review-task-status-update",
-        )
-        if owner_signoff_status in {"approved", "rejected"} or owner_confirmed_by:
-            form = {**form, "owner_confirmed_by": (formal_actor.user_identifier,)}
     if status == "closed":
         _ensure_review_task_can_close(existing_task)
 
@@ -1220,17 +1226,10 @@ async def sign_review_task_report_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    task = _visible_review_task_by_id(
+    task, actor = _visible_review_task_for_formal_action(
         state,
         task_id,
         request=request,
-        attempted_action="review-task-report-signoff",
-    )
-    actor = _require_review_task_permission(
-        state,
-        task,
-        request=request,
-        permission=Permission.SIGN_REPORTS,
         attempted_action="review-task-report-signoff",
     )
     form = await _urlencoded_form(request)
@@ -1318,12 +1317,6 @@ async def update_review_task_rectification_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    task = _visible_review_task_by_id(
-        state,
-        task_id,
-        request=request,
-        attempted_action="review-task-rectification-update",
-    )
     form = await _urlencoded_form(request)
     rectification_status = _form_required_str(form, "rectification_status")
     if rectification_status not in RECTIFICATION_FORM_STATUS_LABELS:
@@ -1333,11 +1326,17 @@ async def update_review_task_rectification_page(
         )
     formal_actor: AuthenticatedUser | None = None
     if rectification_status in {"accepted", "returned"}:
-        formal_actor = _require_review_task_permission(
+        task, formal_actor = _visible_review_task_for_formal_action(
             state,
-            task,
+            task_id,
             request=request,
-            permission=Permission.SIGN_REPORTS,
+            attempted_action="review-task-rectification-update",
+        )
+    else:
+        task = _visible_review_task_by_id(
+            state,
+            task_id,
+            request=request,
             attempted_action="review-task-rectification-update",
         )
     _ensure_review_task_writable(
@@ -1357,6 +1356,9 @@ async def update_review_task_rectification_page(
         task={**task, "dossier": dossier},
         form=form,
         rectification_status=rectification_status,
+        actor_identifier=formal_actor.user_identifier
+        if formal_actor is not None
+        else "page-user",
     )
     dossier["rectification"] = rectification
     _update_review_task(
@@ -2450,6 +2452,35 @@ def _visible_review_task_by_id(
     return task
 
 
+def _visible_review_task_for_formal_action(
+    state: ApiState,
+    task_id: str,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> tuple[dict[str, object], AuthenticatedUser]:
+    task = _review_task_by_id(state, task_id)
+    if _review_task_project_key(task) is None:
+        global_actor = _global_legacy_formal_actor(state, request=request)
+        if global_actor is not None:
+            return task, global_actor
+    _review_task_visible_to_request(
+        state,
+        task,
+        request=request,
+        attempted_action=attempted_action,
+        raise_on_denied=True,
+        context=None,
+    )
+    return task, _require_review_task_permission(
+        state,
+        task,
+        request=request,
+        permission=Permission.SIGN_REPORTS,
+        attempted_action=attempted_action,
+    )
+
+
 def _visible_review_tasks(
     state: ApiState,
     *,
@@ -2672,6 +2703,43 @@ def _can_access_global_legacy_as_admin(user: AuthenticatedUser) -> bool:
         and user.auth_scope_type == "global"
         and user.auth_scope_key is None
     )
+
+
+def _global_legacy_formal_actor(
+    state: ApiState,
+    *,
+    request: Request,
+) -> AuthenticatedUser | None:
+    controlled_user = getattr(request.state, "authenticated_user", None)
+    user = controlled_user if isinstance(controlled_user, AuthenticatedUser) else None
+    if user is None:
+        x_user_id = (request.headers.get("X-User-Id") or "").strip()
+        if not x_user_id or x_user_id == "anonymous":
+            return None
+        try:
+            user = resolve_authenticated_user(
+                state,
+                x_user_id=x_user_id,
+                x_role=request.headers.get("X-Role"),
+                project_key=None,
+            )
+        except HTTPException:
+            return None
+    if not user_has_permission(user, Permission.SIGN_REPORTS):
+        return None
+    if user.auth_source == "header":
+        return (
+            user
+            if user.auth_scope_type is None and user.auth_scope_key is None
+            else None
+        )
+    if (
+        user.auth_source == "persistent_role"
+        and user.auth_scope_type == "global"
+        and user.auth_scope_key is None
+    ):
+        return user
+    return None
 
 
 def _review_task_project_key(task: dict[str, object]) -> str | None:
@@ -3689,6 +3757,7 @@ def _build_review_task_rectification(
     task: dict[str, object],
     form: Mapping[str, Sequence[str]],
     rectification_status: str,
+    actor_identifier: str,
 ) -> dict[str, object]:
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     signed_report = _signed_report_context(dossier)
@@ -3712,7 +3781,7 @@ def _build_review_task_rectification(
             "from_status_label": RECTIFICATION_STATUS_LABELS[previous_status],
             "to_status": rectification_status,
             "to_status_label": RECTIFICATION_STATUS_LABELS[rectification_status],
-            "actor": "page-user",
+            "actor": actor_identifier,
             "note": progress_note,
         }
     )
