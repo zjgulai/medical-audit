@@ -265,6 +265,14 @@ describe("ReplicaProjectWorkbench", () => {
     expect(screen.getByText("未绑定账号")).toBeInTheDocument();
     expect(screen.getByText("项目数据部分可用")).toBeInTheDocument();
     expect(screen.getByText("待处理疑点")).toBeInTheDocument();
+    expect(screen.getByText("提示等级：warning")).toBeInTheDocument();
+    expect(screen.getByText("状态：open · 风险：medium")).toBeInTheDocument();
+    expect(screen.getByText("原始状态：open · 数量：0")).toBeInTheDocument();
+    expect(screen.getByText("部门：内审部 · 总计 0 / 待处理 0 / 已关闭 0")).toBeInTheDocument();
+    expect(screen.getByText("partial")).toBeInTheDocument();
+    expect(screen.getByText("否（false）")).toBeInTheDocument();
+    expect(screen.getByText("可用（true） · SqlAlchemyProjectMemberStore")).toBeInTheDocument();
+    expect(screen.getByText("不可用（false） · unavailable")).toBeInTheDocument();
     expect(screen.queryByText("项目数据已完整同步")).not.toBeInTheDocument();
   });
 
@@ -380,6 +388,33 @@ describe("ReplicaProjectWorkbench", () => {
     expect(createProjectMemberMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("重复成员")).not.toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /Alpha项目/ })).getByText("2")).toBeInTheDocument();
+  });
+
+  it("submits the semantic member form exactly once during synchronous duplicate submits", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    const pendingCreate = deferred<Awaited<ReturnType<typeof createProjectMember>>>();
+    createProjectMemberMock.mockReturnValue(pendingCreate.promise);
+
+    render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    await screen.findByText("ALPHA-M1-account");
+    fireEvent.change(screen.getByRole("textbox", { name: "账号" }), { target: { value: "auditor-li" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "姓名" }), { target: { value: "李审计" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "部门" }), { target: { value: "医保办" } });
+
+    const form = screen.getByRole("form", { name: "新增项目成员" });
+    expect(screen.getByRole("button", { name: "新增成员" })).toHaveAttribute("type", "submit");
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(createProjectMemberMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pendingCreate.resolve({
+        item: member("NEW-LI", alpha.id, "李审计", "auditor-li"),
+        store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+      });
+      await Promise.resolve();
+    });
   });
 
   it("clears pending member-save state when switching projects and ignores the stale POST", async () => {

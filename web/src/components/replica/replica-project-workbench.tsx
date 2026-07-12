@@ -60,6 +60,7 @@ export function ReplicaProjectWorkbench() {
   const [memberStatus, setMemberStatus] = useState<ApiProjectMemberStatus>("在项目中");
   const [memberSaving, setMemberSaving] = useState(false);
   const [memberCreateError, setMemberCreateError] = useState<string | null>(null);
+  const memberSavingRef = useRef(false);
   const projectsRequestRef = useRef(0);
   const membersRequestRef = useRef(0);
   const dashboardRequestRef = useRef(0);
@@ -96,6 +97,7 @@ export function ReplicaProjectWorkbench() {
     setStatusFilter("全部");
     setMembersState(initialMembersState);
     setDashboardState(initialDashboardState);
+    memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
     loadProjects(auditUser.role);
@@ -161,6 +163,7 @@ export function ReplicaProjectWorkbench() {
   function selectProject(project: ProjectSummaryApiItem) {
     ++selectionGenerationRef.current;
     setSelectedProjectId(project.id);
+    memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
     loadMembers(project.id);
@@ -168,13 +171,14 @@ export function ReplicaProjectWorkbench() {
   }
 
   async function submitMember() {
-    if (!selectedProject || !canManageMembers || memberSaving) return;
+    if (!selectedProject || !canManageMembers || memberSavingRef.current) return;
     const normalizedIdentifier = userIdentifier.trim();
     const normalizedName = memberName.trim();
     const normalizedDepartment = memberDepartment.trim();
     if (!normalizedIdentifier || !normalizedName || !normalizedDepartment) return;
 
     const generation = selectionGenerationRef.current;
+    memberSavingRef.current = true;
     setMemberSaving(true);
     setMemberCreateError(null);
     try {
@@ -216,7 +220,10 @@ export function ReplicaProjectWorkbench() {
         setMemberCreateError("成员新增失败，请核对账号是否重复或稍后重试。");
       }
     } finally {
-      if (generation === selectionGenerationRef.current) setMemberSaving(false);
+      if (generation === selectionGenerationRef.current) {
+        memberSavingRef.current = false;
+        setMemberSaving(false);
+      }
     }
   }
 
@@ -419,7 +426,14 @@ function MembersPanel({
       ) : null}
 
       {canManage ? (
-        <div className="replica-project-member-form" aria-label="新增项目成员">
+        <form
+          className="replica-project-member-form"
+          aria-label="新增项目成员"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
           <h4>新增成员</h4>
           <label>账号<input aria-label="账号" required value={userIdentifier} onChange={(event) => onUserIdentifierChange(event.target.value)} /></label>
           <label>姓名<input aria-label="姓名" required value={name} onChange={(event) => onNameChange(event.target.value)} /></label>
@@ -437,8 +451,8 @@ function MembersPanel({
             </select>
           </label>
           {createError ? <p role="alert">{createError}</p> : null}
-          <button type="button" disabled={saving} onClick={onSubmit}>{saving ? "新增中" : "新增成员"}</button>
-        </div>
+          <button type="submit" disabled={saving}>{saving ? "新增中" : "新增成员"}</button>
+        </form>
       ) : <p className="replica-project-readonly">当前角色仅可查看项目成员</p>}
     </section>
   );
@@ -470,7 +484,10 @@ function DashboardPanel({
             <div className="replica-project-metrics">
               {dashboard.metrics.map((metric) => (
                 <article key={metric.key}>
-                  <span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.helper}</small>
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                  <small>{metric.helper}</small>
+                  <small>提示等级：{metric.tone}</small>
                 </article>
               ))}
             </div>
@@ -481,7 +498,8 @@ function DashboardPanel({
               items={dashboard.queue.map((item) => ({
                 id: item.id,
                 primary: item.title,
-                details: `${item.owner} · ${item.dueLabel}`
+                details: `${item.owner} · ${item.dueLabel}`,
+                metadata: `状态：${item.status} · 风险：${item.risk}`
               }))}
             />
           ) : null}
@@ -501,7 +519,7 @@ function DashboardPanel({
               items={dashboard.status_distribution.map((item) => ({
                 id: item.status,
                 primary: item.label,
-                details: `${item.count}`
+                details: `原始状态：${item.status} · 数量：${item.count}`
               }))}
             />
           ) : null}
@@ -511,12 +529,22 @@ function DashboardPanel({
               items={dashboard.member_workloads.map((item) => ({
                 id: `${item.name}-${item.role}-${item.department}`,
                 primary: `${item.name} · ${item.role}`,
-                details: `总计 ${item.total} / 待处理 ${item.pending} / 已关闭 ${item.closed}`
+                details: `部门：${item.department} · 总计 ${item.total} / 待处理 ${item.pending} / 已关闭 ${item.closed}`
               }))}
             />
           ) : null}
           <dl className="replica-project-evidence">
             <div><dt>证据等级</dt><dd>{dashboard.evidence_grade}</dd></div>
+            <div><dt>数据状态</dt><dd>{dashboard.store.status}</dd></div>
+            <div><dt>整体可用</dt><dd>{booleanLabel(dashboard.store.ready)}</dd></div>
+            <div>
+              <dt>成员数据源</dt>
+              <dd>{sourceAvailabilityLabel(dashboard.store.project_members_ready)} · {dashboard.store.backend.project_members}</dd>
+            </div>
+            <div>
+              <dt>疑点数据源</dt>
+              <dd>{sourceAvailabilityLabel(dashboard.store.audit_findings_ready)} · {dashboard.store.backend.audit_findings}</dd>
+            </div>
             <div><dt>数据存储</dt><dd>{dashboard.store.backend.project_members} / {dashboard.store.backend.audit_findings}</dd></div>
             <div><dt>生产副作用</dt><dd>{dashboard.production_side_effect}</dd></div>
           </dl>
@@ -530,6 +558,7 @@ type DashboardListItem = {
   readonly id: string;
   readonly primary: string;
   readonly details: string;
+  readonly metadata?: string;
 };
 
 function DashboardList({ title, items }: { readonly title: string; readonly items: readonly DashboardListItem[] }) {
@@ -541,6 +570,7 @@ function DashboardList({ title, items }: { readonly title: string; readonly item
           <li key={item.id}>
             <strong>{item.primary}</strong>
             <span>{item.details}</span>
+            {item.metadata ? <span>{item.metadata}</span> : null}
           </li>
         ))}
       </ul>
@@ -564,6 +594,14 @@ function dashboardStoreLabel(response: ProjectDashboardResponse): string {
   if (response.store.status === "ready") return "项目数据已完整同步";
   if (response.store.status === "partial") return "项目数据部分可用";
   return "项目数据当前不可用";
+}
+
+function booleanLabel(ready: boolean): string {
+  return ready ? "是（true）" : "否（false）";
+}
+
+function sourceAvailabilityLabel(ready: boolean): string {
+  return ready ? "可用（true）" : "不可用（false）";
 }
 
 function formatDate(value: string): string {
