@@ -221,7 +221,8 @@ describe("ReplicaProjectWorkbench", () => {
     fetchProjectsMock.mockRejectedValueOnce(new Error("offline"));
     fetchProjectsMock.mockResolvedValueOnce(projectsResponse([project("RETRY", "重试项目")]));
     const second = render(<ReplicaProjectWorkbench />);
-    expect(await screen.findByText("项目列表读取失败")).toBeInTheDocument();
+    const projectListError = await screen.findByText("项目列表读取失败");
+    expect(projectListError).toHaveAttribute("role", "alert");
     fireEvent.click(screen.getByRole("button", { name: "重试项目列表" }));
     expect(await screen.findByText("重试项目")).toBeInTheDocument();
     second.unmount();
@@ -310,10 +311,21 @@ describe("ReplicaProjectWorkbench", () => {
     fetchProjectDashboardMock.mockRejectedValueOnce(new Error("dashboard down"));
     render(<ReplicaProjectWorkbench />);
     fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
-    expect(await screen.findByText("项目成员读取失败")).toBeInTheDocument();
-    expect(screen.getByText("项目驾驶舱读取失败")).toBeInTheDocument();
+    const memberError = await screen.findByText("项目成员读取失败");
+    expect(memberError).toHaveAttribute("role", "alert");
+    expect(screen.getByText("项目驾驶舱读取失败")).toHaveAttribute("role", "alert");
     expect(screen.getByRole("button", { name: "重试项目成员" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试项目驾驶舱" })).toBeInTheDocument();
+  });
+
+  it("announces asynchronous loading states politely without treating them as errors", () => {
+    fetchProjectsMock.mockReturnValue(new Promise(() => undefined));
+
+    render(<ReplicaProjectWorkbench />);
+
+    const loading = screen.getByText("项目列表读取中");
+    expect(loading).toHaveAttribute("role", "status");
+    expect(loading).toHaveAttribute("aria-live", "polite");
   });
 
   it("ignores stale detail responses after rapid project switching", async () => {

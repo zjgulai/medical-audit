@@ -261,15 +261,15 @@ export function ReplicaProjectWorkbench() {
           </label>
         </div>
 
-        {roleScopedProjectsState.phase === "loading" ? <ProjectMessage>项目列表读取中</ProjectMessage> : null}
+        {roleScopedProjectsState.phase === "loading" ? <ProjectMessage tone="status">项目列表读取中</ProjectMessage> : null}
         {roleScopedProjectsState.phase === "error" ? (
-          <ProjectMessage>
+          <ProjectMessage tone="error">
             项目列表读取失败
             <button type="button" onClick={() => loadProjects(auditUser.role)}>重试项目列表</button>
           </ProjectMessage>
         ) : null}
-        {roleScopedProjectsState.phase === "empty" ? <ProjectMessage>当前没有可见项目</ProjectMessage> : null}
-        {roleScopedProjectsState.phase === "degraded" ? <ProjectMessage>项目列表存储未就绪</ProjectMessage> : null}
+        {roleScopedProjectsState.phase === "empty" ? <ProjectMessage tone="status">当前没有可见项目</ProjectMessage> : null}
+        {roleScopedProjectsState.phase === "degraded" ? <ProjectMessage tone="status">项目列表存储未就绪</ProjectMessage> : null}
 
         {roleScopedProjectsState.response && projects.length > 0 ? (
           filteredProjects.length > 0 ? (
@@ -395,15 +395,15 @@ function MembersPanel({
   return (
     <section className="replica-project-panel" aria-labelledby="project-members-title">
       <h3 id="project-members-title">项目成员</h3>
-      {membersState.phase === "loading" ? <ProjectMessage>项目成员读取中</ProjectMessage> : null}
+      {membersState.phase === "loading" ? <ProjectMessage tone="status">项目成员读取中</ProjectMessage> : null}
       {membersState.phase === "error" ? (
-        <ProjectMessage>
+        <ProjectMessage tone="error">
           项目成员读取失败
           <button type="button" onClick={onRetry}>重试项目成员</button>
         </ProjectMessage>
       ) : null}
-      {membersState.phase === "empty" ? <ProjectMessage>当前项目没有成员</ProjectMessage> : null}
-      {membersState.phase === "degraded" ? <ProjectMessage>项目成员存储未就绪</ProjectMessage> : null}
+      {membersState.phase === "empty" ? <ProjectMessage tone="status">当前项目没有成员</ProjectMessage> : null}
+      {membersState.phase === "degraded" ? <ProjectMessage tone="status">项目成员存储未就绪</ProjectMessage> : null}
       {members.length > 0 ? (
         <div className="replica-project-table-shell">
           <table className="replica-project-table replica-project-table-compact">
@@ -469,17 +469,19 @@ function DashboardPanel({
   return (
     <section className="replica-project-panel" aria-labelledby="project-dashboard-title">
       <h3 id="project-dashboard-title">项目驾驶舱</h3>
-      {dashboardState.phase === "loading" ? <ProjectMessage>项目驾驶舱读取中</ProjectMessage> : null}
+      {dashboardState.phase === "loading" ? <ProjectMessage tone="status">项目驾驶舱读取中</ProjectMessage> : null}
       {dashboardState.phase === "error" ? (
-        <ProjectMessage>
+        <ProjectMessage tone="error">
           项目驾驶舱读取失败
           <button type="button" onClick={onRetry}>重试项目驾驶舱</button>
         </ProjectMessage>
       ) : null}
       {dashboard ? (
         <>
-          <ProjectMessage>{dashboardStoreLabel(dashboard)}</ProjectMessage>
-          {dashboardState.phase === "empty" ? <ProjectMessage>当前项目暂无驾驶舱数据</ProjectMessage> : null}
+          <ProjectMessage tone={dashboardState.phase === "empty" ? "neutral" : "status"}>
+            {dashboardStoreLabel(dashboard)}
+          </ProjectMessage>
+          {dashboardState.phase === "empty" ? <ProjectMessage tone="status">当前项目暂无驾驶舱数据</ProjectMessage> : null}
           {dashboard.metrics.length > 0 ? (
             <div className="replica-project-metrics">
               {dashboard.metrics.map((metric) => (
@@ -578,8 +580,24 @@ function DashboardList({ title, items }: { readonly title: string; readonly item
   );
 }
 
-function ProjectMessage({ children }: { readonly children: React.ReactNode }) {
-  return <div className="replica-project-message">{children}</div>;
+type ProjectMessageTone = "neutral" | "status" | "error";
+
+function ProjectMessage({
+  children,
+  tone = "neutral"
+}: {
+  readonly children: React.ReactNode;
+  readonly tone?: ProjectMessageTone;
+}) {
+  return (
+    <div
+      className="replica-project-message"
+      role={tone === "error" ? "alert" : tone === "status" ? "status" : undefined}
+      aria-live={tone === "status" ? "polite" : undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 function dashboardIsEmpty(response: ProjectDashboardResponse): boolean {
