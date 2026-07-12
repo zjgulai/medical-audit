@@ -592,10 +592,10 @@ function mapReportWorkbench(response: ReportWorkbenchResponse): readonly Referen
 }
 
 function projectProgress(status: string): number {
-  if (status === "已归档") {
+  if (status === "已归档" || status === "已完成") {
     return 100;
   }
-  if (status === "待启动") {
+  if (status === "待开始") {
     return 12;
   }
   return 68;

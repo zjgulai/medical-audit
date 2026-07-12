@@ -15,6 +15,7 @@ vi.mock("@/lib/api-client", () => ({
       organization_name: "单院医保内审试运行",
       member_count: 3,
       creator: "项目负责人",
+      creator_user_identifier: "next-director",
       created_at: "2026-06-07",
       status: "进行中",
       operation_label: "进入项目",
@@ -74,6 +75,9 @@ vi.mock("@/lib/api-client", () => ({
     production_side_effect: "none",
     store: {
       ready: true,
+      project_members_ready: true,
+      audit_findings_ready: true,
+      status: "ready",
       backend: {
         project_members: "SqlAlchemyProjectMemberStore",
         audit_findings: "SqlAlchemyAuditFindingStore"

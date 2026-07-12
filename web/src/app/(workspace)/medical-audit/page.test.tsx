@@ -178,6 +178,7 @@ const projectSummary = {
   organization_name: "单院医保内审试运行",
   member_count: 3,
   creator: "审计办",
+  creator_user_identifier: "next-director",
   created_at: "2026-06-07T00:00:00Z",
   status: "进行中",
   operation_label: "进入专题",
@@ -188,6 +189,7 @@ const projectsResponse: ProjectsResponse = {
   items: [projectSummary],
   roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
   statuses: ["在项目中", "待确认"],
+  project_statuses: ["待开始", "进行中", "已完成", "已归档"],
   store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
 };
 
@@ -229,6 +231,9 @@ const projectDashboardResponse: ProjectDashboardResponse = {
   production_side_effect: "none",
   store: {
     ready: true,
+    project_members_ready: true,
+    audit_findings_ready: true,
+    status: "ready",
     backend: {
       project_members: "SqlAlchemyProjectMemberStore",
       audit_findings: "SqlAlchemyAuditFindingStore"

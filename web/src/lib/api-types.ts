@@ -1188,7 +1188,7 @@ export type AgentFeedbackListResponse = {
   };
 };
 
-export type ApiProjectStatus = "进行中" | "待启动" | "已归档";
+export type ApiProjectStatus = "待开始" | "进行中" | "已完成" | "已归档";
 export type ApiProjectMemberRole = "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
 export type ApiProjectMemberStatus = "在项目中" | "待确认";
 
@@ -1199,6 +1199,7 @@ export type ProjectSummaryApiItem = {
   readonly organization_name: string;
   readonly member_count: number;
   readonly creator: string;
+  readonly creator_user_identifier: string;
   readonly created_at: string;
   readonly status: ApiProjectStatus;
   readonly operation_label: string;
@@ -1208,6 +1209,7 @@ export type ProjectSummaryApiItem = {
 export type ProjectMemberApiItem = {
   readonly id: string;
   readonly project_key: string;
+  readonly user_identifier: string | null;
   readonly name: string;
   readonly role: ApiProjectMemberRole;
   readonly department: string;
@@ -1223,6 +1225,7 @@ export type ProjectsResponse = {
   readonly items: readonly ProjectSummaryApiItem[];
   readonly roles: readonly ApiProjectMemberRole[];
   readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly project_statuses: readonly ApiProjectStatus[];
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
@@ -1280,6 +1283,9 @@ export type ProjectDashboardResponse = {
   readonly production_side_effect: "none" | string;
   readonly store: {
     readonly ready: boolean;
+    readonly project_members_ready: boolean;
+    readonly audit_findings_ready: boolean;
+    readonly status: "ready" | "partial" | "unavailable";
     readonly backend: {
       readonly project_members: string;
       readonly audit_findings: string;
@@ -1299,6 +1305,7 @@ export type ProjectMembersResponse = {
 };
 
 export type ProjectMemberCreateRequest = {
+  readonly user_identifier: string;
   readonly name: string;
   readonly role: ApiProjectMemberRole;
   readonly department: string;

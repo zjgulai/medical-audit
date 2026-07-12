@@ -73,6 +73,7 @@ export type KnowledgeBaseCard = {
 
 export type PortalProjectMember = {
   readonly id: string;
+  readonly userIdentifier: string | null;
   readonly name: string;
   readonly role: "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
   readonly department: string;
@@ -97,7 +98,7 @@ export type PortalProjectSummary = {
   readonly memberCount: number;
   readonly creator: string;
   readonly createdAt: string;
-  readonly status: "进行中" | "待启动" | "已归档";
+  readonly status: "待开始" | "进行中" | "已完成" | "已归档";
   readonly operationLabel: string;
 };
 
@@ -621,6 +622,7 @@ export const knowledgeBases: readonly KnowledgeBaseCard[] = [
 export const defaultProjectMembers: readonly PortalProjectMember[] = [
   {
     id: "member-auditor",
+    userIdentifier: "next-member",
     name: "审计员",
     role: "审计员",
     department: "内审部",
@@ -628,6 +630,7 @@ export const defaultProjectMembers: readonly PortalProjectMember[] = [
   },
   {
     id: "member-owner",
+    userIdentifier: "next-director",
     name: "项目负责人",
     role: "项目负责人",
     department: "内审部",
@@ -635,6 +638,7 @@ export const defaultProjectMembers: readonly PortalProjectMember[] = [
   },
   {
     id: "member-it",
+    userIdentifier: "next-technician",
     name: "信息科接口人",
     role: "信息科",
     department: "信息科",
@@ -701,7 +705,7 @@ export const portalProjectSummaries: readonly PortalProjectSummary[] = [
     memberCount: 4,
     creator: "业务专家",
     createdAt: "2026-06-09",
-    status: "待启动",
+    status: "待开始",
     operationLabel: "查看成员"
   },
   {

@@ -18,8 +18,9 @@ import { currentSelfCheckProject } from "@/lib/projects";
 
 const memberRoles: readonly PortalProjectMember["role"][] = ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"];
 const projectStatusTone: Record<PortalProjectSummary["status"], "neutral" | "warning" | "success"> = {
+  待开始: "warning",
   进行中: "success",
-  待启动: "warning",
+  已完成: "success",
   已归档: "neutral"
 };
 type StoreStatus = "loading" | "ready" | "fallback" | "saving";
@@ -34,6 +35,7 @@ export function ProjectManagementWorkbench() {
   const [selectedProjectId, setSelectedProjectId] = useState(project.id);
   const [members, setMembers] = useState<readonly PortalProjectMember[]>(defaultMembersForProject(project.id));
   const [projectQuery, setProjectQuery] = useState("");
+  const [userIdentifier, setUserIdentifier] = useState("");
   const [name, setName] = useState("");
   const [permissionRoleId, setPermissionRoleId] = useState(hospitalPermissionRoles[3].id);
   const [role, setRole] = useState<PortalProjectMember["role"]>("审计员");
@@ -58,7 +60,7 @@ export function ProjectManagementWorkbench() {
     hospitalPermissionRoles.find((item) => item.id === permissionRoleId) ?? hospitalPermissionRoles[3];
   const canManageProjectMembers = auditUser.can("manage_project_members");
   const activeProjectCount = projects.filter((item) => item.status === "进行中").length;
-  const pendingProjectCount = projects.filter((item) => item.status === "待启动").length;
+  const pendingProjectCount = projects.filter((item) => item.status === "待开始").length;
   const cockpit = buildAuditCockpit(findingResponse, members);
 
   useEffect(() => {
@@ -147,10 +149,11 @@ export function ProjectManagementWorkbench() {
       return;
     }
 
+    const normalizedUserIdentifier = userIdentifier.trim();
     const normalizedName = name.trim();
     const normalizedDepartment = department.trim();
 
-    if (!normalizedName || !normalizedDepartment) {
+    if (!normalizedUserIdentifier || !normalizedName || !normalizedDepartment) {
       return;
     }
 
@@ -158,6 +161,7 @@ export function ProjectManagementWorkbench() {
     setErrorMessage(null);
     try {
       const response = await createProjectMember(selectedProject.id, {
+        user_identifier: normalizedUserIdentifier,
         name: normalizedName,
         role,
         department: normalizedDepartment
@@ -170,6 +174,7 @@ export function ProjectManagementWorkbench() {
         )
       );
       setName("");
+      setUserIdentifier("");
       setMemberStoreStatus(response.store.ready ? "ready" : "fallback");
     } catch {
       setMemberStoreStatus("fallback");
@@ -202,7 +207,7 @@ export function ProjectManagementWorkbench() {
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
           <SidebarMetric label="进行中" value={String(activeProjectCount)} />
-          <SidebarMetric label="待启动" value={String(pendingProjectCount)} />
+          <SidebarMetric label="待开始" value={String(pendingProjectCount)} />
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-3">
           {portalProjectSummaries.slice(0, 3).map((item) => (
@@ -429,6 +434,16 @@ export function ProjectManagementWorkbench() {
           <h2 className="audit-section-title">新增成员</h2>
           <form className="mt-4 space-y-4" onSubmit={submitMember}>
             <label className="block">
+              <span className="audit-label">账号</span>
+              <input
+                className="audit-focus-ring audit-input mt-2 px-3 py-2"
+                value={userIdentifier}
+                onChange={(event) => setUserIdentifier(event.target.value)}
+                placeholder="登录账号"
+                required
+              />
+            </label>
+            <label className="block">
               <span className="audit-label">姓名</span>
               <input
                 className="audit-focus-ring audit-input mt-2 px-3 py-2"
@@ -516,6 +531,7 @@ function apiProjectToPortalProject(project: ProjectSummaryApiItem): PortalProjec
 function apiMemberToPortalMember(member: ProjectMemberApiItem): PortalProjectMember {
   return {
     id: member.id,
+    userIdentifier: member.user_identifier,
     name: member.name,
     role: member.role,
     department: member.department,

@@ -1890,6 +1890,7 @@ describe("api-client", () => {
               organization_name: "单院医保内审试运行",
               member_count: 3,
               creator: "项目负责人",
+              creator_user_identifier: "next-director",
               created_at: "2026-06-07",
               status: "进行中",
               operation_label: "进入项目",
@@ -1898,6 +1899,7 @@ describe("api-client", () => {
           ],
           roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
           statuses: ["在项目中", "待确认"],
+          project_statuses: ["待开始", "进行中", "已完成", "已归档"],
           store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
         })
       }))
@@ -1928,6 +1930,7 @@ describe("api-client", () => {
             {
               id: "member-auditor",
               project_key: "SELF-CHECK-FUND-20260607",
+              user_identifier: "next-member",
               name: "审计员",
               role: "审计员",
               department: "内审部",
@@ -1974,6 +1977,7 @@ describe("api-client", () => {
             organization_name: "单院医保内审试运行",
             member_count: 3,
             creator: "项目负责人",
+            creator_user_identifier: "next-director",
             created_at: "2026-06-07",
             status: "进行中",
             operation_label: "进入项目",
@@ -1996,6 +2000,9 @@ describe("api-client", () => {
           production_side_effect: "none",
           store: {
             ready: true,
+            project_members_ready: true,
+            audit_findings_ready: true,
+            status: "ready",
             backend: {
               project_members: "SqlAlchemyProjectMemberStore",
               audit_findings: "SqlAlchemyAuditFindingStore"
@@ -2029,6 +2036,7 @@ describe("api-client", () => {
           item: {
             id: "member-custom-001",
             project_key: "CATALOG-LIMIT-202606",
+            user_identifier: "auditor-zhao",
             name: "赵审计",
             role: "审计员",
             department: "医保办",
@@ -2044,6 +2052,7 @@ describe("api-client", () => {
     );
 
     const result = await createProjectMember("CATALOG-LIMIT-202606", {
+      user_identifier: "auditor-zhao",
       name: "赵审计",
       role: "审计员",
       department: "医保办"
@@ -2060,6 +2069,7 @@ describe("api-client", () => {
         "X-Project-Key": "CATALOG-LIMIT-202606"
       },
       body: JSON.stringify({
+        user_identifier: "auditor-zhao",
         name: "赵审计",
         role: "审计员",
         department: "医保办"

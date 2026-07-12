@@ -8691,3 +8691,350 @@ button.replica-graph-node.is-selected {
     justify-content: flex-start;
   }
 }
+
+/* Project collaboration workbench. Scope every rule to avoid changing the legacy project preview. */
+.replica-project-workbench {
+  display: grid;
+  gap: 20px;
+}
+
+.replica-project-workbench .replica-project-visibility {
+  align-self: flex-start;
+  margin: 0;
+  border: 1px solid #d8e6f8;
+  border-radius: 999px;
+  background: #f4f8fe;
+  padding: 7px 12px;
+  color: #315b8d;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-section,
+.replica-project-workbench .replica-project-detail,
+.replica-project-workbench .replica-project-panel {
+  min-width: 0;
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgb(31 47 72 / 5%);
+}
+
+.replica-project-workbench .replica-project-section,
+.replica-project-workbench .replica-project-detail {
+  padding: 20px;
+}
+
+.replica-project-workbench .replica-project-panel {
+  padding: 18px;
+}
+
+.replica-project-workbench .replica-project-toolbar,
+.replica-project-workbench .replica-project-detail-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.replica-project-workbench .replica-project-toolbar h2,
+.replica-project-workbench .replica-project-detail-header h2,
+.replica-project-workbench .replica-project-panel h3,
+.replica-project-workbench .replica-project-member-form h4,
+.replica-project-workbench .replica-project-dashboard-list h4 {
+  margin: 4px 0 0;
+  color: #1f2f48;
+}
+
+.replica-project-workbench .replica-project-filter {
+  display: grid;
+  gap: 6px;
+  min-width: 170px;
+  color: #617086;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.replica-project-workbench select,
+.replica-project-workbench input {
+  min-height: 38px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  background: #fff;
+  padding: 7px 10px;
+  color: #26374f;
+  font: inherit;
+}
+
+.replica-project-workbench select:focus-visible,
+.replica-project-workbench input:focus-visible,
+.replica-project-workbench button:focus-visible {
+  outline: 3px solid rgb(11 99 206 / 20%);
+  outline-offset: 2px;
+}
+
+.replica-project-workbench .replica-project-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid #e4eaf2;
+  border-radius: 9px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  color: #596a80;
+  font-size: 13px;
+}
+
+.replica-project-workbench button {
+  border: 1px solid #b9d3f3;
+  border-radius: 8px;
+  background: #eef5fd;
+  padding: 7px 11px;
+  color: #0b63ce;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.replica-project-workbench button:hover:not(:disabled) {
+  border-color: #78abe6;
+  background: #e3effc;
+}
+
+.replica-project-workbench button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.replica-project-workbench .replica-project-table-shell {
+  width: 100%;
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+}
+
+.replica-project-workbench table.replica-project-table {
+  display: table;
+  width: 100%;
+  min-width: 760px;
+  margin: 0;
+  overflow: visible;
+  border-collapse: collapse;
+}
+
+.replica-project-workbench table.replica-project-table-compact {
+  min-width: 620px;
+}
+
+.replica-project-workbench .replica-project-table th,
+.replica-project-workbench .replica-project-table td {
+  border-bottom: 1px solid #edf1f7;
+  padding: 12px 13px;
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-table th {
+  background: #f7f9fc;
+  color: #6a788b;
+  font-weight: 700;
+}
+
+.replica-project-workbench .replica-project-table tbody tr {
+  cursor: default;
+}
+
+.replica-project-workbench .replica-project-table tbody tr:hover,
+.replica-project-workbench .replica-project-table tbody tr[data-selected="true"] {
+  background: #f3f7fd;
+}
+
+.replica-project-workbench .replica-project-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.replica-project-workbench .replica-project-detail {
+  margin-top: 0;
+}
+
+.replica-project-workbench .replica-project-detail-header > p {
+  margin: 0;
+  color: #63738a;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.replica-project-workbench .replica-project-member-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 1px solid #edf1f7;
+  padding-top: 16px;
+}
+
+.replica-project-workbench .replica-project-member-form h4,
+.replica-project-workbench .replica-project-member-form [role="alert"] {
+  grid-column: 1 / -1;
+}
+
+.replica-project-workbench .replica-project-member-form label {
+  display: grid;
+  gap: 6px;
+  color: #5f6f84;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.replica-project-workbench .replica-project-member-form [role="alert"] {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-member-form > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.replica-project-workbench .replica-project-readonly {
+  margin: 16px 0 0;
+  border-top: 1px solid #edf1f7;
+  padding-top: 14px;
+  color: #6b7889;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.replica-project-workbench .replica-project-metrics article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e5ebf3;
+  border-radius: 10px;
+  background: #f9fbfe;
+  padding: 12px;
+}
+
+.replica-project-workbench .replica-project-metrics span,
+.replica-project-workbench .replica-project-metrics small {
+  color: #69788d;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-metrics strong {
+  color: #153a66;
+  font-size: 22px;
+}
+
+.replica-project-workbench .replica-project-dashboard-list {
+  margin-top: 16px;
+}
+
+.replica-project-workbench .replica-project-dashboard-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replica-project-workbench .replica-project-dashboard-list li {
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid #b8d3f2;
+  background: #f8fafc;
+  padding: 9px 10px;
+  color: #596a80;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-dashboard-list li strong {
+  color: #273b55;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-evidence {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+  border-top: 1px solid #edf1f7;
+  padding-top: 14px;
+}
+
+.replica-project-workbench .replica-project-evidence div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.replica-project-workbench .replica-project-evidence dt,
+.replica-project-workbench .replica-project-evidence dd {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.replica-project-workbench .replica-project-evidence dt {
+  color: #758397;
+}
+
+.replica-project-workbench .replica-project-evidence dd {
+  color: #30445f;
+}
+
+@media (max-width: 1080px) {
+  .replica-project-workbench .replica-project-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .replica-project-workbench .replica-page-header,
+  .replica-project-workbench .replica-project-toolbar,
+  .replica-project-workbench .replica-project-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .replica-project-workbench .replica-project-visibility,
+  .replica-project-workbench .replica-project-filter {
+    align-self: stretch;
+    min-width: 0;
+  }
+
+  .replica-project-workbench .replica-project-section,
+  .replica-project-workbench .replica-project-detail,
+  .replica-project-workbench .replica-project-panel {
+    padding: 15px;
+  }
+
+  .replica-project-workbench .replica-project-member-form,
+  .replica-project-workbench .replica-project-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .replica-project-workbench .replica-project-member-form > * {
+    grid-column: 1;
+  }
+
+  .replica-project-workbench .replica-project-evidence div {
+    grid-template-columns: 1fr;
+  }
+}
