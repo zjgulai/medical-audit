@@ -27,6 +27,7 @@ from medical_audit_kb.api.document_upload_ingestion import (
     DocumentUploadIngestionError,
 )
 from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
+from medical_audit_kb.api.search_backend_details import safe_search_backend_details
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
 from medical_audit_kb.retrieval.filters import RetrievalFilters
@@ -1406,7 +1407,7 @@ def _source_collection_catalog_response(
         search_backend=DocumentSourceCollectionSearchBackend(
             ready=state.search_engine is not None,
             backend=state.search_backend,
-            details=state.search_backend_details,
+            details=safe_search_backend_details(state.search_backend_details),
         ),
         upload_permissions=_upload_permissions(role),
         boundaries=DocumentSourceCollectionCatalogBoundaries(

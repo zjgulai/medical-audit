@@ -12,6 +12,7 @@ from medical_audit_kb.api.app import ApiState, get_api_state
 from medical_audit_kb.api.auth import HospitalRole, resolve_authenticated_user
 from medical_audit_kb.api.document_permissions import document_permissions_for_role
 from medical_audit_kb.api.postgres_status import psycopg_database_url
+from medical_audit_kb.api.search_backend_details import safe_search_backend_details
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
 
@@ -168,6 +169,7 @@ def build_knowledge_base_catalog_response(
         "matching_embedding_count",
     )
     candidate_chunk_count = sum(item.metrics.candidate_chunk_count for item in items)
+    metrics_ready = store_backend == "runtime_state_and_postgres_catalog"
 
     return KnowledgeBaseCatalogResponse(
         contract_version="knowledge-base-catalog-v1",
@@ -186,9 +188,14 @@ def build_knowledge_base_catalog_response(
         search_backend={
             "ready": state.search_engine is not None,
             "backend": state.search_backend,
-            "details": _safe_search_backend_details(state.search_backend_details),
+            "details": safe_search_backend_details(state.search_backend_details),
         },
-        store={"ready": True, "backend": store_backend},
+        store={
+            "ready": metrics_ready,
+            "catalog_ready": True,
+            "metrics_ready": metrics_ready,
+            "backend": store_backend,
+        },
         boundaries=KnowledgeBaseCatalogBoundaries(
             production_write=False,
             provider_call=False,
@@ -425,17 +432,3 @@ def _total_or_sum(
     if total_key in totals:
         return totals[total_key]
     return sum(cast(int, getattr(item.metrics, metric_key)) for item in items)
-
-
-def _safe_search_backend_details(details: Mapping[str, object]) -> dict[str, object]:
-    safe: dict[str, object] = {}
-    for key, value in details.items():
-        lowered = key.lower()
-        if "secret" in lowered or "token" in lowered or "password" in lowered or "key" in lowered:
-            if key == "provider_version":
-                safe[key] = value
-            else:
-                safe[f"{key}_status"] = "set" if value else "missing"
-            continue
-        safe[key] = value
-    return safe

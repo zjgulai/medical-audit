@@ -1630,9 +1630,12 @@ def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Pa
     assert body["summary"]["candidate_chunk_count"] == 727214
     assert body["boundaries"]["production_write"] is False
     assert body["boundaries"]["database_write"] is False
-    assert body["store"]["backend"] in {
-        "runtime_state_and_postgres_catalog",
-        "runtime_state_and_registry_only",
+    assert body["boundaries"]["source"] == "runtime_state_and_postgres_catalog"
+    assert body["store"] == {
+        "ready": True,
+        "catalog_ready": True,
+        "metrics_ready": True,
+        "backend": "runtime_state_and_postgres_catalog",
     }
     law_item = next(
         item for item in body["items"] if item["source_collection"] == "medical-insurance-laws"
@@ -1641,6 +1644,176 @@ def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Pa
     assert law_item["metrics"]["active_embedding_count"] == 49051
     assert law_item["metrics"]["candidate_chunk_count"] == 727214
     assert law_item["index"]["latest_status"] == "active"
+
+
+def test_knowledge_base_catalog_marks_registry_only_metrics_unready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["boundaries"]["source"] == "runtime_state_and_registry_only"
+    assert body["store"] == {
+        "ready": False,
+        "catalog_ready": True,
+        "metrics_ready": False,
+        "backend": "runtime_state_and_registry_only",
+    }
+
+
+def test_document_source_and_knowledge_base_catalog_scrub_sensitive_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "embedding_provider": "deterministic-fake",
+        "token": "dummy-top-token-sentinel",
+        "password": "dummy-top-password-sentinel",
+        "api_key": "dummy-top-api-key-sentinel",
+        "private_key": "dummy-top-private-key-sentinel",
+        "credential": "dummy-top-credential-sentinel",
+        "secret": "dummy-top-secret-sentinel",
+        "nested_mapping": {
+            "safe_value": "dummy-nested-safe-sentinel",
+            "token": "dummy-nested-token-sentinel",
+            "password": "dummy-nested-password-sentinel",
+            "api_key": "dummy-nested-api-key-sentinel",
+            "private_key": "dummy-nested-private-key-sentinel",
+            "credential": "dummy-nested-credential-sentinel",
+            "secret": "dummy-nested-secret-sentinel",
+        },
+        "nested_list": [
+            {
+                "safe_value": 7,
+                "token": "dummy-list-token-sentinel",
+                "password": "dummy-list-password-sentinel",
+                "api_key": "dummy-list-api-key-sentinel",
+                "private_key": "dummy-list-private-key-sentinel",
+                "credential": "dummy-list-credential-sentinel",
+                "secret": "dummy-list-secret-sentinel",
+            },
+            ("dummy-tuple-safe-sentinel", {"secret": "dummy-tuple-secret-sentinel"}),
+        ],
+        "endpoint_url": (
+            "https://dummy-user-sentinel:dummy-password-sentinel@example.invalid/search"
+            "?safe=one&token=dummy-query-token-sentinel&safe=two"
+            "&password=dummy-query-password-sentinel&blank="
+            "#token=dummy-fragment-token-sentinel"
+        ),
+        "ipv6_url": (
+            "https://dummy-ipv6-user-sentinel:dummy-ipv6-password-sentinel@"
+            "[2001:db8::1]:8443/path"
+            "?api_key=dummy-ipv6-api-key-sentinel&safe=value"
+        ),
+        "invalid_port_url": (
+            "https://dummy-invalid-user-sentinel:dummy-invalid-password-sentinel@"
+            "example.invalid:notaport/path?credential=dummy-invalid-query-sentinel"
+        ),
+        "malformed_bracket_url": (
+            "https://dummy-bracket-user-sentinel:dummy-bracket-password-sentinel@"
+            "[2001:db8::1/path?secret=dummy-bracket-query-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        details = response.json()["search_backend"]["details"]
+        assert details == {
+            "embedding_provider": "deterministic-fake",
+            "nested_mapping": {"safe_value": "dummy-nested-safe-sentinel"},
+            "nested_list": [
+                {"safe_value": 7},
+                ["dummy-tuple-safe-sentinel", {}],
+            ],
+            "endpoint_url": "https://example.invalid/search?safe=one&safe=two&blank=",
+            "ipv6_url": "https://[2001:db8::1]:8443/path?safe=value",
+            "invalid_port_url": "<redacted-invalid-url>",
+            "malformed_bracket_url": "<redacted-invalid-url>",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_key in (
+            "token",
+            "password",
+            "api_key",
+            "private_key",
+            "credential",
+            "secret",
+        ):
+            assert sensitive_key not in serialized.lower()
+        for sensitive_value in (
+            "dummy-top-token-sentinel",
+            "dummy-top-password-sentinel",
+            "dummy-top-api-key-sentinel",
+            "dummy-top-private-key-sentinel",
+            "dummy-top-credential-sentinel",
+            "dummy-top-secret-sentinel",
+            "dummy-nested-token-sentinel",
+            "dummy-nested-password-sentinel",
+            "dummy-nested-api-key-sentinel",
+            "dummy-nested-private-key-sentinel",
+            "dummy-nested-credential-sentinel",
+            "dummy-nested-secret-sentinel",
+            "dummy-list-token-sentinel",
+            "dummy-list-password-sentinel",
+            "dummy-list-api-key-sentinel",
+            "dummy-list-private-key-sentinel",
+            "dummy-list-credential-sentinel",
+            "dummy-list-secret-sentinel",
+            "dummy-tuple-secret-sentinel",
+            "dummy-user-sentinel",
+            "dummy-password-sentinel",
+            "dummy-query-token-sentinel",
+            "dummy-query-password-sentinel",
+            "dummy-fragment-token-sentinel",
+            "dummy-ipv6-user-sentinel",
+            "dummy-ipv6-password-sentinel",
+            "dummy-ipv6-api-key-sentinel",
+            "dummy-invalid-user-sentinel",
+            "dummy-invalid-password-sentinel",
+            "dummy-invalid-query-sentinel",
+            "dummy-bracket-user-sentinel",
+            "dummy-bracket-password-sentinel",
+            "dummy-bracket-query-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_replace_unsupported_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "nested": {"unsupported": object()},
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "nested": {"unsupported": "<unsupported-diagnostic-value>"}
+        }
 
 
 def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: Path) -> None:
