@@ -208,7 +208,9 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "review-flow-create-update-export" in script_text
     assert "--include-review-write" in script_text
     assert "--require-generated-answer" in script_text
-    assert "Default is read-only production smoke" in script_text
+    assert "L3-production-read-only" in script_text
+    assert "--include-query-provider-smoke" in script_text
+    assert "--confirm-production-write" in script_text
     assert "edge-regression" in script_text
     assert "--include-shared-edge-regression" in script_text
     assert "shared-edge-regression-is-opt-in" in script_text
@@ -252,6 +254,152 @@ def test_run_production_e2e_smoke_shared_edge_is_explicit_opt_in(
         *module.SHARED_EDGE_REGRESSION_URLS,
         "https://status.example.test/",
     )
+
+
+def test_run_production_e2e_smoke_defaults_to_get_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_get_only",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    report_path = tmp_path / "readonly-smoke.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run-production-e2e-smoke.py",
+            "--report",
+            str(report_path),
+        ],
+    )
+    monkeypatch.setattr(module, "_check_certificate_san", lambda **_kwargs: {"ok": True})
+    monkeypatch.setattr(module, "_check_health", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        module,
+        "_check_search_backend",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+    monkeypatch.setattr(module, "_check_pages", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        module,
+        "_check_query_api",
+        lambda *_args, **_kwargs: pytest.fail("default smoke must not call POST /query"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_check_chat_export",
+        lambda *_args, **_kwargs: pytest.fail("default smoke must not run chat export"),
+    )
+
+    assert module.main() == 0
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["evidence_grade"] == "L3-production-read-only"
+    assert report["production_side_effect"] == "none"
+    assert report["database_write"] is False
+    assert report["provider_call"] == "not_called"
+    assert report["http_methods"] == ["GET"]
+    not_run_steps = {
+        item["name"]: item["details"]["reason"]
+        for item in report["steps"]
+        if item.get("details", {}).get("status") == "not_run"
+    }
+    assert not_run_steps["query-api-with-citations"] == (
+        "requires-explicit-production-write-authorization"
+    )
+    assert not_run_steps["chat-dossier-export"] == (
+        "requires-explicit-production-write-authorization"
+    )
+
+
+def test_run_production_e2e_smoke_requires_confirmation_for_live_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_live_confirmation",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run-production-e2e-smoke.py", "--include-query-provider-smoke"],
+    )
+
+    args = module._parse_args()
+
+    with pytest.raises(module.SmokeError, match="confirm-production-write"):
+        module._validate_side_effect_authorization(args)
+
+
+def test_run_production_e2e_smoke_allows_confirmed_live_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_live_confirmed",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run-production-e2e-smoke.py",
+            "--include-query-provider-smoke",
+            "--confirm-production-write",
+            "audit.lute-tlz-dddd.top",
+        ],
+    )
+
+    args = module._parse_args()
+
+    module._validate_side_effect_authorization(args)
+
+
+def test_run_production_e2e_smoke_reads_search_status_from_no_write_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_readonly_search_catalog",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    requested_urls: list[str] = []
+
+    def fake_get_json(url: str, **_kwargs: object) -> dict[str, object]:
+        requested_urls.append(url)
+        return {
+            "summary": {"current_search_embedding_count": 49051},
+            "search_backend": {
+                "backend": "postgres",
+                "ready": True,
+                "details": {"embedding_model": "text-embedding-v4"},
+            },
+            "boundaries": {
+                "database_write": False,
+                "provider_call": False,
+                "query_history_write": False,
+            },
+        }
+
+    monkeypatch.setattr(module, "_get_json", fake_get_json)
+    auth = module.SmokeAuth(
+        api_key=None,
+        admin_api_key=None,
+        api_key_env=None,
+        admin_api_key_env=None,
+    )
+
+    details = module._check_search_backend(
+        "https://audit.lute-tlz-dddd.top",
+        auth=auth,
+        expected_matching_embeddings=48985,
+        timeout_seconds=1,
+    )
+
+    assert requested_urls == [
+        "https://audit.lute-tlz-dddd.top/api/v1/knowledge-base/catalog",
+    ]
+    assert details["matching_embedding_count"] == 49051
 
 
 def test_audit_answer_provider_gate_readiness_script_is_valid_and_sanitized() -> None:
@@ -1825,7 +1973,13 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
         skip_app_rebuild=False,
         apply_schema=False,
         skip_smoke=False,
+        include_query_provider_smoke=False,
         include_review_write=False,
+        confirm_production_write="",
+        approved_sha="",
+        rollback=False,
+        expected_current_sha="",
+        restore_sha="",
         report="",
     )
 
@@ -1834,6 +1988,137 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     assert config.report_path == Path(
         "tmp/outputs/production-e2e-smoke-after-deploy-20260611T184000+0800.json",
     ).resolve()
+
+
+def test_deploy_tencent_cloud_execute_requires_clean_approved_main(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_source_gate",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    approved_sha = "a" * 40
+    fetch_calls: list[list[str]] = []
+    outputs = {
+        ("git", "symbolic-ref", "--quiet", "--short", "HEAD"): "main\n",
+        ("git", "rev-parse", "HEAD"): f"{approved_sha}\n",
+        ("git", "rev-parse", "origin/main"): f"{approved_sha}\n",
+    }
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda args, *, cwd: fetch_calls.append(list(args)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_capture",
+        lambda args, *, cwd: outputs[tuple(args)],
+    )
+    config = types.SimpleNamespace(repo_root=tmp_path, approved_sha=approved_sha)
+
+    module._validate_release_source(config)
+
+    assert fetch_calls == [
+        [
+            "git",
+            "fetch",
+            "--quiet",
+            "origin",
+            "+refs/heads/main:refs/remotes/origin/main",
+        ],
+    ]
+
+
+def test_deploy_tencent_cloud_execute_requires_explicit_approved_sha(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_approved_sha_required",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+        ],
+    )
+
+    with pytest.raises(module.DeployError, match="approved-sha"):
+        module._config_from_args(module._parse_args())
+
+
+def test_deploy_tencent_cloud_rollback_requires_both_sha_guards(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_rollback_sha_guards",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--rollback",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--expected-current-sha",
+            "a" * 40,
+        ],
+    )
+
+    with pytest.raises(module.DeployError, match="restore-sha"):
+        module._config_from_args(module._parse_args())
+
+
+def test_deploy_tencent_cloud_execute_rejects_release_branch(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_branch_denied",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_run_capture",
+        lambda args, *, cwd: "codex/release-candidate\n",
+    )
+    config = types.SimpleNamespace(repo_root=tmp_path, approved_sha="a" * 40)
+
+    with pytest.raises(module.DeployError, match="main branch"):
+        module._validate_release_source(config)
+
+
+def test_deploy_tencent_cloud_execute_rejects_unapproved_sha(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_unapproved_sha_denied",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    outputs = {
+        ("git", "symbolic-ref", "--quiet", "--short", "HEAD"): "main\n",
+        ("git", "rev-parse", "HEAD"): f"{'b' * 40}\n",
+        ("git", "rev-parse", "origin/main"): f"{'b' * 40}\n",
+    }
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_run_capture",
+        lambda args, *, cwd: outputs[tuple(args)],
+    )
+    config = types.SimpleNamespace(repo_root=tmp_path, approved_sha="a" * 40)
+
+    with pytest.raises(module.DeployError, match="approved SHA"):
+        module._validate_release_source(config)
 
 
 def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
@@ -1861,6 +2146,10 @@ def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
     script = captured_scripts[0]
     assert "docker inspect medical_audit_app" in script
     assert "curl -fsS http://127.0.0.1:18080/health" in script
+    assert "docker exec ai_video_nginx nginx -t" in script
+    assert "WARNING shared-nginx-test-failed" not in script
+    assert "/knowledge-base/catalog" in script
+    assert "/index/search-backend" not in script
     assert "/tmp/medical-audit-nginx-test.log" not in script
     assert "/var/www/audit -> /var/www/audit" not in script
 
@@ -1917,6 +2206,89 @@ def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
         "https://audit.example.test/documents >/dev/null"
     ) in script
     assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
+    assert "docker exec ai_video_nginx nginx -t" in script
+    assert "WARNING shared-nginx-test-failed" not in script
+    assert "/api/v1/knowledge-base/catalog" in script
+    assert "/index/search-backend" not in script
+
+
+def test_deploy_tencent_cloud_default_smoke_stays_get_only(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_get_only_smoke",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda args, *, cwd: commands.append(list(args)),
+    )
+    config = types.SimpleNamespace(
+        skip_smoke=False,
+        report_path=tmp_path / "smoke.json",
+        repo_root=tmp_path,
+        base_url="https://audit.example.test",
+        include_query_provider_smoke=False,
+        include_review_write=False,
+        confirm_production_write="",
+    )
+
+    module._run_production_smoke(config)
+
+    assert len(commands) == 1
+    assert "--include-query-provider-smoke" not in commands[0]
+    assert "--include-review-write" not in commands[0]
+    assert "--confirm-production-write" not in commands[0]
+
+
+def test_deploy_tencent_cloud_rollback_is_executable_and_stamp_scoped(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_rollback_script",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    captured_scripts: list[str] = []
+    monkeypatch.setattr(
+        module,
+        "_ssh",
+        lambda config, script: captured_scripts.append(script),
+    )
+    config = types.SimpleNamespace(
+        stamp="approved-stamp",
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+        expected_current_sha="a" * 40,
+        restore_sha="b" * 40,
+    )
+
+    module._run_remote_rollback(config)
+
+    assert len(captured_scripts) == 1
+    script = captured_scripts[0]
+    assert "pre-deploy-approved-stamp.tar.gz" in script
+    assert "audit-web-pre-deploy-approved-stamp.tar.gz" in script
+    assert "expected_current_sha=" in script
+    assert "restore_sha=" in script
+    assert 'test "$(cat "$remote_app_dir/.deploy-sha")" = "$expected_current_sha"' in script
+    assert "rsync -a --delete" in script
+    assert "--exclude '.deploy-sha'" in script
+    assert "up -d --no-deps app" in script
+    assert "docker exec ai_video_nginx nginx -t" in script
+    marker_write = 'printf \'%s\\n\' "$restore_sha" > "$remote_app_dir/.deploy-sha"'
+    assert script.index("up -d --no-deps app") < script.index(marker_write)
+    assert script.index("docker exec ai_video_nginx nginx -t") < script.index(marker_write)
+    syntax_check = subprocess.run(
+        ["bash", "-n"],
+        input=script,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert syntax_check.returncode == 0, syntax_check.stderr
 
 
 def test_deploy_tencent_cloud_rebuilds_only_app_without_dependencies(

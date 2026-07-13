@@ -1357,6 +1357,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 uv run python scripts/deploy-tencent-cloud-production.py \
   --execute \
   --confirm-production audit.lute-tlz-dddd.top \
+  --approved-sha <merged-main-full-sha> \
   --ssh-key ./ai_video.pem
 ```
 
@@ -1365,7 +1366,9 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 - schema 变更部署：追加 `--apply-schema`。
 - 只同步静态前端或文档、不重建 app：追加 `--skip-app-rebuild`。
 - 已提前生成 `web/out/`：追加 `--skip-web-build`。
-- 验证复核写入链路：追加 `--include-review-write`；执行前必须确认数据库备份已完成。
+- 默认部署 smoke 只执行 GET，不运行 query/provider 或复核写入。
+- 验证 query/provider 链路：追加 `--include-query-provider-smoke --confirm-production-write audit.lute-tlz-dddd.top`；这是单独的 L4 写入/provider 门，执行前必须确认数据库备份和授权。
+- 验证复核写入链路：在上述参数基础上再追加 `--include-review-write`。
 
 脚本执行的同步规则：
 
@@ -1503,19 +1506,29 @@ uv run python scripts/run-production-e2e-smoke.py \
 默认覆盖范围：
 
 - TLS 证书 SAN。
-- `/health` 和公网 `/api/v1/index/search-backend`，由 Nginx 转发到后端 `/index/search-backend`。
-- `/pages/chat`、`/pages/query`、`/pages/review-tasks`、`/pages/index-admin`。
-- 公网 `/api/v1/query` 引用型回答，由 Nginx 转发到后端 `/query`。
-- `/pages/preview/{chunk_id}` 原文预览。
-- `/pages/chat/export` 底稿导出。
+- `/health` 和公网 `/api/v1/knowledge-base/catalog`；catalog 响应的 `search_backend` 与 `boundaries` 同时证明检索后端 ready，且该读取不写 query history/audit log、不调用 provider。
+- `/` 与 `/login` 静态页面关键文本。
+- HTTP 方法严格为 `GET`；报告标记 `database_write=false`、`provider_call=not_called`、`evidence_grade=L3-production-read-only`。
 - 默认不检查无关共享业务域名；共享 `kg`、`video`、`voc`、主域名回归需显式加 `--include-shared-edge-regression`，并作为共享入口巡检单独解释。
 
-默认生产巡检保持只读，不创建复核任务。只有在明确需要验证 PostgreSQL 复核写入流时，才使用：
+`POST /query` 和带问题参数的 chat export 会写 query history/audit log，并可能调用 answer provider，不属于只读。只有在取得独立 L4 授权后，才使用：
 
 ```bash
 uv run python scripts/run-production-e2e-smoke.py \
   --base-url https://audit.lute-tlz-dddd.top \
+  --include-query-provider-smoke \
+  --confirm-production-write audit.lute-tlz-dddd.top \
+  --report tmp/outputs/production-e2e-smoke-with-live-query-latest.json
+```
+
+需要同时验证 PostgreSQL 复核写入流时，再追加：
+
+```bash
+uv run python scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --include-query-provider-smoke \
   --include-review-write \
+  --confirm-production-write audit.lute-tlz-dddd.top \
   --report tmp/outputs/production-e2e-smoke-with-review-write-latest.json
 ```
 
@@ -1698,13 +1711,9 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - TLS 证书 SAN 包含 `audit.lute-tlz-dddd.top`。
 - `/index/search-backend` 返回 `ready=true`。
 - `matching_embedding_count=49051`。
-- `/pages/chat` 页面可访问，并能渲染带引用的查询结果。
-- `/pages/query`、`/pages/review-tasks`、`/pages/index-admin` 均返回 `200`。
-- `/query` 公网调用返回 `confidence=high`、`citation_count=3`、`basis_group_count=2`。
-- `/pages/preview/{chunk_id}` 可打开首条引用原文预览。
-- `/pages/chat/export?format=markdown` 可导出带引用的审计底稿。
-- `scripts/run-production-e2e-smoke.py` 默认只读生产 E2E 已通过；默认流程不创建复核任务。
-- 复核任务创建、状态更新与导出只在显式传入 `--include-review-write` 时执行。
+- `scripts/run-production-e2e-smoke.py` 默认 GET-only 生产 E2E 已通过；默认流程不执行 query、chat export 或复核任务写入。
+- `/query`、chat export 和 answer provider 仅在显式传入 `--include-query-provider-smoke --confirm-production-write audit.lute-tlz-dddd.top` 时执行。
+- 复核任务创建、状态更新与导出只在上述 L4 参数基础上再显式传入 `--include-review-write` 时执行。
 - 视觉基线脚本通过 desktop/mobile 检查，未发现横向溢出或关键文案缺失。
 - 2026-06-15 国家规章平台稳定增量激活已通过，当前 active source documents 为 `503`，active embeddings 为 `49051`；旧的 `486/48985/48985` 仅作为 2026-06-03 至 2026-06-14 历史基线保留。
 - 初始索引回滚就绪审计已执行，旧状态下生产库 `active=1`、`inactive=0`、`rollback_target=0`，真实 rollback 被安全阻止且数据库计数未变化。
@@ -1895,12 +1904,21 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 只有在巡检报告能定位当前 SHA、容器状态、Nginx 状态和备份路径时，才进入回滚执行。
 
-应用回滚：
+应用与静态前端回滚使用同一部署脚本的 fail-closed 模式：
+
+`--expected-current-sha` 必须取远端实际 `.deploy-sha`：post-check 在 marker 写入前失败时它仍是旧 SHA；marker 写入后 smoke 失败时才是失败部署 SHA。不得把“尝试部署的代码 SHA”直接当作 marker。
 
 ```bash
-cd /opt/medical-audit/app/configs/deploy/tencent-cloud
-docker compose -f docker-compose.prod.yaml --env-file medical-audit.env stop app
+uv run python scripts/deploy-tencent-cloud-production.py \
+  --rollback \
+  --confirm-production audit.lute-tlz-dddd.top \
+  --stamp <待回滚部署的备份戳> \
+  --expected-current-sha <只读观测到的当前 marker 完整 SHA> \
+  --restore-sha <备份内旧完整 SHA> \
+  --ssh-key ./ai_video.pem
 ```
+
+脚本会校验当前 `.deploy-sha`、app/web 备份和备份内旧 `.deploy-sha`，保留生产 env，恢复 app/web，仅重建 app，并要求 PostgreSQL/ClamAV 容器 ID 不变、`nginx -t` 和 health 通过；只有这些验证全部成功后才写回旧 marker。该模式不恢复数据库。
 
 nginx 回滚：
 

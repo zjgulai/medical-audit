@@ -103,6 +103,7 @@ def main() -> int:
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     try:
+        _validate_side_effect_authorization(args)
         auth = _auth_from_args(args)
         _run_step(
             steps,
@@ -142,38 +143,55 @@ def main() -> int:
                 },
             }
         )
-        query_details = _run_step(
-            steps,
-            "query-api-with-citations",
-            lambda: _check_query_api(
-                base_url,
-                auth=auth,
-                question=str(args.question),
-                require_generated_answer=bool(args.require_generated_answer),
-                timeout_seconds=float(args.timeout_seconds),
-            ),
-        )
-        first_chunk_id = str(query_details["first_chunk_id"])
-        _run_step(
-            steps,
-            "citation-preview",
-            lambda: _check_preview(
-                base_url,
-                auth=auth,
-                chunk_id=first_chunk_id,
-                timeout_seconds=float(args.timeout_seconds),
-            ),
-        )
-        _run_step(
-            steps,
-            "chat-dossier-export",
-            lambda: _check_chat_export(
-                base_url,
-                auth=auth,
-                question=str(args.question),
-                timeout_seconds=float(args.timeout_seconds),
-            ),
-        )
+        if args.include_query_provider_smoke:
+            query_details = _run_step(
+                steps,
+                "query-api-with-citations",
+                lambda: _check_query_api(
+                    base_url,
+                    auth=auth,
+                    question=str(args.question),
+                    require_generated_answer=bool(args.require_generated_answer),
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+            first_chunk_id = str(query_details["first_chunk_id"])
+            _run_step(
+                steps,
+                "citation-preview",
+                lambda: _check_preview(
+                    base_url,
+                    auth=auth,
+                    chunk_id=first_chunk_id,
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+            _run_step(
+                steps,
+                "chat-dossier-export",
+                lambda: _check_chat_export(
+                    base_url,
+                    auth=auth,
+                    question=str(args.question),
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+        else:
+            for step_name in (
+                "query-api-with-citations",
+                "citation-preview",
+                "chat-dossier-export",
+            ):
+                steps.append(
+                    {
+                        "name": step_name,
+                        "passed": True,
+                        "details": {
+                            "status": "not_run",
+                            "reason": "requires-explicit-production-write-authorization",
+                        },
+                    }
+                )
         if args.include_review_write:
             _run_step(
                 steps,
@@ -215,6 +233,7 @@ def main() -> int:
             started_at=started_at,
             steps=steps,
             auth=auth if "auth" in locals() else None,
+            args=args,
         )
         _write_report(report_path, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -227,6 +246,7 @@ def main() -> int:
         started_at=started_at,
         steps=steps,
         auth=auth,
+        args=args,
     )
     _write_report(report_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -290,12 +310,21 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--include-query-provider-smoke",
+        action="store_true",
+        help=(
+            "Opt in to POST /query and chat export. These paths can write query/audit "
+            "history and call the configured answer provider, so --confirm-production-write "
+            "is also required."
+        ),
+    )
+    parser.add_argument(
         "--include-review-write",
         dest="include_review_write",
         action="store_true",
         help=(
-            "Run the in-memory review flow create/update/export check. "
-            "Default is read-only production smoke."
+            "Opt in to the persistent review flow create/update/export check. Requires "
+            "--include-query-provider-smoke and --confirm-production-write."
         ),
     )
     parser.add_argument(
@@ -305,12 +334,40 @@ def _parse_args() -> argparse.Namespace:
         help="Deprecated compatibility flag. Production smoke is read-only by default.",
     )
     parser.add_argument(
+        "--confirm-production-write",
+        default="",
+        help=(
+            "Required for query/provider or review write smoke. Must equal the expected "
+            "production certificate host."
+        ),
+    )
+    parser.add_argument(
         "--require-generated-answer",
         action="store_true",
         help="Fail when /query returns fallback_used=true.",
     )
     parser.set_defaults(include_review_write=False)
     return parser.parse_args()
+
+
+def _validate_side_effect_authorization(args: argparse.Namespace) -> None:
+    include_query_provider_smoke = bool(args.include_query_provider_smoke)
+    include_review_write = bool(args.include_review_write)
+    if include_review_write and not include_query_provider_smoke:
+        raise SmokeError(
+            "--include-review-write requires --include-query-provider-smoke",
+        )
+    if bool(args.require_generated_answer) and not include_query_provider_smoke:
+        raise SmokeError(
+            "--require-generated-answer requires --include-query-provider-smoke",
+        )
+    if not (include_query_provider_smoke or include_review_write):
+        return
+    expected_host = str(args.expected_cert_host).strip()
+    if str(args.confirm_production_write).strip() != expected_host:
+        raise SmokeError(
+            f"live smoke requires --confirm-production-write {expected_host}",
+        )
 
 
 def _selected_regression_urls(args: argparse.Namespace) -> tuple[str, ...]:
@@ -419,22 +476,31 @@ def _check_search_backend(
     timeout_seconds: float,
 ) -> dict[str, object]:
     payload = _get_json(
-        f"{base_url}/api/v1/index/search-backend",
+        f"{base_url}/api/v1/knowledge-base/catalog",
         auth=auth,
         admin=True,
         timeout_seconds=timeout_seconds,
     )
-    details = _ensure_dict(payload.get("details"))
-    matching = _int_value(details.get("matching_embedding_count"))
-    _require(payload.get("backend") == "postgres", "search backend is not postgres")
-    _require(payload.get("ready") is True, "search backend is not ready")
+    search_backend = _ensure_dict(payload.get("search_backend"))
+    details = _ensure_dict(search_backend.get("details"))
+    summary = _ensure_dict(payload.get("summary"))
+    boundaries = _ensure_dict(payload.get("boundaries"))
+    matching = _int_value(summary.get("current_search_embedding_count"))
+    _require(search_backend.get("backend") == "postgres", "search backend is not postgres")
+    _require(search_backend.get("ready") is True, "search backend is not ready")
     _require(
         matching >= expected_matching_embeddings,
         f"matching embeddings {matching} < expected {expected_matching_embeddings}",
     )
+    _require(boundaries.get("database_write") is False, "catalog permits database writes")
+    _require(boundaries.get("provider_call") is False, "catalog permits provider calls")
+    _require(
+        boundaries.get("query_history_write") is False,
+        "catalog permits query history writes",
+    )
     return {
-        "backend": payload.get("backend"),
-        "ready": payload.get("ready"),
+        "backend": search_backend.get("backend"),
+        "ready": search_backend.get("ready"),
         "matching_embedding_count": matching,
         "embedding_model": details.get("embedding_model"),
     }
@@ -502,19 +568,14 @@ def _check_audit_log_permissions(
         admin=True,
         timeout_seconds=timeout_seconds,
     )
-    _require(
-        isinstance(authorized_api.get("items"), list),
-        "audit logs API should return items list",
-    )
-    store = authorized_api.get("store", {})
-    _require(isinstance(store, dict), "audit logs API should include store metadata")
-    filters = authorized_api.get("filters", {})
-    _require(isinstance(filters, dict), "audit logs API should include filters metadata")
+    items = _ensure_list(authorized_api.get("items"))
+    store = _ensure_dict(authorized_api.get("store"))
+    filters = _ensure_dict(authorized_api.get("filters"))
 
     return {
         "audit_logs_page_denied_bytes": len(denied_response.text.encode()),
         "audit_logs_page_allowed_bytes": len(allowed_response.text.encode()),
-        "audit_logs_api_item_count": len(authorized_api["items"]),
+        "audit_logs_api_item_count": len(items),
         "audit_log_store_ready": bool(store.get("ready")),
         "audit_log_filter_fields": list(filters.keys()),
     }
@@ -797,9 +858,22 @@ def _report(
     started_at: str,
     steps: list[dict[str, object]],
     auth: SmokeAuth | None,
+    args: argparse.Namespace,
 ) -> dict[str, object]:
+    live_side_effects = bool(args.include_query_provider_smoke or args.include_review_write)
     return {
         "status": status,
+        "evidence_grade": (
+            "L4-authorized-live" if live_side_effects else "L3-production-read-only"
+        ),
+        "production_side_effect": (
+            "query/audit/review-write-authorized" if live_side_effects else "none"
+        ),
+        "database_write": live_side_effects,
+        "provider_call": (
+            "authorized_possible" if args.include_query_provider_smoke else "not_called"
+        ),
+        "http_methods": ["GET", "POST"] if live_side_effects else ["GET"],
         "base_url": base_url,
         "question": question,
         "auth": auth.to_report_dict() if auth else {},

@@ -4,36 +4,37 @@ created_at: 2026-07-13
 updated_at: 2026-07-13
 project: medical_audit
 scope: ppt-feedback-production-promotion
-status: ready-for-owner-authorization
-evidence_grade: L3-production-read-only-plus-local-fullstack
+status: local-fix-validated-awaiting-pr-rereview
+evidence_grade: L2-local-fullstack-plus-prior-L3-production-read-only
 production_side_effect: none
 provider_call: false
 database_write: none
+production_reverified: false
 ---
 
 # PPT 反馈产品优化生产部署与验收计划
 
 ## 1. 当前结论
 
-当前候选已具备本地发布质量，但不满足“立即执行生产部署”的证据门槛：
+PR #232 代码审查发现的项目隔离、前端身份失效和部署门禁问题已完成本地修复与全量回归，但尚未完成独立 PR 复审、commit、merge 或 clean-main 发布，因此仍不满足“立即执行生产部署”的证据门槛：
 
 - `origin/main` 与当前生产 `.deploy-sha` 均为 `51dfcb816a0c71928c206683f0fa7fef796e895a`。
 - PPT 产品优化分支以该 SHA 为 merge-base；原产品实现线性领先 `50` 个提交，Loop 51 已追加后端质量闭环 commit `ffed561c` 和部署 preflight 加固 commit `d10d2fff`。
 - 生产服务当前健康，但 `/documents` 仍是旧产品页面文案；这证明新产品形态尚未部署。
-- 当前功能工作区包含 3 个受保护的既有脏文档，实际部署不得使用 `--allow-dirty`，必须从干净候选 checkout 执行。
+- 当前修复仍是未提交工作树；实际部署不得使用 `--allow-dirty`，必须在修复 commit 经复审并合入后，从 fresh fetch 的干净 `main` 执行。
 
-因此当前状态是 `ready_for_owner_authorization`，不是 `deployed`。本轮保持 `production unchanged`、`provider_call=false`、`database_write=false`。
+因此当前状态是 `local-fix-validated-awaiting-pr-rereview`，不是 `ready_for_owner_authorization` 或 `deployed`。本轮只产生本地 L2 代码/测试证据，保持 `production unchanged`、`provider_call=false`、`database_write=false`。
 
 ## 2. 已完成的部署前证据
 
 ### 2.1 本地候选
 
 - Ruff：全仓通过。
-- Mypy：`104` 个 `src` 源文件通过；部署脚本专项 Mypy 通过。
-- Pytest：全部 `569` 个测试通过；仅有既有 Starlette 弃用警告。
-- Web：`32` 个测试文件、`267` 个测试通过；typecheck、lint 通过；Next build `24/24` 页面通过。
+- Mypy：`106` 个 `src` 源文件及两个部署/smoke 脚本通过。
+- Pytest：全部 `589` 个测试通过；仅有既有 Starlette 弃用警告。
+- Web：`32` 个测试文件、`279` 个测试通过；typecheck、lint 通过；Next build `24/24` 页面通过。
 - 本地 full-stack E2E：`13 passed`。
-- 前端代码自 45 张视觉基线后未变化；文件名排序截图 checksum-list 聚合 SHA256 仍为 `ab60b945d4f6327d37d1939e1d5fed3c3ad31e13fdd38bf6161fc722c9c8ed09`。
+- 本批改变了前端身份失效和项目深链状态逻辑；旧的 45 张截图 checksum 仅作历史基线，PR 复审前仍需按既有视口执行视觉抽查，不能沿用“前端代码未变化”的结论。
 
 ### 2.2 生产只读基线
 
@@ -50,8 +51,8 @@ database_write: none
 ## 3. 部署前必须完成的 TODO
 
 - [x] 将 Loop 51 代码和测试按两个原子 commit 提交；未包含 3 个受保护脏文档。
-- [ ] 在干净 release checkout 上确认 `git status --porcelain` 为空，HEAD 等于待发布 SHA。
-- [ ] 再次执行 `git merge-base --is-ancestor origin/main HEAD`，确认是从 `51dfcb81` 线性推进且没有遗漏主线提交。
+- [ ] PR #232 修复后完成独立复审并合入 `main`。
+- [ ] 在 fresh fetch 后的干净 `main` checkout 上确认 `git status --porcelain` 为空，且 `HEAD == origin/main == 已批准完整 SHA`。
 - [ ] 在干净 checkout 重跑 Ruff、Mypy、Pytest、Web 四门禁和 local full-stack E2E。
 - [ ] 由所有者在腾讯云控制台复核当前实例与 known-host 指纹；不得回退到 `StrictHostKeyChecking=no`。
 - [ ] 复核根盘可用空间足以容纳本次 DB/app/web 备份、镜像构建临时空间和回滚保留；未经单独授权不得删除历史备份或 Docker volume。
@@ -75,6 +76,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 uv run python scripts/deploy-tencent-cloud-production.py \
   --execute \
   --confirm-production audit.lute-tlz-dddd.top \
+  --approved-sha <merged-main-full-sha> \
   --ssh-key /Users/pray/Downloads/DDDD.pem \
   --stamp <deploy-stamp> \
   --report tmp/outputs/production-e2e-smoke-after-deploy-<deploy-stamp>.json
@@ -98,9 +100,19 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 4. 同步应用与静态文件。
 5. 仅重建并重启 `medical_audit_app`，不得重建 PostgreSQL 或 ClamAV 依赖。
 6. 写入新 `.deploy-sha`。
-7. 运行不含写入型 review flow 的生产 smoke。
+7. 运行 GET-only 生产 smoke；报告必须保持 `http_methods=["GET"]`、`database_write=false`、`provider_call=not_called`。
 
 本批不执行 schema migration、生产 SQL 写入、对象存储写入、真实 provider 调用或写入型业务验收。
+
+查询、回答 provider、query history、audit log 和 review task 验收不属于默认部署。只有单独取得 L4 生产写入/provider 授权后，才可另行执行：
+
+```bash
+uv run python scripts/run-production-e2e-smoke.py \
+  --base-url https://audit.lute-tlz-dddd.top \
+  --include-query-provider-smoke \
+  --confirm-production-write audit.lute-tlz-dddd.top \
+  --report tmp/outputs/production-live-query-smoke-<stamp>.json
+```
 
 ## 6. 回滚方案
 
@@ -114,13 +126,30 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 - 文档只读 probe 在新 SHA 下仍失败；
 - 9+1 导航、项目权限、table-first 分析、双视图图谱、六类报告目录或 3 个默认医疗智能体任一关键产品契约不成立。
 
+回滚执行前先确认当前故障 SHA、目标恢复 SHA和同一部署 stamp 的 app/web 备份。执行命令：
+
+- 若失败发生在 `_write_remote_deploy_sha` 之前（例如 app unhealthy、Nginx 或 catalog post-check 失败），远端 marker 仍是旧 SHA；`--expected-current-sha` 与 `--restore-sha` 都传该旧 SHA。
+- 若失败发生在 marker 写入之后（例如默认 GET-only smoke 失败），`--expected-current-sha` 传失败部署 SHA，`--restore-sha` 传备份内旧 SHA。
+- 两种情况都必须先以只读方式观测当前 marker，不得用“尝试部署的代码 SHA”代替实际 marker。
+
+```bash
+uv run python scripts/deploy-tencent-cloud-production.py \
+  --rollback \
+  --confirm-production audit.lute-tlz-dddd.top \
+  --stamp <failed-deploy-backup-stamp> \
+  --expected-current-sha <observed-current-deploy-marker-sha> \
+  --restore-sha <previous-full-sha> \
+  --ssh-key /Users/pray/Downloads/DDDD.pem
+```
+
 回滚顺序：
 
 1. 冻结后续动作，保存失败日志和目标/旧 SHA。
-2. 优先恢复旧 app 与 web 版本到 `51dfcb816a0c71928c206683f0fa7fef796e895a`，重新构建/启动 app，并复跑只读验收。
-3. Nginx 仅在配置被意外改变时恢复对应备份；本批正常路径不修改 Nginx 配置。
-4. 本批不应用 schema，且部署后验收不执行业务写入，因此默认不得恢复 DB。只有确认存在数据库损坏或明确授权的数据回滚时，才使用同 stamp 的 DB 备份执行单独恢复方案。
-5. 回滚后重新核对 `.deploy-sha`、4 个容器、Nginx、health、search、前端、权限和文档只读 probe。
+2. 脚本先校验当前 `.deploy-sha`、stamp 对应 app/web 备份和备份内旧 `.deploy-sha`；任一不一致立即停止。
+3. 恢复 app 与 web但暂不改 marker，保留当前生产 env，仅重建 `medical_audit_app`；PostgreSQL 和 ClamAV 容器 ID 必须不变。
+4. 旧 app health、依赖容器和 `nginx -t` 全部通过后才原子写回旧 `.deploy-sha`；随后再运行默认 GET-only smoke。
+5. Nginx 仅在配置被意外改变时恢复对应备份；本批正常路径不修改 Nginx 配置。
+6. 本批不应用 schema，且默认部署后验收不执行业务写入，因此默认不得恢复 DB。只有确认存在数据库损坏或取得数据回滚授权时，才使用同 stamp 的 DB 备份执行单独恢复方案。
 
 ## 7. 部署后验收顺序
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -68,12 +69,18 @@ class DeployConfig:
     base_url: str
     stamp: str
     execute: bool
+    rollback: bool
     allow_dirty: bool
     skip_web_build: bool
     skip_app_rebuild: bool
     apply_schema: bool
     skip_smoke: bool
+    include_query_provider_smoke: bool
     include_review_write: bool
+    confirm_production_write: str
+    approved_sha: str
+    expected_current_sha: str
+    restore_sha: str
     report_path: Path
 
     @property
@@ -86,6 +93,9 @@ def main() -> int:
         config = _config_from_args(_parse_args())
         _print_plan(config)
         _validate_local_state(config)
+        if config.rollback:
+            _run_remote_rollback(config)
+            return 0
         _run_remote_preflight(config)
         if not config.execute:
             print("Preflight passed. Add --execute --confirm-production to deploy.")
@@ -117,15 +127,39 @@ def _parse_args() -> argparse.Namespace:
             "preflight; production writes require --execute and confirmation."
         ),
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--execute",
         action="store_true",
         help="Run write operations against production after preflight succeeds.",
+    )
+    mode_group.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Restore app/web and deploy SHA from one verified pre-deploy backup stamp.",
     )
     parser.add_argument(
         "--confirm-production",
         default="",
         help=f"Required with --execute. Must equal {DEFAULT_DOMAIN}.",
+    )
+    parser.add_argument(
+        "--approved-sha",
+        default="",
+        help=(
+            "Required with --execute. The fresh local main HEAD and origin/main must both "
+            "equal this full commit SHA."
+        ),
+    )
+    parser.add_argument(
+        "--expected-current-sha",
+        default="",
+        help="Required with --rollback. Rollback stops unless remote .deploy-sha equals it.",
+    )
+    parser.add_argument(
+        "--restore-sha",
+        default="",
+        help="Required with --rollback. Must match .deploy-sha inside the app backup.",
     )
     parser.add_argument(
         "--ssh-key",
@@ -168,9 +202,25 @@ def _parse_args() -> argparse.Namespace:
         help="Skip local production E2E smoke after deployment.",
     )
     parser.add_argument(
+        "--include-query-provider-smoke",
+        action="store_true",
+        help=(
+            "After deployment, opt in to query/provider smoke that may write query/audit "
+            "history. Requires --confirm-production-write."
+        ),
+    )
+    parser.add_argument(
         "--include-review-write",
         action="store_true",
         help="Include the write-path review task flow in production smoke.",
+    )
+    parser.add_argument(
+        "--confirm-production-write",
+        default="",
+        help=(
+            "Required with live query/provider or review smoke. Must equal the production "
+            f"domain {DEFAULT_DOMAIN}."
+        ),
     )
     parser.add_argument(
         "--report",
@@ -188,9 +238,37 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
     ssh_key = Path(str(args.ssh_key)).expanduser()
     if not ssh_key.is_absolute():
         ssh_key = repo_root / ssh_key
-    if args.execute and args.confirm_production != DEFAULT_DOMAIN:
+    rollback = bool(args.rollback)
+    execute = bool(args.execute)
+    if (execute or rollback) and args.confirm_production != DEFAULT_DOMAIN:
         raise DeployError(
-            f"--execute requires --confirm-production {DEFAULT_DOMAIN}",
+            f"live deployment actions require --confirm-production {DEFAULT_DOMAIN}",
+        )
+    approved_sha = _validated_sha(
+        args.approved_sha,
+        option="--approved-sha",
+        required=execute,
+    )
+    expected_current_sha = _validated_sha(
+        args.expected_current_sha,
+        option="--expected-current-sha",
+        required=rollback,
+    )
+    restore_sha = _validated_sha(
+        args.restore_sha,
+        option="--restore-sha",
+        required=rollback,
+    )
+    include_query_provider_smoke = bool(args.include_query_provider_smoke)
+    include_review_write = bool(args.include_review_write)
+    if include_review_write and not include_query_provider_smoke:
+        raise DeployError(
+            "--include-review-write requires --include-query-provider-smoke",
+        )
+    confirm_production_write = str(args.confirm_production_write).strip()
+    if include_query_provider_smoke and confirm_production_write != DEFAULT_DOMAIN:
+        raise DeployError(
+            f"live smoke requires --confirm-production-write {DEFAULT_DOMAIN}",
         )
     report_arg = str(args.report).strip()
     if not report_arg:
@@ -210,19 +288,36 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         remote_web_dir=str(args.remote_web_dir).rstrip("/"),
         base_url=str(args.base_url).rstrip("/"),
         stamp=str(args.stamp),
-        execute=bool(args.execute),
+        execute=execute,
+        rollback=rollback,
         allow_dirty=bool(args.allow_dirty),
         skip_web_build=bool(args.skip_web_build),
         skip_app_rebuild=bool(args.skip_app_rebuild),
         apply_schema=bool(args.apply_schema),
         skip_smoke=bool(args.skip_smoke),
-        include_review_write=bool(args.include_review_write),
+        include_query_provider_smoke=include_query_provider_smoke,
+        include_review_write=include_review_write,
+        confirm_production_write=confirm_production_write,
+        approved_sha=approved_sha,
+        expected_current_sha=expected_current_sha,
+        restore_sha=restore_sha,
         report_path=report_path,
     )
 
 
+def _validated_sha(value: object, *, option: str, required: bool) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        if required:
+            raise DeployError(f"{option} requires a full 40-character commit SHA")
+        return ""
+    if re.fullmatch(r"[0-9a-f]{40}", normalized) is None:
+        raise DeployError(f"{option} requires a full 40-character commit SHA")
+    return normalized
+
+
 def _print_plan(config: DeployConfig) -> None:
-    mode = "execute" if config.execute else "preflight"
+    mode = "rollback" if config.rollback else "execute" if config.execute else "preflight"
     print(f"mode: {mode}", flush=True)
     print(f"target: {config.ssh_target}", flush=True)
     print(f"remote_app_dir: {config.remote_app_dir}", flush=True)
@@ -233,16 +328,55 @@ def _print_plan(config: DeployConfig) -> None:
 def _validate_local_state(config: DeployConfig) -> None:
     if not config.ssh_key.exists():
         raise DeployError(f"SSH key not found: {config.ssh_key}")
+    if config.rollback:
+        return
     if not (config.repo_root / "configs/deploy/tencent-cloud/docker-compose.prod.yaml").exists():
         raise DeployError("production compose file is missing")
     if not (config.repo_root / "scripts/run-production-e2e-smoke.py").exists():
         raise DeployError("production smoke script is missing")
     _run_capture(["git", "rev-parse", "--is-inside-work-tree"], cwd=config.repo_root)
     dirty = _run_capture(["git", "status", "--porcelain"], cwd=config.repo_root).strip()
+    if config.execute and config.allow_dirty:
+        raise DeployError("production execute forbids --allow-dirty")
     if dirty and not config.allow_dirty:
         raise DeployError("git worktree is dirty; commit changes or pass --allow-dirty")
+    if config.execute:
+        _validate_release_source(config)
     if config.execute and config.skip_web_build and not (config.repo_root / "web/out").is_dir():
         raise DeployError("web/out is missing; remove --skip-web-build or build first")
+
+
+def _validate_release_source(config: DeployConfig) -> None:
+    _run(
+        [
+            "git",
+            "fetch",
+            "--quiet",
+            "origin",
+            "+refs/heads/main:refs/remotes/origin/main",
+        ],
+        cwd=config.repo_root,
+    )
+    branch = _run_capture(
+        ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+        cwd=config.repo_root,
+    ).strip()
+    if branch != "main":
+        raise DeployError(f"production execute requires main branch; current branch: {branch}")
+    head_sha = _run_capture(["git", "rev-parse", "HEAD"], cwd=config.repo_root).strip()
+    origin_main_sha = _run_capture(
+        ["git", "rev-parse", "origin/main"],
+        cwd=config.repo_root,
+    ).strip()
+    if head_sha != origin_main_sha:
+        raise DeployError(
+            f"production execute requires HEAD == origin/main; HEAD={head_sha} "
+            f"origin/main={origin_main_sha}",
+        )
+    if head_sha != config.approved_sha:
+        raise DeployError(
+            f"production execute target does not match approved SHA: {config.approved_sha}",
+        )
 
 
 def _run_remote_preflight(config: DeployConfig) -> None:
@@ -254,10 +388,7 @@ test -d {shlex.quote(config.remote_web_dir)}
 docker inspect medical_audit_app >/dev/null
 docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
-if ! nginx_test_output="$(docker exec ai_video_nginx nginx -t 2>&1)"; then
-  echo "WARNING shared-nginx-test-failed"
-  printf '%s\n' "$nginx_test_output" | sed -n '1,20p'
-fi
+docker exec ai_video_nginx nginx -t
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 auth_headers=(
   -H 'X-User-Id: deploy-smoke-admin'
@@ -265,7 +396,8 @@ auth_headers=(
   -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
   -H 'X-Tenant-Id: hospital-demo'
 )
-curl -fsS "${{auth_headers[@]}}" http://127.0.0.1:18080/index/search-backend >/dev/null
+curl -fsS "${{auth_headers[@]}}" \
+  http://127.0.0.1:18080/knowledge-base/catalog >/dev/null
 """
     _ssh(config, script)
 
@@ -508,10 +640,7 @@ if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 fi
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
-if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
-  echo "WARNING shared-nginx-test-failed"
-  sed -n '1,20p' /tmp/medical-audit-nginx-test.log
-fi
+docker exec ai_video_nginx nginx -t
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 auth_headers=(
   -H 'X-User-Id: deploy-smoke-admin'
@@ -519,9 +648,10 @@ auth_headers=(
   -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
   -H 'X-Tenant-Id: hospital-demo'
 )
-curl -fsS "${{auth_headers[@]}}" http://127.0.0.1:18080/index/search-backend >/dev/null
 curl -fsS "${{auth_headers[@]}}" \
-  {shlex.quote(config.base_url)}/api/v1/index/search-backend >/dev/null
+  http://127.0.0.1:18080/knowledge-base/catalog >/dev/null
+curl -fsS "${{auth_headers[@]}}" \
+  {shlex.quote(config.base_url)}/api/v1/knowledge-base/catalog >/dev/null
 curl -fsS {shlex.quote(config.base_url)}/api/v1/health >/dev/null
 curl -fsS "${{auth_headers[@]}}" {shlex.quote(config.base_url)}/documents >/dev/null
 """
@@ -541,9 +671,89 @@ def _run_production_smoke(config: DeployConfig) -> None:
         "--report",
         str(config.report_path),
     ]
+    if config.include_query_provider_smoke:
+        args.extend(
+            [
+                "--include-query-provider-smoke",
+                "--confirm-production-write",
+                config.confirm_production_write,
+            ],
+        )
     if config.include_review_write:
         args.append("--include-review-write")
     _run(args, cwd=config.repo_root)
+
+
+def _run_remote_rollback(config: DeployConfig) -> None:
+    app_backup = f"/opt/medical-audit/backups/app/pre-deploy-{config.stamp}.tar.gz"
+    web_backup = f"/opt/medical-audit/backups/web/audit-web-pre-deploy-{config.stamp}.tar.gz"
+    safe_stamp = _safe_remote_job_name(config.stamp)
+    container_id_format = "{{.Id}}"
+    health_format = "{{.State.Health.Status}}"
+    script = f"""
+set -euo pipefail
+remote_app_dir={shlex.quote(config.remote_app_dir)}
+remote_web_dir={shlex.quote(config.remote_web_dir)}
+app_backup={shlex.quote(app_backup)}
+web_backup={shlex.quote(web_backup)}
+expected_current_sha={shlex.quote(config.expected_current_sha)}
+restore_sha={shlex.quote(config.restore_sha)}
+test -s "$app_backup"
+test -s "$web_backup"
+test -s "$remote_app_dir/.deploy-sha"
+test "$(cat "$remote_app_dir/.deploy-sha")" = "$expected_current_sha"
+tar -tzf "$app_backup" >/dev/null
+tar -tzf "$web_backup" >/dev/null
+restore_root="$(mktemp -d /opt/medical-audit/rollback-{safe_stamp}.XXXXXX)"
+preserved_env="$(mktemp)"
+trap 'rm -rf "$restore_root" "$preserved_env"' EXIT
+cp "$remote_app_dir/configs/deploy/tencent-cloud/medical-audit.env" "$preserved_env"
+tar -xzf "$app_backup" -C "$restore_root"
+tar -xzf "$web_backup" -C "$restore_root"
+test -d "$restore_root/app"
+test -d "$restore_root/audit"
+test -s "$restore_root/app/.deploy-sha"
+test "$(cat "$restore_root/app/.deploy-sha")" = "$restore_sha"
+rsync -a --delete \
+  --exclude '.deploy-sha' \
+  --exclude 'configs/deploy/tencent-cloud/medical-audit.env' \
+  "$restore_root/app/" "$remote_app_dir/"
+cp "$preserved_env" "$remote_app_dir/configs/deploy/tencent-cloud/medical-audit.env"
+chmod 600 "$remote_app_dir/configs/deploy/tencent-cloud/medical-audit.env"
+rsync -a --delete "$restore_root/audit/" "$remote_web_dir/"
+cd "$remote_app_dir"
+postgres_id_before="$(docker inspect medical_audit_pg --format {shlex.quote(container_id_format)})"
+clamav_id_before=""
+if docker inspect medical_audit_clamav >/dev/null 2>&1; then
+  clamav_id_before="$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(container_id_format)})"
+fi
+export MEDICAL_AUDIT_DEPLOY_SHA="$restore_sha"
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env build app
+docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
+  --env-file configs/deploy/tencent-cloud/medical-audit.env up -d --no-deps app
+for attempt in $(seq 1 60); do
+  app_health="$(docker inspect medical_audit_app \
+    --format {shlex.quote(health_format)} 2>/dev/null || true)"
+  if [ "$app_health" = "healthy" ]; then
+    break
+  fi
+  sleep 2
+done
+test "$(docker inspect medical_audit_app --format {shlex.quote(health_format)})" = "healthy"
+test "$(docker inspect medical_audit_pg \
+  --format {shlex.quote(container_id_format)})" = "$postgres_id_before"
+if [ -n "$clamav_id_before" ]; then
+  test "$(docker inspect medical_audit_clamav \
+    --format {shlex.quote(container_id_format)})" = "$clamav_id_before"
+fi
+docker exec ai_video_nginx nginx -t
+curl -fsS http://127.0.0.1:18080/health >/dev/null
+printf '%s\\n' "$restore_sha" > "$remote_app_dir/.deploy-sha"
+test "$(cat "$remote_app_dir/.deploy-sha")" = "$restore_sha"
+"""
+    _ssh(config, script)
 
 
 def _ssh(
