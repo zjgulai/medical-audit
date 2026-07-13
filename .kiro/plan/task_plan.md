@@ -142,3 +142,39 @@ Escalation rules:
 - [x] Run Loop 48: if explicitly authorized, decide the PR `#182` merge gate after confirming head SHA, mergeability, and checks; stop before production deploy, production probe, provider call, Docker change, or write-path smoke unless separately authorized.
 - [x] Run Loop 49: if explicitly authorized, run post-merge local gates and deploy preflight for `origin/main`; stop before production `--execute`, production probe, provider call, Docker change, or write-path smoke unless separately authorized.
 - [ ] Run Loop 50: if explicitly authorized, decide the production deploy execution gate for `main@4d54922d`; require explicit `--execute --confirm-production` authorization and stop before provider call or write-path smoke unless separately authorized.
+
+## 2026-07-13 Loop 51 Unresolved Quality Debt And Deployment Readiness
+
+Goal:
+
+- Close the four repository-wide Ruff/Mypy findings left after the PPT-grounded product implementation.
+- Revalidate the complete local product candidate from the current feature worktree.
+- Refresh the release baseline against current `origin/main` without merging or rebasing user-owned work.
+- Use `/Users/pray/Downloads/DDDD.pem` only for an SSH read-only production audit and produce an executable deployment, rollback, and acceptance plan.
+
+Acceptance contract:
+
+- `uv run ruff check .` and `uv run mypy src` pass from the feature worktree.
+- Relevant targeted tests pass before broader backend/frontend/fullstack gates are run.
+- The previously accepted product flows remain green in unit, typecheck, lint, build, local fullstack E2E, and visual acceptance as applicable.
+- Remote inspection captures current deployed SHA, service/container health, front-door health, disk pressure, and backup inventory without reading `.env`, credentials, or private-key contents.
+- Deployment preflight runs without `--execute`; the final plan names target SHA, backup steps, rollback steps, health gates, and owner-authorization boundary.
+- Protected pre-existing dirty files remain untouched and unstaged:
+  - `docs/workflows/workflow-answer-provider-production-gate-stable.md`
+  - `docs/workflows/workflow-project-state-and-debt-register-stable.md`
+  - `drafts/analysis/frontend-cutover-production-readonly-audit-draft-20260705.md`
+
+Execution TODO:
+
+- [x] Phase 0: restore branch/worktree/evidence state, verify SSH-key permissions, and identify the four static-analysis findings.
+- [x] Phase 1: reproduce and fix the four Ruff/Mypy findings with narrow code/test changes.
+- [x] Phase 2: run targeted then full local regression and refresh acceptance artifacts.
+- [x] Phase 3: fetch current remote refs, assess branch divergence, inspect deployment scripts/docs, and run deploy preflight without `--execute`.
+- [x] Phase 4: run SSH read-only production audit using the supplied key; do not mutate production, Docker, database, object storage, or provider state.
+- [x] Phase 5: synchronize deployment/acceptance records, review the exact diff, and create local task-level commits from clean atomic staged sets.
+
+Evidence boundary:
+
+- Local tests/build/preflight are L1/L2 evidence.
+- SSH GET/read-only observation is L3 evidence.
+- Production deployment, remote file synchronization, container recreation, database/object-storage writes, provider calls, merge, and push remain blocked pending separate explicit authorization.

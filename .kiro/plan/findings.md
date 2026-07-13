@@ -1255,6 +1255,28 @@ Boundary:
 - Local commit only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
 
+## 2026-07-13 Loop 51 Initial Findings
+
+- The safe implementation checkout is the PPT feature worktree; the repository root contains extensive unrelated user-owned changes and is unsuitable for this batch.
+- The three pre-existing dirty documents in the feature worktree are protected and outside the Loop 51 staging manifest.
+- The four known repository-wide quality findings are narrow and locally repairable:
+  - line wrapping in `src/medical_audit_kb/api/routes_chat.py`;
+  - import ordering in `src/medical_audit_kb/ingestion/inventory.py`;
+  - explicit `SourceCollection | None` narrowing before `source_collection_definition()`;
+  - replacing an unreachable static `Hashable` type branch in `src/medical_audit_kb/indexing/bm25_index.py` with a runtime hashability check.
+- The attached key has safe local permissions (`0600`) and is readable. This establishes only local key readiness, not SSH success or production health.
+- Previous production/deploy facts in this ledger are historical and cannot be treated as current until a fresh read-only audit is completed.
+- Production deployment remains a separate L4 action; this loop currently permits L1/L2 local/preflight evidence and L3 read-only remote evidence only.
+
+### Loop 51 Resolved And Remaining
+
+- Resolved locally: two Ruff findings, two Mypy findings, one stale authorization fixture, strict SSH host verification, and preflight remote-temp-file mutation.
+- Current production is healthy and exactly aligned to `origin/main@51dfcb81`; it is not aligned to the PPT feature branch.
+- Generic production frontend and permission gates are green, but the documents product-specific probe remains red on new page text. This is a useful deployment-drift signal and must turn green after deployment.
+- Capacity is currently sufficient for another normal backup/build cycle, but DB backup retention is the dominant disk consumer. No cleanup is authorized or required in this loop.
+- Immediate execute remains blocked by two distinct facts: no clean release checkout and no separate production execute authorization.
+- A preflight pass from `--allow-dirty` is L2 preparation evidence only and must never be reused as proof that a dirty checkout is safe to deploy.
+
 ## 2026-07-01 Loop 38 Government-Style UI And Typography Batch Plan
 
 Finding Status:

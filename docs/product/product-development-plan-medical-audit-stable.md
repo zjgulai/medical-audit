@@ -74,6 +74,14 @@ source: human+ai
 - 本地加固证据：项目级智能体缺少当前项目 scope 时 fail-closed；项目图谱拒绝跨项目冲突任务；分析历史按创建人隔离且不返回内部存储路径，持久化失败会补偿删除孤儿文件。
 - 本轮边界：`production unchanged`、`provider_call=false`、`database_write=local-test-only`；生产发布、生产只读复验和真实 provider smoke 均未执行。
 
+### 1.2 2026-07-13 部署准备状态
+
+- Loop 51 已关闭仓库级 Ruff/Mypy 遗留项，并修正本地验收权限 fixture；全仓 Ruff、Mypy、`569` 个后端测试、`32/267` 前端测试、typecheck、lint、`24/24` build 和 `13` 条本地 full-stack E2E 通过。
+- 部署脚本已改为 `BatchMode=yes`、`StrictHostKeyChecking=yes`，preflight 不再写远端临时日志文件；使用 `DDDD.pem` 的零写入 preflight 已通过。
+- 生产只读审计确认当前部署仍为 `main@51dfcb816a0c71928c206683f0fa7fef796e895a`，4 个核心容器健康，前门/health/search 均正常；新产品候选尚未部署。
+- 生产前端和权限只读门禁通过；文档专项 probe 仅在新页面文本检查失败，明确记录为部署前产品形态差异，不是当前服务故障。
+- 正式执行、备份、回滚和部署后验收顺序见 `docs/superpowers/plans/2026-07-13-ppt-feedback-production-deployment.md`。当前状态为 `ready_for_owner_authorization`，仍保持 `production unchanged`、`provider_call=false`、`database_write=false`。
+
 当前未完成：
 
 - 门户核心模块的后端持久化和真实业务闭环：`/agents` 和 `/projects` 已完成生产持久化写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收，但病毒扫描、脱敏留存、对象存储、下载权限隔离和正式工作簿治理仍未完成；`/documents` 已完成生产查询验收，搜索历史持久化、后端 `title_only`、个人材料治理状态机、本地策略扫描/DLP 标记和受控下载已完成本地实现但尚未生产部署，仍需个人材料真实入向量索引、外部杀毒/DLP 服务、脱敏改写和对象存储治理。
