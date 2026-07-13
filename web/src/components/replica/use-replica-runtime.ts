@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
   fetchAgents,
   fetchAnalysisUploadHistory,
@@ -31,6 +32,7 @@ import {
   loadReplicaReportsData,
   loadReplicaShellData
 } from "@/lib/replica-adapters";
+import { auditClientUserId } from "@/lib/audit-user";
 import type {
   ReplicaAdapterIssue,
   ReplicaAdapterResult,
@@ -394,10 +396,12 @@ function useReplicaLoader<TData>(
   surface: ReplicaAdapterIssue["surface"],
   catalogResult?: ReplicaAdapterResult<TData>
 ): ReplicaRuntimeResult<TData> {
+  const auditUser = useAuditUser();
   const apiReadsEnabled = replicaApiReadsEnabled();
+  const identityKey = `${auditUser.role}:${auditClientUserId(auditUser.role)}`;
   const runtimeKey = catalogResult
-    ? `${surface}:catalog`
-    : `${surface}:${apiReadsEnabled ? "api" : "fixture"}`;
+    ? `${surface}:catalog:${identityKey}`
+    : `${surface}:${apiReadsEnabled ? "api" : "fixture"}:${identityKey}`;
   const initialResult = catalogResult ?? (apiReadsEnabled ? emptyResult : fallback);
   const initialStatus: ReplicaRuntimeStatus = catalogResult
     ? "ready"

@@ -454,16 +454,18 @@ describe("loadReplicaChatData", () => {
     expect(result.data.historyItems).toEqual([]);
   });
 
-  it("returns an error with no reference history when the API history read fails", async () => {
+  it("preserves the successful agent lane as degraded when history fails", async () => {
     const result = await loadReplicaChatData({
       fetchAgents: vi.fn().mockResolvedValue(makeAgentsResponse(["first-id"])),
       fetchQueryHistory: vi.fn().mockRejectedValue(new Error("history unavailable"))
     });
 
     expect(result.source).toBe("api");
-    expect(result.outcome).toBe("error");
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.agents).toHaveLength(1);
     expect(result.data.historyItems).toEqual([]);
     expect(result.data.historyItems).not.toEqual(referenceHistoryItems);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
   });
 
   it("retains reference history only when API reads are disabled", async () => {
@@ -531,6 +533,29 @@ describe("replica backend read adapters", () => {
     ]));
     expect(failureMessages.join(" ")).not.toContain("password=do-not-expose");
     expect(failureMessages.join(" ")).not.toContain("body=confidential");
+  });
+
+  it("preserves a successful document catalog as degraded when history fails", async () => {
+    const result = await loadReplicaDocumentsData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(metricBearingSourceCatalog),
+      fetchQueryHistory: vi.fn().mockRejectedValue(new Error("history unavailable"))
+    });
+
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.categories).not.toEqual([]);
+    expect(result.data.searchHistory).toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
+  });
+
+  it("preserves a successful knowledge catalog lane when another catalog read fails", async () => {
+    const result = await loadReplicaKnowledgeBaseData({
+      fetchKnowledgeBaseCatalog: vi.fn().mockRejectedValue(new Error("metrics unavailable")),
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(metricBearingSourceCatalog)
+    });
+
+    expect(result.outcome).toBe("degraded");
+    expect(result.data.knowledgeBases).not.toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
   });
 
   it("preserves registry data as degraded when metrics are unavailable", async () => {

@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
+import { useAuditUser } from "@/components/shell/audit-user-context";
 import { useReplicaAgentsData } from "./use-replica-runtime";
-import { createAuditAgent } from "@/lib/api-client";
+import { createAuditAgent, isBackendRequestError } from "@/lib/api-client";
 import type { ApiAgentCategory } from "@/lib/api-types";
-import { DEFAULT_AUDIT_PROJECT_NAME } from "@/lib/audit-user";
+import { auditClientUserId, DEFAULT_AUDIT_PROJECT_NAME } from "@/lib/audit-user";
 import type { ReferenceAgentCard, ReferenceAgentCategory } from "@/lib/reference-replica-data";
 
 import {
@@ -210,7 +211,16 @@ function DigitalHumanAvatar({
 }
 
 export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
-  const installInFlightRef = useRef(false);
+  const auditUser = useAuditUser();
+  const identityKey = `${auditUser.role}:${auditClientUserId(auditUser.role)}`;
+  const identityGenerationRef = useRef({ key: identityKey, generation: 0 });
+  if (identityGenerationRef.current.key !== identityKey) {
+    identityGenerationRef.current = {
+      key: identityKey,
+      generation: identityGenerationRef.current.generation + 1
+    };
+  }
+  const installInFlightRef = useRef<string | null>(null);
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<AgentFilter>("全部");
   const [notice, setNotice] = useState("");
@@ -236,6 +246,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   );
 
   const isMine = mode === "mine";
+  const canManageAgents = auditUser.can("manage_agents");
   const pageCount = Math.max(1, Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
   const pageStartIndex = (safePage - 1) * AGENT_PAGE_SIZE;
@@ -265,6 +276,14 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, pageCount));
   }, [pageCount]);
+
+  useEffect(() => {
+    installInFlightRef.current = null;
+    setInstallingAgentId("");
+    setInstalledAgentIds(new Map());
+    setFavoriteAgentIds(new Set());
+    setNotice("");
+  }, [identityKey]);
 
   function recordAction(agent: ReferenceAgentCard, action: AgentAction) {
     setSelectedAgentId(agent.id);
@@ -301,8 +320,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   }
 
   async function installMarketAgent(agent: ReferenceAgentCard) {
-    if (installInFlightRef.current) return;
-    installInFlightRef.current = true;
+    if (!canManageAgents) {
+      setNotice("安装未完成：当前身份无权安装智能体。");
+      return;
+    }
+    if (installInFlightRef.current === identityKey) return;
+    const requestGeneration = identityGenerationRef.current.generation;
+    installInFlightRef.current = identityKey;
     setSelectedAgentId(agent.id);
     setDetailOpen(true);
     setActiveAction("创建副本");
@@ -340,13 +364,21 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           template_source_file: agent.sourceFile
         }
       });
+      if (requestGeneration !== identityGenerationRef.current.generation) return;
       setInstalledAgentIds((previous) => new Map(previous).set(agent.id, response.item.id));
       setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
-    } catch {
-      setNotice("安装未完成：智能体创建接口暂不可用，请稍后重试。");
+    } catch (error) {
+      if (requestGeneration !== identityGenerationRef.current.generation) return;
+      setNotice(
+        isBackendRequestError(error) && error.status === 403
+          ? "安装未完成：当前身份无权安装智能体。"
+          : "安装未完成：智能体创建接口暂不可用，请稍后重试。"
+      );
     } finally {
-      installInFlightRef.current = false;
-      setInstallingAgentId("");
+      if (requestGeneration === identityGenerationRef.current.generation) {
+        installInFlightRef.current = null;
+        setInstallingAgentId("");
+      }
     }
   }
 
@@ -371,7 +403,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            disabled={!isMine && installingAgentId.length > 0}
+            disabled={!isMine && (!canManageAgents || installingAgentId.length > 0)}
             onClick={() => {
               if (isMine || !selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
@@ -391,6 +423,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           </button>
         }
       />
+
+      {!isMine && !canManageAgents ? (
+        <ReplicaNotice>当前角色无智能体安装权限</ReplicaNotice>
+      ) : null}
 
       <section className="replica-panel">
         <div className="replica-toolbar">
@@ -631,7 +667,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             <div className="replica-agent-detail-actions is-dialog-actions">
               <button
                 type="button"
-                disabled={installingAgentId.length > 0}
+                disabled={!canManageAgents || installingAgentId.length > 0}
                 aria-label={`加入我的智能体：${selectedAgent.name}`}
                 onClick={() => void installMarketAgent(selectedAgent)}
               >

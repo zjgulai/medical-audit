@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
@@ -48,6 +49,8 @@ const emptyProjects: readonly ProjectSummaryApiItem[] = [];
 
 export function ReplicaProjectWorkbench() {
   const auditUser = useAuditUser();
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams?.get("project")?.trim() ?? "";
   const [projectsState, setProjectsState] = useState<ProjectsState>(initialProjectsState);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ApiProjectStatus | "全部">("全部");
@@ -60,11 +63,25 @@ export function ReplicaProjectWorkbench() {
   const [memberStatus, setMemberStatus] = useState<ApiProjectMemberStatus>("在项目中");
   const [memberSaving, setMemberSaving] = useState(false);
   const [memberCreateError, setMemberCreateError] = useState<string | null>(null);
+  const [projectLinkError, setProjectLinkError] = useState<string | null>(null);
   const memberSavingRef = useRef(false);
   const projectsRequestRef = useRef(0);
   const membersRequestRef = useRef(0);
   const dashboardRequestRef = useRef(0);
   const selectionGenerationRef = useRef(0);
+  const appliedProjectRequestRef = useRef<string | null>(null);
+
+  const clearProjectSelection = useCallback(() => {
+    ++selectionGenerationRef.current;
+    ++membersRequestRef.current;
+    ++dashboardRequestRef.current;
+    setSelectedProjectId(null);
+    setMembersState(initialMembersState);
+    setDashboardState(initialDashboardState);
+    memberSavingRef.current = false;
+    setMemberSaving(false);
+    setMemberCreateError(null);
+  }, []);
 
   const loadProjects = useCallback((role: AuditClientRole) => {
     const requestId = ++projectsRequestRef.current;
@@ -90,18 +107,11 @@ export function ReplicaProjectWorkbench() {
   }, []);
 
   useEffect(() => {
-    ++selectionGenerationRef.current;
-    ++membersRequestRef.current;
-    ++dashboardRequestRef.current;
-    setSelectedProjectId(null);
+    clearProjectSelection();
     setStatusFilter("全部");
-    setMembersState(initialMembersState);
-    setDashboardState(initialDashboardState);
-    memberSavingRef.current = false;
-    setMemberSaving(false);
-    setMemberCreateError(null);
+    setProjectLinkError(null);
     loadProjects(auditUser.role);
-  }, [auditUser.role, loadProjects]);
+  }, [auditUser.role, clearProjectSelection, loadProjects]);
 
   const loadMembers = useCallback((projectId: string) => {
     const requestId = ++membersRequestRef.current;
@@ -160,15 +170,46 @@ export function ReplicaProjectWorkbench() {
   const projectStatuses = roleScopedProjectsState.response?.project_statuses ?? [];
   const canManageMembers = auditUser.can("manage_project_members");
 
-  function selectProject(project: ProjectSummaryApiItem) {
+  const selectProject = useCallback((project: ProjectSummaryApiItem) => {
     ++selectionGenerationRef.current;
     setSelectedProjectId(project.id);
+    setProjectLinkError(null);
     memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
     loadMembers(project.id);
     loadDashboard(project.id);
-  }
+  }, [loadDashboard, loadMembers]);
+
+  useEffect(() => {
+    const response = roleScopedProjectsState.response;
+    if (!response) return;
+
+    const requestKey = `${auditUser.role}:${requestedProjectId || "none"}:${projectsRequestRef.current}`;
+    if (appliedProjectRequestRef.current === requestKey) return;
+    appliedProjectRequestRef.current = requestKey;
+
+    if (!requestedProjectId) {
+      setProjectLinkError(null);
+      return;
+    }
+
+    const requestedProject = response.items.find((item) => item.id === requestedProjectId);
+    if (!requestedProject) {
+      clearProjectSelection();
+      setProjectLinkError("链接中的项目不可见或已不存在。");
+      return;
+    }
+
+    setProjectLinkError(null);
+    selectProject(requestedProject);
+  }, [
+    auditUser.role,
+    clearProjectSelection,
+    requestedProjectId,
+    roleScopedProjectsState.response,
+    selectProject
+  ]);
 
   async function submitMember() {
     if (!selectedProject || !canManageMembers || memberSavingRef.current) return;
@@ -270,6 +311,7 @@ export function ReplicaProjectWorkbench() {
         ) : null}
         {roleScopedProjectsState.phase === "empty" ? <ProjectMessage tone="status">当前没有可见项目</ProjectMessage> : null}
         {roleScopedProjectsState.phase === "degraded" ? <ProjectMessage tone="status">项目列表存储未就绪</ProjectMessage> : null}
+        {projectLinkError ? <ProjectMessage tone="error">{projectLinkError}</ProjectMessage> : null}
 
         {roleScopedProjectsState.response && projects.length > 0 ? (
           filteredProjects.length > 0 ? (

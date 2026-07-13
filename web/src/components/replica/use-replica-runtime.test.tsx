@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
 import type { AgentsResponse } from "@/lib/api-types";
+import { writeAuditClientRole } from "@/lib/audit-user";
+import { AuditUserProvider } from "@/components/shell/audit-user-context";
 
 import { useReplicaAgentsData, useReplicaGraphData } from "./use-replica-runtime";
 
@@ -20,12 +22,16 @@ vi.mock("@/lib/api-client", () => ({
   runKnowledgeQuery: vi.fn()
 }));
 
-function agentsResponse(storeReady = true): AgentsResponse {
+function agentsResponse(
+  storeReady = true,
+  name = "运行时只读助手",
+  id = "agent-runtime-api"
+): AgentsResponse {
   return {
     items: [
       {
-        id: "agent-runtime-api",
-        name: "运行时只读助手",
+        id,
+        name,
         category: "业务类",
         topic: "医保基金审计",
         prompt: "用于测试运行时只读 adapter。",
@@ -305,6 +311,63 @@ describe("use-replica-runtime", () => {
 
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
     expect(screen.queryByText("运行时只读助手")).not.toBeInTheDocument();
+  });
+
+  it("clears old-role API data immediately and reloads for the new identity", async () => {
+    const memberRead = deferred<AgentsResponse>();
+    vi.mocked(fetchAgents)
+      .mockResolvedValueOnce(agentsResponse(true, "管理员敏感智能体", "admin-agent"))
+      .mockReturnValueOnce(memberRead.promise);
+
+    render(
+      <AuditUserProvider>
+        <AgentsRuntimeProbe />
+      </AuditUserProvider>
+    );
+
+    expect(await screen.findByText("管理员敏感智能体")).toBeInTheDocument();
+
+    act(() => writeAuditClientRole("member"));
+
+    expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "loading");
+    expect(screen.queryByText("管理员敏感智能体")).not.toBeInTheDocument();
+
+    await act(async () => {
+      memberRead.resolve(agentsResponse(true, "成员可见智能体", "member-agent"));
+      await memberRead.promise;
+    });
+
+    expect(await screen.findByText("成员可见智能体")).toBeInTheDocument();
+    expect(fetchAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores an old-role response that resolves after the new-role response", async () => {
+    const adminRead = deferred<AgentsResponse>();
+    const memberRead = deferred<AgentsResponse>();
+    vi.mocked(fetchAgents)
+      .mockReturnValueOnce(adminRead.promise)
+      .mockReturnValueOnce(memberRead.promise);
+
+    render(
+      <AuditUserProvider>
+        <AgentsRuntimeProbe />
+      </AuditUserProvider>
+    );
+    act(() => writeAuditClientRole("member"));
+
+    await act(async () => {
+      memberRead.resolve(agentsResponse(true, "成员可见智能体", "member-agent"));
+      await memberRead.promise;
+    });
+    expect(await screen.findByText("成员可见智能体")).toBeInTheDocument();
+
+    await act(async () => {
+      adminRead.resolve(agentsResponse(true, "迟到的管理员智能体", "late-admin-agent"));
+      await adminRead.promise;
+    });
+
+    expect(screen.queryByText("迟到的管理员智能体")).not.toBeInTheDocument();
+    expect(screen.getByText("成员可见智能体")).toBeInTheDocument();
   });
 
   it("keeps readonly graph workbench seed data visible as an adapter issue", async () => {

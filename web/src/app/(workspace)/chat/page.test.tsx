@@ -380,6 +380,30 @@ describe("ChatPortalPage", () => {
     });
   });
 
+  it("clears the selected agent when the URL changes to an invalid or invisible agent", async () => {
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("agent=agent-fund-helper"));
+    const { rerender } = render(<ChatPortalPage />);
+
+    expect(await screen.findByRole("button", { name: /基金问答助手/ })).toBeInTheDocument();
+
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("agent=hidden-agent"));
+    rerender(<ChatPortalPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /基金问答助手/ })).not.toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "不应沿用旧智能体" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ question: "不应沿用旧智能体", agent: null })
+      );
+    });
+  });
+
   it("selects the fifth fixture agent from the chat URL when replica API reads are disabled", async () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
     useSearchParamsMock.mockReturnValue(new URLSearchParams("agent=board-extract"));

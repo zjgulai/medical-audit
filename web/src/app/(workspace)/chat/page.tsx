@@ -201,9 +201,7 @@ function ChatPortalContent() {
       return;
     }
     const matched = chatData.data.agents.find((agent) => agent.id === requestedAgentId);
-    if (matched) {
-      setSelectedAgent((current) => current?.id === matched.id ? current : matched);
-    }
+    setSelectedAgent((current) => matched && current?.id === matched.id ? current : matched ?? null);
   }, [chatData.data.agents, requestedAgentId]);
 
   useEffect(() => {

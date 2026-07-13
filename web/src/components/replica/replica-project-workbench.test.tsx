@@ -23,6 +23,14 @@ import { AUDIT_ROLE_STORAGE_KEY, writeAuditClientRole } from "@/lib/audit-user";
 
 import { ReplicaProjectWorkbench } from "./replica-project-workbench";
 
+const { useSearchParamsMock } = vi.hoisted(() => ({
+  useSearchParamsMock: vi.fn(() => new URLSearchParams())
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: useSearchParamsMock
+}));
+
 vi.mock("@/lib/api-client", () => ({
   createProjectMember: vi.fn(),
   fetchProjectDashboard: vi.fn(),
@@ -182,6 +190,7 @@ function renderWithUser() {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  useSearchParamsMock.mockReturnValue(new URLSearchParams());
   const alpha = project("ALPHA", "Alpha项目", "进行中", 1);
   fetchProjectsMock.mockResolvedValue(projectsResponse([alpha]));
   fetchProjectMembersMock.mockResolvedValue(membersResponse(alpha.id, [member("ALPHA-M1", alpha.id, "张审计")]));
@@ -262,6 +271,78 @@ describe("ReplicaProjectWorkbench", () => {
     expect(screen.getByText("Alpha项目同步完成")).toBeInTheDocument();
     expect(screen.getByText("live-db-connected")).toBeInTheDocument();
     expect(screen.getByText("SqlAlchemyProjectMemberStore / SqlAlchemyAuditFindingStore")).toBeInTheDocument();
+  });
+
+  it("opens a visible project from the project URL parameter", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    const beta = project("BETA", "Beta项目");
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("project=BETA"));
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha, beta]));
+    fetchProjectMembersMock.mockImplementation((projectId) => Promise.resolve(
+      membersResponse(projectId, [member(`${projectId}-M1`, projectId, `${projectId}成员`)])
+    ));
+    fetchProjectDashboardMock.mockImplementation((projectId) => Promise.resolve(
+      dashboardResponse(projectId === alpha.id ? alpha : beta)
+    ));
+
+    render(<ReplicaProjectWorkbench />);
+
+    expect(await screen.findByRole("heading", { name: "项目详情：Beta项目" })).toBeInTheDocument();
+    expect(await screen.findByText("BETA-M1-account")).toBeInTheDocument();
+    expect(fetchProjectMembersMock).toHaveBeenCalledWith("BETA");
+    expect(fetchProjectDashboardMock).toHaveBeenCalledWith("BETA");
+  });
+
+  it("rejects an invisible project URL and clears previously selected details", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("project=ALPHA"));
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha]));
+    const { rerender } = render(<ReplicaProjectWorkbench />);
+
+    expect(await screen.findByRole("heading", { name: "项目详情：Alpha项目" })).toBeInTheDocument();
+
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("project=HIDDEN"));
+    rerender(<ReplicaProjectWorkbench />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("链接中的项目不可见或已不存在");
+    expect(screen.queryByRole("heading", { name: "项目详情：Alpha项目" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看：Alpha项目" }));
+    expect(await screen.findByRole("heading", { name: "项目详情：Alpha项目" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not reapply a project deep link after a member update changes list state", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    const beta = project("BETA", "Beta项目");
+    useSearchParamsMock.mockReturnValue(new URLSearchParams("project=ALPHA"));
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha, beta]));
+    fetchProjectMembersMock.mockImplementation((projectId) => Promise.resolve(
+      membersResponse(projectId, [member(`${projectId}-M1`, projectId, `${projectId}成员`)])
+    ));
+    fetchProjectDashboardMock.mockImplementation((projectId) => Promise.resolve(
+      dashboardResponse(projectId === alpha.id ? alpha : beta)
+    ));
+    createProjectMemberMock.mockResolvedValue({
+      item: member("BETA-M2", "BETA", "Beta新增成员", "beta-new"),
+      store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
+    });
+
+    render(<ReplicaProjectWorkbench />);
+    expect(await screen.findByRole("heading", { name: "项目详情：Alpha项目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看：Beta项目" }));
+    expect(await screen.findByRole("heading", { name: "项目详情：Beta项目" })).toBeInTheDocument();
+    await screen.findByText("BETA-M1-account");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "账号" }), { target: { value: "beta-new" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "姓名" }), { target: { value: "Beta新增成员" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "部门" }), { target: { value: "内审部" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增成员" }));
+
+    expect(await screen.findByText("beta-new")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "项目详情：Beta项目" })).toBeInTheDocument();
+    expect(fetchProjectMembersMock.mock.calls.filter(([projectId]) => projectId === "ALPHA")).toHaveLength(1);
+    expect(fetchProjectMembersMock.mock.calls.filter(([projectId]) => projectId === "BETA")).toHaveLength(1);
   });
 
   it("renders member degradation and partial dashboard data without claiming full readiness", async () => {

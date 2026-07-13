@@ -312,6 +312,10 @@ function hasApiFailure(reads: readonly OptionalApiRead<unknown>[]): boolean {
   return reads.some((read) => read.kind === "failure");
 }
 
+function allEnabledApiReadsFailed(reads: readonly OptionalApiRead<unknown>[]): boolean {
+  return hasApiFailure(reads) && !reads.some((read) => read.kind === "success");
+}
+
 function allApiReadsDisabled(reads: readonly OptionalApiRead<unknown>[]): boolean {
   return reads.every((read) => read.kind === "disabled");
 }
@@ -688,7 +692,7 @@ export async function loadReplicaShellData(
     };
   }
 
-  if (hasApiFailure([sessionRead, historyRead])) {
+  if (allEnabledApiReadsFailed([sessionRead, historyRead])) {
     return {
       source: "api",
       outcome: "error",
@@ -701,10 +705,14 @@ export async function loadReplicaShellData(
   const history = historyRead.kind === "success" ? historyRead.value : null;
   const user = session ? mapSessionUser(session) : emptyUser;
   const historyItems = history ? mapQueryHistoryItems(history) : [];
-  const degraded = Boolean((session && !session.store.ready) || (history && !history.store.ready));
+  const degraded = Boolean(
+    hasApiFailure([sessionRead, historyRead]) ||
+    (session && !session.store.ready) ||
+    (history && !history.store.ready)
+  );
 
   if (degraded) {
-    issues.push(issue("shell", "partial-schema-gap", "Session or query-history storage is not ready."));
+    issues.push(issue("shell", "partial-schema-gap", "Session or query-history data is only partially available."));
   }
 
   return {
@@ -741,7 +749,7 @@ export async function loadReplicaChatData(
     };
   }
 
-  if (hasApiFailure([agentRead, historyRead])) {
+  if (allEnabledApiReadsFailed([agentRead, historyRead])) {
     return {
       source: "api",
       outcome: "error",
@@ -757,11 +765,13 @@ export async function loadReplicaChatData(
     : [];
   const historyItems = history ? mapQueryHistoryItems(history) : [];
   const degraded = Boolean(
-    (agentResponse && !agentResponse.store.ready) || (history && !history.store.ready)
+    hasApiFailure([agentRead, historyRead]) ||
+    (agentResponse && !agentResponse.store.ready) ||
+    (history && !history.store.ready)
   );
 
   if (degraded) {
-    issues.push(issue("chat", "partial-schema-gap", "Agent or query-history storage is not ready."));
+    issues.push(issue("chat", "partial-schema-gap", "Agent or query-history data is only partially available."));
   }
 
   return {
@@ -878,7 +888,7 @@ export async function loadReplicaKnowledgeBaseData(
     };
   }
 
-  if (hasApiFailure(reads)) {
+  if (allEnabledApiReadsFailed(reads)) {
     return {
       source: "api",
       outcome: "error",
@@ -927,6 +937,7 @@ export async function loadReplicaKnowledgeBaseData(
     ? knowledgeCatalog?.summary.current_search_embedding_count ?? null
     : null;
   const readinessGap = Boolean(
+    hasApiFailure(reads) ||
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
       !knowledgeCatalog.store.catalog_ready ||
@@ -1003,7 +1014,7 @@ export async function loadReplicaDocumentsData(
     };
   }
 
-  if (hasApiFailure(reads)) {
+  if (allEnabledApiReadsFailed(reads)) {
     return {
       source: "api",
       outcome: "error",
@@ -1027,6 +1038,7 @@ export async function loadReplicaDocumentsData(
     ? history.items.map((item) => normalizeText(item.question, "未命名查询"))
     : [];
   const readinessGap = Boolean(
+    hasApiFailure(reads) ||
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
       !knowledgeCatalog.search_backend.ready
