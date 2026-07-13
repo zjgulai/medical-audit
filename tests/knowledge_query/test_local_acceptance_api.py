@@ -82,7 +82,12 @@ def test_local_acceptance_api_serves_rebuilt_frontend_routes(tmp_path: Path) -> 
     ]
 
     for method, path, payload in route_checks:
-        response = client.request(method, path, json=payload)
+        response = client.request(
+            method,
+            path,
+            headers=LOCAL_ACCEPTANCE_HEADERS,
+            json=payload,
+        )
         assert response.status_code == 200, f"{method} {path}: {response.text}"
 
 

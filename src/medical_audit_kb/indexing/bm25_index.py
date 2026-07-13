@@ -162,7 +162,9 @@ def _filter_cache_key(
         return ()
     items: list[tuple[str, Hashable]] = []
     for key, value in filters.items():
-        if not isinstance(value, Hashable):
+        try:
+            hash(value)
+        except TypeError:
             return None
         items.append((str(key), value))
     return tuple(sorted(items, key=lambda item: item[0]))

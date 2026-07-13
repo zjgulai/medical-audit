@@ -347,6 +347,29 @@ def test_bm25_filtered_search_scores_against_filtered_corpus() -> None:
     ]
 
 
+def test_bm25_filters_with_unhashable_values_without_using_cache() -> None:
+    target_chunk_id = uuid4()
+    index = InMemoryBM25Index()
+    index.upsert(
+        [
+            BM25Document(
+                chunk_id=target_chunk_id,
+                text="医保基金审核",
+                metadata={"tags": ["fund-audit"]},
+            ),
+            BM25Document(
+                chunk_id=uuid4(),
+                text="医保基金审核",
+                metadata={"tags": ["other"]},
+            ),
+        ]
+    )
+
+    results = index.search("医保基金", filters={"tags": ["fund-audit"]})
+
+    assert [result.document.chunk_id for result in results] == [target_chunk_id]
+
+
 def test_bm25_ranks_exact_medical_catalog_code_above_broad_code_range() -> None:
     target_chunk_id = uuid4()
     broad_range_chunk_id = uuid4()

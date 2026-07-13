@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Final
 
 from medical_audit_kb.domain.constants import DocumentStatus, SourceCollection
-from medical_audit_kb.domain.source_collection_registry import source_collection_definition
 from medical_audit_kb.domain.schemas import SourcePackageVersionCreate
+from medical_audit_kb.domain.source_collection_registry import source_collection_definition
 
 SOURCE_COLLECTION_BY_TOP_LEVEL: Final = {
     "医保目录": SourceCollection.MEDICAL_INSURANCE_CATALOG,
@@ -176,7 +176,10 @@ def classify_domain(file_name: str, source_collection: SourceCollection | None =
     """
     if source_collection in _CURATED_MEDICAL_COLLECTIONS:
         return DOMAIN_MEDICAL_INSURANCE
-    if source_collection not in {None, SourceCollection.MEDICAL_INSURANCE_LAWS}:
+    if (
+        source_collection is not None
+        and source_collection != SourceCollection.MEDICAL_INSURANCE_LAWS
+    ):
         return source_collection_definition(source_collection).label
     if is_medical_insurance_law(file_name):
         return DOMAIN_MEDICAL_INSURANCE
