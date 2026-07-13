@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -2112,7 +2112,21 @@ def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) 
         project_key="CATALOG-LIMIT-202606",
         limit=10,
     )
+    visible_items = store.list_findings(
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"}),
+        limit=10,
+    )
+    no_visible_items = store.list_findings(project_keys=frozenset(), limit=10)
     missing_items = store.list_findings(project_key="UNKNOWN-PROJECT", limit=10)
+    self_count = store.count_findings(
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"})
+    )
+    both_count = store.count_findings(
+        project_keys=frozenset(
+            {"SELF-CHECK-FUND-20260607", "CATALOG-LIMIT-202606"}
+        )
+    )
+    empty_count = store.count_findings(project_keys=frozenset())
 
     assert {item["finding_key"] for item in global_items} == {
         "finding-self-sql",
@@ -2120,7 +2134,12 @@ def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) 
     }
     assert [item["finding_key"] for item in self_items] == ["finding-self-sql"]
     assert [item["finding_key"] for item in catalog_items] == ["finding-catalog-sql"]
+    assert [item["finding_key"] for item in visible_items] == ["finding-self-sql"]
+    assert no_visible_items == []
     assert missing_items == []
+    assert self_count == 1
+    assert both_count == 2
+    assert empty_count == 0
 
 
 def test_audit_finding_store_project_contract_is_stable_across_reads(
@@ -2129,17 +2148,37 @@ def test_audit_finding_store_project_contract_is_stable_across_reads(
     database_url = f"sqlite:///{tmp_path / 'project-finding-contract.db'}"
     store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
     _seed_project_findings(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        self_task = session.scalar(
+            select(ReviewTask).where(ReviewTask.external_task_id == "review-self-sql")
+        )
+        catalog_finding = session.scalar(
+            select(AuditFinding).where(
+                AuditFinding.finding_key == "finding-catalog-sql"
+            )
+        )
+        assert self_task is not None
+        assert catalog_finding is not None
+        catalog_finding.review_task_id = self_task.id
+        session.commit()
 
     listed = store.list_findings(
         project_key="SELF-CHECK-FUND-20260607",
         limit=10,
     )
     loaded = store.get_finding("finding-self-sql")
-    synced = store.sync_review_task_status("review-self-sql", "confirmed-violation")
+    synced = store.sync_review_task_status(
+        "review-self-sql",
+        "confirmed-violation",
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"}),
+    )
+    catalog_after_sync = store.get_finding("finding-catalog-sql")
 
     assert [item["project_key"] for item in listed] == ["SELF-CHECK-FUND-20260607"]
     assert loaded["project_key"] == "SELF-CHECK-FUND-20260607"
     assert [item["project_key"] for item in synced] == ["SELF-CHECK-FUND-20260607"]
+    assert catalog_after_sync["review_status"] == "pending-review"
 
 
 def test_graph_workbench_defaults_to_knowledge_catalog_without_project_store_reads(
@@ -3160,7 +3199,7 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
         create_schema=True,
     )
     client = TestClient(create_app(state))
-    headers = {"X-User-Id": "analytics-owner", "X-Role": "member"}
+    headers = {"X-User-Id": "  analytics-owner  ", "X-Role": "member"}
 
     response = client.post(
         "/analytics/table-upload",
@@ -3204,6 +3243,7 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert "发现 1 条完全重复行。" in body["quality_findings"]
     assert state.operation_logs[-1]["action"] == "analytics-table-upload"
     assert state.operation_logs[-1]["payload"]["retention_status"] == "retained"
+    assert state.operation_logs[-1]["payload"]["actor"] == "analytics-owner"
 
     history_response = client.get("/analytics/table-uploads", headers=headers)
     assert history_response.status_code == 200
@@ -3247,6 +3287,7 @@ def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
 
     response = client.post(
         "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
         files={
             "file": (
                 "charge-workbook.xlsx",
@@ -3272,11 +3313,41 @@ def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) ->
 
     response = client.post(
         "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
         files={"file": ("charges.txt", "not,a,supported,file", "text/plain")},
     )
 
     assert response.status_code == 422
     assert response.json()["detail"] == "unsupported table file extension"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    (
+        {},
+        {"X-User-Id": "   ", "X-Role": "member"},
+        {"X-User-Id": "anonymous", "X-Role": "member"},
+    ),
+)
+def test_analytics_table_upload_rejects_missing_identity_before_retention(
+    tmp_path: Path,
+    headers: dict[str, str],
+) -> None:
+    upload_root = tmp_path / "retained-uploads"
+    state = _api_state(tmp_path)
+    state.analytics_upload_store = InMemoryAnalyticsUploadStore(upload_root=upload_root)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers=headers,
+        files={"file": ("charges.csv", "item,amount\nA,10", "text/csv")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "X-User-Id header is required"
+    assert state.analytics_upload_store.list_uploads() == []
+    assert list(upload_root.glob("**/*")) == []
 
 
 def test_analytics_upload_history_is_owner_scoped_and_redacts_storage_path(

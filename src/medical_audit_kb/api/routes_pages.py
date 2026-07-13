@@ -60,7 +60,9 @@ from medical_audit_kb.api.project_member_store import (
 from medical_audit_kb.api.query_history_store import try_add_query_history
 from medical_audit_kb.api.review_task_store import (
     ReviewTaskNotFoundError,
+    ReviewTaskProjectScopeConflictError,
     ReviewTaskStore,
+    review_task_project_key,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -873,7 +875,20 @@ def audit_findings_page(
 
     if review_status is not None and review_status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
-    findings = _audit_findings(state, review_status=review_status)
+    user = _audit_finding_authorized_user(
+        state,
+        request=request,
+        attempted_action="page-audit-findings-view",
+    )
+    findings = _audit_findings(
+        state,
+        review_status=review_status,
+        project_keys=_audit_finding_visible_project_keys(
+            state,
+            user=user,
+            attempted_action="page-audit-findings-view",
+        ),
+    )
     record_operation(
         state,
         "page-audit-findings-view",
@@ -895,9 +910,15 @@ def audit_findings_page(
 @router.get("/audit-findings/{finding_key}/export")
 def audit_finding_export(
     finding_key: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> Response:
-    finding = _audit_finding_by_key(state, finding_key)
+    finding = _visible_audit_finding_by_key(
+        state,
+        finding_key,
+        request=request,
+        attempted_action="audit-finding-export",
+    )
     payload = _audit_finding_export_payload(finding)
     record_operation(
         state,
@@ -917,7 +938,12 @@ def create_audit_finding_review_task_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    finding = _audit_finding_by_key(state, finding_key)
+    finding = _visible_audit_finding_by_key(
+        state,
+        finding_key,
+        request=request,
+        attempted_action="audit-finding-review-task-create",
+    )
     task = _create_review_task_from_finding(
         state=state,
         request=request,
@@ -1036,7 +1062,12 @@ async def update_review_task_status_page(
             "updated_at": _utc_now_iso(),
         },
     )
-    synced_findings = _sync_audit_finding_review_status(state, task_id, status)
+    synced_findings = _sync_audit_finding_review_status(
+        state,
+        task_id,
+        status,
+        project_key=_review_task_project_key(existing_task),
+    )
     record_operation(
         state,
         "review-task-status-update",
@@ -2755,10 +2786,13 @@ def _global_legacy_formal_actor(
 
 
 def _review_task_project_key(task: dict[str, object]) -> str | None:
-    dossier = _dict_value(task.get("dossier"))
-    draft = _dict_value(dossier.get("report_template_draft"))
-    project_key = str(draft.get("project_key") or "").strip()
-    return project_key or None
+    try:
+        return review_task_project_key(task)
+    except ReviewTaskProjectScopeConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="review task project scope is inconsistent",
+        ) from exc
 
 
 def _require_review_task_permission(
@@ -2842,8 +2876,12 @@ def _audit_findings(
     state: ApiState,
     *,
     review_status: str | None = None,
+    project_keys: frozenset[str] | None = None,
 ) -> list[dict[str, object]]:
-    return _audit_finding_store(state).list_findings(review_status=review_status)
+    return _audit_finding_store(state).list_findings(
+        review_status=review_status,
+        project_keys=project_keys,
+    )
 
 
 def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object]:
@@ -2853,15 +2891,131 @@ def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object
         raise HTTPException(status_code=404, detail="audit finding not found") from exc
 
 
+def _visible_audit_finding_by_key(
+    state: ApiState,
+    finding_key: str,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> dict[str, object]:
+    user = _audit_finding_authorized_user(
+        state,
+        request=request,
+        attempted_action=attempted_action,
+    )
+    finding = _audit_finding_by_key(state, finding_key)
+    visible_keys = _audit_finding_visible_project_keys(
+        state,
+        user=user,
+        attempted_action=attempted_action,
+    )
+    project_key = str(finding.get("project_key") or "").strip()
+    if not project_key or project_key not in visible_keys:
+        raise HTTPException(status_code=404, detail="audit finding not found")
+    return finding
+
+
+def _audit_finding_authorized_user(
+    state: ApiState,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> AuthenticatedUser:
+    permission = Permission.ANALYZE_DATA
+    x_user_id = (request.headers.get("X-User-Id") or "").strip()
+    x_role = request.headers.get("X-Role")
+    if not x_user_id or x_user_id == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    try:
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=x_user_id,
+            x_role=x_role,
+        )
+    except HTTPException as exc:
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier=x_user_id,
+            raw_role=x_role,
+            status_code=exc.status_code,
+            reason=str(exc.detail),
+        )
+        raise
+    if user_has_permission(user, permission):
+        return user
+    record_authorization_denied(
+        state,
+        attempted_action=attempted_action,
+        permission=permission,
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type=user.auth_scope_type,
+        auth_scope_key=user.auth_scope_key,
+        status_code=403,
+        reason=f"{permission.value} requires a higher hospital role",
+    )
+    raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
+
+
+def _audit_finding_visible_project_keys(
+    state: ApiState,
+    *,
+    user: AuthenticatedUser,
+    attempted_action: str,
+) -> frozenset[str]:
+    try:
+        return visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=_report_project_member_store(state),
+        )
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "audit-finding-project-visibility-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+
+
 def _sync_audit_finding_review_status(
     state: ApiState,
     review_task_id: str,
     review_status: str,
+    *,
+    project_key: str | None,
 ) -> list[dict[str, object]]:
-    if state.audit_finding_store is None:
+    if state.audit_finding_store is None or project_key is None:
         return []
     try:
-        return state.audit_finding_store.sync_review_task_status(review_task_id, review_status)
+        return state.audit_finding_store.sync_review_task_status(
+            review_task_id,
+            review_status,
+            project_keys=frozenset({project_key}),
+        )
     except (SQLAlchemyError, ValueError):
         return []
 
@@ -2961,6 +3115,7 @@ def _audit_finding_dossier_payload(
         "format": "audit-finding-dossier-v1",
         "generated_at": _utc_now_iso(),
         "finding_key": finding["finding_key"],
+        "project_key": finding.get("project_key"),
         "finding_type": finding["finding_type"],
         "severity": finding["severity"],
         "status": finding["status"],

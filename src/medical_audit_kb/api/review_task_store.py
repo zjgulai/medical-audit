@@ -21,6 +21,26 @@ class ReviewTaskNotFoundError(KeyError):
     pass
 
 
+class ReviewTaskProjectScopeConflictError(ValueError):
+    pass
+
+
+def review_task_project_key(task: dict[str, object]) -> str | None:
+    dossier = _dict_value(task.get("dossier"))
+    draft = _dict_value(dossier.get("report_template_draft"))
+    top_level_project_key = _optional_str(dossier.get("project_key"))
+    draft_project_key = _optional_str(draft.get("project_key"))
+    if (
+        top_level_project_key is not None
+        and draft_project_key is not None
+        and top_level_project_key != draft_project_key
+    ):
+        raise ReviewTaskProjectScopeConflictError(
+            "review task project scope fields are inconsistent"
+        )
+    return top_level_project_key or draft_project_key
+
+
 class ReviewTaskStore(Protocol):
     def list_tasks(self) -> list[dict[str, object]]:
         pass

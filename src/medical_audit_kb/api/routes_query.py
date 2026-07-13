@@ -40,8 +40,14 @@ from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     enforce_source_collection_access,
 )
+from medical_audit_kb.api.project_member_store import ProjectMemberStore, visible_project_keys
 from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
-from medical_audit_kb.api.review_task_store import ReviewTaskNotFoundError, ReviewTaskStore
+from medical_audit_kb.api.review_task_store import (
+    ReviewTaskNotFoundError,
+    ReviewTaskProjectScopeConflictError,
+    ReviewTaskStore,
+    review_task_project_key,
+)
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
     KNOWLEDGE_QUERY_CONTRACT_VERSION,
@@ -646,9 +652,22 @@ def audit_findings(
     state: Annotated[ApiState, Depends(get_api_state)],
     review_status: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
     if review_status is not None and review_status not in REVIEW_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
+    user = _require_medical_audit_actor(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="audit-findings-list",
+    )
+    project_keys = _visible_audit_finding_project_keys(
+        state,
+        user=user,
+        attempted_action="audit-findings-list",
+    )
     if state.audit_finding_store is None:
         return {
             "items": [],
@@ -661,6 +680,7 @@ def audit_findings(
 
     findings = state.audit_finding_store.list_findings(
         review_status=review_status,
+        project_keys=project_keys,
         limit=limit,
     )
     record_operation(
@@ -668,12 +688,19 @@ def audit_findings(
         "audit-findings-list",
         {"finding_count": len(findings), "review_status": review_status or "all", "limit": limit},
     )
+    generation_readiness = (
+        state.audit_finding_store.generation_readiness()
+        if user.role is HospitalRole.ADMIN
+        else _scoped_audit_finding_readiness(
+            state.audit_finding_store.count_findings(project_keys=project_keys)
+        )
+    )
     return {
         "items": findings,
         "stats": _audit_finding_stats(findings),
         "filters": {"review_status": review_status, "limit": limit},
         "review_status_options": REVIEW_STATUS_LABELS,
-        "generation_readiness": state.audit_finding_store.generation_readiness(),
+        "generation_readiness": generation_readiness,
         "store": {"ready": True, "backend": state.audit_finding_store.__class__.__name__},
     }
 
@@ -741,7 +768,12 @@ def medical_audit_create_review_task(
         x_role=x_role,
         attempted_action="medical-audit-review-task-create",
     )
-    finding = _audit_finding_by_key_for_api(state, finding_key)
+    finding = _visible_audit_finding_by_key_for_api(
+        state,
+        finding_key,
+        user=user,
+        attempted_action="medical-audit-review-task-create",
+    )
     task, created = _ensure_medical_audit_review_task(
         state,
         finding=finding,
@@ -749,7 +781,12 @@ def medical_audit_create_review_task(
         assigned_to=payload.assigned_to,
         note=payload.note,
     )
-    updated_finding = _audit_finding_by_key_for_api(state, finding_key)
+    updated_finding = _visible_audit_finding_by_key_for_api(
+        state,
+        finding_key,
+        user=user,
+        attempted_action="medical-audit-review-task-create",
+    )
     audit_event = _record_medical_audit_event(
         state,
         "medical-audit-review-task-create",
@@ -791,7 +828,12 @@ def medical_audit_update_review_status(
         x_role=x_role,
         attempted_action="medical-audit-review-status-update",
     )
-    finding = _audit_finding_by_key_for_api(state, finding_key)
+    finding = _visible_audit_finding_by_key_for_api(
+        state,
+        finding_key,
+        user=user,
+        attempted_action="medical-audit-review-status-update",
+    )
     task, created = _ensure_medical_audit_review_task(
         state,
         finding=finding,
@@ -824,6 +866,7 @@ def medical_audit_update_review_status(
         state,
         str(updated_task["task_id"]),
         payload.status,
+        project_key=_optional_str(finding.get("project_key")),
     )
     audit_event = _record_medical_audit_event(
         state,
@@ -844,7 +887,12 @@ def medical_audit_update_review_status(
         status="updated",
         user=user,
         payload={
-            "finding": _audit_finding_by_key_for_api(state, finding_key),
+            "finding": _visible_audit_finding_by_key_for_api(
+                state,
+                finding_key,
+                user=user,
+                attempted_action="medical-audit-review-status-update",
+            ),
             "task": updated_task,
             "created_task": created,
             "synced_findings": synced_findings,
@@ -867,7 +915,12 @@ def medical_audit_attach_supplemental_material(
         x_role=x_role,
         attempted_action="medical-audit-supplemental-material-register",
     )
-    finding = _audit_finding_by_key_for_api(state, finding_key)
+    finding = _visible_audit_finding_by_key_for_api(
+        state,
+        finding_key,
+        user=user,
+        attempted_action="medical-audit-supplemental-material-register",
+    )
     task, created = _ensure_medical_audit_review_task(
         state,
         finding=finding,
@@ -932,7 +985,12 @@ def medical_audit_add_to_report(
         x_role=x_role,
         attempted_action="medical-audit-report-entry-add",
     )
-    finding = _audit_finding_by_key_for_api(state, finding_key)
+    finding = _visible_audit_finding_by_key_for_api(
+        state,
+        finding_key,
+        user=user,
+        attempted_action="medical-audit-report-entry-add",
+    )
     task, created = _ensure_medical_audit_review_task(
         state,
         finding=finding,
@@ -998,6 +1056,7 @@ def medical_audit_add_to_report(
         state,
         str(updated_task["task_id"]),
         str(updated_task.get("status", "confirmed-violation")),
+        project_key=_optional_str(finding.get("project_key")),
     )
     audit_event = _record_medical_audit_event(
         state,
@@ -1017,7 +1076,12 @@ def medical_audit_add_to_report(
         status="added",
         user=user,
         payload={
-            "finding": _audit_finding_by_key_for_api(state, finding_key),
+            "finding": _visible_audit_finding_by_key_for_api(
+                state,
+                finding_key,
+                user=user,
+                attempted_action="medical-audit-report-entry-add",
+            ),
             "task": updated_task,
             "created_task": created,
             "synced_findings": synced_findings,
@@ -1144,10 +1208,13 @@ def _require_medical_audit_actor(
     x_role: str | None,
     attempted_action: str,
 ) -> AuthenticatedUser:
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
     return require_permission(
         state,
         permission=Permission.ANALYZE_DATA,
-        x_user_id=x_user_id,
+        x_user_id=normalized_user_identifier,
         x_role=x_role,
         attempted_action=attempted_action,
     )
@@ -1162,6 +1229,65 @@ def _audit_finding_by_key_for_api(state: ApiState, finding_key: str) -> dict[str
         raise HTTPException(status_code=404, detail="audit finding not found") from exc
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="audit finding store is unavailable") from exc
+
+
+def _visible_audit_finding_by_key_for_api(
+    state: ApiState,
+    finding_key: str,
+    *,
+    user: AuthenticatedUser,
+    attempted_action: str,
+) -> dict[str, object]:
+    finding = _audit_finding_by_key_for_api(state, finding_key)
+    visible_keys = _visible_audit_finding_project_keys(
+        state,
+        user=user,
+        attempted_action=attempted_action,
+    )
+    project_key = _optional_str(finding.get("project_key"))
+    if project_key is None or project_key not in visible_keys:
+        raise HTTPException(status_code=404, detail="audit finding not found")
+    return finding
+
+
+def _visible_audit_finding_project_keys(
+    state: ApiState,
+    *,
+    user: AuthenticatedUser,
+    attempted_action: str,
+) -> frozenset[str]:
+    store = _project_member_store_for_audit_findings(state)
+    try:
+        return visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=store,
+        )
+    except SQLAlchemyError as exc:
+        record_operation(
+            state,
+            "audit-finding-project-visibility-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+
+
+def _project_member_store_for_audit_findings(state: ApiState) -> ProjectMemberStore:
+    if state.project_member_store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is not configured",
+        )
+    return state.project_member_store
 
 
 def _review_task_store_for_api(state: ApiState) -> ReviewTaskStore:
@@ -1182,7 +1308,33 @@ def _ensure_medical_audit_review_task(
     existing_task_id = _optional_str(finding.get("review_task_id"))
     if existing_task_id is not None:
         try:
-            return store.get_task(existing_task_id), False
+            existing_task = store.get_task(existing_task_id)
+            finding_project_key = _optional_str(finding.get("project_key"))
+            try:
+                task_project_key = review_task_project_key(existing_task)
+            except ReviewTaskProjectScopeConflictError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="review task project scope does not match audit finding",
+                ) from exc
+            if finding_project_key is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="review task project scope does not match audit finding",
+                )
+            if task_project_key is None:
+                dossier = _dict_value(existing_task.get("dossier"))
+                dossier["project_key"] = finding_project_key
+                existing_task = store.update_task(
+                    existing_task_id,
+                    {"dossier": dossier},
+                )
+            elif task_project_key != finding_project_key:
+                raise HTTPException(
+                    status_code=409,
+                    detail="review task project scope does not match audit finding",
+                )
+            return existing_task, False
         except ReviewTaskNotFoundError:
             pass
 
@@ -1226,6 +1378,7 @@ def _medical_audit_finding_dossier(
         "format": "medical-audit-finding-dossier-v1",
         "generated_at": _utc_now_iso(),
         "created_by": created_by,
+        "project_key": finding.get("project_key"),
         "finding_key": finding.get("finding_key"),
         "finding_type": finding.get("finding_type"),
         "severity": finding.get("severity"),
@@ -1263,11 +1416,17 @@ def _sync_audit_finding_review_status_for_api(
     state: ApiState,
     task_id: str,
     review_status: str,
+    *,
+    project_key: str | None,
 ) -> list[dict[str, object]]:
-    if state.audit_finding_store is None:
+    if state.audit_finding_store is None or project_key is None:
         return []
     try:
-        return state.audit_finding_store.sync_review_task_status(task_id, review_status)
+        return state.audit_finding_store.sync_review_task_status(
+            task_id,
+            review_status,
+            project_keys=frozenset({project_key}),
+        )
     except (SQLAlchemyError, ValueError):
         return []
 
@@ -1381,6 +1540,25 @@ def _audit_finding_stats(findings: list[dict[str, object]]) -> dict[str, int]:
             1 for item in findings if item.get("review_status") == "pending-review"
         ),
         "linked_review_task": sum(1 for item in findings if item.get("review_task_id")),
+    }
+
+
+def _scoped_audit_finding_readiness(
+    finding_count: int,
+) -> dict[str, object]:
+    return {
+        "status": "generated" if finding_count else "empty",
+        "ready": True,
+        "scope": "visible-projects",
+        "has_findings": finding_count > 0,
+        "table_counts": {"audit_findings": finding_count},
+        "prerequisites": [],
+        "blocking_reasons": [],
+        "next_actions": (
+            ["从可见疑点清单创建人工复核任务，完成复核后再进入底稿或报告。"]
+            if finding_count
+            else []
+        ),
     }
 
 

@@ -209,6 +209,7 @@ def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
     state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    state.project_member_store = InMemoryProjectMemberStore()
     client = TestClient(create_app(state))
     client.get("/pages/query", params={"question": "医保基金审核依据"})
     expected_links = (
@@ -233,7 +234,10 @@ def test_backend_pages_share_product_navigation(tmp_path: Path) -> None:
     )
 
     for path, current_label in pages:
-        response = client.get(path, headers={"X-Role": "it-admin"})
+        response = client.get(
+            path,
+            headers={"X-User-Id": "navigation-admin", "X-Role": "it-admin"},
+        )
 
         assert response.status_code == 200
         assert 'aria-label="AI智能审计管理系统门户导航"' in response.text
@@ -3075,10 +3079,12 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     state = _api_state(tmp_path)
     state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
     state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    state.project_member_store = InMemoryProjectMemberStore()
     _seed_charge_rule_001_findings(database_url)
     client = TestClient(create_app(state))
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
 
-    page_response = client.get("/pages/audit-findings")
+    page_response = client.get("/pages/audit-findings", headers=headers)
 
     assert page_response.status_code == 200
     assert "疑点清单" in page_response.text
@@ -3091,7 +3097,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert 'role="tab" aria-selected="true" href="/findings">疑点清单' in page_response.text
     assert str(state.operation_logs[-1]["action"]) == "page-audit-findings-view"
 
-    api_response = client.get("/audit-findings")
+    api_response = client.get("/audit-findings", headers=headers)
 
     assert api_response.status_code == 200
     api_body = api_response.json()
@@ -3108,17 +3114,25 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert api_body["items"][0]["evidence_items"][0]["evidence_type"] == "rule-rationale"
     assert str(state.operation_logs[-1]["action"]) == "audit-findings-list"
 
-    filtered_response = client.get("/audit-findings", params={"review_status": "closed"})
+    filtered_response = client.get(
+        "/audit-findings",
+        headers=headers,
+        params={"review_status": "closed"},
+    )
     assert filtered_response.status_code == 200
     assert filtered_response.json()["items"] == []
 
     invalid_filter_response = client.get(
         "/audit-findings",
+        headers=headers,
         params={"review_status": "unsupported"},
     )
     assert invalid_filter_response.status_code == 422
 
-    export_response = client.get("/audit-findings/finding-fdc6a665ec5fcbf8/export")
+    export_response = client.get(
+        "/audit-findings/finding-fdc6a665ec5fcbf8/export",
+        headers=headers,
+    )
 
     assert export_response.status_code == 200
     assert export_response.headers["content-disposition"] == (
@@ -3137,6 +3151,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
 
     create_response = client.post(
         "/pages/audit-findings/finding-fdc6a665ec5fcbf8/review-task",
+        headers=headers,
         follow_redirects=False,
     )
 
@@ -3149,6 +3164,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert isinstance(dossier, dict)
     assert dossier["format"] == "audit-finding-dossier-v1"
     assert dossier["finding_key"] == "finding-fdc6a665ec5fcbf8"
+    assert dossier["project_key"] == "SELF-CHECK-FUND-20260607"
     calculation_trace = dossier["calculation_trace"]
     assert isinstance(calculation_trace, dict)
     assert calculation_trace["matched_charge_detail_ids"] == [
@@ -3158,6 +3174,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
 
     task_markdown_response = client.get(
         "/review-tasks/review-task-0001/export",
+        headers=headers,
         params={"format": "markdown"},
     )
     assert task_markdown_response.status_code == 200
@@ -3167,6 +3184,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
 
     update_response = client.post(
         "/pages/review-tasks/review-task-0001/status",
+        headers=headers,
         data={
             "status": "confirmed-violation",
             "assigned_to": "fixture-auditor",
@@ -3180,6 +3198,7 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
 
     synced_response = client.get(
         "/audit-findings",
+        headers=headers,
         params={"review_status": "confirmed-violation"},
     )
     assert synced_response.status_code == 200
@@ -3187,20 +3206,89 @@ def test_audit_findings_page_export_and_review_task_flow(tmp_path: Path) -> None
     assert [item["finding_key"] for item in synced_items] == ["finding-fdc6a665ec5fcbf8"]
     assert synced_items[0]["review_status"] == "confirmed-violation"
 
-    linked_page_response = client.get("/pages/audit-findings")
+    linked_page_response = client.get("/pages/audit-findings", headers=headers)
     assert linked_page_response.status_code == 200
     assert "review-task-0001" in linked_page_response.text
     assert "confirmed-violation" in linked_page_response.text
     assert "已创建复核任务" in linked_page_response.text
+
+    outsider_headers = {"X-User-Id": "expert-catalog", "X-Role": "member"}
+    assert client.get(
+        "/pages/audit-findings",
+        headers=outsider_headers,
+    ).status_code == 200
+    assert "finding-fdc6a665ec5fcbf8" not in client.get(
+        "/pages/audit-findings",
+        headers=outsider_headers,
+    ).text
+    hidden_export = client.get(
+        "/audit-findings/finding-fdc6a665ec5fcbf8/export",
+        headers=outsider_headers,
+    )
+    hidden_mutation = client.post(
+        "/pages/audit-findings/finding-fdc6a665ec5fcbf8/review-task",
+        headers=outsider_headers,
+        follow_redirects=False,
+    )
+    assert hidden_export.status_code == 404
+    assert hidden_mutation.status_code == 404
+
+
+def test_audit_finding_review_task_page_rejects_conflicting_scope_fields(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'audit-finding-scope-conflict.db'}"
+    state = _api_state(tmp_path)
+    state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    state.review_task_store = SqlAlchemyReviewTaskStore(database_url)
+    state.project_member_store = InMemoryProjectMemberStore()
+    _seed_charge_rule_001_findings(database_url)
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    create_response = client.post(
+        "/pages/audit-findings/finding-fdc6a665ec5fcbf8/review-task",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+    task = state.review_task_store.get_task("review-task-0001")
+    dossier = dict(task["dossier"])
+    dossier["report_template_draft"] = {
+        "project_key": "CATALOG-LIMIT-202606",
+    }
+    state.review_task_store.update_task(
+        "review-task-0001",
+        {"dossier": dossier},
+    )
+
+    response = client.post(
+        "/pages/review-tasks/review-task-0001/status",
+        headers=headers,
+        data={
+            "status": "confirmed-violation",
+            "reviewer_note": "不得跨项目复核。",
+            "conclusion": "拒绝冲突 scope。",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "review task project scope is inconsistent"
+    finding = state.audit_finding_store.get_finding("finding-fdc6a665ec5fcbf8")
+    assert finding["review_status"] == "pending-review"
 
 
 def test_audit_findings_api_reports_blocked_generation_readiness(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'empty-audit-findings.db'}"
     state = _api_state(tmp_path)
     state.audit_finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    state.project_member_store = InMemoryProjectMemberStore()
     client = TestClient(create_app(state))
 
-    response = client.get("/audit-findings")
+    response = client.get(
+        "/audit-findings",
+        headers={"X-User-Id": "readiness-admin", "X-Role": "admin"},
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -3733,7 +3821,7 @@ def _seed_charge_rule_001_findings(database_url: str) -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         project = AuditProject(
-            project_key="audit-project-charge-fixture",
+            project_key="SELF-CHECK-FUND-20260607",
             name="收费合规 fixture 专项",
             scenario_key="charging-compliance",
             status="fixture",
