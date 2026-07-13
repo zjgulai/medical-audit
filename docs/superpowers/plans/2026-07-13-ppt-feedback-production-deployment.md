@@ -54,6 +54,7 @@ PR #232 代码审查发现的项目隔离、前端身份失效和部署门禁问
 - [ ] PR #232 修复后完成独立复审并合入 `main`。
 - [ ] 在 fresh fetch 后的干净 `main` checkout 上确认 `git status --porcelain` 为空，且 `HEAD == origin/main == 已批准完整 SHA`。
 - [ ] 在干净 checkout 重跑 Ruff、Mypy、Pytest、Web 四门禁和 local full-stack E2E。
+- [ ] 对生产 review task 做只读 scope 审计：统计已关联 finding 但 dossier 顶层/模板草稿均缺少 `project_key` 的历史记录；如非零，先制定单独 backfill、冲突处理和回滚方案，不在部署脚本内隐式批量修复。
 - [ ] 由所有者在腾讯云控制台复核当前实例与 known-host 指纹；不得回退到 `StrictHostKeyChecking=no`。
 - [ ] 复核根盘可用空间足以容纳本次 DB/app/web 备份、镜像构建临时空间和回滚保留；未经单独授权不得删除历史备份或 Docker volume。
 - [ ] 确定唯一 deploy stamp，并记录目标 SHA、旧 SHA、备份路径和回滚责任人。

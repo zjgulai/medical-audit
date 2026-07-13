@@ -965,3 +965,38 @@ Boundary:
 - Loop 49 is local validation plus deploy preflight only.
 - Local Foundation Playwright logs included expected proxy messages for `127.0.0.1:8021` because the backend target was not started; they are not backend acceptance evidence.
 - No production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-13 Loop 52 PR #232 Review Remediation
+
+Decision:
+
+- 将独立复审发现拆成后端权限、前端身份状态、生产发布门禁三个本地原子修复批次。
+- 本轮证据边界保持为 `local_only`；不执行 push、merge、SSH、deploy、provider call、database write 或 live send。
+- 暂不引入 project-member 数据库唯一约束；该项涉及历史数据清理、migration 与回滚，必须单独设计和授权。
+
+Implementation:
+
+- `e7ef552a`：按可见项目约束 audit finding 的列表、计数、导出、页面和 mutation，并统一 finding/review task 的 `project_key` 解析与冲突处理。
+- `9f3b309a`：按 role/user identity 隔离 replica、agent 安装态和请求代际，修复 stale response、deep-link 重放、无效 agent 与 partial lane failure 行为。
+- `fd131071`：生产 execute 强制 clean `main`、fresh fetch、批准 SHA 一致；默认 smoke 改为 GET-only；新增显式 L4 gate、Nginx fail-closed 与 marker-safe rollback。
+- 生产部署计划新增历史 task scope 只读盘点门禁，避免部署脚本隐式批量 backfill。
+
+Verification:
+
+- 三轮独立只读复审完成；最终结论为 PASS，未发现剩余 P0/P1。
+- `uv run ruff check .`：passed。
+- `uv run mypy src scripts/deploy-tencent-cloud-production.py scripts/run-production-e2e-smoke.py`：passed（`106` source files + scripts）。
+- `uv run pytest -q`：passed；最新 collect-only 为 `590` tests。
+- `tests/knowledge_query/test_scripts.py`：`100` tests passed。
+- `pnpm web:test`：`32` files / `279` tests passed。
+- `pnpm web:typecheck`、`pnpm web:lint`：passed。
+- `pnpm web:build`：passed（`24/24` pages）。
+- `pnpm local:fullstack:e2e`：passed（`13/13`）。
+- `git diff --check`：passed。
+
+Boundary:
+
+- 当前分支仅本地领先远端 `3` 个代码 commit；尚未 push，远端 PR #232 仍未包含本轮修复。
+- `production unchanged`；`provider_call=false`；`database_write=false`；`live_send=false`。
+- 生产部署前仍须执行历史 finding-linked task scope 的只读盘点。
+- project-member 数据库唯一约束仍为明确的 P2 后续项，不能用应用层校验替代 migration 证据。

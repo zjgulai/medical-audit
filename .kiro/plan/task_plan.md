@@ -178,3 +178,25 @@ Evidence boundary:
 - Local tests/build/preflight are L1/L2 evidence.
 - SSH GET/read-only observation is L3 evidence.
 - Production deployment, remote file synchronization, container recreation, database/object-storage writes, provider calls, merge, and push remain blocked pending separate explicit authorization.
+
+## 2026-07-13 Loop 52 PR #232 Review Remediation
+
+Goal:
+
+- 修复 PR #232 独立复审发现的权限隔离、跨身份状态和生产发布门禁问题，并以本地原子 commit 和完整回归证据交付。
+
+Execution TODO:
+
+- [x] 稳定复现并分级独立复审发现，明确 P0/P1 验收标准和外部副作用边界。
+- [x] 修复 audit finding/project scope、review task scope、readiness count 和上传身份校验，并补权限回归测试。
+- [x] 修复 replica/agent/deep-link/chat 的跨身份状态失效与 stale response 行为，并补前端回归测试。
+- [x] 强化生产 deploy execute、GET-only smoke、显式 L4 gate、Nginx fail-closed 和 marker-safe rollback。
+- [x] 完成 Ruff、Mypy、Pytest（`590` collected）、脚本测试（`100`）、Web 测试（`32/279`）、typecheck、lint、build（`24/24`）和 local full-stack E2E（`13/13`）。
+- [x] 完成三轮独立只读复审；最终无剩余 P0/P1。
+- [x] 创建三个本地原子代码 commit，并同步部署计划和项目记录。
+- [ ] 下一步须单独授权 push 本地 commit、更新 PR #232 并等待远端复审/检查；不得在同一步隐式 merge 或 deploy。
+
+Evidence boundary:
+
+- 本轮新增证据为 L1/L2 `local_only`；此前 L3 生产只读观察仍是历史独立证据，不能替代本轮代码部署后的生产验收。
+- 本轮未产生 L4 证据；`production unchanged`、`provider_call=false`、`database_write=false`、`live_send=false`。
