@@ -254,9 +254,9 @@ test -d {shlex.quote(config.remote_web_dir)}
 docker inspect medical_audit_app >/dev/null
 docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
-if ! docker exec ai_video_nginx nginx -t >/tmp/medical-audit-nginx-test.log 2>&1; then
+if ! nginx_test_output="$(docker exec ai_video_nginx nginx -t 2>&1)"; then
   echo "WARNING shared-nginx-test-failed"
-  sed -n '1,20p' /tmp/medical-audit-nginx-test.log
+  printf '%s\n' "$nginx_test_output" | sed -n '1,20p'
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 auth_headers=(
@@ -558,7 +558,8 @@ def _ssh(
         "+ ssh "
         "-n "
         f"-i {shlex.quote(str(config.ssh_key))} "
-        "-o StrictHostKeyChecking=no "
+        "-o BatchMode=yes "
+        "-o StrictHostKeyChecking=yes "
         "-o IdentitiesOnly=yes "
         f"{config.ssh_target} bash -lc <remote-script>",
         flush=True,
@@ -724,7 +725,9 @@ def _ssh_args(config: DeployConfig, script: str) -> list[str]:
         "-i",
         str(config.ssh_key),
         "-o",
-        "StrictHostKeyChecking=no",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
         "-o",
         "IdentitiesOnly=yes",
         config.ssh_target,
@@ -738,7 +741,8 @@ def _ssh_transport(config: DeployConfig) -> str:
     return (
         "ssh "
         f"-i {shlex.quote(str(config.ssh_key))} "
-        "-o StrictHostKeyChecking=no "
+        "-o BatchMode=yes "
+        "-o StrictHostKeyChecking=yes "
         "-o IdentitiesOnly=yes"
     )
 

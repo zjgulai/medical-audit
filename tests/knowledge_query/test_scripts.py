@@ -1861,7 +1861,30 @@ def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
     script = captured_scripts[0]
     assert "docker inspect medical_audit_app" in script
     assert "curl -fsS http://127.0.0.1:18080/health" in script
+    assert "/tmp/medical-audit-nginx-test.log" not in script
     assert "/var/www/audit -> /var/www/audit" not in script
+
+
+def test_deploy_tencent_cloud_ssh_transport_requires_known_host(tmp_path: Path) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_strict_ssh_transport",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+
+    args = module._ssh_args(config, "true")
+    transport = module._ssh_transport(config)
+
+    assert "BatchMode=yes" in args
+    assert "StrictHostKeyChecking=yes" in args
+    assert "StrictHostKeyChecking=no" not in args
+    assert "-o BatchMode=yes" in transport
+    assert "-o StrictHostKeyChecking=yes" in transport
+    assert "StrictHostKeyChecking=no" not in transport
 
 
 def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
