@@ -41,7 +41,7 @@ export type GraphWorkbenchRelation = {
   readonly strength: "强" | "中" | "待补";
 };
 
-export type GraphWorkbenchResponse = {
+type GraphWorkbenchResponseBase = {
   readonly format: "graph-workbench-v1";
   readonly generated_at: string;
   readonly graph_id: string;
@@ -58,12 +58,35 @@ export type GraphWorkbenchResponse = {
     readonly pending_relation_count: number;
   };
   readonly evidence_grade: string;
-  readonly production_side_effect: "none" | string;
+  readonly production_side_effect: "none";
+};
+
+export type KnowledgeGraphWorkbenchResponse = GraphWorkbenchResponseBase & {
+  readonly view: "knowledge";
+  readonly project_key: null;
+  readonly evidence_chain_status: "catalog";
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
   };
 };
+
+export type ProjectGraphWorkbenchResponse = GraphWorkbenchResponseBase & {
+  readonly view: "project";
+  readonly project_key: string;
+  readonly evidence_chain_status: "ready" | "empty";
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: {
+      readonly audit_findings: string;
+      readonly review_tasks: string;
+    };
+  };
+};
+
+export type GraphWorkbenchResponse =
+  | KnowledgeGraphWorkbenchResponse
+  | ProjectGraphWorkbenchResponse;
 
 export type RuleLibraryApiItem = {
   readonly id: string;
@@ -374,7 +397,6 @@ export type TableAnalysisUploadHistoryItem = {
   readonly size_bytes: number;
   readonly size_kb: number;
   readonly sha256: string;
-  readonly storage_path: string;
   readonly sheet_name: string | null;
   readonly row_count: number;
   readonly column_count: number;
@@ -555,6 +577,8 @@ export type KnowledgeBaseCatalogResponse = {
   };
   readonly store: {
     readonly ready: boolean;
+    readonly catalog_ready: boolean;
+    readonly metrics_ready: boolean;
     readonly backend: string;
   };
   readonly boundaries: {
@@ -935,8 +959,15 @@ export type MedicalAuditWorkflowActionResponse = {
   readonly audit_event?: Record<string, unknown> | null;
 };
 
+export type ReportTemplateCategory = {
+  readonly id: "plan" | "workpaper" | "evidence" | "confirmation" | "report" | "remediation";
+  readonly label: string;
+  readonly availability: "active" | "awaiting-business-template";
+};
+
 export type WorkpaperTemplateRegistryItem = {
   readonly id: string;
+  readonly category_id: ReportTemplateCategory["id"];
   readonly name: string;
   readonly source_template_id: string;
   readonly source_table: string;
@@ -987,6 +1018,7 @@ export type ReportWorkbenchResponse = {
   readonly format: "report-workbench-v1";
   readonly generated_at: string;
   readonly template_registry_status: string;
+  readonly template_categories: readonly ReportTemplateCategory[];
   readonly workpaper_templates: readonly WorkpaperTemplateRegistryItem[];
   readonly report_entries: readonly ReportWorkbenchEntry[];
   readonly report_evidence_sources: readonly ReportWorkbenchEvidenceSource[];
@@ -1001,6 +1033,40 @@ export type ReportWorkbenchResponse = {
     readonly ready: boolean;
     readonly backend: string;
   };
+};
+
+export type ReportDraftCreateRequest = {
+  readonly template_id: string;
+  readonly project_key: string;
+  readonly field_values: Readonly<Record<string, string>>;
+};
+
+export type ReportDraftCreateResponse = {
+  readonly format: "report-template-draft-v1";
+  readonly task_id: string;
+  readonly template_id: string;
+  readonly category_id: ReportTemplateCategory["id"];
+  readonly project_key: string;
+  readonly project_href: string;
+  readonly status: "pending-review";
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly formal_report_created: false;
+  readonly provider_call: false;
+  readonly audit: {
+    readonly status: "ready" | "local-only" | "degraded";
+    readonly durability: "durable" | "local-only" | "intent-only";
+    readonly local_only: boolean;
+    readonly intent_recorded: boolean;
+    readonly completion_recorded: boolean;
+  };
+};
+
+export type AuditArtifactDownload = {
+  readonly blob: Blob;
+  readonly filename: string;
 };
 
 export type ApiAgentCategory = "效率类" | "业务类" | "研究类";
@@ -1186,7 +1252,7 @@ export type AgentFeedbackListResponse = {
   };
 };
 
-export type ApiProjectStatus = "进行中" | "待启动" | "已归档";
+export type ApiProjectStatus = "待开始" | "进行中" | "已完成" | "已归档";
 export type ApiProjectMemberRole = "项目负责人" | "审计员" | "业务专家" | "信息科" | "只读观察员";
 export type ApiProjectMemberStatus = "在项目中" | "待确认";
 
@@ -1197,6 +1263,7 @@ export type ProjectSummaryApiItem = {
   readonly organization_name: string;
   readonly member_count: number;
   readonly creator: string;
+  readonly creator_user_identifier: string;
   readonly created_at: string;
   readonly status: ApiProjectStatus;
   readonly operation_label: string;
@@ -1206,6 +1273,7 @@ export type ProjectSummaryApiItem = {
 export type ProjectMemberApiItem = {
   readonly id: string;
   readonly project_key: string;
+  readonly user_identifier: string | null;
   readonly name: string;
   readonly role: ApiProjectMemberRole;
   readonly department: string;
@@ -1221,6 +1289,7 @@ export type ProjectsResponse = {
   readonly items: readonly ProjectSummaryApiItem[];
   readonly roles: readonly ApiProjectMemberRole[];
   readonly statuses: readonly ApiProjectMemberStatus[];
+  readonly project_statuses: readonly ApiProjectStatus[];
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
@@ -1278,6 +1347,9 @@ export type ProjectDashboardResponse = {
   readonly production_side_effect: "none" | string;
   readonly store: {
     readonly ready: boolean;
+    readonly project_members_ready: boolean;
+    readonly audit_findings_ready: boolean;
+    readonly status: "ready" | "partial" | "unavailable";
     readonly backend: {
       readonly project_members: string;
       readonly audit_findings: string;
@@ -1297,6 +1369,7 @@ export type ProjectMembersResponse = {
 };
 
 export type ProjectMemberCreateRequest = {
+  readonly user_identifier: string;
   readonly name: string;
   readonly role: ApiProjectMemberRole;
   readonly department: string;

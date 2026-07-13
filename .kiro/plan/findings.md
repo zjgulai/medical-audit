@@ -1255,6 +1255,28 @@ Boundary:
 - Local commit only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
 
+## 2026-07-13 Loop 51 Initial Findings
+
+- The safe implementation checkout is the PPT feature worktree; the repository root contains extensive unrelated user-owned changes and is unsuitable for this batch.
+- The three pre-existing dirty documents in the feature worktree are protected and outside the Loop 51 staging manifest.
+- The four known repository-wide quality findings are narrow and locally repairable:
+  - line wrapping in `src/medical_audit_kb/api/routes_chat.py`;
+  - import ordering in `src/medical_audit_kb/ingestion/inventory.py`;
+  - explicit `SourceCollection | None` narrowing before `source_collection_definition()`;
+  - replacing an unreachable static `Hashable` type branch in `src/medical_audit_kb/indexing/bm25_index.py` with a runtime hashability check.
+- The attached key has safe local permissions (`0600`) and is readable. This establishes only local key readiness, not SSH success or production health.
+- Previous production/deploy facts in this ledger are historical and cannot be treated as current until a fresh read-only audit is completed.
+- Production deployment remains a separate L4 action; this loop currently permits L1/L2 local/preflight evidence and L3 read-only remote evidence only.
+
+### Loop 51 Resolved And Remaining
+
+- Resolved locally: two Ruff findings, two Mypy findings, one stale authorization fixture, strict SSH host verification, and preflight remote-temp-file mutation.
+- Current production is healthy and exactly aligned to `origin/main@51dfcb81`; it is not aligned to the PPT feature branch.
+- Generic production frontend and permission gates are green, but the documents product-specific probe remains red on new page text. This is a useful deployment-drift signal and must turn green after deployment.
+- Capacity is currently sufficient for another normal backup/build cycle, but DB backup retention is the dominant disk consumer. No cleanup is authorized or required in this loop.
+- Immediate execute remains blocked by two distinct facts: no clean release checkout and no separate production execute authorization.
+- A preflight pass from `--allow-dirty` is L2 preparation evidence only and must never be reused as proof that a dirty checkout is safe to deploy.
+
 ## 2026-07-01 Loop 38 Government-Style UI And Typography Batch Plan
 
 Finding Status:
@@ -1590,3 +1612,31 @@ Boundary:
 
 - Local UI/test loop only.
 - No push, merge, deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-13 Loop 52 PR #232 Remediation Findings
+
+Finding Status:
+
+- 初始独立复审发现跨项目 finding 访问、非管理员 readiness 全局计数、上传前身份校验、前端跨身份状态污染和部署门禁不完整等 P1 问题。
+- 二次复审进一步发现 review task scope 来源不一致、deep-link 重放、stale install response、默认 smoke 隐含写审计日志和 rollback marker 时序问题。
+- 对上述问题逐项补测试和修复后，最终独立复审结论为 PASS，未发现剩余 P0/P1。
+
+Supported Claim:
+
+- audit finding 的读取、导出、页面和四类 mutation 均按调用者可见 project scope 执行；finding-linked review task 使用统一 scope 解析并拒绝冲突。
+- analytics upload 在读取或保留上传文件前完成用户身份校验与规范化。
+- 前端 replica、agent install/favorite/notice 与请求结果按 role/user generation 隔离，旧身份响应不会覆盖新身份状态。
+- 默认生产 smoke 使用 knowledge-base catalog GET 路径；成功鉴权路径不调用 `record_operation`，独立实测 operation log delta 为 `0`。
+- execute 只接受 clean `main` 且要求 `HEAD == origin/main == approved_sha`；Nginx 检查和 L4 smoke 均 fail closed。
+- rollback 以实际当前 marker 和备份 restore SHA 为准，恢复验证完成后才写回 restored marker。
+
+Residual Risk:
+
+- project-member 的 `(project_key, user_identifier)` 数据库唯一约束尚未实现；需要单独完成历史数据探查、冲突清理、migration 和 rollback 设计。
+- 历史 review task 可能存在 finding 关联但两处 dossier scope 都缺失的记录；当前 API 仅在已授权 mutation 时惰性回填，生产部署前仍需只读库存盘点。
+- 本轮只完成本地脚本语义、测试和 L2 preflight 证据；没有执行真实生产 rollback，不能把语法/fixture 通过表述为生产回滚已验证。
+
+Boundary:
+
+- 三个修复 commit 均仅存在于本地分支。
+- 未执行 push、merge、SSH、deploy、provider call、migration、production write 或 live send。

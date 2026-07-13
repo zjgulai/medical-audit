@@ -1,4 +1,5 @@
 import { ReplicaShell } from "@/components/replica/replica-shell";
+import { AuditUserProvider } from "@/components/shell/audit-user-context";
 import { WorkspaceAuthGate } from "@/components/shell/workspace-auth-gate";
 
 export default function WorkspaceLayout({
@@ -8,7 +9,9 @@ export default function WorkspaceLayout({
 }>) {
   return (
     <WorkspaceAuthGate>
-      <ReplicaShell>{children}</ReplicaShell>
+      <AuditUserProvider>
+        <ReplicaShell>{children}</ReplicaShell>
+      </AuditUserProvider>
     </WorkspaceAuthGate>
   );
 }

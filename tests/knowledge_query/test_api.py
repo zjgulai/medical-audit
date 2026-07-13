@@ -1,5 +1,7 @@
 import json
+import urllib.parse
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -7,7 +9,9 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
 from medical_audit_kb.api.analytics_upload_store import (
@@ -16,6 +20,7 @@ from medical_audit_kb.api.analytics_upload_store import (
     SqlAlchemyAnalyticsUploadStore,
 )
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.auth_user_store import (
     AUTH_ROLE_ASSIGNMENT_ID_PREFIX,
     AUTH_USER_ID_PREFIX,
@@ -29,13 +34,18 @@ from medical_audit_kb.api.document_upload_store import (
     SqlAlchemyDocumentUploadStore,
 )
 from medical_audit_kb.api.project_member_store import (
+    DEFAULT_PROJECT_MEMBERS_BY_PROJECT,
+    DEFAULT_PROJECT_PAYLOADS,
     PROJECT_MEMBER_ID_PREFIX,
+    InMemoryProjectMemberStore,
     SqlAlchemyProjectMemberStore,
+    visible_project_keys,
 )
 from medical_audit_kb.api.query_history_store import (
     InMemoryQueryHistoryStore,
     SqlAlchemyQueryHistoryStore,
 )
+from medical_audit_kb.api.review_task_store import SqlAlchemyReviewTaskStore
 from medical_audit_kb.api.routes_documents import DocumentUploadItem
 from medical_audit_kb.core.config import (
     DocumentStorageSettings,
@@ -43,6 +53,18 @@ from medical_audit_kb.core.config import (
     DocumentUploadIndexingSettings,
     KnowledgeQuerySettings,
     ModelProviderSettings,
+)
+from medical_audit_kb.db.models import (
+    AnalyticsUploadRecord,
+    AuditDataSnapshot,
+    AuditFinding,
+    AuditProject,
+    AuditProjectMember,
+    AuditRule,
+    AuditRun,
+    AuditTask,
+    ReviewTask,
+    RuleVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -284,6 +306,13 @@ def test_auth_api_lists_roles_and_manages_users(tmp_path: Path) -> None:
     ]
     assert roles_body["compatibility"]["it-admin"] == "admin"
     assert roles_body["compatibility"]["system-admin"] == "admin"
+    permissions_by_role = {
+        item["role"]: set(item["permissions"]) for item in roles_body["items"]
+    }
+    assert "create_report_draft" in permissions_by_role["admin"]
+    assert "create_report_draft" in permissions_by_role["director"]
+    assert "create_report_draft" in permissions_by_role["member"]
+    assert "create_report_draft" not in permissions_by_role["technician"]
 
     session_response = client.get(
         "/auth/session",
@@ -498,7 +527,11 @@ def test_permission_resolver_prefers_persisted_global_role(tmp_path: Path) -> No
 
     agent_response = client.post(
         "/agents",
-        headers={"X-User-Id": "persistent-technician", "X-Role": "member"},
+        headers={
+            "X-User-Id": "persistent-technician",
+            "X-Role": "member",
+            "X-Project-Name": PROJECT_NAME_HEADER,
+        },
         json={
             "name": "持久化权限助手",
             "category": "业务类",
@@ -513,7 +546,12 @@ def test_permission_resolver_prefers_persisted_global_role(tmp_path: Path) -> No
     project_member_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         headers={"X-User-Id": "persistent-technician", "X-Role": "admin"},
-        json={"name": "持久化越权用户", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "persistent-denied-member",
+            "name": "持久化越权用户",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
     assert project_member_response.status_code == 403
     denied_payload = state.operation_logs[-1]["payload"]
@@ -578,12 +616,22 @@ def test_permission_resolver_uses_project_scoped_role_for_matching_project(
     allowed_member_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         headers={"X-User-Id": "project-director", "X-Role": "member"},
-        json={"name": "项目授权成员", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "project-authorized-member",
+            "name": "项目授权成员",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
     blocked_member_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
         headers={"X-User-Id": "project-director", "X-Role": "admin"},
-        json={"name": "跨项目越权成员", "role": "审计员", "department": "医保办"},
+        json={
+            "user_identifier": "cross-project-denied-member",
+            "name": "跨项目越权成员",
+            "role": "审计员",
+            "department": "医保办",
+        },
     )
 
     assert scoped_session_response.status_code == 200
@@ -756,7 +804,11 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
 
     create_response = client.post(
         "/agents",
-        headers={"X-User-Id": "director-1", "X-Role": "director"},
+        headers={
+            "X-User-Id": "director-1",
+            "X-Role": "director",
+            "X-Project-Name": urllib.parse.quote("医保目录限制条件核验"),
+        },
         json={
             "name": "目录限制核验助手",
             "category": "业务类",
@@ -783,7 +835,10 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     second_state = _api_state(tmp_path / "second")
     second_state.agent_store = SqlAlchemyAgentStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_items = second_client.get("/agents").json()["items"]
+    persisted_items = second_client.get(
+        "/agents",
+        headers={"X-Project-Name": urllib.parse.quote("医保目录限制条件核验")},
+    ).json()["items"]
 
     assert persisted_items[0]["id"] == created["id"]
     assert persisted_items[0]["name"] == "目录限制核验助手"
@@ -1050,8 +1105,16 @@ def test_agents_api_restricts_prompt_activation_to_admin_and_director(
     state = _api_state(tmp_path)
     state.agent_store = SqlAlchemyAgentStore(database_url, create_schema=True)
     client = TestClient(create_app(state))
-    technician_headers = {"X-User-Id": "technician-1", "X-Role": "technician"}
-    director_headers = {"X-User-Id": "director-1", "X-Role": "director"}
+    technician_headers = {
+        "X-User-Id": "technician-1",
+        "X-Role": "technician",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
+    director_headers = {
+        "X-User-Id": "director-1",
+        "X-Role": "director",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
 
     create_response = client.post(
         "/agents",
@@ -1158,7 +1221,9 @@ def test_agents_api_filters_project_scope_and_blocks_cross_project_invocation(
 
     project_a_list = client.get("/agents", headers=project_a_headers)
     project_b_list = client.get("/agents", headers=project_b_headers)
+    missing_scope_list = client.get("/agents")
     blocked_detail = client.get(f"/agents/{agent_id}", headers=project_b_headers)
+    missing_scope_detail = client.get(f"/agents/{agent_id}")
     blocked_invocation = client.post(
         f"/agents/{agent_id}/invocations",
         headers={**project_b_headers, "X-User-Id": "member-2", "X-Role": "member"},
@@ -1169,14 +1234,37 @@ def test_agents_api_filters_project_scope_and_blocks_cross_project_invocation(
         headers={**project_a_headers, "X-User-Id": "member-1", "X-Role": "member"},
         json={"invocation_source": "agent-workspace", "question": "本项目调用"},
     )
+    missing_scope_invocation = client.post(
+        f"/agents/{agent_id}/invocations",
+        headers={"X-User-Id": "member-3", "X-Role": "member"},
+        json={"invocation_source": "agent-workspace", "question": "缺少项目范围调用"},
+    )
+    missing_scope_create = client.post(
+        "/agents",
+        headers={"X-User-Id": "admin-3", "X-Role": "admin"},
+        json={
+            "name": "缺少项目范围的助手",
+            "category": "业务类",
+            "topic": "医保目录限制条件核验",
+            "prompt": "不得在缺少当前项目时创建。",
+            "knowledge_base": "项目默认知识库",
+            "project_name": "医保基金使用合规专项自查",
+            "visibility_scope": "project",
+        },
+    )
 
     assert create_response.status_code == 200
     assert agent_id in {item["id"] for item in project_a_list.json()["items"]}
     assert agent_id not in {item["id"] for item in project_b_list.json()["items"]}
+    assert agent_id not in {item["id"] for item in missing_scope_list.json()["items"]}
     assert "agent-citation-check" in {item["id"] for item in project_b_list.json()["items"]}
     assert blocked_detail.status_code == 403
     assert blocked_detail.json()["detail"] == "agent project scope does not match current project"
+    assert missing_scope_detail.status_code == 403
+    assert missing_scope_detail.json()["detail"] == "agent project scope requires current project"
     assert blocked_invocation.status_code == 403
+    assert missing_scope_invocation.status_code == 403
+    assert missing_scope_create.status_code == 403
     assert allowed_invocation.status_code == 200
     assert allowed_invocation.json()["item"]["question"] == "本项目调用"
     assert any(entry["action"] == "agent-project-scope-denied" for entry in state.operation_logs)
@@ -1232,22 +1320,217 @@ def test_agents_api_enforces_manage_agent_permission(tmp_path: Path) -> None:
     assert state.operation_logs[-1]["payload"]["permission"] == "manage_agents"
 
 
-def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
+    tmp_path: Path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
     state = _api_state(tmp_path)
     state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
     client = TestClient(create_app(state))
 
-    projects_response = client.get("/projects")
+    anonymous_response = client.get("/projects")
+    role_only_response = client.get("/projects", headers={"X-Role": "admin"})
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog"},
+    )
+    self_creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "next-director", "X-Role": "director"},
+    )
+    active_member_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    pending_member_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "next-technician", "X-Role": "technician"},
+    )
+    unrelated_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
 
-    assert projects_response.status_code == 200
-    projects_body = projects_response.json()
+    assert anonymous_response.status_code == 200
+    assert anonymous_response.json()["items"] == []
+    assert role_only_response.status_code == 200
+    assert role_only_response.json()["items"] == []
+    assert admin_response.status_code == 200
+    projects_body = admin_response.json()
     assert projects_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
     assert projects_body["roles"] == ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"]
+    assert projects_body["statuses"] == ["在项目中", "待确认"]
+    assert projects_body["project_statuses"] == ["待开始", "进行中", "已完成", "已归档"]
+    project_statuses = {item["status"] for item in projects_body["items"]}
+    assert project_statuses <= set(projects_body["project_statuses"])
+    assert "待启动" not in project_statuses
+    assert len(projects_body["items"]) == 4
     assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
     assert projects_body["items"][0]["member_count"] == 3
+    assert {
+        item["id"]: item["creator_user_identifier"] for item in projects_body["items"]
+    } == {
+        "SELF-CHECK-FUND-20260607": "next-director",
+        "CATALOG-LIMIT-202606": "expert-catalog",
+        "OUTPATIENT-DOSE-202606": "auditor-outpatient-dose",
+        "KB-GOVERNANCE-202606": "it-kb-governance",
+    }
+    assert next(
+        item
+        for item in projects_body["items"]
+        if item["id"] == "OUTPATIENT-DOSE-202606"
+    )["status"] == "进行中"
+    assert [item["id"] for item in creator_response.json()["items"]] == [
+        "CATALOG-LIMIT-202606"
+    ]
+    assert [item["id"] for item in self_creator_response.json()["items"]] == [
+        "SELF-CHECK-FUND-20260607"
+    ]
+    assert [item["id"] for item in active_member_response.json()["items"]] == [
+        "SELF-CHECK-FUND-20260607"
+    ]
+    assert pending_member_response.json()["items"] == []
+    assert unrelated_response.json()["items"] == []
+    assert state.operation_logs[-1]["payload"]["actor"] == "unrelated-member"
+    assert state.operation_logs[-1]["payload"]["visible_project_count"] == 0
 
-    project_response = client.get("/projects/SELF-CHECK-FUND-20260607")
+
+def test_default_project_creators_are_active_members() -> None:
+    for project in DEFAULT_PROJECT_PAYLOADS:
+        project_key = str(project["id"])
+        creator_user_identifier = project["creator_user_identifier"]
+        member_identifiers = [
+            member["user_identifier"]
+            for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
+        ]
+        assert len(member_identifiers) == len(set(member_identifiers))
+        assert any(
+            member["user_identifier"] == creator_user_identifier
+            and member["status"] == "在项目中"
+            for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
+        )
+
+
+def test_projects_api_protects_project_detail_members_and_dashboard(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-members.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    routes = (
+        "/projects/SELF-CHECK-FUND-20260607",
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+    )
+
+    for route in routes:
+        creator_response = client.get(
+            route,
+            headers={"X-User-Id": "next-director", "X-Role": "director"},
+        )
+        active_member_response = client.get(
+            route,
+            headers={"X-User-Id": "next-member", "X-Role": "member"},
+        )
+        pending_member_response = client.get(
+            route,
+            headers={"X-User-Id": "next-technician", "X-Role": "technician"},
+        )
+        unrelated_response = client.get(
+            route,
+            headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+        )
+        anonymous_response = client.get(route)
+        role_only_response = client.get(route, headers={"X-Role": "admin"})
+
+        assert creator_response.status_code == 200
+        assert active_member_response.status_code == 200
+        assert pending_member_response.status_code == 404
+        assert unrelated_response.status_code == 404
+        assert anonymous_response.status_code == 404
+        assert role_only_response.status_code == 404
+
+    members = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    ).json()["items"]
+    assert members[0]["user_identifier"] == "next-member"
+    assert state.operation_logs[-1]["payload"]["actor"] == "next-member"
+
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+    for route in (
+        "/projects/CATALOG-LIMIT-202606",
+        "/projects/CATALOG-LIMIT-202606/members",
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+    ):
+        assert client.get(route, headers=admin_headers).status_code == 200
+
+
+def test_projects_api_uses_project_scoped_auth_for_detail(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+    assert client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "user_key": "scoped-project-admin",
+            "display_name": "项目级管理员",
+            "department_key": "audit-office",
+        },
+    ).status_code == 200
+    assert client.post(
+        "/auth/users/scoped-project-admin/role-assignments",
+        headers=admin_headers,
+        json={
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    ).status_code == 200
+
+    headers = {"X-User-Id": "scoped-project-admin", "X-Role": "member"}
+    list_response = client.get("/projects", headers=headers)
+    detail_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607",
+        headers=headers,
+    )
+    other_detail_response = client.get(
+        "/projects/CATALOG-LIMIT-202606",
+        headers=headers,
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
+    assert detail_response.status_code == 200
+    assert other_detail_response.status_code == 404
+    assert state.operation_logs[-1]["payload"]["actor"] == "scoped-project-admin"
+    assert state.operation_logs[-1]["payload"]["actor_role"] == "admin"
+
+
+def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-members.db'}"
+    state = _api_state(tmp_path)
+    state.project_member_store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    project_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607",
+        headers=admin_headers,
+    )
 
     assert project_response.status_code == 200
     project_body = project_response.json()
@@ -1256,7 +1539,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert project_body["store"]["backend"] == "SqlAlchemyProjectMemberStore"
     assert project_body["production_side_effect"] == "none"
 
-    dashboard_response = client.get("/projects/SELF-CHECK-FUND-20260607/dashboard")
+    dashboard_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=admin_headers,
+    )
 
     assert dashboard_response.status_code == 200
     dashboard_body = dashboard_response.json()
@@ -1268,7 +1554,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert dashboard_body["store"]["backend"]["audit_findings"] == "unavailable"
     assert dashboard_body["production_side_effect"] == "none"
 
-    members_response = client.get("/projects/CATALOG-LIMIT-202606/members")
+    members_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+    )
 
     assert members_response.status_code == 200
     members_body = members_response.json()
@@ -1278,11 +1567,17 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
 
     create_response = client.post(
         "/projects/CATALOG-LIMIT-202606/members",
-        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        headers=admin_headers,
         json={
+            "user_identifier": "  custom-catalog-auditor  ",
             "name": "赵审计",
             "role": "审计员",
             "department": "医保办",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "MEMBER-42",
+                "user_identifier": "spoofed-catalog-member",
+            },
         },
     )
 
@@ -1290,7 +1585,10 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     created = create_response.json()["item"]
     assert created["id"].startswith(PROJECT_MEMBER_ID_PREFIX)
     assert created["project_key"] == "CATALOG-LIMIT-202606"
-    assert created["status"] == "待确认"
+    assert created["status"] == "在项目中"
+    assert created["user_identifier"] == "custom-catalog-auditor"
+    assert created["metadata"]["ticket"] == "MEMBER-42"
+    assert created["metadata"]["user_identifier"] == "custom-catalog-auditor"
     assert created["created_by"] == "admin-1"
     assert state.operation_logs[-1]["action"] == "project-member-create"
     assert state.operation_logs[-1]["payload"]["actor_role"] == "admin"
@@ -1298,16 +1596,1514 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     second_state = _api_state(tmp_path / "second")
     second_state.project_member_store = SqlAlchemyProjectMemberStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_members = second_client.get("/projects/CATALOG-LIMIT-202606/members").json()["items"]
-    persisted_projects = second_client.get("/projects").json()["items"]
+    persisted_members = second_client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers={"X-User-Id": "custom-catalog-auditor", "X-Role": "member"},
+    ).json()["items"]
+    persisted_projects = second_client.get(
+        "/projects",
+        headers={"X-User-Id": "custom-catalog-auditor", "X-Role": "member"},
+    ).json()["items"]
     catalog_project = next(
         item for item in persisted_projects if item["id"] == "CATALOG-LIMIT-202606"
     )
 
     assert persisted_members[0]["id"] == created["id"]
     assert persisted_members[0]["name"] == "赵审计"
+    assert persisted_members[0]["user_identifier"] == "custom-catalog-auditor"
+    assert persisted_members[0]["metadata"]["ticket"] == "MEMBER-42"
+    assert persisted_members[0]["metadata"]["user_identifier"] == "custom-catalog-auditor"
     assert any(item["id"] == "member-catalog-owner" for item in persisted_members)
     assert catalog_project["member_count"] == 5
+
+
+def test_projects_api_keeps_pending_custom_member_invisible_and_matches_in_memory(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    active_response = client.post(
+        "/projects/OUTPATIENT-DOSE-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "  custom-dose-active  ",
+            "name": "自定义门诊审计员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "DOSE-1",
+                "user_identifier": "spoofed-dose-member",
+            },
+        },
+    )
+    pending_response = client.post(
+        "/projects/OUTPATIENT-DOSE-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "custom-dose-pending",
+            "name": "待确认门诊审计员",
+            "role": "审计员",
+            "department": "内审部",
+            "metadata": {"ticket": "DOSE-2"},
+        },
+    )
+
+    assert active_response.status_code == 200
+    assert active_response.json()["item"]["user_identifier"] == "custom-dose-active"
+    assert active_response.json()["item"]["metadata"]["ticket"] == "DOSE-1"
+    assert (
+        active_response.json()["item"]["metadata"]["user_identifier"]
+        == "custom-dose-active"
+    )
+    assert pending_response.status_code == 200
+    active_headers = {"X-User-Id": "custom-dose-active", "X-Role": "member"}
+    pending_headers = {"X-User-Id": "custom-dose-pending", "X-Role": "member"}
+    assert [
+        item["id"] for item in client.get("/projects", headers=active_headers).json()["items"]
+    ] == ["OUTPATIENT-DOSE-202606"]
+    assert client.get(
+        "/projects/OUTPATIENT-DOSE-202606",
+        headers=active_headers,
+    ).status_code == 200
+    assert client.get("/projects", headers=pending_headers).json()["items"] == []
+    assert client.get(
+        "/projects/OUTPATIENT-DOSE-202606",
+        headers=pending_headers,
+    ).status_code == 404
+
+
+@pytest.mark.parametrize("store_kind", ("memory", "sql"))
+def test_projects_api_rejects_duplicate_project_member_identities(
+    tmp_path: Path,
+    store_kind: str,
+) -> None:
+    state = _api_state(tmp_path)
+    if store_kind == "memory":
+        state.project_member_store = InMemoryProjectMemberStore()
+    else:
+        state.project_member_store = SqlAlchemyProjectMemberStore(
+            f"sqlite:///{tmp_path / 'project-member-conflicts.db'}",
+            create_schema=True,
+        )
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    default_conflict = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "next-member",
+            "name": "重复默认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_default_conflict = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "next-technician",
+            "name": "重复待确认默认成员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    active_create = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-active-first",
+            "name": "先激活成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+            "metadata": {
+                "ticket": "IDENTITY-ACTIVE",
+                "user_identifier": "spoofed-active-identity",
+            },
+        },
+    )
+    active_then_pending = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "  duplicate-active-first  ",
+            "name": "后待确认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_create = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-pending-first",
+            "name": "先待确认成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "待确认",
+        },
+    )
+    pending_then_active = client.post(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+        json={
+            "user_identifier": "duplicate-pending-first",
+            "name": "后激活成员",
+            "role": "审计员",
+            "department": "内审部",
+            "status": "在项目中",
+        },
+    )
+
+    assert default_conflict.status_code == 409
+    assert default_conflict.json()["detail"] == "project member identity already exists"
+    assert pending_default_conflict.status_code == 409
+    assert (
+        pending_default_conflict.json()["detail"]
+        == "project member identity already exists"
+    )
+    assert active_create.status_code == 200
+    assert active_create.json()["item"]["user_identifier"] == "duplicate-active-first"
+    assert active_create.json()["item"]["metadata"] == {
+        "ticket": "IDENTITY-ACTIVE",
+        "user_identifier": "duplicate-active-first",
+    }
+    assert active_then_pending.status_code == 409
+    assert active_then_pending.json()["detail"] == "project member identity already exists"
+    assert pending_create.status_code == 200
+    assert pending_then_active.status_code == 409
+    assert pending_then_active.json()["detail"] == "project member identity already exists"
+
+    members = client.get(
+        "/projects/CATALOG-LIMIT-202606/members",
+        headers=admin_headers,
+    ).json()["items"]
+    assert sum(
+        item["user_identifier"] == "duplicate-active-first" for item in members
+    ) == 1
+    assert sum(
+        item["user_identifier"] == "duplicate-pending-first" for item in members
+    ) == 1
+
+
+@pytest.mark.parametrize("store_kind", ("memory", "sql"))
+def test_project_member_reads_dedupe_legacy_identities_consistently(
+    tmp_path: Path,
+    store_kind: str,
+) -> None:
+    project_key = "CATALOG-LIMIT-202606"
+    raw_members = [
+        _legacy_project_member(
+            "custom-default-duplicate",
+            "expert-catalog",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-shared-new",
+            "legacy-shared",
+            "待确认",
+        ),
+        _legacy_project_member(
+            "custom-shared-old",
+            "legacy-shared",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-active-new",
+            "legacy-active",
+            "在项目中",
+        ),
+        _legacy_project_member(
+            "custom-active-old",
+            "legacy-active",
+            "待确认",
+        ),
+        _legacy_project_member("legacy-identityless-one", None, "在项目中"),
+        _legacy_project_member("legacy-identityless-two", None, "待确认"),
+    ]
+    state = _api_state(tmp_path)
+    if store_kind == "memory":
+        store: InMemoryProjectMemberStore | SqlAlchemyProjectMemberStore = (
+            InMemoryProjectMemberStore(members={project_key: raw_members})
+        )
+    else:
+        database_url = f"sqlite:///{tmp_path / 'legacy-project-members.db'}"
+        store = SqlAlchemyProjectMemberStore(database_url, create_schema=True)
+        _seed_legacy_project_members(database_url, project_key, raw_members)
+    state.project_member_store = store
+    client = TestClient(create_app(state))
+    admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    members_response = client.get(
+        f"/projects/{project_key}/members",
+        headers=admin_headers,
+    )
+    projects_response = client.get("/projects", headers=admin_headers)
+    shared_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "legacy-shared", "X-Role": "member"},
+    )
+    active_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "legacy-active", "X-Role": "member"},
+    )
+    default_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert members_response.status_code == 200
+    member_ids = {item["id"] for item in members_response.json()["items"]}
+    assert len(member_ids) == 8
+    assert "custom-default-duplicate" not in member_ids
+    assert "custom-shared-new" in member_ids
+    assert "custom-shared-old" not in member_ids
+    assert "custom-active-new" in member_ids
+    assert "custom-active-old" not in member_ids
+    assert {"legacy-identityless-one", "legacy-identityless-two"} <= member_ids
+    catalog_project = next(
+        item
+        for item in projects_response.json()["items"]
+        if item["id"] == project_key
+    )
+    assert catalog_project["member_count"] == 8
+    assert store.member_counts()[project_key] == 4
+    assert shared_response.json()["items"] == []
+    assert [item["id"] for item in active_response.json()["items"]] == [project_key]
+    assert [item["id"] for item in default_response.json()["items"]] == [project_key]
+
+
+def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: Path) -> None:
+    class FailingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            raise SQLAlchemyError("member store unavailable")
+
+    state = _api_state(tmp_path)
+    state.project_member_store = FailingProjectMemberStore()
+    client = TestClient(create_app(state))
+
+    creator_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+    unrelated_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    creator_detail_response = client.get(
+        "/projects/CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+    creator_dashboard_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert [item["id"] for item in creator_response.json()["items"]] == [
+        "CATALOG-LIMIT-202606"
+    ]
+    assert creator_response.json()["store"] == {"ready": False, "backend": "unavailable"}
+    assert unrelated_response.json()["items"] == []
+    assert len(admin_response.json()["items"]) == 4
+    fallback_statuses = {item["status"] for item in admin_response.json()["items"]}
+    assert fallback_statuses <= set(admin_response.json()["project_statuses"])
+    assert "待启动" not in fallback_statuses
+    assert creator_detail_response.status_code == 200
+    assert creator_detail_response.json()["item"]["status"] == "待开始"
+    assert creator_dashboard_response.status_code == 200
+    creator_dashboard = creator_dashboard_response.json()
+    assert creator_dashboard["project"]["status"] == "待开始"
+    assert creator_dashboard["evidence_grade"] == "backend-defaults"
+    assert creator_dashboard["store"] == {
+        "ready": False,
+        "project_members_ready": False,
+        "audit_findings_ready": False,
+        "status": "unavailable",
+        "backend": {
+            "project_members": "unavailable",
+            "audit_findings": "unavailable",
+        },
+    }
+
+
+def test_project_dashboard_scopes_findings_and_publishes_full_readiness(
+    tmp_path: Path,
+) -> None:
+    class ProjectScopedAuditFindingStore:
+        def __init__(self) -> None:
+            self.requested_project_keys: list[str | None] = []
+            self.items = {
+                "SELF-CHECK-FUND-20260607": [
+                    {
+                        "finding_key": "finding-self-001",
+                        "status": "open",
+                        "finding_type": "self-check",
+                        "severity": "high",
+                        "review_status": "pending-review",
+                        "review_task_id": "review-self-001",
+                        "metadata": {"owner": "SELF负责人"},
+                    }
+                ],
+                "CATALOG-LIMIT-202606": [
+                    {
+                        "finding_key": "finding-catalog-001",
+                        "status": "open",
+                        "finding_type": "catalog",
+                        "severity": "medium",
+                        "review_status": "needs-evidence",
+                        "review_task_id": None,
+                        "metadata": {"owner": "CATALOG负责人"},
+                    },
+                    {
+                        "finding_key": "finding-catalog-002",
+                        "status": "open",
+                        "finding_type": "catalog",
+                        "severity": "low",
+                        "review_status": "pending-review",
+                        "review_task_id": None,
+                        "metadata": {"owner": "CATALOG负责人"},
+                    },
+                ],
+            }
+
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
+            assert project_key is not None
+            return [dict(item) for item in self.items.get(project_key, [])[:limit]]
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    finding_store = ProjectScopedAuditFindingStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    self_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=headers,
+    )
+    catalog_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers=headers,
+    )
+
+    assert self_response.status_code == 200
+    assert catalog_response.status_code == 200
+    assert finding_store.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607",
+        "CATALOG-LIMIT-202606",
+    ]
+    self_body = self_response.json()
+    catalog_body = catalog_response.json()
+    assert [item["id"] for item in self_body["queue"]] == ["finding-self-001"]
+    assert [item["id"] for item in catalog_body["queue"]] == [
+        "finding-catalog-001",
+        "finding-catalog-002",
+    ]
+    assert {item["key"]: item["value"] for item in self_body["metrics"]}[
+        "open_findings"
+    ] == "1"
+    assert {item["key"]: item["value"] for item in catalog_body["metrics"]}[
+        "open_findings"
+    ] == "2"
+    assert "CATALOG负责人" not in {
+        item["name"] for item in self_body["member_workloads"]
+    }
+    assert "SELF负责人" not in {
+        item["name"] for item in catalog_body["member_workloads"]
+    }
+    assert self_body["evidence_grade"] == "live-db-connected"
+    assert self_body["store"] == {
+        "ready": True,
+        "project_members_ready": True,
+        "audit_findings_ready": True,
+        "status": "ready",
+        "backend": {
+            "project_members": "InMemoryProjectMemberStore",
+            "audit_findings": "ProjectScopedAuditFindingStore",
+        },
+    }
+
+
+def test_project_dashboard_keeps_explicitly_closed_findings_out_of_open_metric(
+    tmp_path: Path,
+) -> None:
+    class ClosedAndLegacyFindingStore:
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            assert project_key is not None
+            status = "closed" if project_key == "SELF-CHECK-FUND-20260607" else None
+            return [
+                {
+                    "finding_key": f"finding-{project_key}",
+                    "status": status,
+                    "severity": "medium",
+                    "review_status": "confirmed-violation",
+                    "review_task_id": None,
+                    "metadata": {},
+                }
+            ][:limit]
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = ClosedAndLegacyFindingStore()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
+
+    closed_response = client.get(
+        "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        headers=headers,
+    )
+    legacy_response = client.get(
+        "/projects/CATALOG-LIMIT-202606/dashboard",
+        headers=headers,
+    )
+
+    assert closed_response.status_code == 200
+    assert legacy_response.status_code == 200
+    closed_metrics = {item["key"]: item["value"] for item in closed_response.json()["metrics"]}
+    legacy_metrics = {item["key"]: item["value"] for item in legacy_response.json()["metrics"]}
+    assert closed_metrics["open_findings"] == "0"
+    assert legacy_metrics["open_findings"] == "1"
+
+
+def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-findings.db'}"
+    store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+
+    global_items = store.list_findings(limit=10)
+    self_items = store.list_findings(
+        project_key="SELF-CHECK-FUND-20260607",
+        limit=10,
+    )
+    catalog_items = store.list_findings(
+        project_key="CATALOG-LIMIT-202606",
+        limit=10,
+    )
+    visible_items = store.list_findings(
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"}),
+        limit=10,
+    )
+    no_visible_items = store.list_findings(project_keys=frozenset(), limit=10)
+    missing_items = store.list_findings(project_key="UNKNOWN-PROJECT", limit=10)
+    self_count = store.count_findings(
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"})
+    )
+    both_count = store.count_findings(
+        project_keys=frozenset(
+            {"SELF-CHECK-FUND-20260607", "CATALOG-LIMIT-202606"}
+        )
+    )
+    empty_count = store.count_findings(project_keys=frozenset())
+
+    assert {item["finding_key"] for item in global_items} == {
+        "finding-self-sql",
+        "finding-catalog-sql",
+    }
+    assert [item["finding_key"] for item in self_items] == ["finding-self-sql"]
+    assert [item["finding_key"] for item in catalog_items] == ["finding-catalog-sql"]
+    assert [item["finding_key"] for item in visible_items] == ["finding-self-sql"]
+    assert no_visible_items == []
+    assert missing_items == []
+    assert self_count == 1
+    assert both_count == 2
+    assert empty_count == 0
+
+
+def test_audit_finding_store_project_contract_is_stable_across_reads(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-finding-contract.db'}"
+    store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        self_task = session.scalar(
+            select(ReviewTask).where(ReviewTask.external_task_id == "review-self-sql")
+        )
+        catalog_finding = session.scalar(
+            select(AuditFinding).where(
+                AuditFinding.finding_key == "finding-catalog-sql"
+            )
+        )
+        assert self_task is not None
+        assert catalog_finding is not None
+        catalog_finding.review_task_id = self_task.id
+        session.commit()
+
+    listed = store.list_findings(
+        project_key="SELF-CHECK-FUND-20260607",
+        limit=10,
+    )
+    loaded = store.get_finding("finding-self-sql")
+    synced = store.sync_review_task_status(
+        "review-self-sql",
+        "confirmed-violation",
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607"}),
+    )
+    catalog_after_sync = store.get_finding("finding-catalog-sql")
+
+    assert [item["project_key"] for item in listed] == ["SELF-CHECK-FUND-20260607"]
+    assert loaded["project_key"] == "SELF-CHECK-FUND-20260607"
+    assert [item["project_key"] for item in synced] == ["SELF-CHECK-FUND-20260607"]
+    assert catalog_after_sync["review_status"] == "pending-review"
+
+
+def test_graph_workbench_defaults_to_knowledge_catalog_without_project_store_reads(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    member_store = _RecordingProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.project_member_store = member_store
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["view"] == "knowledge"
+    assert body["project_key"] is None
+    assert body["evidence_chain_status"] == "catalog"
+    assert body["production_side_effect"] == "none"
+    assert "graph-node-project" in {node["id"] for node in body["nodes"]}
+    assert any(str(node["href"]).startswith("/knowledge-base") for node in body["nodes"])
+    assert member_store.list_reads == 0
+    assert finding_store.requested_project_keys == []
+    assert review_store.list_calls == 0
+    assert state.operation_logs[-1]["payload"]["view"] == "knowledge"
+    assert state.operation_logs[-1]["payload"]["project_key"] is None
+
+
+def test_graph_workbench_rejects_invalid_view_project_pairs_before_data_reads(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    member_store = _RecordingProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.project_member_store = member_store
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    missing = client.get("/graph/workbench?view=project")
+    blank = client.get("/graph/workbench?view=project&project_key=%20%20")
+    forbidden = client.get(
+        "/graph/workbench?view=knowledge&project_key=SELF-CHECK-FUND-20260607"
+    )
+    invalid_view = client.get("/graph/workbench?view=workflow")
+    too_long = client.get(
+        f"/graph/workbench?view=project&project_key={'P' * 129}"
+    )
+
+    assert missing.status_code == 422
+    assert missing.json()["detail"] == "project_key is required for project graph view"
+    assert blank.status_code == 422
+    assert blank.json()["detail"] == "project_key is required for project graph view"
+    assert forbidden.status_code == 422
+    assert forbidden.json()["detail"] == (
+        "project_key is not allowed for knowledge graph view"
+    )
+    assert invalid_view.status_code == 422
+    assert too_long.status_code == 422
+    assert member_store.list_reads == 0
+    assert finding_store.requested_project_keys == []
+    assert review_store.list_calls == 0
+    assert not any(log["action"] == "graph-workbench-view" for log in state.operation_logs)
+
+
+def test_project_graph_authorizes_exact_project_scope_and_hides_unrelated_projects(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'graph-auth.db'}",
+        create_schema=True,
+    )
+    state.project_member_store = InMemoryProjectMemberStore()
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    state.auth_user_store.add_user(
+        {
+            "user_key": "graph-project-admin",
+            "display_name": "图谱项目管理员",
+            "department_key": "audit-office",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "graph-project-admin",
+        {
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "SELF-CHECK-FUND-20260607",
+        },
+    )
+    state.auth_user_store.add_user(
+        {
+            "user_key": "graph-department-admin",
+            "display_name": "图谱科室管理员",
+            "department_key": "audit-office",
+        }
+    )
+    state.auth_user_store.assign_role(
+        "graph-department-admin",
+        {
+            "role": "admin",
+            "scope_type": "department",
+            "scope_key": "audit-office",
+        },
+    )
+    client = TestClient(create_app(state))
+
+    visible_member = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    unrelated = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "unrelated-member", "X-Role": "member"},
+    )
+    scoped_allowed = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "graph-project-admin", "X-Role": "member"},
+    )
+    scoped_other = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "graph-project-admin", "X-Role": "admin"},
+    )
+    department_scoped = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "graph-department-admin", "X-Role": "admin"},
+    )
+    unknown = client.get(
+        "/graph/workbench?view=project&project_key=UNKNOWN-PROJECT",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+
+    assert visible_member.status_code == 200
+    assert unrelated.status_code == 404
+    assert unrelated.json()["detail"] == "project not found"
+    assert scoped_allowed.status_code == 200
+    assert scoped_other.status_code == 404
+    assert department_scoped.status_code == 404
+    assert unknown.status_code == 404
+    assert finding_store.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607",
+        "SELF-CHECK-FUND-20260607",
+    ]
+    assert review_store.list_calls == 2
+    denial_logs = [
+        log for log in state.operation_logs if log["action"] == "authorization-denied"
+    ]
+    assert len(denial_logs) == 3
+    assert all("finding" not in json.dumps(log).lower() for log in denial_logs)
+    assert all("task" not in json.dumps(log).lower() for log in denial_logs)
+    success_logs = [
+        log for log in state.operation_logs if log["action"] == "graph-workbench-view"
+    ]
+    assert [log["payload"]["project_key"] for log in success_logs] == [
+        "SELF-CHECK-FUND-20260607",
+        "SELF-CHECK-FUND-20260607",
+    ]
+
+
+def test_project_graph_fails_closed_when_required_stores_are_unavailable(
+    tmp_path: Path,
+) -> None:
+    class FailingProjectMemberStore(_RecordingProjectMemberStore):
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            self.list_reads += 1
+            raise SQLAlchemyError("project member store unavailable")
+
+    class FailingFindingStore(_RecordingGraphFindingStore):
+        def list_findings(
+            self,
+            *,
+            review_status: str | None = None,
+            project_key: str | None = None,
+            limit: int = 100,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
+            raise SQLAlchemyError("finding store unavailable")
+
+    class FailingReviewTaskStore(_RecordingGraphReviewTaskStore):
+        def list_tasks(self) -> list[dict[str, object]]:
+            self.list_calls += 1
+            raise SQLAlchemyError("review task store unavailable")
+
+    route = "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607"
+    headers = {"X-User-Id": "next-member", "X-Role": "member"}
+
+    missing_member_state = _api_state(tmp_path / "missing-member")
+    missing_member_state.project_member_store = None
+    missing_member_finding = _RecordingGraphFindingStore()
+    missing_member_review = _RecordingGraphReviewTaskStore()
+    missing_member_state.audit_finding_store = missing_member_finding  # type: ignore[assignment]
+    missing_member_state.review_task_store = missing_member_review
+    missing_member = TestClient(create_app(missing_member_state)).get(route, headers=headers)
+
+    failing_member_state = _api_state(tmp_path / "failing-member")
+    failing_member_state.project_member_store = FailingProjectMemberStore()
+    failing_member_finding = _RecordingGraphFindingStore()
+    failing_member_review = _RecordingGraphReviewTaskStore()
+    failing_member_state.audit_finding_store = failing_member_finding  # type: ignore[assignment]
+    failing_member_state.review_task_store = failing_member_review
+    failing_member = TestClient(create_app(failing_member_state)).get(route, headers=headers)
+
+    missing_finding_state = _api_state(tmp_path / "missing-finding")
+    missing_finding_state.project_member_store = InMemoryProjectMemberStore()
+    missing_finding_state.audit_finding_store = None
+    missing_finding_review = _RecordingGraphReviewTaskStore()
+    missing_finding_state.review_task_store = missing_finding_review
+    missing_finding = TestClient(create_app(missing_finding_state)).get(route, headers=headers)
+
+    missing_review_state = _api_state(tmp_path / "missing-review")
+    missing_review_state.project_member_store = InMemoryProjectMemberStore()
+    missing_review_finding = _RecordingGraphFindingStore()
+    missing_review_state.audit_finding_store = missing_review_finding  # type: ignore[assignment]
+    missing_review_state.review_task_store = None
+    missing_review = TestClient(create_app(missing_review_state)).get(route, headers=headers)
+
+    failing_finding_state = _api_state(tmp_path / "failing-finding")
+    failing_finding_state.project_member_store = InMemoryProjectMemberStore()
+    failing_finding = FailingFindingStore()
+    failing_finding_state.audit_finding_store = failing_finding  # type: ignore[assignment]
+    failing_finding_state.review_task_store = _RecordingGraphReviewTaskStore()
+    finding_error = TestClient(create_app(failing_finding_state)).get(route, headers=headers)
+
+    failing_review_state = _api_state(tmp_path / "failing-review")
+    failing_review_state.project_member_store = InMemoryProjectMemberStore()
+    failing_review_finding = _RecordingGraphFindingStore()
+    failing_review_state.audit_finding_store = failing_review_finding  # type: ignore[assignment]
+    failing_review_store = FailingReviewTaskStore()
+    failing_review_state.review_task_store = failing_review_store
+    review_error = TestClient(create_app(failing_review_state)).get(route, headers=headers)
+
+    assert missing_member.status_code == 503
+    assert failing_member.status_code == 503
+    assert missing_member_finding.requested_project_keys == []
+    assert missing_member_review.list_calls == 0
+    assert failing_member_finding.requested_project_keys == []
+    assert failing_member_review.list_calls == 0
+    assert missing_finding.status_code == 503
+    assert missing_finding_review.list_calls == 0
+    assert missing_review.status_code == 503
+    assert missing_review_finding.requested_project_keys == []
+    assert finding_error.status_code == 503
+    assert review_error.status_code == 503
+    assert failing_review_finding.requested_project_keys == [
+        "SELF-CHECK-FUND-20260607"
+    ]
+    assert failing_review_store.list_calls == 1
+
+
+def test_project_graph_admin_can_read_known_project_without_member_store(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = None
+    finding_store = _RecordingGraphFindingStore()
+    review_store = _RecordingGraphReviewTaskStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["project_key"] == "CATALOG-LIMIT-202606"
+    assert finding_store.requested_project_keys == ["CATALOG-LIMIT-202606"]
+    assert review_store.list_calls == 1
+
+
+def test_project_graph_builds_only_exact_persisted_evidence_chain(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'project-graph.db'}"
+    finding_store = SqlAlchemyAuditFindingStore(database_url, create_schema=True)
+    _seed_project_findings(database_url)
+    review_store = _CountingSqlAlchemyReviewTaskStore(database_url)
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    self_response = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+    catalog_response = client.get(
+        "/graph/workbench?view=project&project_key=CATALOG-LIMIT-202606",
+        headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
+    )
+
+    assert self_response.status_code == 200
+    assert catalog_response.status_code == 200
+    assert review_store.list_calls == 2
+    self_body = self_response.json()
+    catalog_body = catalog_response.json()
+    assert self_body["view"] == "project"
+    assert self_body["project_key"] == "SELF-CHECK-FUND-20260607"
+    assert self_body["evidence_chain_status"] == "ready"
+    assert self_body["evidence_grade"] == "live-store-readonly"
+    assert self_body["store"] == {
+        "ready": True,
+        "backend": {
+            "audit_findings": "SqlAlchemyAuditFindingStore",
+            "review_tasks": "_CountingSqlAlchemyReviewTaskStore",
+        },
+    }
+    self_ids = {node["id"] for node in self_body["nodes"]}
+    catalog_ids = {node["id"] for node in catalog_body["nodes"]}
+    allowed_statuses = {"已归集", "可引用", "待复核", "门禁中", "跟踪中", "待接入"}
+    assert {
+        node["status"] for node in [*self_body["nodes"], *catalog_body["nodes"]]
+    } <= allowed_statuses
+    assert {
+        "project:SELF-CHECK-FUND-20260607",
+        "finding:finding-self-sql",
+        "review:review-self-sql",
+        "report:review-self-sql",
+        "remediation:rectification-self-sql",
+        "review:report-draft-self-sql",
+        "report:report-draft-self-sql",
+    } <= self_ids
+    assert {
+        "project:CATALOG-LIMIT-202606",
+        "finding:finding-catalog-sql",
+        "review:review-catalog-sql",
+        "report:review-catalog-sql",
+        "remediation:rectification-catalog-sql",
+        "review:report-draft-catalog-sql",
+        "report:report-draft-catalog-sql",
+    } <= catalog_ids
+    assert not any("catalog" in node_id.lower() for node_id in self_ids)
+    assert not any("self" in node_id.lower() for node_id in catalog_ids)
+    assert "review:legacy-project-string-sql" not in self_ids | catalog_ids
+    assert "report:legacy-project-string-sql" not in self_ids | catalog_ids
+    assert all(
+        str(node["href"]).startswith(
+            ("/projects?project=", "/findings", "/reports", "/remediation")
+        )
+        for node in [*self_body["nodes"], *catalog_body["nodes"]]
+    )
+    serialized = json.dumps([self_body, catalog_body], ensure_ascii=False)
+    assert "SENSITIVE-GRAPH-BODY" not in serialized
+    assert "field_values" not in serialized
+    success_payload = state.operation_logs[-1]["payload"]
+    assert success_payload["view"] == "project"
+    assert success_payload["project_key"] == "CATALOG-LIMIT-202606"
+    assert success_payload["node_count"] == len(catalog_body["nodes"])
+    assert "finding" not in success_payload
+    assert "task" not in success_payload
+
+
+def test_project_graph_normalizes_business_statuses_and_requires_canonical_signed_report(
+    tmp_path: Path,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_statuses = {
+        "pending": "pending-review",
+        "needs": "needs-evidence",
+        "confirmed": "confirmed-violation",
+        "rule": "rule-issue",
+        "data": "data-issue",
+        "excluded": "not-violation",
+        "closed": "closed",
+        "unknown": "future-status",
+    }
+    findings = [
+        {
+            "project_key": project_key,
+            "finding_key": f"finding-status-{suffix}",
+            "severity": "medium",
+            "review_status": status,
+            "review_task_id": f"review-status-{suffix}"
+            if suffix in {"pending", "needs", "confirmed", "closed"}
+            else None,
+            "audit_task_key": f"task-status-{suffix}",
+            "rule_version_key": "STATUS-RULE@v1",
+            "evidence_items": [],
+        }
+        for suffix, status in finding_statuses.items()
+    ]
+    tasks = [
+        {
+            "task_id": "review-status-pending",
+            "status": "pending-review",
+            "status_label": "待复核原始标签",
+            "citation_count": 0,
+            "dossier": {
+                "report_draft": {"title": "真实报告草稿"},
+                "rectification": {
+                    "rectification_id": "rectification-status-pending",
+                    "status": "pending-rectification",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-needs",
+            "status": "needs-evidence",
+            "status_label": "需补证原始标签",
+            "citation_count": 1,
+            "dossier": {
+                "report_draft": {"title": "缺 hash 时保留的真实草稿"},
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-missing-hash",
+                    "content": "SENSITIVE-INCOMPLETE-SIGNED-CONTENT",
+                },
+                "rectification": {
+                    "rectification_id": "rectification-status-in-progress",
+                    "status": "in-progress",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-confirmed",
+            "status": "confirmed-violation",
+            "status_label": "确认违规原始标签",
+            "citation_count": 2,
+            "dossier": {
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-canonical",
+                    "content_sha256": "sha256-canonical",
+                    "content": "SENSITIVE-CANONICAL-SIGNED-CONTENT",
+                },
+                "rectification": {
+                    "rectification_id": "rectification-status-accepted",
+                    "status": "accepted",
+                },
+            },
+        },
+        {
+            "task_id": "review-status-closed",
+            "status": "closed",
+            "status_label": "已关闭原始标签",
+            "citation_count": 0,
+            "dossier": {
+                "signed_report": {
+                    "status": "signed",
+                    "report_id": "signed-report-missing-content",
+                    "content_sha256": "sha256-without-content",
+                }
+            },
+        },
+    ]
+    for status in ("submitted", "returned"):
+        tasks.append(
+            {
+                "task_id": f"report-draft-rectification-{status}",
+                "status": "closed",
+                "status_label": "已关闭原始标签",
+                "citation_count": 0,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": f"template-{status}",
+                        "project_key": project_key,
+                    },
+                    "rectification": {
+                        "rectification_id": f"rectification-status-{status}",
+                        "status": status,
+                    },
+                },
+            }
+        )
+
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore(  # type: ignore[assignment]
+        {project_key: findings}
+    )
+    state.review_task_store = _RecordingGraphReviewTaskStore(tasks)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    nodes = {node["id"]: node for node in body["nodes"]}
+    allowed_statuses = {"已归集", "可引用", "待复核", "门禁中", "跟踪中", "待接入"}
+    assert {node["status"] for node in nodes.values()} <= allowed_statuses
+    assert nodes[f"project:{project_key}"]["status"] == "已归集"
+    assert "进行中" in nodes[f"project:{project_key}"]["description"]
+    assert nodes["finding:finding-status-pending"]["status"] == "待复核"
+    assert nodes["finding:finding-status-needs"]["status"] == "门禁中"
+    for suffix in ("confirmed", "rule", "data", "excluded", "closed"):
+        assert nodes[f"finding:finding-status-{suffix}"]["status"] == "已归集"
+    assert nodes["finding:finding-status-unknown"]["status"] == "待复核"
+    assert "future-status" in nodes["finding:finding-status-unknown"]["description"]
+    assert nodes["review:review-status-pending"]["status"] == "待复核"
+    assert nodes["review:review-status-needs"]["status"] == "门禁中"
+    assert nodes["review:review-status-confirmed"]["status"] == "已归集"
+    assert nodes["review:review-status-closed"]["status"] == "已归集"
+    assert "confirmed-violation" in nodes["review:review-status-confirmed"]["description"]
+    assert "确认违规原始标签" in nodes["review:review-status-confirmed"]["description"]
+    assert nodes["report:review-status-pending"]["status"] == "门禁中"
+    assert nodes["report:review-status-needs"]["status"] == "门禁中"
+    assert nodes["report:review-status-confirmed"]["status"] == "已归集"
+    assert "signed" in nodes["report:review-status-confirmed"]["description"]
+    assert "report:review-status-closed" not in nodes
+    assert nodes["remediation:rectification-status-pending"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-in-progress"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-submitted"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-returned"]["status"] == "跟踪中"
+    assert nodes["remediation:rectification-status-accepted"]["status"] == "已归集"
+    assert "accepted" in nodes[
+        "remediation:rectification-status-accepted"
+    ]["description"]
+    serialized = json.dumps(body, ensure_ascii=False)
+    assert "SENSITIVE-INCOMPLETE-SIGNED-CONTENT" not in serialized
+    assert "SENSITIVE-CANONICAL-SIGNED-CONTENT" not in serialized
+
+
+@pytest.mark.parametrize(
+    "duplicate_project_key",
+    ("CATALOG-LIMIT-202606", "SELF-CHECK-FUND-20260607"),
+    ids=("cross-project", "same-project"),
+)
+def test_project_graph_rejects_duplicate_review_task_ids_without_data_leakage(
+    tmp_path: Path,
+    duplicate_project_key: str,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_store = _RecordingGraphFindingStore(
+        {
+            project_key: [
+                {
+                    "project_key": project_key,
+                    "finding_key": "finding-duplicate-review-id",
+                    "severity": "high",
+                    "review_status": "pending-review",
+                    "review_task_id": "review-duplicate-id",
+                    "audit_task_key": "task-duplicate-id",
+                    "rule_version_key": "DUPLICATE-ID-RULE@v1",
+                    "evidence_items": [],
+                }
+            ]
+        }
+    )
+    review_store = _RecordingGraphReviewTaskStore(
+        [
+            {
+                "task_id": "review-duplicate-id",
+                "status": "pending-review",
+                "status_label": "待复核",
+                "citation_count": 0,
+                "dossier": {"report_draft": {"title": "A report draft"}},
+            },
+            {
+                "task_id": "review-duplicate-id",
+                "status": "confirmed-violation",
+                "status_label": "确认违规",
+                "citation_count": 1,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": "B-REPORT-MARKER",
+                        "project_key": duplicate_project_key,
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": "B-REPORT-MARKER",
+                        "content_sha256": "B-HASH-MARKER",
+                        "content": "B-CONTENT-MARKER",
+                    },
+                    "rectification": {
+                        "rectification_id": "B-RECTIFICATION-MARKER",
+                        "status": "accepted",
+                    },
+                },
+            },
+        ]
+    )
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "review task store contains duplicate task ids"
+    serialized = json.dumps(
+        {"response": response.json(), "operation_logs": state.operation_logs},
+        ensure_ascii=False,
+    )
+    assert "B-REPORT-MARKER" not in serialized
+    assert "B-RECTIFICATION-MARKER" not in serialized
+    assert "B-CONTENT-MARKER" not in serialized
+    assert not any(
+        log["action"] == "graph-workbench-view" for log in state.operation_logs
+    )
+    assert finding_store.requested_project_keys == [project_key]
+    assert review_store.list_calls == 1
+
+
+def test_project_graph_rejects_linked_review_task_with_conflicting_project_scope(
+    tmp_path: Path,
+) -> None:
+    project_key = "SELF-CHECK-FUND-20260607"
+    finding_store = _RecordingGraphFindingStore(
+        {
+            project_key: [
+                {
+                    "project_key": project_key,
+                    "finding_key": "finding-conflicting-review-project",
+                    "severity": "high",
+                    "review_status": "confirmed-violation",
+                    "review_task_id": "review-conflicting-project",
+                    "audit_task_key": "task-conflicting-project",
+                    "rule_version_key": "CONFLICTING-PROJECT@v1",
+                    "evidence_items": [],
+                }
+            ]
+        }
+    )
+    review_store = _RecordingGraphReviewTaskStore(
+        [
+            {
+                "task_id": "review-conflicting-project",
+                "status": "confirmed-violation",
+                "status_label": "确认违规",
+                "citation_count": 1,
+                "dossier": {
+                    "report_template_draft": {
+                        "status": "draft",
+                        "template_id": "CROSS-PROJECT-REPORT-MARKER",
+                        "project_key": "CATALOG-LIMIT-202606",
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": "CROSS-PROJECT-REPORT-MARKER",
+                        "content_sha256": "CROSS-PROJECT-HASH",
+                        "content": "CROSS-PROJECT-CONTENT",
+                    },
+                    "rectification": {
+                        "rectification_id": "CROSS-PROJECT-RECTIFICATION-MARKER",
+                        "status": "accepted",
+                    },
+                },
+            }
+        ]
+    )
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    state.review_task_store = review_store
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "review task project scope conflicts with linked finding"
+    serialized = json.dumps(
+        {"response": response.json(), "operation_logs": state.operation_logs},
+        ensure_ascii=False,
+    )
+    assert "CROSS-PROJECT-REPORT-MARKER" not in serialized
+    assert "CROSS-PROJECT-RECTIFICATION-MARKER" not in serialized
+    assert "CROSS-PROJECT-CONTENT" not in serialized
+    assert not any(log["action"] == "graph-workbench-view" for log in state.operation_logs)
+
+
+def test_project_graph_ignores_blank_review_task_ids_and_fails_fast_on_malformed_rows(
+    tmp_path: Path,
+) -> None:
+    class RawReviewTaskStore:
+        def __init__(self, rows: list[object]) -> None:
+            self.rows = rows
+            self.list_calls = 0
+
+        def list_tasks(self) -> list[dict[str, object]]:
+            self.list_calls += 1
+            return self.rows  # type: ignore[return-value]
+
+    project_key = "SELF-CHECK-FUND-20260607"
+    state = _api_state(tmp_path / "blank")
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore()  # type: ignore[assignment]
+    blank_store = RawReviewTaskStore(
+        [
+            {
+                "task_id": "   ",
+                "dossier": {
+                    "report_template_draft": {
+                        "project_key": project_key,
+                        "template_id": "BLANK-ID-MARKER",
+                        "status": "draft",
+                    }
+                },
+            }
+        ]
+    )
+    state.review_task_store = blank_store  # type: ignore[assignment]
+    response = TestClient(create_app(state)).get(
+        f"/graph/workbench?view=project&project_key={project_key}",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["evidence_chain_status"] == "empty"
+    assert "BLANK-ID-MARKER" not in response.text
+    assert blank_store.list_calls == 1
+
+    malformed_state = _api_state(tmp_path / "malformed")
+    malformed_state.project_member_store = InMemoryProjectMemberStore()
+    malformed_state.audit_finding_store = (  # type: ignore[assignment]
+        _RecordingGraphFindingStore()
+    )
+    malformed_store = RawReviewTaskStore(["malformed-row"])
+    malformed_state.review_task_store = malformed_store  # type: ignore[assignment]
+    malformed_client = TestClient(create_app(malformed_state))
+
+    with pytest.raises(AttributeError):
+        malformed_client.get(
+            f"/graph/workbench?view=project&project_key={project_key}",
+            headers={"X-User-Id": "next-member", "X-Role": "member"},
+        )
+    assert malformed_store.list_calls == 1
+    assert not any(
+        log["action"] == "graph-workbench-view"
+        for log in malformed_state.operation_logs
+    )
+
+
+def test_project_graph_empty_chain_is_distinct_from_unavailable_store(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.audit_finding_store = _RecordingGraphFindingStore()  # type: ignore[assignment]
+    state.review_task_store = _RecordingGraphReviewTaskStore()
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/graph/workbench?view=project&project_key=SELF-CHECK-FUND-20260607",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["evidence_chain_status"] == "empty"
+    assert body["relations"] == []
+    assert [node["id"] for node in body["nodes"]] == [
+        "project:SELF-CHECK-FUND-20260607"
+    ]
+    assert body["nodes"][0]["metric"] == "0 条项目证据"
+    assert "0 条项目证据" in body["nodes"][0]["description"]
+    assert body["store"]["ready"] is True
+
+
+def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Path) -> None:
+    class SplitFailureProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise SQLAlchemyError("member visibility unavailable")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise SQLAlchemyError("member store unavailable")
+
+        def member_counts(self) -> dict[str, int]:
+            return {"SELF-CHECK-FUND-20260607": 99}
+
+    class ReadyAuditFindingStore:
+        def __init__(self) -> None:
+            self.requested_project_keys: list[str | None] = []
+
+        def list_findings(
+            self,
+            *,
+            project_key: str | None = None,
+            limit: int,
+        ) -> list[dict[str, object]]:
+            self.requested_project_keys.append(project_key)
+            return []
+
+    state = _api_state(tmp_path)
+    state.project_member_store = SplitFailureProjectMemberStore()
+    finding_store = ReadyAuditFindingStore()
+    state.audit_finding_store = finding_store  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+    visible_headers = (
+        {"X-User-Id": "next-director", "X-Role": "director"},
+        {"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    for headers in visible_headers:
+        list_response = client.get("/projects", headers=headers)
+        assert list_response.status_code == 200
+        assert [item["id"] for item in list_response.json()["items"]] == [
+            "SELF-CHECK-FUND-20260607"
+        ]
+        assert list_response.json()["items"][0]["member_count"] == 3
+        assert list_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        detail_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607",
+            headers=headers,
+        )
+        assert detail_response.status_code == 200
+        assert detail_response.json()["item"]["member_count"] == 3
+        assert detail_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        members_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607/members",
+            headers=headers,
+        )
+        assert members_response.status_code == 200
+        assert len(members_response.json()["items"]) == 3
+        assert all(
+            item["source"] == "system-default"
+            for item in members_response.json()["items"]
+        )
+        assert members_response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+        dashboard_response = client.get(
+            "/projects/SELF-CHECK-FUND-20260607/dashboard",
+            headers=headers,
+        )
+        assert dashboard_response.status_code == 200
+        assert dashboard_response.json()["project"]["member_count"] == 3
+        assert dashboard_response.json()["store"]["backend"] == {
+            "project_members": "unavailable",
+            "audit_findings": "ReadyAuditFindingStore",
+        }
+        assert dashboard_response.json()["store"]["ready"] is False
+        assert dashboard_response.json()["store"]["project_members_ready"] is False
+        assert dashboard_response.json()["store"]["audit_findings_ready"] is True
+        assert dashboard_response.json()["store"]["status"] == "partial"
+        assert dashboard_response.json()["evidence_grade"] == "partial-live-db-connected"
+        assert finding_store.requested_project_keys[-1] == "SELF-CHECK-FUND-20260607"
+        assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
+
+    for user_identifier in ("unrelated-member", "custom-member"):
+        headers = {"X-User-Id": user_identifier, "X-Role": "member"}
+        response = client.get("/projects", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+        assert response.json()["store"] == {
+            "ready": False,
+            "backend": "unavailable",
+        }
+        for route in (
+            "/projects/SELF-CHECK-FUND-20260607",
+            "/projects/SELF-CHECK-FUND-20260607/members",
+            "/projects/SELF-CHECK-FUND-20260607/dashboard",
+        ):
+            assert client.get(route, headers=headers).status_code == 404
+
+    admin_response = client.get(
+        "/projects",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+    )
+    assert admin_response.status_code == 200
+    assert len(admin_response.json()["items"]) == 4
+    assert admin_response.json()["store"] == {
+        "ready": True,
+        "backend": "SplitFailureProjectMemberStore",
+    }
+
+
+def test_projects_api_admin_visibility_helper_does_not_read_store() -> None:
+    class ExplodingProjectMemberStore:
+        def list_members(self, project_key: str) -> list[dict[str, object]]:
+            raise AssertionError("admin visibility must not read member store")
+
+        def add_member(
+            self,
+            project_key: str,
+            values: dict[str, object],
+        ) -> dict[str, object]:
+            raise AssertionError("admin visibility must not write member store")
+
+        def member_counts(self) -> dict[str, int]:
+            raise AssertionError("admin visibility must not count member store")
+
+    visible_keys = visible_project_keys(
+        user_identifier="admin-1",
+        is_admin=True,
+        store=ExplodingProjectMemberStore(),
+    )
+    assert isinstance(visible_keys, frozenset)
+    assert visible_keys == {
+        "SELF-CHECK-FUND-20260607",
+        "CATALOG-LIMIT-202606",
+        "OUTPATIENT-DOSE-202606",
+        "KB-GOVERNANCE-202606",
+    }
 
 
 def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
@@ -1318,13 +3114,34 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(state))
 
-    missing_detail_response = client.get("/projects/UNKNOWN")
-    missing_members_response = client.get("/projects/UNKNOWN/members")
+    member_headers = {"X-User-Id": "unrelated-member", "X-Role": "member"}
+    missing_detail_response = client.get("/projects/UNKNOWN", headers=member_headers)
+    missing_members_response = client.get("/projects/UNKNOWN/members", headers=member_headers)
     invalid_role_response = client.post(
         "/projects/SELF-CHECK-FUND-20260607/members",
         json={
+            "user_identifier": "invalid-role-member",
             "name": "未知角色",
             "role": "访客",
+            "department": "医保办",
+        },
+    )
+    missing_identifier_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "name": "缺少身份",
+            "role": "审计员",
+            "department": "医保办",
+        },
+    )
+    whitespace_identifier_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        json={
+            "user_identifier": "   ",
+            "name": "空白身份",
+            "role": "审计员",
             "department": "医保办",
         },
     )
@@ -1332,6 +3149,8 @@ def test_projects_api_rejects_unknown_project_and_role(tmp_path: Path) -> None:
     assert missing_detail_response.status_code == 404
     assert missing_members_response.status_code == 404
     assert invalid_role_response.status_code == 422
+    assert missing_identifier_response.status_code == 422
+    assert whitespace_identifier_response.status_code == 422
 
 
 def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> None:
@@ -1342,6 +3161,7 @@ def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> N
     )
     client = TestClient(create_app(state))
     payload = {
+        "user_identifier": "permission-test-member",
         "name": "赵审计",
         "role": "审计员",
         "department": "医保办",
@@ -1356,9 +3176,15 @@ def test_projects_api_enforces_member_management_permission(tmp_path: Path) -> N
         headers={"X-User-Id": "director-1", "X-Role": "director"},
         json=payload,
     )
+    member_response = client.post(
+        "/projects/SELF-CHECK-FUND-20260607/members",
+        headers={"X-User-Id": "member-1", "X-Role": "member"},
+        json=payload,
+    )
 
     assert unauthenticated_response.status_code == 401
     assert director_response.status_code == 403
+    assert member_response.status_code == 403
     assert state.operation_logs[-1]["action"] == "authorization-denied"
     assert state.operation_logs[-1]["payload"]["attempted_action"] == "project-member-create"
     assert state.operation_logs[-1]["payload"]["permission"] == "manage_project_members"
@@ -1373,9 +3199,11 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
         create_schema=True,
     )
     client = TestClient(create_app(state))
+    headers = {"X-User-Id": "  analytics-owner  ", "X-Role": "member"}
 
     response = client.post(
         "/analytics/table-upload",
+        headers=headers,
         files={
             "file": (
                 "charge-sample.csv",
@@ -1415,8 +3243,9 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert "发现 1 条完全重复行。" in body["quality_findings"]
     assert state.operation_logs[-1]["action"] == "analytics-table-upload"
     assert state.operation_logs[-1]["payload"]["retention_status"] == "retained"
+    assert state.operation_logs[-1]["payload"]["actor"] == "analytics-owner"
 
-    history_response = client.get("/analytics/table-uploads")
+    history_response = client.get("/analytics/table-uploads", headers=headers)
     assert history_response.status_code == 200
     history_body = history_response.json()
     assert history_body["store"]["backend"] == "SqlAlchemyAnalyticsUploadStore"
@@ -1424,8 +3253,10 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert history_body["items"][0]["sha256"] == body["sha256"]
     assert history_body["items"][0]["row_count"] == 3
     assert history_body["items"][0]["column_count"] == 5
+    assert "storage_path" not in history_body["items"][0]
 
-    retained_path = tmp_path / "retained-uploads" / history_body["items"][0]["storage_path"]
+    retained_record = state.analytics_upload_store.list_uploads(created_by="analytics-owner")[0]
+    retained_path = tmp_path / "retained-uploads" / str(retained_record["storage_path"])
     assert retained_path.exists()
     assert retained_path.read_text(encoding="utf-8").startswith("patient_id,visit_date")
 
@@ -1435,7 +3266,10 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
         upload_root=tmp_path / "retained-uploads",
     )
     second_client = TestClient(create_app(second_state))
-    persisted_items = second_client.get("/analytics/table-uploads").json()["items"]
+    persisted_items = second_client.get(
+        "/analytics/table-uploads",
+        headers=headers,
+    ).json()["items"]
     assert persisted_items[0]["id"] == body["upload_id"]
 
 
@@ -1453,6 +3287,7 @@ def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
 
     response = client.post(
         "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
         files={
             "file": (
                 "charge-workbook.xlsx",
@@ -1478,11 +3313,106 @@ def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) ->
 
     response = client.post(
         "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
         files={"file": ("charges.txt", "not,a,supported,file", "text/plain")},
     )
 
     assert response.status_code == 422
     assert response.json()["detail"] == "unsupported table file extension"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    (
+        {},
+        {"X-User-Id": "   ", "X-Role": "member"},
+        {"X-User-Id": "anonymous", "X-Role": "member"},
+    ),
+)
+def test_analytics_table_upload_rejects_missing_identity_before_retention(
+    tmp_path: Path,
+    headers: dict[str, str],
+) -> None:
+    upload_root = tmp_path / "retained-uploads"
+    state = _api_state(tmp_path)
+    state.analytics_upload_store = InMemoryAnalyticsUploadStore(upload_root=upload_root)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers=headers,
+        files={"file": ("charges.csv", "item,amount\nA,10", "text/csv")},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "X-User-Id header is required"
+    assert state.analytics_upload_store.list_uploads() == []
+    assert list(upload_root.glob("**/*")) == []
+
+
+def test_analytics_upload_history_is_owner_scoped_and_redacts_storage_path(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.analytics_upload_store = InMemoryAnalyticsUploadStore(
+        upload_root=tmp_path / "retained-uploads"
+    )
+    client = TestClient(create_app(state))
+
+    for user_identifier, file_name in (
+        ("analytics-owner-a", "owner-a.csv"),
+        ("analytics-owner-b", "owner-b.csv"),
+    ):
+        response = client.post(
+            "/analytics/table-upload",
+            headers={"X-User-Id": user_identifier, "X-Role": "member"},
+            files={"file": (file_name, "item,amount\nA,10", "text/csv")},
+        )
+        assert response.status_code == 200
+
+    missing_identity = client.get("/analytics/table-uploads")
+    owner_history = client.get(
+        "/analytics/table-uploads",
+        headers={"X-User-Id": "analytics-owner-a", "X-Role": "member"},
+    )
+    admin_history = client.get(
+        "/analytics/table-uploads",
+        headers={"X-User-Id": "analytics-admin", "X-Role": "admin"},
+    )
+
+    assert missing_identity.status_code == 401
+    assert owner_history.status_code == 200
+    assert [item["name"] for item in owner_history.json()["items"]] == ["owner-a.csv"]
+    assert admin_history.status_code == 200
+    assert {item["name"] for item in admin_history.json()["items"]} == {
+        "owner-a.csv",
+        "owner-b.csv",
+    }
+    assert "storage_path" not in json.dumps(owner_history.json())
+    assert "storage_path" not in json.dumps(admin_history.json())
+
+
+def test_sql_analytics_upload_removes_retained_file_when_database_write_fails(
+    tmp_path: Path,
+) -> None:
+    upload_root = tmp_path / "retained-uploads"
+    store = SqlAlchemyAnalyticsUploadStore(
+        database_url=f"sqlite:///{tmp_path / 'analytics-write-failure.db'}",
+        upload_root=upload_root,
+        create_schema=True,
+    )
+    AnalyticsUploadRecord.__table__.drop(store._engine)
+
+    with pytest.raises(SQLAlchemyError):
+        store.add_upload(
+            file_name="must-not-remain.csv",
+            extension="csv",
+            content=b"item,amount\nA,10",
+            analysis_summary={"status": "parsed"},
+            created_by="analytics-owner-a",
+        )
+
+    assert list(upload_root.rglob("*.csv")) == []
 
 
 def test_documents_governance_status_is_redacted_get_only(
@@ -1630,9 +3560,12 @@ def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Pa
     assert body["summary"]["candidate_chunk_count"] == 727214
     assert body["boundaries"]["production_write"] is False
     assert body["boundaries"]["database_write"] is False
-    assert body["store"]["backend"] in {
-        "runtime_state_and_postgres_catalog",
-        "runtime_state_and_registry_only",
+    assert body["boundaries"]["source"] == "runtime_state_and_postgres_catalog"
+    assert body["store"] == {
+        "ready": True,
+        "catalog_ready": True,
+        "metrics_ready": True,
+        "backend": "runtime_state_and_postgres_catalog",
     }
     law_item = next(
         item for item in body["items"] if item["source_collection"] == "medical-insurance-laws"
@@ -1641,6 +3574,431 @@ def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Pa
     assert law_item["metrics"]["active_embedding_count"] == 49051
     assert law_item["metrics"]["candidate_chunk_count"] == 727214
     assert law_item["index"]["latest_status"] == "active"
+
+
+def test_knowledge_base_catalog_marks_registry_only_metrics_unready(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["boundaries"]["source"] == "runtime_state_and_registry_only"
+    assert body["store"] == {
+        "ready": False,
+        "catalog_ready": True,
+        "metrics_ready": False,
+        "backend": "runtime_state_and_registry_only",
+    }
+
+
+def test_document_source_and_knowledge_base_catalog_scrub_sensitive_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "embedding_provider": "deterministic-fake",
+        "token": "dummy-top-token-sentinel",
+        "password": "dummy-top-password-sentinel",
+        "api_key": "dummy-top-api-key-sentinel",
+        "private_key": "dummy-top-private-key-sentinel",
+        "credential": "dummy-top-credential-sentinel",
+        "secret": "dummy-top-secret-sentinel",
+        "nested_mapping": {
+            "safe_value": "dummy-nested-safe-sentinel",
+            "token": "dummy-nested-token-sentinel",
+            "password": "dummy-nested-password-sentinel",
+            "api_key": "dummy-nested-api-key-sentinel",
+            "private_key": "dummy-nested-private-key-sentinel",
+            "credential": "dummy-nested-credential-sentinel",
+            "secret": "dummy-nested-secret-sentinel",
+        },
+        "nested_list": [
+            {
+                "safe_value": 7,
+                "token": "dummy-list-token-sentinel",
+                "password": "dummy-list-password-sentinel",
+                "api_key": "dummy-list-api-key-sentinel",
+                "private_key": "dummy-list-private-key-sentinel",
+                "credential": "dummy-list-credential-sentinel",
+                "secret": "dummy-list-secret-sentinel",
+            },
+            ("dummy-tuple-safe-sentinel", {"secret": "dummy-tuple-secret-sentinel"}),
+        ],
+        "endpoint_url": (
+            "https://dummy-user-sentinel:dummy-password-sentinel@example.invalid/search"
+            "?safe=one&token=dummy-query-token-sentinel&safe=two"
+            "&password=dummy-query-password-sentinel&blank="
+            "#token=dummy-fragment-token-sentinel"
+        ),
+        "ipv6_url": (
+            "https://dummy-ipv6-user-sentinel:dummy-ipv6-password-sentinel@"
+            "[2001:db8::1]:8443/path"
+            "?api_key=dummy-ipv6-api-key-sentinel&safe=value"
+        ),
+        "invalid_port_url": (
+            "https://dummy-invalid-user-sentinel:dummy-invalid-password-sentinel@"
+            "example.invalid:notaport/path?credential=dummy-invalid-query-sentinel"
+        ),
+        "malformed_bracket_url": (
+            "https://dummy-bracket-user-sentinel:dummy-bracket-password-sentinel@"
+            "[2001:db8::1/path?secret=dummy-bracket-query-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        details = response.json()["search_backend"]["details"]
+        assert details == {
+            "embedding_provider": "deterministic-fake",
+            "nested_mapping": {"safe_value": "dummy-nested-safe-sentinel"},
+            "nested_list": [
+                {"safe_value": 7},
+                ["dummy-tuple-safe-sentinel", {}],
+            ],
+            "endpoint_url": "https://example.invalid/search?safe=one&safe=two&blank=",
+            "ipv6_url": "https://[2001:db8::1]:8443/path?safe=value",
+            "invalid_port_url": "<redacted-invalid-url>",
+            "malformed_bracket_url": "<redacted-invalid-url>",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_key in (
+            "token",
+            "password",
+            "api_key",
+            "private_key",
+            "credential",
+            "secret",
+        ):
+            assert sensitive_key not in serialized.lower()
+        for sensitive_value in (
+            "dummy-top-token-sentinel",
+            "dummy-top-password-sentinel",
+            "dummy-top-api-key-sentinel",
+            "dummy-top-private-key-sentinel",
+            "dummy-top-credential-sentinel",
+            "dummy-top-secret-sentinel",
+            "dummy-nested-token-sentinel",
+            "dummy-nested-password-sentinel",
+            "dummy-nested-api-key-sentinel",
+            "dummy-nested-private-key-sentinel",
+            "dummy-nested-credential-sentinel",
+            "dummy-nested-secret-sentinel",
+            "dummy-list-token-sentinel",
+            "dummy-list-password-sentinel",
+            "dummy-list-api-key-sentinel",
+            "dummy-list-private-key-sentinel",
+            "dummy-list-credential-sentinel",
+            "dummy-list-secret-sentinel",
+            "dummy-tuple-secret-sentinel",
+            "dummy-user-sentinel",
+            "dummy-password-sentinel",
+            "dummy-query-token-sentinel",
+            "dummy-query-password-sentinel",
+            "dummy-fragment-token-sentinel",
+            "dummy-ipv6-user-sentinel",
+            "dummy-ipv6-password-sentinel",
+            "dummy-ipv6-api-key-sentinel",
+            "dummy-invalid-user-sentinel",
+            "dummy-invalid-password-sentinel",
+            "dummy-invalid-query-sentinel",
+            "dummy-bracket-user-sentinel",
+            "dummy-bracket-password-sentinel",
+            "dummy-bracket-query-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_replace_unsupported_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "nested": {"unsupported": object()},
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "nested": {"unsupported": "<unsupported-diagnostic-value>"}
+        }
+
+
+def test_document_source_and_knowledge_base_catalog_scrub_protocol_relative_urls(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "protocol_relative_url": (
+            "//dummy-user-sentinel:dummy-pass-sentinel@example.invalid/path"
+            "?safe=ok&token=dummy-query-token-sentinel"
+            "#password=dummy-fragment-password-sentinel"
+        ),
+        "empty_host_url": (
+            "https://?token=dummy-empty-token-sentinel"
+            "#password=dummy-empty-password-sentinel"
+        ),
+        "missing_protocol_relative_host_url": "//",
+        "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "protocol_relative_url": "//example.invalid/path?safe=ok",
+            "empty_host_url": "<redacted-invalid-url>",
+            "missing_protocol_relative_host_url": "<redacted-invalid-url>",
+            "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-user-sentinel",
+            "dummy-pass-sentinel",
+            "dummy-query-token-sentinel",
+            "dummy-fragment-password-sentinel",
+            "dummy-empty-token-sentinel",
+            "dummy-empty-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_scrub_double_encoded_url_parts(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "encoded_url": (
+            "https://example.invalid/path?safe=ok"
+            "&to%256ben=dummy-double-token-sentinel"
+            "&Pa%2573sword=dummy-double-password-sentinel"
+            "#Pa%2573sword=dummy-double-fragment-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "encoded_url": "https://example.invalid/path?safe=ok"
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-double-token-sentinel",
+            "dummy-double-password-sentinel",
+            "dummy-double-fragment-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_replace_nonfinite_diagnostics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "nested": {
+            "nan": float("nan"),
+            "positive_infinity": float("inf"),
+            "negative_infinity": float("-inf"),
+        }
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "nested": {
+                "nan": "<unsupported-diagnostic-value>",
+                "positive_infinity": "<unsupported-diagnostic-value>",
+                "negative_infinity": "<unsupported-diagnostic-value>",
+            }
+        }
+
+
+def test_document_source_and_knowledge_base_catalog_normalize_prefixed_url_candidates(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "prefixed_empty_host_url": (
+            " \x00https://?token=dummy-prefixed-empty-token-sentinel"
+            "#password=dummy-prefixed-empty-password-sentinel"
+        ),
+        "prefixed_protocol_relative_url": (
+            " \t//dummy-prefixed-user-sentinel:dummy-prefixed-pass-sentinel@"
+            "example.invalid/path?safe=ok&token=dummy-prefixed-query-token-sentinel"
+            "#password=dummy-prefixed-fragment-password-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "prefixed_empty_host_url": "<redacted-invalid-url>",
+            "prefixed_protocol_relative_url": "//example.invalid/path?safe=ok",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-prefixed-empty-token-sentinel",
+            "dummy-prefixed-empty-password-sentinel",
+            "dummy-prefixed-user-sentinel",
+            "dummy-prefixed-pass-sentinel",
+            "dummy-prefixed-query-token-sentinel",
+            "dummy-prefixed-fragment-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_fail_closed_beyond_decode_cap(
+    tmp_path: Path,
+) -> None:
+    overencoded_token_key = "To%4beN"
+    overencoded_password_fragment = "Pa%73sWoRd"
+    for _ in range(5):
+        overencoded_token_key = overencoded_token_key.replace("%", "%25")
+        overencoded_password_fragment = overencoded_password_fragment.replace("%", "%25")
+
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "overencoded_url": (
+            "https://example.invalid/path?safe=ok"
+            f"&{overencoded_token_key}=dummy-overencoded-query-sentinel"
+            f"#{overencoded_password_fragment}=dummy-overencoded-fragment-sentinel"
+        ),
+        "double_encoded_url": (
+            "https://example.invalid/path?safe=ok"
+            "&to%256ben=dummy-double-encoded-query-sentinel"
+            "#Pa%2573sword=dummy-double-encoded-fragment-sentinel"
+        ),
+        "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "overencoded_url": "https://example.invalid/path?safe=ok",
+            "double_encoded_url": "https://example.invalid/path?safe=ok",
+            "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-overencoded-query-sentinel",
+            "dummy-overencoded-fragment-sentinel",
+            "dummy-double-encoded-query-sentinel",
+            "dummy-double-encoded-fragment-sentinel",
+        ):
+            assert sensitive_value not in serialized
+
+
+def test_document_source_and_knowledge_base_catalog_normalize_embedded_url_controls(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.settings = state.settings.model_copy(
+        update={"database_url": "registry-only://dummy-diagnostic-sentinel"}
+    )
+    state.search_backend_details = {
+        "embedded_tab_url": (
+            "h\tttps://?token=dummy-embedded-tab-token-sentinel"
+            "#password=dummy-embedded-tab-password-sentinel"
+        ),
+        "embedded_carriage_return_url": (
+            "ht\rtps://?token=dummy-embedded-cr-token-sentinel"
+            "#password=dummy-embedded-cr-password-sentinel"
+        ),
+        "embedded_line_feed_url": (
+            "htt\nps://?token=dummy-embedded-lf-token-sentinel"
+            "#password=dummy-embedded-lf-password-sentinel"
+        ),
+    }
+    client = TestClient(create_app(state))
+
+    responses = (
+        client.get("/documents/source-collections", headers={"X-Role": "it-admin"}),
+        client.get("/knowledge-base/catalog", headers={"X-Role": "it-admin"}),
+    )
+
+    for response in responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["search_backend"]["details"] == {
+            "embedded_tab_url": "<redacted-invalid-url>",
+            "embedded_carriage_return_url": "<redacted-invalid-url>",
+            "embedded_line_feed_url": "<redacted-invalid-url>",
+        }
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        for sensitive_value in (
+            "dummy-embedded-tab-token-sentinel",
+            "dummy-embedded-tab-password-sentinel",
+            "dummy-embedded-cr-token-sentinel",
+            "dummy-embedded-cr-password-sentinel",
+            "dummy-embedded-lf-token-sentinel",
+            "dummy-embedded-lf-password-sentinel",
+        ):
+            assert sensitive_value not in serialized
 
 
 def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: Path) -> None:
@@ -2393,6 +4751,16 @@ def test_query_endpoint_records_installed_catalog_agent_invocation(tmp_path: Pat
     assert create_response.status_code == 200
     agent_id = str(create_response.json()["item"]["id"])
 
+    missing_scope_response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "医保基金审核依据",
+            "top_k": 2,
+            "agent": agent_id,
+        },
+    )
+
     response = client.post(
         "/query",
         headers={
@@ -2409,6 +4777,8 @@ def test_query_endpoint_records_installed_catalog_agent_invocation(tmp_path: Pat
         },
     )
 
+    assert missing_scope_response.status_code == 403
+    assert missing_scope_response.json()["detail"] == "agent project scope requires current project"
     assert response.status_code == 200
     body = response.json()
     assert body["agent_invocation_id"]
@@ -3617,6 +5987,297 @@ def test_index_evaluation_run_requires_ready_search_backend(tmp_path: Path) -> N
 
     assert response.status_code == 409
     assert "search backend is not ready" in response.json()["detail"]
+
+
+def _legacy_project_member(
+    member_key: str,
+    user_identifier: str | None,
+    status: str,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {"fixture": "legacy-duplicate"}
+    if user_identifier is not None:
+        metadata["user_identifier"] = user_identifier
+    member: dict[str, object] = {
+        "id": member_key,
+        "project_key": "CATALOG-LIMIT-202606",
+        "name": member_key,
+        "role": "审计员",
+        "department": "内审部",
+        "status": status,
+        "created_by": "legacy-import",
+        "source": "custom",
+        "metadata": metadata,
+    }
+    if user_identifier is not None:
+        member["user_identifier"] = user_identifier
+    return member
+
+
+def _seed_legacy_project_members(
+    database_url: str,
+    project_key: str,
+    raw_members: list[dict[str, object]],
+) -> None:
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    newest_timestamp = datetime(2026, 7, 12, 12, 0, tzinfo=UTC)
+    with Session(engine) as session:
+        for index, member in enumerate(raw_members):
+            timestamp = newest_timestamp - timedelta(minutes=index)
+            metadata = member["metadata"]
+            assert isinstance(metadata, dict)
+            session.add(
+                AuditProjectMember(
+                    member_key=str(member["id"]),
+                    project_key=project_key,
+                    name=str(member["name"]),
+                    role=str(member["role"]),
+                    department=str(member["department"]),
+                    status=str(member["status"]),
+                    created_by=str(member["created_by"]),
+                    extra_metadata=dict(metadata),
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+            )
+        session.commit()
+
+
+class _RecordingProjectMemberStore:
+    def __init__(self) -> None:
+        self.list_reads = 0
+
+    def list_members(self, project_key: str) -> list[dict[str, object]]:
+        self.list_reads += 1
+        return []
+
+    def add_member(
+        self,
+        project_key: str,
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        raise AssertionError("graph tests do not add project members")
+
+    def member_counts(self) -> dict[str, int]:
+        raise AssertionError("graph tests do not read member counts")
+
+
+class _RecordingGraphFindingStore:
+    def __init__(
+        self,
+        items_by_project: dict[str, list[dict[str, object]]] | None = None,
+    ) -> None:
+        self.items_by_project = items_by_project or {}
+        self.requested_project_keys: list[str | None] = []
+
+    def list_findings(
+        self,
+        *,
+        review_status: str | None = None,
+        project_key: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        self.requested_project_keys.append(project_key)
+        assert review_status is None
+        assert project_key is not None
+        return [dict(item) for item in self.items_by_project.get(project_key, [])[:limit]]
+
+
+class _RecordingGraphReviewTaskStore:
+    def __init__(self, tasks: list[dict[str, object]] | None = None) -> None:
+        self.tasks = tasks or []
+        self.list_calls = 0
+
+    def list_tasks(self) -> list[dict[str, object]]:
+        self.list_calls += 1
+        return [dict(task) for task in self.tasks]
+
+
+class _CountingSqlAlchemyReviewTaskStore:
+    def __init__(self, database_url: str) -> None:
+        self._store = SqlAlchemyReviewTaskStore(database_url)
+        self.list_calls = 0
+
+    def list_tasks(self) -> list[dict[str, object]]:
+        self.list_calls += 1
+        return self._store.list_tasks()
+
+
+def _seed_project_findings(database_url: str) -> None:
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        rule = AuditRule(
+            rule_key="PROJECT-SCOPE-RULE",
+            scenario_key="project-scope-test",
+            name="项目隔离测试规则",
+            status="active",
+            owner="unit-test",
+        )
+        session.add(rule)
+        session.flush()
+        rule_version = RuleVersion(
+            audit_rule_id=rule.id,
+            version_key="PROJECT-SCOPE-RULE@v1",
+            rule_key=rule.rule_key,
+            status="active",
+            logic={"fixture": True},
+            evidence_links={},
+            created_by="unit-test",
+        )
+        session.add(rule_version)
+        session.flush()
+
+        for suffix, project_key in (
+            ("self", "SELF-CHECK-FUND-20260607"),
+            ("catalog", "CATALOG-LIMIT-202606"),
+        ):
+            linked_review_task = ReviewTask(
+                external_task_id=f"review-{suffix}-sql",
+                question=f"{suffix} SENSITIVE-GRAPH-BODY question",
+                status="confirmed-violation",
+                status_label="确认违规",
+                citation_count=1,
+                review_gate="负责人确认",
+                confidence_label="high",
+                fallback_label="manual-review",
+                reviewer_note="SENSITIVE-GRAPH-BODY reviewer note",
+                conclusion="SENSITIVE-GRAPH-BODY conclusion",
+                created_by="unit-test",
+                assigned_to="unit-test",
+                source="chat-dossier",
+                dossier={
+                    "report_draft": {
+                        "title": f"{suffix} SENSITIVE-GRAPH-BODY report",
+                        "summary": "SENSITIVE-GRAPH-BODY summary",
+                        "rectification_request": "SENSITIVE-GRAPH-BODY request",
+                    },
+                    "signed_report": {
+                        "status": "signed",
+                        "report_id": f"signed-report-{suffix}-sql",
+                        "content_sha256": f"sha256-{suffix}",
+                        "content": "SENSITIVE-GRAPH-BODY signed content",
+                    },
+                    "rectification": {
+                        "rectification_id": f"rectification-{suffix}-sql",
+                        "status": "in-progress",
+                        "progress_note": "SENSITIVE-GRAPH-BODY progress",
+                    },
+                },
+            )
+            session.add(linked_review_task)
+            session.flush()
+            session.add(
+                ReviewTask(
+                    external_task_id=f"report-draft-{suffix}-sql",
+                    question="SENSITIVE-GRAPH-BODY template question",
+                    status="pending-review",
+                    status_label="待复核",
+                    citation_count=0,
+                    review_gate="manual-review",
+                    confidence_label="pending",
+                    fallback_label="manual-review",
+                    reviewer_note="",
+                    conclusion="",
+                    created_by="unit-test",
+                    assigned_to=None,
+                    source="report-template-draft",
+                    dossier={
+                        "report_template_draft": {
+                            "status": "draft",
+                            "template_id": f"workpaper-{suffix}",
+                            "project_key": project_key,
+                            "field_values": {
+                                "sensitive": "SENSITIVE-GRAPH-BODY field value"
+                            },
+                        }
+                    },
+                )
+            )
+            project = AuditProject(
+                project_key=project_key,
+                name=f"{suffix} project",
+                scenario_key="project-scope-test",
+                status="active",
+                created_by="unit-test",
+            )
+            session.add(project)
+            session.flush()
+            snapshot = AuditDataSnapshot(
+                snapshot_key=f"snapshot-{suffix}",
+                project_id=project.id,
+                source_batch_key=f"batch-{suffix}",
+                time_range={},
+                row_counts={"fixture": 1},
+                checksum=f"sha256:{suffix}",
+                status="validated",
+            )
+            session.add(snapshot)
+            session.flush()
+            task = AuditTask(
+                task_key=f"task-{suffix}",
+                project_id=project.id,
+                snapshot_id=snapshot.id,
+                topic=f"{suffix} topic",
+                department_scope={},
+                date_range={},
+                status="ready",
+                created_by="unit-test",
+            )
+            session.add(task)
+            session.flush()
+            run = AuditRun(
+                run_key=f"run-{suffix}",
+                audit_task_id=task.id,
+                snapshot_id=snapshot.id,
+                rule_version_key=rule_version.version_key,
+                status="succeeded",
+                summary={"fixture": True},
+            )
+            session.add(run)
+            session.flush()
+            session.add(
+                AuditFinding(
+                    finding_key=f"finding-{suffix}-sql",
+                    audit_run_id=run.id,
+                    audit_task_id=task.id,
+                    rule_version_id=rule_version.id,
+                    snapshot_id=snapshot.id,
+                    status="open",
+                    finding_type="project-scope-test",
+                    severity="medium",
+                    source_record_locator={"project_key": project_key},
+                    calculation_trace={},
+                    review_status="pending-review",
+                    review_task_id=linked_review_task.id,
+                    extra_metadata={"owner": f"{suffix}-owner"},
+                )
+            )
+        session.add(
+            ReviewTask(
+                external_task_id="legacy-project-string-sql",
+                question=(
+                    "SELF-CHECK-FUND-20260607 and CATALOG-LIMIT-202606 are text only"
+                ),
+                status="confirmed-violation",
+                status_label="确认违规",
+                citation_count=0,
+                review_gate="manual-review",
+                confidence_label="pending",
+                fallback_label="manual-review",
+                reviewer_note="",
+                conclusion="",
+                created_by="unit-test",
+                assigned_to=None,
+                source="legacy",
+                dossier={
+                    "metadata": {
+                        "project_key": "SELF-CHECK-FUND-20260607",
+                        "project_hint": "CATALOG-LIMIT-202606",
+                    },
+                    "report_draft": {"title": "SENSITIVE-GRAPH-BODY legacy report"},
+                },
+            )
+        )
+        session.commit()
 
 
 def _api_state(tmp_path: Path) -> ApiState:

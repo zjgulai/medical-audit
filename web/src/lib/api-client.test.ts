@@ -80,6 +80,7 @@ describe("api-client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    window.localStorage.removeItem("medical-audit-current-role");
   });
 
   it("keeps the page backend contract aligned with proxy-local API paths", () => {
@@ -526,6 +527,14 @@ describe("api-client", () => {
           format: "report-workbench-v1",
           generated_at: "2026-06-21T00:00:00Z",
           template_registry_status: "active",
+          template_categories: [
+            { id: "plan", label: "计划类", availability: "awaiting-business-template" },
+            { id: "workpaper", label: "底稿类", availability: "active" },
+            { id: "evidence", label: "取证类", availability: "awaiting-business-template" },
+            { id: "confirmation", label: "函证类", availability: "awaiting-business-template" },
+            { id: "report", label: "报告类", availability: "awaiting-business-template" },
+            { id: "remediation", label: "整改类", availability: "awaiting-business-template" }
+          ],
           workpaper_templates: [],
           report_entries: [],
           report_evidence_sources: [],
@@ -553,6 +562,277 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.format).toBe("report-workbench-v1");
+  });
+
+  it("creates a controlled report draft with project-scoped identity headers", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly createReportDraft?: (payload: {
+        readonly template_id: string;
+        readonly project_key: string;
+        readonly field_values: Readonly<Record<string, string>>;
+      }) => Promise<{ readonly task_id: string }>;
+    };
+    expect(client.createReportDraft).toBeTypeOf("function");
+    if (!client.createReportDraft) return;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "report-template-draft-v1",
+          task_id: "report-draft-123",
+          template_id: "workpaper-summary-risk",
+          category_id: "workpaper",
+          project_key: "PROJECT-A",
+          project_href: "/projects?project=PROJECT-A",
+          status: "pending-review",
+          store: { ready: true, backend: "JsonFileReviewTaskStore" },
+          formal_report_created: false,
+          provider_call: false,
+          audit: {
+            status: "ready",
+            durability: "durable",
+            local_only: false,
+            intent_recorded: true,
+            completion_recorded: true
+          }
+        })
+      }))
+    );
+    const payload = {
+      template_id: "workpaper-summary-risk",
+      project_key: "PROJECT-A",
+      field_values: { 人工复核意见: "待主任复核" }
+    } as const;
+
+    const result = await client.createReportDraft(payload);
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/reports/drafts", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Project-Key": "PROJECT-A",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store"
+    });
+    expect(result.task_id).toBe("report-draft-123");
+  });
+
+  it.each([
+    [422, "field_values contains unsupported evidence binding", "field_values contains unsupported evidence binding"],
+    [403, "create_report_draft is not allowed", "create_report_draft is not allowed"],
+    [404, "project not found", "project not found"]
+  ] as const)(
+    "exposes structured POST status %s with a safe string detail",
+    async (status, responseDetail, expectedDetail) => {
+      const client = await import("./api-client") as unknown as {
+        readonly createReportDraft: (payload: {
+          readonly template_id: string;
+          readonly project_key: string;
+          readonly field_values: Readonly<Record<string, string>>;
+        }) => Promise<unknown>;
+        readonly isBackendRequestError?: (error: unknown) => boolean;
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: false,
+          status,
+          json: async () => ({ detail: responseDetail })
+        }))
+      );
+
+      const error = await client.createReportDraft({
+        template_id: "workpaper-summary-risk",
+        project_key: "PROJECT-A",
+        field_values: { 人工复核意见: "待复核" }
+      }).catch((caught: unknown) => caught);
+
+      expect(client.isBackendRequestError).toBeTypeOf("function");
+      expect(client.isBackendRequestError?.(error)).toBe(true);
+      expect(error).toMatchObject({
+        name: "BackendRequestError",
+        method: "POST",
+        path: "/api/v1/reports/drafts",
+        status,
+        detail: expectedDetail,
+        message: `Backend request failed: POST /api/v1/reports/drafts returned ${status}`
+      });
+    }
+  );
+
+  it("does not expose structured error-detail objects through the shared POST client", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly createReportDraft: (payload: {
+        readonly template_id: string;
+        readonly project_key: string;
+        readonly field_values: Readonly<Record<string, string>>;
+      }) => Promise<unknown>;
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => ({ detail: { field: "SENSITIVE-OBJECT-DETAIL" } })
+      }))
+    );
+
+    const error = await client.createReportDraft({
+      template_id: "workpaper-summary-risk",
+      project_key: "PROJECT-A",
+      field_values: { 人工复核意见: "待复核" }
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      name: "BackendRequestError",
+      status: 422,
+      detail: null
+    });
+    expect(JSON.stringify(error)).not.toContain("SENSITIVE-OBJECT-DETAIL");
+  });
+
+  it("downloads only internal review-task artifacts with authenticated headers and a response filename", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact?: (
+        path: string
+      ) => Promise<{ readonly blob: Blob; readonly filename: string }>;
+    };
+    expect(client.downloadAuditArtifact).toBeTypeOf("function");
+    if (!client.downloadAuditArtifact) return;
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="review-task-001.docx"',
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      }),
+      blob: async () => new Blob(["document"], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(client.downloadAuditArtifact("https://attacker.invalid/steal")).rejects.toThrow(
+      "Audit artifact path must be an internal /review-tasks/ path"
+    );
+    await expect(client.downloadAuditArtifact("/api/v1/documents/secret")).rejects.toThrow(
+      "Audit artifact path must be an internal /review-tasks/ path"
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const result = await client.downloadAuditArtifact(
+      "/review-tasks/review-task-001/export?format=docx"
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/review-tasks/review-task-001/export?format=docx",
+      {
+        headers: {
+          Accept: "application/octet-stream",
+          "X-Role": "admin",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-admin"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.filename).toBe("review-task-001.docx");
+    expect(result.blob).toBeInstanceOf(Blob);
+  });
+
+  it("surfaces authenticated artifact download failures with method, path and status", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact?: (path: string) => Promise<unknown>;
+    };
+    expect(client.downloadAuditArtifact).toBeTypeOf("function");
+    if (!client.downloadAuditArtifact) return;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 403 }))
+    );
+
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/review-task-001/export?format=docx")
+    ).rejects.toThrow(
+      "Backend request failed: GET /review-tasks/review-task-001/export?format=docx returned 403"
+    );
+  });
+
+  it("passes an AbortSignal to the authenticated artifact request", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact: (
+        path: string,
+        options?: { readonly signal?: AbortSignal }
+      ) => Promise<unknown>;
+    };
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      blob: async () => new Blob(["artifact"], { type: "application/json" })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await client.downloadAuditArtifact(
+      "/review-tasks/review-task-001/export?format=json",
+      { signal: controller.signal }
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/review-tasks/review-task-001/export?format=json",
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
+  it("decodes RFC 5987 artifact filenames and uses path-safe format fallbacks", async () => {
+    const client = await import("./api-client") as unknown as {
+      readonly downloadAuditArtifact: (
+        path: string
+      ) => Promise<{ readonly blob: Blob; readonly filename: string }>;
+    };
+    const response = (disposition: string | null, contentType: string) => ({
+      ok: true,
+      headers: new Headers({
+        ...(disposition ? { "Content-Disposition": disposition } : {}),
+        "Content-Type": contentType
+      }),
+      blob: async () => new Blob(["artifact"], { type: contentType })
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(response(
+          "attachment; filename*=UTF-8''%E5%8C%BB%E4%BF%9D%E5%BA%95%E7%A8%BF.docx",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
+        .mockResolvedValueOnce(response(
+          'attachment; filename="../../secret.docx"',
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
+        .mockResolvedValueOnce(response(null, "text/markdown"))
+        .mockResolvedValueOnce(response(
+          'attachment; filename="audit;report\\"final.docx"',
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ))
+    );
+
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-1/export?format=docx")
+    ).resolves.toMatchObject({ filename: "医保底稿.docx" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-2/export?format=docx")
+    ).resolves.toMatchObject({ filename: "secret.docx" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-3/export?format=markdown")
+    ).resolves.toMatchObject({ filename: "audit-artifact.md" });
+    await expect(
+      client.downloadAuditArtifact("/review-tasks/task-4/export?format=docx")
+    ).resolves.toMatchObject({ filename: "audit;report-final.docx" });
   });
 
   it("fetches graph workbench through the versioned API proxy", async () => {
@@ -595,6 +875,61 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.format).toBe("graph-workbench-v1");
+  });
+
+  it("fetches a project evidence graph with exact encoded scope headers", async () => {
+    window.localStorage.setItem("medical-audit-current-role", "member");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "graph-workbench-v1",
+          view: "project",
+          project_key: "PROJECT / A&B",
+          evidence_chain_status: "empty"
+        })
+      }))
+    );
+
+    const result = await fetchGraphWorkbench({
+      view: "project",
+      projectKey: "PROJECT / A&B"
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/graph/workbench?view=project&project_key=PROJECT+%2F+A%26B",
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Project-Key": "PROJECT / A&B",
+          "X-Role": "member",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-member"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.view).toBe("project");
+  });
+
+  it("preserves project graph GET status and backend detail for view-specific errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "project not found" })
+      }))
+    );
+
+    await expect(fetchGraphWorkbench({ view: "project", projectKey: "PROJECT-A" })).rejects.toMatchObject({
+      name: "BackendRequestError",
+      method: "GET",
+      path: "/api/v1/graph/workbench?view=project&project_key=PROJECT-A",
+      status: 404,
+      detail: "project not found"
+    });
   });
 
   it("fetches rules workbench through the versioned API proxy", async () => {
@@ -825,6 +1160,59 @@ describe("api-client", () => {
     expect(result.retention_status).toBe("retained");
   });
 
+  it.each([
+    [413, "uploaded table file is too large"],
+    [422, "unsupported table file extension"]
+  ])("surfaces FastAPI string detail for analytics upload status %s", async (status, detail) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status,
+        json: async () => ({ detail })
+      }))
+    );
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(detail);
+  });
+
+  it("keeps generic method, path and status context for non-validation upload failures", async () => {
+    const json = vi.fn(async () => ({ detail: "do not expose this body" }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json })));
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/analytics/table-upload returned 500"
+    );
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("falls back safely when a validation error body cannot be parsed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => {
+          throw new SyntaxError("invalid json");
+        }
+      }))
+    );
+
+    await expect(uploadAnalysisTable(new File(["x"], "bad.csv"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/analytics/table-upload returned 422"
+    );
+  });
+
+  it("keeps non-analytics form validation errors generic without reading backend detail", async () => {
+    const json = vi.fn(async () => ({ detail: "internal document validation detail" }));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 422, json })));
+
+    await expect(uploadPersonalDocument(new File(["x"], "document.pdf"))).rejects.toThrow(
+      "Backend request failed: POST /api/v1/documents/uploads returned 422"
+    );
+    expect(json).not.toHaveBeenCalled();
+  });
+
   it("fetches analysis upload history through the versioned API proxy", async () => {
     vi.stubGlobal(
       "fetch",
@@ -839,7 +1227,6 @@ describe("api-client", () => {
               size_bytes: 128,
               size_kb: 1,
               sha256: "b".repeat(64),
-              storage_path: "2026/06/15/analytics-upload-001.csv",
               sheet_name: null,
               row_count: 3,
               column_count: 5,
@@ -869,6 +1256,7 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("analytics-upload-001");
+    expect(result.items[0]).not.toHaveProperty("storage_path");
   });
 
   it("fetches document permissions through the versioned API proxy", async () => {
@@ -1890,6 +2278,7 @@ describe("api-client", () => {
               organization_name: "单院医保内审试运行",
               member_count: 3,
               creator: "项目负责人",
+              creator_user_identifier: "next-director",
               created_at: "2026-06-07",
               status: "进行中",
               operation_label: "进入项目",
@@ -1898,6 +2287,7 @@ describe("api-client", () => {
           ],
           roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
           statuses: ["在项目中", "待确认"],
+          project_statuses: ["待开始", "进行中", "已完成", "已归档"],
           store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
         })
       }))
@@ -1928,6 +2318,7 @@ describe("api-client", () => {
             {
               id: "member-auditor",
               project_key: "SELF-CHECK-FUND-20260607",
+              user_identifier: "next-member",
               name: "审计员",
               role: "审计员",
               department: "内审部",
@@ -1974,6 +2365,7 @@ describe("api-client", () => {
             organization_name: "单院医保内审试运行",
             member_count: 3,
             creator: "项目负责人",
+            creator_user_identifier: "next-director",
             created_at: "2026-06-07",
             status: "进行中",
             operation_label: "进入项目",
@@ -1996,6 +2388,9 @@ describe("api-client", () => {
           production_side_effect: "none",
           store: {
             ready: true,
+            project_members_ready: true,
+            audit_findings_ready: true,
+            status: "ready",
             backend: {
               project_members: "SqlAlchemyProjectMemberStore",
               audit_findings: "SqlAlchemyAuditFindingStore"
@@ -2029,6 +2424,7 @@ describe("api-client", () => {
           item: {
             id: "member-custom-001",
             project_key: "CATALOG-LIMIT-202606",
+            user_identifier: "auditor-zhao",
             name: "赵审计",
             role: "审计员",
             department: "医保办",
@@ -2044,6 +2440,7 @@ describe("api-client", () => {
     );
 
     const result = await createProjectMember("CATALOG-LIMIT-202606", {
+      user_identifier: "auditor-zhao",
       name: "赵审计",
       role: "审计员",
       department: "医保办"
@@ -2060,6 +2457,7 @@ describe("api-client", () => {
         "X-Project-Key": "CATALOG-LIMIT-202606"
       },
       body: JSON.stringify({
+        user_identifier: "auditor-zhao",
         name: "赵审计",
         role: "审计员",
         department: "医保办"

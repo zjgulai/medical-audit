@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.project_member_store import InMemoryProjectMemberStore
 from medical_audit_kb.api.review_task_store import InMemoryReviewTaskStore
 from medical_audit_kb.core.config import (
     REQUIRED_COLLECTIONS,
@@ -13,7 +15,7 @@ from medical_audit_kb.core.config import (
 )
 
 AUTH_HEADERS = {
-    "X-User-Id": "auditor-1",
+    "X-User-Id": "next-member",
     "X-Role": "member",
     "X-Tenant-Id": "hospital-demo",
 }
@@ -33,6 +35,7 @@ def test_medical_audit_review_task_create_and_status_update(tmp_path: Path) -> N
     create_body = create_response.json()
     assert create_body["status"] == "created"
     assert create_body["task"]["task_id"] == "review-task-0001"
+    assert create_body["task"]["dossier"]["project_key"] == "SELF-CHECK-FUND-20260607"
     assert create_body["finding"]["review_task_id"] == "review-task-0001"
     assert state.operation_logs[-1]["action"] == "medical-audit-review-task-create"
 
@@ -53,6 +56,235 @@ def test_medical_audit_review_task_create_and_status_update(tmp_path: Path) -> N
     assert update_body["task"]["status"] == "confirmed-violation"
     assert update_body["finding"]["review_status"] == "confirmed-violation"
     assert update_body["synced_findings"][0]["finding_key"] == "finding-001"
+
+
+def test_medical_audit_authorized_mutation_lazy_scopes_legacy_review_task(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/api/v1/audit-findings/finding-001/review-task",
+        json={},
+        headers=AUTH_HEADERS,
+    ).json()["task"]
+    dossier = dict(created["dossier"])
+    dossier.pop("project_key")
+    state.review_task_store.update_task(  # type: ignore[union-attr]
+        str(created["task_id"]),
+        {"dossier": dossier},
+    )
+
+    response = client.post(
+        "/api/v1/audit-findings/finding-001/review-status",
+        json={
+            "status": "confirmed-violation",
+            "reviewer_note": "授权复核旧任务。",
+            "conclusion": "旧任务已补齐项目范围。",
+        },
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task"]["dossier"]["project_key"] == (
+        "SELF-CHECK-FUND-20260607"
+    )
+
+
+def test_medical_audit_rejects_review_task_with_mismatched_project_scope(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/api/v1/audit-findings/finding-001/review-task",
+        json={},
+        headers=AUTH_HEADERS,
+    ).json()["task"]
+    dossier = dict(created["dossier"])
+    dossier["project_key"] = "CATALOG-LIMIT-202606"
+    state.review_task_store.update_task(  # type: ignore[union-attr]
+        str(created["task_id"]),
+        {"dossier": dossier},
+    )
+
+    response = client.post(
+        "/api/v1/audit-findings/finding-001/review-status",
+        json={
+            "status": "confirmed-violation",
+            "reviewer_note": "不得跨项目复核。",
+            "conclusion": "拒绝错配任务。",
+        },
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "review task project scope does not match audit finding"
+    )
+
+
+def test_medical_audit_rejects_nested_legacy_review_task_scope_conflict(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/api/v1/audit-findings/finding-001/review-task",
+        json={},
+        headers=AUTH_HEADERS,
+    ).json()["task"]
+    dossier = dict(created["dossier"])
+    dossier.pop("project_key")
+    dossier["report_template_draft"] = {
+        "project_key": "CATALOG-LIMIT-202606",
+    }
+    state.review_task_store.update_task(  # type: ignore[union-attr]
+        str(created["task_id"]),
+        {"dossier": dossier},
+    )
+
+    response = client.post(
+        "/api/v1/audit-findings/finding-001/review-status",
+        json={
+            "status": "confirmed-violation",
+            "reviewer_note": "不得覆盖旧任务项目范围。",
+            "conclusion": "拒绝嵌套项目错配。",
+        },
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "review task project scope does not match audit finding"
+    )
+
+
+def test_medical_audit_findings_fail_closed_outside_visible_projects(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    client = TestClient(create_app(state))
+    outsider_headers = {
+        "X-User-Id": "expert-catalog",
+        "X-Role": "member",
+        "X-Tenant-Id": "hospital-demo",
+    }
+
+    visible_list = client.get("/api/v1/audit-findings", headers=AUTH_HEADERS)
+    hidden_list = client.get("/api/v1/audit-findings", headers=outsider_headers)
+    anonymous_list = client.get("/api/v1/audit-findings")
+
+    assert visible_list.status_code == 200
+    assert [item["finding_key"] for item in visible_list.json()["items"]] == [
+        "finding-001"
+    ]
+    assert hidden_list.status_code == 200
+    assert hidden_list.json()["items"] == []
+    assert hidden_list.json()["generation_readiness"] == {
+        "status": "empty",
+        "ready": True,
+        "scope": "visible-projects",
+        "has_findings": False,
+        "table_counts": {"audit_findings": 0},
+        "prerequisites": [],
+        "blocking_reasons": [],
+        "next_actions": [],
+    }
+    assert anonymous_list.status_code == 401
+
+    requests = (
+        (
+            "/api/v1/audit-findings/finding-001/review-task",
+            {"assigned_to": "越权用户"},
+        ),
+        (
+            "/api/v1/audit-findings/finding-001/review-status",
+            {
+                "status": "confirmed-violation",
+                "reviewer_note": "越权复核",
+                "conclusion": "越权结论",
+            },
+        ),
+        (
+            "/api/v1/audit-findings/finding-001/supplemental-material",
+            {"title": "越权补证"},
+        ),
+        (
+            "/api/v1/audit-findings/finding-001/report-entry",
+            {"report_title": "越权报告"},
+        ),
+    )
+    for route, payload in requests:
+        response = client.post(route, headers=outsider_headers, json=payload)
+        assert response.status_code == 404
+        assert response.json()["detail"] == "audit finding not found"
+
+    assert state.review_task_store.list_tasks() == []  # type: ignore[union-attr]
+
+
+def test_scoped_finding_readiness_count_ignores_result_filter_and_limit(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    finding_store = state.audit_finding_store
+    assert isinstance(finding_store, FakeAuditFindingStore)
+    base_finding = finding_store.items["finding-001"]
+    finding_store.items["finding-002"] = {
+        **base_finding,
+        "finding_key": "finding-002",
+        "review_status": "closed",
+    }
+    finding_store.items["finding-hidden"] = {
+        **base_finding,
+        "finding_key": "finding-hidden",
+        "project_key": "CATALOG-LIMIT-202606",
+    }
+    client = TestClient(create_app(state))
+
+    pending_response = client.get(
+        "/api/v1/audit-findings",
+        headers=AUTH_HEADERS,
+        params={"review_status": "pending-review", "limit": 1},
+    )
+    closed_response = client.get(
+        "/api/v1/audit-findings",
+        headers=AUTH_HEADERS,
+        params={"review_status": "closed", "limit": 1},
+    )
+
+    assert [item["finding_key"] for item in pending_response.json()["items"]] == [
+        "finding-001"
+    ]
+    assert [item["finding_key"] for item in closed_response.json()["items"]] == [
+        "finding-002"
+    ]
+    for response in (pending_response, closed_response):
+        readiness = response.json()["generation_readiness"]
+        assert readiness["scope"] == "visible-projects"
+        assert readiness["has_findings"] is True
+        assert readiness["table_counts"] == {"audit_findings": 2}
+
+
+def test_medical_audit_findings_fail_closed_when_membership_store_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    state = _workflow_state(tmp_path)
+    state.project_member_store = UnavailableProjectMemberStore()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+
+    list_response = client.get("/api/v1/audit-findings", headers=AUTH_HEADERS)
+    mutation_response = client.post(
+        "/api/v1/audit-findings/finding-001/review-task",
+        headers=AUTH_HEADERS,
+        json={},
+    )
+
+    assert list_response.status_code == 503
+    assert mutation_response.status_code == 503
+    assert list_response.json()["detail"] == "project membership store is unavailable"
+    assert mutation_response.json()["detail"] == "project membership store is unavailable"
+    assert state.review_task_store.list_tasks() == []  # type: ignore[union-attr]
 
 
 def test_medical_audit_import_supplement_and_report_entry(tmp_path: Path) -> None:
@@ -125,6 +357,7 @@ class FakeAuditFindingStore:
                 "updated_at": "2026-07-08T01:00:00Z",
                 "audit_run_key": "audit-run-001",
                 "audit_task_key": "audit-task-001",
+                "project_key": "SELF-CHECK-FUND-20260607",
                 "rule_key": "CHARGE-RULE-001",
                 "rule_version_key": "CHARGE-RULE-001@v1",
                 "evidence_items": [
@@ -147,11 +380,14 @@ class FakeAuditFindingStore:
         self,
         *,
         review_status: str | None = None,
+        project_keys: frozenset[str] | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
         findings = list(self.items.values())
         if review_status is not None:
             findings = [item for item in findings if item.get("review_status") == review_status]
+        if project_keys is not None:
+            findings = [item for item in findings if item.get("project_key") in project_keys]
         return [dict(item) for item in findings[:limit]]
 
     def generation_readiness(self) -> dict[str, object]:
@@ -164,6 +400,12 @@ class FakeAuditFindingStore:
             "blocking_reasons": [],
             "next_actions": [],
         }
+
+    def count_findings(self, *, project_keys: frozenset[str]) -> int:
+        return sum(
+            item.get("project_key") in project_keys
+            for item in self.items.values()
+        )
 
     def get_finding(self, finding_key: str) -> dict[str, object]:
         if finding_key not in self.items:
@@ -180,9 +422,13 @@ class FakeAuditFindingStore:
         self,
         review_task_external_id: str,
         review_status: str,
+        *,
+        project_keys: frozenset[str] | None = None,
     ) -> list[dict[str, object]]:
         updated: list[dict[str, object]] = []
         for finding in self.items.values():
+            if project_keys is not None and finding.get("project_key") not in project_keys:
+                continue
             if finding.get("review_task_id") == review_task_external_id:
                 finding["review_status"] = review_status
                 updated.append(dict(finding))
@@ -206,6 +452,23 @@ class FakeAuditLogStore:
         return list(self.events)
 
 
+class UnavailableProjectMemberStore:
+    def list_members(self, project_key: str) -> list[dict[str, object]]:
+        _ = project_key
+        raise SQLAlchemyError("membership unavailable")
+
+    def add_member(
+        self,
+        project_key: str,
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        _ = project_key, values
+        raise SQLAlchemyError("membership unavailable")
+
+    def member_counts(self) -> dict[str, int]:
+        raise SQLAlchemyError("membership unavailable")
+
+
 def _workflow_state(tmp_path: Path) -> ApiState:
     settings = KnowledgeQuerySettings(
         data_root=tmp_path / "data",
@@ -223,4 +486,5 @@ def _workflow_state(tmp_path: Path) -> ApiState:
     state.audit_finding_store = FakeAuditFindingStore()  # type: ignore[assignment]
     state.audit_log_store = FakeAuditLogStore()  # type: ignore[assignment]
     state.review_task_store = InMemoryReviewTaskStore()
+    state.project_member_store = InMemoryProjectMemberStore()
     return state

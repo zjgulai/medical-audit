@@ -29,7 +29,12 @@ class AnalyticsUploadStore(Protocol):
     ) -> dict[str, object]:
         pass
 
-    def list_uploads(self, *, limit: int = 20) -> list[dict[str, object]]:
+    def list_uploads(
+        self,
+        *,
+        limit: int = 20,
+        created_by: str | None = None,
+    ) -> list[dict[str, object]]:
         pass
 
 
@@ -87,18 +92,26 @@ class SqlAlchemyAnalyticsUploadStore:
             analysis_summary=copy.deepcopy(analysis_summary),
             created_at=now,
         )
-        with self._session_factory.begin() as session:
-            session.add(record)
-            session.flush()
-            return _record_to_payload(record)
+        try:
+            with self._session_factory.begin() as session:
+                session.add(record)
+                session.flush()
+                return _record_to_payload(record)
+        except Exception:
+            _remove_retained_file(upload_root=self.upload_root, storage_path=storage_path)
+            raise
 
-    def list_uploads(self, *, limit: int = 20) -> list[dict[str, object]]:
+    def list_uploads(
+        self,
+        *,
+        limit: int = 20,
+        created_by: str | None = None,
+    ) -> list[dict[str, object]]:
         with self._session_factory() as session:
-            statement = (
-                select(AnalyticsUploadRecord)
-                .order_by(AnalyticsUploadRecord.created_at.desc())
-                .limit(limit)
-            )
+            statement = select(AnalyticsUploadRecord)
+            if created_by is not None:
+                statement = statement.where(AnalyticsUploadRecord.created_by == created_by)
+            statement = statement.order_by(AnalyticsUploadRecord.created_at.desc()).limit(limit)
             return [_record_to_payload(record) for record in session.scalars(statement).all()]
 
 
@@ -147,8 +160,16 @@ class InMemoryAnalyticsUploadStore:
         self.records.insert(0, copy.deepcopy(record))
         return copy.deepcopy(record)
 
-    def list_uploads(self, *, limit: int = 20) -> list[dict[str, object]]:
-        return [copy.deepcopy(record) for record in self.records[:limit]]
+    def list_uploads(
+        self,
+        *,
+        limit: int = 20,
+        created_by: str | None = None,
+    ) -> list[dict[str, object]]:
+        records = self.records
+        if created_by is not None:
+            records = [record for record in records if record.get("created_by") == created_by]
+        return [copy.deepcopy(record) for record in records[:limit]]
 
 
 def _write_retained_file(
@@ -167,6 +188,14 @@ def _write_retained_file(
     temp_path.write_bytes(content)
     temp_path.replace(final_path)
     return relative_path.as_posix()
+
+
+def _remove_retained_file(*, upload_root: Path, storage_path: str) -> None:
+    root = upload_root.resolve()
+    retained_path = (root / storage_path).resolve()
+    if not retained_path.is_relative_to(root):
+        raise ValueError("analytics upload path escapes upload root")
+    retained_path.unlink(missing_ok=True)
 
 
 def _record_to_payload(record: AnalyticsUploadRecord) -> dict[str, object]:

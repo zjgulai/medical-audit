@@ -23,6 +23,7 @@ from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.document_upload_store import InMemoryDocumentUploadStore
 from medical_audit_kb.api.local_acceptance import LOCAL_ACCEPTANCE_CHAT_MODEL_ENV
 from medical_audit_kb.api.query_history_store import InMemoryQueryHistoryStore
+from medical_audit_kb.api.review_task_store import InMemoryReviewTaskStore
 from medical_audit_kb.core.config import (
     KnowledgeQuerySettings,
     ModelProviderSettings,
@@ -218,7 +219,7 @@ def _api_state(temp_root: Path) -> ApiState:
     state.audit_log_store = None
     state.agent_store = None
     state.project_member_store = None
-    state.review_task_store = None
+    state.review_task_store = InMemoryReviewTaskStore()
     state.analytics_upload_store = InMemoryAnalyticsUploadStore(
         upload_root=settings.index_root / "analytics-uploads"
     )

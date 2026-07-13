@@ -15,6 +15,7 @@ import type {
   AgentPromptVersionsResponse,
   AgentsResponse,
   ArchiveWorkbenchResponse,
+  AuditArtifactDownload,
   AuthSessionResponse,
   AuditFindingsResponse,
   BackendHealthResponse,
@@ -45,6 +46,8 @@ import type {
   QueryRequest,
   QueryResponse,
   RemediationWorkbenchResponse,
+  ReportDraftCreateRequest,
+  ReportDraftCreateResponse,
   ReportWorkbenchResponse,
   RulesWorkbenchResponse,
   SearchBackendStatusResponse,
@@ -52,6 +55,32 @@ import type {
   TableAnalysisUploadResponse
 } from "./api-types";
 import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
+
+export class BackendRequestError extends Error {
+  readonly method: "GET" | "POST";
+  readonly path: string;
+  readonly status: number;
+  readonly detail: string | null;
+
+  constructor(options: {
+    readonly method?: "GET" | "POST";
+    readonly path: string;
+    readonly status: number;
+    readonly detail: string | null;
+  }) {
+    const method = options.method ?? "POST";
+    super(`Backend request failed: ${method} ${options.path} returned ${options.status}`);
+    this.name = "BackendRequestError";
+    this.method = method;
+    this.path = options.path;
+    this.status = options.status;
+    this.detail = options.detail;
+  }
+}
+
+export function isBackendRequestError(error: unknown): error is BackendRequestError {
+  return error instanceof BackendRequestError;
+}
 
 function assertBackendProxyClientRuntime(): void {
   if (typeof window === "undefined") {
@@ -91,7 +120,21 @@ async function getJsonWithAuditHeaders<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
+    let detail: string | null = null;
+    try {
+      const errorPayload = await response.json() as unknown;
+      if (
+        typeof errorPayload === "object" &&
+        errorPayload !== null &&
+        "detail" in errorPayload &&
+        typeof errorPayload.detail === "string"
+      ) {
+        detail = errorPayload.detail.trim() || null;
+      }
+    } catch {
+      // Preserve the stable status-bearing error contract when the body is absent or invalid JSON.
+    }
+    throw new BackendRequestError({ method: "GET", path, status: response.status, detail });
   }
 
   return (await response.json()) as T;
@@ -116,13 +159,31 @@ async function postJson<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
+    let detail: string | null = null;
+    try {
+      const errorPayload = await response.json() as unknown;
+      if (
+        typeof errorPayload === "object" &&
+        errorPayload !== null &&
+        "detail" in errorPayload &&
+        typeof errorPayload.detail === "string"
+      ) {
+        detail = errorPayload.detail.trim() || null;
+      }
+    } catch {
+      // Preserve the stable generic error contract when the body is absent or invalid JSON.
+    }
+    throw new BackendRequestError({ path, status: response.status, detail });
   }
 
   return (await response.json()) as T;
 }
 
-async function postForm<T>(path: string, formData: FormData): Promise<T> {
+async function postForm<T>(
+  path: string,
+  formData: FormData,
+  options: { readonly exposeValidationDetail?: boolean } = {}
+): Promise<T> {
   assertBackendProxyClientRuntime();
 
   const response = await fetch(path, {
@@ -136,6 +197,26 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
   });
 
   if (!response.ok) {
+    if (options.exposeValidationDetail && (response.status === 413 || response.status === 422)) {
+      let detail: string | null = null;
+      try {
+        const payload = await response.json() as unknown;
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "detail" in payload &&
+          typeof payload.detail === "string" &&
+          payload.detail.trim().length > 0
+        ) {
+          detail = payload.detail.trim();
+        }
+      } catch {
+        // The generic error below preserves method, path, and status when the body is not JSON.
+      }
+      if (detail) {
+        throw new Error(detail);
+      }
+    }
     throw new Error(`Backend request failed: POST ${path} returned ${response.status}`);
   }
 
@@ -249,8 +330,106 @@ export function fetchReportWorkbench(): Promise<ReportWorkbenchResponse> {
   return getJsonWithAuditHeaders<ReportWorkbenchResponse>("/api/v1/reports/workbench");
 }
 
-export function fetchGraphWorkbench(): Promise<GraphWorkbenchResponse> {
-  return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
+export function createReportDraft(
+  payload: ReportDraftCreateRequest
+): Promise<ReportDraftCreateResponse> {
+  return postJson<ReportDraftCreateResponse>(
+    "/api/v1/reports/drafts",
+    payload,
+    auditProjectClientHeaders(payload.project_key)
+  );
+}
+
+function safeArtifactFilename(value: string): string | null {
+  const basename = value.replaceAll("\\", "/").split("/").at(-1) ?? "";
+  const sanitized = basename
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[:*?"<>|]/g, "-")
+    .replace(/^[.\s]+/, "")
+    .trim();
+  return sanitized && sanitized !== "." && sanitized !== ".." ? sanitized.slice(0, 180) : null;
+}
+
+function contentDispositionFilename(disposition: string): string | null {
+  const encodedMatch = /filename\*\s*=\s*(?:UTF-8'[^']*')?([^;]+)/i.exec(disposition);
+  if (encodedMatch?.[1]) {
+    const encoded = encodedMatch[1].trim().replace(/^"|"$/g, "");
+    try {
+      const decoded = safeArtifactFilename(decodeURIComponent(encoded));
+      if (decoded) return decoded;
+    } catch {
+      // Fall through to the plain filename or a deterministic format fallback.
+    }
+  }
+  const quotedMatch = /filename\s*=\s*"((?:\\.|[^"])*)"/i.exec(disposition);
+  if (quotedMatch?.[1]) {
+    return safeArtifactFilename(quotedMatch[1].replace(/\\(.)/g, "$1"));
+  }
+  const plainMatch = /filename\s*=\s*([^;]+)/i.exec(disposition);
+  return plainMatch?.[1] ? safeArtifactFilename(plainMatch[1]) : null;
+}
+
+function artifactFallbackFilename(path: URL, contentType: string): string {
+  const format = path.searchParams.get("format")?.toLowerCase();
+  if (format === "docx" || contentType.includes("wordprocessingml")) return "audit-artifact.docx";
+  if (format === "markdown" || contentType.includes("markdown")) return "audit-artifact.md";
+  if (format === "json" || contentType.includes("json")) return "audit-artifact.json";
+  return "audit-artifact.bin";
+}
+
+export async function downloadAuditArtifact(
+  path: string,
+  options: { readonly signal?: AbortSignal } = {}
+): Promise<AuditArtifactDownload> {
+  assertBackendProxyClientRuntime();
+  const parsed = new URL(path, window.location.origin);
+  if (
+    !path.startsWith("/review-tasks/") ||
+    parsed.origin !== window.location.origin ||
+    !parsed.pathname.startsWith("/review-tasks/")
+  ) {
+    throw new Error("Audit artifact path must be an internal /review-tasks/ path");
+  }
+
+  const response = await fetch(path, {
+    headers: {
+      Accept: "application/octet-stream",
+      ...auditClientHeaders()
+    },
+    cache: "no-store",
+    ...(options.signal ? { signal: options.signal } : {})
+  });
+  if (!response.ok) {
+    throw new Error(`Backend request failed: GET ${path} returned ${response.status}`);
+  }
+
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const contentType = response.headers.get("Content-Type") ?? "";
+  return {
+    blob: await response.blob(),
+    filename: contentDispositionFilename(disposition) ?? artifactFallbackFilename(parsed, contentType)
+  };
+}
+
+export function fetchGraphWorkbench(options?: {
+  readonly view?: "knowledge" | "project";
+  readonly projectKey?: string;
+}): Promise<GraphWorkbenchResponse> {
+  if (options?.view !== "project") {
+    return getJsonWithAuditHeaders<GraphWorkbenchResponse>("/api/v1/graph/workbench");
+  }
+
+  const projectKey = options.projectKey?.trim() ?? "";
+  if (!projectKey) {
+    throw new Error("projectKey is required for project graph view");
+  }
+  const params = new URLSearchParams();
+  params.set("view", "project");
+  params.set("project_key", projectKey);
+  return getJsonWithAuditHeaders<GraphWorkbenchResponse>(
+    `/api/v1/graph/workbench?${params.toString()}`,
+    auditProjectClientHeaders(projectKey)
+  );
 }
 
 export function fetchRulesWorkbench(): Promise<RulesWorkbenchResponse> {
@@ -268,7 +447,9 @@ export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
 export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData);
+  return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData, {
+    exposeValidationDetail: true
+  });
 }
 
 export function fetchAnalysisUploadHistory(): Promise<TableAnalysisUploadHistoryResponse> {

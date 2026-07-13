@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
@@ -11,9 +11,9 @@ from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, 
 from medical_audit_kb.api.auth import (
     HospitalRole,
     Permission,
-    has_permission,
     normalize_hospital_role,
     resolve_authenticated_user,
+    user_has_permission,
 )
 from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
@@ -27,6 +27,7 @@ from medical_audit_kb.api.document_upload_ingestion import (
     DocumentUploadIngestionError,
 )
 from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
+from medical_audit_kb.api.search_backend_details import safe_search_backend_details
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
 from medical_audit_kb.retrieval.filters import RetrievalFilters
@@ -678,7 +679,7 @@ async def upload_document(
     )
     role = user.legacy_api_role
     permissions = _upload_permissions(role)
-    if not has_permission(user.role, Permission.UPLOAD_PERSONAL_DOCUMENT):
+    if not user_has_permission(user, Permission.UPLOAD_PERSONAL_DOCUMENT):
         raise HTTPException(status_code=403, detail="upload_personal_document is not allowed")
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
@@ -1393,7 +1394,10 @@ def _source_collection_catalog_response(
                 evidence_group=definition.evidence_group,
                 description=definition.description,
                 audit_hint=definition.audit_hint,
-                access=permission.access,
+                access=cast(
+                    Literal["read", "explicit-owner-read", "explicit-read-all"],
+                    permission.access,
+                ),
                 product_queryable=definition.product_queryable,
                 queryable=definition.product_queryable and state.search_engine is not None,
                 metrics=_source_collection_metrics(definition.collection, state),
@@ -1406,7 +1410,7 @@ def _source_collection_catalog_response(
         search_backend=DocumentSourceCollectionSearchBackend(
             ready=state.search_engine is not None,
             backend=state.search_backend,
-            details=state.search_backend_details,
+            details=safe_search_backend_details(state.search_backend_details),
         ),
         upload_permissions=_upload_permissions(role),
         boundaries=DocumentSourceCollectionCatalogBoundaries(

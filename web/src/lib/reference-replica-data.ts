@@ -1,4 +1,4 @@
-import { auditAgentCatalog } from "./audit-agent-catalog";
+import { medicalAuditAgentCatalog } from "./audit-agent-catalog";
 
 export type ReferenceNavigationItem = {
   readonly id: string;
@@ -37,6 +37,7 @@ export type ReferenceAgentCard = {
   readonly sourceFile?: string;
   readonly avatarSeed?: string;
   readonly templateKey?: string;
+  readonly catalogScope?: "medical-default" | "extension-validation";
 };
 
 export type ReferenceKnowledgeBase = {
@@ -131,9 +132,15 @@ export const referenceNavigation: readonly ReferenceNavigationItem[] = [
   { id: "analysis", label: "AI数据分析", href: "/analytics", icon: "ai" },
   { id: "graph", label: "知识图谱", href: "/graph", icon: "graph" },
   { id: "workpaper", label: "审计底稿/报告", href: "/reports", icon: "paper" },
-  { id: "project", label: "项目管理", href: "/projects", icon: "folder" },
-  { id: "medical-topic", label: "医保审计专题", href: "/medical-audit", icon: "shield" }
+  { id: "project", label: "项目管理", href: "/projects", icon: "folder" }
 ];
+
+export const referenceTopicNavigation: ReferenceNavigationItem = {
+  id: "medical-topic",
+  label: "医保审计专题",
+  href: "/medical-audit",
+  icon: "shield"
+};
 
 export const referenceHistoryItems: readonly ReferenceHistoryItem[] = [
   {
@@ -303,7 +310,7 @@ export const referenceAgents: readonly ReferenceAgentCard[] = [
   }
 ];
 
-export const referenceMarketAgents: readonly ReferenceAgentCard[] = auditAgentCatalog;
+export const referenceMarketAgents: readonly ReferenceAgentCard[] = medicalAuditAgentCatalog;
 
 export const referenceKnowledgeBases: readonly ReferenceKnowledgeBase[] = [
   {

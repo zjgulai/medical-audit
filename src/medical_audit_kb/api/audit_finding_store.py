@@ -71,14 +71,18 @@ class SqlAlchemyAuditFindingStore:
         self,
         *,
         review_status: str | None = None,
+        project_key: str | None = None,
+        project_keys: frozenset[str] | None = None,
         limit: int = 100,
     ) -> list[dict[str, object]]:
+        if project_key is not None and project_keys is not None:
+            raise ValueError("project_key and project_keys are mutually exclusive")
         with self._session_factory() as session:
             statement = (
                 select(AuditFinding)
                 .options(
                     selectinload(AuditFinding.audit_run),
-                    selectinload(AuditFinding.audit_task),
+                    selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
                     selectinload(AuditFinding.rule_version),
                     selectinload(AuditFinding.evidence_items),
                 )
@@ -87,6 +91,18 @@ class SqlAlchemyAuditFindingStore:
             )
             if review_status is not None:
                 statement = statement.where(AuditFinding.review_status == review_status)
+            if project_key is not None:
+                statement = (
+                    statement.join(AuditFinding.audit_task)
+                    .join(AuditTask.project)
+                    .where(AuditProject.project_key == project_key)
+                )
+            if project_keys is not None:
+                statement = (
+                    statement.join(AuditFinding.audit_task)
+                    .join(AuditTask.project)
+                    .where(AuditProject.project_key.in_(project_keys))
+                )
             return [_finding_to_payload(session, finding) for finding in session.scalars(statement)]
 
     def generation_readiness(self) -> dict[str, object]:
@@ -139,6 +155,17 @@ class SqlAlchemyAuditFindingStore:
             "next_actions": _generation_next_actions(status),
         }
 
+    def count_findings(self, *, project_keys: frozenset[str]) -> int:
+        with self._session_factory() as session:
+            statement = (
+                select(func.count())
+                .select_from(AuditFinding)
+                .join(AuditFinding.audit_task)
+                .join(AuditTask.project)
+                .where(AuditProject.project_key.in_(project_keys))
+            )
+            return int(session.scalar(statement) or 0)
+
     def get_finding(self, finding_key: str) -> dict[str, object]:
         with self._session_factory() as session:
             finding = _load_finding(session, finding_key)
@@ -166,6 +193,8 @@ class SqlAlchemyAuditFindingStore:
         self,
         review_task_external_id: str,
         review_status: str,
+        *,
+        project_keys: frozenset[str] | None = None,
     ) -> list[dict[str, object]]:
         with self._session_factory.begin() as session:
             review_task = session.scalar(
@@ -173,18 +202,23 @@ class SqlAlchemyAuditFindingStore:
             )
             if review_task is None:
                 raise ValueError(f"review task does not exist: {review_task_external_id}")
-            findings = list(
-                session.scalars(
-                    select(AuditFinding)
-                    .options(
-                        selectinload(AuditFinding.audit_run),
-                        selectinload(AuditFinding.audit_task),
-                        selectinload(AuditFinding.rule_version),
-                        selectinload(AuditFinding.evidence_items),
-                    )
-                    .where(AuditFinding.review_task_id == review_task.id)
+            statement = (
+                select(AuditFinding)
+                .options(
+                    selectinload(AuditFinding.audit_run),
+                    selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
+                    selectinload(AuditFinding.rule_version),
+                    selectinload(AuditFinding.evidence_items),
                 )
+                .where(AuditFinding.review_task_id == review_task.id)
             )
+            if project_keys is not None:
+                statement = (
+                    statement.join(AuditFinding.audit_task)
+                    .join(AuditTask.project)
+                    .where(AuditProject.project_key.in_(project_keys))
+                )
+            findings = list(session.scalars(statement))
             now = _utc_now()
             for finding in findings:
                 finding.review_status = review_status
@@ -218,7 +252,7 @@ def _load_finding(session: Session, finding_key: str) -> AuditFinding | None:
         select(AuditFinding)
         .options(
             selectinload(AuditFinding.audit_run),
-            selectinload(AuditFinding.audit_task),
+            selectinload(AuditFinding.audit_task).selectinload(AuditTask.project),
             selectinload(AuditFinding.rule_version),
             selectinload(AuditFinding.evidence_items),
         )
@@ -243,6 +277,7 @@ def _finding_to_payload(session: Session, finding: AuditFinding) -> dict[str, ob
         "updated_at": _datetime_to_iso(finding.updated_at),
         "audit_run_key": _audit_run_key(finding.audit_run),
         "audit_task_key": _audit_task_key(finding.audit_task),
+        "project_key": _project_key(finding.audit_task),
         "rule_key": _rule_key(finding.rule_version),
         "rule_version_key": _rule_version_key(finding.rule_version),
         "evidence_items": [
@@ -284,6 +319,12 @@ def _audit_run_key(audit_run: AuditRun | None) -> str | None:
 
 def _audit_task_key(audit_task: AuditTask | None) -> str | None:
     return audit_task.task_key if audit_task is not None else None
+
+
+def _project_key(audit_task: AuditTask | None) -> str | None:
+    if audit_task is None or audit_task.project is None:
+        return None
+    return audit_task.project.project_key
 
 
 def _rule_key(rule_version: RuleVersion | None) -> str | None:

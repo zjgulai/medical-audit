@@ -11,9 +11,20 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.agent_store import AgentStore, InMemoryAgentStore, combined_agent_payloads
@@ -26,7 +37,14 @@ from medical_audit_kb.api.audit_log_policy import (
     audit_log_policy_payload,
     redact_audit_log_events,
 )
-from medical_audit_kb.api.auth import Permission, has_permission, resolve_authenticated_user
+from medical_audit_kb.api.auth import (
+    AuthenticatedUser,
+    HospitalRole,
+    Permission,
+    record_authorization_denied,
+    resolve_authenticated_user,
+    user_has_permission,
+)
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
 from medical_audit_kb.api.evaluation_reports import (
     latest_evaluation_report,
@@ -34,11 +52,17 @@ from medical_audit_kb.api.evaluation_reports import (
     list_evaluation_report_files,
 )
 from medical_audit_kb.api.postgres_status import load_postgres_index_status, row_count
+from medical_audit_kb.api.project_member_store import (
+    ProjectMemberStore,
+    project_exists,
+    visible_project_keys,
+)
 from medical_audit_kb.api.query_history_store import try_add_query_history
 from medical_audit_kb.api.review_task_store import (
-    InMemoryReviewTaskStore,
     ReviewTaskNotFoundError,
+    ReviewTaskProjectScopeConflictError,
     ReviewTaskStore,
+    review_task_project_key,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -134,9 +158,69 @@ SOURCE_COLLECTION_UI: dict[SourceCollection, dict[str, str]] = {
     for definition in SOURCE_COLLECTION_DEFINITIONS
 }
 
+REPORT_TEMPLATE_CATEGORIES: tuple[dict[str, str], ...] = (
+    {"id": "plan", "label": "计划类", "availability": "awaiting-business-template"},
+    {"id": "workpaper", "label": "底稿类", "availability": "active"},
+    {
+        "id": "evidence",
+        "label": "取证类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "confirmation",
+        "label": "函证类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "report",
+        "label": "报告类",
+        "availability": "awaiting-business-template",
+    },
+    {
+        "id": "remediation",
+        "label": "整改类",
+        "availability": "awaiting-business-template",
+    },
+)
+
+
+class ReportTemplateDraftCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=1, max_length=128)
+    project_key: str = Field(min_length=1, max_length=128)
+    field_values: dict[str, str] = Field(max_length=32)
+
+    @field_validator("template_id", "project_key")
+    @classmethod
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("identifier is required")
+        return normalized
+
+    @field_validator("field_values")
+    @classmethod
+    def normalize_field_values(cls, values: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in values.items():
+            normalized_key = key.strip()
+            if not normalized_key:
+                raise ValueError("field_values keys must not be blank")
+            if len(normalized_key) > 128:
+                raise ValueError("field_values keys must not exceed 128 characters")
+            if normalized_key in normalized:
+                raise ValueError("field_values keys must be unique after normalization")
+            normalized_value = value.strip()
+            if len(normalized_value) > 4000:
+                raise ValueError("field_values values must not exceed 4000 characters")
+            normalized[normalized_key] = normalized_value
+        return normalized
+
 WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     {
         "id": "workpaper-summary-risk",
+        "category_id": "workpaper",
         "name": "费用汇总风险底稿",
         "source_template_id": "medical-expense-summary",
         "source_table": "表1 医保费用汇总表",
@@ -188,6 +272,7 @@ WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     },
     {
         "id": "workpaper-category-review",
+        "category_id": "workpaper",
         "name": "分类费用复核清单",
         "source_template_id": "medical-expense-category-summary",
         "source_table": "表2 医保费用分类汇总表",
@@ -239,6 +324,7 @@ WORKPAPER_TEMPLATE_REGISTRY: tuple[dict[str, object], ...] = (
     },
     {
         "id": "workpaper-visit-detail",
+        "category_id": "workpaper",
         "name": "就诊明细疑点摘要",
         "source_template_id": "visit-expense-detail",
         "source_table": "表3 就诊费用明细表",
@@ -437,7 +523,11 @@ def review_tasks_page(
     if redirect_response := _retired_legacy_page_redirect("/pages/review-tasks"):
         return redirect_response
 
-    review_tasks = _review_tasks(state)
+    review_tasks = _visible_review_tasks(
+        state,
+        request=request,
+        attempted_action="review-task-page-list",
+    )
     record_operation(
         state,
         "page-review-tasks-view",
@@ -474,17 +564,182 @@ def report_workpaper_templates(
         "format": "workpaper-template-registry-v1",
         "generated_at": _utc_now_iso(),
         "registry_status": "active",
+        "template_categories": REPORT_TEMPLATE_CATEGORIES,
         "items": templates_payload,
         "count": len(templates_payload),
         "store": {"ready": True, "backend": "static-template-registry"},
     }
 
 
+@router.post("/reports/drafts")
+def create_report_template_draft(
+    payload: ReportTemplateDraftCreateRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _report_draft_authorized_user(
+        state,
+        project_key=payload.project_key,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    template = _report_template_by_id(payload.template_id)
+    allowed_fields = frozenset(_string_sequence(template.get("evidence_bindings")))
+    unsupported_fields = sorted(set(payload.field_values) - allowed_fields)
+    if unsupported_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "field_values contains unsupported evidence binding: "
+                f"{unsupported_fields[0]}"
+            ),
+        )
+    now = _utc_now_iso()
+    template_name = str(template["name"])
+    category_id = str(template["category_id"])
+    task_id = f"report-draft-{uuid4().hex}"
+    safe_audit_payload: dict[str, object] = {
+        "task_id": task_id,
+        "template_id": payload.template_id,
+        "category_id": category_id,
+        "project_key": payload.project_key,
+        "created_by": user.user_identifier,
+        "actor_role": user.role.value,
+        "field_count": len(payload.field_values),
+        "status": "pending-review",
+        "formal_report_created": False,
+        "provider_call": False,
+    }
+    try:
+        record_operation(
+            state,
+            "report-template-draft-create-intent",
+            safe_audit_payload,
+        )
+    except SQLAlchemyError as exc:
+        _record_local_operation(
+            state,
+            "report-template-draft-create-unavailable",
+            {
+                **safe_audit_payload,
+                "status_code": 503,
+                "reason": "audit-intent-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(status_code=503, detail="report draft audit is unavailable") from exc
+
+    task = {
+        "task_id": task_id,
+        "created_at": now,
+        "updated_at": now,
+        "status": "pending-review",
+        "status_label": REVIEW_TASK_STATUS_LABELS["pending-review"],
+        "question": f"{template_name}：{payload.project_key}",
+        "citation_count": 0,
+        "review_gate": "模板字段已受控校验，待人工复核。",
+        "confidence_label": "待复核",
+        "fallback_label": "模板草稿",
+        "source": "report-template-draft",
+        "created_by": user.user_identifier,
+        "assigned_to": "",
+        "reviewer_note": "",
+        "conclusion": "",
+        "dossier": _with_review_task_governance_defaults(
+            {
+                "format": "report-template-draft-dossier-v1",
+                "report_template_draft": {
+                    "status": "draft",
+                    "template_id": payload.template_id,
+                    "template_name": template_name,
+                    "category_id": category_id,
+                    "project_key": payload.project_key,
+                    "created_by": user.user_identifier,
+                    "user_identifier": user.user_identifier,
+                    "field_values": dict(payload.field_values),
+                }
+            }
+        ),
+    }
+    created_task = _review_task_store(state).add_task(task)
+    task_id = str(created_task["task_id"])
+    audit_payload = (
+        {
+            "status": "ready",
+            "durability": "durable",
+            "local_only": False,
+            "intent_recorded": True,
+            "completion_recorded": True,
+        }
+        if state.audit_log_store is not None
+        else {
+            "status": "local-only",
+            "durability": "local-only",
+            "local_only": True,
+            "intent_recorded": True,
+            "completion_recorded": True,
+        }
+    )
+    try:
+        record_operation(
+            state,
+            "report-template-draft-create-completed",
+            safe_audit_payload,
+        )
+    except SQLAlchemyError as exc:
+        audit_payload = {
+            "status": "degraded",
+            "durability": "intent-only",
+            "local_only": False,
+            "intent_recorded": True,
+            "completion_recorded": False,
+        }
+        _record_local_operation(
+            state,
+            "report-template-draft-create-audit-degraded",
+            {
+                **safe_audit_payload,
+                "status_code": 200,
+                "reason": "audit-completion-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+    return {
+        "format": "report-template-draft-v1",
+        "task_id": task_id,
+        "template_id": payload.template_id,
+        "category_id": category_id,
+        "project_key": payload.project_key,
+        "project_href": (
+            "/projects?project="
+            f"{urllib.parse.quote(payload.project_key, safe='')}"
+        ),
+        "status": "pending-review",
+        "store": {
+            "ready": True,
+            "backend": _review_task_store(state).__class__.__name__,
+        },
+        "formal_report_created": False,
+        "provider_call": False,
+        "audit": audit_payload,
+    }
+
+
 @router.get("/reports/workbench")
 def reports_workbench(
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> dict[str, object]:
-    review_tasks = tuple(reversed(_review_tasks(state)))
+    review_tasks = tuple(
+        reversed(
+            _visible_review_tasks(
+                state,
+                request=request,
+                attempted_action="report-workbench-list",
+            )
+        )
+    )
     report_entries = tuple(_review_task_report_entry(task) for task in review_tasks)
     report_evidence_sources = tuple(
         _review_task_report_evidence_source(task) for task in review_tasks
@@ -507,6 +762,7 @@ def reports_workbench(
         "format": "report-workbench-v1",
         "generated_at": _utc_now_iso(),
         "template_registry_status": "active",
+        "template_categories": REPORT_TEMPLATE_CATEGORIES,
         "workpaper_templates": templates_payload,
         "report_entries": report_entries,
         "report_evidence_sources": report_evidence_sources,
@@ -553,7 +809,7 @@ def audit_logs_page(
         user_identifier_for_log = user.user_identifier
         effective_role_for_log = user.role.value
         auth_source_for_log = user.auth_source
-        can_access_audit_logs = has_permission(user.role, Permission.READ_AUDIT_LOGS)
+        can_access_audit_logs = user_has_permission(user, Permission.READ_AUDIT_LOGS)
     except HTTPException as exc:
         can_access_audit_logs = False
         auth_source_for_log = "denied"
@@ -619,7 +875,20 @@ def audit_findings_page(
 
     if review_status is not None and review_status not in REVIEW_TASK_STATUS_LABELS:
         raise HTTPException(status_code=422, detail=f"unsupported review_status: {review_status}")
-    findings = _audit_findings(state, review_status=review_status)
+    user = _audit_finding_authorized_user(
+        state,
+        request=request,
+        attempted_action="page-audit-findings-view",
+    )
+    findings = _audit_findings(
+        state,
+        review_status=review_status,
+        project_keys=_audit_finding_visible_project_keys(
+            state,
+            user=user,
+            attempted_action="page-audit-findings-view",
+        ),
+    )
     record_operation(
         state,
         "page-audit-findings-view",
@@ -641,9 +910,15 @@ def audit_findings_page(
 @router.get("/audit-findings/{finding_key}/export")
 def audit_finding_export(
     finding_key: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> Response:
-    finding = _audit_finding_by_key(state, finding_key)
+    finding = _visible_audit_finding_by_key(
+        state,
+        finding_key,
+        request=request,
+        attempted_action="audit-finding-export",
+    )
     payload = _audit_finding_export_payload(finding)
     record_operation(
         state,
@@ -663,7 +938,12 @@ def create_audit_finding_review_task_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
-    finding = _audit_finding_by_key(state, finding_key)
+    finding = _visible_audit_finding_by_key(
+        state,
+        finding_key,
+        request=request,
+        attempted_action="audit-finding-review-task-create",
+    )
     task = _create_review_task_from_finding(
         state=state,
         request=request,
@@ -725,7 +1005,40 @@ async def update_review_task_status_page(
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
     form = await _urlencoded_form(request)
-    existing_task = _review_task_by_id(state, task_id)
+    status = _form_required_str(form, "status")
+    if status not in REVIEW_TASK_STATUS_LABELS:
+        raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
+    owner_signoff_status = _form_optional_str(form, "owner_signoff_status")
+    owner_confirmed_by = _form_optional_str(form, "owner_confirmed_by")
+    owner_confirmed_at = _form_optional_str(form, "owner_confirmed_at")
+    is_formal_action = (
+        status == "closed"
+        or owner_signoff_status in {"approved", "rejected"}
+        or bool(owner_confirmed_by)
+        or bool(owner_confirmed_at)
+    )
+    formal_actor: AuthenticatedUser | None
+    if is_formal_action:
+        existing_task, formal_actor = _visible_review_task_for_formal_action(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-status-update",
+        )
+        if (
+            owner_signoff_status in {"approved", "rejected"}
+            or owner_confirmed_by
+            or owner_confirmed_at
+        ):
+            form = {**form, "owner_confirmed_by": (formal_actor.user_identifier,)}
+    else:
+        existing_task = _visible_review_task_by_id(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-status-update",
+        )
+        formal_actor = None
     _ensure_review_task_writable(
         state,
         existing_task,
@@ -733,9 +1046,6 @@ async def update_review_task_status_page(
         attempted_action="review-task-status-update",
         endpoint=f"/pages/review-tasks/{task_id}/status",
     )
-    status = _form_required_str(form, "status")
-    if status not in REVIEW_TASK_STATUS_LABELS:
-        raise HTTPException(status_code=422, detail=f"unsupported review task status: {status}")
     if status == "closed":
         _ensure_review_task_can_close(existing_task)
 
@@ -752,7 +1062,12 @@ async def update_review_task_status_page(
             "updated_at": _utc_now_iso(),
         },
     )
-    synced_findings = _sync_audit_finding_review_status(state, task_id, status)
+    synced_findings = _sync_audit_finding_review_status(
+        state,
+        task_id,
+        status,
+        project_key=_review_task_project_key(existing_task),
+    )
     record_operation(
         state,
         "review-task-status-update",
@@ -760,6 +1075,8 @@ async def update_review_task_status_page(
             "task_id": task_id,
             "status": status,
             "synced_audit_finding_count": len(synced_findings),
+            "actor": formal_actor.user_identifier if formal_actor is not None else None,
+            "actor_role": formal_actor.role.value if formal_actor is not None else None,
         },
     )
     return RedirectResponse("/pages/review-tasks", status_code=303)
@@ -774,7 +1091,12 @@ async def upload_review_task_attachment_page(
     attachment_title: Annotated[str | None, Form()] = None,
     attachment_note: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-attachment-upload",
+    )
     _ensure_review_task_writable(
         state,
         task,
@@ -816,9 +1138,15 @@ async def upload_review_task_attachment_page(
 def download_review_task_attachment(
     task_id: str,
     attachment_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> FileResponse:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-attachment-download",
+    )
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     attachment = _review_task_attachment_by_id(dossier, attachment_id)
     if attachment is None:
@@ -846,10 +1174,16 @@ def download_review_task_attachment(
 @router.get("/review-tasks/{task_id}/export")
 def review_task_export(
     task_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
     format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "json",
 ) -> Response:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-export",
+    )
     payload = _review_task_export_payload(task)
     record_operation(
         state,
@@ -879,10 +1213,16 @@ def review_task_export(
 @router.get("/review-tasks/{task_id}/report-draft")
 def review_task_report_draft_export(
     task_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
     format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "markdown",
 ) -> Response:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-report-draft-export",
+    )
     payload = _review_task_report_draft_payload(task)
     record_operation(
         state,
@@ -917,10 +1257,14 @@ async def sign_review_task_report_page(
     request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> RedirectResponse:
+    task, actor = _visible_review_task_for_formal_action(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-report-signoff",
+    )
     form = await _urlencoded_form(request)
-    signed_by = _form_required_str(form, "signed_by")
     signoff_note = _form_optional_str(form, "signoff_note")
-    task = _review_task_by_id(state, task_id)
     _ensure_review_task_writable(
         state,
         task,
@@ -931,7 +1275,7 @@ async def sign_review_task_report_page(
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     signed_report = _build_review_task_signed_report(
         task=task,
-        signed_by=signed_by,
+        signed_by=actor.user_identifier,
         signoff_note=signoff_note,
     )
     dossier["signed_report"] = signed_report
@@ -949,7 +1293,8 @@ async def sign_review_task_report_page(
         {
             "task_id": task_id,
             "report_id": signed_report["report_id"],
-            "signed_by": signed_by,
+            "signed_by": actor.user_identifier,
+            "actor_role": actor.role.value,
             "content_sha256": signed_report["content_sha256"],
         },
     )
@@ -959,10 +1304,16 @@ async def sign_review_task_report_page(
 @router.get("/review-tasks/{task_id}/signed-report")
 def review_task_signed_report_export(
     task_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
     format: Annotated[str, Query(pattern="^(json|markdown|docx)$")] = "markdown",
 ) -> Response:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-signed-report-export",
+    )
     payload = _review_task_signed_report_payload(task)
     record_operation(
         state,
@@ -1004,7 +1355,21 @@ async def update_review_task_rectification_page(
             status_code=422,
             detail=f"unsupported rectification_status: {rectification_status}",
         )
-    task = _review_task_by_id(state, task_id)
+    formal_actor: AuthenticatedUser | None = None
+    if rectification_status in {"accepted", "returned"}:
+        task, formal_actor = _visible_review_task_for_formal_action(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-rectification-update",
+        )
+    else:
+        task = _visible_review_task_by_id(
+            state,
+            task_id,
+            request=request,
+            attempted_action="review-task-rectification-update",
+        )
     _ensure_review_task_writable(
         state,
         task,
@@ -1022,6 +1387,9 @@ async def update_review_task_rectification_page(
         task={**task, "dossier": dossier},
         form=form,
         rectification_status=rectification_status,
+        actor_identifier=formal_actor.user_identifier
+        if formal_actor is not None
+        else "page-user",
     )
     dossier["rectification"] = rectification
     _update_review_task(
@@ -1040,6 +1408,8 @@ async def update_review_task_rectification_page(
             "rectification_id": rectification["rectification_id"],
             "rectification_status": rectification["status"],
             "event_count": rectification["event_count"],
+            "actor": formal_actor.user_identifier if formal_actor is not None else None,
+            "actor_role": formal_actor.role.value if formal_actor is not None else None,
         },
     )
     return RedirectResponse("/pages/review-tasks", status_code=303)
@@ -1048,10 +1418,16 @@ async def update_review_task_rectification_page(
 @router.get("/review-tasks/{task_id}/rectification/export")
 def review_task_rectification_export(
     task_id: str,
+    request: Request,
     state: Annotated[ApiState, Depends(get_api_state)],
     format: Annotated[str, Query(pattern="^(json|markdown)$")] = "json",
 ) -> Response:
-    task = _review_task_by_id(state, task_id)
+    task = _visible_review_task_by_id(
+        state,
+        task_id,
+        request=request,
+        attempted_action="review-task-rectification-export",
+    )
     payload = _review_task_rectification_payload(task)
     record_operation(
         state,
@@ -1464,9 +1840,21 @@ def _agent_project_scope_error(
     attempted_action: str,
 ) -> str | None:
     normalized_project = _normalize_project_name(request_project_name)
-    if not normalized_project or str(agent.get("visibility_scope") or "project") != "project":
+    if str(agent.get("visibility_scope") or "project") != "project":
         return None
     agent_project_name = str(agent.get("project_name") or "").strip()
+    if not normalized_project:
+        record_operation(
+            state,
+            "agent-project-scope-denied",
+            {
+                "agent_id": str(agent.get("id") or ""),
+                "agent_project_name": agent_project_name,
+                "request_project_name": "",
+                "attempted_action": attempted_action,
+            },
+        )
+        return "选择项目级智能体时必须提供当前项目空间。"
     if agent_project_name == normalized_project:
         return None
     record_operation(
@@ -1717,6 +2105,7 @@ def _docx_download_response(
 def _workpaper_template_registry_item(template: Mapping[str, object]) -> dict[str, object]:
     return {
         "id": str(template["id"]),
+        "category_id": str(template["category_id"]),
         "name": str(template["name"]),
         "source_template_id": str(template["source_template_id"]),
         "source_table": str(template["source_table"]),
@@ -1730,6 +2119,159 @@ def _workpaper_template_registry_item(template: Mapping[str, object]) -> dict[st
         "prompt": str(template["prompt"]),
         "chat_href": str(template["chat_href"]),
     }
+
+
+def _report_template_by_id(template_id: str) -> Mapping[str, object]:
+    for template in WORKPAPER_TEMPLATE_REGISTRY:
+        if template["id"] == template_id:
+            return template
+    raise HTTPException(status_code=404, detail="report template not found")
+
+
+def _report_draft_authorized_user(
+    state: ApiState,
+    *,
+    project_key: str,
+    x_user_id: str | None,
+    x_role: str | None,
+) -> AuthenticatedUser:
+    attempted_action = "report-template-draft-create"
+    permission = Permission.CREATE_REPORT_DRAFT
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+
+    try:
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=normalized_user_identifier,
+            x_role=x_role,
+            project_key=project_key,
+        )
+    except HTTPException as exc:
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier=normalized_user_identifier,
+            raw_role=x_role,
+            status_code=exc.status_code,
+            reason=str(exc.detail),
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise
+
+    if not project_exists(project_key):
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=404,
+            reason="project not found",
+        )
+        raise HTTPException(status_code=404, detail="project not found")
+
+    store = _report_project_member_store(state)
+    try:
+        visible_keys = visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=store,
+        )
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "report-template-draft-create-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "permission": permission.value,
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or user.role.value,
+                "effective_role": user.role.value,
+                "auth_scope_type": "project",
+                "auth_scope_key": project_key,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+    if project_key not in visible_keys:
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=404,
+            reason="project not found",
+        )
+        raise HTTPException(status_code=404, detail="project not found")
+
+    if not user_has_permission(user, permission):
+        _record_report_draft_denial(
+            state,
+            user=user,
+            project_key=project_key,
+            status_code=403,
+            reason=f"{permission.value} requires a higher hospital role",
+        )
+        raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
+    return user
+
+
+def _record_report_draft_denial(
+    state: ApiState,
+    *,
+    user: AuthenticatedUser,
+    project_key: str,
+    status_code: int,
+    reason: str,
+) -> None:
+    record_authorization_denied(
+        state,
+        attempted_action="report-template-draft-create",
+        permission=Permission.CREATE_REPORT_DRAFT,
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type="project",
+        auth_scope_key=project_key,
+        status_code=status_code,
+        reason=reason,
+    )
+
+
+def _report_project_member_store(state: ApiState) -> ProjectMemberStore:
+    if state.project_member_store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is not configured",
+        )
+    return state.project_member_store
+
+
+def _record_local_operation(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> None:
+    state.operation_logs.append({"action": action, "payload": payload})
 
 
 def _review_task_report_entry(task: dict[str, object]) -> dict[str, object]:
@@ -1889,6 +2431,7 @@ def _create_review_task(
         "confidence_label": dossier["confidence_label"],
         "fallback_label": dossier["fallback_label"],
         "source": "chat-dossier",
+        "created_by": request.headers.get("X-User-Id") or "page-user",
         "assigned_to": "",
         "reviewer_note": "",
         "conclusion": "",
@@ -1917,6 +2460,7 @@ def _create_review_task_from_finding(
         "confidence_label": "中",
         "fallback_label": "规则命中",
         "source": "audit-finding",
+        "created_by": request.headers.get("X-User-Id") or "page-user",
         "assigned_to": "",
         "reviewer_note": "",
         "conclusion": "",
@@ -1930,6 +2474,366 @@ def _review_task_by_id(state: ApiState, task_id: str) -> dict[str, object]:
         return _review_task_store(state).get_task(task_id)
     except ReviewTaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail="review task not found") from exc
+
+
+def _visible_review_task_by_id(
+    state: ApiState,
+    task_id: str,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> dict[str, object]:
+    task = _review_task_by_id(state, task_id)
+    _review_task_visible_to_request(
+        state,
+        task,
+        request=request,
+        attempted_action=attempted_action,
+        raise_on_denied=True,
+        context=None,
+    )
+    return task
+
+
+def _visible_review_task_for_formal_action(
+    state: ApiState,
+    task_id: str,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> tuple[dict[str, object], AuthenticatedUser]:
+    task = _review_task_by_id(state, task_id)
+    if _review_task_project_key(task) is None:
+        global_actor = _global_legacy_formal_actor(state, request=request)
+        if global_actor is not None:
+            return task, global_actor
+    _review_task_visible_to_request(
+        state,
+        task,
+        request=request,
+        attempted_action=attempted_action,
+        raise_on_denied=True,
+        context=None,
+    )
+    return task, _require_review_task_permission(
+        state,
+        task,
+        request=request,
+        permission=Permission.SIGN_REPORTS,
+        attempted_action=attempted_action,
+    )
+
+
+def _visible_review_tasks(
+    state: ApiState,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> list[dict[str, object]]:
+    context = _ReviewTaskVisibilityContext()
+    visible: list[dict[str, object]] = []
+    hidden_count = 0
+    for task in _review_tasks(state):
+        if _review_task_visible_to_request(
+            state,
+            task,
+            request=request,
+            attempted_action=attempted_action,
+            raise_on_denied=False,
+            context=context,
+        ):
+            visible.append(task)
+        else:
+            hidden_count += 1
+    if hidden_count:
+        _record_operation_best_effort(
+            state,
+            "review-task-list-filtered",
+            {
+                "attempted_action": attempted_action,
+                "hidden_count": hidden_count,
+                "user_identifier": request.headers.get("X-User-Id") or "anonymous",
+                "role": request.headers.get("X-Role") or "anonymous",
+                "status_code": 200,
+                "reason": "review-task-visibility-filtered",
+            },
+        )
+    return visible
+
+
+class _ReviewTaskVisibilityContext:
+    def __init__(self) -> None:
+        self.users_by_project: dict[str, AuthenticatedUser | None] = {}
+        self.non_admin_visible_keys: frozenset[str] | None = None
+        self.membership_evaluated = False
+
+
+def _review_task_visible_to_request(
+    state: ApiState,
+    task: dict[str, object],
+    *,
+    request: Request,
+    attempted_action: str,
+    raise_on_denied: bool,
+    context: _ReviewTaskVisibilityContext | None,
+) -> bool:
+    project_key = _review_task_project_key(task)
+    if project_key is None:
+        controlled_user = getattr(request.state, "authenticated_user", None)
+        if not isinstance(controlled_user, AuthenticatedUser):
+            return True
+        created_by = str(task.get("created_by") or "").strip()
+        if _can_access_global_legacy_as_admin(controlled_user) or (
+            created_by and created_by == controlled_user.user_identifier
+        ):
+            return True
+        return _review_task_access_denied(
+            state,
+            task=task,
+            attempted_action=attempted_action,
+            project_key=None,
+            x_user_id=controlled_user.user_identifier,
+            x_role=controlled_user.raw_role,
+            user=controlled_user,
+            raise_on_denied=raise_on_denied,
+            record_denial=context is None,
+        )
+
+    x_user_id = (request.headers.get("X-User-Id") or "").strip()
+    x_role = request.headers.get("X-Role")
+    if not x_user_id or x_user_id == "anonymous":
+        return _review_task_access_denied(
+            state,
+            task=task,
+            attempted_action=attempted_action,
+            project_key=project_key,
+            x_user_id="anonymous",
+            x_role=x_role,
+            user=None,
+            raise_on_denied=raise_on_denied,
+            record_denial=context is None,
+        )
+    user: AuthenticatedUser | None
+    if context is not None and project_key in context.users_by_project:
+        user = context.users_by_project[project_key]
+    else:
+        try:
+            user = resolve_authenticated_user(
+                state,
+                x_user_id=x_user_id,
+                x_role=x_role,
+                project_key=project_key,
+            )
+        except HTTPException:
+            user = None
+        if context is not None:
+            context.users_by_project[project_key] = user
+    if user is None:
+        return _review_task_access_denied(
+            state,
+            task=task,
+            attempted_action=attempted_action,
+            project_key=project_key,
+            x_user_id=x_user_id,
+            x_role=x_role,
+            user=None,
+            raise_on_denied=raise_on_denied,
+            record_denial=context is None,
+        )
+
+    if not project_exists(project_key):
+        return _review_task_access_denied(
+            state,
+            task=task,
+            attempted_action=attempted_action,
+            project_key=project_key,
+            x_user_id=x_user_id,
+            x_role=x_role,
+            user=user,
+            raise_on_denied=raise_on_denied,
+            record_denial=context is None,
+        )
+    project_member_store = _report_project_member_store(state)
+    if user.role is HospitalRole.ADMIN:
+        return True
+    try:
+        if context is not None and context.membership_evaluated:
+            visible_keys = context.non_admin_visible_keys or frozenset()
+        else:
+            visible_keys = visible_project_keys(
+                user_identifier=user.user_identifier,
+                is_admin=False,
+                store=project_member_store,
+            )
+            if context is not None:
+                context.non_admin_visible_keys = visible_keys
+                context.membership_evaluated = True
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "review-task-project-visibility-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "task_id": str(task.get("task_id") or ""),
+                "user_identifier": user.user_identifier,
+                "role": user.raw_role or user.role.value,
+                "effective_role": user.role.value,
+                "auth_scope_type": "project",
+                "auth_scope_key": project_key,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+    if project_key in visible_keys:
+        return True
+    return _review_task_access_denied(
+        state,
+        task=task,
+        attempted_action=attempted_action,
+        project_key=project_key,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        user=user,
+        raise_on_denied=raise_on_denied,
+        record_denial=context is None,
+    )
+
+
+def _review_task_access_denied(
+    state: ApiState,
+    *,
+    task: dict[str, object],
+    attempted_action: str,
+    project_key: str | None,
+    x_user_id: str,
+    x_role: str | None,
+    user: AuthenticatedUser | None,
+    raise_on_denied: bool,
+    record_denial: bool,
+) -> bool:
+    if record_denial:
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission="access_project_review_task" if project_key else "access_review_task",
+            user_identifier=user.user_identifier if user is not None else x_user_id,
+            raw_role=user.raw_role if user is not None else x_role,
+            effective_role=user.role.value if user is not None else None,
+            auth_source=user.auth_source if user is not None else None,
+            profile_status=user.profile_status if user is not None else None,
+            auth_scope_type="project" if project_key else "review-task",
+            auth_scope_key=project_key or str(task.get("task_id") or ""),
+            status_code=404,
+            reason="review task not found",
+        )
+    if raise_on_denied:
+        raise HTTPException(status_code=404, detail="review task not found")
+    return False
+
+
+def _can_access_global_legacy_as_admin(user: AuthenticatedUser) -> bool:
+    if user.role is not HospitalRole.ADMIN:
+        return False
+    if user.auth_source == "header":
+        return user.auth_scope_type is None and user.auth_scope_key is None
+    return (
+        user.auth_source == "persistent_role"
+        and user.auth_scope_type == "global"
+        and user.auth_scope_key is None
+    )
+
+
+def _global_legacy_formal_actor(
+    state: ApiState,
+    *,
+    request: Request,
+) -> AuthenticatedUser | None:
+    controlled_user = getattr(request.state, "authenticated_user", None)
+    user = controlled_user if isinstance(controlled_user, AuthenticatedUser) else None
+    if user is None:
+        x_user_id = (request.headers.get("X-User-Id") or "").strip()
+        if not x_user_id or x_user_id == "anonymous":
+            return None
+        try:
+            user = resolve_authenticated_user(
+                state,
+                x_user_id=x_user_id,
+                x_role=request.headers.get("X-Role"),
+                project_key=None,
+            )
+        except HTTPException:
+            return None
+    if not user_has_permission(user, Permission.SIGN_REPORTS):
+        return None
+    if user.auth_source == "header":
+        return (
+            user
+            if user.auth_scope_type is None and user.auth_scope_key is None
+            else None
+        )
+    if (
+        user.auth_source == "persistent_role"
+        and user.auth_scope_type == "global"
+        and user.auth_scope_key is None
+    ):
+        return user
+    return None
+
+
+def _review_task_project_key(task: dict[str, object]) -> str | None:
+    try:
+        return review_task_project_key(task)
+    except ReviewTaskProjectScopeConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="review task project scope is inconsistent",
+        ) from exc
+
+
+def _require_review_task_permission(
+    state: ApiState,
+    task: dict[str, object],
+    *,
+    request: Request,
+    permission: Permission,
+    attempted_action: str,
+) -> AuthenticatedUser:
+    project_key = _review_task_project_key(task)
+    x_user_id = (request.headers.get("X-User-Id") or "").strip()
+    x_role = request.headers.get("X-Role")
+    user: AuthenticatedUser | None = None
+    if x_user_id and x_user_id != "anonymous":
+        try:
+            user = resolve_authenticated_user(
+                state,
+                x_user_id=x_user_id,
+                x_role=x_role,
+                project_key=project_key,
+            )
+        except HTTPException:
+            user = None
+    if user is None or not user_has_permission(user, permission):
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier=user.user_identifier if user is not None else x_user_id or "anonymous",
+            raw_role=user.raw_role if user is not None else x_role,
+            effective_role=user.role.value if user is not None else None,
+            auth_source=user.auth_source if user is not None else None,
+            profile_status=user.profile_status if user is not None else None,
+            auth_scope_type="project" if project_key else "review-task",
+            auth_scope_key=project_key or str(task.get("task_id") or ""),
+            status_code=403,
+            reason=f"{permission.value} is not allowed",
+        )
+        raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
+    return user
 
 
 def _review_tasks(state: ApiState) -> list[dict[str, object]]:
@@ -1949,16 +2853,35 @@ def _update_review_task(
 
 def _review_task_store(state: ApiState) -> ReviewTaskStore:
     if state.review_task_store is None:
-        state.review_task_store = InMemoryReviewTaskStore()
+        raise HTTPException(status_code=503, detail="review task store is not configured")
     return state.review_task_store
+
+
+def _record_operation_best_effort(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> None:
+    try:
+        record_operation(state, action, payload)
+    except SQLAlchemyError as exc:
+        _record_local_operation(
+            state,
+            f"{action}-audit-degraded",
+            {**payload, "error_type": type(exc).__name__},
+        )
 
 
 def _audit_findings(
     state: ApiState,
     *,
     review_status: str | None = None,
+    project_keys: frozenset[str] | None = None,
 ) -> list[dict[str, object]]:
-    return _audit_finding_store(state).list_findings(review_status=review_status)
+    return _audit_finding_store(state).list_findings(
+        review_status=review_status,
+        project_keys=project_keys,
+    )
 
 
 def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object]:
@@ -1968,15 +2891,131 @@ def _audit_finding_by_key(state: ApiState, finding_key: str) -> dict[str, object
         raise HTTPException(status_code=404, detail="audit finding not found") from exc
 
 
+def _visible_audit_finding_by_key(
+    state: ApiState,
+    finding_key: str,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> dict[str, object]:
+    user = _audit_finding_authorized_user(
+        state,
+        request=request,
+        attempted_action=attempted_action,
+    )
+    finding = _audit_finding_by_key(state, finding_key)
+    visible_keys = _audit_finding_visible_project_keys(
+        state,
+        user=user,
+        attempted_action=attempted_action,
+    )
+    project_key = str(finding.get("project_key") or "").strip()
+    if not project_key or project_key not in visible_keys:
+        raise HTTPException(status_code=404, detail="audit finding not found")
+    return finding
+
+
+def _audit_finding_authorized_user(
+    state: ApiState,
+    *,
+    request: Request,
+    attempted_action: str,
+) -> AuthenticatedUser:
+    permission = Permission.ANALYZE_DATA
+    x_user_id = (request.headers.get("X-User-Id") or "").strip()
+    x_role = request.headers.get("X-Role")
+    if not x_user_id or x_user_id == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    try:
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=x_user_id,
+            x_role=x_role,
+        )
+    except HTTPException as exc:
+        record_authorization_denied(
+            state,
+            attempted_action=attempted_action,
+            permission=permission,
+            user_identifier=x_user_id,
+            raw_role=x_role,
+            status_code=exc.status_code,
+            reason=str(exc.detail),
+        )
+        raise
+    if user_has_permission(user, permission):
+        return user
+    record_authorization_denied(
+        state,
+        attempted_action=attempted_action,
+        permission=permission,
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type=user.auth_scope_type,
+        auth_scope_key=user.auth_scope_key,
+        status_code=403,
+        reason=f"{permission.value} requires a higher hospital role",
+    )
+    raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
+
+
+def _audit_finding_visible_project_keys(
+    state: ApiState,
+    *,
+    user: AuthenticatedUser,
+    attempted_action: str,
+) -> frozenset[str]:
+    try:
+        return visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=_report_project_member_store(state),
+        )
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "audit-finding-project-visibility-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+
+
 def _sync_audit_finding_review_status(
     state: ApiState,
     review_task_id: str,
     review_status: str,
+    *,
+    project_key: str | None,
 ) -> list[dict[str, object]]:
-    if state.audit_finding_store is None:
+    if state.audit_finding_store is None or project_key is None:
         return []
     try:
-        return state.audit_finding_store.sync_review_task_status(review_task_id, review_status)
+        return state.audit_finding_store.sync_review_task_status(
+            review_task_id,
+            review_status,
+            project_keys=frozenset({project_key}),
+        )
     except (SQLAlchemyError, ValueError):
         return []
 
@@ -2037,6 +3076,7 @@ def _review_task_export_payload(task: dict[str, object]) -> dict[str, object]:
         "confidence_label": task["confidence_label"],
         "fallback_label": task["fallback_label"],
         "assigned_to": task.get("assigned_to"),
+        "created_by": task.get("created_by"),
         "reviewer_note": task["reviewer_note"],
         "conclusion": task["conclusion"],
         "source": task.get("source", "chat-dossier"),
@@ -2075,6 +3115,7 @@ def _audit_finding_dossier_payload(
         "format": "audit-finding-dossier-v1",
         "generated_at": _utc_now_iso(),
         "finding_key": finding["finding_key"],
+        "project_key": finding.get("project_key"),
         "finding_type": finding["finding_type"],
         "severity": finding["severity"],
         "status": finding["status"],
@@ -2206,7 +3247,41 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
 def _render_review_task_dossier_markdown(dossier: dict[str, object]) -> str:
     if dossier.get("format") == "audit-finding-dossier-v1":
         return _render_audit_finding_dossier_markdown(dossier)
+    if dossier.get("format") == "report-template-draft-dossier-v1":
+        return _render_report_template_draft_dossier_markdown(dossier)
     return _render_audit_dossier_markdown(dossier)
+
+
+def _render_report_template_draft_dossier_markdown(dossier: dict[str, object]) -> str:
+    draft = _dict_value(dossier.get("report_template_draft"))
+    field_values = _dict_value(draft.get("field_values"))
+    lines = [
+        "# AuditScope 模板底稿草稿",
+        "",
+        f"- 模板：{draft.get('template_name') or '未记录'}",
+        f"- 模板 ID：{draft.get('template_id') or '未记录'}",
+        f"- 分类：{draft.get('category_id') or '未记录'}",
+        f"- 项目：{draft.get('project_key') or '未记录'}",
+        f"- 创建人：{draft.get('created_by') or '未记录'}",
+        f"- 草稿状态：{draft.get('status') or 'draft'}",
+        "",
+        "## 受控模板字段",
+        "",
+    ]
+    if field_values:
+        for key, value in field_values.items():
+            lines.append(f"- {key}：")
+            value_lines = str(value).splitlines() or [""]
+            lines.extend(f"DATA | {line}" for line in value_lines)
+    else:
+        lines.append("- 未填写模板字段。")
+    lines.extend(
+        [
+            "",
+            "> 本文件为受控模板草稿，不是正式审计报告，未调用外部 provider。",
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _render_audit_finding_dossier_markdown(dossier: dict[str, object]) -> str:
@@ -2849,6 +3924,7 @@ def _build_review_task_rectification(
     task: dict[str, object],
     form: Mapping[str, Sequence[str]],
     rectification_status: str,
+    actor_identifier: str,
 ) -> dict[str, object]:
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     signed_report = _signed_report_context(dossier)
@@ -2872,7 +3948,7 @@ def _build_review_task_rectification(
             "from_status_label": RECTIFICATION_STATUS_LABELS[previous_status],
             "to_status": rectification_status,
             "to_status_label": RECTIFICATION_STATUS_LABELS[rectification_status],
-            "actor": "page-user",
+            "actor": actor_identifier,
             "note": progress_note,
         }
     )

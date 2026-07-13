@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
 
+import type { ReplicaDataSource } from "@/lib/replica-adapters";
+
+import type { ReplicaRuntimeStatus } from "./use-replica-runtime";
+
 type ReplicaPageHeaderProps = {
   readonly kicker: string;
   readonly title: string;
@@ -14,8 +18,8 @@ type ReplicaMetricProps = {
 };
 
 type ReplicaRuntimeBadgeProps = {
-  readonly source: "fixture" | "api" | "hybrid";
-  readonly status: "loading" | "ready";
+  readonly source: ReplicaDataSource;
+  readonly status: ReplicaRuntimeStatus;
   readonly hasSeedData?: boolean;
   readonly issueCount?: number;
 };
@@ -65,10 +69,15 @@ export function ReplicaRuntimeBadge({
   issueCount = 0
 }: ReplicaRuntimeBadgeProps) {
   const label = runtimeBadgeLabel(source, status, hasSeedData);
-  const detail = issueCount > 0 ? `${issueCount} 项待接入` : "接口已校验";
+  const sourceLabel = runtimeSourceLabel(source, hasSeedData);
+  const statusLabel = runtimeStatusLabel(status);
+  const detail = runtimeBadgeDetail(source, status, issueCount);
 
   return (
-    <span className={`replica-runtime-badge source-${hasSeedData ? "seed" : source}`} aria-label={`数据来源：${label}`}>
+    <span
+      className={`replica-runtime-badge source-${hasSeedData ? "seed" : source}`}
+      aria-label={`数据来源：${sourceLabel}；状态：${statusLabel}`}
+    >
       <strong>{label}</strong>
       <em>{detail}</em>
     </span>
@@ -79,8 +88,24 @@ function runtimeBadgeLabel(source: ReplicaRuntimeBadgeProps["source"], status: R
   if (status === "loading") {
     return "数据加载中";
   }
+  if (status === "empty") {
+    return "暂无数据";
+  }
+  if (status === "degraded") {
+    return "数据受限";
+  }
+  if (status === "error") {
+    return "读取失败";
+  }
+  return runtimeSourceLabel(source, hasSeedData);
+}
+
+function runtimeSourceLabel(source: ReplicaRuntimeBadgeProps["source"], hasSeedData: boolean) {
   if (hasSeedData) {
     return "后端种子数据";
+  }
+  if (source === "catalog") {
+    return "产品目录";
   }
   if (source === "api") {
     return "后端数据";
@@ -89,6 +114,48 @@ function runtimeBadgeLabel(source: ReplicaRuntimeBadgeProps["source"], status: R
     return "后端+本地";
   }
   return "本地样例";
+}
+
+function runtimeStatusLabel(status: ReplicaRuntimeBadgeProps["status"]) {
+  if (status === "loading") {
+    return "数据加载中";
+  }
+  if (status === "empty") {
+    return "暂无数据";
+  }
+  if (status === "degraded") {
+    return "数据受限";
+  }
+  if (status === "error") {
+    return "读取失败";
+  }
+  return "已就绪";
+}
+
+function runtimeBadgeDetail(
+  source: ReplicaRuntimeBadgeProps["source"],
+  status: ReplicaRuntimeBadgeProps["status"],
+  issueCount: number
+) {
+  if (status === "loading") {
+    return "正在读取";
+  }
+  if (status === "empty") {
+    return "当前无记录";
+  }
+  if (status === "degraded") {
+    return issueCount > 0 ? `${issueCount} 项受限` : "部分能力受限";
+  }
+  if (status === "error") {
+    return "请检查读取服务";
+  }
+  if (issueCount > 0) {
+    return `${issueCount} 项待接入`;
+  }
+  if (source === "catalog") {
+    return "目录已就绪";
+  }
+  return source === "fixture" ? "样例数据已启用" : "接口已校验";
 }
 
 export function ReplicaFilterButton<T extends string>({

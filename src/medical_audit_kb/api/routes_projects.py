@@ -1,24 +1,32 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
-from medical_audit_kb.api.auth import Permission, require_permission
+from medical_audit_kb.api.auth import (
+    AuthenticatedUser,
+    HospitalRole,
+    Permission,
+    require_permission,
+    resolve_authenticated_user,
+)
 from medical_audit_kb.api.project_member_store import (
-    DEFAULT_PROJECT_PAYLOADS,
     PROJECT_MEMBER_ROLES,
     PROJECT_MEMBER_STATUSES,
+    PROJECT_STATUSES,
     InMemoryProjectMemberStore,
+    ProjectMemberIdentityConflictError,
     ProjectMemberStore,
     combined_project_members,
     project_exists,
     project_payloads_with_member_counts,
     validate_project_member_role,
     validate_project_member_status,
+    visible_project_keys,
 )
 
 router = APIRouter()
@@ -35,11 +43,20 @@ REVIEW_STATUS_LABELS: dict[str, str] = {
 class ProjectMemberCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    user_identifier: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=128)
     role: str = Field(min_length=1, max_length=48)
     department: str = Field(min_length=1, max_length=128)
     status: str = Field(default="待确认", min_length=1, max_length=48)
     metadata: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("user_identifier")
+    @classmethod
+    def normalize_user_identifier(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("user_identifier is required")
+        return normalized
 
     @field_validator("role")
     @classmethod
@@ -61,23 +78,52 @@ class ProjectMemberCreateRequest(BaseModel):
 @router.get("/projects")
 def list_projects(
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    store = _project_member_store(state)
     try:
-        items = project_payloads_with_member_counts(_project_member_store(state).member_counts())
+        custom_counts = store.member_counts()
+        counts_ready = True
     except SQLAlchemyError:
-        return {
-            "items": [dict(project) for project in DEFAULT_PROJECT_PAYLOADS],
-            "roles": list(PROJECT_MEMBER_ROLES),
-            "statuses": list(PROJECT_MEMBER_STATUSES),
-            "store": {"ready": False, "backend": "unavailable"},
-        }
+        custom_counts = {}
+        counts_ready = False
 
-    record_operation(state, "projects-list", {"project_count": len(items)})
+    visible_keys, visibility_ready = _project_visibility(
+        user=user,
+        store=store,
+    )
+    if not visibility_ready:
+        custom_counts = {}
+    all_items = project_payloads_with_member_counts(custom_counts)
+    items = [item for item in all_items if str(item["id"]) in visible_keys]
+    store_ready = counts_ready and visibility_ready
+    store_backend = store.__class__.__name__ if store_ready else "unavailable"
+
+    record_operation(
+        state,
+        "projects-list",
+        {
+            "actor": user.user_identifier,
+            "actor_role": user.role.value,
+            "project_count": len(items),
+            "visible_project_count": len(items),
+            "visibility_ready": visibility_ready,
+            "member_counts_ready": counts_ready,
+        },
+    )
     return {
         "items": items,
         "roles": list(PROJECT_MEMBER_ROLES),
         "statuses": list(PROJECT_MEMBER_STATUSES),
-        "store": {"ready": True, "backend": _project_member_store(state).__class__.__name__},
+        "project_statuses": list(PROJECT_STATUSES),
+        "store": {"ready": store_ready, "backend": store_backend},
     }
 
 
@@ -85,23 +131,52 @@ def list_projects(
 def get_project(
     project_key: str,
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_project(project_key)
-    store = _project_member_store(state)
-    try:
+    user, store, visible_keys, visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if visibility_ready:
+        try:
+            project = next(
+                item
+                for item in project_payloads_with_member_counts(store.member_counts())
+                if item["id"] == project_key
+            )
+            store_ready = True
+            store_backend = store.__class__.__name__
+        except SQLAlchemyError:
+            project = next(
+                item
+                for item in project_payloads_with_member_counts({})
+                if item["id"] == project_key
+            )
+            store_ready = False
+            store_backend = "unavailable"
+    else:
         project = next(
             item
-            for item in project_payloads_with_member_counts(store.member_counts())
+            for item in project_payloads_with_member_counts({})
             if item["id"] == project_key
         )
-        store_ready = True
-        store_backend = store.__class__.__name__
-    except SQLAlchemyError:
-        project = next(dict(item) for item in DEFAULT_PROJECT_PAYLOADS if item["id"] == project_key)
         store_ready = False
         store_backend = "unavailable"
 
-    record_operation(state, "project-detail", {"project_key": project_key})
+    record_operation(
+        state,
+        "project-detail",
+        {
+            "project_key": project_key,
+            "actor": user.user_identifier,
+            "actor_role": user.role.value,
+            "visible_project_count": len(visible_keys),
+            "visibility_ready": visibility_ready,
+        },
+    )
     return {
         "item": project,
         "store": {"ready": store_ready, "backend": store_backend},
@@ -113,31 +188,48 @@ def get_project(
 def list_project_members(
     project_key: str,
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_project(project_key)
-    try:
-        custom_members = _project_member_store(state).list_members(project_key)
-    except SQLAlchemyError:
-        return {
-            "items": combined_project_members(project_key, []),
-            "project_key": project_key,
-            "roles": list(PROJECT_MEMBER_ROLES),
-            "statuses": list(PROJECT_MEMBER_STATUSES),
-            "store": {"ready": False, "backend": "unavailable"},
-        }
+    user, store, visible_keys, visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if visibility_ready:
+        try:
+            custom_members = store.list_members(project_key)
+            store_ready = True
+            store_backend = store.__class__.__name__
+        except SQLAlchemyError:
+            custom_members = []
+            store_ready = False
+            store_backend = "unavailable"
+    else:
+        custom_members = []
+        store_ready = False
+        store_backend = "unavailable"
 
     items = combined_project_members(project_key, custom_members)
     record_operation(
         state,
         "project-members-list",
-        {"project_key": project_key, "member_count": len(items)},
+        {
+            "project_key": project_key,
+            "actor": user.user_identifier,
+            "actor_role": user.role.value,
+            "visible_project_count": len(visible_keys),
+            "visibility_ready": visibility_ready,
+            "member_count": len(items),
+        },
     )
     return {
         "items": items,
         "project_key": project_key,
         "roles": list(PROJECT_MEMBER_ROLES),
         "statuses": list(PROJECT_MEMBER_STATUSES),
-        "store": {"ready": True, "backend": _project_member_store(state).__class__.__name__},
+        "store": {"ready": store_ready, "backend": store_backend},
     }
 
 
@@ -145,26 +237,56 @@ def list_project_members(
 def project_dashboard(
     project_key: str,
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_project(project_key)
-    store = _project_member_store(state)
-    try:
+    user, store, visible_keys, visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if visibility_ready:
+        try:
+            project = next(
+                item for item in project_payloads_with_member_counts(store.member_counts())
+                if item["id"] == project_key
+            )
+            members = combined_project_members(project_key, store.list_members(project_key))
+            member_store_ready = True
+            member_store_backend = store.__class__.__name__
+        except SQLAlchemyError:
+            project = next(
+                item
+                for item in project_payloads_with_member_counts({})
+                if item["id"] == project_key
+            )
+            members = combined_project_members(project_key, [])
+            member_store_ready = False
+            member_store_backend = "unavailable"
+    else:
         project = next(
-            item for item in project_payloads_with_member_counts(store.member_counts())
+            item
+            for item in project_payloads_with_member_counts({})
             if item["id"] == project_key
         )
-        members = combined_project_members(project_key, store.list_members(project_key))
-        member_store_ready = True
-        member_store_backend = store.__class__.__name__
-    except SQLAlchemyError:
-        project = next(dict(item) for item in DEFAULT_PROJECT_PAYLOADS if item["id"] == project_key)
         members = combined_project_members(project_key, [])
         member_store_ready = False
         member_store_backend = "unavailable"
 
-    findings, finding_store_payload = _dashboard_findings(state)
+    findings, finding_store_payload = _dashboard_findings(state, project_key)
     stats = _dashboard_finding_stats(findings)
-    response = {
+    audit_findings_ready = bool(finding_store_payload["ready"])
+    if member_store_ready and audit_findings_ready:
+        store_status = "ready"
+        evidence_grade = "live-db-connected"
+    elif member_store_ready or audit_findings_ready:
+        store_status = "partial"
+        evidence_grade = "partial-live-db-connected"
+    else:
+        store_status = "unavailable"
+        evidence_grade = "backend-defaults"
+    response: dict[str, object] = {
         "format": "project-dashboard-v1",
         "project": project,
         "metrics": _dashboard_metrics(stats, findings, members),
@@ -172,14 +294,13 @@ def project_dashboard(
         "activities": _dashboard_activities(stats, findings, member_store_ready),
         "status_distribution": _dashboard_status_distribution(findings),
         "member_workloads": _dashboard_member_workloads(members, findings),
-        "evidence_grade": (
-            "live-db-connected"
-            if bool(finding_store_payload["ready"]) or member_store_ready
-            else "backend-defaults"
-        ),
+        "evidence_grade": evidence_grade,
         "production_side_effect": "none",
         "store": {
-            "ready": member_store_ready or bool(finding_store_payload["ready"]),
+            "ready": member_store_ready and audit_findings_ready,
+            "project_members_ready": member_store_ready,
+            "audit_findings_ready": audit_findings_ready,
+            "status": store_status,
             "backend": {
                 "project_members": member_store_backend,
                 "audit_findings": finding_store_payload["backend"],
@@ -191,6 +312,10 @@ def project_dashboard(
         "project-dashboard",
         {
             "project_key": project_key,
+            "actor": user.user_identifier,
+            "actor_role": user.role.value,
+            "visible_project_count": len(visible_keys),
+            "visibility_ready": visibility_ready,
             "member_count": len(members),
             "finding_count": stats["total"],
             "member_store_ready": member_store_ready,
@@ -221,6 +346,11 @@ def create_project_member(
     values["created_by"] = user.user_identifier
     try:
         member = _project_member_store(state).add_member(project_key, values)
+    except ProjectMemberIdentityConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="project member identity already exists",
+        ) from exc
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=409,
@@ -250,17 +380,73 @@ def _require_project(project_key: str) -> None:
         raise HTTPException(status_code=404, detail="project not found")
 
 
+def _visible_project_user(
+    project_key: str,
+    state: ApiState,
+    *,
+    x_user_id: str | None,
+    x_role: str | None,
+) -> tuple[AuthenticatedUser, ProjectMemberStore, frozenset[str], bool]:
+    _require_project(project_key)
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+        project_key=project_key,
+    )
+    store = _project_member_store(state)
+    visible_keys, visibility_ready = _project_visibility(
+        user=user,
+        store=store,
+    )
+    if project_key not in visible_keys:
+        raise HTTPException(status_code=404, detail="project not found")
+    return user, store, visible_keys, visibility_ready
+
+
+def _project_visibility(
+    *,
+    user: AuthenticatedUser,
+    store: ProjectMemberStore,
+) -> tuple[frozenset[str], bool]:
+    try:
+        return (
+            visible_project_keys(
+                user_identifier=user.user_identifier,
+                is_admin=user.role is HospitalRole.ADMIN,
+                store=store,
+            ),
+            True,
+        )
+    except SQLAlchemyError:
+        return (
+            visible_project_keys(
+                user_identifier=user.user_identifier,
+                is_admin=user.role is HospitalRole.ADMIN,
+                store=InMemoryProjectMemberStore(),
+            ),
+            False,
+        )
+
+
 def _project_member_store(state: ApiState) -> ProjectMemberStore:
     if state.project_member_store is None:
         state.project_member_store = InMemoryProjectMemberStore()
     return state.project_member_store
 
 
-def _dashboard_findings(state: ApiState) -> tuple[list[dict[str, object]], dict[str, object]]:
+def _dashboard_findings(
+    state: ApiState,
+    project_key: str,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     if state.audit_finding_store is None:
         return [], {"ready": False, "backend": "none"}
     try:
-        findings = state.audit_finding_store.list_findings(limit=100)
+        findings = state.audit_finding_store.list_findings(
+            project_key=project_key,
+            limit=100,
+        )
     except SQLAlchemyError:
         return [], {"ready": False, "backend": "unavailable"}
     return findings, {"ready": True, "backend": state.audit_finding_store.__class__.__name__}
@@ -270,6 +456,9 @@ def _dashboard_finding_stats(findings: list[dict[str, object]]) -> dict[str, int
     return {
         "total": len(findings),
         "open": sum(1 for item in findings if item.get("status") == "open"),
+        "status_present": sum(
+            1 for item in findings if str(item.get("status") or "").strip()
+        ),
         "pending_review": sum(
             1 for item in findings if item.get("review_status") == "pending-review"
         ),
@@ -285,13 +474,14 @@ def _dashboard_metrics(
     findings: list[dict[str, object]],
     members: list[dict[str, object]],
 ) -> list[dict[str, str]]:
+    open_findings = stats["open"] if stats["status_present"] else stats["total"]
     return [
         {
             "key": "open_findings",
             "label": "待处理疑点",
-            "value": str(stats["open"] or stats["total"]),
+            "value": str(open_findings),
             "helper": "来自审计疑点库，需人工确认后进入底稿",
-            "tone": "danger" if stats["open"] else "neutral",
+            "tone": "danger" if open_findings else "neutral",
         },
         {
             "key": "missing_evidence",
@@ -436,15 +626,15 @@ def _dashboard_member_workloads(
                 "closed": 0,
             },
         )
-        item["total"] = int(item["total"]) + 1
+        item["total"] = cast(int, item["total"]) + 1
         review_status = str(finding.get("review_status") or "")
         if review_status in {"pending-review", "needs-evidence"}:
-            item["pending"] = int(item["pending"]) + 1
+            item["pending"] = cast(int, item["pending"]) + 1
         if review_status in {"closed", "not-violation", "confirmed-violation"}:
-            item["closed"] = int(item["closed"]) + 1
+            item["closed"] = cast(int, item["closed"]) + 1
     return sorted(
         workloads.values(),
-        key=lambda item: (-int(item["total"]), str(item["name"])),
+        key=lambda item: (-cast(int, item["total"]), str(item["name"])),
     )[:8]
 
 

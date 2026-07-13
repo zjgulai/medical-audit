@@ -1,0 +1,753 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
+
+import { useAuditUser } from "@/components/shell/audit-user-context";
+import {
+  createReportDraft,
+  downloadAuditArtifact,
+  fetchProjects,
+  fetchReportWorkbench,
+  isBackendRequestError
+} from "@/lib/api-client";
+import type {
+  ProjectsResponse,
+  ReportDraftCreateResponse,
+  ReportTemplateCategory,
+  ReportWorkbenchEntry,
+  ReportWorkbenchEvidenceSource,
+  ReportWorkbenchResponse,
+  WorkpaperTemplateRegistryItem
+} from "@/lib/api-types";
+import type { AuditClientRole } from "@/lib/audit-user";
+
+type LanePhase = "loading" | "ready" | "degraded" | "error";
+
+type LaneState<T> = {
+  readonly phase: LanePhase;
+  readonly response: T | null;
+  readonly role: AuditClientRole | null;
+};
+
+type CategoryCatalogProps = {
+  readonly categories: readonly ReportTemplateCategory[];
+  readonly templates: readonly WorkpaperTemplateRegistryItem[];
+  readonly canSelect: boolean;
+  readonly selectionHint: string;
+  readonly selectedTemplateId: string | null;
+  readonly onSelectTemplate: (templateId: string) => void;
+};
+
+type DraftPanelProps = {
+  readonly template: WorkpaperTemplateRegistryItem;
+  readonly projectKey: string;
+  readonly canCreate: boolean;
+  readonly fieldValues: Readonly<Record<string, string>>;
+  readonly saving: boolean;
+  readonly error: string | null;
+  readonly result: ReportDraftCreateResponse | null;
+  readonly onFieldChange: (field: string, value: string) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+};
+
+type AuthenticatedDownloadButtonProps = {
+  readonly href: string;
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly pending: boolean;
+  readonly onDownload: (href: string) => Promise<void>;
+};
+
+function loadingLane<T>(role: AuditClientRole | null): LaneState<T> {
+  return { phase: "loading", response: null, role };
+}
+
+function CategoryCatalog({
+  categories,
+  templates,
+  canSelect,
+  selectionHint,
+  selectedTemplateId,
+  onSelectTemplate
+}: CategoryCatalogProps) {
+  return (
+    <section className="replica-report-catalog-section" aria-label="报表分类目录">
+      <div className="replica-report-section-heading">
+        <div>
+          <p>模板目录</p>
+          <h2>六类模板目录</h2>
+        </div>
+        <span>{selectionHint}</span>
+      </div>
+      <div className="replica-report-catalog">
+        {categories.map((category, index) => {
+          const categoryTemplates = templates.filter((template) => template.category_id === category.id);
+          const active = category.availability === "active";
+          return (
+            <article
+              className={active ? "is-active" : "is-awaiting"}
+              key={category.id}
+            >
+              <div className="replica-report-category-heading">
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h3>{category.label}</h3>
+                  <p>{active ? `${categoryTemplates.length} 项受控模板` : "模板尚未进入目录"}</p>
+                </div>
+              </div>
+              {active ? (
+                <div className="replica-report-template-list">
+                  {categoryTemplates.length > 0 ? categoryTemplates.map((template) => (
+                    <div className="replica-report-template" key={template.id}>
+                      <div>
+                        <strong>{template.name}</strong>
+                        <span>{template.output_type} · {template.source_table}</span>
+                      </div>
+                      <button
+                        aria-label={`填写模板：${template.name}`}
+                        aria-pressed={selectedTemplateId === template.id}
+                        disabled={!canSelect}
+                        type="button"
+                        onClick={() => onSelectTemplate(template.id)}
+                      >
+                        填写模板
+                      </button>
+                    </div>
+                  )) : <p className="replica-report-empty-inline">当前无已启用模板</p>}
+                </div>
+              ) : (
+                <span className="replica-report-awaiting-badge">待业务模板确认</span>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DraftPanel({
+  template,
+  projectKey,
+  canCreate,
+  fieldValues,
+  saving,
+  error,
+  result,
+  onFieldChange,
+  onSubmit
+}: DraftPanelProps) {
+  const nonEmptyFieldCount = template.evidence_bindings.reduce(
+    (count, field) => count + ((fieldValues[field] ?? "").trim() ? 1 : 0),
+    0
+  );
+  const boundaryAnomaly = result !== null && (
+    result.formal_report_created !== false || result.provider_call !== false
+  );
+  return (
+    <section className="replica-report-draft-panel" aria-labelledby="report-draft-title">
+      <div className="replica-report-section-heading">
+        <div>
+          <p>受控底稿草稿</p>
+          <h2 id="report-draft-title">创建草稿：{template.name}</h2>
+        </div>
+        <span>{template.evidence_bindings.length} 个允许字段</span>
+      </div>
+      <p className="replica-report-draft-note">
+        仅提交当前模板声明的 evidence_bindings；空白字段不会进入草稿。
+      </p>
+      <form aria-label={`${template.name}草稿`} onSubmit={onSubmit}>
+        {template.evidence_bindings.map((field, index) => {
+          const value = fieldValues[field] ?? "";
+          const countId = `replica-report-field-${index}-count`;
+          return (
+            <label key={field}>
+              <span>{field}</span>
+              <textarea
+                aria-describedby={countId}
+                aria-label={field}
+                disabled={saving}
+                maxLength={4000}
+                name={field}
+                rows={3}
+                value={value}
+                onChange={(event) => onFieldChange(field, event.target.value)}
+              />
+              <small id={countId}>{value.length} / 4000</small>
+            </label>
+          );
+        })}
+        <div className="replica-report-form-actions">
+          <button
+            disabled={!canCreate || !projectKey || nonEmptyFieldCount === 0 || saving}
+            type="submit"
+          >
+            {saving ? "正在创建草稿…" : "创建受控草稿"}
+          </button>
+          <span>{projectKey ? `目标项目：${projectKey}` : "请先选择所属项目"}</span>
+        </div>
+      </form>
+      {error ? <p className="replica-report-error" role="alert">{error}</p> : null}
+      {result ? (
+        <div className="replica-report-handoff" aria-live="polite">
+          <div>
+            <span>{boundaryAnomaly ? "草稿响应边界异常" : "草稿已进入待复核队列"}</span>
+            <strong>{result.task_id}</strong>
+          </div>
+          <ul>
+            <li>
+              <span>formal_report_created={String(result.formal_report_created)}</span>
+              {result.formal_report_created === false ? <span>未生成正式报告</span> : null}
+            </li>
+            <li>
+              <span>provider_call={String(result.provider_call)}</span>
+              {result.provider_call === false ? <span>未调用外部 provider</span> : null}
+            </li>
+            <li>
+              审计记录：{result.audit.durability}
+              {result.audit.status === "degraded" ? "（降级）" : ""}
+              {result.audit.status === "local-only" ? "（本地）" : ""}
+            </li>
+          </ul>
+          {boundaryAnomaly ? (
+            <p className="replica-report-error" role="alert">
+              草稿响应违反无副作用边界，请勿将其视为安全草稿。
+            </p>
+          ) : null}
+          <Link href={result.project_href}>
+            {boundaryAnomaly ? "前往项目核查异常" : "转入项目管理"}
+          </Link>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ReportMetrics({ metrics }: { readonly metrics: ReportWorkbenchResponse["metrics"] }) {
+  const items = [
+    ["报告总数", metrics.report_count],
+    ["已签发报告", metrics.signed_report_count],
+    ["门禁阻断报告", metrics.blocked_report_count],
+    ["已纳入疑点", metrics.included_finding_count],
+    ["报告 DOCX", metrics.docx_download_count]
+  ] as const;
+  return (
+    <section className="replica-report-metrics" aria-label="报告指标">
+      {items.map(([label, value]) => (
+        <article key={label}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function AuthenticatedDownloadButton({
+  href,
+  label,
+  disabled,
+  pending,
+  onDownload
+}: AuthenticatedDownloadButtonProps) {
+  return (
+    <button
+      disabled={disabled}
+      type="button"
+      onClick={() => void onDownload(href)}
+    >
+      {pending ? `正在下载：${label}` : label}
+    </button>
+  );
+}
+
+function ReportLedger({
+  entries,
+  downloadingPath,
+  onDownload
+}: {
+  readonly entries: readonly ReportWorkbenchEntry[];
+  readonly downloadingPath: string | null;
+  readonly onDownload: (href: string) => Promise<void>;
+}) {
+  const downloadLocked = downloadingPath !== null;
+  return (
+    <section className="replica-report-ledger" aria-labelledby="report-ledger-title">
+      <div className="replica-report-section-heading">
+        <div>
+          <p>复核与报告</p>
+          <h2 id="report-ledger-title">报告台账</h2>
+        </div>
+        <span>{entries.length} 条</span>
+      </div>
+      {entries.length === 0 ? (
+        <p className="replica-report-empty">暂无报告台账</p>
+      ) : (
+        <div className="replica-report-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>报告 / 底稿</th>
+                <th>状态</th>
+                <th>证据与门禁</th>
+                <th>负责人</th>
+                <th>受控操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td>
+                    <strong>{entry.title}</strong>
+                    <span>{entry.report_no} · {entry.id}</span>
+                  </td>
+                  <td><span className={`replica-report-status status-${entry.status}`}>{entry.status}</span></td>
+                  <td>
+                    <strong>{entry.gate_summary}</strong>
+                    <span>{entry.included_finding_count} 个疑点 · {entry.appendix_count} 个附件</span>
+                  </td>
+                  <td>{entry.owner}</td>
+                  <td>
+                    <nav aria-label={`${entry.title}操作`}>
+                      <span>详情请从项目管理进入</span>
+                      <AuthenticatedDownloadButton
+                        disabled={downloadLocked}
+                        href={entry.download_links.task_docx}
+                        label="下载任务 DOCX"
+                        pending={downloadingPath === entry.download_links.task_docx}
+                        onDownload={onDownload}
+                      />
+                      {entry.download_links.report_docx ? (
+                        <AuthenticatedDownloadButton
+                          disabled={downloadLocked}
+                          href={entry.download_links.report_docx}
+                          label="下载报告 DOCX"
+                          pending={downloadingPath === entry.download_links.report_docx}
+                          onDownload={onDownload}
+                        />
+                      ) : null}
+                      {entry.download_links.report_markdown ? (
+                        <AuthenticatedDownloadButton
+                          disabled={downloadLocked}
+                          href={entry.download_links.report_markdown}
+                          label="下载报告 Markdown"
+                          pending={downloadingPath === entry.download_links.report_markdown}
+                          onDownload={onDownload}
+                        />
+                      ) : null}
+                      {entry.download_links.report_json ? (
+                        <AuthenticatedDownloadButton
+                          disabled={downloadLocked}
+                          href={entry.download_links.report_json}
+                          label="下载报告 JSON"
+                          pending={downloadingPath === entry.download_links.report_json}
+                          onDownload={onDownload}
+                        />
+                      ) : null}
+                    </nav>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EvidenceLedger({ sources }: { readonly sources: readonly ReportWorkbenchEvidenceSource[] }) {
+  return (
+    <section className="replica-report-evidence" aria-labelledby="report-evidence-title">
+      <div className="replica-report-section-heading">
+        <div>
+          <p>证据来源</p>
+          <h2 id="report-evidence-title">底稿证据索引</h2>
+        </div>
+        <span>{sources.length} 条</span>
+      </div>
+      {sources.length === 0 ? (
+        <p className="replica-report-empty">暂无已纳入的底稿证据</p>
+      ) : (
+        <ul>
+          {sources.map((source) => (
+            <li key={source.id}>
+              <div>
+                <strong>{source.title}</strong>
+                <span>{source.kind} · {source.reference}</span>
+              </div>
+              <span>{source.status}</span>
+              <span>证据详情由项目任务承载</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function draftFailureMessage(error: unknown): string {
+  if (!isBackendRequestError(error)) return "草稿创建失败，请稍后重试。";
+  if (error.status === 422) {
+    return error.detail ? `模板字段校验失败：${error.detail}` : "模板字段校验失败，请核对填写内容。";
+  }
+  if (error.status === 403) return "当前身份无权创建底稿草稿。";
+  if (error.status === 404) return "所属项目不可见或已不存在。";
+  return "草稿创建失败，请稍后重试。";
+}
+
+function hasNonEmptyValues(fieldValues: Readonly<Record<string, string>>): boolean {
+  return Object.values(fieldValues).some((value) => value.trim().length > 0);
+}
+
+export function ReplicaReportWorkbench() {
+  const auditUser = useAuditUser();
+  const requestGenerationRef = useRef(0);
+  const interactionGenerationRef = useRef(0);
+  const submittingRef = useRef(false);
+  const submitRoleRef = useRef<AuditClientRole | null>(null);
+  const mountedRef = useRef(true);
+  const downloadGenerationRef = useRef(0);
+  const downloadPendingRef = useRef(false);
+  const downloadAbortRef = useRef<AbortController | null>(null);
+  const [reportState, setReportState] = useState<LaneState<ReportWorkbenchResponse>>(loadingLane(null));
+  const [projectsState, setProjectsState] = useState<LaneState<ProjectsResponse>>(loadingLane(null));
+  const [selectedProjectKey, setSelectedProjectKey] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [fieldValues, setFieldValues] = useState<Readonly<Record<string, string>>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftResult, setDraftResult] = useState<ReportDraftCreateResponse | null>(null);
+  const [projectContextNotice, setProjectContextNotice] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
+
+  const abortPendingDownload = useCallback((updateState: boolean) => {
+    ++downloadGenerationRef.current;
+    downloadAbortRef.current?.abort();
+    downloadAbortRef.current = null;
+    downloadPendingRef.current = false;
+    if (updateState) setDownloadingPath(null);
+  }, []);
+
+  const loadWorkbench = useCallback((role: AuditClientRole) => {
+    const generation = ++requestGenerationRef.current;
+    setReportState(loadingLane(role));
+    setProjectsState(loadingLane(role));
+
+    const reportRequest = fetchReportWorkbench();
+    const projectsRequest = fetchProjects();
+    reportRequest
+      .then((response) => {
+        if (generation !== requestGenerationRef.current) return;
+        setReportState({
+          phase: response.store.ready ? "ready" : "degraded",
+          response,
+          role
+        });
+      })
+      .catch(() => {
+        if (generation === requestGenerationRef.current) {
+          setReportState({ phase: "error", response: null, role });
+        }
+      });
+    projectsRequest
+      .then((response) => {
+        if (generation !== requestGenerationRef.current) return;
+        setProjectsState({
+          phase: response.store.ready ? "ready" : "degraded",
+          response,
+          role
+        });
+      })
+      .catch(() => {
+        if (generation === requestGenerationRef.current) {
+          setProjectsState({ phase: "error", response: null, role });
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    abortPendingDownload(true);
+    ++interactionGenerationRef.current;
+    setSelectedProjectKey("");
+    setSelectedTemplateId(null);
+    setFieldValues({});
+    setDraftError(null);
+    setDraftResult(null);
+    setProjectContextNotice(null);
+    setDownloadError(null);
+    loadWorkbench(auditUser.role);
+  }, [abortPendingDownload, auditUser.role, loadWorkbench]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortPendingDownload(false);
+    };
+  }, [abortPendingDownload]);
+
+  const roleReportState = reportState.role === auditUser.role
+    ? reportState
+    : loadingLane<ReportWorkbenchResponse>(auditUser.role);
+  const roleProjectsState = projectsState.role === auditUser.role
+    ? projectsState
+    : loadingLane<ProjectsResponse>(auditUser.role);
+  const report = roleReportState.phase === "ready" ? roleReportState.response : null;
+  const projects = roleProjectsState.response?.items ?? [];
+  const projectReady = roleProjectsState.phase === "ready" && roleProjectsState.response !== null;
+  const selectedProjectVisible = projectReady && selectedProjectKey !== "" && projects.some(
+    (project) => project.id === selectedProjectKey
+  );
+  const selectedTemplate = report?.workpaper_templates.find(
+    (template) => template.id === selectedTemplateId
+  ) ?? null;
+  const canCreate = auditUser.can("create_report_draft");
+  const unsavedFields = hasNonEmptyValues(fieldValues);
+  const canSelectTemplate = canCreate && selectedProjectVisible && !submitting;
+  const submittingFromAnotherRole = submitting && submitRoleRef.current !== auditUser.role;
+  const templateSelectionHint = !canCreate
+    ? "无草稿创建权限"
+    : submitting
+      ? "草稿请求处理中，暂不可切换"
+      : !projectReady
+        ? "项目上下文未就绪"
+        : !selectedProjectVisible
+          ? "请先选择项目后填写模板"
+          : "已选择项目，可填写模板";
+  const retryVisible = (
+    roleReportState.phase === "error" ||
+    roleReportState.phase === "degraded" ||
+    roleProjectsState.phase === "error" ||
+    roleProjectsState.phase === "degraded"
+  );
+
+  useEffect(() => {
+    if (!projectReady || selectedProjectKey === "" || selectedProjectVisible) return;
+    ++interactionGenerationRef.current;
+    setSelectedProjectKey("");
+    setSelectedTemplateId(null);
+    setFieldValues({});
+    setDraftError(null);
+    setDraftResult(null);
+    setProjectContextNotice("原项目已不可见，请重新选择");
+  }, [projectReady, selectedProjectKey, selectedProjectVisible]);
+
+  function clearDraftDisplay(): void {
+    ++interactionGenerationRef.current;
+    setDraftError(null);
+    setDraftResult(null);
+  }
+
+  function selectProject(projectKey: string): void {
+    if (submittingRef.current || projectKey === selectedProjectKey) return;
+    if (unsavedFields && !window.confirm("切换项目将清空当前未保存字段，是否继续？")) return;
+    clearDraftDisplay();
+    setSelectedProjectKey(projectKey);
+    setFieldValues({});
+    setProjectContextNotice(null);
+  }
+
+  function selectTemplate(templateId: string): void {
+    if (submittingRef.current || templateId === selectedTemplateId) return;
+    if (unsavedFields && !window.confirm("切换模板将清空当前未保存字段，是否继续？")) return;
+    clearDraftDisplay();
+    setSelectedTemplateId(templateId);
+    setFieldValues({});
+  }
+
+  function changeField(field: string, value: string): void {
+    if (submittingRef.current) return;
+    setFieldValues((current) => ({ ...current, [field]: value }));
+    setDraftError(null);
+    setDraftResult(null);
+  }
+
+  async function submitDraft(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!selectedTemplate || !selectedProjectVisible || !canCreate || submittingRef.current) return;
+    const allowedFields = new Set(selectedTemplate.evidence_bindings);
+    const normalizedValues: Record<string, string> = {};
+    for (const [field, value] of Object.entries(fieldValues)) {
+      const normalizedValue = value.trim();
+      if (allowedFields.has(field) && normalizedValue) normalizedValues[field] = normalizedValue;
+    }
+    if (Object.keys(normalizedValues).length === 0) return;
+
+    const generation = interactionGenerationRef.current;
+    submittingRef.current = true;
+    submitRoleRef.current = auditUser.role;
+    setSubmitting(true);
+    setDraftError(null);
+    setDraftResult(null);
+    try {
+      const response = await createReportDraft({
+        template_id: selectedTemplate.id,
+        project_key: selectedProjectKey,
+        field_values: normalizedValues
+      });
+      if (generation === interactionGenerationRef.current && mountedRef.current) {
+        setDraftResult(response);
+      }
+    } catch (error) {
+      if (generation === interactionGenerationRef.current && mountedRef.current) {
+        setDraftError(draftFailureMessage(error));
+      }
+    } finally {
+      submittingRef.current = false;
+      submitRoleRef.current = null;
+      if (mountedRef.current) setSubmitting(false);
+    }
+  }
+
+  const handleDownload = useCallback(async (href: string) => {
+    if (downloadPendingRef.current) return;
+    const generation = ++downloadGenerationRef.current;
+    const controller = new AbortController();
+    downloadPendingRef.current = true;
+    downloadAbortRef.current = controller;
+    setDownloadError(null);
+    setDownloadingPath(href);
+    try {
+      const artifact = await downloadAuditArtifact(href, { signal: controller.signal });
+      if (generation !== downloadGenerationRef.current || controller.signal.aborted) return;
+      triggerBrowserDownload(artifact.blob, artifact.filename);
+    } catch {
+      if (generation === downloadGenerationRef.current && !controller.signal.aborted && mountedRef.current) {
+        setDownloadError("文件下载失败，请确认当前身份与任务访问权限。");
+      }
+    } finally {
+      if (generation === downloadGenerationRef.current) {
+        downloadPendingRef.current = false;
+        downloadAbortRef.current = null;
+        if (mountedRef.current) setDownloadingPath(null);
+      }
+    }
+  }, []);
+
+  return (
+    <main className="replica-page replica-page-standard replica-report-workbench">
+      <header className="replica-page-header">
+        <div>
+          <p className="replica-kicker">受控报告工作台</p>
+          <h1>审计底稿与报告台账</h1>
+          <p>按业务模板形成可追溯草稿，正式报告生成与签发仍由后续门禁控制。</p>
+        </div>
+        <div className="replica-report-boundary" aria-label="报告边界">
+          <span>{canCreate ? "草稿可创建" : "当前身份只读"}</span>
+          <span>签发不在本页</span>
+        </div>
+      </header>
+
+      <section className="replica-report-control-band" aria-label="草稿项目上下文">
+        <div>
+          <p>项目归属</p>
+          <label>
+            <span>所属项目</span>
+            <select
+              aria-label="所属项目"
+              disabled={!projectReady || submitting}
+              value={selectedProjectVisible ? selectedProjectKey : ""}
+              onChange={(event) => selectProject(event.target.value)}
+            >
+              <option value="">请选择可见项目</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </label>
+          {roleProjectsState.phase === "loading" ? <span>正在读取可见项目…</span> : null}
+          {roleProjectsState.phase === "error" ? (
+            <span className="replica-report-inline-error" role="alert">项目列表读取失败，草稿创建暂不可用。</span>
+          ) : null}
+          {roleProjectsState.phase === "degraded" ? <span>项目存储未就绪</span> : null}
+          {projectReady && projects.length === 0 ? <span>当前没有可见项目</span> : null}
+          {projectContextNotice ? <span role="status">{projectContextNotice}</span> : null}
+        </div>
+        <div>
+          <p>当前身份边界</p>
+          <strong>{canCreate ? "可创建底稿草稿" : "当前角色无权新建底稿草稿"}</strong>
+          <span>后端仍会独立执行项目可见性与角色鉴权。</span>
+          {submittingFromAnotherRole ? <span>上一身份的草稿请求仍在处理中</span> : null}
+        </div>
+        <div>
+          <p>报告数据来源</p>
+          <strong>{roleReportState.response?.store.backend ?? "尚未就绪"}</strong>
+          <span>{roleReportState.phase}</span>
+        </div>
+      </section>
+
+      {roleReportState.phase === "loading" ? (
+        <p className="replica-report-message" role="status">正在读取报表目录…</p>
+      ) : null}
+      {roleReportState.phase === "error" ? (
+        <p className="replica-report-message is-error" role="alert">报表工作台读取失败，请稍后重试。</p>
+      ) : null}
+      {roleReportState.phase === "degraded" ? (
+        <div className="replica-report-message is-degraded" role="status">
+          <strong>报表数据源未就绪</strong>
+          <span>当前不展示草稿入口或历史 fixture。</span>
+        </div>
+      ) : null}
+      <button disabled={submitting} type="button" onClick={() => loadWorkbench(auditUser.role)}>
+        {retryVisible ? "重试工作台" : "刷新工作台"}
+      </button>
+
+      {report ? (
+        <>
+          <CategoryCatalog
+            canSelect={canSelectTemplate}
+            categories={report.template_categories}
+            selectionHint={templateSelectionHint}
+            selectedTemplateId={selectedTemplateId}
+            templates={report.workpaper_templates}
+            onSelectTemplate={selectTemplate}
+          />
+
+          {selectedTemplate && selectedProjectVisible ? (
+            <DraftPanel
+              canCreate={canCreate && selectedProjectVisible}
+              error={draftError}
+              fieldValues={fieldValues}
+              projectKey={selectedProjectKey}
+              result={draftResult}
+              saving={submitting}
+              template={selectedTemplate}
+              onFieldChange={changeField}
+              onSubmit={submitDraft}
+            />
+          ) : null}
+
+          <ReportMetrics metrics={report.metrics} />
+          {downloadError ? <p className="replica-report-error" role="alert">{downloadError}</p> : null}
+          <div className="replica-report-ledger-grid">
+            <ReportLedger
+              downloadingPath={downloadingPath}
+              entries={report.report_entries}
+              onDownload={handleDownload}
+            />
+            <EvidenceLedger sources={report.report_evidence_sources} />
+          </div>
+        </>
+      ) : null}
+    </main>
+  );
+}

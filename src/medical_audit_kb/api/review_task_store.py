@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Protocol
 
 from sqlalchemy import create_engine, select
@@ -18,6 +19,26 @@ REVIEW_TASK_ID_PREFIX = "review-task-"
 
 class ReviewTaskNotFoundError(KeyError):
     pass
+
+
+class ReviewTaskProjectScopeConflictError(ValueError):
+    pass
+
+
+def review_task_project_key(task: dict[str, object]) -> str | None:
+    dossier = _dict_value(task.get("dossier"))
+    draft = _dict_value(dossier.get("report_template_draft"))
+    top_level_project_key = _optional_str(dossier.get("project_key"))
+    draft_project_key = _optional_str(draft.get("project_key"))
+    if (
+        top_level_project_key is not None
+        and draft_project_key is not None
+        and top_level_project_key != draft_project_key
+    ):
+        raise ReviewTaskProjectScopeConflictError(
+            "review task project scope fields are inconsistent"
+        )
+    return top_level_project_key or draft_project_key
 
 
 class ReviewTaskStore(Protocol):
@@ -139,45 +160,51 @@ class SqlAlchemyReviewTaskStore:
 @dataclass(slots=True)
 class JsonFileReviewTaskStore:
     path: Path
+    _lock: RLock = field(default_factory=RLock, init=False, repr=False, compare=False)
 
     def list_tasks(self) -> list[dict[str, object]]:
-        return _copy_tasks(self._read_tasks())
+        with self._lock:
+            return _copy_tasks(self._read_tasks())
 
     def next_task_id(self) -> str:
-        highest = 0
-        for task in self._read_tasks():
-            task_id = str(task.get("task_id", ""))
-            if not task_id.startswith(REVIEW_TASK_ID_PREFIX):
-                continue
-            suffix = task_id.removeprefix(REVIEW_TASK_ID_PREFIX)
-            if suffix.isdigit():
-                highest = max(highest, int(suffix))
-        return f"{REVIEW_TASK_ID_PREFIX}{highest + 1:04d}"
+        with self._lock:
+            highest = 0
+            for task in self._read_tasks():
+                task_id = str(task.get("task_id", ""))
+                if not task_id.startswith(REVIEW_TASK_ID_PREFIX):
+                    continue
+                suffix = task_id.removeprefix(REVIEW_TASK_ID_PREFIX)
+                if suffix.isdigit():
+                    highest = max(highest, int(suffix))
+            return f"{REVIEW_TASK_ID_PREFIX}{highest + 1:04d}"
 
     def add_task(self, task: dict[str, object]) -> dict[str, object]:
-        tasks = self._read_tasks()
-        task_id = str(task.get("task_id", ""))
-        if any(existing.get("task_id") == task_id for existing in tasks):
-            raise ValueError(f"review task already exists: {task_id}")
-        tasks.append(copy.deepcopy(task))
-        self._write_tasks(tasks)
-        return copy.deepcopy(task)
+        with self._lock:
+            tasks = self._read_tasks()
+            task_id = str(task.get("task_id", ""))
+            if any(existing.get("task_id") == task_id for existing in tasks):
+                raise ValueError(f"review task already exists: {task_id}")
+            tasks.append(copy.deepcopy(task))
+            self._write_tasks(tasks)
+            return copy.deepcopy(task)
 
     def get_task(self, task_id: str) -> dict[str, object]:
-        for task in self._read_tasks():
-            if task.get("task_id") == task_id:
-                return copy.deepcopy(task)
+        with self._lock:
+            for task in self._read_tasks():
+                if task.get("task_id") == task_id:
+                    return copy.deepcopy(task)
         raise ReviewTaskNotFoundError(task_id)
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
-        tasks = self._read_tasks()
-        for index, task in enumerate(tasks):
-            if task.get("task_id") != task_id:
-                continue
-            updated = {**task, **copy.deepcopy(values)}
-            tasks[index] = updated
-            self._write_tasks(tasks)
-            return copy.deepcopy(updated)
+        with self._lock:
+            tasks = self._read_tasks()
+            for index, task in enumerate(tasks):
+                if task.get("task_id") != task_id:
+                    continue
+                updated = {**task, **copy.deepcopy(values)}
+                tasks[index] = updated
+                self._write_tasks(tasks)
+                return copy.deepcopy(updated)
         raise ReviewTaskNotFoundError(task_id)
 
     def _read_tasks(self) -> list[dict[str, object]]:
@@ -208,30 +235,39 @@ class JsonFileReviewTaskStore:
 @dataclass(slots=True)
 class InMemoryReviewTaskStore:
     tasks: list[dict[str, object]] = field(default_factory=list)
+    _lock: RLock = field(default_factory=RLock, init=False, repr=False, compare=False)
 
     def list_tasks(self) -> list[dict[str, object]]:
-        return _copy_tasks(self.tasks)
+        with self._lock:
+            return _copy_tasks(self.tasks)
 
     def next_task_id(self) -> str:
-        return f"{REVIEW_TASK_ID_PREFIX}{len(self.tasks) + 1:04d}"
+        with self._lock:
+            return f"{REVIEW_TASK_ID_PREFIX}{len(self.tasks) + 1:04d}"
 
     def add_task(self, task: dict[str, object]) -> dict[str, object]:
-        self.tasks.append(copy.deepcopy(task))
-        return copy.deepcopy(task)
+        with self._lock:
+            task_id = str(task.get("task_id", ""))
+            if any(existing.get("task_id") == task_id for existing in self.tasks):
+                raise ValueError(f"review task already exists: {task_id}")
+            self.tasks.append(copy.deepcopy(task))
+            return copy.deepcopy(task)
 
     def get_task(self, task_id: str) -> dict[str, object]:
-        for task in self.tasks:
-            if task.get("task_id") == task_id:
-                return copy.deepcopy(task)
+        with self._lock:
+            for task in self.tasks:
+                if task.get("task_id") == task_id:
+                    return copy.deepcopy(task)
         raise ReviewTaskNotFoundError(task_id)
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
-        for index, task in enumerate(self.tasks):
-            if task.get("task_id") != task_id:
-                continue
-            updated = {**task, **copy.deepcopy(values)}
-            self.tasks[index] = updated
-            return copy.deepcopy(updated)
+        with self._lock:
+            for index, task in enumerate(self.tasks):
+                if task.get("task_id") != task_id:
+                    continue
+                updated = {**task, **copy.deepcopy(values)}
+                self.tasks[index] = updated
+                return copy.deepcopy(updated)
         raise ReviewTaskNotFoundError(task_id)
 
 
@@ -273,6 +309,7 @@ def _task_to_payload(task: ReviewTask) -> dict[str, object]:
         "reviewer_note": task.reviewer_note,
         "conclusion": task.conclusion,
         "assigned_to": task.assigned_to,
+        "created_by": task.created_by,
         "source": task.source,
         "dossier": copy.deepcopy(task.dossier),
     }

@@ -1,6 +1,7 @@
 export type AuditClientRole = "admin" | "technician" | "director" | "member";
 
 export type AuditClientPermission =
+  | "create_report_draft"
   | "manage_agents"
   | "manage_project_members"
   | "manage_index"
@@ -29,10 +30,16 @@ export const auditRoleOptions: readonly AuditRoleOption[] = [
 ] as const;
 
 const rolePermissions: Record<AuditClientRole, readonly AuditClientPermission[]> = {
-  admin: ["manage_agents", "manage_project_members", "manage_index", "read_audit_logs"],
+  admin: [
+    "create_report_draft",
+    "manage_agents",
+    "manage_project_members",
+    "manage_index",
+    "read_audit_logs"
+  ],
   technician: ["manage_agents", "manage_index"],
-  director: ["manage_agents", "read_audit_logs", "sign_reports"],
-  member: []
+  director: ["create_report_draft", "manage_agents", "read_audit_logs", "sign_reports"],
+  member: ["create_report_draft"]
 };
 
 export function normalizeAuditClientRole(value: string | null | undefined): AuditClientRole {

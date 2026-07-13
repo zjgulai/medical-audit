@@ -1,17 +1,21 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import ProjectsPage from "./page";
 
+vi.mock("@/lib/api-client", () => ({
+  createProjectMember: vi.fn(),
+  fetchProjectDashboard: vi.fn(),
+  fetchProjectMembers: vi.fn(),
+  fetchProjects: vi.fn(() => new Promise(() => undefined))
+}));
+
 describe("ProjectsPage", () => {
-  it("renders a clear preview state instead of unfinished cockpit metrics", () => {
+  it("mounts the project collaboration workbench instead of the preview", () => {
     render(<ProjectsPage />);
 
-    expect(screen.getByRole("heading", { name: "项目管理" })).toBeInTheDocument();
-    expect(screen.getByText("内测中")).toBeInTheDocument();
-    expect(screen.getByLabelText("项目管理开通说明")).toBeInTheDocument();
-    expect(screen.getByText("审计专题列表")).toBeInTheDocument();
-    expect(screen.getByText("成员权限")).toBeInTheDocument();
-    expect(screen.getByText("任务状态")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "项目协作工作台" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "项目状态" })).toBeInTheDocument();
+    expect(screen.queryByText("内测中")).not.toBeInTheDocument();
   });
 });

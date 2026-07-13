@@ -860,6 +860,77 @@ Boundary:
 - Loop 48 changed GitHub `main` by merging PR `#182`.
 - No production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
 
+## 2026-07-13 Loop 51 Start
+
+Decision:
+
+- Continue from the PPT product-optimization worktree instead of the dirty repository root.
+- Close the four known repository-wide Ruff/Mypy findings before deployment-readiness work.
+- Treat the supplied SSH key as access material only: permissions/readability may be checked, but key contents must not be printed or stored in reports.
+- Keep production at read-only observation and deploy preflight; do not run production `--execute` without a separate authorization gate.
+
+Observed baseline:
+
+- Worktree: `/Users/pray/.config/superpowers/worktrees/medical_audit/ppt-feedback-product-optimization-20260711`.
+- Branch: `codex/ppt-feedback-product-optimization-20260711`, `ahead 50` of the currently cached `origin/main` before a fresh fetch.
+- Pre-existing dirty files are limited to the three protected workflow/draft documents listed in the Loop 51 plan.
+- SSH key `/Users/pray/Downloads/DDDD.pem`: readable, mode `0600`; contents not read.
+- Known static findings to reproduce: `routes_chat.py` E501, `inventory.py` I001 plus optional narrowing, and `bm25_index.py` unreachable branch.
+
+Process note:
+
+- `planning-with-files` referenced optional `references/` and bootstrap scripts that are absent from the installed skill directory. The repository's existing `.kiro/plan/` ledger is being used directly; the missing optional resources were not retried.
+
+Boundary:
+
+- No production write, deployment execution, provider call, database write, object-storage write, merge, or push has occurred in Loop 51.
+
+### Phase 1 Quality Debt Closure
+
+- Fresh RED evidence reproduced exactly `2` Ruff findings and `2` Mypy findings.
+- Narrow code changes:
+  - wrapped the chat attachment `HTTPException` without changing error behavior;
+  - reordered inventory imports and explicitly narrowed `SourceCollection | None`;
+  - replaced the statically unreachable `isinstance(..., Hashable)` branch with `hash(value)` runtime validation while preserving the no-cache fallback for unhashable filters.
+- Added one BM25 regression test covering a list-valued metadata filter.
+- Targeted pytest: passed, `138` tests; one existing Starlette deprecation warning.
+- Targeted Ruff: passed.
+- Full `uv run mypy src`: initially exposed one redundant cast introduced by the first patch; the cast was removed, then Mypy passed for `104` source files.
+- No test was deleted, skipped, or weakened.
+
+### Phase 2 Local Regression And Acceptance
+
+- The first full pytest run exposed a stale local-acceptance fixture: the project-members request omitted the identity/project headers required by the newer backend visibility contract and returned `404 project not found`.
+- The test was fixed by reusing `LOCAL_ACCEPTANCE_HEADERS`; backend authorization was not relaxed. The isolated test changed from red to green.
+- Final local evidence: Ruff pass; Mypy `104` src files plus deploy script pass; all `569` backend tests pass; frontend `32` files / `267` tests, typecheck, lint, and `24/24` build pass; local full-stack E2E `13 passed`.
+- The existing `45`-screenshot visual baseline remains byte-identical with aggregate SHA256 `ab60b945d4f6327d37d1939e1d5fed3c3ad31e13fdd38bf6161fc722c9c8ed09`; no frontend file changed after the visual baseline commit.
+
+### Phase 3 Deployment Preflight
+
+- Fresh fetch confirmed `origin/main=51dfcb816a0c71928c206683f0fa7fef796e895a`; the feature branch is linear and `50` commits ahead before the Loop 51 closeout commit.
+- Deployment review found `StrictHostKeyChecking=no` and a remote `/tmp` log write in preflight. Two tests reproduced both security gaps.
+- The deploy script now uses `BatchMode=yes`, `StrictHostKeyChecking=yes`, and no remote preflight log file; both tests and the full backend suite pass.
+- Zero-execute preflight using `/Users/pray/Downloads/DDDD.pem` passed. `--allow-dirty` was used only to inspect the current protected dirty worktree and is forbidden in the formal execute plan.
+
+### Phase 4 Production Read-Only Audit
+
+- The first direct SSH heredoc attempt used `ssh -n`, which intentionally detached stdin and returned no audit payload. It was retried without `-n`; no production assertion was made from the empty attempt.
+- Fresh SSH observation: production `.deploy-sha=51dfcb816a0c71928c206683f0fa7fef796e895a`; app/postgres/clamav/nginx are running and healthy; Nginx, local/public health, and search checks pass.
+- Root disk is `66%` used with `91,589,876 KiB` available. DB backup directory is `47,849,588 KiB`; Docker local volumes are `45.67GB`.
+- Production frontend acceptance passed `18` routes / `36` checks with `P0=0/P1=0`.
+- Production permission read-only smoke observed `35` GET probes with `issue_count=0`, `production_side_effect=none`, and `provider_call_status=not_called`.
+- Documents read-only probe matched the production SHA and passed permissions/governance/health/search, but failed the new page-text contract. This is expected pre-deploy drift and proves the PPT candidate is not yet in production.
+- Formal plan: `docs/superpowers/plans/2026-07-13-ppt-feedback-production-deployment.md`.
+- Machine-readable evidence: `tmp/outputs/ppt-feedback-deployment-readiness-loop51-20260713.json`.
+
+### Phase 5 Local Closeout
+
+- Backend quality and local-acceptance changes committed as `ffed561c` (`5` files).
+- Deployment preflight hardening committed as `d10d2fff` (`2` files).
+- Documentation and `.kiro/plan` state are committed as a separate docs-only closeout unit.
+- The three protected pre-existing dirty documents remain unstaged and outside every Loop 51 commit.
+- No push, merge, deployment execute, provider call, database write, object-storage write, or write-path smoke occurred.
+
 ## 2026-07-02 Loop 49 Post-Merge Local Gates And Deploy Preflight
 
 Decision:
@@ -894,3 +965,38 @@ Boundary:
 - Loop 49 is local validation plus deploy preflight only.
 - Local Foundation Playwright logs included expected proxy messages for `127.0.0.1:8021` because the backend target was not started; they are not backend acceptance evidence.
 - No production deployment, production probe, provider call, env write, object storage write, schema migration, Docker change, or write-path smoke is part of this loop.
+
+## 2026-07-13 Loop 52 PR #232 Review Remediation
+
+Decision:
+
+- 将独立复审发现拆成后端权限、前端身份状态、生产发布门禁三个本地原子修复批次。
+- 本轮证据边界保持为 `local_only`；不执行 push、merge、SSH、deploy、provider call、database write 或 live send。
+- 暂不引入 project-member 数据库唯一约束；该项涉及历史数据清理、migration 与回滚，必须单独设计和授权。
+
+Implementation:
+
+- `e7ef552a`：按可见项目约束 audit finding 的列表、计数、导出、页面和 mutation，并统一 finding/review task 的 `project_key` 解析与冲突处理。
+- `9f3b309a`：按 role/user identity 隔离 replica、agent 安装态和请求代际，修复 stale response、deep-link 重放、无效 agent 与 partial lane failure 行为。
+- `fd131071`：生产 execute 强制 clean `main`、fresh fetch、批准 SHA 一致；默认 smoke 改为 GET-only；新增显式 L4 gate、Nginx fail-closed 与 marker-safe rollback。
+- 生产部署计划新增历史 task scope 只读盘点门禁，避免部署脚本隐式批量 backfill。
+
+Verification:
+
+- 三轮独立只读复审完成；最终结论为 PASS，未发现剩余 P0/P1。
+- `uv run ruff check .`：passed。
+- `uv run mypy src scripts/deploy-tencent-cloud-production.py scripts/run-production-e2e-smoke.py`：passed（`106` source files + scripts）。
+- `uv run pytest -q`：passed；最新 collect-only 为 `590` tests。
+- `tests/knowledge_query/test_scripts.py`：`100` tests passed。
+- `pnpm web:test`：`32` files / `279` tests passed。
+- `pnpm web:typecheck`、`pnpm web:lint`：passed。
+- `pnpm web:build`：passed（`24/24` pages）。
+- `pnpm local:fullstack:e2e`：passed（`13/13`）。
+- `git diff --check`：passed。
+
+Boundary:
+
+- 当前分支仅本地领先远端 `3` 个代码 commit；尚未 push，远端 PR #232 仍未包含本轮修复。
+- `production unchanged`；`provider_call=false`；`database_write=false`；`live_send=false`。
+- 生产部署前仍须执行历史 finding-linked task scope 的只读盘点。
+- project-member 数据库唯一约束仍为明确的 P2 后续项，不能用应用层校验替代 migration 证据。

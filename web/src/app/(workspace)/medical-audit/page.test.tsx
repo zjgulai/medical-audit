@@ -142,9 +142,18 @@ const reportWorkbenchResponse: ReportWorkbenchResponse = {
   format: "report-workbench-v1",
   generated_at: "2026-07-07T02:30:00Z",
   template_registry_status: "active",
+  template_categories: [
+    { id: "plan", label: "计划类", availability: "awaiting-business-template" },
+    { id: "workpaper", label: "底稿类", availability: "active" },
+    { id: "evidence", label: "取证类", availability: "awaiting-business-template" },
+    { id: "confirmation", label: "函证类", availability: "awaiting-business-template" },
+    { id: "report", label: "报告类", availability: "awaiting-business-template" },
+    { id: "remediation", label: "整改类", availability: "awaiting-business-template" }
+  ],
   workpaper_templates: [
     {
       id: "template-fee-summary",
+      category_id: "workpaper",
       name: "医保费用汇总表",
       source_template_id: "table1",
       source_table: "fee_summary",
@@ -178,6 +187,7 @@ const projectSummary = {
   organization_name: "单院医保内审试运行",
   member_count: 3,
   creator: "审计办",
+  creator_user_identifier: "next-director",
   created_at: "2026-06-07T00:00:00Z",
   status: "进行中",
   operation_label: "进入专题",
@@ -188,6 +198,7 @@ const projectsResponse: ProjectsResponse = {
   items: [projectSummary],
   roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
   statuses: ["在项目中", "待确认"],
+  project_statuses: ["待开始", "进行中", "已完成", "已归档"],
   store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
 };
 
@@ -229,6 +240,9 @@ const projectDashboardResponse: ProjectDashboardResponse = {
   production_side_effect: "none",
   store: {
     ready: true,
+    project_members_ready: true,
+    audit_findings_ready: true,
+    status: "ready",
     backend: {
       project_members: "SqlAlchemyProjectMemberStore",
       audit_findings: "SqlAlchemyAuditFindingStore"

@@ -116,7 +116,10 @@ async def analyze_chat_attachment(
         try:
             answer = provider.generate_answer(prompt, [citation])
         except Exception as exc:
-            raise HTTPException(status_code=502, detail="chat attachment model call failed") from exc
+            raise HTTPException(
+                status_code=502,
+                detail="chat attachment model call failed",
+            ) from exc
         model_status = "selected_provider"
 
     record_operation(

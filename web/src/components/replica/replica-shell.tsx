@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { BrandLogo } from "@/components/shell/brand-logo";
-import { AUDIT_PLATFORM_NAME, AUDIT_PLATFORM_SUBTITLE } from "@/lib/brand";
+import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
+import { referenceTopicNavigation, type ReferenceNavigationItem } from "@/lib/reference-replica-data";
 import { useReplicaShellData } from "./use-replica-runtime";
-import type { ReferenceNavigationItem } from "@/lib/reference-replica-data";
 
 type ReplicaShellProps = {
   readonly children: ReactNode;
@@ -28,14 +28,18 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
   const [closedTagPath, setClosedTagPath] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const shellData = useReplicaShellData();
-  const activeItem = shellData.data.navigation.find((item) => isActivePath(pathname, item.href));
+  const isTopicActive = isActivePath(pathname, referenceTopicNavigation.href);
+  const activeItem = isTopicActive
+    ? referenceTopicNavigation
+    : shellData.data.navigation.find((item) => isActivePath(pathname, item.href));
   const activeTagLabel = activeItem?.id === "chat" ? "新对话" : activeItem?.label ?? "新对话";
   const isActiveTagClosed = closedTagPath === pathname;
   const isChatRoute = isActivePath(pathname, "/chat");
+  const isProjectRoute = isActivePath(pathname, "/projects");
 
   return (
     <div
-      className={`replica-app-shell ${collapsed ? "replica-sidebar-collapsed" : ""} ${isChatRoute ? "replica-chat-shell" : ""}`}
+      className={`replica-app-shell ${collapsed ? "replica-sidebar-collapsed" : ""} ${isChatRoute ? "replica-chat-shell" : ""} ${isProjectRoute ? "replica-project-shell" : ""}`}
       data-replica-source={shellData.source}
       data-replica-status={shellData.status}
     >
@@ -45,8 +49,7 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
             <BrandLogo height={28} priority width={28} />
           </span>
           <span className="replica-brand-copy">
-            <span className="replica-brand-text">{AUDIT_PLATFORM_NAME}</span>
-            <span>{AUDIT_PLATFORM_SUBTITLE}</span>
+            <strong className="replica-brand-text">{AUDIT_PLATFORM_NAME}</strong>
           </span>
         </Link>
 
@@ -67,9 +70,14 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
           })}
         </nav>
 
-        <Link className="replica-topic-entry" href="/medical-audit" aria-label="打开医保审计专题">
-          <span aria-hidden="true">专</span>
-          <strong>医保审计专题</strong>
+        <Link
+          className={`replica-topic-entry ${isTopicActive ? "is-active" : ""}`}
+          href={referenceTopicNavigation.href}
+          aria-current={isTopicActive ? "page" : undefined}
+          aria-label={`打开${referenceTopicNavigation.label}`}
+        >
+          {navIcon(referenceTopicNavigation.icon)}
+          <strong>{referenceTopicNavigation.label}</strong>
         </Link>
       </aside>
 
@@ -117,10 +125,11 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
         type="button"
         className="replica-history-fab"
         aria-expanded={historyOpen}
-        aria-label="打开历史对话"
+        aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
         onClick={() => setHistoryOpen((open) => !open)}
       >
-        ◷
+        <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
+        <span>历史对话</span>
       </button>
       {historyOpen ? (
         <section className="replica-history-drawer" aria-labelledby="replica-history-title">

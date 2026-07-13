@@ -28,7 +28,9 @@ class Permission(StrEnum):
     MANAGE_PROJECT_MEMBERS = "manage_project_members"
     MANAGE_INDEX = "manage_index"
     READ_AUDIT_LOGS = "read_audit_logs"
+    READ_ALL_ANALYTICS_UPLOADS = "read_all_analytics_uploads"
     SIGN_REPORTS = "sign_reports"
+    CREATE_REPORT_DRAFT = "create_report_draft"
 
 
 ROLE_LABELS: dict[HospitalRole, str] = {
@@ -78,6 +80,8 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.MANAGE_PROJECT_MEMBERS,
             Permission.MANAGE_INDEX,
             Permission.READ_AUDIT_LOGS,
+            Permission.READ_ALL_ANALYTICS_UPLOADS,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
     HospitalRole.TECHNICIAN: frozenset(
@@ -98,6 +102,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.MANAGE_AGENTS,
             Permission.READ_AUDIT_LOGS,
             Permission.SIGN_REPORTS,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
     HospitalRole.MEMBER: frozenset(
@@ -105,6 +110,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.QUERY_KNOWLEDGE,
             Permission.UPLOAD_PERSONAL_DOCUMENT,
             Permission.ANALYZE_DATA,
+            Permission.CREATE_REPORT_DRAFT,
         }
     ),
 }
@@ -237,6 +243,21 @@ def has_permission(role: HospitalRole, permission: Permission) -> bool:
     return permission in ROLE_PERMISSIONS[role]
 
 
+def permissions_for_user(user: AuthenticatedUser) -> frozenset[Permission]:
+    permissions = ROLE_PERMISSIONS[user.role]
+    if not user.auth_source.startswith("persistent_profile_without_"):
+        return permissions
+    try:
+        raw_role = normalize_hospital_role(user.raw_role)
+    except HTTPException:
+        return frozenset()
+    return permissions & ROLE_PERMISSIONS[raw_role]
+
+
+def user_has_permission(user: AuthenticatedUser, permission: Permission) -> bool:
+    return permission in permissions_for_user(user)
+
+
 def require_permission(
     state: ApiState,
     *,
@@ -254,7 +275,7 @@ def require_permission(
             project_key=project_key,
         )
     except HTTPException as exc:
-        _record_authorization_denied(
+        record_authorization_denied(
             state,
             attempted_action=attempted_action,
             permission=permission,
@@ -265,10 +286,10 @@ def require_permission(
         )
         raise
 
-    if has_permission(user.role, permission):
+    if user_has_permission(user, permission):
         return user
 
-    _record_authorization_denied(
+    record_authorization_denied(
         state,
         attempted_action=attempted_action,
         permission=permission,
@@ -285,11 +306,11 @@ def require_permission(
     raise HTTPException(status_code=403, detail=f"{permission.value} is not allowed")
 
 
-def _record_authorization_denied(
+def record_authorization_denied(
     state: ApiState,
     *,
     attempted_action: str,
-    permission: Permission,
+    permission: Permission | str,
     user_identifier: str,
     raw_role: str | None,
     status_code: int,
@@ -302,23 +323,31 @@ def _record_authorization_denied(
 ) -> None:
     from medical_audit_kb.api.app import record_operation
 
-    record_operation(
-        state,
-        "authorization-denied",
-        {
-            "attempted_action": attempted_action,
-            "permission": permission.value,
-            "user_identifier": user_identifier,
-            "role": raw_role or "anonymous",
-            "effective_role": effective_role,
-            "auth_source": auth_source,
-            "profile_status": profile_status,
-            "auth_scope_type": auth_scope_type,
-            "auth_scope_key": auth_scope_key,
-            "status_code": status_code,
-            "reason": reason,
-        },
-    )
+    payload: dict[str, object] = {
+        "attempted_action": attempted_action,
+        "permission": permission.value if isinstance(permission, Permission) else permission,
+        "user_identifier": user_identifier,
+        "role": raw_role or "anonymous",
+        "effective_role": effective_role,
+        "auth_source": auth_source,
+        "profile_status": profile_status,
+        "auth_scope_type": auth_scope_type,
+        "auth_scope_key": auth_scope_key,
+        "status_code": status_code,
+        "reason": reason,
+    }
+    try:
+        record_operation(state, "authorization-denied", payload)
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": "authorization-denied-audit-degraded",
+                "payload": {
+                    **payload,
+                    "error_type": type(exc).__name__,
+                },
+            }
+        )
 
 
 def _load_persistent_profile(

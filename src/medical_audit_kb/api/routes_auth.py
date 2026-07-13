@@ -13,6 +13,7 @@ from medical_audit_kb.api.auth import (
     HospitalRole,
     Permission,
     normalize_hospital_role,
+    permissions_for_user,
     require_permission,
     resolve_authenticated_user,
 )
@@ -124,7 +125,7 @@ def current_auth_session(
         "user_identifier": user.user_identifier,
         "role": user.role.value,
         "role_label": user.role_label,
-        "permissions": sorted(permission.value for permission in ROLE_PERMISSIONS[user.role]),
+        "permissions": sorted(permission.value for permission in permissions_for_user(user)),
         "legacy_api_role": user.legacy_api_role,
         "tenant_id": user.tenant_id,
         "auth_source": user.auth_source,

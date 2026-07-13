@@ -12,9 +12,15 @@ from zipfile import BadZipFile
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
+from medical_audit_kb.api.auth import (
+    Permission,
+    require_permission,
+    resolve_authenticated_user,
+    user_has_permission,
+)
 
 router = APIRouter(prefix="/analytics")
 
@@ -65,7 +71,7 @@ class AnalyticsUploadHistoryItem(BaseModel):
     size_bytes: int
     size_kb: int
     sha256: str
-    storage_path: str
+    storage_path: str = Field(exclude=True)
     sheet_name: str | None
     row_count: int
     column_count: int
@@ -90,7 +96,18 @@ async def analyze_table_upload(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> TableUploadAnalysisResponse:
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    user = require_permission(
+        state,
+        permission=Permission.ANALYZE_DATA,
+        x_user_id=normalized_user_identifier,
+        x_role=x_role,
+        attempted_action="analytics-table-upload",
+    )
     file_name = file.filename or "uploaded-table"
     extension = _file_extension(file_name)
     if extension not in SUPPORTED_EXTENSIONS:
@@ -133,7 +150,7 @@ async def analyze_table_upload(
             extension=extension,
             content=content,
             analysis_summary=_analysis_summary(response),
-            created_by=x_user_id,
+            created_by=user.user_identifier,
         )
         response = response.model_copy(
             update={
@@ -154,6 +171,7 @@ async def analyze_table_upload(
             "row_count": response.row_count,
             "column_count": len(response.columns),
             "retention_status": response.retention_status,
+            "actor": user.user_identifier,
         },
     )
     return response
@@ -163,20 +181,43 @@ async def analyze_table_upload(
 def list_table_uploads(
     state: Annotated[ApiState, Depends(get_api_state)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> AnalyticsUploadHistoryResponse:
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=normalized_user_identifier,
+        x_role=x_role,
+    )
     if state.analytics_upload_store is None:
         return AnalyticsUploadHistoryResponse(
             items=[],
             store={"ready": False, "backend": "none"},
         )
+    created_by = (
+        None
+        if user_has_permission(user, Permission.READ_ALL_ANALYTICS_UPLOADS)
+        else user.user_identifier
+    )
     items = [
         AnalyticsUploadHistoryItem.model_validate(item)
-        for item in state.analytics_upload_store.list_uploads(limit=limit)
+        for item in state.analytics_upload_store.list_uploads(
+            limit=limit,
+            created_by=created_by,
+        )
     ]
     record_operation(
         state,
         "analytics-table-upload-history-list",
-        {"count": len(items), "limit": limit},
+        {
+            "actor": user.user_identifier,
+            "count": len(items),
+            "limit": limit,
+            "scope": "all" if created_by is None else "created-by",
+        },
     )
     return AnalyticsUploadHistoryResponse(
         items=items,

@@ -79,10 +79,10 @@ function mergeDashboardProject(
 }
 
 function apiProjectStatusToDashboardStatus(project: ProjectSummaryApiItem): SelfCheckProject["status"] {
-  if (project.status === "已归档") {
+  if (project.status === "已归档" || project.status === "已完成") {
     return "closed";
   }
-  if (project.status === "待启动") {
+  if (project.status === "待开始") {
     return "paused";
   }
   return "active";

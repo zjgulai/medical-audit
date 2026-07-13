@@ -56,7 +56,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await page.goto("/documents");
 
     await expect(page.getByRole("heading", { name: "文档检索" })).toBeVisible();
-    await expect(page.getByText("法律法规库").first()).toBeVisible();
+    await expect(page.getByText("法规政策").first()).toBeVisible();
 
     const searchRequestPromise = page.waitForRequest(
       (request) => request.url().includes("/api/v1/documents/search") && request.method() === "GET"
@@ -81,23 +81,33 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await expect(page.getByRole("button", { name: /详情/ }).first()).toBeVisible();
   });
 
-  test("preview modules are clear and medical audit remains interactive", async ({ page }) => {
+  test("analytics workbench, preview modules and medical audit remain interactive", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(page.getByRole("heading", { name: "AI数据分析", exact: true })).toBeVisible();
-    await expect(page.getByLabel("AI数据分析开通说明")).toBeVisible();
-    await expect(page.getByText("内测中")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "上传表格", exact: true })).toBeVisible();
+    await expect(page.getByText("provider_call=false", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "分析历史", exact: true })).toBeVisible();
 
     await page.goto("/graph");
-    await expect(page.getByRole("heading", { name: "知识图谱", exact: true })).toBeVisible();
-    await expect(page.getByLabel("知识图谱工作台")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "知识依据与项目证据链", exact: true })).toBeVisible();
+    await expect(page.getByLabel("知识依据图谱工作台")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "知识依据" })).toHaveAttribute("aria-selected", "true");
 
+    const reportWorkbenchResponsePromise = page.waitForResponse(
+      (response) => response.url().includes("/api/v1/reports/workbench") && response.request().method() === "GET"
+    );
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "审计底稿/报告", exact: true })).toBeVisible();
-    await expect(page.getByLabel("审计底稿/报告开通说明")).toBeVisible();
+    const reportWorkbenchResponse = await reportWorkbenchResponsePromise;
+    expect(reportWorkbenchResponse.status()).toBe(200);
+    expect(await reportWorkbenchResponse.json()).toMatchObject({
+      store: { ready: true, backend: "InMemoryReviewTaskStore" }
+    });
+    await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "报表分类目录" })).toBeVisible();
 
     await page.goto("/projects");
-    await expect(page.getByRole("heading", { name: "项目管理", exact: true })).toBeVisible();
-    await expect(page.getByLabel("项目管理开通说明")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "项目协作工作台", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "项目状态" })).toBeVisible();
 
     await page.goto("/medical-audit");
     await expect(page.getByRole("heading", { name: "医保审计", exact: true })).toBeVisible();
