@@ -1662,8 +1662,14 @@ def test_run_controlled_api_readonly_permission_smoke_script_is_valid_and_readon
     assert '"GET"' in script_text
     assert '"POST"' not in script_text
     assert "production_side_effect" in script_text
+    assert "database_write" in script_text
+    assert "audit_log_write_expected" in script_text
     assert "provider_call_status" in script_text
     assert "X-Tenant-Id" in script_text
+    assert "--allow-audit-log-writes" in script_text
+    assert "--confirm-production-write" in script_text
+    assert "body_preview" not in script_text
+    assert "body_length" in script_text
 
 
 def test_run_controlled_api_readonly_permission_smoke_builds_get_probes() -> None:
@@ -1675,7 +1681,7 @@ def test_run_controlled_api_readonly_permission_smoke_builds_get_probes() -> Non
         base_url="http://127.0.0.1:8021",
         api_prefix="",
         mode="enforce",
-        protected_paths=("/projects",),
+        protected_paths=("/auth/session", "/projects"),
         tenant_id="hospital-demo",
         project_key="SELF-CHECK-FUND-20260607",
         admin_role="admin",
@@ -1692,15 +1698,50 @@ def test_run_controlled_api_readonly_permission_smoke_builds_get_probes() -> Non
     assert [probe.kind for probe in probes] == [
         "public",
         "public",
+    ]
+    skipped = module._build_skipped_probes(config)
+    assert len(skipped) == 6
+    assert sum(
+        item["reason"] == "audit-log-writes-not-authorized" for item in skipped
+    ) == 4
+    assert sum(item["reason"] == "endpoint-may-write-audit-log" for item in skipped) == 2
+
+
+def test_run_controlled_api_readonly_permission_smoke_write_mode_builds_full_matrix() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_write_mode_builds_full_matrix",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="http://127.0.0.1:8021",
+        api_prefix="",
+        mode="enforce",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+        allow_audit_log_writes=True,
+        confirm_production_write="audit.lute-tlz-dddd.top",
+    )
+
+    probes = module._build_probes(config)
+
+    assert [probe.kind for probe in probes] == [
+        "public",
+        "public",
         "protected-anonymous",
         "protected-missing-tenant",
         "protected-admin",
     ]
-    admin_probe = next(probe for probe in probes if probe.kind == "protected-admin")
+    assert module._build_skipped_probes(config) == []
     missing_tenant_probe = next(
         probe for probe in probes if probe.kind == "protected-missing-tenant"
     )
-    assert admin_probe.headers["X-Tenant-Id"] == "hospital-demo"
     assert "X-Tenant-Id" not in missing_tenant_probe.headers
 
 
@@ -1722,6 +1763,8 @@ def test_run_controlled_api_readonly_permission_smoke_enforce_fails_mismatch() -
         api_key_env=None,
         timeout_seconds=1,
         json_output=None,
+        allow_audit_log_writes=True,
+        confirm_production_write="audit.lute-tlz-dddd.top",
     )
 
     def fake_requester(probe: object, timeout_seconds: float) -> object:
@@ -1754,6 +1797,8 @@ def test_run_controlled_api_readonly_permission_smoke_observe_records_observatio
         api_key_env=None,
         timeout_seconds=1,
         json_output=None,
+        allow_audit_log_writes=True,
+        confirm_production_write="audit.lute-tlz-dddd.top",
     )
 
     def fake_requester(probe: object, timeout_seconds: float) -> object:
@@ -1765,8 +1810,162 @@ def test_run_controlled_api_readonly_permission_smoke_observe_records_observatio
     assert report["status"] == "observed"
     assert report["issues"] == []
     assert report["summary"]["observation_count"] == 2
-    assert report["production_side_effect"] == "none"
+    assert report["side_effect_mode"] == "audit-log-write-enabled"
+    assert report["production_side_effect"] == "audit-log-only"
+    assert report["database_write"] == "audit-log-only"
+    assert report["audit_log_write_expected"] is True
     assert report["http_methods"] == ["GET"]
+
+
+def test_run_controlled_api_readonly_permission_smoke_default_reports_limited_readonly() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_default_reports_limited_readonly",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="https://audit.lute-tlz-dddd.top",
+        api_prefix="/api/v1",
+        mode="observe",
+        protected_paths=module.DEFAULT_PROTECTED_PATHS,
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+    )
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        del timeout_seconds
+        return module.HttpResponse(status=200, url=probe.url, text="{}")
+
+    report = module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert report["side_effect_mode"] == "readonly"
+    assert report["production_side_effect"] == "none"
+    assert report["database_write"] is False
+    assert report["audit_log_write_expected"] is False
+    assert report["summary"] == {
+        "probe_count": 2,
+        "executed_probe_count": 2,
+        "skipped_probe_count": 33,
+        "total_probe_count": 35,
+        "issue_count": 0,
+        "observation_count": 0,
+    }
+    assert len(report["executed_probes"]) == 2
+    assert len(report["skipped_probes"]) == 33
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    (
+        "http://127.0.0.1:8021",
+        "https://audit.lute-tlz-dddd.top",
+        "http://101.34.52.232:18080",
+    ),
+)
+def test_run_controlled_api_readonly_permission_smoke_rejects_unconfirmed_write(
+    base_url: str,
+) -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_rejects_unconfirmed_production_write",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url=base_url,
+        api_prefix="/api/v1",
+        mode="observe",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+        allow_audit_log_writes=True,
+    )
+    request_count = 0
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        nonlocal request_count
+        del probe, timeout_seconds
+        request_count += 1
+        raise AssertionError("requester must not run")
+
+    with pytest.raises(module.PermissionSmokeConfigError, match="confirm-production-write"):
+        module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert request_count == 0
+
+
+def test_run_controlled_api_readonly_permission_smoke_does_not_follow_redirects() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_does_not_follow_redirects",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    target_hits = 0
+
+    class TargetHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            nonlocal target_hits
+            target_hits += 1
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    target_server = ThreadingHTTPServer(("127.0.0.1", 0), TargetHandler)
+    target_thread = threading.Thread(target=target_server.serve_forever, daemon=True)
+    target_thread.start()
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{target_server.server_port}/target",
+            )
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirect_thread = threading.Thread(
+        target=redirect_server.serve_forever,
+        daemon=True,
+    )
+    redirect_thread.start()
+
+    try:
+        response = module._request_probe(
+            module.Probe(
+                name="redirect",
+                path="/redirect",
+                url=f"http://127.0.0.1:{redirect_server.server_port}/redirect",
+                method="GET",
+                headers={},
+                expected_statuses=(302,),
+                kind="public",
+            ),
+            1,
+        )
+    finally:
+        redirect_server.shutdown()
+        target_server.shutdown()
+        redirect_thread.join(timeout=2)
+        target_thread.join(timeout=2)
+        redirect_server.server_close()
+        target_server.server_close()
+
+    assert response.status == 302
+    assert target_hits == 0
 
 
 def test_run_production_e2e_smoke_selects_latest_review_task_id() -> None:
@@ -1856,6 +2055,9 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
     script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
         encoding="utf-8"
     )
+    gate_text = Path("scripts/run-production-frontend-acceptance-gate.mjs").read_text(
+        encoding="utf-8"
+    )
 
     assert script_text.count("/表格分析工作台/") == 2
     assert script_text.count("/上传表格|分析历史/") == 2
@@ -1864,6 +2066,262 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
     assert "/项目协作工作台/" in script_text
     assert "/可见项目/" in script_text
     assert "/内测中|待开通/" not in script_text
+    for contract_text in (script_text, gate_text):
+        assert "--allow-audit-log-writes" in contract_text
+        assert "--confirm-production-write" in contract_text
+        assert "audit-log-write-enabled" in contract_text
+        assert "audit-log-only" in contract_text
+    assert "anonymous_body_length" in script_text
+    assert "missing_tenant_body_length" in script_text
+    assert "allowed_body_length" in script_text
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    (
+        "run-production-frontend-acceptance.mjs",
+        "run-production-frontend-acceptance-gate.mjs",
+    ),
+)
+def test_production_frontend_acceptance_fails_closed_before_local_side_effects(
+    script_name: str,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "acceptance.json"
+    screenshot_dir = tmp_path / "screenshots"
+
+    result = subprocess.run(
+        [
+            "node",
+            f"scripts/{script_name}",
+            "--base-url",
+            "http://127.0.0.1:9",
+            "--output",
+            str(output_path),
+            "--screenshot-dir",
+            str(screenshot_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "fails closed by default" in result.stderr
+    assert not output_path.exists()
+    assert not screenshot_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    (
+        "run-production-frontend-acceptance.mjs",
+        "run-production-frontend-acceptance-gate.mjs",
+    ),
+)
+@pytest.mark.parametrize(
+    "base_url",
+    (
+        "http://127.0.0.1:8021",
+        "https://audit.lute-tlz-dddd.top",
+        "http://101.34.52.232:18080",
+    ),
+)
+def test_production_frontend_acceptance_requires_exact_write_confirmation(
+    script_name: str,
+    base_url: str,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "acceptance.json"
+    screenshot_dir = tmp_path / "screenshots"
+
+    result = subprocess.run(
+        [
+            "node",
+            f"scripts/{script_name}",
+            "--allow-audit-log-writes",
+            "--base-url",
+            base_url,
+            "--output",
+            str(output_path),
+            "--screenshot-dir",
+            str(screenshot_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Audit-log writes require" in result.stderr
+    assert not output_path.exists()
+    assert not screenshot_dir.exists()
+
+
+def test_production_frontend_acceptance_gate_rejects_inconsistent_report() -> None:
+    gate_path = Path("scripts/run-production-frontend-acceptance-gate.mjs").resolve()
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    api_check = {
+        "execution_status": "executed",
+        "anonymous_check": "executed",
+        "missing_tenant_check": "executed",
+        "allowed_check": "executed",
+        "anonymous_status": 403,
+        "missing_tenant_status": 401,
+        "allowed_status": 200,
+    }
+    report = {
+        "status": "pass",
+        "contract_profile": "hardened",
+        "side_effect_mode": "audit-log-write-enabled",
+        "production_side_effect": "audit-log-only",
+        "database_write": "audit-log-only",
+        "audit_log_write_expected": True,
+        "summary": {
+            "route_count": 0,
+            "check_count": 0,
+            "viewports": [],
+            "p0": [],
+            "p1": [],
+            "api_checks": {
+                "/audit/logs": dict(api_check),
+                "/audit/logs/export": dict(api_check),
+            },
+            "executed_api_probes": [
+                "/audit/logs:anonymous",
+                "/audit/logs:missing-tenant",
+                "/audit/logs:allowed",
+                "/audit/logs/export:anonymous",
+                "/audit/logs/export:missing-tenant",
+                "/audit/logs/export:allowed",
+            ],
+            "executed_api_probe_count": 6,
+            "skipped_api_probes": [],
+            "skipped_api_probe_count": 0,
+            "skipped_routes": [],
+            "skipped_route_count": 0,
+        },
+        "checks": [],
+    }
+    node_program = (
+        f"import {{ assertGate }} from {json.dumps(gate_path.as_uri())}; "
+        f"import {{ routeCheckProfiles, viewports }} from {json.dumps(runner_path.as_uri())}; "
+        "const report = JSON.parse(process.env.REPORT); "
+        "const routes = routeCheckProfiles[report.contract_profile].map((item) => item.route); "
+        "const viewportNames = viewports.map((item) => item.name); "
+        "report.summary.route_count = routes.length; "
+        "report.summary.viewports = viewportNames; "
+        "report.checks = routes.flatMap((route) => "
+        "viewportNames.map((viewport) => ({ route, viewport, status: 200, "
+        "navigationError: false, headingCount: 1, bodyTextLength: 100, "
+        "fileInputCount: 0, scrollWidth: 100, clientWidth: 100, "
+        "horizontalOverflow: false, overflowOffenders: [], consoleErrorCount: 0, "
+        "failedRequestCount: 0, failedRequests: [], interactionErrorCount: 0, "
+        "issues: [] }))); "
+        "report.summary.check_count = report.checks.length; "
+        "if (process.env.MUTATE_ROUTE === '1') report.checks[0].route = '/fake-route'; "
+        "if (process.env.DROP_RESULTS === '1') { "
+        "delete report.checks[0].status; delete report.checks[0].issues; } "
+        "assertGate(report);"
+    )
+
+    valid_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "REPORT": json.dumps(report)},
+    )
+    assert valid_result.returncode == 0, valid_result.stderr
+
+    report["database_write"] = False
+    invalid_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "REPORT": json.dumps(report)},
+    )
+    assert invalid_result.returncode == 2
+    assert "frontend acceptance side-effect contract is inconsistent" in invalid_result.stderr
+
+    report["database_write"] = "audit-log-only"
+    route_invalid_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_ROUTE": "1",
+        },
+    )
+    assert route_invalid_result.returncode == 2
+    assert "frontend acceptance route coverage is incomplete" in (
+        route_invalid_result.stderr
+    )
+
+    incomplete_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "DROP_RESULTS": "1",
+        },
+    )
+    assert incomplete_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        incomplete_result.stderr
+    )
+
+
+def test_production_frontend_acceptance_report_sanitizers_remove_sensitive_text() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    sentinel = "patient-li-ACCESS_TOKEN_123"
+    node_program = (
+        "import { classify, sanitizeFailedRequest, sanitizeUrl } from "
+        f"{json.dumps(runner_path.as_uri())}; "
+        f"const sentinel = {json.dumps(sentinel)}; "
+        "const failed = { "
+        "url: `https://audit.example.test/api/items?token=${sentinel}#record`, "
+        "error: sentinel }; "
+        "const issues = classify("
+        "{ status: 200, error: null, consoleErrors: [sentinel], "
+        "failedRequests: [failed], interactionErrors: [sentinel] }, "
+        "{}, "
+        "{ bodyText: 'x'.repeat(100), headings: ['heading'], controlText: [], fileInputCount: 0, "
+        "horizontalOverflow: false, scrollWidth: 100, clientWidth: 100, overflowOffenders: [] }"
+        "); "
+        "console.log(JSON.stringify({ url: sanitizeUrl(failed.url), "
+        "failed: sanitizeFailedRequest(failed), issues }));"
+    )
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert sentinel not in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["url"] == "https://audit.example.test/api/items"
+    assert payload["failed"] == {
+        "url": "https://audit.example.test/api/items",
+        "error": "request-failed",
+    }
+    script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
+        encoding="utf-8"
+    )
+    assert "bodySample" not in script_text
+    assert "headings: data.headings" not in script_text
+    assert 'route.request().method() !== "GET"' in script_text
+    assert 'redirect: "manual"' in script_text
 
 
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:

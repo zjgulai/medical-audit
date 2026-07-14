@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(__filename), "..");
 
 const DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top";
+const PRODUCTION_HOST = "audit.lute-tlz-dddd.top";
 const DEFAULT_OUTPUT = "tmp/outputs/production-frontend-acceptance-latest.json";
 const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-latest";
 const DEFAULT_TENANT_ID = "hospital-demo";
@@ -148,6 +149,8 @@ function parseArgs(argv) {
     adminRole: "it-admin",
     adminApiKeyEnv: null,
     contractProfile: DEFAULT_CONTRACT_PROFILE,
+    allowAuditLogWrites: false,
+    confirmProductionWrite: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -175,6 +178,13 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--contract-profile=")) {
       options.contractProfile = arg.split("=", 2)[1];
+    } else if (arg === "--allow-audit-log-writes") {
+      options.allowAuditLogWrites = true;
+    } else if (arg === "--confirm-production-write" && next) {
+      options.confirmProductionWrite = next;
+      index += 1;
+    } else if (arg.startsWith("--confirm-production-write=")) {
+      options.confirmProductionWrite = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -189,7 +199,10 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Run read-only production frontend acceptance checks.
+  console.log(`Run production frontend acceptance checks.
+
+The full browser acceptance flow can write audit-log records and therefore
+fails closed unless audit-log writes are explicitly authorized.
 
 Usage:
   node scripts/run-production-frontend-acceptance.mjs [options]
@@ -202,7 +215,60 @@ Options:
   --admin-role <role>       Role for admin API checks (default: it-admin)
   --admin-api-key-env <name> Env var for admin API key (optional)
   --contract-profile <name> Acceptance contract profile: ${contractProfiles.join("|")} (default: ${DEFAULT_CONTRACT_PROFILE})
+  --allow-audit-log-writes Authorize audit-log-only writes made by the acceptance flow
+  --confirm-production-write <host>
+                            Required with --allow-audit-log-writes for every target;
+                            must equal ${PRODUCTION_HOST}
 `);
+}
+
+function validateSideEffectAuthorization(options) {
+  try {
+    new URL(options.baseUrl);
+  } catch {
+    throw new Error(`Invalid --base-url: ${options.baseUrl}`);
+  }
+
+  if (!options.allowAuditLogWrites) {
+    throw new Error(
+      "Frontend acceptance fails closed by default: browser routes and API permission checks can write audit-log records. " +
+        "Re-run with --allow-audit-log-writes and " +
+        `--confirm-production-write ${PRODUCTION_HOST}.`,
+    );
+  }
+  if (options.confirmProductionWrite !== PRODUCTION_HOST) {
+    throw new Error(
+      `Audit-log writes require --confirm-production-write ${PRODUCTION_HOST} for every target.`,
+    );
+  }
+}
+
+function sanitizeUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "invalid-url";
+  }
+}
+
+function sanitizeFailedRequest(failed) {
+  const sanitized = { url: sanitizeUrl(failed.url) };
+  if (Number.isInteger(failed.status)) {
+    sanitized.status = failed.status;
+  } else if (typeof failed.error === "string" && /^net::[A-Z_]+$/.test(failed.error)) {
+    sanitized.error = failed.error;
+  } else {
+    sanitized.error = "request-failed";
+  }
+  return sanitized;
+}
+
+function sanitizeOverflowOffenders(items) {
+  return items.map((item) => ({
+    tag: item.tag,
+    rect: item.rect,
+  }));
 }
 
 function resolveRepoPath(value) {
@@ -538,20 +604,21 @@ function classify(check, routeCheck, data) {
     issues.push(issue("P0", "http-status", `HTTP ${check.status ?? "unknown"}`));
   }
   if (check.error) {
-    issues.push(issue("P0", "navigation-error", check.error));
+    issues.push(issue("P0", "navigation-error", "navigation failed"));
   }
   if (check.consoleErrors.length > 0) {
-    issues.push(issue("P1", "console-error", check.consoleErrors.slice(0, 3).join(" | ")));
+    issues.push(issue("P1", "console-error", `${check.consoleErrors.length} console error(s)`));
   }
   if (check.failedRequests.length > 0) {
     const sample = check.failedRequests
       .slice(0, 3)
+      .map(sanitizeFailedRequest)
       .map((failed) => `${failed.status ?? failed.error} ${failed.url}`)
       .join(" | ");
     issues.push(issue("P1", "failed-request", sample));
   }
   if (check.interactionErrors.length > 0) {
-    issues.push(issue("P1", "interaction-error", check.interactionErrors.slice(0, 3).join(" | ")));
+    issues.push(issue("P1", "interaction-error", `${check.interactionErrors.length} interaction error(s)`));
   }
   if (data.horizontalOverflow) {
     issues.push(
@@ -608,6 +675,7 @@ async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
     const response = await fetch(url, {
       method: "GET",
       headers,
+      redirect: "manual",
       signal: controller.signal,
     });
     const bodyText = await response.text();
@@ -631,16 +699,29 @@ async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
 
 async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, timeoutMs }) {
   const checks = {};
+  const executedProbes = [];
   const endpoints = [
     { path: "/audit/logs", requireItems: true },
     { path: "/audit/logs/export", requireItems: false },
   ];
 
   for (const item of endpoints) {
-    const denied = await fetchWithTimeout(`${baseUrl}${item.path}`, {
+    const anonymous = await fetchWithTimeout(`${baseUrl}${item.path}`, {
       timeoutMs,
       headers: { Accept: "application/json" },
     });
+    executedProbes.push(`${item.path}:anonymous`);
+    const missingTenant = await fetchWithTimeout(`${baseUrl}${item.path}`, {
+      timeoutMs,
+      headers: {
+        Accept: "application/json",
+        "X-User-Id": DEFAULT_ADMIN_USER_ID,
+        "X-Role": adminRole,
+        "X-Project-Key": DEFAULT_PROJECT_KEY,
+        ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
+      },
+    });
+    executedProbes.push(`${item.path}:missing-tenant`);
     const allowed = await fetchWithTimeout(`${baseUrl}${item.path}`, {
       timeoutMs,
       headers: {
@@ -652,34 +733,48 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
         ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
       },
     });
+    executedProbes.push(`${item.path}:allowed`);
 
     if (item.requireItems && !Array.isArray(allowed.body?.items)) {
       throw new Error(`${item.path} should return JSON with items`);
     }
 
     checks[item.path] = {
-      denied_status: denied.status,
-      denied_content_type: denied.contentType,
+      execution_status: "executed",
+      anonymous_check: "executed",
+      missing_tenant_check: "executed",
+      allowed_check: "executed",
+      denied_status: anonymous.status,
+      anonymous_status: anonymous.status,
+      anonymous_content_type: anonymous.contentType,
+      missing_tenant_status: missingTenant.status,
+      missing_tenant_content_type: missingTenant.contentType,
       allowed_status: allowed.status,
       allowed_content_type: allowed.contentType,
-      denied_body_sample: denied.bodyText.slice(0, 220),
-      allowed_body_sample: allowed.bodyText.slice(0, 220),
+      anonymous_body_length: anonymous.bodyText.length,
+      missing_tenant_body_length: missingTenant.bodyText.length,
+      allowed_body_length: allowed.bodyText.length,
     };
 
-    if (![401, 403].includes(denied.status)) {
+    if (![401, 403].includes(anonymous.status)) {
       throw new Error(`${item.path} should return 401/403 without role`);
+    }
+    if (![401, 403].includes(missingTenant.status)) {
+      throw new Error(`${item.path} should return 401/403 without tenant`);
     }
     if (allowed.status !== 200) {
       throw new Error(`${item.path} should return 200 with role`);
     }
   }
 
-  return checks;
+  return { checks, executedProbes };
 }
 
 async function run() {
   const options = parseArgs(process.argv.slice(2));
+  validateSideEffectAuthorization(options);
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const baseOrigin = new URL(baseUrl).origin;
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
   const routeChecks = routeCheckProfiles[options.contractProfile];
@@ -711,6 +806,24 @@ async function run() {
         const context = await browser.newContext({
           viewport: { width: viewport.width, height: viewport.height },
           extraHTTPHeaders: acceptanceHeaders,
+        });
+        await context.route("**/*", async (route) => {
+          if (route.request().method() !== "GET") {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          let requestOrigin;
+          try {
+            requestOrigin = new URL(route.request().url()).origin;
+          } catch {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          if (requestOrigin !== baseOrigin) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          await route.continue();
         });
         await seedWorkspaceSession(context);
         const page = await context.newPage();
@@ -756,25 +869,24 @@ async function run() {
         const check = {
           route: routeCheck.route,
           viewport: viewport.name,
-          url,
-          finalUrl: page.url(),
+          url: sanitizeUrl(url),
+          finalUrl: sanitizeUrl(page.url()),
           status,
-          error,
-          title: data.title,
-          headings: data.headings.slice(0, 8),
+          navigationError: error !== null,
+          headingCount: data.headings.length,
           bodyTextLength: compactText(data.bodyText).length,
-          bodySample: compactText(data.bodyText).slice(0, 320),
           fileInputCount: data.fileInputCount,
           scrollWidth: data.scrollWidth,
           clientWidth: data.clientWidth,
           horizontalOverflow: data.horizontalOverflow,
-          overflowOffenders: data.overflowOffenders,
-          consoleErrors,
-          failedRequests,
-          interactionErrors,
+          overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
+          consoleErrorCount: consoleErrors.length,
+          failedRequestCount: failedRequests.length,
+          failedRequests: failedRequests.map(sanitizeFailedRequest),
+          interactionErrorCount: interactionErrors.length,
           issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
         };
-        const shouldCaptureScreenshot = (captureScreenshots && check.issues.length > 0) || check.horizontalOverflow;
+        const shouldCaptureScreenshot = captureScreenshots && (check.issues.length > 0 || check.horizontalOverflow);
         if (shouldCaptureScreenshot) {
           const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
           const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
@@ -782,7 +894,7 @@ async function run() {
             await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
             check.screenshot = screenshotPath;
           } catch (caught) {
-            check.screenshot_error = caught instanceof Error ? caught.message : String(caught);
+            check.screenshot_error = true;
           }
         }
         checks.push(check);
@@ -834,15 +946,27 @@ async function run() {
   const report = {
     status,
     generated_at: new Date().toISOString(),
-    base_url: baseUrl,
+    base_url: sanitizeUrl(baseUrl),
     contract_profile: options.contractProfile,
+    side_effect_mode: "audit-log-write-enabled",
+    production_side_effect: "audit-log-only",
+    database_write: "audit-log-only",
+    audit_log_write_expected: true,
+    provider_call_status: "not_called",
+    http_methods: ["GET"],
     summary: {
       route_count: routeChecks.length,
       check_count: checks.length,
       viewports: viewports.map((viewport) => viewport.name),
-      api_checks: apiCheckResult || { error: apiCheckError },
+      api_checks: apiCheckResult?.checks || { error: apiCheckError !== null },
+      executed_api_probes: apiCheckResult?.executedProbes || [],
+      executed_api_probe_count: apiCheckResult?.executedProbes.length || 0,
+      skipped_api_probes: [],
+      skipped_api_probe_count: 0,
+      skipped_routes: [],
+      skipped_route_count: 0,
       screenshot_capture: captureScreenshots,
-      screenshot_policy: captureScreenshots ? "all_issues" : "horizontal_overflow_only",
+      screenshot_policy: captureScreenshots ? "all_issues" : "disabled",
       p0,
       p1,
     },
@@ -853,11 +977,22 @@ async function run() {
   return report.status === "pass" ? 0 : 2;
 }
 
-run()
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 2;
-  });
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  run()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 2;
+    });
+}
+
+export {
+  classify,
+  routeCheckProfiles,
+  sanitizeFailedRequest,
+  sanitizeUrl,
+  validateSideEffectAuthorization,
+  viewports,
+};

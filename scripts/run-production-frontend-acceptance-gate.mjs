@@ -4,11 +4,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  routeCheckProfiles,
+  viewports as acceptanceViewports,
+} from "./run-production-frontend-acceptance.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(__filename), "..");
 
 const DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top";
+const PRODUCTION_HOST = "audit.lute-tlz-dddd.top";
 const DEFAULT_OUTPUT = "tmp/outputs/production-frontend-acceptance-latest.json";
 const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-latest";
 
@@ -21,6 +26,8 @@ function parseArgs(argv) {
     adminRole: "it-admin",
     adminApiKeyEnv: null,
     contractProfile: "hardened",
+    allowAuditLogWrites: false,
+    confirmProductionWrite: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -51,6 +58,13 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--contract-profile=")) {
       options.contractProfile = arg.split("=", 2)[1];
+    } else if (arg === "--allow-audit-log-writes") {
+      options.allowAuditLogWrites = true;
+    } else if (arg === "--confirm-production-write" && next) {
+      options.confirmProductionWrite = next;
+      index += 1;
+    } else if (arg.startsWith("--confirm-production-write=")) {
+      options.confirmProductionWrite = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -76,7 +90,32 @@ Options:
   --admin-role <role>       Default: it-admin
   --admin-api-key-env <name> Optional env var containing admin API key.
   --contract-profile <name> Passed through to the acceptance runner (default: hardened).
+  --allow-audit-log-writes Authorize audit-log-only writes made by the acceptance flow.
+  --confirm-production-write <host>
+                            Required with --allow-audit-log-writes for every target;
+                            must equal ${PRODUCTION_HOST}.
 `);
+}
+
+function validateSideEffectAuthorization(options) {
+  try {
+    new URL(options.baseUrl);
+  } catch {
+    throw new Error(`Invalid --base-url: ${options.baseUrl}`);
+  }
+
+  if (!options.allowAuditLogWrites) {
+    throw new Error(
+      "Frontend acceptance gate fails closed by default because the full flow can write audit-log records. " +
+        "Use --allow-audit-log-writes and " +
+        `--confirm-production-write ${PRODUCTION_HOST}.`,
+    );
+  }
+  if (options.confirmProductionWrite !== PRODUCTION_HOST) {
+    throw new Error(
+      `Audit-log writes require --confirm-production-write ${PRODUCTION_HOST} for every target.`,
+    );
+  }
 }
 
 function resolveRepoPath(value) {
@@ -103,6 +142,12 @@ function runAcceptance(options) {
   }
   if (options.adminApiKeyEnv) {
     args.push("--admin-api-key-env", options.adminApiKeyEnv);
+  }
+  if (options.allowAuditLogWrites) {
+    args.push("--allow-audit-log-writes");
+  }
+  if (options.confirmProductionWrite) {
+    args.push("--confirm-production-write", options.confirmProductionWrite);
   }
 
   const result = spawnSync(process.execPath, args, {
@@ -138,13 +183,85 @@ function requireStatus(condition, message, details = {}) {
   }
 }
 
+function isNonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function hasCompleteRouteEvidence(check) {
+  return (
+    typeof check?.route === "string" &&
+    typeof check?.viewport === "string" &&
+    Number.isInteger(check.status) &&
+    check.status >= 200 &&
+    check.status < 400 &&
+    check.navigationError === false &&
+    Number.isInteger(check.headingCount) &&
+    check.headingCount > 0 &&
+    Number.isInteger(check.bodyTextLength) &&
+    check.bodyTextLength >= 80 &&
+    isNonNegativeInteger(check.fileInputCount) &&
+    isNonNegativeInteger(check.scrollWidth) &&
+    isNonNegativeInteger(check.clientWidth) &&
+    check.horizontalOverflow === false &&
+    Array.isArray(check.overflowOffenders) &&
+    check.consoleErrorCount === 0 &&
+    check.failedRequestCount === 0 &&
+    Array.isArray(check.failedRequests) &&
+    check.failedRequests.length === 0 &&
+    check.interactionErrorCount === 0 &&
+    Array.isArray(check.issues) &&
+    check.issues.length === 0
+  );
+}
+
 function assertGate(report) {
   const summary = report.summary ?? {};
   const apiChecks = summary.api_checks ?? {};
   const auditLogs = apiChecks["/audit/logs"] ?? {};
   const auditLogExports = apiChecks["/audit/logs/export"] ?? {};
+  const executedApiProbes = Array.isArray(summary.executed_api_probes) ? summary.executed_api_probes : [];
+  const skippedApiProbes = Array.isArray(summary.skipped_api_probes) ? summary.skipped_api_probes : [];
+  const skippedRoutes = Array.isArray(summary.skipped_routes) ? summary.skipped_routes : [];
+  const reportViewports = Array.isArray(summary.viewports) ? summary.viewports : [];
+  const routeChecks = Array.isArray(report.checks) ? report.checks : [];
+  const routeViewportKeys = new Set(
+    routeChecks
+      .filter((check) => typeof check?.route === "string" && typeof check?.viewport === "string")
+      .map((check) => `${check.route}:${check.viewport}`),
+  );
+  const expectedRouteChecks = routeCheckProfiles[report.contract_profile];
+  const expectedRoutes = Array.isArray(expectedRouteChecks)
+    ? expectedRouteChecks.map((check) => check.route)
+    : [];
+  const expectedViewports = acceptanceViewports.map((viewport) => viewport.name);
+  const expectedRouteViewportKeys = new Set(
+    expectedRoutes.flatMap((route) =>
+      expectedViewports.map((viewport) => `${route}:${viewport}`),
+    ),
+  );
+  const incompleteRouteChecks = routeChecks
+    .filter((check) => !hasCompleteRouteEvidence(check))
+    .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));
+  const routeP0 = routeChecks.flatMap((check) =>
+    Array.isArray(check?.issues)
+      ? check.issues.filter((item) => item?.severity === "P0")
+      : [],
+  );
+  const routeP1 = routeChecks.flatMap((check) =>
+    Array.isArray(check?.issues)
+      ? check.issues.filter((item) => item?.severity === "P1")
+      : [],
+  );
   const p0 = Array.isArray(summary.p0) ? summary.p0 : [];
   const p1 = Array.isArray(summary.p1) ? summary.p1 : [];
+  const expectedApiProbes = [
+    "/audit/logs:anonymous",
+    "/audit/logs:missing-tenant",
+    "/audit/logs:allowed",
+    "/audit/logs/export:anonymous",
+    "/audit/logs/export:missing-tenant",
+    "/audit/logs/export:allowed",
+  ];
 
   requireStatus(report.status === "pass", "frontend acceptance report is not pass", {
     status: report.status,
@@ -154,32 +271,110 @@ function assertGate(report) {
     p1_count: p1.length,
   });
   requireStatus(
-    [401, 403].includes(auditLogs.denied_status) && auditLogs.allowed_status === 200,
+    report.side_effect_mode === "audit-log-write-enabled" &&
+      report.production_side_effect === "audit-log-only" &&
+      report.database_write === "audit-log-only" &&
+      report.audit_log_write_expected === true,
+    "frontend acceptance side-effect contract is inconsistent",
+    {
+      side_effect_mode: report.side_effect_mode,
+      production_side_effect: report.production_side_effect,
+      database_write: report.database_write,
+      audit_log_write_expected: report.audit_log_write_expected,
+    },
+  );
+  requireStatus(
+    incompleteRouteChecks.length === 0 && routeP0.length === 0 && routeP1.length === 0,
+    "frontend acceptance route check evidence is incomplete",
+    {
+      incomplete_route_checks: incompleteRouteChecks,
+      recomputed_p0_count: routeP0.length,
+      recomputed_p1_count: routeP1.length,
+    },
+  );
+  requireStatus(
+    executedApiProbes.length === expectedApiProbes.length &&
+      expectedApiProbes.every((probe) => executedApiProbes.includes(probe)) &&
+      summary.executed_api_probe_count === expectedApiProbes.length &&
+      skippedApiProbes.length === 0 &&
+      summary.skipped_api_probe_count === 0,
+    "frontend acceptance API probe coverage is incomplete",
+    {
+      executed_api_probes: executedApiProbes,
+      executed_api_probe_count: summary.executed_api_probe_count,
+      skipped_api_probes: skippedApiProbes,
+      skipped_api_probe_count: summary.skipped_api_probe_count,
+    },
+  );
+  requireStatus(
+    expectedRoutes.length > 0 &&
+      new Set(expectedRoutes).size === expectedRoutes.length &&
+      summary.route_count === expectedRoutes.length &&
+      reportViewports.length === expectedViewports.length &&
+      new Set(reportViewports).size === expectedViewports.length &&
+      expectedViewports.every((viewport) => reportViewports.includes(viewport)) &&
+      skippedRoutes.length === 0 &&
+      summary.skipped_route_count === 0 &&
+      routeChecks.length === summary.check_count &&
+      routeViewportKeys.size === summary.check_count &&
+      summary.check_count === expectedRouteViewportKeys.size &&
+      routeViewportKeys.size === expectedRouteViewportKeys.size &&
+      [...expectedRouteViewportKeys].every((key) => routeViewportKeys.has(key)),
+    "frontend acceptance route coverage is incomplete",
+    {
+      contract_profile: report.contract_profile,
+      expected_route_count: expectedRoutes.length,
+      route_count: summary.route_count,
+      check_count: summary.check_count,
+      viewport_count: reportViewports.length,
+      skipped_routes: skippedRoutes,
+      skipped_route_count: summary.skipped_route_count,
+    },
+  );
+  requireStatus(
+    auditLogs.execution_status === "executed" &&
+      auditLogs.anonymous_check === "executed" &&
+      auditLogs.missing_tenant_check === "executed" &&
+      auditLogs.allowed_check === "executed" &&
+      [401, 403].includes(auditLogs.anonymous_status) &&
+      [401, 403].includes(auditLogs.missing_tenant_status) &&
+      auditLogs.allowed_status === 200,
     "audit logs API permission gate failed",
     auditLogs,
   );
   requireStatus(
-    [401, 403].includes(auditLogExports.denied_status) && auditLogExports.allowed_status === 200,
+    auditLogExports.execution_status === "executed" &&
+      auditLogExports.anonymous_check === "executed" &&
+      auditLogExports.missing_tenant_check === "executed" &&
+      auditLogExports.allowed_check === "executed" &&
+      [401, 403].includes(auditLogExports.anonymous_status) &&
+      [401, 403].includes(auditLogExports.missing_tenant_status) &&
+      auditLogExports.allowed_status === 200,
     "audit logs export API permission gate failed",
     auditLogExports,
   );
-
   console.log(
     JSON.stringify(
       {
         status: "pass",
         contract_profile: report.contract_profile,
+        side_effect_mode: report.side_effect_mode,
+        production_side_effect: report.production_side_effect,
+        database_write: report.database_write,
+        audit_log_write_expected: report.audit_log_write_expected,
         route_count: summary.route_count,
         check_count: summary.check_count,
         p0_count: p0.length,
         p1_count: p1.length,
         api_checks: {
           "/audit/logs": {
-            denied_status: auditLogs.denied_status,
+            anonymous_status: auditLogs.anonymous_status,
+            missing_tenant_status: auditLogs.missing_tenant_status,
             allowed_status: auditLogs.allowed_status,
           },
           "/audit/logs/export": {
-            denied_status: auditLogExports.denied_status,
+            anonymous_status: auditLogExports.anonymous_status,
+            missing_tenant_status: auditLogExports.missing_tenant_status,
             allowed_status: auditLogExports.allowed_status,
           },
         },
@@ -192,8 +387,18 @@ function assertGate(report) {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
+  validateSideEffectAuthorization(options);
   runAcceptance(options);
   assertGate(readReport(options.output));
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  }
+}
+
+export { assertGate, validateSideEffectAuthorization };

@@ -1640,3 +1640,32 @@ Boundary:
 
 - 三个修复 commit 均仅存在于本地分支。
 - 未执行 push、merge、SSH、deploy、provider call、migration、production write 或 live send。
+
+## 2026-07-15 Loop 53 Production Evidence Side-Effect Findings
+
+Finding Status:
+
+- 旧权限 smoke 的匿名/缺失租户 GET 会由 controlled API middleware 写入 `authorization-denied`。
+- `/audit/logs/export` 的成功 GET 会写入 `audit-logs-export`。
+- 问题不限于拒绝和导出：`/agents`、`/projects`、`/analytics/table-uploads`、`/graph/workbench`、`/reports/workbench` 等成功 GET 也会调用 `record_operation`。因此 HTTP GET 不是数据库只读的充分条件。
+- 完整生产前端浏览器矩阵会加载上述 API，不能诚实标为 L3 `database_write=false`。
+- `run-production-e2e-smoke.py` 默认调用链当前不执行遗留 `_check_audit_log_permissions`，其默认 smoke 仍保持该检查为 `not_run`；该不可达代码未来若重新启用，必须进入显式审计日志写模式。
+
+Supported Claim:
+
+- 权限 smoke 的通用只读集合只有 2 个不进入 controlled-auth middleware 的 public probe；默认执行 2、skipped 33、候选总数 35。
+- 完整权限矩阵和完整前端浏览器验收可在用户已授权后作为 L4 `audit-log-only` 证据执行，但不得与 L3 只读证据混写。
+- 任意目标的写模式缺少 `--confirm-production-write audit.lute-tlz-dddd.top` 时必须在任何网络动作前失败关闭；transport 不跟随 redirect，浏览器阻断跨 origin 请求。
+- frontend gate 必须按 runner profile 精确验证 `route × viewport` 集合；报告不保存正文、heading、console/interaction 原文、URL query/fragment 或默认截图。
+- 最终人工对抗复核与 bundled Codex `0.144.2` review 均为 PASS，accepted P0/P1 为 `0`；gate 还会拒绝只有 route/viewport 而缺少 status、度量与 issues 的伪完整报告。
+
+Residual Risk:
+
+- `/auth/session` handler 虽不直接调用 `record_operation`，但 disabled/pending persistent profile 等 middleware 拒绝路径会持久化 `authorization-denied`，所以已从只读 allowlist 移除。
+- 前端完整验收的 `audit-log-only` 合同依赖页面交互仍为 GET/read 路径；未来新增业务写操作时必须重新审计。
+- deploy preflight 不检查磁盘空间；2026-07-15 fresh SSH 显示根盘可用 `75,256,524 KiB`，可读部署备份目录合计 `54,397,672 KiB`，四个核心容器健康。`observations` 子目录无读取权限，容量结论不包含该目录。
+
+Boundary:
+
+- 已观察的至少 69 条审计事件保留，未清理。
+- 本节记录时 production runtime 仍为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`；`deploy_execute=false`。
