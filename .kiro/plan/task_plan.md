@@ -200,3 +200,29 @@ Evidence boundary:
 
 - 本轮新增证据为 L1/L2 `local_only`；此前 L3 生产只读观察仍是历史独立证据，不能替代本轮代码部署后的生产验收。
 - 本轮未产生 L4 证据；`production unchanged`、`provider_call=false`、`database_write=false`、`live_send=false`。
+
+## 2026-07-15 Loop 53 Production Evidence Contract And Deployment
+
+Goal:
+
+- 修正生产权限 smoke 与前端验收对审计日志副作用的错误分类。
+- 将完整权限矩阵和完整浏览器验收收敛到显式 L4 `audit-log-only` 授权路径。
+- 经 PR 审查合并后，只从 clean `main` 部署精确 merge SHA，并完成分层生产验收。
+
+Execution TODO:
+
+- [x] 确认 PR `#233` 已合并为 `2d790375621bafa3dd564b1a1464f3e229a053a2`，远端分支保留。
+- [x] 纠正部署准备证据：此前工具至少产生 69 条审计事件，不能表述为 `database_write=false`。
+- [x] 批准并提交方案 A 设计文档 `15fa4ee`。
+- [x] 实施权限 smoke 的 2 项公共只读 / 35 项显式写入双模式合同；protected probe 全部退出默认只读 allowlist。
+- [x] 实施前端验收默认 fail-closed / 显式 `audit-log-only` 完整验收合同。
+- [x] 完成全量本地门禁、人工对抗复核与 bundled Codex review；accepted P0/P1 为 `0`。
+- [ ] 完成原子 commit、push、Ready PR 与 GitHub merge 审查。
+- [ ] merge 后在 clean `main` 完成磁盘检查、零执行 preflight 和生产部署；不删除远端分支。
+- [ ] 部署后分别保存 L3 状态/有限只读证据与 L4 `audit-log-only` 完整验收证据。
+
+Evidence boundary:
+
+- 当前生产运行版本仍为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`；本节记录时 `deploy_execute=false`。
+- 已观察的至少 69 条审计事件保留，不清理、不回填。
+- 本轮不授权或执行 schema、SQL backfill、provider call、review/query 写入、live send 或远端分支删除。

@@ -1000,3 +1000,34 @@ Boundary:
 - `production unchanged`；`provider_call=false`；`database_write=false`；`live_send=false`。
 - 生产部署前仍须执行历史 finding-linked task scope 的只读盘点。
 - project-member 数据库唯一约束仍为明确的 P2 后续项，不能用应用层校验替代 migration 证据。
+
+## 2026-07-15 Loop 53 Evidence Contract Implementation Progress
+
+Verified baseline:
+
+- PR `#233` 已合并；`origin/main=2d790375621bafa3dd564b1a1464f3e229a053a2`。
+- 当前生产 `.deploy-sha` 的最近新鲜证据为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`。
+- 部署准备阶段至少产生 68 条 `authorization-denied` 和 1 条 `audit-logs-export`；正确边界为 `database_write=audit-log-only`，不是 `none`。
+- 方案 A spec 已以 `15fa4ee` 提交到 `codex/evidence-tool-readonly-contract-20260715`。
+
+Implementation and verification:
+
+- 权限 smoke 默认只执行 2 个 public GET；`/auth/session` 也因 controlled-auth middleware 可能记录拒绝事件而移出只读 allowlist，33 个可能写审计日志的候选明确 skipped。显式写模式执行完整 35 项，所有目标都要求固定 confirmation。
+- 完整前端浏览器矩阵会通过成功 GET 记录审计事件，因此默认在任何 mkdir、Chromium 或 network action 前失败关闭；显式写模式报告 `database_write=audit-log-only`。
+- 聚焦合同测试：`21 passed`。
+- `tests/knowledge_query/test_scripts.py`：`119 passed`，1 个既有 Starlette deprecation warning。
+- changed-file Ruff、Python Mypy、Node `--check` 与 `git diff --check`：passed。
+- 全仓 Ruff 与 Mypy：passed（`107` 个 source/script 文件）。
+- 全仓 Pytest：passed；最新 collect-only 为 `609 tests`，仅有同一既有 Starlette warning。
+- Web typecheck、lint、`32` files / `279` tests、静态 build `24/24`：passed。
+- 本地 full-stack E2E：`13/13 passed`。
+- 2026-07-15 fresh SSH 只读检查：production marker 仍为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`；根盘使用 `72%`、可用 `75,256,524 KiB`。
+- 可读的 app/db/env/nginx/web 备份目录合计 `54,397,672 KiB`；`observations` 子目录无读取权限，未把不完整 `du` 当作总量。远端 app 目录 `18,608,116 KiB`、web 目录 `2,524 KiB`。
+- `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx` 均为 `running/healthy`。
+- 最终人工对抗复核：PASS，accepted P0/P1 为 `0`。
+- bundled Codex `0.144.2` review：exit `0`，accepted P0/P1 为 `0`；旧 PATH CLI 的工具性子调用失败未被误报为代码 finding，相关进程已清理。
+
+Current boundary:
+
+- 当前最高为 L2 本地全量验证与独立 review 通过证据；尚未完成 push、PR、merge 或 deploy。
+- 本轮只新增 L3 SSH 只读容量/健康证据；`production unchanged`；`deploy_execute=false`；`provider_call=false`；`live_send=false`；`remote_ref_delete=false`。
