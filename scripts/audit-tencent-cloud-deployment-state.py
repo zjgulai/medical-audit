@@ -181,7 +181,9 @@ def _collect_remote_report(
         "-i",
         str(ssh_key),
         "-o",
-        "StrictHostKeyChecking=no",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
         "-o",
         "IdentitiesOnly=yes",
         f"{ssh_user}@{ssh_host}",
@@ -191,7 +193,8 @@ def _collect_remote_report(
     print(
         "+ ssh "
         f"-i {shlex.quote(str(ssh_key))} "
-        "-o StrictHostKeyChecking=no "
+        "-o BatchMode=yes "
+        "-o StrictHostKeyChecking=yes "
         "-o IdentitiesOnly=yes "
         f"{ssh_user}@{ssh_host} python3 - <remote-audit>",
         flush=True,
