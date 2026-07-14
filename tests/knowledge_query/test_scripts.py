@@ -1390,7 +1390,10 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
             return module.HttpResponse(
                 status=200,
                 url=url,
-                content="文档依据检索 审计问题或文档关键词 个人材料".encode(),
+                content=(
+                    "AI审计一体化协作平台 /_next/static/ "
+                    "app/(workspace)/documents/page-abc123.js"
+                ).encode(),
                 headers={"content-type": "text/html"},
             )
         if url.endswith("/api/v1/documents/permissions"):
@@ -1460,6 +1463,37 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
     assert report["boundaries"]["document_governance_status_api_called"] is True
 
 
+def test_run_production_documents_readonly_probe_uses_pr232_page_contract() -> None:
+    module = _load_script_module(
+        "run_production_documents_readonly_probe_pr232_contract",
+        Path("scripts/run-production-documents-readonly-probe.py"),
+    )
+    expected_text = (
+        "AI审计一体化协作平台",
+        "/_next/static/",
+        "app/(workspace)/documents/page-",
+    )
+
+    assert expected_text == module.EXPECTED_DOCUMENTS_TEXT
+
+    details = module._check_documents_page(
+        "https://audit.lute-tlz-dddd.top",
+        timeout_seconds=1,
+        http_get=lambda url, headers, timeout_seconds: module.HttpResponse(
+            status=200,
+            url=url,
+            content=(
+                "AI审计一体化协作平台 /_next/static/ "
+                "app/(workspace)/documents/page-abc123.js"
+            ).encode(),
+            headers={"content-type": "text/html"},
+        ),
+    )
+
+    assert details["status_code"] == 200
+    assert all(details["expected_utf8_text"].values())
+
+
 def test_run_production_documents_readonly_probe_reports_search_backend_failure() -> None:
     module = _load_script_module(
         "run_production_documents_readonly_probe_search_failure",
@@ -1479,7 +1513,10 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
             return module.HttpResponse(
                 status=200,
                 url=url,
-                content="文档依据检索 审计问题或文档关键词 个人材料".encode(),
+                content=(
+                    "AI审计一体化协作平台 /_next/static/ "
+                    "app/(workspace)/documents/page-abc123.js"
+                ).encode(),
                 headers={"content-type": "text/html"},
             )
         if url.endswith("/api/v1/documents/permissions"):
@@ -1815,6 +1852,20 @@ def test_run_production_e2e_smoke_can_require_generated_answer(
         )
 
 
+def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> None:
+    script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert script_text.count("/表格分析工作台/") == 2
+    assert script_text.count("/上传表格|分析历史/") == 2
+    assert script_text.count("/审计底稿与报告台账/") == 2
+    assert script_text.count("/六类模板目录/") == 2
+    assert "/项目协作工作台/" in script_text
+    assert "/可见项目/" in script_text
+    assert "/内测中|待开通/" not in script_text
+
+
 def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() -> None:
     script_path = Path("scripts/audit-tencent-cloud-deployment-state.py")
 
@@ -1831,6 +1882,44 @@ def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() 
     assert "<remote-audit>" in script_text
     assert "tmp/outputs/tencent-cloud-deployment-state-latest.json" in script_text
     assert "medical-audit.env" not in script_text
+
+
+def test_audit_tencent_cloud_deployment_state_requires_known_host(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_strict_ssh",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    ssh_key = tmp_path / "deploy.pem"
+    ssh_key.write_text("test-key-placeholder", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._collect_remote_report(
+        ssh_key=ssh_key,
+        ssh_user="ubuntu",
+        ssh_host="example.test",
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+        remote_backup_root="/opt/medical-audit/backups",
+        base_url="https://audit.example.test",
+        backup_limit=1,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "BatchMode=yes" in command
+    assert "StrictHostKeyChecking=yes" in command
+    assert "StrictHostKeyChecking=no" not in command
+    assert "IdentitiesOnly=yes" in command
 
 
 def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path) -> None:

@@ -51,7 +51,7 @@ const routeCheckProfiles = {
     { route: "/agent-market", requiredText: [/智能体广场/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
     {
       route: "/analytics",
-      requiredText: [/AI数据分析/, /内测中|待开通/],
+      requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
     },
     {
       route: "/projects",
@@ -62,7 +62,7 @@ const routeCheckProfiles = {
     { route: "/knowledge-base", requiredText: [/知识库/, /知识库概览|法律法规库|审计员个人知识库/] },
     { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
     { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
-    { route: "/reports", requiredText: [/内测中|待开通/] },
+    { route: "/reports", requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/] },
     { route: "/remediation", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },
     { route: "/archive", requiredText: [/底稿与报告/, /历史生成记录/, /历史记录/] },
     { route: "/guided-check", requiredText: [/AI，让审计更智能/] },
@@ -98,17 +98,17 @@ const routeCheckProfiles = {
     },
     {
       route: "/analytics",
-      requiredText: [/AI数据分析/, /内测中|待开通/],
+      requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
     },
     {
       route: "/projects",
-      requiredText: [/项目管理/, /内测中|待开通/],
+      requiredText: [/项目管理/, /项目协作工作台/, /可见项目/],
     },
     { route: "/documents", requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/] },
     { route: "/knowledge-base", requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/] },
     { route: "/graph", requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/] },
     { route: "/rules", requiredText: [/知识库|规则|法规/] },
-    { route: "/reports", requiredText: [/内测中|待开通/] },
+    { route: "/reports", requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/] },
     {
       route: "/remediation",
       postLoadWaitMs: 2_000,
