@@ -18,6 +18,7 @@ DEFAULT_TENANT_ID = "hospital-demo"
 DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 DEFAULT_ADMIN_ROLE = "admin"
 DEFAULT_ADMIN_USER_ID = "permission-smoke-admin"
+PRODUCTION_HOST = "audit.lute-tlz-dddd.top"
 DEFAULT_PROTECTED_PATHS = (
     "/auth/session",
     "/projects",
@@ -32,6 +33,10 @@ DEFAULT_PROTECTED_PATHS = (
     "/reports/workbench",
 )
 PUBLIC_PATHS = ("/health", "/auth/roles")
+# Protected requests cross controlled-auth middleware. Even a code-audited GET
+# handler can persist authorization-denied when the supplied profile is disabled
+# or otherwise rejected, so no protected probe is universally read-only.
+READONLY_PROTECTED_PATHS: frozenset[str] = frozenset()
 
 JsonObject = dict[str, object]
 Requester = Callable[["Probe", float], "HttpResponse"]
@@ -51,6 +56,8 @@ class SmokeConfig:
     api_key_env: str | None
     timeout_seconds: float
     json_output: Path | None
+    allow_audit_log_writes: bool = False
+    confirm_production_write: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +82,34 @@ class ProbeTransportError(RuntimeError):
     pass
 
 
+class PermissionSmokeConfigError(ValueError):
+    pass
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
 def main() -> int:
     args = _parse_args()
-    config = _config_from_args(args)
+    try:
+        config = _config_from_args(args)
+    except PermissionSmokeConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     report = run_readonly_permission_smoke(config)
     _write_report(report, config.json_output)
     print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -92,7 +124,9 @@ def run_readonly_permission_smoke(
         timeout_seconds,
     ),
 ) -> JsonObject:
+    _validate_write_authorization(config)
     probes = _build_probes(config)
+    skipped_probes = _build_skipped_probes(config)
     results: list[JsonObject] = []
     issues: list[str] = []
     observations: list[str] = []
@@ -111,7 +145,7 @@ def run_readonly_permission_smoke(
                 "status": status,
                 "expected_statuses": list(probe.expected_statuses),
                 "matched": matched,
-                "body_preview": _body_preview(response.text),
+                "body_length": len(response.text),
             }
         except ProbeTransportError as exc:
             status = None
@@ -146,14 +180,24 @@ def run_readonly_permission_smoke(
         status_value = "observed"
     else:
         status_value = "pass"
+    audit_log_write_expected = config.allow_audit_log_writes
     return {
         "status": status_value,
         "mode": config.mode,
+        "side_effect_mode": (
+            "audit-log-write-enabled" if audit_log_write_expected else "readonly"
+        ),
         "base_url": config.base_url,
         "api_prefix": config.api_prefix,
         "started_at": started_at,
         "finished_at": finished_at,
-        "production_side_effect": "none",
+        "production_side_effect": (
+            "audit-log-only" if audit_log_write_expected else "none"
+        ),
+        "database_write": (
+            "audit-log-only" if audit_log_write_expected else False
+        ),
+        "audit_log_write_expected": audit_log_write_expected,
         "provider_call_status": "not_called",
         "http_methods": ["GET"],
         "auth": {
@@ -166,11 +210,16 @@ def run_readonly_permission_smoke(
         },
         "summary": {
             "probe_count": len(probes),
+            "executed_probe_count": len(probes),
+            "skipped_probe_count": len(skipped_probes),
+            "total_probe_count": len(probes) + len(skipped_probes),
             "issue_count": len(issues),
             "observation_count": len(observations),
         },
         "issues": issues,
         "observations": observations,
+        "executed_probes": [str(result["name"]) for result in results],
+        "skipped_probes": skipped_probes,
         "probes": results,
     }
 
@@ -192,31 +241,36 @@ def _build_probes(config: SmokeConfig) -> list[Probe]:
         )
 
     for path in config.protected_paths:
-        probes.extend(
-            (
-                Probe(
-                    name=f"protected-anonymous:{path}",
-                    path=path,
-                    url=_build_url(config, path),
-                    method="GET",
-                    headers=dict(api_key_headers),
-                    expected_statuses=(401, 403),
-                    kind="protected-anonymous",
-                ),
-                Probe(
-                    name=f"protected-missing-tenant:{path}",
-                    path=path,
-                    url=_build_url(config, path),
-                    method="GET",
-                    headers={
-                        **api_key_headers,
-                        "X-User-Id": config.admin_user_id,
-                        "X-Role": config.admin_role,
-                        "X-Project-Key": config.project_key,
-                    },
-                    expected_statuses=(401,),
-                    kind="protected-missing-tenant",
-                ),
+        if config.allow_audit_log_writes:
+            probes.extend(
+                (
+                    Probe(
+                        name=f"protected-anonymous:{path}",
+                        path=path,
+                        url=_build_url(config, path),
+                        method="GET",
+                        headers=dict(api_key_headers),
+                        expected_statuses=(401, 403),
+                        kind="protected-anonymous",
+                    ),
+                    Probe(
+                        name=f"protected-missing-tenant:{path}",
+                        path=path,
+                        url=_build_url(config, path),
+                        method="GET",
+                        headers={
+                            **api_key_headers,
+                            "X-User-Id": config.admin_user_id,
+                            "X-Role": config.admin_role,
+                            "X-Project-Key": config.project_key,
+                        },
+                        expected_statuses=(401,),
+                        kind="protected-missing-tenant",
+                    ),
+                )
+            )
+        if config.allow_audit_log_writes or _is_readonly_protected_path(path):
+            probes.append(
                 Probe(
                     name=f"protected-admin:{path}",
                     path=path,
@@ -231,10 +285,72 @@ def _build_probes(config: SmokeConfig) -> list[Probe]:
                     },
                     expected_statuses=(200,),
                     kind="protected-admin",
-                ),
+                )
+            )
+    return probes
+
+
+def _build_skipped_probes(config: SmokeConfig) -> list[JsonObject]:
+    if config.allow_audit_log_writes:
+        return []
+
+    skipped: list[JsonObject] = []
+    for path in config.protected_paths:
+        skipped.extend(
+            (
+                {
+                    "name": f"protected-anonymous:{path}",
+                    "kind": "protected-anonymous",
+                    "method": "GET",
+                    "path": path,
+                    "expected_statuses": [401, 403],
+                    "status": "skipped",
+                    "reason": "audit-log-writes-not-authorized",
+                },
+                {
+                    "name": f"protected-missing-tenant:{path}",
+                    "kind": "protected-missing-tenant",
+                    "method": "GET",
+                    "path": path,
+                    "expected_statuses": [401],
+                    "status": "skipped",
+                    "reason": "audit-log-writes-not-authorized",
+                },
             )
         )
-    return probes
+        if not _is_readonly_protected_path(path):
+            skipped.append(
+                {
+                    "name": f"protected-admin:{path}",
+                    "kind": "protected-admin",
+                    "method": "GET",
+                    "path": path,
+                    "expected_statuses": [200],
+                    "status": "skipped",
+                    "reason": "endpoint-may-write-audit-log",
+                }
+            )
+    return skipped
+
+
+def _validate_write_authorization(config: SmokeConfig) -> None:
+    confirmation = config.confirm_production_write
+    if confirmation is not None and not config.allow_audit_log_writes:
+        raise PermissionSmokeConfigError(
+            "--confirm-production-write requires --allow-audit-log-writes"
+        )
+    if not config.allow_audit_log_writes:
+        return
+    if confirmation != PRODUCTION_HOST:
+        raise PermissionSmokeConfigError(
+            "audit-log writes require "
+            f"--confirm-production-write {PRODUCTION_HOST}"
+        )
+
+
+def _is_readonly_protected_path(path: str) -> bool:
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return urllib.parse.urlsplit(normalized_path).path in READONLY_PROTECTED_PATHS
 
 
 def _request_probe(probe: Probe, timeout_seconds: float) -> HttpResponse:
@@ -244,7 +360,7 @@ def _request_probe(probe: Probe, timeout_seconds: float) -> HttpResponse:
         method=probe.method,
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with _NO_REDIRECT_OPENER.open(request, timeout=timeout_seconds) as response:
             return HttpResponse(
                 status=response.status,
                 url=probe.url,
@@ -262,7 +378,8 @@ def _request_probe(probe: Probe, timeout_seconds: float) -> HttpResponse:
 
 def _config_from_args(args: argparse.Namespace) -> SmokeConfig:
     api_key = _optional_env_value(str(args.api_key_env) if args.api_key_env else None)
-    return SmokeConfig(
+    confirmation_value = getattr(args, "confirm_production_write", None)
+    config = SmokeConfig(
         base_url=str(args.base_url).rstrip("/"),
         api_prefix=_normalize_prefix(str(args.api_prefix)),
         mode=str(args.mode),
@@ -275,16 +392,21 @@ def _config_from_args(args: argparse.Namespace) -> SmokeConfig:
         api_key_env=str(args.api_key_env) if args.api_key_env else None,
         timeout_seconds=float(args.timeout_seconds),
         json_output=Path(args.json_output) if args.json_output else None,
+        allow_audit_log_writes=bool(getattr(args, "allow_audit_log_writes", False)),
+        confirm_production_write=(
+            str(confirmation_value) if confirmation_value is not None else None
+        ),
     )
+    _validate_write_authorization(config)
+    return config
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a read-only controlled API permission smoke. The script only issues GET "
-            "requests and records whether controlled endpoints enforce role and tenant "
-            "headers. Use --mode enforce for local gates and --mode observe for production "
-            "read-only reconnaissance."
+            "Run a controlled API permission smoke. By default, only code-audited GET "
+            "probes without known audit-log writes execute; other probes are reported as "
+            "skipped. Use --allow-audit-log-writes for the complete permission matrix."
         )
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -311,6 +433,23 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--timeout-seconds", type=float, default=10)
     parser.add_argument("--json-output", default=None)
+    parser.add_argument(
+        "--allow-audit-log-writes",
+        action="store_true",
+        help=(
+            "Run negative and write-capable positive probes that may persist audit-log "
+            "events."
+        ),
+    )
+    parser.add_argument(
+        "--confirm-production-write",
+        default=None,
+        metavar="HOST",
+        help=(
+            "Required with --allow-audit-log-writes for every target so aliases and "
+            f"redirects cannot bypass production confirmation; must equal {PRODUCTION_HOST}."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -342,10 +481,6 @@ def _optional_env_value(name: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
-
-
-def _body_preview(value: str) -> str:
-    return _redact(value.replace("\n", " ")[:500])
 
 
 def _redact(value: str) -> str:
