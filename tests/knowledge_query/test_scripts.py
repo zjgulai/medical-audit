@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -4952,3 +4954,293 @@ def test_run_production_personal_material_index_staging_selects_readiness_sample
         explicit_upload_ids=("document-upload-explicit",),
         max_uploads=10,
     ) == ["document-upload-explicit"]
+
+
+def _release_manifest_env(tmp_path: Path) -> dict[str, str]:
+    tool_bin = tmp_path / "tool-bin"
+    tool_bin.mkdir()
+    node = _write_bytes(tool_bin / "node", b"#!/bin/sh\nprintf 'v22.99.0\\n'\n")
+    pnpm = _write_bytes(tool_bin / "pnpm", b"#!/bin/sh\nprintf '9.99.0\\n'\n")
+    node.chmod(0o755)
+    pnpm.chmod(0o755)
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("NEXT_PUBLIC_")
+    }
+    env["PATH"] = f"{tool_bin}{os.pathsep}{env['PATH']}"
+    return env
+
+
+def _run_release_manifest(
+    *,
+    web_out: Path,
+    output: Path,
+    env: dict[str, str],
+    source_sha: str = "a" * 40,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "scripts/build-web-release-manifest.py",
+            "--web-out",
+            str(web_out),
+            "--source-sha",
+            source_sha,
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_web_release_manifest_is_deterministic_complete_and_secret_safe(
+    tmp_path: Path,
+) -> None:
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+    output.write_text("stale manifest", encoding="utf-8")
+    env = _release_manifest_env(tmp_path)
+    env.update(
+        {
+            "MEDICAL_AUDIT_SECRET_SENTINEL": "must-never-be-serialized",
+            "NEXT_PUBLIC_AUDIT_ORG_NAME": "测试医院",
+            "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": "",
+        }
+    )
+
+    first = _run_release_manifest(web_out=web_out, output=output, env=env)
+    assert first.returncode == 0, first.stderr
+    first_bytes = output.read_bytes()
+    second = _run_release_manifest(web_out=web_out, output=output, env=env)
+
+    assert second.returncode == 0, second.stderr
+    assert output.read_bytes() == first_bytes
+    payload = json.loads(first_bytes)
+    assert first_bytes == (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode()
+    assert payload == {
+        "files": [
+            {
+                "path": "_next/static/app.js",
+                "sha256": "3385455a7d81f78e18978e877f84012edbf2471b613620c8dff01f154e5ec7d4",
+                "size_bytes": 24,
+            },
+            {
+                "path": "index.html",
+                "sha256": "335fca8574f060eea24ebcdae6b78f32414f5de03da1084fd0e73d710768e3a9",
+                "size_bytes": 16,
+            },
+        ],
+        "format": "medical-audit-web-release-manifest-v1",
+        "lockfile_sha256": hashlib.sha256(Path("pnpm-lock.yaml").read_bytes()).hexdigest(),
+        "node_version": "v22.99.0",
+        "pnpm_version": "9.99.0",
+        "public_build_variables": {
+            "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
+            "NEXT_PUBLIC_AUDIT_ORG_NAME": "测试医院",
+            "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+            "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": "",
+        },
+        "source_sha": "a" * 40,
+    }
+    serialized = first_bytes.decode("utf-8")
+    assert "release-manifest.json" not in serialized
+    assert "must-never-be-serialized" not in serialized
+    assert str(tmp_path) not in serialized
+    assert "timestamp" not in serialized
+    assert "mtime" not in serialized
+
+
+@pytest.mark.parametrize("source_sha", ["a" * 39, "A" * 40, "g" * 40])
+def test_web_release_manifest_rejects_invalid_source_sha(
+    tmp_path: Path,
+    source_sha: str,
+) -> None:
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+
+    result = _run_release_manifest(
+        web_out=web_out,
+        output=output,
+        env=_release_manifest_env(tmp_path),
+        source_sha=source_sha,
+    )
+
+    assert result.returncode != 0
+    assert "source SHA" in result.stderr
+    assert not output.exists()
+
+
+def test_web_release_manifest_requires_named_source_sha_environment_variable(
+    tmp_path: Path,
+) -> None:
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+    env = _release_manifest_env(tmp_path)
+    env.pop("MISSING_DEPLOY_SHA", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build-web-release-manifest.py",
+            "--web-out",
+            str(web_out),
+            "--source-sha-env",
+            "MISSING_DEPLOY_SHA",
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "MISSING_DEPLOY_SHA" in result.stderr
+    assert not output.exists()
+
+
+def test_web_release_manifest_rejects_unknown_public_build_variable(
+    tmp_path: Path,
+) -> None:
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+    env = _release_manifest_env(tmp_path)
+    env["NEXT_PUBLIC_UNREVIEWED_FLAG"] = "enabled"
+
+    result = _run_release_manifest(web_out=web_out, output=output, env=env)
+
+    assert result.returncode != 0
+    assert "NEXT_PUBLIC_UNREVIEWED_FLAG" in result.stderr
+    assert not output.exists()
+
+
+def test_web_release_manifest_rejects_symlinks_and_special_files(tmp_path: Path) -> None:
+    env = _release_manifest_env(tmp_path)
+    fixture = Path("tests/fixtures/web-release-manifest")
+
+    symlink_out = tmp_path / "symlink-out"
+    shutil.copytree(fixture, symlink_out)
+    outside = _write_bytes(tmp_path / "outside.txt", b"outside")
+    (symlink_out / "escape.txt").symlink_to(outside)
+    symlink_output = symlink_out / "release-manifest.json"
+    symlink_result = _run_release_manifest(
+        web_out=symlink_out,
+        output=symlink_output,
+        env=env,
+    )
+    assert symlink_result.returncode != 0
+    assert "symlink" in symlink_result.stderr.lower()
+    assert not symlink_output.exists()
+
+    special_out = tmp_path / "special-out"
+    shutil.copytree(fixture, special_out)
+    special = special_out / "named-pipe"
+    os.mkfifo(special)
+    special_output = special_out / "release-manifest.json"
+    special_result = _run_release_manifest(
+        web_out=special_out,
+        output=special_output,
+        env=env,
+    )
+    assert special_result.returncode != 0
+    assert "regular file" in special_result.stderr.lower()
+    assert not special_output.exists()
+
+
+def test_web_release_manifest_rejects_output_escape_and_output_symlink(
+    tmp_path: Path,
+) -> None:
+    env = _release_manifest_env(tmp_path)
+    fixture = Path("tests/fixtures/web-release-manifest")
+    web_out = tmp_path / "out"
+    shutil.copytree(fixture, web_out)
+    escaped_output = tmp_path / "escaped-manifest.json"
+
+    escape_result = _run_release_manifest(
+        web_out=web_out,
+        output=escaped_output,
+        env=env,
+    )
+    assert escape_result.returncode != 0
+    assert "inside --web-out" in escape_result.stderr
+    assert not escaped_output.exists()
+
+    outside = _write_bytes(tmp_path / "outside-manifest.json", b"outside remains")
+    linked_output = web_out / "release-manifest.json"
+    linked_output.symlink_to(outside)
+    link_result = _run_release_manifest(web_out=web_out, output=linked_output, env=env)
+    assert link_result.returncode != 0
+    assert "symlink" in link_result.stderr.lower()
+    assert outside.read_bytes() == b"outside remains"
+
+
+def test_web_release_manifest_atomic_failure_preserves_previous_output(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "build_web_release_manifest_atomic_failure",
+        Path("scripts/build-web-release-manifest.py"),
+    )
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+    output.write_bytes(b"previous manifest\n")
+    env = _release_manifest_env(tmp_path)
+    for key in tuple(os.environ):
+        if key.startswith("NEXT_PUBLIC_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build-web-release-manifest.py",
+            "--web-out",
+            str(web_out),
+            "--source-sha",
+            "a" * 40,
+            "--output",
+            str(output),
+        ],
+    )
+
+    def fail_replace(_source: Path, _destination: Path) -> None:
+        raise OSError("injected replace failure")
+
+    monkeypatch.setattr(module.os, "replace", fail_replace)
+
+    assert module.main() == 2
+    assert output.read_bytes() == b"previous manifest\n"
+    assert sorted(path.name for path in web_out.iterdir()) == [
+        "_next",
+        "index.html",
+        "release-manifest.json",
+    ]
+
+
+def test_web_release_manifest_package_script_is_frozen() -> None:
+    package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+
+    assert package["scripts"]["web:build:release"] == (
+        "pnpm web:build:static && uv run python scripts/build-web-release-manifest.py "
+        "--web-out web/out --source-sha-env MEDICAL_AUDIT_DEPLOY_SHA "
+        "--output web/out/release-manifest.json"
+    )
