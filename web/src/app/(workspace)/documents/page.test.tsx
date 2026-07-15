@@ -15,6 +15,14 @@ vi.mock("@/components/replica/use-replica-runtime", () => ({
   useReplicaDocumentsData: () => runtimeMock.current
 }));
 
+vi.mock("@/components/documents/personal-material-read-panel", () => ({
+  PersonalMaterialReadPanel: () => (
+    <section aria-label="个人材料只读面板">
+      <h2>个人材料</h2>
+    </section>
+  )
+}));
+
 function makeApiRuntime(): ReplicaRuntimeResult<ReplicaDocumentsData> {
   return {
     apiReadsEnabled: true,
@@ -101,6 +109,16 @@ describe("DocumentsPage", () => {
     expect(screen.queryByDisplayValue("劳动争议司法案件解释")).not.toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
     expect(searchDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  it("mounts the personal material panel without regressing search, catalog, history, or AI controls", () => {
+    render(<DocumentsPage />);
+
+    expect(screen.getByRole("region", { name: "个人材料只读面板" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "检索关键词" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "搜索历史" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "医保法规库 (12)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /检索AI\+/ })).toBeInTheDocument();
   });
 
   it("uses the medical-audit default when either search mode receives a blank draft", async () => {

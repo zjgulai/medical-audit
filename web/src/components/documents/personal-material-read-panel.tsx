@@ -1,0 +1,149 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { fetchDocumentPermissions, fetchDocumentUploads } from "@/lib/api-client";
+import type {
+  DocumentPermissionsResponse,
+  DocumentUploadItem,
+  DocumentUploadListResponse,
+  DocumentUploadPermissions
+} from "@/lib/api-types";
+
+type PersonalMaterialReadState =
+  | { readonly status: "loading" }
+  | {
+      readonly status: "ready" | "empty";
+      readonly permissions: DocumentPermissionsResponse;
+      readonly uploads: DocumentUploadListResponse;
+    }
+  | { readonly status: "degraded"; readonly reason: string }
+  | { readonly status: "error" };
+
+export function PersonalMaterialReadPanel() {
+  const [state, setState] = useState<PersonalMaterialReadState>({ status: "loading" });
+
+  useEffect(() => {
+    let active = true;
+
+    Promise.all([fetchDocumentPermissions(), fetchDocumentUploads()])
+      .then(([permissions, uploads]) => {
+        if (!active) {
+          return;
+        }
+        if (!uploads.store.ready) {
+          setState({ status: "degraded", reason: "个人材料存储当前未就绪，已停止展示上传明细。" });
+          return;
+        }
+        if (!sameUploadPermissions(permissions.upload_permissions, uploads.permissions)) {
+          setState({ status: "degraded", reason: "个人材料权限响应不一致，已停止展示上传明细。" });
+          return;
+        }
+        setState({
+          status: uploads.items.length > 0 ? "ready" : "empty",
+          permissions,
+          uploads
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setState({ status: "error" });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <section className="replica-panel" aria-labelledby="personal-material-title" data-status={state.status}>
+      <div className="replica-results-head">
+        <div>
+          <p className="replica-kicker">个人材料只读状态</p>
+          <h2 id="personal-material-title">个人材料</h2>
+        </div>
+        <span>HTTP GET-only</span>
+      </div>
+
+      {state.status === "loading" ? (
+        <p role="status">个人材料加载中</p>
+      ) : null}
+
+      {state.status === "error" ? (
+        <p role="alert">个人材料读取失败</p>
+      ) : null}
+
+      {state.status === "degraded" ? (
+        <div role="status">
+          <strong>个人材料状态受限</strong>
+          <p>{state.reason}</p>
+        </div>
+      ) : null}
+
+      {state.status === "ready" || state.status === "empty" ? (
+        <>
+          <div aria-label="个人材料角色能力">
+            <p>当前角色：{state.permissions.role}</p>
+            <ul>
+              <li>上传个人材料：{permissionLabel(state.permissions.upload_permissions.can_upload_personal)}</li>
+              <li>查看全部个人材料：{permissionLabel(state.permissions.upload_permissions.can_read_all_personal_uploads)}</li>
+              <li>治理个人材料：{permissionLabel(state.permissions.upload_permissions.can_govern_personal_uploads)}</li>
+            </ul>
+          </div>
+
+          {state.status === "empty" ? (
+            <p role="status">当前身份暂无可见个人材料</p>
+          ) : (
+            <div aria-label="可见个人材料历史">
+              {state.uploads.items.map((item) => (
+                <PersonalMaterialHistoryItem key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function PersonalMaterialHistoryItem({ item }: { readonly item: DocumentUploadItem }) {
+  return (
+    <article className="replica-result-card">
+      <h3>{item.name}</h3>
+      <time>{item.created_at}</time>
+      <dl>
+        <div>
+          <dt className="sr-only">治理状态</dt>
+          <dd>治理状态：{item.governance_status}</dd>
+        </div>
+        <div>
+          <dt className="sr-only">安全扫描</dt>
+          <dd>安全扫描：{item.security_scan_status}</dd>
+        </div>
+        <div>
+          <dt className="sr-only">DLP</dt>
+          <dd>DLP：{item.dlp_status}</dd>
+        </div>
+        <div>
+          <dt className="sr-only">索引状态</dt>
+          <dd>索引状态：{item.index_status}</dd>
+        </div>
+        <div>
+          <dt className="sr-only">个人索引</dt>
+          <dd>个人索引：{item.personal_index_status} / {item.personal_index_chunk_count} chunks</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function sameUploadPermissions(left: DocumentUploadPermissions, right: DocumentUploadPermissions): boolean {
+  return left.can_upload_personal === right.can_upload_personal
+    && left.can_read_all_personal_uploads === right.can_read_all_personal_uploads
+    && left.can_govern_personal_uploads === right.can_govern_personal_uploads;
+}
+
+function permissionLabel(allowed: boolean): string {
+  return allowed ? "允许" : "不允许";
+}
