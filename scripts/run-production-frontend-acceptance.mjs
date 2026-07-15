@@ -336,6 +336,16 @@ function finalPath(url) {
   }
 }
 
+function buildBrowserContextOptions(viewport, session, acceptanceHeaders) {
+  const options = {
+    viewport: { width: viewport.width, height: viewport.height },
+  };
+  if (session !== "anonymous") {
+    options.extraHTTPHeaders = acceptanceHeaders;
+  }
+  return options;
+}
+
 function sanitizeFailedRequest(failed) {
   const sanitized = { url: sanitizeUrl(failed.url) };
   if (Number.isInteger(failed.status)) {
@@ -916,10 +926,9 @@ async function run() {
       for (const group of checkGroups) {
         for (const routeCheck of group.routeChecks) {
           const session = routeCheck.session ?? "workspace";
-          const context = await browser.newContext({
-            viewport: { width: viewport.width, height: viewport.height },
-            extraHTTPHeaders: acceptanceHeaders,
-          });
+          const context = await browser.newContext(
+            buildBrowserContextOptions(viewport, session, acceptanceHeaders),
+          );
           await context.route("**/*", async (route) => {
             if (route.request().method() !== "GET") {
               await route.abort("blockedbyclient");
@@ -1126,6 +1135,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
 
 export {
   aliasRouteChecks,
+  buildBrowserContextOptions,
   classify,
   finalPath,
   routeCheckProfiles,

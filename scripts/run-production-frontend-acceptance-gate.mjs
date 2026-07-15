@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   aliasRouteChecks,
+  finalPath,
   routeCheckProfiles,
   viewports as acceptanceViewports,
 } from "./run-production-frontend-acceptance.mjs";
@@ -188,10 +189,36 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function hasValidPngScreenshot(value) {
+  if (typeof value !== "string" || value.trim().length === 0 || path.extname(value).toLowerCase() !== ".png") {
+    return false;
+  }
+  let descriptor = null;
+  try {
+    const stats = fs.statSync(value);
+    if (!stats.isFile() || stats.size < PNG_SIGNATURE.length) {
+      return false;
+    }
+    descriptor = fs.openSync(value, "r");
+    const signature = Buffer.alloc(PNG_SIGNATURE.length);
+    const bytesRead = fs.readSync(descriptor, signature, 0, signature.length, 0);
+    return bytesRead === PNG_SIGNATURE.length && signature.equals(PNG_SIGNATURE);
+  } catch {
+    return false;
+  } finally {
+    if (descriptor !== null) {
+      fs.closeSync(descriptor);
+    }
+  }
+}
+
 function hasCompleteRouteEvidence(
   check,
   { expectedPath = null, requirePathIdentity = false, requireScreenshot = false } = {},
 ) {
+  const observedPath = typeof check?.finalUrl === "string" ? finalPath(check.finalUrl) : null;
   return (
     typeof check?.route === "string" &&
     typeof check?.viewport === "string" &&
@@ -199,8 +226,9 @@ function hasCompleteRouteEvidence(
       (typeof check.expectedPath === "string" &&
         check.expectedPath === expectedPath &&
         typeof check.finalPath === "string" &&
-        check.finalPath === expectedPath)) &&
-    (!requireScreenshot || (typeof check.screenshot === "string" && check.screenshot.trim().length > 0)) &&
+        check.finalPath === expectedPath &&
+        observedPath === expectedPath)) &&
+    (!requireScreenshot || hasValidPngScreenshot(check.screenshot)) &&
     Number.isInteger(check.status) &&
     check.status >= 200 &&
     check.status < 400 &&
