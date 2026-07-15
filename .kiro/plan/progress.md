@@ -1142,3 +1142,94 @@ Phase 5 GitHub promotion evidence before Ready/merge:
 - GitHub 报告 `MERGEABLE`、`CLEAN`；status check count=`0`，只能表述为 checks 未配置/未报告，不能表述为 checks 通过。
 - PR 精确包含 8 个 intended files：三份 plan、release rules、稳定 workflow、operator script 和两份测试；不含 runtime/Web/Compose/Dockerfile/schema/migration。
 - 该记录写入待合并 PR 时，Ready/merge 尚未执行；最终 outcome 只能由后续 GitHub 外部状态和 closeout 证明，不能在本 commit 中预先声明。
+
+## 2026-07-15 Loop 56 PPT Production Closure Start
+
+Decision:
+
+- 用户批准下一步建议，进入“PPT 生产闭环”；本轮先执行逐页矩阵、三个明确代码缺口和本地验证。
+- 从 fresh `origin/main@f2e2c7b7d5746d2ebd0347c42a4b7d427aac1617` 创建 `codex/ppt-production-closure-20260715`，worktree 初始 clean。
+- `planning-with-files` 的引用目录仍未安装，只使用已读取的 `SKILL.md` 规则摘要和仓库现有 `.kiro/plan/`；Playwright wrapper 前置检查 `npx_available=0` 表示 shell exit 0、即 `npx` 可用。
+
+Evidence boundary:
+
+- 当前阶段为 L0/L1 需求与代码审计起点；尚未修改业务代码、未运行生产浏览器、未产生生产审计日志。
+- `production unchanged`、`provider_call=false`、`database_write=false`、`live_send=false`。
+- 生产浏览器完整验收、项目创建/转任务生产写入和真实 provider smoke 仍为独立 L4 门。
+
+Plan backup:
+
+- `/Users/pray/.Codex/file-history/medical-audit-ppt-production-closure-20260715T115209+0800`
+
+Phase 1 acceptance matrix:
+
+- 新建 `drafts/analysis/ppt-production-closure-acceptance-matrix-draft-20260715.md`，按原始 15 页逐项标记 `implemented / partial / blocked`。
+- 矩阵把部署产物、最终代码本地交互、生产路由、L4 业务写入和 provider 证据拆开；当前三个可编码缺口与四类业务输入/provider 阻塞已分离。
+- 本阶段仅写文档与计划；`production unchanged`、`provider_call=false`、`database_write=false`。
+
+Phase 4 document metric semantics:
+
+- adapter 只使用 `document_count`，不再以 `chunk_count` 冒充文档数；缺失时保持 `null` 并标记 `degraded`，页面显示“待同步”；真实 `0` 继续显示 `0` / `0 份`，API error 仍与 degraded 文案隔离。
+- 主线程 fresh targeted Vitest：`2 files / 47 tests passed`；`git diff --check` 通过。子智能体此前还通过 `pnpm web:typecheck` 与 `pnpm web:lint`，完整门禁将在 Phase 5 对最终合并代码重跑。
+- 本阶段仅本地代码和测试；`production unchanged`、`provider_call=false`、`database_write=false`。
+
+Phase 2 history-to-task closure:
+
+- 新增 owner-scoped history lookup 与 `POST /query/logs/{query_log_id}/review-task`；仅在用户显式选择项目并提交后创建任务，project visibility、task permission 和历史 owner 均 fail-closed。
+- canonical UUID、uppercase UUID 与无连字符 UUID 统一返回同一 canonical query id 和稳定 task id；重复调用返回 `created=false`，无重复任务。
+- 审计链覆盖 intent、completed/degraded 与 store failure 的 `create-failed`；`provider_call=false` 明确进入响应和审计合同。
+- 新增历史对话人工复核 dossier renderer；JSON、Markdown、DOCX 导出均通过本地验证。
+
+Phase 3 project-create closure:
+
+- 新增 admin-only `POST /projects` 与前端创建表单；项目和创建人成员同 transaction，创建人自动成为项目负责人并立即进入可见范围。
+- mutation 只接受显式持久化 project store 和 audit store；缺失时在业务写入前 `503`，不再静默回退到 `InMemoryProjectMemberStore`。
+- 审计字段统一为 `user_identifier`、`role`、`endpoint`，`project_key` 映射为审计 entity；completion audit 降级会在 API/UI 显式呈现。
+- 动态项目成员数不可读时返回 `null` 并显示“待同步”，不再把未知折叠为真实 `0`。
+
+Phase 5 fresh local acceptance:
+
+- 最终 targeted backend history/project：`28 passed`；历史文件异常专项为 `16 passed`。
+- 全量 `uv run pytest -q` 通过，collect-only 为 `645`；全量 `pnpm web:test` 为 `32 files / 295 tests`。
+- `uv run ruff check .`、`uv run mypy src`（104 source files）、`pnpm web:typecheck`、`pnpm web:lint`、`pnpm web:build`（`24/24` pages）、`git diff --check` 与冻结 JSON contract 语法检查均通过。
+- `pnpm local:fullstack:e2e`：`13/13 passed`。
+- 本地浏览器使用临时 SQLite 与显式 SQL stores：`/documents` 显示真实 `0`；项目创建 `201`、创建人成员/审计 ready；移动端历史抽屉可滚动且关闭可达；历史转任务 `200`、重复 UUID 幂等、Markdown/DOCX 导出 `200`。
+- 截图目录：`output/playwright/loop56-ppt-production-closure/`。
+- 当前边界：`database_write=local-test-only`、`production unchanged`、`provider_call=false`、`deploy_execution=false`。
+
+Phase 6 independent review status:
+
+- 首轮与后续多轮只读复审发现的 canonical UUID、导出、持久化能力、read-ready 门禁、JSON 文件解析/编码/写入以及非法条目覆盖风险均已逐项修复并补 RED→GREEN 回归。
+- 最终独立复审：`accepted P0/P1/P2=0`。`codex review --uncommitted` helper 因本机 CLI 不支持所需模型而中断，未产出第二模型结果；该限制未被表述为检查通过。
+- 当前本地候选状态：`ready_for_owner_authorization`。本阶段未创建 commit、未 stage、未 push、未开 PR、未 merge、未 deploy。
+
+## 2026-07-15 Loop 57 PPT Candidate Promotion
+
+Decision:
+
+- 用户明确批准将 Loop 56 候选原子 commit、push 并创建 Draft PR；生产部署仍作为最终目标，但 Ready、merge、clean-main preflight 与生产 `--execute` 保持后续独立门。
+- 使用 `dirty-worktree-atomic-staging` 按显式路径拆分，未使用 `git add .`、stash、reset、clean 或 checkout 覆盖。
+
+Atomic commit evidence:
+
+- `e5231d414efeb7609b40becc49092df907983269` — 后端持久化项目创建与历史人工转任务合同，15 files；staged backend targeted `28/28`。
+- `6b4ecdac8883d894321158941f16f7df0fa4e9ff` — 前端项目/历史操作级门禁，14 files；staged frontend targeted `94/94`。
+- `c03b5ab017e697ab18264a1b4fb6bfbe3e5fe1bf` — 文档统计未知与真实 0 语义，4 files；staged frontend targeted `48/48`。
+- `d6b862cbfcb9173ef820628f906eec90dd8615b4` — 产品 PRD、15 页验收矩阵与原子提交计划，3 files；frontmatter、refined secret scan 和 cached diff check 通过。
+- 最终推广状态账本为包含本段记录的 docs-only commit；其自身 SHA 与 push outcome 只能由提交后的 Git/GitHub 外部状态证明。
+
+Draft PR evidence before final ledger push:
+
+- PR：`#236`，`https://github.com/zjgulai/medical-audit/pull/236`；`state=OPEN`、`isDraft=true`。
+- base：`main@f2e2c7b7d5746d2ebd0347c42a4b7d427aac1617`；head：`d6b862cbfcb9173ef820628f906eec90dd8615b4`，local/remote 一致。
+- GitHub manifest：`4` commits、`36` files；`mergeable=MERGEABLE`、`mergeStateStatus=CLEAN`。
+- `statusCheckRollup=[]`；`gh pr checks 236 --watch=false` 返回 `no checks reported`，因此没有 CI 通过证据。
+- 初次 broad secret pattern 被 `risk-...` 业务字符串误触发；加入 token 左边界后的 refined high-risk scan 为 false，未发现 secret 候选。
+
+Boundary:
+
+- `production unchanged`
+- `provider_call=false`
+- `database_write=false`
+- `deploy_execution=false`
+- 未执行 PR Ready、merge、production preflight、生产业务写入或生产部署。

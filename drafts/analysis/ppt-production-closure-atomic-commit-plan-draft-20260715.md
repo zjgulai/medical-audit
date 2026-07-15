@@ -2,7 +2,7 @@
 title: PPT 生产闭环原子提交计划
 doc_type: analysis
 module: release
-status: active
+status: promotion-closeout
 created: 2026-07-15
 updated: 2026-07-15
 owner: self
@@ -117,6 +117,13 @@ Verification: GitHub state refresh、remote/local head equality、cached diff ch
 - 初始 head：`c03b5ab017e697ab18264a1b4fb6bfbe3e5fe1bf`，与远端分支一致。
 - 初始 manifest：`3` 个业务 commit、`33` 个文件；GitHub 报告 `MERGEABLE/CLEAN`。
 - `statusCheckRollup=[]`，`gh pr checks` 返回“no checks reported”；只能表述为 checks 未配置/未报告。
+
+After Commit 4:
+
+- head：`d6b862cbfcb9173ef820628f906eec90dd8615b4`，local/remote 相等。
+- manifest：`4` commits、`36` files；GitHub 仍为 `OPEN/Draft/MERGEABLE/CLEAN`。
+- checks 仍为 `0`，没有 CI passed 证据。
+- Commit 5 是包含本段推广账本的 commit；其自身 SHA 与最终 push 结果由提交后的 GitHub 外部状态证明，不在文件内预写。
 
 ## Promotion gate
 
