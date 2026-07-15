@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
@@ -33,7 +33,20 @@ export function PersonalMaterialActions({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [message, setMessage] = useState<{ readonly kind: "error" | "success"; readonly text: string } | null>(null);
+  const mountedRef = useRef(false);
+  const currentRoleRef = useRef(auditUser.role);
+  const actionGenerationRef = useRef(0);
   const pendingActionRef = useRef<PendingAction | null>(null);
+  currentRoleRef.current = auditUser.role;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      actionGenerationRef.current += 1;
+      pendingActionRef.current = null;
+    };
+  }, []);
 
   const canUpload = permissions.can_upload_personal;
   const canGovern = permissions.can_govern_personal_uploads;
@@ -66,27 +79,73 @@ export function PersonalMaterialActions({
     if (pendingActionRef.current !== null) {
       return;
     }
+    const actionRole = auditUser.role;
+    const generation = actionGenerationRef.current + 1;
+    actionGenerationRef.current = generation;
     pendingActionRef.current = action;
     setPendingAction(action);
     setMessage(null);
 
     try {
       await write();
+      if (!isCurrentAction(
+        mountedRef,
+        currentRoleRef,
+        actionGenerationRef,
+        actionRole,
+        generation
+      )) {
+        return;
+      }
       afterWrite?.();
       try {
         await onChanged();
-        setMessage({ kind: "success", text: "操作成功" });
+        if (isCurrentAction(
+          mountedRef,
+          currentRoleRef,
+          actionGenerationRef,
+          actionRole,
+          generation
+        )) {
+          setMessage({ kind: "success", text: "操作成功" });
+        }
       } catch (error) {
-        setMessage({
-          kind: "error",
-          text: `操作已完成，但列表刷新失败：${requestErrorMessage(error)}`
-        });
+        if (isCurrentAction(
+          mountedRef,
+          currentRoleRef,
+          actionGenerationRef,
+          actionRole,
+          generation
+        )) {
+          setMessage({
+            kind: "error",
+            text: `操作已完成，但列表刷新失败：${requestErrorMessage(error)}`
+          });
+        }
       }
     } catch (error) {
-      setMessage({ kind: "error", text: requestErrorMessage(error) });
+      if (isCurrentAction(
+        mountedRef,
+        currentRoleRef,
+        actionGenerationRef,
+        actionRole,
+        generation
+      )) {
+        setMessage({ kind: "error", text: requestErrorMessage(error) });
+      }
     } finally {
-      pendingActionRef.current = null;
-      setPendingAction(null);
+      if (actionGenerationRef.current === generation) {
+        pendingActionRef.current = null;
+        if (isCurrentAction(
+          mountedRef,
+          currentRoleRef,
+          actionGenerationRef,
+          actionRole,
+          generation
+        )) {
+          setPendingAction(null);
+        }
+      }
     }
   }
 
@@ -209,6 +268,18 @@ export function PersonalMaterialActions({
       {message?.kind === "success" ? <p role="status">{message.text}</p> : null}
     </div>
   );
+}
+
+function isCurrentAction(
+  mountedRef: React.RefObject<boolean>,
+  currentRoleRef: React.RefObject<string>,
+  generationRef: React.RefObject<number>,
+  actionRole: string,
+  generation: number
+): boolean {
+  return mountedRef.current
+    && currentRoleRef.current === actionRole
+    && generationRef.current === generation;
 }
 
 function validatePersonalFile(file: File): string | null {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import { fetchDocumentPermissions, fetchDocumentUploads } from "@/lib/api-client";
@@ -17,6 +17,7 @@ type PersonalMaterialReadState =
   | { readonly status: "loading" }
   | {
       readonly status: "ready" | "empty";
+      readonly generation: number;
       readonly loadedRole: string;
       readonly permissions: DocumentPermissionsResponse;
       readonly uploads: DocumentUploadListResponse;
@@ -27,15 +28,34 @@ type PersonalMaterialReadState =
 export function PersonalMaterialReadPanel() {
   const auditUser = useAuditUser();
   const [state, setState] = useState<PersonalMaterialReadState>({ status: "loading" });
+  const mountedRef = useRef(false);
+  const currentRoleRef = useRef(auditUser.role);
+  const loadGenerationRef = useRef(0);
+  currentRoleRef.current = auditUser.role;
 
   useEffect(() => {
-    let active = true;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadGenerationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     const loadedRole = auditUser.role;
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
     setState({ status: "loading" });
 
     Promise.all([fetchDocumentPermissions(), fetchDocumentUploads()])
       .then(([permissions, uploads]) => {
-        if (!active) {
+        if (!isCurrentIdentityLoad(
+          mountedRef,
+          currentRoleRef,
+          loadGenerationRef,
+          loadedRole,
+          generation
+        )) {
           return;
         }
         const invalidReason = documentUploadsInvalidReason(permissions, uploads);
@@ -45,20 +65,23 @@ export function PersonalMaterialReadPanel() {
         }
         setState({
           status: uploads.items.length > 0 ? "ready" : "empty",
+          generation,
           loadedRole,
           permissions,
           uploads
         });
       })
       .catch(() => {
-        if (active) {
+        if (isCurrentIdentityLoad(
+          mountedRef,
+          currentRoleRef,
+          loadGenerationRef,
+          loadedRole,
+          generation
+        )) {
           setState({ status: "error" });
         }
       });
-
-    return () => {
-      active = false;
-    };
   }, [auditUser.role]);
 
   const staleRole = (state.status === "ready" || state.status === "empty")
@@ -115,13 +138,28 @@ export function PersonalMaterialReadPanel() {
             permissions={state.permissions.upload_permissions}
             uploads={state.uploads.items}
             onChanged={async () => {
+              assertCurrentIdentityLoad(
+                mountedRef,
+                currentRoleRef,
+                loadGenerationRef,
+                state.loadedRole,
+                state.generation
+              );
               const uploads = await fetchDocumentUploads();
+              assertCurrentIdentityLoad(
+                mountedRef,
+                currentRoleRef,
+                loadGenerationRef,
+                state.loadedRole,
+                state.generation
+              );
               const invalidReason = documentUploadsInvalidReason(state.permissions, uploads);
               if (invalidReason) {
                 throw new Error(invalidReason);
               }
               setState({
                 status: uploads.items.length > 0 ? "ready" : "empty",
+                generation: state.generation,
                 loadedRole: state.loadedRole,
                 permissions: state.permissions,
                 uploads
@@ -132,6 +170,36 @@ export function PersonalMaterialReadPanel() {
       ) : null}
     </section>
   );
+}
+
+function isCurrentIdentityLoad(
+  mountedRef: React.RefObject<boolean>,
+  currentRoleRef: React.RefObject<string>,
+  generationRef: React.RefObject<number>,
+  loadedRole: string,
+  generation: number
+): boolean {
+  return mountedRef.current
+    && currentRoleRef.current === loadedRole
+    && generationRef.current === generation;
+}
+
+function assertCurrentIdentityLoad(
+  mountedRef: React.RefObject<boolean>,
+  currentRoleRef: React.RefObject<string>,
+  generationRef: React.RefObject<number>,
+  loadedRole: string,
+  generation: number
+): void {
+  if (!isCurrentIdentityLoad(
+    mountedRef,
+    currentRoleRef,
+    generationRef,
+    loadedRole,
+    generation
+  )) {
+    throw new Error("个人材料身份已变化，已忽略旧列表刷新");
+  }
 }
 
 function documentUploadsInvalidReason(

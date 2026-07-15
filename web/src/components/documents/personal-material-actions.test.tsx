@@ -422,4 +422,55 @@ describe("PersonalMaterialReadPanel action integration", () => {
     expect(fetchDocumentPermissionsMock).toHaveBeenCalledTimes(2);
     expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(2);
   });
+
+  it("does not let an old role refresh overwrite a newer role load", async () => {
+    const write = deferred<DocumentUploadResponse>();
+    const oldRoleRefresh = deferred<DocumentUploadListResponse>();
+    const memberUpload = {
+      ...readyUpload,
+      id: "document-upload-member",
+      name: "member-current.pdf",
+      created_by: "next-member"
+    };
+    const staleAdminUpload = {
+      ...readyUpload,
+      id: "document-upload-stale-admin",
+      name: "stale-admin.pdf"
+    };
+    fetchDocumentPermissionsMock
+      .mockResolvedValueOnce(permissionsResponse("admin", governorPermissions))
+      .mockResolvedValueOnce(permissionsResponse("member", deniedPermissions));
+    fetchDocumentUploadsMock
+      .mockResolvedValueOnce(uploadsResponse(governorPermissions))
+      .mockReturnValueOnce(oldRoleRefresh.promise)
+      .mockResolvedValueOnce(uploadsResponse(deniedPermissions, [memberUpload]));
+    indexPersonalDocumentMock.mockReturnValue(write.promise);
+    const view = render(<PersonalMaterialReadPanel />);
+    expect(await screen.findByRole("button", { name: "批准进入索引" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "执行个人索引" }));
+    expect(indexPersonalDocumentMock).toHaveBeenCalledTimes(1);
+    await act(async () => write.resolve(uploadResponse));
+    await waitFor(() => expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(2));
+
+    auditUserState.role = "member";
+    view.rerender(<PersonalMaterialReadPanel />);
+    expect(await screen.findByText("当前角色：member")).toBeInTheDocument();
+    expect(screen.getByText("member-current.pdf")).toBeInTheDocument();
+    expect(fetchDocumentPermissionsMock).toHaveBeenCalledTimes(2);
+    expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(3);
+
+    await act(async () => oldRoleRefresh.resolve(
+      uploadsResponse(governorPermissions, [staleAdminUpload])
+    ));
+
+    await waitFor(() => expect(screen.getByText("当前角色：member")).toBeInTheDocument());
+    expect(screen.getByText("member-current.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("stale-admin.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批准进入索引" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "执行个人索引" })).toBeEnabled();
+    expect(screen.queryByText(/操作已完成，但列表刷新失败/)).not.toBeInTheDocument();
+    expect(indexPersonalDocumentMock).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(3);
+  });
 });
