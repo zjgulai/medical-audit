@@ -767,6 +767,8 @@ describe("replica backend read adapters", () => {
 
   it("starts knowledge-base permissions and both catalog reads in the same load pass", async () => {
     const humanLabel = "医院医保审计依据库";
+    const permissionsFallbackLabel = "权限目录回退标签-不得采用";
+    const sourceCatalogFallbackLabel = "来源目录回退标签-不得采用";
     const internalSource = "medical-insurance-laws" as const;
     const internalAccess = "explicit-read-all" as const;
     const fetchDocumentPermissions = vi.fn(async () => ({
@@ -774,7 +776,7 @@ describe("replica backend read adapters", () => {
       source_collections: [
         {
           source_collection: internalSource,
-          label: humanLabel,
+          label: permissionsFallbackLabel,
           scope: "系统",
           access: internalAccess
         }
@@ -795,7 +797,7 @@ describe("replica backend read adapters", () => {
       items: [{
         ...sourceCollectionCatalogItem,
         source_collection: internalSource,
-        label: humanLabel,
+        label: sourceCatalogFallbackLabel,
         access: internalAccess
       }]
     }));
@@ -814,6 +816,8 @@ describe("replica backend read adapters", () => {
     });
     expect(result.data.knowledgeBases[0]).not.toHaveProperty("source_collection");
     expect(result.data.knowledgeBases[0]).not.toHaveProperty("access");
+    expect(result.data.knowledgeBases[0]?.name).not.toBe(permissionsFallbackLabel);
+    expect(result.data.knowledgeBases[0]?.name).not.toBe(sourceCatalogFallbackLabel);
     expect(result.data.sourceGroups[0]?.options[0]).toMatchObject({
       value: internalSource,
       label: humanLabel

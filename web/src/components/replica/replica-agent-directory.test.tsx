@@ -8,7 +8,10 @@ import { AUDIT_ROLE_STORAGE_KEY, writeAuditClientRole } from "@/lib/audit-user";
 import type { ReferenceAgentCard } from "@/lib/reference-replica-data";
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 
-import { ReplicaAgentDirectory } from "./replica-agent-directory";
+import {
+  getMarketAgentInstallBlockReason,
+  ReplicaAgentDirectory
+} from "./replica-agent-directory";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -301,7 +304,7 @@ describe("ReplicaAgentDirectory", () => {
     );
   });
 
-  it("does not install the same market template again after a successful install", async () => {
+  it("renders completed market-template install actions as disabled", async () => {
     render(<ReplicaAgentDirectory mode="market" />);
 
     fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
@@ -316,10 +319,22 @@ describe("ReplicaAgentDirectory", () => {
       expect(installButton).toHaveTextContent("已安装");
     });
     expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+  });
 
-    installButton.removeAttribute("disabled");
-    fireEvent.click(installButton);
-    expect(createAuditAgent).toHaveBeenCalledTimes(1);
+  it("rejects a completed market-template install before the handler can call the API again", () => {
+    expect(getMarketAgentInstallBlockReason({
+      canManageAgents: true,
+      isInstalled: true,
+      inFlightIdentityKey: null,
+      identityKey: "admin:next-admin"
+    })).toBe("already-installed");
+
+    expect(getMarketAgentInstallBlockReason({
+      canManageAgents: true,
+      isInstalled: false,
+      inFlightIdentityKey: null,
+      identityKey: "admin:next-admin"
+    })).toBeNull();
   });
 
   it.each(auditExtensionValidationCatalog.map(({ id, name }) => ({ id, name })))(

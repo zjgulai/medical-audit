@@ -184,6 +184,28 @@ function toApiAgentCategory(category: ReferenceAgentCategory): ApiAgentCategory 
   return "业务类";
 }
 
+type MarketAgentInstallBlockReason =
+  | "permission-denied"
+  | "already-installed"
+  | "install-pending";
+
+export function getMarketAgentInstallBlockReason({
+  canManageAgents,
+  isInstalled,
+  inFlightIdentityKey,
+  identityKey
+}: {
+  readonly canManageAgents: boolean;
+  readonly isInstalled: boolean;
+  readonly inFlightIdentityKey: string | null;
+  readonly identityKey: string;
+}): MarketAgentInstallBlockReason | null {
+  if (!canManageAgents) return "permission-denied";
+  if (isInstalled) return "already-installed";
+  if (inFlightIdentityKey === identityKey) return "install-pending";
+  return null;
+}
+
 function DigitalHumanAvatar({
   agent,
   size = "default"
@@ -320,12 +342,17 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   }
 
   async function installMarketAgent(agent: ReferenceAgentCard) {
-    if (!canManageAgents) {
+    const blockReason = getMarketAgentInstallBlockReason({
+      canManageAgents,
+      isInstalled: installedAgentIds.has(agent.id),
+      inFlightIdentityKey: installInFlightRef.current,
+      identityKey
+    });
+    if (blockReason === "permission-denied") {
       setNotice("安装未完成：当前身份无权安装智能体。");
       return;
     }
-    if (installedAgentIds.has(agent.id)) return;
-    if (installInFlightRef.current === identityKey) return;
+    if (blockReason !== null) return;
     const requestGeneration = identityGenerationRef.current.generation;
     installInFlightRef.current = identityKey;
     setSelectedAgentId(agent.id);
