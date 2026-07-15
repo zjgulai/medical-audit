@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ReplicaRemediationWorkbench } from "@/components/replica/replica-remediation-workbench";
 
 export default function RemediationPage() {
-  redirect("/medical-audit");
+  return <ReplicaRemediationWorkbench />;
 }
