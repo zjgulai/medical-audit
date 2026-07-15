@@ -41,6 +41,11 @@ source: human+ai
 - Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
 - commit point 是部署后 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke 全部通过后，最后原子写入 `.deploy-sha`。app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。
 - 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
+- execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。`--skip-web-build` 只允许先复验本地 `web/out`、复制到该快照后再次复验；快照在整个同步事务退出后销毁。
+- execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 拒绝跨 origin redirect，并按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
+- execute 禁止 `--skip-smoke`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、rsync timeout/30、SSH 255 或 activation restore 79/cleanup 85 都按远端结果未知处理，必须保留生产锁并人工核对，不能自动宣称回滚或部署成功。
+- 首次从 legacy flat root 迁移必须显式传 `--allow-first-legacy-migration`，且仅在 `current` 和 migration sentinel 都不存在、flat `index.html` 与旧 `.deploy-sha` 均合法时放行。activation 在最终 marker 前原子创建 migration sentinel；marker 前失败恢复必须删除 sentinel。回滚到 legacy 时先删除 sentinel，若 marker 尚未尝试则失败恢复会重建 sentinel；`.deploy-sha` 始终是最后的状态提交点。
+- app/env/db/Nginx/Web 五类备份及 completion marker 必须是非 symlink regular file、非空且 mode `0600`。Nginx secret-bearing candidate 的 host/container cleanup trap 必须先于生成或 `docker cp` 安装；清理失败按 fail-closed 保留锁。正式 `nginx -t` 的 stdout/stderr 不进入部署日志，只返回通用失败信息。
 - 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
 
 ### 2026-07-15 main@2bba501 生产部署与状态审计边界修正

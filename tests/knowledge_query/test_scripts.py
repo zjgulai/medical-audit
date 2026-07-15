@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import types
+from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import util as importlib_util
 from pathlib import Path
@@ -3114,6 +3115,7 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
         rollback=False,
         expected_current_sha="",
         restore_sha="",
+        allow_first_legacy_migration=False,
         report="",
     )
 
@@ -3122,6 +3124,27 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     assert config.report_path == Path(
         "tmp/outputs/production-e2e-smoke-after-deploy-20260611T184000+0800.json",
     ).resolve()
+
+
+def _patch_deploy_execute_snapshot(
+    monkeypatch: MonkeyPatch,
+    module: types.ModuleType,
+    config: types.SimpleNamespace,
+) -> None:
+    if not hasattr(config, "repo_root"):
+        config.repo_root = Path(".").resolve()
+    if not hasattr(config, "skip_web_build"):
+        config.skip_web_build = False
+    monkeypatch.setattr(
+        module,
+        "_approved_release_snapshot",
+        lambda _config: nullcontext(config.repo_root),
+    )
+    monkeypatch.setattr(
+        module,
+        "replace",
+        lambda value, **changes: types.SimpleNamespace(**(vars(value) | changes)),
+    )
 
 
 def test_deploy_tencent_cloud_execute_requires_clean_approved_main(
@@ -3164,6 +3187,75 @@ def test_deploy_tencent_cloud_execute_requires_clean_approved_main(
     ]
 
 
+def test_deploy_tencent_cloud_snapshot_is_pinned_to_approved_commit(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_approved_snapshot",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    snapshotter = getattr(module, "_approved_release_snapshot", None)
+    assert snapshotter is not None
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "codex@example.test"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Codex Test"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "approved.txt").write_text("approved\n", encoding="utf-8")
+    subprocess.run(["git", "add", "approved.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "approved"], cwd=repo, check=True)
+    approved_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    config = types.SimpleNamespace(
+        repo_root=repo,
+        approved_sha=approved_sha,
+        skip_web_build=False,
+    )
+    commands: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda args, *, cwd, **_kwargs: commands.append((list(args), cwd)),
+    )
+
+    with snapshotter(config) as snapshot_root:
+        snapshot_root = Path(snapshot_root)
+        assert snapshot_root != repo
+        assert (snapshot_root / "approved.txt").read_text(encoding="utf-8") == "approved\n"
+        subprocess.run(["git", "switch", "-c", "drift"], cwd=repo, check=True)
+        (repo / "approved.txt").write_text("live-drift\n", encoding="utf-8")
+        web_out = snapshot_root / "web" / "out"
+        web_out.mkdir(parents=True)
+        deploy_config = types.SimpleNamespace(
+            repo_root=snapshot_root,
+            ssh_target="ubuntu@example.test",
+            ssh_key=tmp_path / "deploy.pem",
+            remote_app_dir="/opt/medical-audit/app",
+            remote_web_dir="/var/www/audit",
+            approved_sha=approved_sha,
+        )
+        module._sync_application(deploy_config, "owner-token")
+        module._sync_static_frontend(deploy_config, "owner-token")
+        assert (snapshot_root / "approved.txt").read_text(encoding="utf-8") == "approved\n"
+        assert commands[0][0][-2] == f"{snapshot_root}/"
+        assert commands[1][0][-2] == f"{snapshot_root}/web/out/"
+    assert not snapshot_root.exists()
+
+
 def test_deploy_tencent_cloud_wrong_release_sha_fails_before_first_ssh(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -3172,6 +3264,7 @@ def test_deploy_tencent_cloud_wrong_release_sha_fails_before_first_ssh(
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
     config = types.SimpleNamespace(execute=True, rollback=False, apply_schema=False)
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
     events: list[str] = []
 
     monkeypatch.setattr(module, "_parse_args", lambda: object())
@@ -3649,6 +3742,7 @@ def test_deploy_tencent_cloud_skip_build_still_runs_manifest_gate_before_ssh(
         skip_web_build=True,
         skip_app_rebuild=False,
     )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
     events: list[str] = []
     monkeypatch.setattr(module, "_parse_args", lambda: object())
     monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
@@ -3705,7 +3799,7 @@ def test_deploy_tencent_cloud_skip_build_still_runs_manifest_gate_before_ssh(
         monkeypatch.setattr(module, name, lambda *_args: None)
 
     assert module.main() == 0
-    assert events[:3] == ["build-skip=True", "validate", "ssh"]
+    assert events[:4] == ["validate", "build-skip=True", "validate", "ssh"]
 
 
 def test_deploy_tencent_cloud_readonly_preflight_does_not_require_manifest(
@@ -3793,6 +3887,122 @@ def test_deploy_tencent_cloud_rollback_requires_both_sha_guards(
         module._config_from_args(module._parse_args())
 
 
+@pytest.mark.parametrize(
+    "bad_base_url",
+    [
+        "http://audit.lute-tlz-dddd.top",
+        "https://user@audit.lute-tlz-dddd.top",
+        "https://audit.lute-tlz-dddd.top.evil.example",
+        "https://audit.lute-tlz-dddd.top:444",
+        "https://audit.lute-tlz-dddd.top?probe=1",
+        "https://audit.lute-tlz-dddd.top#fragment",
+    ],
+)
+def test_deploy_tencent_cloud_live_modes_reject_untrusted_base_url(
+    monkeypatch: MonkeyPatch,
+    bad_base_url: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_bad_base_url_{hashlib.sha256(bad_base_url.encode()).hexdigest()[:8]}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--base-url",
+            bad_base_url,
+        ],
+    )
+
+    with pytest.raises(module.DeployError, match="base-url"):
+        module._config_from_args(module._parse_args())
+
+
+def test_deploy_tencent_cloud_live_base_url_allows_explicit_default_https_port(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_explicit_https_port",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--base-url",
+            f"https://{module.DEFAULT_DOMAIN}:443/",
+        ],
+    )
+
+    config = module._config_from_args(module._parse_args())
+
+    assert config.base_url == module.DEFAULT_BASE_URL
+
+
+def test_deploy_tencent_cloud_execute_forbids_skip_smoke(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_skip_smoke_denied",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--skip-smoke",
+        ],
+    )
+
+    with pytest.raises(module.DeployError, match="forbids --skip-smoke"):
+        module._config_from_args(module._parse_args())
+
+
+def test_deploy_tencent_cloud_first_legacy_migration_requires_explicit_flag(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_legacy_migration_flag",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--allow-first-legacy-migration",
+        ],
+    )
+
+    config = module._config_from_args(module._parse_args())
+
+    assert config.allow_first_legacy_migration is True
+
+
 def test_deploy_tencent_cloud_execute_rejects_release_branch(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -3863,7 +4073,8 @@ def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
     script = captured_scripts[0]
     assert "docker inspect medical_audit_app" in script
     assert "curl -fsS http://127.0.0.1:18080/health" in script
-    assert "docker exec ai_video_nginx nginx -t" in script
+    assert "docker exec ai_video_nginx nginx -t >/dev/null 2>&1" in script
+    assert "production nginx configuration test failed" in script
     assert "WARNING shared-nginx-test-failed" not in script
     assert "/knowledge-base/catalog" in script
     assert "/index/search-backend" not in script
@@ -3879,11 +4090,12 @@ def test_deploy_tencent_cloud_static_sync_targets_owned_incoming_without_delete(
         "deploy_tencent_cloud_versioned_static_sync",
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
-    commands: list[list[str]] = []
+    run_command = module._run
+    commands: list[tuple[list[str], dict[str, object]]] = []
     monkeypatch.setattr(
         module,
         "_run",
-        lambda args, *, cwd, **_kwargs: commands.append(list(args)),
+        lambda args, *, cwd, **kwargs: commands.append((list(args), kwargs)),
     )
     web_out = tmp_path / "web" / "out"
     web_out.mkdir(parents=True)
@@ -3897,16 +4109,40 @@ def test_deploy_tencent_cloud_static_sync_targets_owned_incoming_without_delete(
         approved_sha=approved_sha,
     )
 
+    module._sync_application(config, "owner-token")
     module._sync_static_frontend(config, "owner-token")
 
-    assert len(commands) == 1
-    command = commands[0]
-    assert "--delete" not in command
-    assert command[-1] == (
+    assert len(commands) == 2
+    app_command, app_kwargs = commands[0]
+    static_command, static_kwargs = commands[1]
+    assert "--delete" in app_command
+    assert "--delete" not in static_command
+    assert static_command[-1] == (
         "ubuntu@example.test:/var/www/audit/releases/"
         f"{approved_sha}.incoming/"
     )
-    assert "owner-token" in command[command.index("--rsync-path") + 1]
+    for command, kwargs in commands:
+        assert "--timeout" in command
+        assert int(command[command.index("--timeout") + 1]) > 0
+        transport = command[command.index("-e") + 1]
+        assert "ConnectTimeout=" in transport
+        assert "ServerAliveInterval=" in transport
+        assert "ServerAliveCountMax=" in transport
+        assert "owner-token" in command[command.index("--rsync-path") + 1]
+        assert kwargs["remote_outcome_unknown"] is True
+        assert int(kwargs["timeout_seconds"]) > 0
+    assert app_kwargs == static_kwargs
+
+    def fail_partial_rsync(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(23, ["rsync"])
+
+    monkeypatch.setattr(module.subprocess, "run", fail_partial_rsync)
+    with pytest.raises(module.RemoteOutcomeUnknownError):
+        run_command(
+            ["rsync", "source", "target"],
+            cwd=tmp_path,
+            remote_outcome_unknown=True,
+        )
 
 
 def test_deploy_tencent_cloud_remote_lock_is_owner_checked_and_fail_closed(
@@ -4239,6 +4475,7 @@ def test_deploy_tencent_cloud_execute_acquires_lock_and_writes_marker_after_smok
         approved_sha="a" * 40,
         skip_app_rebuild=False,
     )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
     evidence = module.ReleaseEvidence(
         manifest_sha256="b" * 64,
         manifest_file_count=2,
@@ -4316,6 +4553,7 @@ def test_deploy_tencent_cloud_precommit_failure_restores_activation_and_keeps_ma
         approved_sha="a" * 40,
         skip_app_rebuild=False,
     )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
     evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
     events: list[str] = []
     monkeypatch.setattr(module, "_parse_args", lambda: object())
@@ -4385,6 +4623,7 @@ def test_deploy_tencent_cloud_marker_commit_error_retains_lock_without_restore(
         approved_sha="a" * 40,
         skip_app_rebuild=False,
     )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
     evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
     events: list[str] = []
     monkeypatch.setattr(module, "_parse_args", lambda: object())
@@ -4435,6 +4674,122 @@ def test_deploy_tencent_cloud_marker_commit_error_retains_lock_without_restore(
 
     assert module.main() == 2
     assert events == ["activate", "marker"]
+
+
+def test_deploy_tencent_cloud_rsync_timeout_retains_remote_lock(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_rsync_timeout_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    outcome_error = getattr(module, "RemoteOutcomeUnknownError", None)
+    assert outcome_error is not None
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=False,
+        skip_web_build=False,
+    )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
+    evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_locked_python_dependencies", lambda _config: None)
+    monkeypatch.setattr(module, "_build_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_web_release", lambda _config: evidence)
+    monkeypatch.setattr(module, "_run_remote_preflight", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_acquire_remote_deploy_lock",
+        lambda _config: events.append("lock") or "token",
+    )
+    monkeypatch.setattr(
+        module,
+        "_release_remote_deploy_lock",
+        lambda *_args: events.append("unlock"),
+    )
+    monkeypatch.setattr(module, "_create_remote_backups", lambda *_args: None)
+    monkeypatch.setattr(module, "_cleanup_remote_sync_artifacts", lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "_sync_application",
+        lambda *_args: (_ for _ in ()).throw(outcome_error("rsync timed out")),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock"]
+
+
+def test_deploy_tencent_cloud_activation_unknown_retains_lock_without_reconcile(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_activation_unknown_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    outcome_error = getattr(module, "RemoteOutcomeUnknownError", None)
+    assert outcome_error is not None
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=False,
+        skip_web_build=False,
+    )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
+    evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_locked_python_dependencies", lambda _config: None)
+    monkeypatch.setattr(module, "_build_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_web_release", lambda _config: evidence)
+    monkeypatch.setattr(module, "_run_remote_preflight", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_acquire_remote_deploy_lock",
+        lambda _config: events.append("lock") or "token",
+    )
+    monkeypatch.setattr(
+        module,
+        "_release_remote_deploy_lock",
+        lambda *_args: events.append("unlock"),
+    )
+    for name in (
+        "_create_remote_backups",
+        "_cleanup_remote_sync_artifacts",
+        "_sync_application",
+        "_prepare_remote_release_incoming",
+        "_sync_static_frontend",
+        "_verify_and_promote_remote_release",
+        "_rebuild_application",
+    ):
+        monkeypatch.setattr(module, name, lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "_activate_remote_release",
+        lambda *_args: (
+            events.append("activate")
+            or (_ for _ in ()).throw(outcome_error("activation restore outcome unknown"))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("reconcile"),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "activate"]
 
 
 def test_nginx_audit_fragment_uses_versioned_current_roots_and_cache_contract() -> None:
@@ -4522,6 +4877,40 @@ def test_deploy_tencent_cloud_nginx_host_update_preserves_bind_mount_inode(
         overwrite(linked, candidate)
 
 
+def test_deploy_tencent_cloud_nginx_inode_race_does_not_truncate_replacement(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_nginx_inode_race",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    host_config = tmp_path / "nginx.conf"
+    replacement = tmp_path / "replacement.conf"
+    candidate = tmp_path / "candidate.conf"
+    host_config.write_bytes(b"old-config")
+    replacement_bytes = b"replacement-must-remain-unchanged"
+    replacement.write_bytes(replacement_bytes)
+    candidate.write_bytes(b"new-config")
+    real_open = module.os.open
+    raced = False
+
+    def racing_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal raced
+        if Path(path) == host_config and flags & module.os.O_WRONLY and not raced:
+            raced = True
+            module.os.replace(replacement, host_config)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", racing_open)
+
+    with pytest.raises(module.DeployError, match="changed before in-place update"):
+        module._overwrite_regular_file_in_place(host_config, candidate)
+
+    assert raced is True
+    assert host_config.read_bytes() == replacement_bytes
+
+
 def test_deploy_tencent_cloud_activation_failure_restores_current_and_nginx_inode(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -4551,6 +4940,10 @@ def test_deploy_tencent_cloud_activation_failure_restores_current_and_nginx_inod
     (remote_web_dir / "releases" / old_sha).mkdir(parents=True)
     (remote_web_dir / "releases" / new_sha).mkdir(parents=True)
     (remote_web_dir / "current").symlink_to(f"releases/{old_sha}")
+    (remote_web_dir / ".versioned-release-migration-complete").write_text(
+        old_sha + "\n",
+        encoding="utf-8",
+    )
     remote_app_dir.mkdir(exist_ok=True)
     lock_dir = Path(f"{remote_app_dir}.deploy.lock")
     lock_dir.mkdir()
@@ -4578,11 +4971,15 @@ server {{
     )
     scripts: list[str] = []
     monkeypatch.setattr(module, "_ssh", lambda _config, script: scripts.append(script))
+    stamp = f"activation-failure-{tmp_path.name}"
+    host_candidate = Path(f"/tmp/medical-audit-nginx-{stamp}.candidate")
+    assert not host_candidate.exists()
     config = types.SimpleNamespace(
         remote_app_dir=str(remote_app_dir),
         remote_web_dir=str(remote_web_dir),
         approved_sha=new_sha,
-        stamp="activation-failure-test",
+        stamp=stamp,
+        allow_first_legacy_migration=False,
     )
 
     activate(config, "owner-token")
@@ -4599,6 +4996,10 @@ server {{
     assert scripts[0].index("nginx -t -c") < scripts[0].index(
         'ln -s "releases/$approved_sha"',
     )
+    assert scripts[0].index("trap cleanup_sensitive_candidates") < scripts[0].index(
+        "MEDICAL_AUDIT_NGINX_PATCH",
+    )
+    assert 'rm -f "$container_candidate" >/dev/null 2>&1 || true' not in scripts[0]
     assert "mv -Tf" in scripts[0]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -4616,8 +5017,10 @@ server {{
     )
     fake_mv.chmod(0o755)
     fake_docker = fake_bin / "docker"
+    docker_log = tmp_path / "docker.log"
     fake_docker.write_text(
         "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$DOCKER_LOG\"\n"
         "case \"$*\" in\n"
         "  *'nginx -t -c'*) exit 0;;\n"
         "  *'nginx -t'*) exit 1;;\n"
@@ -4628,6 +5031,7 @@ server {{
     fake_docker.chmod(0o755)
     environment = os.environ.copy()
     environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+    environment["DOCKER_LOG"] = str(docker_log)
 
     failed = subprocess.run(
         ["bash", "-c", scripts[0]],
@@ -4643,6 +5047,105 @@ server {{
     assert os.readlink(remote_web_dir / "current") == f"releases/{old_sha}"
     assert host_config.read_bytes() == original_config
     assert host_config.stat().st_ino == original_inode
+    assert not host_candidate.exists()
+    assert f"exec ai_video_nginx rm -f {host_candidate}" in docker_log.read_text(
+        encoding="utf-8",
+    )
+
+
+def test_deploy_tencent_cloud_activation_rc79_is_outcome_unknown(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_activation_rc79",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    outcome_error = getattr(module, "RemoteOutcomeUnknownError", None)
+    assert outcome_error is not None
+    monkeypatch.setattr(
+        module,
+        "_ssh",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(79, ["ssh"]),
+        ),
+    )
+    config = types.SimpleNamespace(
+        stamp="activation-rc79",
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+        approved_sha="a" * 40,
+        allow_first_legacy_migration=False,
+    )
+
+    with pytest.raises(outcome_error, match="restore outcome"):
+        module._activate_remote_release(config, "owner-token")
+
+
+def test_deploy_tencent_cloud_missing_current_requires_legacy_authorization(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_legacy_activation_denied",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    remote_app_dir = tmp_path / "app"
+    remote_web_dir = tmp_path / "web"
+    transaction_root = tmp_path / "transactions"
+    approved_sha = "a" * 40
+    old_sha = "b" * 40
+    (remote_web_dir / "releases" / approved_sha).mkdir(parents=True)
+    (remote_web_dir / "index.html").write_text("legacy", encoding="utf-8")
+    remote_app_dir.mkdir()
+    (remote_app_dir / ".deploy-sha").write_text(old_sha + "\n", encoding="utf-8")
+    lock_dir = Path(f"{remote_app_dir}.deploy.lock")
+    lock_dir.mkdir()
+    (lock_dir / "owner").write_text("owner-token\n", encoding="utf-8")
+    nginx_config = tmp_path / "nginx.conf"
+    nginx_config.write_text("events {}\n", encoding="utf-8")
+    monkeypatch.setattr(module, "REMOTE_NGINX_CONFIG", str(nginx_config), raising=False)
+    monkeypatch.setattr(
+        module,
+        "REMOTE_TRANSACTION_ROOT",
+        str(transaction_root),
+        raising=False,
+    )
+    scripts: list[str] = []
+    monkeypatch.setattr(module, "_ssh", lambda _config, script: scripts.append(script))
+    config = types.SimpleNamespace(
+        stamp="legacy-denied",
+        remote_app_dir=str(remote_app_dir),
+        remote_web_dir=str(remote_web_dir),
+        approved_sha=approved_sha,
+        allow_first_legacy_migration=False,
+    )
+
+    module._activate_remote_release(config, "owner-token")
+
+    denied = subprocess.run(
+        ["bash", "-c", scripts[0]],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert denied.returncode != 0
+    assert "legacy migration authorization required" in denied.stderr
+    assert not transaction_root.exists()
+    assert not (remote_web_dir / ".versioned-release-migration-complete").exists()
+    assert 'rm -f -- "$migration_sentinel"' in scripts[0]
+    sentinel_commit = 'mv -Tf -- "$next_migration_sentinel" "$migration_sentinel"'
+    assert scripts[0].index(sentinel_commit) < scripts[0].index(
+        "printf 'active",
+    )
+    for marker in (
+        "MEDICAL_AUDIT_MIGRATION_FSYNC",
+        "MEDICAL_AUDIT_MIGRATION_DIR_FSYNC",
+    ):
+        embedded = scripts[0].split(f"<<'{marker}'\n", 1)[1].split(
+            f"\n{marker}",
+            1,
+        )[0]
+        compile(embedded, f"<{marker.lower()}>", "exec")
 
 
 def test_deploy_tencent_cloud_post_activation_restore_uses_recorded_transaction(
@@ -4670,6 +5173,11 @@ def test_deploy_tencent_cloud_post_activation_restore_uses_recorded_transaction(
     (remote_web_dir / "releases" / old_sha).mkdir(parents=True)
     (remote_web_dir / "releases" / new_sha).mkdir(parents=True)
     (remote_web_dir / "current").symlink_to(f"releases/{new_sha}")
+    (remote_web_dir / "current.next").symlink_to(f"releases/{new_sha}")
+    (remote_web_dir / ".versioned-release-migration-complete").write_text(
+        old_sha + "\n",
+        encoding="utf-8",
+    )
     lock_dir = Path(f"{remote_app_dir}.deploy.lock")
     lock_dir.mkdir()
     (lock_dir / "owner").write_text("owner-token\n", encoding="utf-8")
@@ -4679,7 +5187,7 @@ def test_deploy_tencent_cloud_post_activation_restore_uses_recorded_transaction(
         f"releases/{old_sha}\n",
         encoding="utf-8",
     )
-    (transaction / "status").write_text("active\n", encoding="utf-8")
+    (transaction / "status").write_text("prepared\n", encoding="utf-8")
     secret = b"SECRET-SENTINEL-post-activation"
     original = b"events {}\n# " + secret + b"\n"
     patched = b"events {}\n# patched\n"
@@ -4745,6 +5253,7 @@ def test_deploy_tencent_cloud_post_activation_restore_uses_recorded_transaction(
     assert secret.decode() not in completed.stdout
     assert secret.decode() not in completed.stderr
     assert os.readlink(remote_web_dir / "current") == f"releases/{old_sha}"
+    assert not (remote_web_dir / "current.next").exists()
     assert host_config.read_bytes() == original
     assert host_config.stat().st_ino == original_inode
     assert (transaction / "status").read_text(encoding="utf-8").strip() == "restored"
@@ -4763,9 +5272,23 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
     class Handler(BaseHTTPRequestHandler):
         static_cache = "public, max-age=31536000, immutable"
         static_body = static
+        html_cache = "no-store, no-cache, must-revalidate"
+        redirect_manifest = False
+        server_port = 0
 
         def do_GET(self) -> None:
             if self.path == "/release-manifest.json":
+                if type(self).redirect_manifest:
+                    self.send_response(302)
+                    self.send_header(
+                        "Location",
+                        f"http://localhost:{type(self).server_port}/redirected-manifest.json",
+                    )
+                    self.end_headers()
+                    return
+                body = manifest
+                cache = "no-store"
+            elif self.path == "/redirected-manifest.json":
                 body = manifest
                 cache = "no-store"
             elif self.path == "/_next/static/app.js":
@@ -4773,7 +5296,7 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
                 cache = type(self).static_cache
             else:
                 body = b"<html>release</html>"
-                cache = "no-store, no-cache, must-revalidate"
+                cache = type(self).html_cache
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache)
@@ -4787,6 +5310,7 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        Handler.server_port = server.server_port
         base_url = f"http://127.0.0.1:{server.server_port}"
         command = [
             sys.executable,
@@ -4808,6 +5332,36 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
         Handler.static_body = b"tampered-static"
         bad_hash = subprocess.run(command, check=False, capture_output=True, text=True)
         assert bad_hash.returncode != 0
+
+        Handler.static_body = static
+        Handler.static_cache = "public, max-age=60, not-immutable"
+        substring_static = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert substring_static.returncode != 0
+
+        Handler.static_cache = "public, max-age=31536000, immutable"
+        Handler.html_cache = "private, no-cache-disabled"
+        substring_html = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert substring_html.returncode != 0
+
+        Handler.html_cache = "no-store"
+        Handler.redirect_manifest = True
+        cross_origin_redirect = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert cross_origin_redirect.returncode != 0
     finally:
         server.shutdown()
         server.server_close()
@@ -4824,8 +5378,17 @@ def test_deploy_tencent_cloud_deploy_marker_is_atomic_and_uses_approved_sha(
     )
     approved_sha = "a" * 40
     remote_app_dir = tmp_path / "app"
+    remote_web_dir = tmp_path / "web"
+    transaction_root = tmp_path / "transactions"
+    transaction = transaction_root / "atomic-marker"
     remote_app_dir.mkdir()
+    remote_web_dir.mkdir()
+    transaction.mkdir(parents=True)
     (remote_app_dir / ".deploy-sha").write_text("b" * 40 + "\n", encoding="utf-8")
+    (transaction / "approved-sha").write_text(approved_sha + "\n", encoding="utf-8")
+    (transaction / "previous-current").write_text("LEGACY_NONE\n", encoding="utf-8")
+    migration_sentinel = remote_web_dir / ".versioned-release-migration-complete"
+    migration_sentinel.write_text(approved_sha + "\n", encoding="utf-8")
     lock_dir = Path(f"{remote_app_dir}.deploy.lock")
     lock_dir.mkdir()
     (lock_dir / "owner").write_text("owner-token\n", encoding="utf-8")
@@ -4835,9 +5398,17 @@ def test_deploy_tencent_cloud_deploy_marker_is_atomic_and_uses_approved_sha(
         "_ssh",
         lambda _config, script, **kwargs: ssh_calls.append((script, kwargs)),
     )
+    monkeypatch.setattr(
+        module,
+        "REMOTE_TRANSACTION_ROOT",
+        str(transaction_root),
+        raising=False,
+    )
     config = types.SimpleNamespace(
         remote_app_dir=str(remote_app_dir),
+        remote_web_dir=str(remote_web_dir),
         approved_sha=approved_sha,
+        stamp="atomic-marker",
     )
 
     module._write_remote_deploy_sha(config, "owner-token")
@@ -4847,6 +5418,7 @@ def test_deploy_tencent_cloud_deploy_marker_is_atomic_and_uses_approved_sha(
     assert ssh_kwargs == {}
     assert ".deploy-sha.next" in script
     assert "mv -Tf" in script
+    assert "next_migration_sentinel" not in script
     syntax = subprocess.run(
         ["bash", "-n"],
         input=script,
@@ -4878,6 +5450,7 @@ def test_deploy_tencent_cloud_deploy_marker_is_atomic_and_uses_approved_sha(
     assert completed.returncode == 0, completed.stderr
     assert (remote_app_dir / ".deploy-sha").read_text(encoding="utf-8").strip() == approved_sha
     assert not (remote_app_dir / ".deploy-sha.next").exists()
+    assert migration_sentinel.read_text(encoding="utf-8").strip() == approved_sha
 
 
 def test_deploy_tencent_cloud_ssh_transport_requires_known_host(tmp_path: Path) -> None:
@@ -4932,7 +5505,8 @@ def test_deploy_tencent_cloud_post_checks_auth_protected_documents(
         "https://audit.example.test/documents >/dev/null"
     ) in script
     assert "curl -fsS https://audit.example.test/documents >/dev/null" not in script
-    assert "docker exec ai_video_nginx nginx -t" in script
+    assert "docker exec ai_video_nginx nginx -t >/dev/null 2>&1" in script
+    assert "production nginx configuration test failed" in script
     assert "WARNING shared-nginx-test-failed" not in script
     assert "/api/v1/knowledge-base/catalog" in script
     assert "/index/search-backend" not in script
@@ -4972,6 +5546,7 @@ def test_deploy_tencent_cloud_default_smoke_stays_get_only(
 
 def test_deploy_tencent_cloud_rollback_is_executable_and_stamp_scoped(
     monkeypatch: MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     module = _load_script_module(
         "deploy_tencent_cloud_rollback_script",
@@ -5018,6 +5593,8 @@ def test_deploy_tencent_cloud_rollback_is_executable_and_stamp_scoped(
     assert "marker_commit_started=0" in script
     assert 'if [ "$marker_commit_started" -eq 1 ]; then' in script
     marker_commit = 'mv -Tf -- "$next_marker" "$marker"'
+    sentinel_remove = 'rm -f -- "$migration_sentinel"'
+    assert script.index(sentinel_remove) < script.index(marker_commit)
     assert script.index("marker_commit_started=1") < script.index(marker_commit)
     assert script.index("up -d --no-deps app") < script.index(marker_commit)
     assert script.index("docker exec ai_video_nginx nginx -t") < script.index(marker_commit)
@@ -5030,6 +5607,27 @@ def test_deploy_tencent_cloud_rollback_is_executable_and_stamp_scoped(
         text=True,
     )
     assert syntax_check.returncode == 0, syntax_check.stderr
+    heredoc_start = "<<'MEDICAL_AUDIT_NGINX_OVERWRITE'\n"
+    inline_overwrite = script.split(heredoc_start, 1)[1].split(
+        "\nMEDICAL_AUDIT_NGINX_OVERWRITE",
+        1,
+    )[0]
+    compile(inline_overwrite, "<rollback-nginx-overwrite>", "exec")
+    assert "os.O_TRUNC" not in inline_overwrite
+    destination = tmp_path / "nginx.conf"
+    source = tmp_path / "nginx.before"
+    destination.write_bytes(b"patched\n")
+    source.write_bytes(b"original\n")
+    destination_inode = destination.stat().st_ino
+    overwritten = subprocess.run(
+        [sys.executable, "-c", inline_overwrite, str(destination), str(source)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert overwritten.returncode == 0, overwritten.stderr
+    assert destination.read_bytes() == b"original\n"
+    assert destination.stat().st_ino == destination_inode
 
 
 def test_deploy_tencent_cloud_failed_rollback_retains_remote_lock(
@@ -5128,7 +5726,7 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     poll_results = [
         subprocess.CompletedProcess(
             args=["ssh"],
-            returncode=255,
+            returncode=0,
             stdout="MEDICAL_AUDIT_REMOTE_JOB_STATUS=running\n",
             stderr="",
         ),
@@ -5322,8 +5920,21 @@ def test_deploy_tencent_cloud_remote_backups_use_background_completion(
     completion_script = captured["completion_check_script"]
     assert isinstance(script, str)
     assert isinstance(completion_script, str)
+    for generated_script in (cleanup_script, script, completion_script):
+        syntax = subprocess.run(
+            ["bash", "-n"],
+            input=generated_script,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert syntax.returncode == 0, syntax.stderr
     assert "pg_dump" in script
     assert "owner-token" in script
+    assert script.index("umask 077") < script.index('worker_pid="$lock_dir/worker.pid"')
+    assert "install -m 600" in script
+    assert "medical-audit.env.pre-deploy-${stamp}" in script
+    assert "nginx.conf.pre-deploy-${stamp}" in script
     assert 'worker_pid="$lock_dir/worker.pid"' in script
     assert 'printf \'%s\\n\' "$BASHPID" > "$worker_pid_next"' in script
     assert 'test "$(cat "$worker_pid" 2>/dev/null || true)" = "$BASHPID"' in script
@@ -5333,8 +5944,12 @@ def test_deploy_tencent_cloud_remote_backups_use_background_completion(
     assert "pre-deploy-${stamp}.sql.gz" in script
     assert "medical-audit-deploy-backups-unit-stamp.complete" in completion_script
     assert 'test ! -e "$lock_dir/worker.pid"' in completion_script
-    assert "test -s /opt/medical-audit/backups/db/pre-deploy-unit-stamp.sql.gz" in (
-        completion_script
+    assert "test ! -L" in completion_script
+    assert 'test "$(stat -c \'%a\' "$path")" = 600' in completion_script
+    assert (
+        "verify_backup_file "
+        "/opt/medical-audit/backups/db/pre-deploy-unit-stamp.sql.gz"
+        in completion_script
     )
 
 

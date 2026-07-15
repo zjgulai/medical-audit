@@ -8,12 +8,17 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+import urllib.parse
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 DEFAULT_HOST = "101.34.52.232"
@@ -28,6 +33,12 @@ REMOTE_TRANSACTION_ROOT = "/opt/medical-audit/backups/transactions"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 45 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 REMOTE_COMPLETION_POLL_SECONDS = 5
+REMOTE_SSH_COMMAND_TIMEOUT_SECONDS = 30 * 60
+REMOTE_RSYNC_TOTAL_TIMEOUT_SECONDS = 30 * 60
+REMOTE_RSYNC_IO_TIMEOUT_SECONDS = 120
+SSH_CONNECT_TIMEOUT_SECONDS = 15
+SSH_SERVER_ALIVE_INTERVAL_SECONDS = 15
+SSH_SERVER_ALIVE_COUNT_MAX = 4
 RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1"
 RELEASE_MANIFEST_NAME = "release-manifest.json"
 RELEASE_MANIFEST_FIELDS = {
@@ -89,6 +100,10 @@ class DeployError(RuntimeError):
     pass
 
 
+class RemoteOutcomeUnknownError(DeployError):
+    pass
+
+
 @dataclass(frozen=True)
 class DeployConfig:
     repo_root: Path
@@ -112,6 +127,7 @@ class DeployConfig:
     approved_sha: str
     expected_current_sha: str
     restore_sha: str
+    allow_first_legacy_migration: bool
     report_path: Path
 
     @property
@@ -314,7 +330,7 @@ def _overwrite_regular_file_in_place(destination: Path, source: Path) -> None:
     try:
         descriptor = os.open(
             destination,
-            os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_NOFOLLOW,
         )
     except OSError as exc:
         raise DeployError("nginx host config could not be opened safely") from exc
@@ -322,6 +338,7 @@ def _overwrite_regular_file_in_place(destination: Path, source: Path) -> None:
         opened = os.fstat(descriptor)
         if not _same_file(destination_stat, opened) or not stat.S_ISREG(opened.st_mode):
             raise DeployError("nginx host config changed before in-place update")
+        os.ftruncate(descriptor, 0)
         offset = 0
         while offset < len(content):
             offset += os.write(descriptor, content[offset:])
@@ -333,6 +350,12 @@ def _overwrite_regular_file_in_place(destination: Path, source: Path) -> None:
         os.close(descriptor)
     if not _same_file(opened, final) or final.st_size != len(content):
         raise DeployError("nginx host config inode changed during in-place update")
+    try:
+        final_path = destination.lstat()
+    except OSError as exc:
+        raise DeployError("nginx host config path changed during in-place update") from exc
+    if not _same_file(final, final_path):
+        raise DeployError("nginx host config path changed during in-place update")
 
 
 def _remote_lock_dir(config: DeployConfig) -> str:
@@ -612,16 +635,50 @@ import urllib.request
 from pathlib import Path
 
 
-def fetch(url):
+def origin(url):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.username is not None or parsed.password is not None or not parsed.hostname:
+        raise RuntimeError("invalid URL origin")
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme.lower() == "https" else 80
+    return parsed.scheme.lower(), parsed.hostname.lower(), port
+
+
+class SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, expected_origin):
+        super().__init__()
+        self.expected_origin = expected_origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if origin(newurl) != self.expected_origin:
+            raise RuntimeError("cross-origin redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def cache_directives(values):
+    result = set()
+    for value in values:
+        for part in value.split(","):
+            name = part.split("=", 1)[0].strip().lower()
+            if name:
+                result.add(name)
+    return result
+
+
+def fetch(url, expected_origin):
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "medical-audit-deploy-verifier/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
+    opener = urllib.request.build_opener(SameOriginRedirectHandler(expected_origin))
+    with opener.open(request, timeout=20) as response:
         body = response.read()
         values = response.headers.get_all("Cache-Control") or []
-    cache_control = ",".join(value.strip() for value in values).lower()
-    return body, cache_control
+        final_url = response.geturl()
+    if origin(final_url) != expected_origin:
+        raise RuntimeError("final URL origin mismatch")
+    return body, cache_directives(values)
 
 
 def verify():
@@ -648,14 +705,18 @@ def verify():
         expected_static_sha = sys.argv[4]
     else:
         raise RuntimeError("invalid arguments")
-    manifest, _manifest_cache = fetch(base_url + "/release-manifest.json")
+    expected_origin = origin(base_url)
+    manifest, _manifest_cache = fetch(
+        base_url + "/release-manifest.json",
+        expected_origin,
+    )
     if hashlib.sha256(manifest).hexdigest() != expected_manifest_sha:
         raise RuntimeError("public manifest mismatch")
-    _html, html_cache = fetch(base_url + "/")
-    if "no-store" not in html_cache and "no-cache" not in html_cache:
+    _html, html_cache = fetch(base_url + "/", expected_origin)
+    if html_cache.isdisjoint({"no-store", "no-cache"}):
         raise RuntimeError("html cache mismatch")
     quoted_static = urllib.parse.quote(static_path, safe="/-._~")
-    static, static_cache = fetch(base_url + "/" + quoted_static)
+    static, static_cache = fetch(base_url + "/" + quoted_static, expected_origin)
     if hashlib.sha256(static).hexdigest() != expected_static_sha:
         raise RuntimeError("public static mismatch")
     if "immutable" not in static_cache:
@@ -668,6 +729,41 @@ except Exception:
     print("public release verification failed", file=sys.stderr)
     raise SystemExit(2)
 '''
+
+
+@contextmanager
+def _approved_release_snapshot(config: DeployConfig) -> Iterator[Path]:
+    with tempfile.TemporaryDirectory(prefix="medical-audit-approved-release-") as temp_dir:
+        temp_root = Path(temp_dir)
+        archive_path = temp_root / "approved-source.tar"
+        snapshot_root = temp_root / "source"
+        snapshot_root.mkdir(mode=0o700)
+        with archive_path.open("wb") as archive_output:
+            subprocess.run(
+                ["git", "archive", "--format=tar", config.approved_sha],
+                cwd=config.repo_root,
+                check=True,
+                stdout=archive_output,
+            )
+        try:
+            with tarfile.open(archive_path, mode="r:") as archive:
+                archive.extractall(snapshot_root, filter="data")
+        except (OSError, tarfile.TarError) as exc:
+            raise DeployError("approved SHA archive could not be extracted safely") from exc
+        finally:
+            archive_path.unlink(missing_ok=True)
+        if config.skip_web_build:
+            source_web_out = config.repo_root / "web" / "out"
+            snapshot_web_out = snapshot_root / "web" / "out"
+            if snapshot_web_out.is_symlink() or (
+                snapshot_web_out.exists() and not snapshot_web_out.is_dir()
+            ):
+                snapshot_web_out.unlink()
+            elif snapshot_web_out.exists():
+                shutil.rmtree(snapshot_web_out)
+            snapshot_web_out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_web_out, snapshot_web_out, symlinks=True)
+        yield snapshot_root
 
 
 def main() -> int:
@@ -691,82 +787,100 @@ def main() -> int:
                         file=sys.stderr,
                     )
             return 0
-        _validate_locked_python_dependencies(config)
-        release_evidence: ReleaseEvidence | None = None
+        if config.execute and config.skip_web_build:
+            _validate_web_release(config)
         if config.execute:
-            _build_static_frontend(config)
-            release_evidence = _validate_web_release(config)
-        _run_remote_preflight(config)
-        if not config.execute:
-            print("Preflight passed. Add --execute --confirm-production to deploy.")
-            return 0
-        if release_evidence is None:
-            raise DeployError("validated Web release evidence is missing")
-        owner_token = _acquire_remote_deploy_lock(config)
-        activation_active = False
-        release_lock = True
-        schema_applied = False
-        app_rebuild_attempted = False
-        marker_commit_attempted = False
-        try:
-            _create_remote_backups(config, owner_token)
-            _cleanup_remote_sync_artifacts(config, owner_token)
-            _sync_application(config, owner_token)
-            _prepare_remote_release_incoming(config, owner_token)
-            _sync_static_frontend(config, owner_token)
-            _verify_and_promote_remote_release(
-                config,
-                owner_token,
-                release_evidence,
-            )
-            if config.apply_schema:
-                _apply_schema(config, owner_token)
-                schema_applied = True
-            app_rebuild_attempted = not config.skip_app_rebuild
-            _rebuild_application(config, owner_token)
-            _activate_remote_release(config, owner_token)
-            activation_active = True
-            _run_remote_post_checks(config)
-            _verify_remote_release_commit_point(
-                config,
-                owner_token,
-                release_evidence,
-            )
-            _run_production_smoke(config)
-            marker_commit_attempted = True
-            _write_remote_deploy_sha(config, owner_token)
-        except BaseException as original_error:
-            if marker_commit_attempted:
-                release_lock = False
-                raise DeployError(
-                    "deploy marker commit outcome is unknown; production lock retained "
-                    "for manual reconciliation",
-                ) from original_error
-            if activation_active:
-                try:
-                    _restore_remote_activation(config, owner_token)
-                except BaseException as restore_error:
-                    release_lock = False
-                    raise DeployError(
-                        "activation restore failed; production lock retained for "
-                        "manual recovery",
-                    ) from restore_error
-            if schema_applied or app_rebuild_attempted:
-                print(
-                    "MANUAL_ROLLBACK_REQUIRED: app rebuild or schema may already be "
-                    "active; .deploy-sha was not committed",
-                    file=sys.stderr,
-                )
-            raise original_error
-        finally:
-            if release_lock:
-                _release_remote_deploy_lock(config, owner_token)
+            with _approved_release_snapshot(config) as snapshot_root:
+                return _run_nonrollback(replace(config, repo_root=snapshot_root))
+        return _run_nonrollback(config)
     except DeployError as exc:
         print(f"deploy failed: {exc}", file=sys.stderr)
         return 2
     except subprocess.CalledProcessError as exc:
         print(f"command failed with exit code {exc.returncode}", file=sys.stderr)
         return exc.returncode or 1
+
+
+def _run_nonrollback(config: DeployConfig) -> int:
+    _validate_locked_python_dependencies(config)
+    release_evidence: ReleaseEvidence | None = None
+    if config.execute:
+        _build_static_frontend(config)
+        release_evidence = _validate_web_release(config)
+    _run_remote_preflight(config)
+    if not config.execute:
+        print("Preflight passed. Add --execute --confirm-production to deploy.")
+        return 0
+    if release_evidence is None:
+        raise DeployError("validated Web release evidence is missing")
+    owner_token = _acquire_remote_deploy_lock(config)
+    activation_reconcile_required = False
+    release_lock = True
+    schema_applied = False
+    app_rebuild_attempted = False
+    marker_commit_attempted = False
+    try:
+        _create_remote_backups(config, owner_token)
+        _cleanup_remote_sync_artifacts(config, owner_token)
+        _sync_application(config, owner_token)
+        _prepare_remote_release_incoming(config, owner_token)
+        _sync_static_frontend(config, owner_token)
+        _verify_and_promote_remote_release(
+            config,
+            owner_token,
+            release_evidence,
+        )
+        if config.apply_schema:
+            _apply_schema(config, owner_token)
+            schema_applied = True
+        app_rebuild_attempted = not config.skip_app_rebuild
+        _rebuild_application(config, owner_token)
+        activation_reconcile_required = True
+        _activate_remote_release(config, owner_token)
+        _run_remote_post_checks(config)
+        _verify_remote_release_commit_point(
+            config,
+            owner_token,
+            release_evidence,
+        )
+        _run_production_smoke(config)
+        marker_commit_attempted = True
+        _write_remote_deploy_sha(config, owner_token)
+    except BaseException as original_error:
+        if marker_commit_attempted:
+            release_lock = False
+            raise DeployError(
+                "deploy marker commit outcome is unknown; production lock retained "
+                "for manual reconciliation",
+            ) from original_error
+        if activation_reconcile_required and not isinstance(
+            original_error,
+            RemoteOutcomeUnknownError,
+        ):
+            try:
+                _restore_remote_activation(config, owner_token)
+            except BaseException as restore_error:
+                release_lock = False
+                raise DeployError(
+                    "activation restore failed; production lock retained for "
+                    "manual recovery",
+                ) from restore_error
+        if isinstance(original_error, RemoteOutcomeUnknownError):
+            release_lock = False
+            raise DeployError(
+                "remote write outcome is unknown; production lock retained for "
+                "manual reconciliation",
+            ) from original_error
+        if schema_applied or app_rebuild_attempted:
+            print(
+                "MANUAL_ROLLBACK_REQUIRED: app rebuild or schema may already be "
+                "active; .deploy-sha was not committed",
+                file=sys.stderr,
+            )
+        raise original_error
+    finally:
+        if release_lock:
+            _release_remote_deploy_lock(config, owner_token)
     return 0
 
 
@@ -810,6 +924,14 @@ def _parse_args() -> argparse.Namespace:
         "--restore-sha",
         default="",
         help="Required with --rollback. Must match .deploy-sha inside the app backup.",
+    )
+    parser.add_argument(
+        "--allow-first-legacy-migration",
+        action="store_true",
+        help=(
+            "Allow the one-time migration from the legacy flat Web root when no "
+            "versioned current link or durable migration sentinel exists."
+        ),
     )
     parser.add_argument(
         "--ssh-key",
@@ -894,6 +1016,17 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         raise DeployError(
             f"live deployment actions require --confirm-production {DEFAULT_DOMAIN}",
         )
+    if execute and bool(args.skip_smoke):
+        raise DeployError("production execute forbids --skip-smoke")
+    allow_first_legacy_migration = bool(args.allow_first_legacy_migration)
+    if allow_first_legacy_migration and not execute:
+        raise DeployError("--allow-first-legacy-migration requires --execute")
+    raw_base_url = str(args.base_url).strip()
+    base_url = (
+        _validated_live_base_url(raw_base_url)
+        if execute or rollback
+        else raw_base_url.rstrip("/")
+    )
     approved_sha = _validated_sha(
         args.approved_sha,
         option="--approved-sha",
@@ -936,7 +1069,7 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         ssh_host=str(args.ssh_host),
         remote_app_dir=str(args.remote_app_dir).rstrip("/"),
         remote_web_dir=str(args.remote_web_dir).rstrip("/"),
-        base_url=str(args.base_url).rstrip("/"),
+        base_url=base_url,
         stamp=str(args.stamp),
         execute=execute,
         rollback=rollback,
@@ -951,6 +1084,7 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         approved_sha=approved_sha,
         expected_current_sha=expected_current_sha,
         restore_sha=restore_sha,
+        allow_first_legacy_migration=allow_first_legacy_migration,
         report_path=report_path,
     )
 
@@ -964,6 +1098,28 @@ def _validated_sha(value: object, *, option: str, required: bool) -> str:
     if re.fullmatch(r"[0-9a-f]{40}", normalized) is None:
         raise DeployError(f"{option} requires a full 40-character commit SHA")
     return normalized
+
+
+def _validated_live_base_url(value: str) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise DeployError("live --base-url is invalid") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != DEFAULT_DOMAIN
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise DeployError(
+            "live --base-url must be the exact HTTPS production origin",
+        )
+    return DEFAULT_BASE_URL
 
 
 def _print_plan(config: DeployConfig) -> None:
@@ -1038,7 +1194,10 @@ test -d {shlex.quote(config.remote_web_dir)}
 docker inspect medical_audit_app >/dev/null
 docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
-docker exec ai_video_nginx nginx -t
+if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
+  echo "production nginx configuration test failed" >&2
+  exit 80
+fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 auth_headers=(
   -H 'X-User-Id: deploy-smoke-admin'
@@ -1512,6 +1671,7 @@ rm -f {shlex.quote(backup_marker)} \
     script = f"""
 set -euo pipefail
 {_remote_lock_guard_script(config, owner_token)}
+umask 077
 worker_pid="$lock_dir/worker.pid"
 worker_pid_next="$lock_dir/worker.pid.$BASHPID.next"
 test ! -e "$worker_pid"
@@ -1540,15 +1700,20 @@ mkdir -p /opt/medical-audit/backups/app \
 tar --exclude='.git' --exclude='.venv' --exclude='tmp' --exclude='data' \
   -czf /opt/medical-audit/backups/app/pre-deploy-${{stamp}}.tar.gz \
   -C /opt/medical-audit app
-cp {shlex.quote(config.remote_app_dir)}/configs/deploy/tencent-cloud/medical-audit.env \
+install -m 600 \
+  {shlex.quote(config.remote_app_dir)}/configs/deploy/tencent-cloud/medical-audit.env \
   /opt/medical-audit/backups/env/medical-audit.env.pre-deploy-${{stamp}}
 docker exec medical_audit_pg sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
   | gzip > /opt/medical-audit/backups/db/pre-deploy-${{stamp}}.sql.gz
-cp /opt/ai-video/deploy/lighthouse/nginx.conf \
+install -m 600 /opt/ai-video/deploy/lighthouse/nginx.conf \
   /opt/medical-audit/backups/nginx/nginx.conf.pre-deploy-${{stamp}}
 tar --exclude='audit/releases' --exclude='audit/current' \
   -czf /opt/medical-audit/backups/web/audit-web-pre-deploy-${{stamp}}.tar.gz \
   -C /var/www audit
+chmod 600 \
+  /opt/medical-audit/backups/app/pre-deploy-${{stamp}}.tar.gz \
+  /opt/medical-audit/backups/db/pre-deploy-${{stamp}}.sql.gz \
+  /opt/medical-audit/backups/web/audit-web-pre-deploy-${{stamp}}.tar.gz
 printf 'complete\\n' > "$backup_marker"
 """
     completion_check_script = f"""
@@ -1556,12 +1721,19 @@ set -euo pipefail
 {_remote_lock_guard_script(config, owner_token)}
 test ! -e "$lock_dir/worker.pid"
 backup_marker={shlex.quote(backup_marker)}
-test -s "$backup_marker"
-test -s {shlex.quote(app_backup)}
-test -s {shlex.quote(env_backup)}
-test -s {shlex.quote(db_backup)}
-test -s {shlex.quote(nginx_backup)}
-test -s {shlex.quote(web_backup)}
+verify_backup_file() {{
+  path="$1"
+  test -f "$path"
+  test ! -L "$path"
+  test -s "$path"
+  test "$(stat -c '%a' "$path")" = 600
+}}
+verify_backup_file "$backup_marker"
+verify_backup_file {shlex.quote(app_backup)}
+verify_backup_file {shlex.quote(env_backup)}
+verify_backup_file {shlex.quote(db_backup)}
+verify_backup_file {shlex.quote(nginx_backup)}
+verify_backup_file {shlex.quote(web_backup)}
 """
     _ssh(config, stale_backup_cleanup_script)
     _ssh_background_with_completion(
@@ -1581,6 +1753,8 @@ def _sync_application(config: DeployConfig, owner_token: str) -> None:
         "-az",
         "--delete",
         "--itemize-changes",
+        "--timeout",
+        str(REMOTE_RSYNC_IO_TIMEOUT_SECONDS),
         "--rsync-path",
         _remote_rsync_path(config, owner_token),
         "-e",
@@ -1589,7 +1763,12 @@ def _sync_application(config: DeployConfig, owner_token: str) -> None:
     for pattern in APP_RSYNC_EXCLUDES:
         args.extend(["--exclude", pattern])
     args.extend([f"{config.repo_root}/", remote])
-    _run(args, cwd=config.repo_root)
+    _run(
+        args,
+        cwd=config.repo_root,
+        timeout_seconds=REMOTE_RSYNC_TOTAL_TIMEOUT_SECONDS,
+        remote_outcome_unknown=True,
+    )
 
 
 def _cleanup_remote_sync_artifacts(config: DeployConfig, owner_token: str) -> None:
@@ -1669,6 +1848,8 @@ def _sync_static_frontend(config: DeployConfig, owner_token: str) -> None:
             "rsync",
             "-az",
             "--itemize-changes",
+            "--timeout",
+            str(REMOTE_RSYNC_IO_TIMEOUT_SECONDS),
             "--rsync-path",
             _remote_rsync_path(config, owner_token),
             "-e",
@@ -1677,6 +1858,8 @@ def _sync_static_frontend(config: DeployConfig, owner_token: str) -> None:
             remote,
         ],
         cwd=config.repo_root,
+        timeout_seconds=REMOTE_RSYNC_TOTAL_TIMEOUT_SECONDS,
+        remote_outcome_unknown=True,
     )
 
 
@@ -1742,6 +1925,10 @@ def _activate_remote_release(config: DeployConfig, owner_token: str) -> None:
     release = f"{release_root}/{config.approved_sha}"
     current = f"{config.remote_web_dir}/current"
     current_next = f"{config.remote_web_dir}/current.next"
+    migration_sentinel = (
+        f"{config.remote_web_dir}/.versioned-release-migration-complete"
+    )
+    next_migration_sentinel = f"{migration_sentinel}.next"
     transaction_dir = f"{REMOTE_TRANSACTION_ROOT}/{safe_stamp}"
     nginx_backup = f"{transaction_dir}/nginx.conf.before"
     candidate = f"/tmp/medical-audit-nginx-{safe_stamp}.candidate"
@@ -1768,6 +1955,11 @@ container_candidate={shlex.quote(container_candidate)}
 fragment={shlex.quote(fragment)}
 deploy_script={shlex.quote(deploy_script)}
 approved_sha={shlex.quote(config.approved_sha)}
+allow_first_legacy_migration={1 if config.allow_first_legacy_migration else 0}
+migration_sentinel={shlex.quote(migration_sentinel)}
+next_migration_sentinel={shlex.quote(next_migration_sentinel)}
+remote_web_dir={shlex.quote(config.remote_web_dir)}
+legacy_marker={shlex.quote(config.remote_app_dir)}/.deploy-sha
 test -d "$release"
 test ! -L "$release"
 test -f "$nginx_config"
@@ -1782,14 +1974,70 @@ if [ -L "$current" ]; then
   previous_sha="${{previous_current#releases/}}"
   test -d "$release_root/$previous_sha"
   test ! -L "$release_root/$previous_sha"
+  test -f "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  test ! -e "$next_migration_sentinel"
+  test ! -L "$next_migration_sentinel"
+  migration_sha="$(cat "$migration_sentinel")"
+  [[ "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]
 elif [ -e "$current" ]; then
   echo "current release path is not a symlink" >&2
   exit 77
 else
+  if [ "$allow_first_legacy_migration" -ne 1 ]; then
+    echo "legacy migration authorization required" >&2
+    exit 77
+  fi
+  test ! -e "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  test ! -e "$next_migration_sentinel"
+  test ! -L "$next_migration_sentinel"
   test -f {shlex.quote(config.remote_web_dir)}/index.html
+  test ! -L {shlex.quote(config.remote_web_dir)}/index.html
+  test -f "$legacy_marker"
+  test ! -L "$legacy_marker"
+  legacy_sha="$(cat "$legacy_marker")"
+  if [[ ! "$legacy_sha" =~ ^[0-9a-f]{{40}}$ ]]; then
+    echo "legacy deploy marker is invalid" >&2
+    exit 77
+  fi
 fi
 test ! -e "$current_next"
 test ! -L "$current_next"
+test ! -e "$candidate"
+test ! -L "$candidate"
+if ! docker exec ai_video_nginx sh -c 'test ! -e "$1"' sh \
+  "$container_candidate" >/dev/null 2>&1; then
+  echo "candidate cleanup precondition failed" >&2
+  exit 85
+fi
+host_candidate_owned=1
+container_candidate_owned=0
+cleanup_sensitive_candidates() {{
+  cleanup_status=0
+  if [ "$host_candidate_owned" -eq 1 ]; then
+    if ! rm -f -- "$candidate"; then
+      cleanup_status=1
+    fi
+  fi
+  if [ "$container_candidate_owned" -eq 1 ]; then
+    if ! docker exec ai_video_nginx rm -f "$container_candidate" \
+      >/dev/null 2>&1; then
+      cleanup_status=1
+    fi
+  fi
+  return "$cleanup_status"
+}}
+cleanup_sensitive_candidates_on_exit() {{
+  original_status="$?"
+  trap - EXIT
+  if ! cleanup_sensitive_candidates; then
+    echo "sensitive candidate cleanup failed" >&2
+    exit 85
+  fi
+  exit "$original_status"
+}}
+trap cleanup_sensitive_candidates_on_exit EXIT
 umask 077
 mkdir -p {shlex.quote(REMOTE_TRANSACTION_ROOT)}
 mkdir -- "$transaction_dir"
@@ -1823,13 +2071,13 @@ try:
 finally:
     os.close(descriptor)
 MEDICAL_AUDIT_NGINX_PATCH
+container_candidate_owned=1
 docker cp "$candidate" "ai_video_nginx:$container_candidate" >/dev/null 2>&1
 if ! docker exec ai_video_nginx nginx -t -c "$container_candidate" \
   >/dev/null 2>&1; then
   echo "candidate nginx configuration test failed" >&2
   exit 78
 fi
-docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
 printf '%s\n' "$approved_sha" > "$transaction_dir/approved-sha"
 printf '%s\n' "$previous_current" > "$transaction_dir/previous-current"
 printf 'prepared\n' > "$transaction_dir/status"
@@ -1848,9 +2096,30 @@ MEDICAL_AUDIT_NGINX_OVERWRITE
 }}
 restore_activation() {{
   restore_status=0
+  if [ -e "$current_next" ] || [ -L "$current_next" ]; then
+    rm -f -- "$current_next" || restore_status=1
+  fi
+  if [ -e "$current_next" ] || [ -L "$current_next" ]; then
+    restore_status=1
+  fi
   if [ "$activation_started" -eq 1 ]; then
     if [ "$previous_current" = LEGACY_NONE ]; then
-      rm -f -- "$current"
+      rm -f -- "$current" || restore_status=1
+      if [ -e "$current" ] || [ -L "$current" ]; then
+        restore_status=1
+      fi
+      if [ -e "$migration_sentinel" ] || [ -L "$migration_sentinel" ]; then
+        rm -f -- "$migration_sentinel" || restore_status=1
+      fi
+      if [ -e "$next_migration_sentinel" ] || \
+         [ -L "$next_migration_sentinel" ]; then
+        rm -f -- "$next_migration_sentinel" || restore_status=1
+      fi
+      if [ -e "$migration_sentinel" ] || [ -L "$migration_sentinel" ] || \
+         [ -e "$next_migration_sentinel" ] || \
+         [ -L "$next_migration_sentinel" ]; then
+        restore_status=1
+      fi
     else
       restore_link="$current.restore"
       rm -f -- "$restore_link"
@@ -1861,8 +2130,6 @@ restore_activation() {{
     docker exec ai_video_nginx nginx -t >/dev/null 2>&1 || restore_status=1
     docker exec ai_video_nginx nginx -s reload >/dev/null 2>&1 || restore_status=1
   fi
-  rm -f -- "$candidate"
-  docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
   if [ "$restore_status" -eq 0 ]; then
     printf 'restored\n' > "$transaction_dir/status"
     return 0
@@ -1891,18 +2158,55 @@ fi
 if ! docker exec ai_video_nginx nginx -s reload >/dev/null 2>&1; then
   false
 fi
+if [ "$previous_current" = LEGACY_NONE ]; then
+  printf '%s\n' "$approved_sha" > "$next_migration_sentinel"
+  python3 - "$next_migration_sentinel" <<'MEDICAL_AUDIT_MIGRATION_FSYNC'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+MEDICAL_AUDIT_MIGRATION_FSYNC
+  mv -Tf -- "$next_migration_sentinel" "$migration_sentinel"
+  python3 - "$remote_web_dir" <<'MEDICAL_AUDIT_MIGRATION_DIR_FSYNC'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+MEDICAL_AUDIT_MIGRATION_DIR_FSYNC
+  test -f "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  test "$(cat "$migration_sentinel")" = "$approved_sha"
+fi
 printf 'active\n' > "$transaction_dir/status"
-rm -f -- "$candidate"
-docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
 trap - ERR
 """
-    _ssh(config, script)
+    try:
+        _ssh(config, script)
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode in {79, 85}:
+            raise RemoteOutcomeUnknownError(
+                "activation restore outcome is unknown",
+            ) from exc
+        raise
 
 
 def _restore_remote_activation(config: DeployConfig, owner_token: str) -> None:
     safe_stamp = _safe_remote_job_name(config.stamp)
     transaction_dir = f"{REMOTE_TRANSACTION_ROOT}/{safe_stamp}"
     current = f"{config.remote_web_dir}/current"
+    current_next = f"{config.remote_web_dir}/current.next"
+    migration_sentinel = (
+        f"{config.remote_web_dir}/.versioned-release-migration-complete"
+    )
+    next_migration_sentinel = f"{migration_sentinel}.next"
     nginx_backup = f"{transaction_dir}/nginx.conf.before"
     container_candidate = f"/tmp/medical-audit-nginx-restore-{safe_stamp}.candidate"
     deploy_script = (
@@ -1913,6 +2217,9 @@ set -Eeuo pipefail
 {_remote_lock_guard_script(config, owner_token)}
 transaction_dir={shlex.quote(transaction_dir)}
 current={shlex.quote(current)}
+current_next={shlex.quote(current_next)}
+migration_sentinel={shlex.quote(migration_sentinel)}
+next_migration_sentinel={shlex.quote(next_migration_sentinel)}
 nginx_config={shlex.quote(REMOTE_NGINX_CONFIG)}
 nginx_backup={shlex.quote(nginx_backup)}
 container_candidate={shlex.quote(container_candidate)}
@@ -1921,33 +2228,74 @@ approved_sha={shlex.quote(config.approved_sha)}
 test -d "$transaction_dir"
 test "$(cat "$transaction_dir/approved-sha")" = "$approved_sha"
 status="$(cat "$transaction_dir/status")"
-if [ "$status" = restored ]; then
-  exit 0
-fi
-test "$status" = active -o "$status" = restore-failed
+rm -f -- "$current_next"
+test ! -e "$current_next"
+test ! -L "$current_next"
+case "$status" in
+  prepared|active|restore-failed|restored) ;;
+  *) echo "recorded activation status is invalid" >&2; exit 81 ;;
+esac
 previous_current="$(cat "$transaction_dir/previous-current")"
 if [ "$previous_current" != LEGACY_NONE ] && \
    [[ ! "$previous_current" =~ ^releases/[0-9a-f]{{40}}$ ]]; then
   echo "recorded previous current target is invalid" >&2
   exit 81
 fi
+if [ "$status" = restored ]; then
+  current_target="$(readlink "$current" 2>/dev/null || true)"
+  if [ "$previous_current" = LEGACY_NONE ]; then
+    test ! -e "$current"
+    test ! -L "$current"
+    test ! -e "$migration_sentinel"
+    test ! -L "$migration_sentinel"
+    test ! -e "$next_migration_sentinel"
+    test ! -L "$next_migration_sentinel"
+  else
+    test -L "$current"
+    test "$current_target" = "$previous_current"
+    test -f "$migration_sentinel"
+    test ! -L "$migration_sentinel"
+    test ! -e "$next_migration_sentinel"
+    test ! -L "$next_migration_sentinel"
+    migration_sha="$(cat "$migration_sentinel")"
+    [[ "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]
+  fi
+  exit 0
+fi
 test -f "$nginx_backup"
 test ! -L "$nginx_backup"
 test -f "$nginx_config"
 test ! -L "$nginx_config"
+mark_restore_failed() {{
+  trap - ERR
+  printf 'restore-failed\n' > "$transaction_dir/status"
+}}
+trap mark_restore_failed ERR
+if ! docker exec ai_video_nginx sh -c 'test ! -e "$1"' sh \
+  "$container_candidate" >/dev/null 2>&1; then
+  echo "restore candidate cleanup precondition failed" >&2
+  exit 85
+fi
+container_candidate_owned=1
+cleanup_restore_candidate_on_exit() {{
+  original_status="$?"
+  trap - EXIT
+  if [ "$container_candidate_owned" -eq 1 ] && \
+     ! docker exec ai_video_nginx rm -f "$container_candidate" \
+       >/dev/null 2>&1; then
+    printf 'restore-failed\n' > "$transaction_dir/status"
+    echo "sensitive restore candidate cleanup failed" >&2
+    exit 85
+  fi
+  exit "$original_status"
+}}
+trap cleanup_restore_candidate_on_exit EXIT
 docker cp "$nginx_backup" "ai_video_nginx:$container_candidate" >/dev/null 2>&1
 if ! docker exec ai_video_nginx nginx -t -c "$container_candidate" \
   >/dev/null 2>&1; then
   echo "recorded nginx backup failed candidate validation" >&2
   exit 81
 fi
-docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
-mark_restore_failed() {{
-  trap - ERR
-  printf 'restore-failed\n' > "$transaction_dir/status"
-  docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
-}}
-trap mark_restore_failed ERR
 current_target="$(readlink "$current" 2>/dev/null || true)"
 if [ "$current_target" = "releases/$approved_sha" ]; then
   if [ "$previous_current" = LEGACY_NONE ]; then
@@ -1964,6 +2312,25 @@ elif [ "$previous_current" = LEGACY_NONE ]; then
   test ! -L "$current"
 else
   test "$current_target" = "$previous_current"
+fi
+if [ "$previous_current" = LEGACY_NONE ]; then
+  rm -f -- "$next_migration_sentinel"
+  rm -f -- "$migration_sentinel"
+  test ! -e "$current"
+  test ! -L "$current"
+  test ! -e "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  test ! -e "$next_migration_sentinel"
+  test ! -L "$next_migration_sentinel"
+else
+  test -L "$current"
+  test "$(readlink "$current")" = "$previous_current"
+  test -f "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  test ! -e "$next_migration_sentinel"
+  test ! -L "$next_migration_sentinel"
+  migration_sha="$(cat "$migration_sentinel")"
+  [[ "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]
 fi
 python3 - "$nginx_config" "$nginx_backup" "$deploy_script" <<'MEDICAL_AUDIT_NGINX_RESTORE'
 import runpy
@@ -2000,14 +2367,38 @@ def _write_remote_deploy_sha(config: DeployConfig, owner_token: str) -> None:
     sha = config.approved_sha
     marker = f"{config.remote_app_dir}/.deploy-sha"
     next_marker = f"{marker}.next"
+    safe_stamp = _safe_remote_job_name(config.stamp)
+    transaction_dir = f"{REMOTE_TRANSACTION_ROOT}/{safe_stamp}"
+    migration_sentinel = (
+        f"{config.remote_web_dir}/.versioned-release-migration-complete"
+    )
     script = f"""
 set -euo pipefail
 {_remote_lock_guard_script(config, owner_token)}
 marker={shlex.quote(marker)}
 next_marker={shlex.quote(next_marker)}
 approved_sha={shlex.quote(sha)}
+transaction_dir={shlex.quote(transaction_dir)}
+migration_sentinel={shlex.quote(migration_sentinel)}
+test -d "$transaction_dir"
+test "$(cat "$transaction_dir/approved-sha")" = "$approved_sha"
+previous_current="$(cat "$transaction_dir/previous-current")"
+if [ "$previous_current" != LEGACY_NONE ] && \
+   [[ ! "$previous_current" =~ ^releases/[0-9a-f]{{40}}$ ]]; then
+  echo "recorded previous current target is invalid" >&2
+  exit 81
+fi
 test ! -e "$next_marker"
 test ! -L "$next_marker"
+test -f "$migration_sentinel"
+test ! -L "$migration_sentinel"
+migration_sha="$(cat "$migration_sentinel")"
+if [ "$previous_current" = LEGACY_NONE ]; then
+  test "$migration_sha" = "$approved_sha"
+elif [[ ! "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]; then
+  echo "migration sentinel is invalid" >&2
+  exit 81
+fi
 printf '%s\\n' "$approved_sha" > "$next_marker"
 python3 - "$next_marker" <<'MEDICAL_AUDIT_MARKER_FSYNC'
 import os
@@ -2105,7 +2496,10 @@ if docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 fi
 docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
-docker exec ai_video_nginx nginx -t
+if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
+  echo "production nginx configuration test failed" >&2
+  exit 80
+fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
 auth_headers=(
   -H 'X-User-Id: deploy-smoke-admin'
@@ -2170,8 +2564,7 @@ fi
 
 def _run_production_smoke(config: DeployConfig) -> None:
     if config.skip_smoke:
-        print("skip production smoke", flush=True)
-        return
+        raise DeployError("production execute forbids --skip-smoke")
     config.report_path.parent.mkdir(parents=True, exist_ok=True)
     args = [
         sys.executable,
@@ -2228,6 +2621,8 @@ current="$remote_web_dir/current"
 current_next="$remote_web_dir/current.next"
 marker="$remote_app_dir/.deploy-sha"
 next_marker="$remote_app_dir/.deploy-sha.next"
+migration_sentinel="$remote_web_dir/.versioned-release-migration-complete"
+next_migration_sentinel="$migration_sentinel.next"
 test -s "$app_backup"
 test -s "$web_backup"
 test -s "$marker"
@@ -2248,6 +2643,12 @@ test ! -e "$current_next"
 test ! -L "$current_next"
 test ! -e "$next_marker"
 test ! -L "$next_marker"
+test ! -e "$next_migration_sentinel"
+test ! -L "$next_migration_sentinel"
+test -f "$migration_sentinel"
+test ! -L "$migration_sentinel"
+migration_sha="$(cat "$migration_sentinel")"
+[[ "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]
 test -f "$nginx_config"
 test ! -L "$nginx_config"
 test -f "$nginx_backup"
@@ -2256,14 +2657,32 @@ tar -tzf "$app_backup" >/dev/null
 tar -tzf "$web_backup" >/dev/null
 restore_root="$(mktemp -d /opt/medical-audit/rollback-{safe_stamp}.XXXXXX)"
 preserved_env="$(mktemp)"
+if ! docker exec ai_video_nginx sh -c 'test ! -e "$1"' sh \
+  "$container_candidate" >/dev/null 2>&1; then
+  echo "rollback candidate cleanup precondition failed" >&2
+  exit 85
+fi
+container_candidate_owned=1
 cleanup_rollback() {{
-  docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
-  if [ "$(cat "$incoming_owner" 2>/dev/null || true)" = "$owner_token" ]; then
-    rm -rf -- "$incoming"
-    rm -f -- "$incoming_owner"
+  original_status="$?"
+  trap - EXIT
+  cleanup_status=0
+  if [ "$container_candidate_owned" -eq 1 ] && \
+     ! docker exec ai_video_nginx rm -f "$container_candidate" \
+       >/dev/null 2>&1; then
+    cleanup_status=1
   fi
-  rm -rf -- "$restore_root"
-  rm -f -- "$preserved_env"
+  if [ "$(cat "$incoming_owner" 2>/dev/null || true)" = "$owner_token" ]; then
+    rm -rf -- "$incoming" || cleanup_status=1
+    rm -f -- "$incoming_owner" || cleanup_status=1
+  fi
+  rm -rf -- "$restore_root" || cleanup_status=1
+  rm -f -- "$preserved_env" || cleanup_status=1
+  if [ "$cleanup_status" -ne 0 ]; then
+    echo "rollback cleanup failed" >&2
+    exit 85
+  fi
+  exit "$original_status"
 }}
 trap cleanup_rollback EXIT
 cp "$remote_app_dir/configs/deploy/tencent-cloud/medical-audit.env" "$preserved_env"
@@ -2313,7 +2732,12 @@ if ! docker exec ai_video_nginx nginx -t -c "$container_candidate" \
   echo "rollback nginx backup failed candidate validation" >&2
   exit 83
 fi
-docker exec ai_video_nginx rm -f "$container_candidate" >/dev/null 2>&1 || true
+if ! docker exec ai_video_nginx rm -f "$container_candidate" \
+  >/dev/null 2>&1; then
+  echo "sensitive rollback candidate cleanup failed" >&2
+  exit 85
+fi
+container_candidate_owned=0
 umask 077
 test ! -e "$rollback_transaction_dir"
 mkdir -- "$rollback_transaction_dir"
@@ -2324,6 +2748,7 @@ printf '%s\n' "$restore_sha" > "$rollback_transaction_dir/restore-sha"
 printf 'prepared\n' > "$rollback_transaction_dir/status"
 activation_started=0
 marker_commit_started=0
+sentinel_removed=0
 overwrite_nginx_in_place() {{
   destination="$1"
   source_file="$2"
@@ -2335,23 +2760,73 @@ from pathlib import Path
 
 destination = Path(sys.argv[1])
 source = Path(sys.argv[2])
-for path in (destination, source):
-    observed = path.lstat()
+destination_before = destination.lstat()
+source_before = source.lstat()
+for observed in (destination_before, source_before):
     if stat.S_ISLNK(observed.st_mode) or not stat.S_ISREG(observed.st_mode):
         raise SystemExit("nginx restore input must be regular")
 content = source.read_bytes()
 descriptor = os.open(
     destination,
-    os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW,
+    os.O_WRONLY | os.O_NOFOLLOW,
 )
 try:
+    opened = os.fstat(descriptor)
+    if (
+        opened.st_dev != destination_before.st_dev
+        or opened.st_ino != destination_before.st_ino
+    ):
+        raise SystemExit("nginx restore destination changed")
+    os.ftruncate(descriptor, 0)
     offset = 0
     while offset < len(content):
         offset += os.write(descriptor, content[offset:])
     os.fsync(descriptor)
+    final = os.fstat(descriptor)
 finally:
     os.close(descriptor)
+destination_after = destination.lstat()
+if (
+    final.st_dev != destination_after.st_dev
+    or final.st_ino != destination_after.st_ino
+):
+    raise SystemExit("nginx restore destination changed")
 MEDICAL_AUDIT_NGINX_OVERWRITE
+}}
+write_migration_sentinel() {{
+  test ! -e "$next_migration_sentinel" || return 1
+  test ! -L "$next_migration_sentinel" || return 1
+  printf '%s\n' "$expected_current_sha" > "$next_migration_sentinel" || return 1
+  python3 - "$next_migration_sentinel" <<'MEDICAL_AUDIT_MIGRATION_FSYNC'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+MEDICAL_AUDIT_MIGRATION_FSYNC
+  if [ "$?" -ne 0 ]; then
+    return 1
+  fi
+  mv -Tf -- "$next_migration_sentinel" "$migration_sentinel" || return 1
+  python3 - "$remote_web_dir" <<'MEDICAL_AUDIT_MIGRATION_DIR_FSYNC'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+MEDICAL_AUDIT_MIGRATION_DIR_FSYNC
+  if [ "$?" -ne 0 ]; then
+    return 1
+  fi
+  test -f "$migration_sentinel" || return 1
+  test ! -L "$migration_sentinel" || return 1
+  test "$(cat "$migration_sentinel")" = "$expected_current_sha" || return 1
 }}
 restore_ui_after_error() {{
   restore_status=0
@@ -2367,6 +2842,9 @@ restore_ui_after_error() {{
     docker exec ai_video_nginx nginx -t >/dev/null 2>&1 || restore_status=1
     docker exec ai_video_nginx nginx -s reload >/dev/null 2>&1 \
       || restore_status=1
+  fi
+  if [ "$sentinel_removed" -eq 1 ]; then
+    write_migration_sentinel || restore_status=1
   fi
   if [ "$restore_status" -eq 0 ]; then
     printf 'rollback-failed\n' > "$rollback_transaction_dir/status"
@@ -2451,6 +2929,26 @@ else
   test ! -e "$current"
   test ! -L "$current"
 fi
+if [ "$legacy_mode" -eq 1 ]; then
+  rm -f -- "$next_migration_sentinel"
+  rm -f -- "$migration_sentinel"
+  sentinel_removed=1
+  test ! -e "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+  python3 - "$remote_web_dir" <<'MEDICAL_AUDIT_MIGRATION_DIR_FSYNC'
+import os
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+MEDICAL_AUDIT_MIGRATION_DIR_FSYNC
+else
+  test -f "$migration_sentinel"
+  test ! -L "$migration_sentinel"
+fi
 printf 'ready-to-commit\n' > "$rollback_transaction_dir/status"
 printf '%s\n' "$restore_sha" > "$next_marker"
 python3 - "$next_marker" <<'MEDICAL_AUDIT_MARKER_FSYNC'
@@ -2485,7 +2983,7 @@ def _ssh(
     config: DeployConfig,
     script: str,
     *,
-    timeout_seconds: int | None = None,
+    timeout_seconds: int | None = REMOTE_SSH_COMMAND_TIMEOUT_SECONDS,
     completion_check_script: str | None = None,
     timeout_description: str = "remote script",
 ) -> None:
@@ -2509,7 +3007,7 @@ def _ssh(
         )
     except subprocess.TimeoutExpired as exc:
         if completion_check_script is None:
-            raise DeployError(
+            raise RemoteOutcomeUnknownError(
                 f"{timeout_description} timed out after {exc.timeout} seconds",
             ) from exc
         print(
@@ -2517,26 +3015,48 @@ def _ssh(
             "checking remote completion marker",
             flush=True,
         )
-        subprocess.run(
-            _ssh_args(config, completion_check_script),
-            cwd=config.repo_root,
-            check=True,
-            text=True,
-            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
-        )
+        try:
+            subprocess.run(
+                _ssh_args(config, completion_check_script),
+                cwd=config.repo_root,
+                check=True,
+                text=True,
+                timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as check_error:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} completion outcome is unknown",
+            ) from check_error
         print(
             f"WARNING {timeout_description} completed remotely after ssh timeout; continuing",
             flush=True,
         )
         return
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 255:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} SSH outcome is unknown",
+            ) from exc
+        raise
     if completion_check_script is not None:
-        subprocess.run(
-            _ssh_args(config, completion_check_script),
-            cwd=config.repo_root,
-            check=True,
-            text=True,
-            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
-        )
+        try:
+            subprocess.run(
+                _ssh_args(config, completion_check_script),
+                cwd=config.repo_root,
+                check=True,
+                text=True,
+                timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} completion outcome is unknown",
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 255:
+                raise RemoteOutcomeUnknownError(
+                    f"{timeout_description} completion outcome is unknown",
+                ) from exc
+            raise
 
 
 def _ssh_background_with_completion(
@@ -2570,13 +3090,20 @@ printf '%s\\n' "$!" > "$job_pid"
         f"job={safe_job_name}",
         flush=True,
     )
-    subprocess.run(
-        _ssh_args(config, starter_script),
-        cwd=config.repo_root,
-        check=True,
-        text=True,
-        timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
-    )
+    try:
+        subprocess.run(
+            _ssh_args(config, starter_script),
+            cwd=config.repo_root,
+            check=True,
+            text=True,
+            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        if isinstance(exc, subprocess.TimeoutExpired) or exc.returncode == 255:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} background starter outcome is unknown",
+            ) from exc
+        raise
     deadline = time.monotonic() + timeout_seconds
     poll_script = f"""
 set -euo pipefail
@@ -2597,14 +3124,23 @@ tail -n 80 "$job_log" || true
 exit 0
 """
     while True:
-        completed = subprocess.run(
-            _ssh_args(config, poll_script),
-            cwd=config.repo_root,
-            check=False,
-            text=True,
-            capture_output=True,
-            timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
-        )
+        try:
+            completed = subprocess.run(
+                _ssh_args(config, poll_script),
+                cwd=config.repo_root,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} background poll outcome is unknown",
+            ) from exc
+        if completed.returncode == 255:
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} background poll outcome is unknown",
+            )
         detail = "\n".join(
             part.strip()
             for part in (completed.stdout, completed.stderr)
@@ -2630,7 +3166,7 @@ exit 0
                 + (f":\n{detail}" if detail else ""),
             )
         if time.monotonic() >= deadline:
-            raise DeployError(
+            raise RemoteOutcomeUnknownError(
                 f"{timeout_description} timed out after {timeout_seconds} seconds",
             )
         if completed.stdout.strip():
@@ -2665,6 +3201,12 @@ def _ssh_args(config: DeployConfig, script: str) -> list[str]:
         "StrictHostKeyChecking=yes",
         "-o",
         "IdentitiesOnly=yes",
+        "-o",
+        f"ConnectTimeout={SSH_CONNECT_TIMEOUT_SECONDS}",
+        "-o",
+        f"ServerAliveInterval={SSH_SERVER_ALIVE_INTERVAL_SECONDS}",
+        "-o",
+        f"ServerAliveCountMax={SSH_SERVER_ALIVE_COUNT_MAX}",
         config.ssh_target,
         "bash",
         "-lc",
@@ -2678,7 +3220,10 @@ def _ssh_transport(config: DeployConfig) -> str:
         f"-i {shlex.quote(str(config.ssh_key))} "
         "-o BatchMode=yes "
         "-o StrictHostKeyChecking=yes "
-        "-o IdentitiesOnly=yes"
+        "-o IdentitiesOnly=yes "
+        f"-o ConnectTimeout={SSH_CONNECT_TIMEOUT_SECONDS} "
+        f"-o ServerAliveInterval={SSH_SERVER_ALIVE_INTERVAL_SECONDS} "
+        f"-o ServerAliveCountMax={SSH_SERVER_ALIVE_COUNT_MAX}"
     )
 
 
@@ -2687,9 +3232,36 @@ def _run(
     *,
     cwd: Path,
     env: Mapping[str, str] | None = None,
+    timeout_seconds: int | None = None,
+    remote_outcome_unknown: bool = False,
 ) -> None:
     print(_format_command(args), flush=True)
-    subprocess.run(args, cwd=cwd, check=True, text=True, env=env)
+    try:
+        if timeout_seconds is None:
+            subprocess.run(
+                args,
+                cwd=cwd,
+                check=True,
+                text=True,
+                env=env,
+            )
+        else:
+            subprocess.run(
+                args,
+                cwd=cwd,
+                check=True,
+                text=True,
+                env=env,
+                timeout=timeout_seconds,
+            )
+    except subprocess.TimeoutExpired as exc:
+        if remote_outcome_unknown:
+            raise RemoteOutcomeUnknownError("remote command outcome is unknown") from exc
+        raise
+    except subprocess.CalledProcessError as exc:
+        if remote_outcome_unknown:
+            raise RemoteOutcomeUnknownError("remote command outcome is unknown") from exc
+        raise
 
 
 def _run_capture(args: Sequence[str], *, cwd: Path) -> str:
