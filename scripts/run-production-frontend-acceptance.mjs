@@ -76,57 +76,133 @@ const routeCheckProfiles = {
     { route: "/pages/audit-logs", requiredText: [/审计日志台/, /审计日志/] },
   ],
   hardened: [
-    { route: "/workspace", requiredText: [/AI，让审计更智能/] },
+    {
+      route: "/login",
+      expectedPath: "/login",
+      session: "anonymous",
+      requiredText: [/登录工作台/, /进入系统/],
+    },
+    {
+      route: "/medical-audit",
+      expectedPath: "/medical-audit",
+      session: "workspace",
+      requiredText: [/医保审计/, /智能审计/],
+    },
     {
       route: "/fund-compliance",
+      expectedPath: "/fund-compliance",
+      session: "workspace",
       requiredText: [/医保基金使用合规/, /医保审计/],
       requiredTextAny: [[/复核表单/, /费用表单/, /归档包/]],
     },
     {
       route: "/fund-compliance/review",
+      expectedPath: "/fund-compliance/review",
+      session: "workspace",
       requiredText: [/医保基金复核表单/, /费用汇总表/, /分类汇总表|医保费用分类汇总表/, /就诊明细表|就诊费用明细表/],
     },
-    { route: "/chat", requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/] },
+    {
+      route: "/chat",
+      expectedPath: "/chat",
+      session: "workspace",
+      requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/],
+    },
     {
       route: "/agents",
+      expectedPath: "/agents",
+      session: "workspace",
       requiredText: [/我的助手|我的智能体/, /智能体/],
       requiredControlText: [/查看详情|创建/],
     },
     {
       route: "/agent-market",
+      expectedPath: "/agent-market",
+      session: "workspace",
       requiredText: [/智能体广场/, /详情/],
       requiredTextAny: [[/全部/, /财务收支审计/, /采购招标审计/, /工程审计/]],
     },
     {
       route: "/analytics",
+      expectedPath: "/analytics",
+      session: "workspace",
       requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
     },
     {
       route: "/projects",
+      expectedPath: "/projects",
+      session: "workspace",
       requiredText: [/项目管理/, /项目协作工作台/, /可见项目/],
     },
-    { route: "/documents", requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/] },
-    { route: "/knowledge-base", requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/] },
-    { route: "/graph", requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/] },
-    { route: "/rules", requiredText: [/知识库|规则|法规/] },
-    { route: "/reports", requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/] },
+    {
+      route: "/documents",
+      expectedPath: "/documents",
+      session: "workspace",
+      requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/],
+    },
+    {
+      route: "/knowledge-base",
+      expectedPath: "/knowledge-base",
+      session: "workspace",
+      requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/],
+    },
+    {
+      route: "/graph",
+      expectedPath: "/graph",
+      session: "workspace",
+      requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/],
+    },
+    {
+      route: "/rules",
+      expectedPath: "/rules",
+      session: "workspace",
+      requiredText: [/知识库|规则|法规/],
+    },
+    {
+      route: "/reports",
+      expectedPath: "/reports",
+      session: "workspace",
+      requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/],
+    },
     {
       route: "/remediation",
-      postLoadWaitMs: 2_000,
-      requiredText: [/医保审计/],
-      requiredTextAny: [[/待处理/, /异常/, /疑点/, /规则/]],
+      expectedPath: "/remediation",
+      session: "workspace",
+      requiredText: [/整改/, /补证/, /关闭门禁/],
     },
-    { route: "/archive", requiredText: [/项目档案归档/, /归档包/, /签名链|归档策略|审计日志/] },
-    { route: "/guided-check", requiredText: [/引导式核查/, /核查步骤/, /AI 审证问题|材料准备状态/] },
     {
-      route: "/findings",
-      postLoadWaitMs: 2_000,
-      requiredText: [/医保审计/],
-      requiredTextAny: [[/待处理/, /异常/, /疑点/, /规则/]],
+      route: "/archive",
+      expectedPath: "/archive",
+      session: "workspace",
+      requiredText: [/项目档案归档/, /归档包/, /签名链|归档策略|审计日志/],
     },
-    { route: "/knowledge-query", requiredText: [/文档检索/, /对话文档|检索结果|搜索历史/] },
+    {
+      route: "/guided-check",
+      expectedPath: "/guided-check",
+      session: "workspace",
+      requiredText: [/引导式核查/, /核查步骤/, /AI 审证问题|材料准备状态/],
+    },
   ],
 };
+const aliasRouteChecks = [
+  {
+    route: "/workspace",
+    expectedPath: "/chat",
+    session: "workspace",
+    requiredText: [/AI，让审计更智能/],
+  },
+  {
+    route: "/findings",
+    expectedPath: "/medical-audit",
+    session: "workspace",
+    requiredText: [/医保审计/, /智能审计/],
+  },
+  {
+    route: "/knowledge-query",
+    expectedPath: "/documents",
+    session: "workspace",
+    requiredText: [/文档检索/, /对话文档|检索结果|搜索历史/],
+  },
+];
 const contractProfiles = Object.keys(routeCheckProfiles);
 
 const placeholderPatterns = [
@@ -249,6 +325,14 @@ function sanitizeUrl(value) {
     return `${parsed.origin}${parsed.pathname}`;
   } catch {
     return "invalid-url";
+  }
+}
+
+function finalPath(url) {
+  try {
+    return new URL(url).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return null;
   }
 }
 
@@ -600,6 +684,18 @@ function issue(severity, type, message) {
 
 function classify(check, routeCheck, data) {
   const issues = [];
+  if (routeCheck.expectedPath) {
+    const observedPath = finalPath(check.finalUrl);
+    if (observedPath !== routeCheck.expectedPath) {
+      issues.push(
+        issue(
+          "P0",
+          "unexpected-final-path",
+          `expected ${routeCheck.expectedPath}; observed ${observedPath ?? "invalid-url"}`,
+        ),
+      );
+    }
+  }
   if (!check.status || check.status >= 400) {
     issues.push(issue("P0", "http-status", `HTTP ${check.status ?? "unknown"}`));
   }
@@ -778,6 +874,7 @@ async function run() {
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
   const routeChecks = routeCheckProfiles[options.contractProfile];
+  const selectedAliasRouteChecks = options.contractProfile === DEFAULT_CONTRACT_PROFILE ? aliasRouteChecks : [];
   const adminApiKey = readOptionalEnv(options.adminApiKeyEnv);
   const adminRole = options.adminRole || "it-admin";
   const acceptanceHeaders = {
@@ -787,10 +884,19 @@ async function run() {
     "X-Tenant-Id": DEFAULT_TENANT_ID,
   };
   const captureScreenshots = readBooleanEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS");
+  const requestedScreenshotPolicy = readOptionalEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY");
+  if (requestedScreenshotPolicy !== null && !["all", "issues"].includes(requestedScreenshotPolicy)) {
+    throw new Error(
+      "MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY must be one of: all, issues",
+    );
+  }
+  const screenshotPolicy = captureScreenshots ? (requestedScreenshotPolicy ?? "all") : "disabled";
   let apiCheckResult = null;
   let apiCheckError = null;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.mkdirSync(screenshotDir, { recursive: true });
+  if (captureScreenshots) {
+    fs.mkdirSync(screenshotDir, { recursive: true });
+  }
 
   const executablePath =
     readOptionalEnv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") ?? readOptionalEnv("CHROME_EXECUTABLE_PATH");
@@ -800,114 +906,138 @@ async function run() {
     args: ["--no-proxy-server", "--proxy-server=direct://", "--proxy-bypass-list=*"],
   });
   const checks = [];
+  const aliasChecks = [];
   try {
     for (const viewport of viewports) {
-      for (const routeCheck of routeChecks) {
-        const context = await browser.newContext({
-          viewport: { width: viewport.width, height: viewport.height },
-          extraHTTPHeaders: acceptanceHeaders,
-        });
-        await context.route("**/*", async (route) => {
-          if (route.request().method() !== "GET") {
-            await route.abort("blockedbyclient");
-            return;
+      const checkGroups = [
+        { contractKind: "independent", routeChecks, target: checks },
+        { contractKind: "alias", routeChecks: selectedAliasRouteChecks, target: aliasChecks },
+      ];
+      for (const group of checkGroups) {
+        for (const routeCheck of group.routeChecks) {
+          const session = routeCheck.session ?? "workspace";
+          const context = await browser.newContext({
+            viewport: { width: viewport.width, height: viewport.height },
+            extraHTTPHeaders: acceptanceHeaders,
+          });
+          await context.route("**/*", async (route) => {
+            if (route.request().method() !== "GET") {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            let requestOrigin;
+            try {
+              requestOrigin = new URL(route.request().url()).origin;
+            } catch {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            if (requestOrigin !== baseOrigin) {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            await route.continue();
+          });
+          if (session !== "anonymous") {
+            await seedWorkspaceSession(context);
           }
-          let requestOrigin;
-          try {
-            requestOrigin = new URL(route.request().url()).origin;
-          } catch {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          if (requestOrigin !== baseOrigin) {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          await route.continue();
-        });
-        await seedWorkspaceSession(context);
-        const page = await context.newPage();
-        const consoleErrors = [];
-        const failedRequests = [];
-        const interactionErrors = [];
-        page.on("console", (message) => {
-          if (message.type() === "error") {
-            consoleErrors.push(message.text());
-          }
-        });
-        page.on("requestfailed", (request) => {
-          const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
-          if (!isIgnorableFailedRequest(failed, baseUrl)) {
-            failedRequests.push(failed);
-          }
-        });
-        page.on("response", (response) => {
-          const url = response.url();
-          if (response.status() >= 400 && url.startsWith(baseUrl)) {
-            failedRequests.push({ url, status: response.status() });
-          }
-        });
+          const page = await context.newPage();
+          const consoleErrors = [];
+          const failedRequests = [];
+          const interactionErrors = [];
+          page.on("console", (message) => {
+            if (message.type() === "error") {
+              consoleErrors.push(message.text());
+            }
+          });
+          page.on("requestfailed", (request) => {
+            const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
+            if (!isIgnorableFailedRequest(failed, baseUrl)) {
+              failedRequests.push(failed);
+            }
+          });
+          page.on("response", (response) => {
+            const url = response.url();
+            if (response.status() >= 400 && url.startsWith(baseUrl)) {
+              failedRequests.push({ url, status: response.status() });
+            }
+          });
 
-        let status = null;
-        let error = null;
-        const url = `${baseUrl}${routeCheck.route}`;
-        try {
-          const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
-          status = response?.status() ?? null;
-          await ensureWorkspaceSession(page, options.timeoutMs);
-          await waitForRouteReady(page, routeCheck);
-          await applyInteractions(page, routeCheck.interactions);
-        } catch (caught) {
-          const message = caught instanceof Error ? caught.message : String(caught);
-          if (status === null) {
-            error = message;
-          } else {
-            interactionErrors.push(message);
-          }
-        }
-        const data = await snapshot(page);
-        const check = {
-          route: routeCheck.route,
-          viewport: viewport.name,
-          url: sanitizeUrl(url),
-          finalUrl: sanitizeUrl(page.url()),
-          status,
-          navigationError: error !== null,
-          headingCount: data.headings.length,
-          bodyTextLength: compactText(data.bodyText).length,
-          fileInputCount: data.fileInputCount,
-          scrollWidth: data.scrollWidth,
-          clientWidth: data.clientWidth,
-          horizontalOverflow: data.horizontalOverflow,
-          overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
-          consoleErrorCount: consoleErrors.length,
-          failedRequestCount: failedRequests.length,
-          failedRequests: failedRequests.map(sanitizeFailedRequest),
-          interactionErrorCount: interactionErrors.length,
-          issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
-        };
-        const shouldCaptureScreenshot = captureScreenshots && (check.issues.length > 0 || check.horizontalOverflow);
-        if (shouldCaptureScreenshot) {
-          const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
-          const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
+          let status = null;
+          let error = null;
+          const url = `${baseUrl}${routeCheck.route}`;
           try {
-            await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
-            check.screenshot = screenshotPath;
+            const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
+            status = response?.status() ?? null;
+            if (session !== "anonymous") {
+              await ensureWorkspaceSession(page, options.timeoutMs);
+            }
+            await waitForRouteReady(page, routeCheck);
+            await applyInteractions(page, routeCheck.interactions);
           } catch (caught) {
-            check.screenshot_error = true;
+            const message = caught instanceof Error ? caught.message : String(caught);
+            if (status === null) {
+              error = message;
+            } else {
+              interactionErrors.push(message);
+            }
           }
-        }
-        checks.push(check);
-        console.error(
-          JSON.stringify({
+          const data = await snapshot(page);
+          const observedFinalUrl = sanitizeUrl(page.url());
+          const check = {
             route: routeCheck.route,
+            expectedPath: routeCheck.expectedPath ?? null,
+            finalPath: finalPath(observedFinalUrl),
+            contractKind: group.contractKind,
+            session,
             viewport: viewport.name,
+            url: sanitizeUrl(url),
+            finalUrl: observedFinalUrl,
             status,
-            issue_count: check.issues.length,
-          }),
-        );
-        await page.close();
-        await context.close();
+            navigationError: error !== null,
+            headingCount: data.headings.length,
+            bodyTextLength: compactText(data.bodyText).length,
+            fileInputCount: data.fileInputCount,
+            scrollWidth: data.scrollWidth,
+            clientWidth: data.clientWidth,
+            horizontalOverflow: data.horizontalOverflow,
+            overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
+            consoleErrorCount: consoleErrors.length,
+            failedRequestCount: failedRequests.length,
+            failedRequests: failedRequests.map(sanitizeFailedRequest),
+            interactionErrorCount: interactionErrors.length,
+            issues: classify(
+              { status, error, consoleErrors, failedRequests, interactionErrors, finalUrl: observedFinalUrl },
+              routeCheck,
+              data,
+            ),
+          };
+          const shouldCaptureScreenshot =
+            captureScreenshots &&
+            (screenshotPolicy === "all" || check.issues.length > 0 || check.horizontalOverflow);
+          if (shouldCaptureScreenshot) {
+            const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
+            const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
+            try {
+              await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
+              check.screenshot = screenshotPath;
+            } catch (caught) {
+              check.screenshot_error = true;
+            }
+          }
+          group.target.push(check);
+          console.error(
+            JSON.stringify({
+              route: routeCheck.route,
+              contract_kind: group.contractKind,
+              viewport: viewport.name,
+              status,
+              issue_count: check.issues.length,
+            }),
+          );
+          await page.close();
+          await context.close();
+        }
       }
     }
     try {
@@ -924,10 +1054,11 @@ async function run() {
     await browser.close();
   }
 
-  const p0 = checks.flatMap((check) =>
+  const allChecks = [...checks, ...aliasChecks];
+  const p0 = allChecks.flatMap((check) =>
     check.issues.filter((item) => item.severity === "P0").map((item) => ({ route: check.route, viewport: check.viewport, ...item })),
   );
-  const p1 = checks.flatMap((check) =>
+  const p1 = allChecks.flatMap((check) =>
     check.issues.filter((item) => item.severity === "P1").map((item) => ({
       route: check.route,
       viewport: check.viewport,
@@ -956,7 +1087,11 @@ async function run() {
     http_methods: ["GET"],
     summary: {
       route_count: routeChecks.length,
+      independent_page_count: routeChecks.length,
+      alias_check_count: selectedAliasRouteChecks.length,
       check_count: checks.length,
+      alias_execution_check_count: aliasChecks.length,
+      total_execution_check_count: allChecks.length,
       viewports: viewports.map((viewport) => viewport.name),
       api_checks: apiCheckResult?.checks || { error: apiCheckError !== null },
       executed_api_probes: apiCheckResult?.executedProbes || [],
@@ -966,11 +1101,12 @@ async function run() {
       skipped_routes: [],
       skipped_route_count: 0,
       screenshot_capture: captureScreenshots,
-      screenshot_policy: captureScreenshots ? "all_issues" : "disabled",
+      screenshot_policy: screenshotPolicy,
       p0,
       p1,
     },
     checks,
+    alias_checks: aliasChecks,
   };
   fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ status: report.status, output: outputPath, p0_count: p0.length, p1_count: p1.length }, null, 2));
@@ -989,7 +1125,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
 }
 
 export {
+  aliasRouteChecks,
   classify,
+  finalPath,
   routeCheckProfiles,
   sanitizeFailedRequest,
   sanitizeUrl,

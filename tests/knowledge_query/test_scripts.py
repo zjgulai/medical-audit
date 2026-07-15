@@ -2051,6 +2051,137 @@ def test_run_production_e2e_smoke_can_require_generated_answer(
         )
 
 
+def test_production_frontend_acceptance_rejects_unexpected_final_path() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify } from " + json.dumps(runner_path.as_uri()) + "; "
+        "const issues = classify("
+        "{ status: 200, error: null, consoleErrors: [], failedRequests: [], "
+        "interactionErrors: [], finalUrl: 'https://audit.example.test/medical-audit' }, "
+        "{ route: '/remediation', expectedPath: '/remediation' }, "
+        "{ bodyText: 'x'.repeat(120), headings: ['整改台账'], controlText: [], "
+        "fileInputCount: 0, horizontalOverflow: false, scrollWidth: 100, "
+        "clientWidth: 100, overflowOffenders: [] }); "
+        "console.log(JSON.stringify(issues));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert '"type":"unexpected-final-path"' in result.stdout
+
+
+def test_production_frontend_acceptance_separates_independent_pages_and_aliases() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { aliasRouteChecks, routeCheckProfiles } from "
+        + json.dumps(runner_path.as_uri())
+        + "; "
+        "const project = (item) => ({ route: item.route, expectedPath: item.expectedPath, "
+        "session: item.session }); "
+        "console.log(JSON.stringify({ independent: routeCheckProfiles.hardened.map(project), "
+        "aliases: aliasRouteChecks.map(project) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [item["route"] for item in payload["independent"]] == [
+        "/login",
+        "/medical-audit",
+        "/fund-compliance",
+        "/fund-compliance/review",
+        "/chat",
+        "/agents",
+        "/agent-market",
+        "/analytics",
+        "/projects",
+        "/documents",
+        "/knowledge-base",
+        "/graph",
+        "/rules",
+        "/reports",
+        "/remediation",
+        "/archive",
+        "/guided-check",
+    ]
+    assert [item["expectedPath"] for item in payload["independent"]] == [
+        item["route"] for item in payload["independent"]
+    ]
+    assert payload["independent"][0]["session"] == "anonymous"
+    assert all(
+        item["session"] == "workspace" for item in payload["independent"][1:]
+    )
+    assert payload["aliases"] == [
+        {
+            "route": "/workspace",
+            "expectedPath": "/chat",
+            "session": "workspace",
+        },
+        {
+            "route": "/findings",
+            "expectedPath": "/medical-audit",
+            "session": "workspace",
+        },
+        {
+            "route": "/knowledge-query",
+            "expectedPath": "/documents",
+            "session": "workspace",
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    (
+        "run-production-frontend-acceptance.mjs",
+        "run-production-frontend-acceptance-gate.mjs",
+    ),
+)
+def test_production_frontend_acceptance_rejects_invalid_screenshot_policy_before_browser(
+    script_name: str,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "acceptance.json"
+    screenshot_dir = tmp_path / "screenshots"
+    result = subprocess.run(
+        [
+            "node",
+            f"scripts/{script_name}",
+            "--allow-audit-log-writes",
+            "--confirm-production-write",
+            "audit.lute-tlz-dddd.top",
+            "--base-url",
+            "http://127.0.0.1:9",
+            "--output",
+            str(output_path),
+            "--screenshot-dir",
+            str(screenshot_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS": "1",
+            "MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY": "sometimes",
+        },
+    )
+
+    assert result.returncode == 2
+    assert "SCREENSHOT_POLICY must be one of: all, issues" in result.stderr
+    assert not output_path.exists()
+    assert not screenshot_dir.exists()
+
+
 def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> None:
     script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
         encoding="utf-8"
@@ -2074,6 +2205,19 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
     assert "anonymous_body_length" in script_text
     assert "missing_tenant_body_length" in script_text
     assert "allowed_body_length" in script_text
+    assert script_text.count('if (session !== "anonymous")') == 2
+    assert 'screenshotPolicy === "all"' in script_text
+    for report_field in (
+        "independent_page_count",
+        "alias_check_count",
+        "alias_execution_check_count",
+        "total_execution_check_count",
+        "alias_checks",
+        "expectedPath",
+        "finalPath",
+    ):
+        assert report_field in script_text
+        assert report_field in gate_text
 
 
 @pytest.mark.parametrize(
@@ -2179,8 +2323,14 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report() -> No
         "audit_log_write_expected": True,
         "summary": {
             "route_count": 0,
+            "independent_page_count": 0,
+            "alias_check_count": 0,
             "check_count": 0,
+            "alias_execution_check_count": 0,
+            "total_execution_check_count": 0,
             "viewports": [],
+            "screenshot_capture": False,
+            "screenshot_policy": "disabled",
             "p0": [],
             "p1": [],
             "api_checks": {
@@ -2202,24 +2352,40 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report() -> No
             "skipped_route_count": 0,
         },
         "checks": [],
+        "alias_checks": [],
     }
     node_program = (
         f"import {{ assertGate }} from {json.dumps(gate_path.as_uri())}; "
-        f"import {{ routeCheckProfiles, viewports }} from {json.dumps(runner_path.as_uri())}; "
+        "import { aliasRouteChecks, routeCheckProfiles, viewports } from "
+        f"{json.dumps(runner_path.as_uri())}; "
         "const report = JSON.parse(process.env.REPORT); "
-        "const routes = routeCheckProfiles[report.contract_profile].map((item) => item.route); "
+        "const routes = routeCheckProfiles[report.contract_profile]; "
+        "const aliases = report.contract_profile === 'hardened' ? aliasRouteChecks : []; "
         "const viewportNames = viewports.map((item) => item.name); "
         "report.summary.route_count = routes.length; "
+        "report.summary.independent_page_count = routes.length; "
+        "report.summary.alias_check_count = aliases.length; "
         "report.summary.viewports = viewportNames; "
-        "report.checks = routes.flatMap((route) => "
-        "viewportNames.map((viewport) => ({ route, viewport, status: 200, "
+        "const makeCheck = (contract, viewport) => ({ route: contract.route, viewport, "
+        "expectedPath: contract.expectedPath, finalPath: contract.expectedPath, status: 200, "
         "navigationError: false, headingCount: 1, bodyTextLength: 100, "
         "fileInputCount: 0, scrollWidth: 100, clientWidth: 100, "
         "horizontalOverflow: false, overflowOffenders: [], consoleErrorCount: 0, "
         "failedRequestCount: 0, failedRequests: [], interactionErrorCount: 0, "
-        "issues: [] }))); "
+        "issues: [] }); "
+        "report.checks = routes.flatMap((contract) => "
+        "viewportNames.map((viewport) => makeCheck(contract, viewport))); "
+        "report.alias_checks = aliases.flatMap((contract) => "
+        "viewportNames.map((viewport) => makeCheck(contract, viewport))); "
         "report.summary.check_count = report.checks.length; "
+        "report.summary.alias_execution_check_count = report.alias_checks.length; "
+        "report.summary.total_execution_check_count = "
+        "report.checks.length + report.alias_checks.length; "
         "if (process.env.MUTATE_ROUTE === '1') report.checks[0].route = '/fake-route'; "
+        "if (process.env.MUTATE_FINAL_PATH === '1') report.checks[0].finalPath = '/wrong'; "
+        "if (process.env.DROP_ALIAS === '1') report.alias_checks.pop(); "
+        "if (process.env.REQUIRE_SCREENSHOT === '1') { "
+        "report.summary.screenshot_capture = true; report.summary.screenshot_policy = 'all'; } "
         "if (process.env.DROP_RESULTS === '1') { "
         "delete report.checks[0].status; delete report.checks[0].issues; } "
         "assertGate(report);"
@@ -2276,6 +2442,54 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report() -> No
     assert incomplete_result.returncode == 2
     assert "frontend acceptance route check evidence is incomplete" in (
         incomplete_result.stderr
+    )
+
+    wrong_path_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_FINAL_PATH": "1",
+        },
+    )
+    assert wrong_path_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        wrong_path_result.stderr
+    )
+
+    missing_alias_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "DROP_ALIAS": "1",
+        },
+    )
+    assert missing_alias_result.returncode == 2
+    assert "frontend acceptance alias coverage is incomplete" in (
+        missing_alias_result.stderr
+    )
+
+    missing_screenshot_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "REQUIRE_SCREENSHOT": "1",
+        },
+    )
+    assert missing_screenshot_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        missing_screenshot_result.stderr
     )
 
 

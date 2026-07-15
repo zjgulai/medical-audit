@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  aliasRouteChecks,
   routeCheckProfiles,
   viewports as acceptanceViewports,
 } from "./run-production-frontend-acceptance.mjs";
@@ -187,10 +188,19 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-function hasCompleteRouteEvidence(check) {
+function hasCompleteRouteEvidence(
+  check,
+  { expectedPath = null, requirePathIdentity = false, requireScreenshot = false } = {},
+) {
   return (
     typeof check?.route === "string" &&
     typeof check?.viewport === "string" &&
+    (!requirePathIdentity ||
+      (typeof check.expectedPath === "string" &&
+        check.expectedPath === expectedPath &&
+        typeof check.finalPath === "string" &&
+        check.finalPath === expectedPath)) &&
+    (!requireScreenshot || (typeof check.screenshot === "string" && check.screenshot.trim().length > 0)) &&
     Number.isInteger(check.status) &&
     check.status >= 200 &&
     check.status < 400 &&
@@ -224,8 +234,14 @@ function assertGate(report) {
   const skippedRoutes = Array.isArray(summary.skipped_routes) ? summary.skipped_routes : [];
   const reportViewports = Array.isArray(summary.viewports) ? summary.viewports : [];
   const routeChecks = Array.isArray(report.checks) ? report.checks : [];
+  const reportAliasChecks = Array.isArray(report.alias_checks) ? report.alias_checks : [];
   const routeViewportKeys = new Set(
     routeChecks
+      .filter((check) => typeof check?.route === "string" && typeof check?.viewport === "string")
+      .map((check) => `${check.route}:${check.viewport}`),
+  );
+  const aliasRouteViewportKeys = new Set(
+    reportAliasChecks
       .filter((check) => typeof check?.route === "string" && typeof check?.viewport === "string")
       .map((check) => `${check.route}:${check.viewport}`),
   );
@@ -233,21 +249,57 @@ function assertGate(report) {
   const expectedRoutes = Array.isArray(expectedRouteChecks)
     ? expectedRouteChecks.map((check) => check.route)
     : [];
+  const expectedRoutePaths = new Map(
+    Array.isArray(expectedRouteChecks)
+      ? expectedRouteChecks.map((check) => [check.route, check.expectedPath ?? null])
+      : [],
+  );
+  const expectedAliasRouteChecks = report.contract_profile === "hardened" ? aliasRouteChecks : [];
+  const expectedAliasRoutes = expectedAliasRouteChecks.map((check) => check.route);
+  const expectedAliasPaths = new Map(
+    expectedAliasRouteChecks.map((check) => [check.route, check.expectedPath]),
+  );
   const expectedViewports = acceptanceViewports.map((viewport) => viewport.name);
   const expectedRouteViewportKeys = new Set(
     expectedRoutes.flatMap((route) =>
       expectedViewports.map((viewport) => `${route}:${viewport}`),
     ),
   );
+  const expectedAliasRouteViewportKeys = new Set(
+    expectedAliasRoutes.flatMap((route) =>
+      expectedViewports.map((viewport) => `${route}:${viewport}`),
+    ),
+  );
+  const requirePathIdentity = report.contract_profile === "hardened";
+  const requireIndependentScreenshot =
+    summary.screenshot_capture === true && summary.screenshot_policy === "all";
   const incompleteRouteChecks = routeChecks
-    .filter((check) => !hasCompleteRouteEvidence(check))
+    .filter(
+      (check) =>
+        !hasCompleteRouteEvidence(check, {
+          expectedPath: expectedRoutePaths.get(check?.route),
+          requirePathIdentity: requirePathIdentity && expectedRoutePaths.has(check?.route),
+          requireScreenshot: requireIndependentScreenshot,
+        }),
+    )
     .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));
-  const routeP0 = routeChecks.flatMap((check) =>
+  const incompleteAliasChecks = reportAliasChecks
+    .filter(
+      (check) =>
+        !hasCompleteRouteEvidence(check, {
+          expectedPath: expectedAliasPaths.get(check?.route),
+          requirePathIdentity: expectedAliasPaths.has(check?.route),
+          requireScreenshot: false,
+        }),
+    )
+    .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));
+  const allRouteChecks = [...routeChecks, ...reportAliasChecks];
+  const routeP0 = allRouteChecks.flatMap((check) =>
     Array.isArray(check?.issues)
       ? check.issues.filter((item) => item?.severity === "P0")
       : [],
   );
-  const routeP1 = routeChecks.flatMap((check) =>
+  const routeP1 = allRouteChecks.flatMap((check) =>
     Array.isArray(check?.issues)
       ? check.issues.filter((item) => item?.severity === "P1")
       : [],
@@ -284,12 +336,28 @@ function assertGate(report) {
     },
   );
   requireStatus(
+    (summary.screenshot_capture === false && summary.screenshot_policy === "disabled") ||
+      (summary.screenshot_capture === true && ["all", "issues"].includes(summary.screenshot_policy)),
+    "frontend acceptance screenshot contract is inconsistent",
+    {
+      screenshot_capture: summary.screenshot_capture,
+      screenshot_policy: summary.screenshot_policy,
+    },
+  );
+  requireStatus(
     incompleteRouteChecks.length === 0 && routeP0.length === 0 && routeP1.length === 0,
     "frontend acceptance route check evidence is incomplete",
     {
       incomplete_route_checks: incompleteRouteChecks,
       recomputed_p0_count: routeP0.length,
       recomputed_p1_count: routeP1.length,
+    },
+  );
+  requireStatus(
+    incompleteAliasChecks.length === 0,
+    "frontend acceptance alias check evidence is incomplete",
+    {
+      incomplete_alias_checks: incompleteAliasChecks,
     },
   );
   requireStatus(
@@ -310,6 +378,7 @@ function assertGate(report) {
     expectedRoutes.length > 0 &&
       new Set(expectedRoutes).size === expectedRoutes.length &&
       summary.route_count === expectedRoutes.length &&
+      summary.independent_page_count === expectedRoutes.length &&
       reportViewports.length === expectedViewports.length &&
       new Set(reportViewports).size === expectedViewports.length &&
       expectedViewports.every((viewport) => reportViewports.includes(viewport)) &&
@@ -325,10 +394,29 @@ function assertGate(report) {
       contract_profile: report.contract_profile,
       expected_route_count: expectedRoutes.length,
       route_count: summary.route_count,
+      independent_page_count: summary.independent_page_count,
       check_count: summary.check_count,
       viewport_count: reportViewports.length,
       skipped_routes: skippedRoutes,
       skipped_route_count: summary.skipped_route_count,
+    },
+  );
+  requireStatus(
+    new Set(expectedAliasRoutes).size === expectedAliasRoutes.length &&
+      summary.alias_check_count === expectedAliasRoutes.length &&
+      reportAliasChecks.length === summary.alias_execution_check_count &&
+      aliasRouteViewportKeys.size === summary.alias_execution_check_count &&
+      summary.alias_execution_check_count === expectedAliasRouteViewportKeys.size &&
+      aliasRouteViewportKeys.size === expectedAliasRouteViewportKeys.size &&
+      [...expectedAliasRouteViewportKeys].every((key) => aliasRouteViewportKeys.has(key)) &&
+      summary.total_execution_check_count === routeChecks.length + reportAliasChecks.length,
+    "frontend acceptance alias coverage is incomplete",
+    {
+      contract_profile: report.contract_profile,
+      expected_alias_check_count: expectedAliasRoutes.length,
+      alias_check_count: summary.alias_check_count,
+      alias_execution_check_count: summary.alias_execution_check_count,
+      total_execution_check_count: summary.total_execution_check_count,
     },
   );
   requireStatus(
@@ -363,7 +451,11 @@ function assertGate(report) {
         database_write: report.database_write,
         audit_log_write_expected: report.audit_log_write_expected,
         route_count: summary.route_count,
+        independent_page_count: summary.independent_page_count,
+        alias_check_count: summary.alias_check_count,
         check_count: summary.check_count,
+        alias_execution_check_count: summary.alias_execution_check_count,
+        total_execution_check_count: summary.total_execution_check_count,
         p0_count: p0.length,
         p1_count: p1.length,
         api_checks: {
