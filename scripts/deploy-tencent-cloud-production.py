@@ -18,6 +18,7 @@ DEFAULT_DOMAIN = "audit.lute-tlz-dddd.top"
 DEFAULT_REMOTE_APP_DIR = "/opt/medical-audit/app"
 DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_BASE_URL = f"https://{DEFAULT_DOMAIN}"
+DEFAULT_PYTHON_INDEX = "https://pypi.org/simple"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 45 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 REMOTE_COMPLETION_POLL_SECONDS = 5
@@ -98,6 +99,7 @@ def main() -> int:
         if config.rollback:
             _run_remote_rollback(config)
             return 0
+        _validate_locked_python_dependencies(config)
         _run_remote_preflight(config)
         if not config.execute:
             print("Preflight passed. Add --execute --confirm-production to deploy.")
@@ -404,11 +406,28 @@ curl -fsS "${{auth_headers[@]}}" \
     _ssh(config, script)
 
 
+def _validate_locked_python_dependencies(config: DeployConfig) -> None:
+    _run(
+        [
+            "uv",
+            "lock",
+            "--check",
+            "--default-index",
+            DEFAULT_PYTHON_INDEX,
+        ],
+        cwd=config.repo_root,
+    )
+
+
 def _build_static_frontend(config: DeployConfig) -> None:
     if config.skip_web_build:
         print("skip web build", flush=True)
         return
-    _run(["pnpm", "web:build:static"], cwd=config.repo_root)
+    _run(
+        ["corepack", "pnpm", "install", "--frozen-lockfile"],
+        cwd=config.repo_root,
+    )
+    _run(["corepack", "pnpm", "web:build:static"], cwd=config.repo_root)
 
 
 def _create_remote_backups(config: DeployConfig) -> None:

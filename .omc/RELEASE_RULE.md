@@ -4,13 +4,13 @@ doc_type: release-rules
 module: repository
 status: active
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-16
 owner: self
 source: repository-audit
 ---
 
 # Release Rules
-<!-- last-analyzed: 2026-07-15T01:33:03Z -->
+<!-- last-analyzed: 2026-07-15T16:44:38Z -->
 
 ## Version Sources
 
@@ -55,7 +55,9 @@ pnpm local:permission:readonly
 
 - 浏览器/端口环境不可用时必须明确记录未验证，不能视为通过。
 - 部署脚本不会替代 Ruff、Mypy、Pytest、Web lint/typecheck/test 或 Playwright 门禁。
-- execute 默认执行 Web static build、远端 preflight、stamp-scoped 备份、部署后 health/proxy 检查和默认生产 smoke。
+- preflight 先用官方 PyPI index 执行 `uv lock --check`；execute 再通过 Corepack 执行 `pnpm install --frozen-lockfile` 与 Web static build，然后才进入 stamp-scoped 备份和生产变更。
+- production Dockerfile 复制 `uv.lock`，并执行 `uv sync --frozen --no-dev --no-editable`；锁内运行依赖使用 `uv.lock` 记录的 PyPI 来源，`UV_INDEX_URL` 仍可能影响未锁定的 PEP 517 build-isolation 依赖。项目一致性由前置 `uv lock --check` 单独失败关闭，本门禁不代表最终镜像字节完全固定。
+- execute 默认执行远端 preflight、锁定依赖的 Web static build、stamp-scoped 备份、部署后 health/proxy 检查和默认生产 smoke。
 - `--skip-web-build`、`--skip-app-rebuild`、`--skip-smoke` 会降低证据强度，只能在 release manifest 中有明确理由和审批时使用。
 - `--apply-schema` 会执行生产 SQL，自动 rollback 不恢复数据库。
 - 生产验收必须分别记录脚本退出、`.deploy-sha`、容器状态、GET-only smoke、权限 smoke、前端验收，以及任何 audit-log/database/provider side effect 的独立授权和增量证据。
@@ -66,7 +68,7 @@ pnpm local:permission:readonly
 - 根/Web npm packages 均为 private，未发现 npm registry publish。
 - 未发现 Docker registry push 或 immutable image artifact；应用使用远端本地标签 `medical-audit-kb:prod`。
 - 发布通过 rsync 同步源码到 `/opt/medical-audit/app` 后在生产主机构建；Next static 输出同步到 `/var/www/audit`。
-- execute 固定顺序：preflight -> static build -> app/env/db/nginx/web 备份 -> rsync -> 可选 schema -> build/recreate app -> health/Nginx/route checks -> 写 `.deploy-sha` -> 默认 smoke。
+- execute 固定顺序：本地 `uv lock --check` -> 远端 preflight -> frozen pnpm install/static build -> app/env/db/nginx/web 备份 -> rsync -> 可选 schema -> uv.lock runtime dependency build/recreate -> health/Nginx/route checks -> 写 `.deploy-sha` -> 默认 smoke。
 - 自动 rollback 恢复 app、Web 和 `.deploy-sha`，保留 env，不恢复数据库或 Nginx；schema/data 回滚必须独立设计。
 
 ## Release Notes Strategy
@@ -85,8 +87,9 @@ pnpm local:permission:readonly
 
 - [P0] 无 CI workflow，PR 不能自动阻断 Ruff/Mypy/Pytest/Web/build 回归。
 - [P1] 无 immutable release artifact；生产主机从 rsync 源码重新构建。
-- [P1] production Dockerfile 未复制 `uv.lock`，`uv pip install .` 配合 `>=` dependency range 使构建不可完全复现。
-- [P1] Web build 前未运行 `pnpm install --frozen-lockfile`，依赖现有本地 `node_modules`。
+- [已解决 2026-07-16] production Dockerfile 已复制并消费 `uv.lock`；前置 `uv lock --check` 与容器内 `uv sync --frozen --no-dev --no-editable` 分别验证项目一致性和锁定项目运行依赖解析。
+- [已解决 2026-07-16] Web build 前已通过 Corepack 执行 `pnpm install --frozen-lockfile`，不再默默依赖既有 `node_modules` 状态。
+- [P1] 项目及第三方 sdist 的 PEP 517 build-isolation 依赖尚未通过 build constraints 固定；当前批次不能声称最终 Python image 完全可复现。
 - [P1] app/base/service images 未 pin digest。
 - [P1] app/Web rollback 不恢复数据库；任何 schema 发布必须单独规划数据库兼容和恢复。
 - [已解决] `.gitnexus/` 已被根 `.gitignore`、`.dockerignore` 和 rsync excludes 统一排除；本地 `output/` 证据目录也已被 Docker context 和 rsync 排除。
