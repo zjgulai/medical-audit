@@ -8,15 +8,14 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     UV_LINK_MODE=copy \
     UV_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY configs ./configs
 COPY scripts ./scripts
 COPY sql ./sql
 COPY src ./src
 COPY web/out ./web/out
 
-RUN uv venv /app/.venv \
-    && uv pip install --python /app/.venv/bin/python --index-url "${UV_INDEX_URL}" . \
+RUN uv sync --frozen --no-dev --no-editable \
     && chmod +x scripts/serve-chat-workbench-container.py
 
 EXPOSE 8000

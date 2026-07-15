@@ -3357,6 +3357,59 @@ def test_deploy_tencent_cloud_package_carries_static_export() -> None:
     assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
 
 
+def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_locked_dependencies",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    dockerfile_text = Path("configs/deploy/tencent-cloud/Dockerfile").read_text(
+        encoding="utf-8",
+    )
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(args: list[str], *, cwd: Path) -> None:
+        calls.append((args, cwd))
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    repo_root = Path("/tmp/medical-audit-release")
+    config = types.SimpleNamespace(skip_web_build=False, repo_root=repo_root)
+
+    module._validate_locked_python_dependencies(config)
+    module._build_static_frontend(config)
+
+    assert "COPY pyproject.toml uv.lock README.md ./" in dockerfile_text
+    assert "uv sync --frozen --no-dev --no-editable" in dockerfile_text
+    assert "uv pip install" not in dockerfile_text
+    assert calls == [
+        (
+            [
+                "uv",
+                "lock",
+                "--check",
+                "--default-index",
+                "https://pypi.org/simple",
+            ],
+            repo_root,
+        ),
+        (["corepack", "pnpm", "install", "--frozen-lockfile"], repo_root),
+        (["corepack", "pnpm", "web:build:static"], repo_root),
+    ]
+    script_text = Path("scripts/deploy-tencent-cloud-production.py").read_text(
+        encoding="utf-8",
+    )
+    assert script_text.index("_validate_locked_python_dependencies(config)") < (
+        script_text.index("_run_remote_preflight(config)")
+    )
+
+    calls.clear()
+    module._build_static_frontend(
+        types.SimpleNamespace(skip_web_build=True, repo_root=repo_root),
+    )
+    assert calls == []
+
+
 def test_deploy_tencent_cloud_excludes_local_tooling_and_evidence_artifacts() -> None:
     module = _load_script_module(
         "deploy_tencent_cloud_local_artifact_excludes",
