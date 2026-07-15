@@ -3357,6 +3357,21 @@ def test_deploy_tencent_cloud_package_carries_static_export() -> None:
     assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
 
 
+def test_deploy_tencent_cloud_excludes_local_tooling_and_evidence_artifacts() -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_local_artifact_excludes",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    gitignore_lines = Path(".gitignore").read_text(encoding="utf-8").splitlines()
+    dockerignore_lines = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
+
+    assert ".gitnexus/" in module.APP_RSYNC_EXCLUDES
+    assert "output/" in module.APP_RSYNC_EXCLUDES
+    assert ".gitnexus/" in gitignore_lines
+    assert ".gitnexus" in dockerignore_lines
+    assert "output" in dockerignore_lines
+
+
 def test_deploy_tencent_cloud_cleans_only_regenerable_remote_sync_artifacts(
     monkeypatch: MonkeyPatch,
 ) -> None:
