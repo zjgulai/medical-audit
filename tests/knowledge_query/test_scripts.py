@@ -3164,6 +3164,390 @@ def test_deploy_tencent_cloud_execute_requires_clean_approved_main(
     ]
 
 
+def test_deploy_tencent_cloud_wrong_release_sha_fails_before_first_ssh(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_wrong_release_sha_before_ssh",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(execute=True, rollback=False, apply_schema=False)
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_validate_locked_python_dependencies",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        module,
+        "_build_static_frontend",
+        lambda _config: events.append("build"),
+    )
+
+    def reject_manifest(_config: object) -> None:
+        events.append("validate")
+        raise module.DeployError(
+            "web release manifest source SHA does not match approved SHA",
+        )
+
+    monkeypatch.setattr(module, "_validate_web_release", reject_manifest, raising=False)
+    monkeypatch.setattr(
+        module,
+        "_run_remote_preflight",
+        lambda _config: events.append("ssh"),
+    )
+    monkeypatch.setattr(module, "_create_remote_backups", lambda _config: None)
+    monkeypatch.setattr(module, "_cleanup_remote_sync_artifacts", lambda _config: None)
+    monkeypatch.setattr(module, "_sync_application", lambda _config: None)
+    monkeypatch.setattr(module, "_sync_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_rebuild_application", lambda _config: None)
+    monkeypatch.setattr(module, "_run_remote_post_checks", lambda _config: None)
+    monkeypatch.setattr(module, "_write_remote_deploy_sha", lambda _config: None)
+    monkeypatch.setattr(module, "_run_production_smoke", lambda _config: None)
+
+    assert module.main() == 2
+    assert events == ["build", "validate"]
+
+
+def _deploy_release_fixture(
+    tmp_path: Path,
+    *,
+    source_sha: str = "a" * 40,
+) -> tuple[types.SimpleNamespace, dict[str, object], Path]:
+    repo_root = tmp_path / "repo"
+    web_out = repo_root / "web" / "out"
+    static_asset = _write_bytes(
+        web_out / "_next" / "static" / "app.js",
+        b"console.log('release');\n",
+    )
+    index = _write_bytes(web_out / "index.html", b"<h1>release</h1>\n")
+    lockfile = _write_bytes(repo_root / "pnpm-lock.yaml", b"lockfileVersion: '9.0'\n")
+    files = []
+    for relative_path, path in (
+        ("_next/static/app.js", static_asset),
+        ("index.html", index),
+    ):
+        content = path.read_bytes()
+        files.append(
+            {
+                "path": relative_path,
+                "size_bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    payload: dict[str, object] = {
+        "files": files,
+        "format": "medical-audit-web-release-manifest-v1",
+        "lockfile_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest(),
+        "node_version": "v22.22.0",
+        "pnpm_version": "9.15.0",
+        "public_build_variables": {
+            "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
+            "NEXT_PUBLIC_AUDIT_ORG_NAME": "测试医院",
+            "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+            "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": "1",
+        },
+        "source_sha": source_sha,
+    }
+    manifest_path = web_out / "release-manifest.json"
+    manifest_path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    return (
+        types.SimpleNamespace(repo_root=repo_root, approved_sha="a" * 40),
+        payload,
+        manifest_path,
+    )
+
+
+def _rewrite_deploy_release_manifest(
+    manifest_path: Path,
+    payload: dict[str, object],
+) -> None:
+    manifest_path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_deploy_tencent_cloud_valid_release_manifest_returns_stable_evidence(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_valid_release_manifest",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, payload, manifest_path = _deploy_release_fixture(tmp_path)
+
+    evidence = module._validate_web_release(config)
+
+    assert evidence.manifest_sha256 == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    assert evidence.manifest_file_count == len(payload["files"])
+    assert evidence.static_asset_path == "_next/static/app.js"
+    assert evidence.static_asset_sha256 == hashlib.sha256(
+        (config.repo_root / "web/out/_next/static/app.js").read_bytes(),
+    ).hexdigest()
+
+
+def test_deploy_tencent_cloud_release_gate_fails_closed_on_parent_directory_swap(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_parent_directory_swap",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, _manifest_path = _deploy_release_fixture(tmp_path)
+    static_directory = config.repo_root / "web/out/_next/static"
+    safe_directory = config.repo_root / "web/out/_next/static.safe"
+    outside_directory = tmp_path / "outside-static"
+    outside_directory.mkdir()
+    _write_bytes(outside_directory / "app.js", b"malicious outside content\n")
+    original_open = module.os.open
+    swapped = False
+
+    def swap_parent_before_asset_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if not swapped and Path(os.fsdecode(path)).name == "app.js":
+            static_directory.rename(safe_directory)
+            static_directory.symlink_to(outside_directory, target_is_directory=True)
+            swapped = True
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "open", swap_parent_before_asset_open)
+
+    with pytest.raises(module.DeployError, match="symlink"):
+        module._validate_web_release(config)
+
+    assert swapped is True
+
+
+def test_deploy_tencent_cloud_release_manifest_has_bounded_read(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_manifest_bounded_read",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, manifest_path = _deploy_release_fixture(tmp_path)
+    monkeypatch.setattr(module, "MAX_RELEASE_MANIFEST_BYTES", 32)
+    assert manifest_path.stat().st_size > 32
+
+    with pytest.raises(module.DeployError, match="maximum allowed size"):
+        module._validate_web_release(config)
+
+
+@pytest.mark.parametrize(
+    ("case", "error_match"),
+    [
+        ("missing", "file set"),
+        ("extra", "file set"),
+        ("hash", "SHA-256"),
+        ("size", "size"),
+        ("symlink", "symlink"),
+        ("manifest-symlink", "manifest.*regular"),
+        ("path-escape", "canonical relative POSIX"),
+        ("invalid-format", "format"),
+        ("lockfile", "lockfile"),
+        ("duplicate", "duplicate"),
+        ("sha-type", "sha256"),
+        ("size-type", "size_bytes"),
+        ("files-type", "files"),
+        ("no-static-asset", "_next/static"),
+    ],
+)
+def test_deploy_tencent_cloud_release_manifest_fails_closed(
+    tmp_path: Path,
+    case: str,
+    error_match: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_invalid_release_manifest_{case}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, payload, manifest_path = _deploy_release_fixture(tmp_path)
+    files = payload["files"]
+    assert isinstance(files, list)
+    first = files[0]
+    assert isinstance(first, dict)
+
+    if case == "missing":
+        (config.repo_root / "web/out/index.html").unlink()
+    elif case == "extra":
+        _write_bytes(config.repo_root / "web/out/unexpected.txt", b"unexpected")
+    elif case == "hash":
+        first["sha256"] = "b" * 64
+    elif case == "size":
+        first["size_bytes"] = int(first["size_bytes"]) + 1
+    elif case == "symlink":
+        asset = config.repo_root / "web/out/_next/static/app.js"
+        outside = _write_bytes(tmp_path / "outside.js", b"outside")
+        asset.unlink()
+        asset.symlink_to(outside)
+    elif case == "manifest-symlink":
+        outside_manifest = _write_bytes(tmp_path / "manifest.json", manifest_path.read_bytes())
+        manifest_path.unlink()
+        manifest_path.symlink_to(outside_manifest)
+    elif case == "path-escape":
+        first["path"] = "../escape.js"
+    elif case == "invalid-format":
+        payload["format"] = "medical-audit-web-release-manifest-v0"
+    elif case == "lockfile":
+        payload["lockfile_sha256"] = "b" * 64
+    elif case == "duplicate":
+        files.append(dict(first))
+    elif case == "sha-type":
+        first["sha256"] = True
+    elif case == "size-type":
+        first["size_bytes"] = True
+    elif case == "files-type":
+        payload["files"] = {"not": "a list"}
+    elif case == "no-static-asset":
+        first["path"] = "app.js"
+        (config.repo_root / "web/out/app.js").parent.mkdir(parents=True, exist_ok=True)
+        (config.repo_root / "web/out/_next/static/app.js").rename(
+            config.repo_root / "web/out/app.js",
+        )
+    else:
+        raise AssertionError(f"unhandled case: {case}")
+    if case != "manifest-symlink":
+        _rewrite_deploy_release_manifest(manifest_path, payload)
+
+    with pytest.raises(module.DeployError, match=error_match):
+        module._validate_web_release(config)
+
+
+def test_deploy_tencent_cloud_wrong_release_source_sha_has_exact_error(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_wrong_release_source_sha",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, _manifest_path = _deploy_release_fixture(
+        tmp_path,
+        source_sha="b" * 40,
+    )
+
+    with pytest.raises(module.DeployError) as exc_info:
+        module._validate_web_release(config)
+
+    assert str(exc_info.value) == (
+        "web release manifest source SHA does not match approved SHA"
+    )
+
+
+def test_deploy_tencent_cloud_skip_build_still_runs_manifest_gate_before_ssh(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_skip_build_manifest_gate",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        skip_web_build=True,
+    )
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_validate_locked_python_dependencies",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        module,
+        "_build_static_frontend",
+        lambda value: events.append(f"build-skip={value.skip_web_build}"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_validate_web_release",
+        lambda _config: events.append("validate"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_remote_preflight",
+        lambda _config: events.append("ssh"),
+    )
+    for name in (
+        "_create_remote_backups",
+        "_cleanup_remote_sync_artifacts",
+        "_sync_application",
+        "_sync_static_frontend",
+        "_rebuild_application",
+        "_run_remote_post_checks",
+        "_write_remote_deploy_sha",
+        "_run_production_smoke",
+    ):
+        monkeypatch.setattr(module, name, lambda _config: None)
+
+    assert module.main() == 0
+    assert events[:3] == ["build-skip=True", "validate", "ssh"]
+
+
+def test_deploy_tencent_cloud_readonly_preflight_does_not_require_manifest(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_readonly_without_manifest",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(execute=False, rollback=False)
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_validate_locked_python_dependencies",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        module,
+        "_build_static_frontend",
+        lambda _config: pytest.fail("readonly preflight must not build"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_validate_web_release",
+        lambda _config: pytest.fail("readonly preflight must not require manifest"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_remote_preflight",
+        lambda _config: events.append("ssh"),
+    )
+
+    assert module.main() == 0
+    assert events == ["ssh"]
+
+
 def test_deploy_tencent_cloud_execute_requires_explicit_approved_sha(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -3713,14 +4097,24 @@ def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
     dockerfile_text = Path("configs/deploy/tencent-cloud/Dockerfile").read_text(
         encoding="utf-8",
     )
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[tuple[list[str], Path, dict[str, str] | None]] = []
 
-    def fake_run(args: list[str], *, cwd: Path) -> None:
-        calls.append((args, cwd))
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        calls.append((args, cwd, env))
 
     monkeypatch.setattr(module, "_run", fake_run)
     repo_root = Path("/tmp/medical-audit-release")
-    config = types.SimpleNamespace(skip_web_build=False, repo_root=repo_root)
+    config = types.SimpleNamespace(
+        skip_web_build=False,
+        repo_root=repo_root,
+        approved_sha="a" * 40,
+    )
+    original_environment = os.environ.copy()
 
     module._validate_locked_python_dependencies(config)
     module._build_static_frontend(config)
@@ -3738,10 +4132,20 @@ def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
                 "https://pypi.org/simple",
             ],
             repo_root,
+            None,
         ),
-        (["corepack", "pnpm", "install", "--frozen-lockfile"], repo_root),
-        (["corepack", "pnpm", "web:build:static"], repo_root),
+        (
+            ["corepack", "pnpm", "install", "--frozen-lockfile"],
+            repo_root,
+            None,
+        ),
+        (
+            ["corepack", "pnpm", "web:build:release"],
+            repo_root,
+            {**original_environment, "MEDICAL_AUDIT_DEPLOY_SHA": "a" * 40},
+        ),
     ]
+    assert os.environ == original_environment
     script_text = Path("scripts/deploy-tencent-cloud-production.py").read_text(
         encoding="utf-8",
     )
@@ -3751,7 +4155,11 @@ def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
 
     calls.clear()
     module._build_static_frontend(
-        types.SimpleNamespace(skip_web_build=True, repo_root=repo_root),
+        types.SimpleNamespace(
+            skip_web_build=True,
+            repo_root=repo_root,
+            approved_sha="a" * 40,
+        ),
     )
     assert calls == []
 

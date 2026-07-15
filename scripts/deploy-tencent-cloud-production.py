@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DEFAULT_HOST = "101.34.52.232"
 DEFAULT_USER = "ubuntu"
@@ -22,6 +25,22 @@ DEFAULT_PYTHON_INDEX = "https://pypi.org/simple"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 45 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 REMOTE_COMPLETION_POLL_SECONDS = 5
+RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1"
+RELEASE_MANIFEST_NAME = "release-manifest.json"
+RELEASE_MANIFEST_FIELDS = {
+    "files",
+    "format",
+    "lockfile_sha256",
+    "node_version",
+    "pnpm_version",
+    "public_build_variables",
+    "source_sha",
+}
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+FILE_HASH_CHUNK_SIZE = 1024 * 1024
+MAX_RELEASE_MANIFEST_BYTES = 16 * 1024 * 1024
+DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+FILE_OPEN_FLAGS = os.O_RDONLY | os.O_NOFOLLOW
 
 APP_RSYNC_EXCLUDES = (
     ".DS_Store",
@@ -91,6 +110,20 @@ class DeployConfig:
         return f"{self.ssh_user}@{self.ssh_host}"
 
 
+@dataclass(frozen=True)
+class ReleaseEvidence:
+    manifest_sha256: str
+    manifest_file_count: int
+    static_asset_path: str
+    static_asset_sha256: str
+
+
+@dataclass(frozen=True)
+class _ReleaseFileEvidence:
+    size_bytes: int
+    sha256: str
+
+
 def main() -> int:
     try:
         config = _config_from_args(_parse_args())
@@ -100,11 +133,13 @@ def main() -> int:
             _run_remote_rollback(config)
             return 0
         _validate_locked_python_dependencies(config)
+        if config.execute:
+            _build_static_frontend(config)
+            _validate_web_release(config)
         _run_remote_preflight(config)
         if not config.execute:
             print("Preflight passed. Add --execute --confirm-production to deploy.")
             return 0
-        _build_static_frontend(config)
         _create_remote_backups(config)
         _cleanup_remote_sync_artifacts(config)
         _sync_application(config)
@@ -427,7 +462,405 @@ def _build_static_frontend(config: DeployConfig) -> None:
         ["corepack", "pnpm", "install", "--frozen-lockfile"],
         cwd=config.repo_root,
     )
-    _run(["corepack", "pnpm", "web:build:static"], cwd=config.repo_root)
+    child_environment = os.environ.copy()
+    child_environment["MEDICAL_AUDIT_DEPLOY_SHA"] = config.approved_sha
+    _run(
+        ["corepack", "pnpm", "web:build:release"],
+        cwd=config.repo_root,
+        env=child_environment,
+    )
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DeployError(f"web release manifest contains duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _same_file(first: os.stat_result, second: os.stat_result) -> bool:
+    return first.st_dev == second.st_dev and first.st_ino == second.st_ino
+
+
+def _read_open_regular_file(
+    file_descriptor: int,
+    *,
+    expected_stat: os.stat_result,
+    label: str,
+    collect_content: bool,
+    max_bytes: int | None,
+) -> tuple[bytes, _ReleaseFileEvidence]:
+    digest = hashlib.sha256()
+    chunks: list[bytes] = []
+    size_bytes = 0
+    try:
+        initial_open_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(initial_open_stat.st_mode) or not _same_file(
+            expected_stat,
+            initial_open_stat,
+        ):
+            raise DeployError(f"{label} changed before it could be opened safely")
+        while chunk := os.read(file_descriptor, FILE_HASH_CHUNK_SIZE):
+            if collect_content:
+                chunks.append(chunk)
+            digest.update(chunk)
+            size_bytes += len(chunk)
+            if max_bytes is not None and size_bytes > max_bytes:
+                raise DeployError(f"{label} exceeds the maximum allowed size")
+        final_open_stat = os.fstat(file_descriptor)
+    except OSError as exc:
+        raise DeployError(f"{label} could not be read safely") from exc
+    if (
+        not _same_file(initial_open_stat, final_open_stat)
+        or initial_open_stat.st_size != final_open_stat.st_size
+        or initial_open_stat.st_mtime_ns != final_open_stat.st_mtime_ns
+        or size_bytes != final_open_stat.st_size
+    ):
+        raise DeployError(f"{label} changed while it was being read")
+    return (
+        b"".join(chunks),
+        _ReleaseFileEvidence(size_bytes=size_bytes, sha256=digest.hexdigest()),
+    )
+
+
+def _read_regular_file(
+    path: Path,
+    *,
+    label: str,
+    collect_content: bool = False,
+    max_bytes: int | None = None,
+) -> tuple[bytes, _ReleaseFileEvidence]:
+    try:
+        path_stat = path.lstat()
+    except OSError as exc:
+        raise DeployError(f"{label} is missing or unreadable") from exc
+    if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISREG(path_stat.st_mode):
+        raise DeployError(f"{label} must be a regular file and not a symlink")
+    try:
+        file_descriptor = os.open(path, FILE_OPEN_FLAGS)
+    except OSError as exc:
+        raise DeployError(f"{label} could not be opened safely") from exc
+    try:
+        return _read_open_regular_file(
+            file_descriptor,
+            expected_stat=path_stat,
+            label=label,
+            collect_content=collect_content,
+            max_bytes=max_bytes,
+        )
+    finally:
+        os.close(file_descriptor)
+
+
+def _read_regular_file_at(
+    *,
+    directory_fd: int,
+    name: str,
+    label: str,
+    collect_content: bool = False,
+    max_bytes: int | None = None,
+    expected_stat: os.stat_result | None = None,
+) -> tuple[bytes, _ReleaseFileEvidence]:
+    try:
+        entry_stat = expected_stat or os.stat(
+            name,
+            dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+    except OSError as exc:
+        raise DeployError(f"{label} is missing or unreadable") from exc
+    if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
+        raise DeployError(f"{label} must be a regular file and not a symlink")
+    try:
+        file_descriptor = os.open(
+            name,
+            FILE_OPEN_FLAGS,
+            dir_fd=directory_fd,
+        )
+    except OSError as exc:
+        raise DeployError(f"{label} could not be opened safely") from exc
+    try:
+        return _read_open_regular_file(
+            file_descriptor,
+            expected_stat=entry_stat,
+            label=label,
+            collect_content=collect_content,
+            max_bytes=max_bytes,
+        )
+    finally:
+        os.close(file_descriptor)
+
+
+def _canonical_release_path(value: object) -> str:
+    if type(value) is not str:
+        raise DeployError("web release manifest file path must be a string")
+    path = value
+    raw_parts = path.split("/")
+    normalized = PurePosixPath(path)
+    if (
+        not path
+        or "\\" in path
+        or "\x00" in path
+        or normalized.is_absolute()
+        or any(part in {"", ".", ".."} for part in raw_parts)
+        or normalized.as_posix() != path
+        or path == RELEASE_MANIFEST_NAME
+    ):
+        raise DeployError(
+            "web release manifest path is not a canonical relative POSIX path",
+        )
+    return path
+
+
+def _open_release_root(web_out: Path) -> tuple[int, os.stat_result]:
+    try:
+        root_stat = web_out.lstat()
+    except OSError as exc:
+        raise DeployError("web/out is missing or unreadable") from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise DeployError("web/out must be a directory and not a symlink")
+    try:
+        root_fd = os.open(web_out, DIRECTORY_OPEN_FLAGS)
+    except OSError as exc:
+        raise DeployError("web/out could not be opened safely") from exc
+    opened_stat = os.fstat(root_fd)
+    if not stat.S_ISDIR(opened_stat.st_mode) or not _same_file(root_stat, opened_stat):
+        os.close(root_fd)
+        raise DeployError("web/out changed before it could be opened safely")
+    return root_fd, opened_stat
+
+
+def _assert_release_root_unchanged(
+    web_out: Path,
+    *,
+    opened_stat: os.stat_result,
+) -> None:
+    try:
+        final_stat = web_out.lstat()
+    except OSError as exc:
+        raise DeployError("web/out changed during release validation") from exc
+    if (
+        stat.S_ISLNK(final_stat.st_mode)
+        or not stat.S_ISDIR(final_stat.st_mode)
+        or not _same_file(opened_stat, final_stat)
+    ):
+        raise DeployError("web/out changed during release validation")
+
+
+def _collect_release_files(root_fd: int) -> dict[str, _ReleaseFileEvidence]:
+    result: dict[str, _ReleaseFileEvidence] = {}
+
+    def visit(directory_fd: int, relative_directory: str) -> None:
+        try:
+            with os.scandir(directory_fd) as iterator:
+                entries = sorted(
+                    iterator,
+                    key=lambda item: item.name.encode("utf-8"),
+                )
+        except OSError as exc:
+            raise DeployError("web/out could not be enumerated safely") from exc
+        for entry in entries:
+            relative_path = (
+                f"{relative_directory}/{entry.name}"
+                if relative_directory
+                else entry.name
+            )
+            try:
+                entry_stat = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise DeployError(
+                    f"web/out entry could not be inspected: {relative_path}",
+                ) from exc
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise DeployError(f"web/out contains a symlink: {relative_path}")
+            if stat.S_ISDIR(entry_stat.st_mode):
+                try:
+                    child_fd = os.open(
+                        entry.name,
+                        DIRECTORY_OPEN_FLAGS,
+                        dir_fd=directory_fd,
+                    )
+                except OSError as exc:
+                    raise DeployError(
+                        f"web/out directory could not be opened safely: {relative_path}",
+                    ) from exc
+                try:
+                    child_stat = os.fstat(child_fd)
+                    if not stat.S_ISDIR(child_stat.st_mode) or not _same_file(
+                        entry_stat,
+                        child_stat,
+                    ):
+                        raise DeployError(
+                            f"web/out directory changed during validation: {relative_path}",
+                        )
+                    visit(child_fd, relative_path)
+                finally:
+                    os.close(child_fd)
+                continue
+            if not stat.S_ISREG(entry_stat.st_mode):
+                raise DeployError(
+                    f"web/out contains a non-regular file: {relative_path}",
+                )
+            if relative_path == RELEASE_MANIFEST_NAME:
+                continue
+            _content, evidence = _read_regular_file_at(
+                directory_fd=directory_fd,
+                name=entry.name,
+                label=f"web/out file {relative_path}",
+                expected_stat=entry_stat,
+            )
+            result[relative_path] = evidence
+
+    visit(root_fd, "")
+    return result
+
+
+def _manifest_payload(manifest_bytes: bytes) -> dict[str, object]:
+    try:
+        decoded = manifest_bytes.decode("utf-8")
+        payload = json.loads(decoded, object_pairs_hook=_unique_json_object)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeployError("web release manifest is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise DeployError("web release manifest root must be an object")
+    if set(payload) != RELEASE_MANIFEST_FIELDS:
+        raise DeployError("web release manifest fields do not match the required format")
+    return payload
+
+
+def _validate_manifest_metadata(
+    *,
+    payload: Mapping[str, object],
+    config: DeployConfig,
+) -> None:
+    if payload["format"] != RELEASE_MANIFEST_FORMAT:
+        raise DeployError("web release manifest format is invalid")
+    source_sha = payload["source_sha"]
+    if type(source_sha) is not str or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
+        raise DeployError("web release manifest source SHA is invalid")
+    if source_sha != config.approved_sha:
+        raise DeployError("web release manifest source SHA does not match approved SHA")
+    for field in ("node_version", "pnpm_version"):
+        value = payload[field]
+        if type(value) is not str or not value:
+            raise DeployError(f"web release manifest {field} is invalid")
+    public_build_variables = payload["public_build_variables"]
+    if not isinstance(public_build_variables, dict) or any(
+        type(key) is not str or (value is not None and type(value) is not str)
+        for key, value in public_build_variables.items()
+    ):
+        raise DeployError("web release manifest public_build_variables is invalid")
+
+
+def _manifest_file_entries(payload: Mapping[str, object]) -> dict[str, _ReleaseFileEvidence]:
+    raw_files = payload["files"]
+    if not isinstance(raw_files, list):
+        raise DeployError("web release manifest files must be a list")
+    declared: dict[str, _ReleaseFileEvidence] = {}
+    ordered_paths: list[str] = []
+    for raw_entry in raw_files:
+        if not isinstance(raw_entry, dict) or set(raw_entry) != {
+            "path",
+            "sha256",
+            "size_bytes",
+        }:
+            raise DeployError("web release manifest files entry has invalid fields")
+        path = _canonical_release_path(raw_entry["path"])
+        if path in declared:
+            raise DeployError(f"web release manifest contains duplicate path: {path}")
+        size_bytes = raw_entry["size_bytes"]
+        if type(size_bytes) is not int or size_bytes < 0:
+            raise DeployError(
+                "web release manifest file size_bytes must be a non-negative integer",
+            )
+        sha256 = raw_entry["sha256"]
+        if type(sha256) is not str or SHA256_PATTERN.fullmatch(sha256) is None:
+            raise DeployError(
+                "web release manifest file sha256 must be lowercase hexadecimal",
+            )
+        declared[path] = _ReleaseFileEvidence(
+            size_bytes=size_bytes,
+            sha256=sha256,
+        )
+        ordered_paths.append(path)
+    if ordered_paths != sorted(ordered_paths, key=lambda value: value.encode("utf-8")):
+        raise DeployError("web release manifest files must be sorted by path")
+    return declared
+
+
+def _validate_web_release(config: DeployConfig) -> ReleaseEvidence:
+    web_out = config.repo_root / "web" / "out"
+    root_fd, root_stat = _open_release_root(web_out)
+    try:
+        manifest_bytes, manifest_evidence = _read_regular_file_at(
+            directory_fd=root_fd,
+            name=RELEASE_MANIFEST_NAME,
+            label="web release manifest",
+            collect_content=True,
+            max_bytes=MAX_RELEASE_MANIFEST_BYTES,
+        )
+        payload = _manifest_payload(manifest_bytes)
+        _validate_manifest_metadata(payload=payload, config=config)
+
+        lockfile_sha256 = payload["lockfile_sha256"]
+        if (
+            type(lockfile_sha256) is not str
+            or SHA256_PATTERN.fullmatch(lockfile_sha256) is None
+        ):
+            raise DeployError("web release manifest lockfile SHA-256 is invalid")
+        _lockfile_bytes, lockfile_evidence = _read_regular_file(
+            config.repo_root / "pnpm-lock.yaml",
+            label="pnpm lockfile",
+        )
+        if lockfile_sha256 != lockfile_evidence.sha256:
+            raise DeployError(
+                "web release manifest lockfile hash does not match pnpm-lock.yaml",
+            )
+
+        declared = _manifest_file_entries(payload)
+        actual = _collect_release_files(root_fd)
+        if set(declared) != set(actual):
+            raise DeployError("web release manifest file set does not match web/out")
+        for path in sorted(declared, key=lambda value: value.encode("utf-8")):
+            expected = declared[path]
+            observed = actual[path]
+            if observed.size_bytes != expected.size_bytes:
+                raise DeployError(f"web release manifest size mismatch: {path}")
+            if observed.sha256 != expected.sha256:
+                raise DeployError(f"web release manifest SHA-256 mismatch: {path}")
+
+        final_manifest_bytes, final_manifest_evidence = _read_regular_file_at(
+            directory_fd=root_fd,
+            name=RELEASE_MANIFEST_NAME,
+            label="web release manifest",
+            collect_content=True,
+            max_bytes=MAX_RELEASE_MANIFEST_BYTES,
+        )
+        if (
+            final_manifest_bytes != manifest_bytes
+            or final_manifest_evidence != manifest_evidence
+            or _collect_release_files(root_fd) != actual
+        ):
+            raise DeployError("web release files changed during release validation")
+        _assert_release_root_unchanged(web_out, opened_stat=root_stat)
+
+        static_assets = sorted(
+            (path for path in declared if path.startswith("_next/static/")),
+            key=lambda value: value.encode("utf-8"),
+        )
+        if not static_assets:
+            raise DeployError("web release manifest must contain a _next/static asset")
+        static_asset_path = static_assets[0]
+        return ReleaseEvidence(
+            manifest_sha256=manifest_evidence.sha256,
+            manifest_file_count=len(declared),
+            static_asset_path=static_asset_path,
+            static_asset_sha256=declared[static_asset_path].sha256,
+        )
+    finally:
+        os.close(root_fd)
 
 
 def _create_remote_backups(config: DeployConfig) -> None:
@@ -978,9 +1411,14 @@ def _ssh_transport(config: DeployConfig) -> str:
     )
 
 
-def _run(args: Sequence[str], *, cwd: Path) -> None:
+def _run(
+    args: Sequence[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str] | None = None,
+) -> None:
     print(_format_command(args), flush=True)
-    subprocess.run(args, cwd=cwd, check=True, text=True)
+    subprocess.run(args, cwd=cwd, check=True, text=True, env=env)
 
 
 def _run_capture(args: Sequence[str], *, cwd: Path) -> str:
