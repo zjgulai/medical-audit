@@ -87,6 +87,13 @@ function assertGetOnlyContract() {
   expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument();
 }
 
+function assertUploadPayloadHidden() {
+  expect(screen.queryByText("document-upload-001.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("sensitive-sha256-value")).not.toBeInTheDocument();
+  expect(screen.queryByText("/private/sensitive/storage/document-upload-001.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByText("https://signed.example.test/sensitive-download-url")).not.toBeInTheDocument();
+}
+
 describe("PersonalMaterialReadPanel", () => {
   beforeEach(() => {
     fetchDocumentPermissionsMock.mockReset();
@@ -189,6 +196,48 @@ describe("PersonalMaterialReadPanel", () => {
 
     expect(await screen.findByText("个人材料状态受限")).toBeInTheDocument();
     expect(screen.queryByText("document-upload-001.pdf")).not.toBeInTheDocument();
+    assertGetOnlyContract();
+  });
+
+  it("fails closed when both permission payloads omit the same capability", async () => {
+    const malformedPermissions = {
+      can_upload_personal: true,
+      can_read_all_personal_uploads: false
+    } as unknown as DocumentUploadPermissions;
+    fetchDocumentPermissionsMock.mockResolvedValue({
+      ...permissionsResponse,
+      upload_permissions: malformedPermissions
+    });
+    fetchDocumentUploadsMock.mockResolvedValue({
+      ...uploadListResponse,
+      permissions: malformedPermissions
+    });
+
+    render(<PersonalMaterialReadPanel />);
+
+    expect(await screen.findByText("个人材料状态受限")).toBeInTheDocument();
+    assertUploadPayloadHidden();
+    assertGetOnlyContract();
+  });
+
+  it("fails closed when both permission payloads contain the same non-boolean capability", async () => {
+    const malformedPermissions = {
+      ...uploadPermissions,
+      can_govern_personal_uploads: "true"
+    } as unknown as DocumentUploadPermissions;
+    fetchDocumentPermissionsMock.mockResolvedValue({
+      ...permissionsResponse,
+      upload_permissions: malformedPermissions
+    });
+    fetchDocumentUploadsMock.mockResolvedValue({
+      ...uploadListResponse,
+      permissions: malformedPermissions
+    });
+
+    render(<PersonalMaterialReadPanel />);
+
+    expect(await screen.findByText("个人材料状态受限")).toBeInTheDocument();
+    assertUploadPayloadHidden();
     assertGetOnlyContract();
   });
 });

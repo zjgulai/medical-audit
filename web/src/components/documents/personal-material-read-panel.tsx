@@ -138,10 +138,23 @@ function PersonalMaterialHistoryItem({ item }: { readonly item: DocumentUploadIt
   );
 }
 
-function sameUploadPermissions(left: DocumentUploadPermissions, right: DocumentUploadPermissions): boolean {
+function sameUploadPermissions(left: unknown, right: unknown): boolean {
+  if (!isDocumentUploadPermissions(left) || !isDocumentUploadPermissions(right)) {
+    return false;
+  }
   return left.can_upload_personal === right.can_upload_personal
     && left.can_read_all_personal_uploads === right.can_read_all_personal_uploads
     && left.can_govern_personal_uploads === right.can_govern_personal_uploads;
+}
+
+function isDocumentUploadPermissions(value: unknown): value is DocumentUploadPermissions {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.can_upload_personal === "boolean"
+    && typeof candidate.can_read_all_personal_uploads === "boolean"
+    && typeof candidate.can_govern_personal_uploads === "boolean";
 }
 
 function permissionLabel(allowed: boolean): string {
