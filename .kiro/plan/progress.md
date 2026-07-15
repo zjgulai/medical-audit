@@ -1031,3 +1031,106 @@ Current boundary:
 
 - 当前最高为 L2 本地全量验证与独立 review 通过证据；尚未完成 push、PR、merge 或 deploy。
 - 本轮只新增 L3 SSH 只读容量/健康证据；`production unchanged`；`deploy_execute=false`；`provider_call=false`；`live_send=false`；`remote_ref_delete=false`。
+
+## 2026-07-15 Loop 53 Deployment And Acceptance Closure
+
+Execution:
+
+- PR `#234` 已转为 Ready 并 merge；merge commit 为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`，远端分支 `codex/evidence-tool-readonly-contract-20260715` 保留。
+- clean `main` 部署脚本退出 `0`；备份 stamp 为 `evidence-contract-main-2bba501-20260715T031945+0800`。
+- 生产 marker、`main` 与 `origin/main` 均为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`。
+
+Acceptance:
+
+- 默认 production smoke：PASS，GET-only，`database_write=false`，`provider_call=not_called`。
+- L3 permission smoke：`2/2` public probes PASS，审计日志 delta `0`。
+- L4 permission smoke：30 秒重试 `35/35` PASS，`database_write=audit-log-only`。
+- L4 frontend gate：`18` routes / `36` checks、6 API probes全部执行，`P0=0`、`P1=0`；本轮新增 `63` 条读取/权限/审计导出类事件。
+- 最终生产审计表行数为 `56066`；四个相关容器均为 `running/healthy`，front door、`/`、`/login` 均为 `200`。
+
+Correction:
+
+- deployment-state audit 运行时新增了恰好一条 `search-backend-status-view`，其实际边界是 L4 `audit-log-only`，不能沿用脚本当前的 read-only 描述。
+
+## 2026-07-15 Loop 54 Start
+
+Decision:
+
+- 在干净的 release reconciliation worktree 创建 `codex/deployment-audit-l3-contract-20260715`；不触碰落后 `172` commits 且含大量用户变更的原始 worktree。
+- 以已部署 SHA 为 runtime 基线，先修复 operator-side 状态审计合同；若最终 diff 不含 runtime artifact，则禁止重复生产重建。
+- `planning-with-files` 安装包只包含 `SKILL.md`，其引用的 optional `references/` 不存在；沿用仓库现有 `.kiro/plan/` 文件和内置规则摘要。
+
+Current phase:
+
+- Phase 0 与 Phase 1 完成；Phase 2 真 L3 合同修复开始。
+- 计划文件备份：`/Users/pray/.Codex/file-history/medical-audit-loop54-20260715T092035+0800`。
+- 第一次三文件 planning patch 因 task-plan 最后一条边界文本多出 `review/query 写入` 而匹配失败；随后按文件拆分 patch 并使用实际上下文完成，未重复同一失败方式。
+
+RED verification:
+
+- 聚焦 4 tests：3 failed / 1 passed，符合预期。
+- RED 1：旧脚本仍含 `/index/search-backend`，缺 `/knowledge-base/catalog`。
+- RED 2：旧报告缺 `evidence_grade`/side-effect 顶层合同。
+- RED 3：audit log delta `+1` 不会使旧报告失败。
+- GREEN baseline：合法 controlled-auth catalog 请求返回 `200` 且 operation log 保持空。
+
+Phase 2 implementation:
+
+- deployment-state audit 已改用 catalog 规范化状态，不再调用 `/index/search-backend`，并为每次运行生成唯一合法审计身份。
+- PostgreSQL 容器内的 audit snapshot 查询强制 `default_transaction_read_only=on`；最终报告只在 count/latest/fingerprint 全局快照不变、唯一 auditor identity 前后均为零且 catalog boundaries 安全时标记 L3。
+- 已归因的 audit 新增报告 `database_write=audit-log-only` 并失败；快照变化但无法归因、任一测量不可用或边界缺失同样失败关闭。
+- 顶层 JSON/Markdown 新增 evidence grade、production side effect、database write、provider status、HTTP methods、audit delta/snapshot/identity 和只读事务证据。
+- RED 同一路径转 GREEN：4 focused tests passed；保留一个既有 Starlette deprecation warning。
+- 稳定部署 workflow 已同步 conditional L3 语义，并明确鉴权失败仍可能先写审计日志，不能宣传为 all-path read-only。
+- 独立只读审查结论为 `PASS with limitation`：成功路径 + 全局快照不变 + 唯一 identity 零事件可归类 L3；鉴权失败仍会先写 `authorization-denied`，随后被门禁检测并降级。
+- 增强测试使用持久化 `AuditSpy` 与禁止调用的 search/provider spy，证明合法 catalog 成功路径既不记录 operation，也不调用 search/provider；另覆盖负 delta 与不可测 delta 均失败关闭。
+- 增强后的 focused suite：`6 passed`，仅保留同一既有 Starlette deprecation warning。
+
+Phase 3 targeted gates:
+
+- changed-file Ruff：PASS。
+- deployment-state script Mypy：PASS，1 source file。
+- `tests/knowledge_query/test_scripts.py`：PASS；仅保留同一既有 Starlette deprecation warning。
+- `git diff --check` 与 Python `py_compile`：PASS。
+- 当前 intended diff 仅为 operator script、tests、deployment workflow、planning ledger 和 `.omc/RELEASE_RULE.md`；未修改 `src/` runtime、Web runtime、Compose、Dockerfile、schema 或 migration。
+
+Phase 3 full gates:
+
+- `uv run ruff check .`：PASS。
+- `uv run mypy src scripts/audit-tencent-cloud-deployment-state.py`：PASS，105 source files。
+- `uv run pytest -q`：PASS，613 tests；仅保留同一既有 Starlette deprecation warning。
+- 风险比例结论：本轮无前端/runtime 文件变化，不重复 Web build/E2E；沿用同日已部署 SHA 的 Web `32/279`、static build `24/24`、local full-stack `13/13` 证据，且本轮不会据此声称新 runtime 已部署。
+
+Adversarial hardening:
+
+- 自审新增 embedded remote code compile + no-redirect 合同；初次 RED 如预期失败，因为旧 transport 使用 `urllib.request.urlopen` 自动跟随 redirect。
+- remote audit 现使用 `NoRedirectHandler`，任何 3xx 不再自动跳转或向新 origin 继续发送审计 headers。
+- redirect 合同转 GREEN：7 focused tests passed；CLI 描述随后进一步收紧为全局 snapshot + 唯一 identity 实测，provider/write 结论来自 endpoint boundaries。
+- 独立复审接受两项 P1：全表净计数可能被 retention 与新增相抵；frontdoor false 未阻断报告。
+- side-effect observation 已升级为单条只读 SQL 的 count/latest-created-at/event-id-fingerprint/unique-auditor-count 快照；L3 要求全局快照完全不变且本次 auditor 前后均为 `0`。
+- `audit_frontdoor_healthy=false` 现强制追加 `audit-frontdoor-not-ready`；balanced mutation、auditor event、frontdoor failure 均先 RED 后 GREEN。
+- deployment-state 聚焦回归：`13 passed`；changed-file Ruff、script Mypy 与 `git diff --check` 通过。
+- 后续独立复审接受 secret-boundary P1：remote audit 不得读取 `medical-audit.env`，Compose service discovery 也不得通过 `--env-file` 间接读取。实现改为 app 容器内固定六键 runtime allowlist + Docker Compose labels，相关 RED 合同转 GREEN。
+- 分类复审接受两项 P1：boundaries 缺失时不得输出 `database_write=false`；纯全局正 delta 不得归因成本次 `audit-log-only`。当前仅 snapshot/identity/boundaries 全安全输出 false，仅唯一 identity 从 `0` 增至正数且 boundaries 安全输出 `audit-log-only`，其余为 `unknown`。
+- P2 hardening：`psql -X` 禁用用户级 psqlrc；唯一 auditor identity 改用 UUID4。
+- 最新 deployment-state 聚焦回归为 `14 passed`；完整脚本测试曾通过 `127` 项，后续最终全量门禁仍需在最终 diff 上重跑。
+
+Phase 4 final review and full gates:
+
+- 独立对抗复审最终结论 `PASS`，accepted P0/P1=`0`，把握高；手工审查和 fresh focused/Ruff/Mypy/py_compile/diff-check 构成有效证据。
+- 最终本地门禁：deployment-state review scope `15 passed`、`tests/knowledge_query/test_scripts.py` `127 passed`、全仓 Ruff PASS、Mypy 105 source files PASS、全量 Pytest `618/618` PASS、`git diff --check` PASS。
+- bundled `codex review --uncommitted` 因并发 diff 多次变化长跑，未产出 verdict；helper 已终止。它越界刷新 ignored `.gitnexus` 并短暂生成 GitNexus 文件，生成文件已清理，未进入 tracked diff；最终 PASS 不依赖该未完成 verdict。
+
+Phase 6 runtime deployment decision:
+
+- 最终 intended diff 不含 `src/`、Web runtime、Compose、Dockerfile、schema 或 migration；`runtime_deploy_required=false`。
+- 生产 runtime 保持 `2bba501c93eaf1f6f7485241ec15e0c21c209842`，不执行 rebuild、rsync、container recreate 或 marker update。
+
+Phase 7 production candidate acceptance:
+
+- SSH key permission 为 `0600`；独立 read-only baseline 返回 `transaction_read_only=on`、audit count `56066`、最新时间 `2026-07-14 19:51:16.836935+00`。
+- 修复后的状态审计退出 `0`：`status=pass`、`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`database_write=false`、`provider_call_status=not_called`、issues/warnings 均为空。
+- 脚本内部 before/after：count `56066→56066`、latest 不变、event-id fingerprint 不变、唯一 auditor identity `0→0`；独立 after 复核同样为 `56066` 且最新时间不变。
+- 生产 marker 匹配 `2bba501...`；app/PostgreSQL/ClamAV/Nginx 健康，frontdoor/static/mount 通过，matching embeddings `49051`，DLP reviewer `ruleset-v1`。
+- 报告：`tmp/outputs/tencent-cloud-deployment-state-conditional-l3-loop54-20260715.json` 与同名 `.md`；报告属于本地 ignored evidence，不进入 Git commit。
+- `provider_call_status=not_called` 来自 catalog boundary 和源码禁止调用测试，不是 provider 外部计量。

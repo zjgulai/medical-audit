@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-07-10
+updated: 2026-07-15
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,16 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-07-15 main@2bba501 生产部署与状态审计边界修正
+
+- PR `#234` 已合并并部署；当前生产 `.deploy-sha=2bba501c93eaf1f6f7485241ec15e0c21c209842`，app/PostgreSQL/ClamAV/共享 Nginx 均为 `running/healthy`。
+- 默认 GET-only smoke 与 2 项 public permission smoke 为 L3；完整 35 项权限矩阵和 18 routes / 36 checks 前端验收属于显式 L4 `audit-log-only`，不能混写为数据库只读。
+- 旧 deployment-state audit 调用 `/index/search-backend`，成功请求会持久化一条 `search-backend-status-view`；因此历史报告如无独立 audit delta 证据，不得仅因 `status=pass` 重述为 L3。
+- 修复后的 operator-side audit 使用 `/knowledge-base/catalog`，以每次运行唯一的合法身份调用，并在请求前后通过同一条 `transaction_read_only=on` SQL 读取 `audit_log_events` 全表计数、最新时间、有序 event-id fingerprint 和该身份的事件计数。只有全局快照不变、该身份前后均为 `0` 且 catalog 的 write/provider boundaries 全为 false 时，报告才标记 `L3-production-read-only`。
+- 该修复是 conditional L3 classification，不是“所有失败路径天生零写入”：若 controlled-auth 拒绝先记录审计事件，脚本会检测快照变化并失败关闭，再按 boundaries 与唯一 identity 归因结果保守分类为 `audit-log-only` 或 `unknown`；不得继续声称 read-only。
+- operator script/tests/docs 不是生产 runtime artifact；仅此类 diff 合并后记录 `runtime_deploy_required=false`，不得为了更新工具 marker 而无意义重建生产容器。
+- Loop 54 candidate 已对现有 production runtime 完成 conditional-L3 验收：独立 baseline/after audit count 均为 `56066` 且最新时间一致；工具内部 count/latest/fingerprint 不变、唯一 auditor identity `0→0`，报告 `status=pass`、issues/warnings 为空，marker 保持 `2bba501...`、四个相关容器健康、matching embeddings `49051`。证据文件为 `tmp/outputs/tencent-cloud-deployment-state-conditional-l3-loop54-20260715.{json,md}`。
 
 ### 2026-07-10 app-only 部署隔离合同
 
@@ -981,15 +991,17 @@ python3 scripts/run-production-e2e-smoke.py \
 
 ### 5.13 部署状态巡检与备份索引固化
 
-已新增只读部署状态巡检脚本：`scripts/audit-tencent-cloud-deployment-state.py`。
+部署状态巡检脚本：`scripts/audit-tencent-cloud-deployment-state.py`。
 
 脚本边界：
 
-- 只通过 SSH 读取远端状态，不修改生产文件、容器、数据库或 Nginx。
-- 不读取 `medical-audit.env` 内容，只检查备份文件路径、大小和修改时间。
-- 默认检查 `medical_audit_app`、`medical_audit_pg`、`ai_video_nginx` 状态。
+- 通过 SSH 读取远端状态，不修改生产文件、容器或 Nginx；数据库快照查询强制 `transaction_read_only=on`。HTTP 请求仍受下述 conditional L3 门禁约束。
+- 不打开 `medical-audit.env`，不枚举容器完整环境，也不输出或读取 secret 值；仅在运行中的 `medical_audit_app` 内 allowlist 读取 virus scanner、DLP reviewer、ClamAV host/port/timeout/chunk-size 六个非 secret runtime 配置，并检查备份文件路径、大小和修改时间。
+- 默认检查 `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
-- 默认检查本机 `127.0.0.1:18080/index/search-backend` 是否为 PostgreSQL ready，且 `matching_embedding_count >= 1`；报告会记录实际 `matching_embedding_count`，但不再与历史固定计数做精确相等比较。
+- 默认通过本机 `/knowledge-base/catalog` 检查 PostgreSQL runtime ready 与 `matching_embedding_count >= 1`；只保留规范化状态，不保存 catalog 原始大响应。
+- catalog/frontdoor 请求前后分别读取 `audit_log_events` 的全表计数、最新 `created_at`、有序 event-id fingerprint，以及本次唯一 auditor identity 的事件计数。只有全表 delta `0`、最新时间/fingerprint 不变、该身份前后均无事件、快照事务为只读且 catalog 声明 `database_write=false`、`provider_call=false`、`query_history_write=false` 时才输出 L3。
+- delta、fingerprint、最新时间或本次身份事件任一发生变化，任一快照不可测，frontdoor 不健康，或 catalog side-effect boundaries 缺失时均失败关闭。只有本次 identity 从 `0` 增至正数且 catalog boundaries 安全时，才按 `audit-log-only` 报告；纯全局并发/retention 变化、缺失 boundaries 或无法归因的变化均报告为 `unknown`。鉴权失败仍可能先写一条 `authorization-denied`，所以不能把工具描述成 all-path read-only。
 - 如需提高门槛，使用 `--min-matching-embeddings <最小可接受计数>`；旧参数 `--expected-matching-embeddings` 仍兼容，但语义已调整为最小阈值而非精确值。
 - 默认汇总本地 `tmp/outputs/production-e2e-smoke*.json` 的最近结果，报告仍保存在 `tmp/outputs/`，不进入正式资产区。
 
@@ -1014,9 +1026,11 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - `ai_video_nginx nginx -t` 通过。
 - `/var/www/audit` bind mount 存在且为只读。
 - PostgreSQL 检索后端 ready，embedding 计数等于当前 active index 的 embedding 计数；2026-06-15 当前值为 `49051`。
+- `evidence_grade=L3-production-read-only`、`production_side_effect=none`、`database_write=false`、`provider_call_status=not_called`、`http_methods=[GET]`。
+- `audit_log_event_delta=0`、`audit_log_snapshot_unchanged=true`、`audit_log_auditor_event_delta=0`、`audit_log_auditor_events_absent=true` 且 `audit_log_count_transaction_read_only=true`。
 - 指定部署戳对应的 app/env/db/nginx/web 备份均存在。
 - 最近本地生产 smoke 报告不是 `fail`。
-- 首次生产巡检 `tencent-cloud-deployment-state-after-pr48-20260611` 已通过，状态为 `pass`，阻断项为空。
+- 历史首次巡检 `tencent-cloud-deployment-state-after-pr48-20260611` 的 `status=pass` 只保留为当时功能结果；它早于 side-effect delta 合同，不能单独作为真 L3 证据。
 
 ### 5.14 PR #51 产品导航真实功能入口部署
 
@@ -1445,23 +1459,22 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
   --env-file configs/deploy/tencent-cloud/medical-audit.env ps
 
 curl -fsS http://127.0.0.1:18080/health
-curl -fsS http://127.0.0.1:18080/index/search-backend
-curl -fsS 'http://127.0.0.1:18080/pages/chat?question=医保基金审核依据'
 ```
+
+search backend readiness 不再通过裸 `curl /index/search-backend` 验收；该 endpoint 会写审计日志。必须使用 5.13 的 deployment-state audit，并以 count/latest/fingerprint 全局快照不变、唯一 auditor identity 零事件和 catalog boundaries 作为 L3 门禁。
 
 ### 7.2 容器网络测试
 
 ```bash
 docker exec ai_video_nginx wget -qO- http://medical_audit_app:8000/health
-docker exec ai_video_nginx wget -qO- http://medical_audit_app:8000/index/search-backend
 ```
 
 ### 7.3 公网域名测试
 
 ```bash
-curl -I https://audit.lute-tlz-dddd.top/health
-curl -fsS https://audit.lute-tlz-dddd.top/index/search-backend
-curl -fsS 'https://audit.lute-tlz-dddd.top/pages/chat?question=医保基金审核依据'
+curl -fsS https://audit.lute-tlz-dddd.top/api/v1/health
+curl -fsS -o /dev/null https://audit.lute-tlz-dddd.top/
+curl -fsS -o /dev/null https://audit.lute-tlz-dddd.top/login
 ```
 
 ### 7.4 功能 smoke

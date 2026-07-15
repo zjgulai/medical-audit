@@ -1669,3 +1669,72 @@ Boundary:
 
 - 已观察的至少 69 条审计事件保留，未清理。
 - 本节记录时 production runtime 仍为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`；`deploy_execute=false`。
+
+## 2026-07-15 Loop 54 True-L3 Audit Findings
+
+Verified current state:
+
+- PR `#234` 已合并为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`，该 SHA 已部署且与生产 marker 一致。
+- 状态审计脚本每次调用一次 `GET /index/search-backend`；该 handler 无条件执行 `record_operation("search-backend-status-view")`，生产 SQL audit store 会插入一条 `AuditLogEvent`。
+- 时间窗和计数证据显示 deployment-state audit 前后恰好 `+1`；因此 CLI 的 `read-only` 描述和 workflow 的“不会修改数据库”陈述均不成立。
+- 完整前端 L4 验收后审计表为 `56066`；新增 63 条均属于读取视图、权限拒绝或审计导出 action。
+- release reconciliation worktree 当前干净并已从 `main` 创建专用分支；原始 worktree 落后 `172` commits 且有大量用户修改，必须隔离。
+
+Decision:
+
+- 修复目标优先是真 L3，而不是仅把脚本重标为 L4。
+- 状态来源必须同时满足：不触发 controlled-auth denial 持久化、不调用 `record_operation`、返回 search backend readiness/embedding count、声明 `database_write=false` 与 `provider_call=false`。
+- 如果修复只涉及本地 operator script、tests 和 docs，则 `runtime_deploy_required=false`；以一次全局快照不变且唯一 auditor identity 零事件的生产验证闭环，不重复重建生产容器。
+
+Known process gap:
+
+- `.omc/RELEASE_RULE.md` 尚不存在；按 release workflow 需要从当前 repo/CI/deploy 规则生成本地 release rule cache，并明确本项目以 deploy SHA 而非本轮 semver bump 作为发布身份。
+
+Initial implementation trace:
+
+- `run-production-e2e-smoke.py` 已把 `/api/v1/knowledge-base/catalog` 作为默认 search-backend 只读来源，并强制其 `boundaries.database_write is false`、`boundaries.provider_call is false`；可复用该既有合同，避免发明第二套状态语义。
+- deployment-state audit 当前报告缺少顶层 evidence/side-effect 字段；真 L3 修复需同时改变数据来源和报告合同，不能只替换 URL。
+- 初次全量文档搜索输出过大并被截断；后续改为针对稳定 workflow 和脚本测试的窄行区间读取，不从截断输出下结论。
+
+Catalog contract details:
+
+- `/knowledge-base/catalog` 返回 `search_backend.backend`、`search_backend.ready`、`search_backend.details`，并在 `summary.current_search_embedding_count` 返回 active matching count；这与 deployment-state audit 现有判定所需信息等价。
+- 同一响应的 `boundaries` 明确 `production_write=false`、`provider_call=false`、`database_write=false`、`object_storage_write=false`、`query_history_write=false`。
+- 现有 deployment-state fixture 仍模拟旧 `/index/search-backend` payload，相关测试尚未断言 URL、边界字段或顶层证据等级；Phase 2 需要先新增这些 RED 合同断言。
+
+Rejected status sources:
+
+- `/index/postgres-status` 虽被 controlled-auth middleware 列为 public，但 handler 成功后无条件记录 `postgres-index-status-view`，不能作为真 L3 来源。
+- `/knowledge-base/catalog` 本身不调用 `record_operation`，但它属于 protected prefix；缺租户、无效/disabled identity 会由 middleware 持久化 `authorization-denied`。仅凭成功路径不能给整个工具宣称 fail-closed read-only。
+- 下一候选为远端容器内直接只读 PostgreSQL 检查，或新增专用无审计 runtime endpoint；前者不暴露新公网接口且可能避免第二次 runtime deploy，优先评估。
+
+Selected true-L3 design:
+
+- 保留 catalog 对 runtime search-engine readiness 的观测，但改用每次生成的唯一审计身份，避免命中持久化 disabled/pending profile。
+- 在请求前后通过 PostgreSQL 容器执行单条 `transaction_read_only=on` 聚合 SQL，同时读取全表 count、最新 `created_at`、有序 event-id fingerprint 和本次唯一 auditor identity 的事件计数；只有全局快照不变、identity 前后均为 `0` 且 catalog 全部 write/provider boundaries 为 false 才允许顶层 `evidence_grade=L3-production-read-only`。
+- catalog 原始大响应不写入报告；只规范化保留 backend、ready、安全 embedding metadata、matching count、contract version 和 boundaries。
+- count delta 非零、snapshot/identity 变化或任一测量不可用时必须 fail closed，不得输出 L3；该方案不要求新增公网 endpoint，也不要求因 operator-only 变更再次重建生产 runtime。
+
+Independent review limitation:
+
+- 当前实现只能保证“全局快照不变且唯一 auditor identity 前后均无事件才分类为 L3”，不能保证每条失败路径在结构上零写入；controlled-auth 401/403 仍可能先产生一条 `authorization-denied`，随后才被门禁检测。
+- `provider_call_status=not_called` 来自 catalog 响应的静态 boundary，并有源码调用链支持，不是外部 provider 计量。
+- 全局 count 单独使用会被 retention 删除与新增事件相抵；当前实现额外比较最新时间和有序 event-id fingerprint，并单独归因本次唯一 identity。并发生产流量或 retention 会造成 fail-closed 阻断，不会仅因净计数为 `0` 错误升级为 L3。
+
+Adversarial review findings:
+
+- 第一项 accepted P1：仅比较全表 count 存在“新增 1 + retention 删除 1”净 delta `0` 的 false-positive 风险。修复后使用同一只读 SQL 的 count/latest/fingerprint/identity-count 快照，任一变化均阻断 L3。
+- 第二项 accepted P1：旧 `_build_report` 计算了 `audit_frontdoor_healthy` 但未把 false 加入 issues。修复后 `/api/v1/health` 或 `/documents` 失败会追加 `audit-frontdoor-not-ready` 并使报告失败。
+- 第三项 accepted P1：旧 remote audit 直接打开 `medical-audit.env` 并以 `docker compose --env-file` 解析 secret-bearing 文件，违反仓库 secret 边界。修复后从运行中 app 容器仅读取固定六项非 secret runtime 配置，Compose 服务从 project/service labels 发现，不再打开 env 文件或枚举完整环境。
+- 第四项 accepted P1：audit snapshot 安全但 catalog boundaries 缺失时曾错误输出 `database_write=false`。修复后只有 snapshot/identity 与 boundaries 同时安全才能输出 false；否则为 `unknown`。
+- 第五项 accepted P1：纯全局正 delta 曾被错误归因成 `audit-log-only`。修复后只有唯一 identity 从 `0` 增至正数且 boundaries 安全才能输出该分类；纯全局变化为 `unknown`。
+- 新增 balanced mutation、auditor-attributed event、missing boundaries 和 unhealthy frontdoor 回归测试；最终精确总数以 Phase 3 全量复验为准。
+- 最终独立复审结论：accepted P0/P1=`0`，把握高；`runtime_deploy_required=false`。剩余 P2 为全表有序 fingerprint 在 audit 表大幅增长后的性能成本，应后续监控，不影响当前约 5.6 万行规模的验收。
+
+Production candidate acceptance:
+
+- 独立只读 baseline 与 after 均为 audit count `56066`、latest `2026-07-14 19:51:16.836935+00`；未观察到并发或 retention 漂移。
+- candidate audit 内部 before/after count、latest 和 event-id fingerprint 完全一致，本次 UUID auditor identity 事件计数 `0→0`。
+- 报告 `status=pass`、`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`database_write=false`、`provider_call_status=not_called`、issues/warnings 为空。
+- runtime marker 仍为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`；四个相关容器健康，frontdoor/static/mount/search 通过，matching embeddings `49051`。
+- 这是从本地 operator candidate 对现有 production runtime 的 L3 成功运行证据，不表示该 operator commit 已部署到 runtime；本轮 `runtime_deploy_required=false`，production unchanged。

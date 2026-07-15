@@ -217,12 +217,51 @@ Execution TODO:
 - [x] 实施权限 smoke 的 2 项公共只读 / 35 项显式写入双模式合同；protected probe 全部退出默认只读 allowlist。
 - [x] 实施前端验收默认 fail-closed / 显式 `audit-log-only` 完整验收合同。
 - [x] 完成全量本地门禁、人工对抗复核与 bundled Codex review；accepted P0/P1 为 `0`。
-- [ ] 完成原子 commit、push、Ready PR 与 GitHub merge 审查。
-- [ ] merge 后在 clean `main` 完成磁盘检查、零执行 preflight 和生产部署；不删除远端分支。
-- [ ] 部署后分别保存 L3 状态/有限只读证据与 L4 `audit-log-only` 完整验收证据。
+- [x] 完成原子 commit、push、Ready PR 与 GitHub merge 审查。
+- [x] merge 后在 clean `main` 完成磁盘检查、零执行 preflight 和生产部署；不删除远端分支。
+- [x] 部署后分别保存 L3 状态/有限只读证据与 L4 `audit-log-only` 完整验收证据。
 
 Evidence boundary:
 
-- 当前生产运行版本仍为 `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4`；本节记录时 `deploy_execute=false`。
+- 当前生产运行版本已更新为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`；部署脚本退出 `0`，`deploy_execute=true`。
 - 已观察的至少 69 条审计事件保留，不清理、不回填。
-- 本轮不授权或执行 schema、SQL backfill、provider call、review/query 写入、live send 或远端分支删除。
+- L3 有限只读与 L4 `audit-log-only` 验收均已完成；未执行 schema、SQL backfill、provider call、review/query 写入、live send 或远端分支删除。
+
+## 2026-07-15 Loop 54 Deployment Closure And True-L3 State Audit
+
+Goal:
+
+- 以已部署的 `main@2bba501c93eaf1f6f7485241ec15e0c21c209842` 为生产基线，完成部署计划、TODO、回滚边界和验收矩阵的最终闭环。
+- 修复 `audit-tencent-cloud-deployment-state.py` 自称 L3/read-only、实际写入一条 `search-backend-status-view` 审计日志的证据合同错误。
+- 用生产审计日志前后 count/latest/fingerprint 全局快照不变和唯一 auditor identity 零事件证明修复后的成功运行可分类为 L3；不因 operator-only 脚本修复而重复重建生产容器。
+
+Execution TODO:
+
+- [x] Phase 0 — 冻结基线：确认 PR `#234` 已合并、生产 marker 与 merge SHA 一致、远端功能分支保留、发布 worktree 干净；隔离原始 dirty worktree。
+- [x] Phase 1 — 建立完整计划：补齐部署准备、实施、PR/merge、部署决策、回滚和分层验收门禁。
+- [x] Phase 2 — 修复 conditional L3 合同：使用成功路径零日志的 catalog、全表 count/latest/fingerprint 与唯一 auditor identity 组合快照、补强 side-effect 元数据和 fail-closed 校验，并同步稳定 workflow；鉴权失败可能先写日志的限制已显式记录。
+- [x] Phase 3 — 本地验证：deployment-state 15 项聚焦验证、127 项脚本测试、全仓 Ruff/Mypy、618 项 Pytest 与 `git diff --check` 全部通过。
+- [x] Phase 4 — 独立复审：accepted P0/P1=`0`；认证拒绝、redirect、secret boundary、frontdoor、provider boundary、并发/retention、归因分类和 audit-log 写入路径均已收敛。
+- [ ] Phase 5 — GitHub 推广：原子 commit、push、Draft PR、Ready/merge gate；不得删除远端分支。
+- [x] Phase 6 — 部署决策：intended diff 仅含 operator-side 脚本/测试/文档/plan/release rules，`runtime_deploy_required=false`；禁止无意义重建生产 runtime。
+- [x] Phase 7 — 生产候选验收：独立 baseline/after 均为 `56066` 且最新时间一致；脚本内 count/latest/fingerprint 不变、唯一 auditor identity `0→0`，生产 marker 仍为 `2bba501...`，四个相关容器健康、49,051 embeddings、`provider_call_status=not_called`。
+- [ ] Phase 8 — 收尾（进行中）：同步 `.kiro/plan`、稳定 workflow 和 release 规则，完成 GitHub promotion，并给出最终允许/阻断结论。
+
+Acceptance matrix:
+
+- Local/L2：全部相关静态检查与自动化测试通过；报告字段必须明确 `evidence_grade=L3-production-read-only`、`production_side_effect=none`、`database_write=false`、`provider_call_status=not_called`、`http_methods=[GET]`。
+- PR gate：PR head、review 状态、mergeability 和 checks 分开记录；无 checks 只能表述为“未配置/未报告”。
+- Deploy gate：仅 runtime artifact 变化才允许第二次生产部署；部署必须从 clean `main`、`HEAD == origin/main == approved_sha` 执行，先备份再变更，并保留远端分支。
+- L3 production acceptance：状态审计前后 `audit_log_events` 的 count、最新时间和 event-id fingerprint 不变，本次唯一 auditor identity 的事件计数前后均为 `0`；marker、容器健康、Nginx、front door、静态资源、PostgreSQL 和 search backend 同时通过。
+- L4 production acceptance：本轮默认不重复；只有再次执行完整权限/浏览器矩阵时，才以 `audit-log-only` 明示授权和独立报告保存。
+
+Rollback and stop conditions:
+
+- operator-only 修复回滚：revert PR/commit；不触碰生产文件、容器或 marker。
+- runtime 部署回滚：仅在 Phase 6 判定需要部署时使用对应 stamp 的 app/db/env/nginx/web 备份，并在恢复验证通过后更新 marker。
+- 任一测试失败、审计 delta/快照/identity 证据不满足、provider attempt、生产 SHA 不符、frontdoor 异常或容器不健康即停止状态升级，保留原始证据，不清理审计日志。
+
+Evidence boundary:
+
+- 当前生产部署已完成；本 Loop 的新目标不是重复部署，而是修复 operator-side 验收工具并证明一次成功运行的全局 audit snapshot 不变且唯一 auditor identity 零事件。
+- Phase 7 已证明本次成功运行可分类为 `L3-production-read-only`；仍不得把工具宣传为 all-path read-only，鉴权失败或并发变化会失败关闭并分类为 `audit-log-only` 或 `unknown`。
