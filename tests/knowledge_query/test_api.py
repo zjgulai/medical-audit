@@ -3574,6 +3574,42 @@ def test_knowledge_base_catalog_reports_index_layers_without_writes(tmp_path: Pa
     assert law_item["metrics"]["active_embedding_count"] == 49051
     assert law_item["metrics"]["candidate_chunk_count"] == 727214
     assert law_item["index"]["latest_status"] == "active"
+    assert state.operation_logs == []
+
+
+def test_knowledge_base_catalog_controlled_success_writes_no_audit_event(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    persisted_events: list[tuple[str, dict[str, object]]] = []
+
+    class AuditSpy:
+        def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+            persisted_events.append((action, payload))
+            return {"action": action, "payload": payload}
+
+    class SearchEngineThatMustNotRun:
+        def search(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("catalog must not invoke the search engine or provider")
+
+    state.audit_log_store = AuditSpy()  # type: ignore[assignment]
+    state.search_engine = SearchEngineThatMustNotRun()  # type: ignore[assignment]
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
+
+    response = client.get(
+        "/api/v1/knowledge-base/catalog",
+        headers={
+            "X-User-Id": "deployment-state-auditor-contract-test",
+            "X-Role": "it-admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["boundaries"]["database_write"] is False
+    assert response.json()["boundaries"]["provider_call"] is False
+    assert state.operation_logs == []
+    assert persisted_events == []
 
 
 def test_knowledge_base_catalog_marks_registry_only_metrics_unready(tmp_path: Path) -> None:

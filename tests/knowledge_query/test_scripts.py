@@ -2340,6 +2340,39 @@ def test_audit_tencent_cloud_deployment_state_script_is_valid_and_secret_safe() 
     assert "<remote-audit>" in script_text
     assert "tmp/outputs/tencent-cloud-deployment-state-latest.json" in script_text
     assert "medical-audit.env" not in script_text
+    assert "/knowledge-base/catalog" in script_text
+    assert "/index/search-backend" not in script_text
+    assert "default_transaction_read_only=on" in script_text
+    assert "audit_log_events" in script_text
+    assert "deployment-state-auditor-" in script_text
+
+
+def test_audit_tencent_cloud_deployment_state_remote_code_is_valid_and_blocks_redirects() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_remote_code",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+
+    remote_code = module._remote_audit_code(
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+        remote_backup_root="/opt/medical-audit/backups",
+        base_url="https://audit.example.test",
+        backup_limit=1,
+    )
+
+    compile(remote_code, "<remote-audit>", "exec")
+    assert "class NoRedirectHandler" in remote_code
+    assert "build_opener(NoRedirectHandler())" in remote_code
+    assert "urllib.request.urlopen(" not in remote_code
+    assert "psql -X -v ON_ERROR_STOP=1" in remote_code
+    assert "event_id_fingerprint" in remote_code
+    assert "auditor_event_count" in remote_code
+    assert "GOVERNANCE_ENV_KEYS" in remote_code
+    assert "ENV_FILE_NAME" not in remote_code
+    assert "env_path.read_text" not in remote_code
+    assert '"--env-file"' not in remote_code
+    assert '"medical_audit_app",\n            "python3",' in remote_code
 
 
 def test_audit_tencent_cloud_deployment_state_requires_known_host(
@@ -2411,9 +2444,194 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
 
     assert report["status"] == "pass"
     assert report["issues"] == []
+    assert report["evidence_grade"] == "L3-production-read-only"
+    assert report["production_side_effect"] == "none"
+    assert report["database_write"] is False
+    assert report["provider_call_status"] == "not_called"
+    assert report["http_methods"] == ["GET"]
     assert report["summary"]["deploy_sha"] == "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
     assert report["summary"]["audit_mount_present"] is True
+    assert report["summary"]["audit_log_event_delta"] == 0
     assert report["summary"]["latest_local_smoke_status"] == "pass"
+
+
+def test_audit_tencent_cloud_deployment_state_fails_closed_on_audit_log_delta() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_audit_delta",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    side_effects = remote_report["side_effect_observation"]
+    assert isinstance(side_effects, dict)
+    after = side_effects["audit_log_after"]
+    assert isinstance(after, dict)
+    after["count"] = 101
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert report["issues"] == ["audit-log-delta-nonzero"]
+    assert report["evidence_grade"] == "L1-public-or-runtime"
+    assert report["production_side_effect"] == "unknown"
+    assert report["database_write"] == "unknown"
+    assert report["provider_call_status"] == "not_called"
+    assert report["summary"]["audit_log_event_delta"] == 1
+
+
+def test_audit_tencent_cloud_deployment_state_rejects_balanced_audit_log_mutation() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_balanced_audit_mutation",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    side_effects = remote_report["side_effect_observation"]
+    assert isinstance(side_effects, dict)
+    after = side_effects["audit_log_after"]
+    assert isinstance(after, dict)
+    after["event_id_fingerprint"] = "f" * 32
+    after["latest_created_at"] = "2026-07-15 01:00:01+00"
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "audit-log-snapshot-mutated" in report["issues"]
+    assert report["evidence_grade"] == "L1-public-or-runtime"
+    assert report["production_side_effect"] == "unknown"
+    assert report["database_write"] == "unknown"
+    assert report["summary"]["audit_log_event_delta"] == 0
+    assert report["summary"]["audit_log_snapshot_unchanged"] is False
+
+
+def test_audit_tencent_cloud_deployment_state_rejects_auditor_attributed_event() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_auditor_event",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    side_effects = remote_report["side_effect_observation"]
+    assert isinstance(side_effects, dict)
+    after = side_effects["audit_log_after"]
+    assert isinstance(after, dict)
+    after["auditor_event_count"] = 1
+    after["event_id_fingerprint"] = "f" * 32
+    after["latest_created_at"] = "2026-07-15 01:00:01+00"
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "audit-log-auditor-events-detected" in report["issues"]
+    assert report["evidence_grade"] == "L1-public-or-runtime"
+    assert report["production_side_effect"] == "audit-log-only"
+    assert report["database_write"] == "audit-log-only"
+    assert report["summary"]["audit_log_auditor_event_delta"] == 1
+    assert report["summary"]["audit_log_auditor_write_attributed"] is True
+
+
+def test_audit_tencent_cloud_deployment_state_unknown_database_write_without_boundaries(
+) -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_missing_boundaries",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    local_backend = remote_report["local_backend"]
+    assert isinstance(local_backend, dict)
+    search_backend = local_backend["search_backend"]
+    assert isinstance(search_backend, dict)
+    payload = search_backend["payload"]
+    assert isinstance(payload, dict)
+    payload.pop("boundaries")
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "search-backend-side-effect-boundary-unsafe" in report["issues"]
+    assert report["evidence_grade"] == "L1-public-or-runtime"
+    assert report["production_side_effect"] == "unknown"
+    assert report["database_write"] == "unknown"
+    assert report["provider_call_status"] == "unknown"
+
+    side_effects = remote_report["side_effect_observation"]
+    assert isinstance(side_effects, dict)
+    after = side_effects["audit_log_after"]
+    assert isinstance(after, dict)
+    after["count"] = 101
+    after["auditor_event_count"] = 1
+    after["event_id_fingerprint"] = "f" * 32
+    after["latest_created_at"] = "2026-07-15 01:00:01+00"
+    report_with_observed_audit_write = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+    assert report_with_observed_audit_write["database_write"] == "unknown"
+    assert report_with_observed_audit_write["production_side_effect"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("after_count", "expected_issue"),
+    [
+        (99, "audit-log-delta-nonzero"),
+        (None, "audit-log-delta-unavailable"),
+    ],
+)
+def test_audit_tencent_cloud_deployment_state_rejects_unprovable_l3_delta(
+    after_count: int | None,
+    expected_issue: str,
+) -> None:
+    module = _load_script_module(
+        f"audit_tencent_cloud_deployment_state_unprovable_{after_count}",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    side_effects = remote_report["side_effect_observation"]
+    assert isinstance(side_effects, dict)
+    after = side_effects["audit_log_after"]
+    assert isinstance(after, dict)
+    if after_count is None:
+        after.pop("count")
+    else:
+        after["count"] = after_count
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert expected_issue in report["issues"]
+    assert report["evidence_grade"] == "L1-public-or-runtime"
+    assert report["production_side_effect"] == "unknown"
+    assert report["database_write"] == "unknown"
 
 
 def test_audit_tencent_cloud_deployment_state_rejects_proxy_frontdoor_without_mount() -> None:
@@ -2448,6 +2666,29 @@ def test_audit_tencent_cloud_deployment_state_rejects_proxy_frontdoor_without_mo
     assert report["summary"]["audit_mount_present"] is False
     assert report["summary"]["audit_frontdoor_healthy"] is True
     assert report["summary"]["audit_next_static_healthy"] is False
+
+
+def test_audit_tencent_cloud_deployment_state_fails_when_frontdoor_is_unhealthy() -> None:
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_frontdoor_unhealthy",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    frontdoor = remote_report["public_frontdoor"]
+    assert isinstance(frontdoor, dict)
+    frontdoor["health"] = {"ok": False, "status_code": 503}
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha="cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "audit-frontdoor-not-ready" in report["issues"]
+    assert report["summary"]["audit_frontdoor_healthy"] is False
 
 
 def test_audit_tencent_cloud_deployment_state_authenticates_documents_frontdoor() -> None:
@@ -3713,11 +3954,39 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
             "search_backend": {
                 "ok": True,
                 "payload": {
+                    "contract_version": "knowledge-base-catalog-v1",
                     "backend": "postgres",
                     "ready": True,
                     "details": {"matching_embedding_count": 48985},
+                    "boundaries": {
+                        "production_write": False,
+                        "provider_call": False,
+                        "database_write": False,
+                        "object_storage_write": False,
+                        "query_history_write": False,
+                    },
                 },
             }
+        },
+        "side_effect_observation": {
+            "audit_log_before": {
+                "ok": True,
+                "transaction_read_only": "on",
+                "count": 100,
+                "latest_created_at": "2026-07-15 01:00:00+00",
+                "event_id_fingerprint": "a" * 32,
+                "auditor_user_identifier": "deployment-state-auditor-123",
+                "auditor_event_count": 0,
+            },
+            "audit_log_after": {
+                "ok": True,
+                "transaction_read_only": "on",
+                "count": 100,
+                "latest_created_at": "2026-07-15 01:00:00+00",
+                "event_id_fingerprint": "a" * 32,
+                "auditor_user_identifier": "deployment-state-auditor-123",
+                "auditor_event_count": 0,
+            },
         },
         "public_frontdoor": {
             "health": {"ok": True, "status_code": 200},

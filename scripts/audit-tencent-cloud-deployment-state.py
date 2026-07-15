@@ -78,7 +78,11 @@ def main() -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run a read-only deployment state audit for the Tencent Cloud production host.",
+        description=(
+            "Audit Tencent Cloud production deployment state and classify the run as L3 "
+            "only when the measured audit snapshot is unchanged, the unique auditor identity "
+            "has no events, and endpoint boundaries forbid write and provider side effects."
+        ),
     )
     parser.add_argument(
         "--ssh-key",
@@ -232,6 +236,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 APP_DIR = {json.dumps(remote_app_dir, ensure_ascii=False)}
@@ -240,18 +245,85 @@ BACKUP_ROOT = {json.dumps(remote_backup_root, ensure_ascii=False)}
 BASE_URL = {json.dumps(base_url, ensure_ascii=False)}
 BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
-ENV_FILE_NAME = "medical" + "-audit" + ".env"
+GOVERNANCE_ENV_KEYS = (
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST",
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT",
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS",
+    "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES",
+)
 AUDIT_HEADERS = {{
     "User-Agent": "medical-audit-state-audit/1.0",
-    "X-User-Id": "deployment-state-auditor",
+    "X-User-Id": "deployment-state-auditor-" + uuid.uuid4().hex,
     "X-Role": "it-admin",
     "X-Project-Key": "SELF-CHECK-FUND-20260607",
     "X-Tenant-Id": "hospital-demo",
 }}
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
+HTTP_OPENER = urllib.request.build_opener(NoRedirectHandler())
+
+
 def run(command, cwd=None):
     return subprocess.run(command, check=False, capture_output=True, text=True, cwd=cwd)
+
+
+def audit_log_event_snapshot():
+    auditor_user_identifier = AUDIT_HEADERS["X-User-Id"]
+    auditor_sql = auditor_user_identifier.replace("'", "''")
+    sql = (
+        "SELECT current_setting('transaction_read_only'), "
+        "count(*), "
+        "COALESCE(max(created_at)::text, 'none'), "
+        "md5(COALESCE(string_agg(id::text, ',' ORDER BY id::text), '')), "
+        f"count(*) FILTER (WHERE user_identifier = '{{auditor_sql}}') "
+        "FROM audit_log_events;"
+    )
+    result = run(
+        [
+            "docker",
+            "exec",
+            "medical_audit_pg",
+            "sh",
+            "-c",
+            'PGOPTIONS="-c default_transaction_read_only=on" '
+            'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB" '
+            '-At -F "|" -c "$1"',
+            "medical-audit-audit-log-snapshot",
+            sql,
+        ]
+    )
+    if result.returncode != 0:
+        return {{"ok": False, "error": result.stderr.strip() or "audit-log-snapshot-failed"}}
+    fields = [field.strip() for field in result.stdout.strip().split("|")]
+    fingerprint = fields[3] if len(fields) == 5 else ""
+    fingerprint_valid = len(fingerprint) == 32 and all(
+        character in "0123456789abcdef" for character in fingerprint
+    )
+    if (
+        len(fields) != 5
+        or fields[0] != "on"
+        or not fields[1].isdigit()
+        or not fields[2]
+        or not fingerprint_valid
+        or not fields[4].isdigit()
+    ):
+        return {{"ok": False, "error": "audit-log-snapshot-invalid-output"}}
+    return {{
+        "ok": True,
+        "transaction_read_only": fields[0],
+        "count": int(fields[1]),
+        "latest_created_at": fields[2],
+        "event_id_fingerprint": fields[3],
+        "auditor_user_identifier": auditor_user_identifier,
+        "auditor_event_count": int(fields[4]),
+    }}
 
 
 def docker_inspect_json(name, template):
@@ -287,48 +359,67 @@ def container_state(name):
 
 
 def compose_services():
-    compose_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud/docker-compose.prod.yaml")
-    env_path = str(Path(APP_DIR) / "configs/deploy/tencent-cloud" / ENV_FILE_NAME)
     result = run(
         [
             "docker",
-            "compose",
-            "-f",
-            compose_path,
-            "--env-file",
-            env_path,
-            "config",
-            "--services",
-        ],
-        cwd=APP_DIR,
+            "ps",
+            "-a",
+            "--filter",
+            "label=com.docker.compose.project=medical-audit",
+            "--format",
+            "{{{{.Names}}}}",
+        ]
     )
     if result.returncode != 0:
         return {{"ok": False, "services": [], "error": result.stderr.strip()}}
-    services = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return {{"ok": True, "services": services}}
+    container_names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    services = []
+    inspect_errors = []
+    for container_name in container_names:
+        labels = docker_inspect_json(container_name, "{{{{json .Config.Labels}}}}")
+        label_value = labels.get("value") if labels.get("available") else None
+        if not isinstance(label_value, dict):
+            inspect_errors.append(container_name)
+            continue
+        if label_value.get("com.docker.compose.project") != "medical-audit":
+            continue
+        service = label_value.get("com.docker.compose.service")
+        if isinstance(service, str) and service:
+            services.append(service)
+    return {{
+        "ok": not inspect_errors,
+        "services": sorted(set(services)),
+        "error": ",".join(inspect_errors) if inspect_errors else None,
+    }}
 
 
 def governance_env():
-    env_path = Path(APP_DIR) / "configs/deploy/tencent-cloud" / ENV_FILE_NAME
-    keys = {{
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_HOST",
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_PORT",
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_TIMEOUT_SECONDS",
-        "MEDICAL_AUDIT_DOCUMENT_UPLOAD_CLAMAV_CHUNK_SIZE_BYTES",
-    }}
-    values = {{}}
+    result = run(
+        [
+            "docker",
+            "exec",
+            "medical_audit_app",
+            "python3",
+            "-c",
+            (
+                "import json, os, sys; "
+                "print(json.dumps({{key: os.environ.get(key) for key in sys.argv[1:] "
+                "if os.environ.get(key) is not None}}))"
+            ),
+            *GOVERNANCE_ENV_KEYS,
+        ]
+    )
+    if result.returncode != 0:
+        return {{"ok": False, "values": {{}}, "error": result.stderr.strip()}}
     try:
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#") or "=" not in stripped:
-                continue
-            key, value = stripped.split("=", maxsplit=1)
-            if key in keys:
-                values[key] = value
-    except OSError as exc:
-        return {{"ok": False, "values": {{}}, "error": str(exc)}}
+        values = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {{"ok": False, "values": {{}}, "error": "governance-env-invalid-json"}}
+    if not isinstance(values, dict) or any(
+        key not in GOVERNANCE_ENV_KEYS or not isinstance(value, str)
+        for key, value in values.items()
+    ):
+        return {{"ok": False, "values": {{}}, "error": "governance-env-invalid-values"}}
     return {{"ok": True, "values": values}}
 
 
@@ -372,7 +463,7 @@ def read_file(path):
 def http_json(url, headers=None):
     try:
         request = urllib.request.Request(url, headers=headers or {{}})
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with HTTP_OPENER.open(request, timeout=20) as response:
             body = response.read().decode("utf-8")
         try:
             payload = json.loads(body)
@@ -381,6 +472,64 @@ def http_json(url, headers=None):
         return {{"ok": True, "payload": payload}}
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {{"ok": False, "error": str(exc)}}
+
+
+def knowledge_base_catalog_status():
+    response = http_json(
+        "http://127.0.0.1:18080/knowledge-base/catalog",
+        headers=AUDIT_HEADERS,
+    )
+    if response.get("ok") is not True:
+        return response
+    payload = response.get("payload")
+    if not isinstance(payload, dict):
+        return {{"ok": False, "error": "knowledge-base-catalog-non-object"}}
+    search_backend = payload.get("search_backend")
+    summary = payload.get("summary")
+    boundaries = payload.get("boundaries")
+    if not isinstance(search_backend, dict):
+        return {{"ok": False, "error": "knowledge-base-catalog-search-backend-missing"}}
+    if not isinstance(summary, dict):
+        return {{"ok": False, "error": "knowledge-base-catalog-summary-missing"}}
+    if not isinstance(boundaries, dict):
+        return {{"ok": False, "error": "knowledge-base-catalog-boundaries-missing"}}
+    if payload.get("contract_version") != "knowledge-base-catalog-v1":
+        return {{"ok": False, "error": "knowledge-base-catalog-contract-version-mismatch"}}
+    expected_false = (
+        "production_write",
+        "provider_call",
+        "database_write",
+        "object_storage_write",
+        "query_history_write",
+    )
+    if any(boundaries.get(key) is not False for key in expected_false):
+        return {{"ok": False, "error": "knowledge-base-catalog-boundaries-unsafe"}}
+    matching = summary.get("current_search_embedding_count")
+    if isinstance(matching, bool) or not isinstance(matching, int):
+        return {{"ok": False, "error": "knowledge-base-catalog-matching-count-invalid"}}
+    raw_details = search_backend.get("details")
+    details = raw_details if isinstance(raw_details, dict) else {{}}
+    safe_details = {{
+        key: details.get(key)
+        for key in (
+            "embedding_provider",
+            "embedding_model",
+            "provider_version",
+            "embedding_dimension",
+        )
+        if key in details
+    }}
+    safe_details["matching_embedding_count"] = matching
+    return {{
+        "ok": True,
+        "payload": {{
+            "contract_version": payload.get("contract_version"),
+            "backend": search_backend.get("backend"),
+            "ready": search_backend.get("ready"),
+            "details": safe_details,
+            "boundaries": {{key: boundaries.get(key) for key in expected_false}},
+        }},
+    }}
 
 
 def http_status(url, expected_texts=None, headers=None):
@@ -393,7 +542,7 @@ def http_status(url, expected_texts=None, headers=None):
             url,
             headers=request_headers,
         )
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with HTTP_OPENER.open(request, timeout=20) as response:
             body = response.read()
             status_code = response.getcode()
             content_type = response.headers.get("content-type")
@@ -462,6 +611,22 @@ def backup_index():
     return {{category: backup_entries(category) for category in BACKUP_CATEGORIES}}
 
 
+audit_log_before = audit_log_event_snapshot()
+local_backend = {{
+    "health": http_json("http://127.0.0.1:18080/health"),
+    "search_backend": knowledge_base_catalog_status(),
+}}
+public_frontdoor = {{
+    "health": http_status(BASE_URL + "/api/v1/health"),
+    "documents": http_status(
+        BASE_URL + "/documents",
+        ["登录工作台", "AI审计一体化协作平台"],
+        headers=AUDIT_HEADERS,
+    ),
+    "next_static": next_static_asset_status(),
+}}
+audit_log_after = audit_log_event_snapshot()
+
 report = {{
     "collected_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     "remote_app_dir": APP_DIR,
@@ -480,21 +645,11 @@ report = {{
         "config_test": nginx_test(),
         "mounts": nginx_mounts(),
     }},
-    "local_backend": {{
-        "health": http_json("http://127.0.0.1:18080/health"),
-        "search_backend": http_json(
-            "http://127.0.0.1:18080/index/search-backend",
-            headers=AUDIT_HEADERS,
-        ),
-    }},
-    "public_frontdoor": {{
-        "health": http_status(BASE_URL + "/api/v1/health"),
-        "documents": http_status(
-            BASE_URL + "/documents",
-            ["登录工作台", "AI审计一体化协作平台"],
-            headers=AUDIT_HEADERS,
-        ),
-        "next_static": next_static_asset_status(),
+    "local_backend": local_backend,
+    "public_frontdoor": public_frontdoor,
+    "side_effect_observation": {{
+        "audit_log_before": audit_log_before,
+        "audit_log_after": audit_log_after,
     }},
     "backups": backup_index(),
 }}
@@ -562,6 +717,8 @@ def _build_report(
             issues.append(f"{name}-not-healthy")
     nginx_config_test_passed = _nginx_test_passed(remote_report)
     audit_frontdoor_healthy = _audit_frontdoor_healthy(remote_report)
+    if not audit_frontdoor_healthy:
+        issues.append("audit-frontdoor-not-ready")
     if not nginx_config_test_passed and _shared_nginx_failure_is_non_blocking(
         remote_report,
         matching_embedding_floor,
@@ -575,6 +732,26 @@ def _build_report(
         issues.append("audit-next-static-not-ready")
     if not _search_backend_ready(remote_report, matching_embedding_floor):
         issues.append("search-backend-not-ready")
+    audit_log_event_delta = _audit_log_event_delta(remote_report)
+    audit_log_snapshot_unchanged = _audit_log_snapshot_unchanged(remote_report)
+    audit_log_auditor_event_delta = _audit_log_auditor_event_delta(remote_report)
+    audit_log_auditor_events_absent = _audit_log_auditor_events_absent(remote_report)
+    audit_log_auditor_write_attributed = _audit_log_auditor_write_attributed(remote_report)
+    search_backend_boundaries_safe = _search_backend_boundaries_safe(remote_report)
+    if audit_log_event_delta is None:
+        issues.append("audit-log-delta-unavailable")
+    elif audit_log_event_delta != 0:
+        issues.append("audit-log-delta-nonzero")
+    if audit_log_snapshot_unchanged is None:
+        issues.append("audit-log-snapshot-unavailable")
+    elif not audit_log_snapshot_unchanged:
+        issues.append("audit-log-snapshot-mutated")
+    if audit_log_auditor_events_absent is None:
+        issues.append("audit-log-auditor-delta-unavailable")
+    elif not audit_log_auditor_events_absent:
+        issues.append("audit-log-auditor-events-detected")
+    if not search_backend_boundaries_safe:
+        issues.append("search-backend-side-effect-boundary-unsafe")
     if required_backup_stamp:
         missing = _missing_backup_categories(remote_report, required_backup_stamp)
         if missing:
@@ -593,8 +770,35 @@ def _build_report(
     latest_smoke = local_smoke_reports[0] if local_smoke_reports else None
     if latest_smoke and latest_smoke.get("status") != "pass":
         issues.append("latest-local-smoke-not-pass")
+    provider_call_status = (
+        "not_called" if _search_backend_provider_call_disabled(remote_report) else "unknown"
+    )
+    audit_log_observation_safe = (
+        audit_log_event_delta == 0
+        and audit_log_snapshot_unchanged is True
+        and audit_log_auditor_events_absent is True
+    )
+    if audit_log_observation_safe and search_backend_boundaries_safe:
+        database_write: bool | str = False
+        production_side_effect = "none"
+    elif audit_log_auditor_write_attributed is True and search_backend_boundaries_safe:
+        database_write = "audit-log-only"
+        production_side_effect = "audit-log-only"
+    else:
+        database_write = "unknown"
+        production_side_effect = "unknown"
+    evidence_grade = (
+        "L3-production-read-only"
+        if audit_log_observation_safe and search_backend_boundaries_safe
+        else "L1-public-or-runtime"
+    )
     return {
         "status": "pass" if not issues else "fail",
+        "evidence_grade": evidence_grade,
+        "production_side_effect": production_side_effect,
+        "database_write": database_write,
+        "provider_call_status": provider_call_status,
+        "http_methods": ["GET"],
         "issues": issues,
         "warnings": warnings,
         "expected_deploy_sha": expected_deploy_sha,
@@ -622,6 +826,14 @@ def _build_report(
                 matching_embedding_floor,
             ),
             "matching_embedding_count": _matching_embedding_count(remote_report),
+            "audit_log_event_delta": audit_log_event_delta,
+            "audit_log_snapshot_unchanged": audit_log_snapshot_unchanged,
+            "audit_log_auditor_event_delta": audit_log_auditor_event_delta,
+            "audit_log_auditor_events_absent": audit_log_auditor_events_absent,
+            "audit_log_auditor_write_attributed": audit_log_auditor_write_attributed,
+            "audit_log_count_transaction_read_only": _audit_log_count_transaction_read_only(
+                remote_report
+            ),
             "latest_local_smoke_status": latest_smoke.get("status") if latest_smoke else None,
         },
         "remote": remote_report,
@@ -742,6 +954,142 @@ def _matching_embedding_count(remote_report: dict[str, Any]) -> int | None:
     return None
 
 
+def _search_backend_boundaries(remote_report: dict[str, Any]) -> dict[str, Any]:
+    search_backend = _nested_dict(remote_report, "local_backend", "search_backend")
+    payload = search_backend.get("payload")
+    if not isinstance(payload, dict):
+        return {}
+    boundaries = payload.get("boundaries")
+    return boundaries if isinstance(boundaries, dict) else {}
+
+
+def _search_backend_boundaries_safe(remote_report: dict[str, Any]) -> bool:
+    search_backend = _nested_dict(remote_report, "local_backend", "search_backend")
+    payload = search_backend.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("contract_version") != "knowledge-base-catalog-v1":
+        return False
+    boundaries = _search_backend_boundaries(remote_report)
+    return all(
+        boundaries.get(key) is False
+        for key in (
+            "production_write",
+            "provider_call",
+            "database_write",
+            "object_storage_write",
+            "query_history_write",
+        )
+    )
+
+
+def _search_backend_provider_call_disabled(remote_report: dict[str, Any]) -> bool:
+    return _search_backend_boundaries(remote_report).get("provider_call") is False
+
+
+def _audit_log_event_delta(remote_report: dict[str, Any]) -> int | None:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    if before.get("ok") is not True or after.get("ok") is not True:
+        return None
+    if before.get("transaction_read_only") != "on":
+        return None
+    if after.get("transaction_read_only") != "on":
+        return None
+    before_count = before.get("count")
+    after_count = after.get("count")
+    if isinstance(before_count, bool) or not isinstance(before_count, int):
+        return None
+    if isinstance(after_count, bool) or not isinstance(after_count, int):
+        return None
+    return after_count - before_count
+
+
+def _audit_log_snapshot_unchanged(remote_report: dict[str, Any]) -> bool | None:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    before_latest = before.get("latest_created_at")
+    after_latest = after.get("latest_created_at")
+    before_fingerprint = before.get("event_id_fingerprint")
+    after_fingerprint = after.get("event_id_fingerprint")
+    if not all(
+        isinstance(value, str) and bool(value)
+        for value in (
+            before_latest,
+            after_latest,
+            before_fingerprint,
+            after_fingerprint,
+        )
+    ):
+        return None
+    return before_latest == after_latest and before_fingerprint == after_fingerprint
+
+
+def _audit_log_auditor_event_delta(remote_report: dict[str, Any]) -> int | None:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    before_identifier = before.get("auditor_user_identifier")
+    after_identifier = after.get("auditor_user_identifier")
+    if (
+        not isinstance(before_identifier, str)
+        or not before_identifier
+        or before_identifier != after_identifier
+    ):
+        return None
+    before_count = before.get("auditor_event_count")
+    after_count = after.get("auditor_event_count")
+    if isinstance(before_count, bool) or not isinstance(before_count, int):
+        return None
+    if isinstance(after_count, bool) or not isinstance(after_count, int):
+        return None
+    return after_count - before_count
+
+
+def _audit_log_auditor_events_absent(remote_report: dict[str, Any]) -> bool | None:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    if _audit_log_auditor_event_delta(remote_report) is None:
+        return None
+    before_count = before.get("auditor_event_count")
+    after_count = after.get("auditor_event_count")
+    if isinstance(before_count, bool) or not isinstance(before_count, int):
+        return None
+    if isinstance(after_count, bool) or not isinstance(after_count, int):
+        return None
+    return before_count == 0 and after_count == 0
+
+
+def _audit_log_auditor_write_attributed(remote_report: dict[str, Any]) -> bool | None:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    if _audit_log_auditor_event_delta(remote_report) is None:
+        return None
+    before_count = before.get("auditor_event_count")
+    after_count = after.get("auditor_event_count")
+    if isinstance(before_count, bool) or not isinstance(before_count, int):
+        return None
+    if isinstance(after_count, bool) or not isinstance(after_count, int):
+        return None
+    return before_count == 0 and after_count > 0
+
+
+def _audit_log_count_transaction_read_only(remote_report: dict[str, Any]) -> bool:
+    observation = _nested_dict(remote_report, "side_effect_observation")
+    before = _dict_or_empty(observation.get("audit_log_before"))
+    after = _dict_or_empty(observation.get("audit_log_after"))
+    return (
+        before.get("ok") is True
+        and after.get("ok") is True
+        and before.get("transaction_read_only") == "on"
+        and after.get("transaction_read_only") == "on"
+    )
+
+
 def _missing_backup_categories(remote_report: dict[str, Any], stamp: str) -> list[str]:
     backups = remote_report.get("backups")
     if not isinstance(backups, dict):
@@ -810,6 +1158,11 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             "# 腾讯云生产部署状态巡检报告",
             "",
             f"- `status`: `{report.get('status')}`",
+            f"- `evidence_grade`: `{report.get('evidence_grade')}`",
+            f"- `production_side_effect`: `{report.get('production_side_effect')}`",
+            f"- `database_write`: `{report.get('database_write')}`",
+            f"- `provider_call_status`: `{report.get('provider_call_status')}`",
+            f"- `http_methods`: `{report.get('http_methods')}`",
             f"- `deploy_sha`: `{summary.get('deploy_sha')}`",
             f"- `app_health`: `{summary.get('app_health')}`",
             f"- `postgres_health`: `{summary.get('postgres_health')}`",
@@ -822,6 +1175,18 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `audit_next_static_healthy`: `{summary.get('audit_next_static_healthy')}`",
             f"- `audit_mount_present`: `{summary.get('audit_mount_present')}`",
             f"- `search_backend_ready`: `{summary.get('search_backend_ready')}`",
+            f"- `matching_embedding_count`: `{summary.get('matching_embedding_count')}`",
+            f"- `audit_log_event_delta`: `{summary.get('audit_log_event_delta')}`",
+            f"- `audit_log_snapshot_unchanged`: "
+            f"`{summary.get('audit_log_snapshot_unchanged')}`",
+            f"- `audit_log_auditor_event_delta`: "
+            f"`{summary.get('audit_log_auditor_event_delta')}`",
+            f"- `audit_log_auditor_events_absent`: "
+            f"`{summary.get('audit_log_auditor_events_absent')}`",
+            f"- `audit_log_auditor_write_attributed`: "
+            f"`{summary.get('audit_log_auditor_write_attributed')}`",
+            f"- `audit_log_count_transaction_read_only`: "
+            f"`{summary.get('audit_log_count_transaction_read_only')}`",
             f"- `latest_local_smoke_status`: `{summary.get('latest_local_smoke_status')}`",
             "",
             "## 阻断项",
