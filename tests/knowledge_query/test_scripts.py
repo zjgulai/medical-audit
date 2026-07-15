@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -5243,4 +5244,93 @@ def test_web_release_manifest_package_script_is_frozen() -> None:
         "pnpm web:build:static && uv run python scripts/build-web-release-manifest.py "
         "--web-out web/out --source-sha-env MEDICAL_AUDIT_DEPLOY_SHA "
         "--output web/out/release-manifest.json"
+    )
+
+
+def test_web_release_manifest_is_world_readable_after_atomic_publish(
+    tmp_path: Path,
+) -> None:
+    web_out = tmp_path / "out"
+    shutil.copytree(Path("tests/fixtures/web-release-manifest"), web_out)
+    output = web_out / "release-manifest.json"
+
+    result = _run_release_manifest(
+        web_out=web_out,
+        output=output,
+        env=_release_manifest_env(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert stat.S_IMODE(output.stat().st_mode) == 0o644
+
+
+def test_web_release_manifest_hashes_from_open_parent_directory_during_swap(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "build_web_release_manifest_parent_directory_swap",
+        Path("scripts/build-web-release-manifest.py"),
+    )
+    web_out = tmp_path / "out"
+    nested = web_out / "nested"
+    outside = tmp_path / "outside"
+    nested.mkdir(parents=True)
+    outside.mkdir()
+    safe_content = b"safe release content\n"
+    outside_content = b"outside attacker content\n"
+    _write_bytes(nested / "probe.txt", safe_content)
+    _write_bytes(outside / "probe.txt", outside_content)
+    output = web_out / "release-manifest.json"
+    env = _release_manifest_env(tmp_path)
+    for key in tuple(os.environ):
+        if key.startswith("NEXT_PUBLIC_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build-web-release-manifest.py",
+            "--web-out",
+            str(web_out),
+            "--source-sha",
+            "a" * 40,
+            "--output",
+            str(output),
+        ],
+    )
+    original_open = module.os.open
+    swapped = False
+
+    def swap_parent_before_probe_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if not swapped and Path(os.fsdecode(path)).name == "probe.txt":
+            nested.rename(web_out / "nested.safe")
+            nested.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "open", swap_parent_before_probe_open)
+
+    assert module.main() == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert swapped is True
+    assert payload["files"] == [
+        {
+            "path": "nested/probe.txt",
+            "sha256": hashlib.sha256(safe_content).hexdigest(),
+            "size_bytes": len(safe_content),
+        }
+    ]
+    assert hashlib.sha256(outside_content).hexdigest() not in output.read_text(
+        encoding="utf-8"
     )

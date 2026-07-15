@@ -42,9 +42,10 @@ class Config:
 
 
 @dataclass(frozen=True)
-class PublicFile:
+class ManifestFile:
     relative_path: str
-    absolute_path: Path
+    size_bytes: int
+    sha256: str
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> Config:
@@ -104,72 +105,159 @@ def _validated_paths(config: Config) -> tuple[Path, Path]:
     return web_out, output
 
 
-def _collect_public_files(web_out: Path, output: Path) -> list[PublicFile]:
-    pending = [web_out]
-    public_files: list[PublicFile] = []
-    while pending:
-        directory = pending.pop()
-        try:
-            with os.scandir(directory) as iterator:
-                entries = list(iterator)
-        except OSError as exc:
-            raise ManifestError("failed to enumerate static Web output") from exc
-        for entry in entries:
-            path = directory / entry.name
-            try:
-                mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError as exc:
-                raise ManifestError("failed to inspect a static Web output entry") from exc
-            relative_path = path.relative_to(web_out).as_posix()
-            if stat.S_ISLNK(mode):
-                raise ManifestError(f"static Web output contains a symlink: {relative_path}")
-            if stat.S_ISDIR(mode):
-                pending.append(path)
-                continue
-            if not stat.S_ISREG(mode):
-                raise ManifestError(
-                    f"static Web output contains a non-regular file: {relative_path}"
-                )
-            if path == output:
-                continue
-            public_files.append(
-                PublicFile(relative_path=relative_path, absolute_path=path)
-            )
-    return sorted(public_files, key=lambda item: item.relative_path.encode("utf-8"))
+def _directory_open_flags() -> int:
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def _hash_regular_file(path: Path) -> tuple[str, int]:
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        file_descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise ManifestError("failed to open a manifest input file") from exc
+def _file_open_flags() -> int:
+    return os.O_RDONLY | os.O_NOFOLLOW
+
+
+def _hash_file_descriptor(file_descriptor: int) -> tuple[str, int]:
     digest = hashlib.sha256()
     size_bytes = 0
     try:
         initial = os.fstat(file_descriptor)
         if not stat.S_ISREG(initial.st_mode):
             raise ManifestError("manifest input changed into a non-regular file")
-        with os.fdopen(file_descriptor, "rb") as handle:
-            file_descriptor = -1
-            while chunk := handle.read(HASH_CHUNK_SIZE):
-                digest.update(chunk)
-                size_bytes += len(chunk)
-            final = os.fstat(handle.fileno())
-        if (
-            initial.st_dev != final.st_dev
-            or initial.st_ino != final.st_ino
-            or initial.st_size != final.st_size
-            or initial.st_mtime_ns != final.st_mtime_ns
-            or size_bytes != final.st_size
-        ):
-            raise ManifestError("manifest input changed while it was being hashed")
-    finally:
-        if file_descriptor >= 0:
-            os.close(file_descriptor)
+        while chunk := os.read(file_descriptor, HASH_CHUNK_SIZE):
+            digest.update(chunk)
+            size_bytes += len(chunk)
+        final = os.fstat(file_descriptor)
+    except OSError as exc:
+        raise ManifestError("failed to hash a manifest input file") from exc
+    if (
+        initial.st_dev != final.st_dev
+        or initial.st_ino != final.st_ino
+        or initial.st_size != final.st_size
+        or initial.st_mtime_ns != final.st_mtime_ns
+        or size_bytes != final.st_size
+    ):
+        raise ManifestError("manifest input changed while it was being hashed")
     return digest.hexdigest(), size_bytes
+
+
+def _hash_regular_file(path: Path) -> tuple[str, int]:
+    try:
+        file_descriptor = os.open(path, _file_open_flags())
+    except OSError as exc:
+        raise ManifestError("failed to open a manifest input file") from exc
+    try:
+        return _hash_file_descriptor(file_descriptor)
+    finally:
+        os.close(file_descriptor)
+
+
+def _hash_public_file_at(
+    *,
+    directory_fd: int,
+    name: str,
+    relative_path: str,
+) -> ManifestFile:
+    try:
+        file_descriptor = os.open(
+            name,
+            _file_open_flags(),
+            dir_fd=directory_fd,
+        )
+    except OSError as exc:
+        raise ManifestError(
+            f"failed to open a static Web output file: {relative_path}"
+        ) from exc
+    try:
+        sha256, size_bytes = _hash_file_descriptor(file_descriptor)
+    finally:
+        os.close(file_descriptor)
+    return ManifestFile(
+        relative_path=relative_path,
+        size_bytes=size_bytes,
+        sha256=sha256,
+    )
+
+
+def _collect_from_directory(
+    *,
+    directory_fd: int,
+    relative_directory: str,
+    output_relative_path: str,
+    public_files: list[ManifestFile],
+) -> None:
+    try:
+        with os.scandir(directory_fd) as iterator:
+            entries = list(iterator)
+    except OSError as exc:
+        raise ManifestError("failed to enumerate static Web output") from exc
+    for entry in entries:
+        relative_path = (
+            f"{relative_directory}/{entry.name}"
+            if relative_directory
+            else entry.name
+        )
+        try:
+            mode = entry.stat(follow_symlinks=False).st_mode
+        except OSError as exc:
+            raise ManifestError("failed to inspect a static Web output entry") from exc
+        if stat.S_ISLNK(mode):
+            raise ManifestError(f"static Web output contains a symlink: {relative_path}")
+        if stat.S_ISDIR(mode):
+            try:
+                child_fd = os.open(
+                    entry.name,
+                    _directory_open_flags(),
+                    dir_fd=directory_fd,
+                )
+            except OSError as exc:
+                raise ManifestError(
+                    f"failed to open a static Web output directory: {relative_path}"
+                ) from exc
+            try:
+                if not stat.S_ISDIR(os.fstat(child_fd).st_mode):
+                    raise ManifestError(
+                        f"static Web output directory changed type: {relative_path}"
+                    )
+                _collect_from_directory(
+                    directory_fd=child_fd,
+                    relative_directory=relative_path,
+                    output_relative_path=output_relative_path,
+                    public_files=public_files,
+                )
+            finally:
+                os.close(child_fd)
+            continue
+        if not stat.S_ISREG(mode):
+            raise ManifestError(
+                f"static Web output contains a non-regular file: {relative_path}"
+            )
+        if relative_path == output_relative_path:
+            continue
+        public_files.append(
+            _hash_public_file_at(
+                directory_fd=directory_fd,
+                name=entry.name,
+                relative_path=relative_path,
+            )
+        )
+
+
+def _collect_public_files(web_out: Path, output: Path) -> list[ManifestFile]:
+    output_relative_path = output.relative_to(web_out).as_posix()
+    try:
+        root_fd = os.open(web_out, _directory_open_flags())
+    except OSError as exc:
+        raise ManifestError("failed to open --web-out without following symlinks") from exc
+    try:
+        if not stat.S_ISDIR(os.fstat(root_fd).st_mode):
+            raise ManifestError("--web-out changed into a non-directory")
+        public_files: list[ManifestFile] = []
+        _collect_from_directory(
+            directory_fd=root_fd,
+            relative_directory="",
+            output_relative_path=output_relative_path,
+            public_files=public_files,
+        )
+    finally:
+        os.close(root_fd)
+    return sorted(public_files, key=lambda item: item.relative_path.encode("utf-8"))
 
 
 def _tool_version(command: str) -> str:
@@ -206,16 +294,14 @@ def _public_build_variables() -> dict[str, str | None]:
 def _manifest_bytes(*, web_out: Path, output: Path, source_sha: str) -> bytes:
     repo_root = Path(__file__).resolve().parent.parent
     lockfile_sha256, _ = _hash_regular_file(repo_root / "pnpm-lock.yaml")
-    files = []
-    for public_file in _collect_public_files(web_out, output):
-        sha256, size_bytes = _hash_regular_file(public_file.absolute_path)
-        files.append(
-            {
-                "path": public_file.relative_path,
-                "size_bytes": size_bytes,
-                "sha256": sha256,
-            }
-        )
+    files = [
+        {
+            "path": public_file.relative_path,
+            "size_bytes": public_file.size_bytes,
+            "sha256": public_file.sha256,
+        }
+        for public_file in _collect_public_files(web_out, output)
+    ]
     payload: dict[str, object] = {
         "format": FORMAT,
         "source_sha": source_sha,
@@ -245,6 +331,7 @@ def _write_atomic(output: Path, content: bytes) -> None:
             temp_path = Path(handle.name)
             handle.write(content)
             handle.flush()
+            os.fchmod(handle.fileno(), 0o644)
             os.fsync(handle.fileno())
         os.replace(temp_path, output)
         temp_path = None
