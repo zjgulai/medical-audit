@@ -28,6 +28,7 @@ web/playwright-report/
 .pytest_cache/
 .ruff_cache/
 .codegraph/
+.gitnexus/
 __pycache__/
 
 tmp/

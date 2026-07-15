@@ -89,7 +89,7 @@ pnpm local:permission:readonly
 - [P1] Web build 前未运行 `pnpm install --frozen-lockfile`，依赖现有本地 `node_modules`。
 - [P1] app/base/service images 未 pin digest。
 - [P1] app/Web rollback 不恢复数据库；任何 schema 发布必须单独规划数据库兼容和恢复。
-- [P1] `.gitnexus/` 未被根 `.gitignore`、`.dockerignore` 和 rsync excludes 统一排除，可能进入部署同步与 Docker context。
+- [已解决] `.gitnexus/` 已被根 `.gitignore`、`.dockerignore` 和 rsync excludes 统一排除；本地 `output/` 证据目录也已被 Docker context 和 rsync 排除。
 - [P2] Python version facts 手工重复，存在漂移风险。
 - [P2] 本地无 Git tags，且无正式 changelog/release notes。
 - [P2] 历史 workflow 含 `--allow-dirty` 旧记录；当前 production execute 必须以代码的 fail-closed 规则为准。

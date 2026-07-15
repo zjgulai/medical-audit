@@ -1,4 +1,5 @@
 .git
+.gitnexus
 .DS_Store
 .venv
 venv
@@ -16,6 +17,7 @@ web/playwright-report
 .vercel
 .superpowers
 node_modules
+output
 tmp
 data
 archive
