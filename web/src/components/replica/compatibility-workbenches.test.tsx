@@ -168,10 +168,26 @@ const searchResponse: SearchBackendStatusResponse = {
   details: { matching_embedding_count: 49051 }
 };
 
-function mockBackendReads() {
+function reportsWithMetrics(reportCount: number, blockedReportCount: number): ReportWorkbenchResponse {
+  return {
+    ...reportsResponse,
+    report_entries: reportCount === 0 ? [] : reportsResponse.report_entries,
+    metrics: {
+      ...reportsResponse.metrics,
+      report_count: reportCount,
+      blocked_report_count: blockedReportCount
+    }
+  };
+}
+
+function mockBackendReads(options: { reports?: ReportWorkbenchResponse; reportsError?: Error } = {}) {
   fetchAuditFindingsMock.mockResolvedValue(findingsResponse);
   fetchRulesWorkbenchMock.mockResolvedValue(rulesResponse);
-  fetchReportWorkbenchMock.mockResolvedValue(reportsResponse);
+  if (options.reportsError) {
+    fetchReportWorkbenchMock.mockRejectedValue(options.reportsError);
+  } else {
+    fetchReportWorkbenchMock.mockResolvedValue(options.reports ?? reportsResponse);
+  }
   fetchSearchBackendStatusMock.mockResolvedValue(searchResponse);
 }
 
@@ -212,6 +228,62 @@ describe("compatibility workbenches", () => {
     expect(await stages.findByText("费用汇总、分类汇总、就诊明细 · 0 个底稿模板")).toBeInTheDocument();
     expect(await stages.findByText("1 项阻断门禁 / 1 项控制门禁")).toBeInTheDocument();
     expect(await stages.findByText("1 项底稿 / 1 项阻断")).toBeInTheDocument();
+    expect(stages.getByRole("link", { name: "打开单据审查" })).toHaveAttribute("href", "/medical-audit");
+    expect(stages.getByRole("link", { name: "打开费用表单" })).toHaveAttribute("href", "/analytics");
+    expect(stages.getByRole("link", { name: "打开规则复核" })).toHaveAttribute("href", "/rules");
+    expect(stages.getByRole("link", { name: "打开底稿输出" })).toHaveAttribute("href", "/reports");
+  });
+
+  it.each([
+    {
+      name: "reports fallback",
+      options: { reportsError: new Error("reports unavailable") },
+      expectedStatus: "本地样例",
+      expectedSummary: "暂无底稿"
+    },
+    {
+      name: "ready with no reports",
+      options: { reports: reportsWithMetrics(0, 0) },
+      expectedStatus: "需处理",
+      expectedSummary: "暂无底稿"
+    },
+    {
+      name: "ready with blocked reports",
+      options: { reports: reportsWithMetrics(1, 1) },
+      expectedStatus: "需处理",
+      expectedSummary: "1 项底稿 / 1 项阻断"
+    },
+    {
+      name: "ready with unblocked reports",
+      options: { reports: reportsWithMetrics(1, 0) },
+      expectedStatus: "已就绪",
+      expectedSummary: "1 项底稿 / 0 项阻断"
+    }
+  ])("derives the workpaper stage for $name", async ({ options, expectedStatus, expectedSummary }) => {
+    mockBackendReads(options);
+
+    render(<FundComplianceReviewWorkbench />);
+
+    const workflow = await screen.findByRole("region", { name: "医保基金复核四阶段" });
+    const stageHeading = within(workflow).getByRole("heading", { name: "底稿输出" });
+    const stage = stageHeading.closest("article");
+    expect(stage).not.toBeNull();
+    expect(await within(stage!).findByText(expectedStatus)).toBeInTheDocument();
+    expect(within(stage!).getByText(expectedSummary)).toBeInTheDocument();
+  });
+
+  it("shows an actionable empty state instead of 0/0 for report readiness", async () => {
+    mockBackendReads({ reports: reportsWithMetrics(0, 0) });
+
+    render(<FundComplianceWorkbench />);
+
+    const heading = await screen.findByRole("heading", { name: "底稿就绪状态" });
+    const card = heading.closest("article");
+    expect(card).not.toBeNull();
+    expect(await within(card!).findByText("需处理")).toBeInTheDocument();
+    expect(within(card!).getByText("暂无底稿")).toBeInTheDocument();
+    expect(within(card!).getByText("当前没有可用底稿。")).toBeInTheDocument();
+    expect(within(card!).queryByText("0/0")).not.toBeInTheDocument();
   });
 
   it("does not execute workflow writes while rendering the review stages", async () => {

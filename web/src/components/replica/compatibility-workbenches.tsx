@@ -269,6 +269,17 @@ function runtimeStageStatus(status: RuntimeStatus, blockerCount: number): string
   return blockerCount > 0 ? "需处理" : "已就绪";
 }
 
+function reportStageStatus(status: RuntimeStatus, reportCount: number, blockedReportCount: number): string {
+  if (status === "loading") return "加载中";
+  if (status === "fallback") return "本地样例";
+  return reportCount === 0 || blockedReportCount > 0 ? "需处理" : "已就绪";
+}
+
+function reportStageSummary(reportCount: number, blockedReportCount: number): string {
+  if (reportCount === 0) return "暂无底稿";
+  return `${reportCount} 项底稿 / ${blockedReportCount} 项阻断`;
+}
+
 function buildReviewStages(runtime: CompatibilityRuntime): readonly ReviewStage[] {
   const pendingFindingCount = runtime.findings?.stats.pending_review ?? 0;
   const templateCount = runtime.reports?.workpaper_templates.length ?? 0;
@@ -303,8 +314,8 @@ function buildReviewStages(runtime: CompatibilityRuntime): readonly ReviewStage[
       id: "workpaper",
       label: "底稿输出",
       href: "/reports",
-      status: runtimeStageStatus(runtime.statuses.reports, blockedReportCount),
-      summary: `${reportCount} 项底稿 / ${blockedReportCount} 项阻断`
+      status: reportStageStatus(runtime.statuses.reports, reportCount, blockedReportCount),
+      summary: reportStageSummary(reportCount, blockedReportCount)
     }
   ];
 }
@@ -336,10 +347,14 @@ function buildComplianceReadinessCards(runtime: CompatibilityRuntime): readonly 
     },
     {
       id: "report-readiness",
-      eyebrow: runtimeStageStatus(runtime.statuses.reports, blockedReportCount),
+      eyebrow: reportStageStatus(runtime.statuses.reports, reportCount, blockedReportCount),
       title: "底稿就绪状态",
-      detail: `${reportCount} 项底稿 / ${blockedReportCount} 项阻断。`,
-      value: `${Math.max(reportCount - blockedReportCount, 0)}/${reportCount}`,
+      detail: reportCount === 0
+        ? "当前没有可用底稿。"
+        : `${reportCount} 项底稿 / ${blockedReportCount} 项阻断。`,
+      value: reportCount === 0
+        ? "暂无底稿"
+        : `${Math.max(reportCount - blockedReportCount, 0)}/${reportCount}`,
       href: "/reports"
     }
   ];
@@ -608,7 +623,7 @@ export function FundComplianceReviewWorkbench() {
               </div>
               <p>{stage.summary}</p>
               <div className="replica-card-actions">
-                <Link className="replica-card-detail-button" href={stage.href}>打开</Link>
+                <Link className="replica-card-detail-button" href={stage.href}>打开{stage.label}</Link>
               </div>
             </article>
           ))}
