@@ -5,7 +5,7 @@ module: security
 topic: auth-rbac
 status: stable
 created: 2026-06-15
-updated: 2026-06-30
+updated: 2026-07-15
 owner: self
 source: human+ai
 ---
@@ -95,7 +95,7 @@ V1.0 采用单院 RBAC，不做多院多租户。角色是授权单元，部门�
 | `department-head` | 审计科主任/负责人 | 审核确认、查看本科室审计材料、导出正式报告、查看和导出审计日志、确认整改闭环 |
 | `info-staff` | 医院信息科 | 查看运行状态、协助 HIS 数据接入、查看数据导入状态、不能确认审计结论 |
 | `business-expert` | 业务/审计专家 | 查看规则、评测集、知识依据和模板；可提交规则口径意见，不能发布索引或管理用户 |
-| `system-admin` | 系统管理员 | 用户、角色、部门、索引发布、回滚、系统配置、运行状态和审计日志治理 |
+| `system-admin` | 系统管理员 | 用户、角色、部门、项目创建、索引发布、回滚、系统配置、运行状态和审计日志治理 |
 
 历史 `it-admin` 作为兼容角色键，迁移后映射到 `system-admin`。兼容期内 API 可接受 `it-admin`，但审计日志中必须同时记录 `normalized_role=system-admin`。
 
@@ -121,6 +121,7 @@ V1.0 采用单院 RBAC，不做多院多租户。角色是授权单元，部门�
 | agent | create-own | allow | allow | deny | allow | allow |
 | agent | manage-all | deny | allow | deny | deny | allow |
 | project-member | read | allow | allow | allow | allow | allow |
+| project | create | deny | deny | deny | deny | allow |
 | project-member | create | deny | allow | deny | deny | allow |
 | index | rebuild | deny | deny | deny | deny | allow |
 | index | activate | deny | deny | deny | deny | allow |
@@ -129,6 +130,8 @@ V1.0 采用单院 RBAC，不做多院多租户。角色是授权单元，部门�
 | auth-user | manage | deny | deny | deny | deny | allow |
 
 `allow-review-only` 表示可提交专家意见，但不能直接改变审计结论状态。
+
+当前门户四角色过渡层将 `review-task:create` 映射为 `admin/director/member` 允许、`technician` 拒绝；`project:create` 仅 `admin` 允许。两项权限均还要叠加资源范围和持久化能力校验：历史转任务必须由历史 owner 发起、显式选择可见项目，并同时具备持久化项目成员与复核任务 store；项目创建不接受项目级角色提升为全局创建权限，也不允许只读 fallback 或内存 store 承担写入。`GET /projects` 将读取 `ready`、项目/成员 `persistent_writes_ready` 和历史任务 `history_review_task_writes_ready` 分开；前端对应 mutation 控件必须同时满足读取 ready 和操作级写能力才可提交。
 
 ## 5. 数据模型
 

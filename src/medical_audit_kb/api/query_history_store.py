@@ -4,6 +4,7 @@ import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
+from uuid import UUID
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
@@ -12,11 +13,28 @@ from sqlalchemy.orm import Session, sessionmaker
 from medical_audit_kb.db.models import Base, QueryLog, utc_now
 
 
+class QueryHistoryNotFoundError(KeyError):
+    pass
+
+
 class QueryHistoryStore(Protocol):
     def add_query(self, values: dict[str, object]) -> dict[str, object]:
         pass
 
-    def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
+    def get_query(
+        self,
+        query_id: str,
+        *,
+        user_identifier: str | None = None,
+    ) -> dict[str, object]:
+        pass
+
+    def list_queries(
+        self,
+        *,
+        limit: int = 20,
+        user_identifier: str | None = None,
+    ) -> list[dict[str, object]]:
         pass
 
 
@@ -36,11 +54,14 @@ def try_list_query_history(
     store: QueryHistoryStore | None,
     *,
     limit: int = 20,
+    user_identifier: str | None = None,
 ) -> tuple[list[dict[str, object]] | None, dict[str, object] | None]:
     if store is None:
         return None, None
     try:
-        return store.list_queries(limit=limit), None
+        if user_identifier is None:
+            return store.list_queries(limit=limit), None
+        return store.list_queries(limit=limit, user_identifier=user_identifier), None
     except Exception as exc:
         return None, _store_error_payload(exc)
 
@@ -76,14 +97,37 @@ class SqlAlchemyQueryHistoryStore:
             session.flush()
             return _query_log_to_payload(log)
 
-    def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
+    def get_query(
+        self,
+        query_id: str,
+        *,
+        user_identifier: str | None = None,
+    ) -> dict[str, object]:
+        try:
+            normalized_query_id = UUID(query_id)
+        except ValueError as exc:
+            raise QueryHistoryNotFoundError(query_id) from exc
+        with self._session_factory() as session:
+            statement = select(QueryLog).where(QueryLog.id == normalized_query_id)
+            if user_identifier is not None:
+                statement = statement.where(QueryLog.user_identifier == user_identifier)
+            log = session.scalar(statement)
+            if log is None:
+                raise QueryHistoryNotFoundError(query_id)
+            return _query_log_to_payload(log)
+
+    def list_queries(
+        self,
+        *,
+        limit: int = 20,
+        user_identifier: str | None = None,
+    ) -> list[dict[str, object]]:
         normalized_limit = max(1, min(limit, 100))
         with self._session_factory() as session:
-            statement = (
-                select(QueryLog)
-                .order_by(QueryLog.created_at.desc())
-                .limit(normalized_limit)
-            )
+            statement = select(QueryLog)
+            if user_identifier is not None:
+                statement = statement.where(QueryLog.user_identifier == user_identifier)
+            statement = statement.order_by(QueryLog.created_at.desc()).limit(normalized_limit)
             return [_query_log_to_payload(log) for log in session.scalars(statement).all()]
 
 
@@ -106,9 +150,37 @@ class InMemoryQueryHistoryStore:
         self.items.insert(0, item)
         return copy.deepcopy(item)
 
-    def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
+    def get_query(
+        self,
+        query_id: str,
+        *,
+        user_identifier: str | None = None,
+    ) -> dict[str, object]:
+        for item in self.items:
+            if item.get("id") != query_id:
+                continue
+            if user_identifier is not None and item.get("user_identifier") != user_identifier:
+                continue
+            return copy.deepcopy(item)
+        raise QueryHistoryNotFoundError(query_id)
+
+    def list_queries(
+        self,
+        *,
+        limit: int = 20,
+        user_identifier: str | None = None,
+    ) -> list[dict[str, object]]:
         normalized_limit = max(1, min(limit, 100))
-        return [copy.deepcopy(item) for item in self.items[:normalized_limit]]
+        matching_items = (
+            self.items
+            if user_identifier is None
+            else [
+                item
+                for item in self.items
+                if item.get("user_identifier") == user_identifier
+            ]
+        )
+        return [copy.deepcopy(item) for item in matching_items[:normalized_limit]]
 
 
 def _query_log_to_payload(log: QueryLog) -> dict[str, object]:

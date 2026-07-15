@@ -3,22 +3,28 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import ClassVar, Protocol
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from medical_audit_kb.db.models import AuditProjectMember, Base, utc_now
+from medical_audit_kb.db.models import AuditProject, AuditProjectMember, Base, utc_now
 
 PROJECT_MEMBER_ROLES = ("项目负责人", "审计员", "业务专家", "信息科", "只读观察员")
 PROJECT_MEMBER_STATUSES = ("在项目中", "待确认")
 PROJECT_STATUSES = ("待开始", "进行中", "已完成", "已归档")
 PROJECT_MEMBER_ID_PREFIX = "member-custom-"
+PROJECT_SURFACE = "collaboration-v1"
 
 
 class ProjectMemberIdentityConflictError(ValueError):
+    pass
+
+
+class ProjectIdentityConflictError(ValueError):
     pass
 
 DEFAULT_PROJECT_PAYLOADS: tuple[dict[str, object], ...] = (
@@ -203,6 +209,15 @@ _PROJECT_KEYS = frozenset(str(project["id"]) for project in DEFAULT_PROJECT_PAYL
 
 
 class ProjectMemberStore(Protocol):
+    def list_projects(self) -> list[dict[str, object]]:
+        pass
+
+    def create_project(
+        self,
+        values: dict[str, object],
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        pass
+
     def list_members(self, project_key: str) -> list[dict[str, object]]:
         pass
 
@@ -215,6 +230,7 @@ class ProjectMemberStore(Protocol):
 
 @dataclass(slots=True)
 class SqlAlchemyProjectMemberStore:
+    supports_persistent_writes: ClassVar[bool] = True
     database_url: str
     create_schema: bool = False
     _engine: Engine = field(init=False, repr=False)
@@ -229,6 +245,78 @@ class SqlAlchemyProjectMemberStore:
         if self.create_schema:
             Base.metadata.create_all(self._engine)
         self._session_factory = sessionmaker(self._engine, expire_on_commit=False)
+
+    def list_projects(self) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            projects = session.scalars(
+                select(AuditProject).order_by(
+                    AuditProject.created_at.desc(),
+                    AuditProject.project_key.asc(),
+                )
+            ).all()
+            return [
+                _project_to_payload(project)
+                for project in projects
+                if _project_surface(project.extra_metadata) == PROJECT_SURFACE
+            ]
+
+    def create_project(
+        self,
+        values: dict[str, object],
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        project_key = str(values["project_key"])
+        if project_key in _PROJECT_KEYS:
+            raise ProjectIdentityConflictError(project_key)
+        now = utc_now()
+        project_metadata = _dict_value(values.get("metadata"))
+        project_metadata["project_surface"] = PROJECT_SURFACE
+        member_values = _creator_member_values(values)
+        member_metadata = _member_metadata(member_values)
+        try:
+            with self._session_factory.begin() as session:
+                existing_project = session.scalar(
+                    select(AuditProject.id).where(AuditProject.project_key == project_key)
+                )
+                if existing_project is not None:
+                    raise ProjectIdentityConflictError(project_key)
+                project = AuditProject(
+                    project_key=project_key,
+                    name=str(values["name"]),
+                    scenario_key=str(values["scenario_key"]),
+                    status=str(values["status"]),
+                    owner_department=_optional_str(values.get("owner_department")),
+                    created_by=_optional_str(values.get("created_by")),
+                    description=_optional_str(values.get("description")),
+                    extra_metadata=project_metadata,
+                    created_at=now,
+                    updated_at=now,
+                )
+                member = AuditProjectMember(
+                    member_key=_new_member_key(),
+                    project_key=project_key,
+                    name=str(member_values["name"]),
+                    role=str(member_values["role"]),
+                    department=str(member_values["department"]),
+                    status=str(member_values["status"]),
+                    created_by=_optional_str(member_values.get("created_by")),
+                    extra_metadata=member_metadata,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(project)
+                session.add(member)
+                session.flush()
+                project_payload = _project_to_payload(project)
+                project_payload["member_count"] = 1
+                return project_payload, _member_to_payload(member)
+        except IntegrityError as exc:
+            with self._session_factory() as session:
+                project_exists_after_rollback = session.scalar(
+                    select(AuditProject.id).where(AuditProject.project_key == project_key)
+                )
+            if project_exists_after_rollback is not None:
+                raise ProjectIdentityConflictError(project_key) from exc
+            raise
 
     def list_members(self, project_key: str) -> list[dict[str, object]]:
         with self._session_factory() as session:
@@ -303,7 +391,55 @@ class SqlAlchemyProjectMemberStore:
 
 @dataclass(slots=True)
 class InMemoryProjectMemberStore:
+    supports_persistent_writes: ClassVar[bool] = False
     members: dict[str, list[dict[str, object]]] = field(default_factory=dict)
+    projects: dict[str, dict[str, object]] = field(default_factory=dict)
+
+    def list_projects(self) -> list[dict[str, object]]:
+        return [copy.deepcopy(project) for project in self.projects.values()]
+
+    def create_project(
+        self,
+        values: dict[str, object],
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        project_key = str(values["project_key"])
+        if project_key in _PROJECT_KEYS or project_key in self.projects:
+            raise ProjectIdentityConflictError(project_key)
+        now = _datetime_to_iso(utc_now())
+        metadata = _dict_value(values.get("metadata"))
+        metadata["project_surface"] = PROJECT_SURFACE
+        project: dict[str, object] = {
+            "id": project_key,
+            "name": str(values["name"]),
+            "audit_topic": str(metadata["audit_topic"]),
+            "organization_name": str(metadata["organization_name"]),
+            "member_count": 1,
+            "creator": str(values["created_by"]),
+            "creator_user_identifier": str(values["created_by"]),
+            "created_at": now,
+            "status": str(values["status"]),
+            "operation_label": "进入项目",
+            "source": PROJECT_SURFACE,
+        }
+        member_values = _creator_member_values(values)
+        member_metadata = _member_metadata(member_values)
+        member: dict[str, object] = {
+            "id": _new_member_key(),
+            "project_key": project_key,
+            "name": str(member_values["name"]),
+            "role": str(member_values["role"]),
+            "department": str(member_values["department"]),
+            "status": str(member_values["status"]),
+            "user_identifier": member_metadata["user_identifier"],
+            "created_by": _optional_str(member_values.get("created_by")),
+            "created_at": now,
+            "updated_at": now,
+            "source": "custom",
+            "metadata": member_metadata,
+        }
+        self.projects[project_key] = copy.deepcopy(project)
+        self.members.setdefault(project_key, []).insert(0, copy.deepcopy(member))
+        return copy.deepcopy(project), copy.deepcopy(member)
 
     def list_members(self, project_key: str) -> list[dict[str, object]]:
         return [copy.deepcopy(member) for member in self.members.get(project_key, [])]
@@ -340,11 +476,20 @@ class InMemoryProjectMemberStore:
         }
 
 
-def project_exists(project_key: str) -> bool:
-    return project_key in _PROJECT_KEYS
+def project_exists(project_key: str, store: ProjectMemberStore | None = None) -> bool:
+    if project_key in _PROJECT_KEYS:
+        return True
+    return any(item["id"] == project_key for item in _stored_project_payloads(store))
 
 
-def project_payloads_with_member_counts(custom_counts: dict[str, int]) -> list[dict[str, object]]:
+def supports_persistent_project_writes(store: ProjectMemberStore | None) -> bool:
+    return bool(store is not None and getattr(store, "supports_persistent_writes", False))
+
+
+def project_payloads_with_member_counts(
+    custom_counts: dict[str, int],
+    store: ProjectMemberStore | None = None,
+) -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
     for project in DEFAULT_PROJECT_PAYLOADS:
         project_key = str(project["id"])
@@ -353,6 +498,14 @@ def project_payloads_with_member_counts(custom_counts: dict[str, int]) -> list[d
         item["member_count"] = (
             _default_member_count(project_key) + custom_counts.get(project_key, 0)
         )
+        items.append(item)
+    for project in _stored_project_payloads(store):
+        project_key = str(project["id"])
+        if project_key in _PROJECT_KEYS:
+            continue
+        item = copy.deepcopy(project)
+        item["status"] = normalize_project_status(str(item["status"]))
+        item["member_count"] = custom_counts.get(project_key, 0)
         items.append(item)
     return items
 
@@ -366,12 +519,14 @@ def visible_project_keys(
     normalized_user_identifier = _optional_str(user_identifier)
     if normalized_user_identifier in {None, "anonymous"}:
         return frozenset()
+    project_payloads = project_payloads_with_member_counts({}, store)
+    all_project_keys = frozenset(str(project["id"]) for project in project_payloads)
     if is_admin:
-        return _PROJECT_KEYS
+        return all_project_keys
 
     default_visible = {
         str(project["id"])
-        for project in DEFAULT_PROJECT_PAYLOADS
+        for project in project_payloads
         if project.get("creator_user_identifier") == normalized_user_identifier
     }
     for project_key, default_members in DEFAULT_PROJECT_MEMBERS_BY_PROJECT.items():
@@ -383,7 +538,7 @@ def visible_project_keys(
             default_visible.add(project_key)
 
     custom_visible: set[str] = set()
-    for project_key in _PROJECT_KEYS:
+    for project_key in all_project_keys:
         custom_members = _effective_custom_project_members(
             project_key,
             store.list_members(project_key),
@@ -486,6 +641,66 @@ def _default_member_payload(
     payload["created_by"] = "system"
     payload["metadata"] = {}
     return payload
+
+
+def _stored_project_payloads(
+    store: ProjectMemberStore | None,
+) -> list[dict[str, object]]:
+    if store is None:
+        return []
+    list_projects = getattr(store, "list_projects", None)
+    if not callable(list_projects):
+        return []
+    projects = list_projects()
+    return [copy.deepcopy(project) for project in projects]
+
+
+def _project_to_payload(project: AuditProject) -> dict[str, object]:
+    metadata = _dict_value(project.extra_metadata)
+    creator_user_identifier = _optional_str(project.created_by) or "unknown"
+    return {
+        "id": project.project_key,
+        "name": project.name,
+        "audit_topic": _optional_str(metadata.get("audit_topic")) or project.scenario_key,
+        "organization_name": (
+            _optional_str(metadata.get("organization_name"))
+            or _optional_str(project.owner_department)
+            or "未设置"
+        ),
+        "member_count": 0,
+        "creator": _optional_str(metadata.get("creator_display_name"))
+        or creator_user_identifier,
+        "creator_user_identifier": creator_user_identifier,
+        "created_at": _datetime_to_iso(project.created_at),
+        "status": normalize_project_status(project.status),
+        "operation_label": "查看归档" if project.status == "已归档" else "进入项目",
+        "source": PROJECT_SURFACE,
+    }
+
+
+def _project_surface(metadata: object) -> str | None:
+    return _optional_str(_dict_value(metadata).get("project_surface"))
+
+
+def _creator_member_values(values: dict[str, object]) -> dict[str, object]:
+    creator_identifier = _optional_str(values.get("created_by"))
+    if creator_identifier is None:
+        raise ValueError("created_by is required")
+    metadata = _dict_value(values.get("metadata"))
+    department = (
+        _optional_str(values.get("owner_department"))
+        or _optional_str(metadata.get("organization_name"))
+        or "未设置"
+    )
+    return {
+        "user_identifier": creator_identifier,
+        "name": _optional_str(values.get("creator_display_name")) or creator_identifier,
+        "role": "项目负责人",
+        "department": department,
+        "status": "在项目中",
+        "created_by": creator_identifier,
+        "metadata": {"user_identifier": creator_identifier},
+    }
 
 
 def _member_to_payload(member: AuditProjectMember) -> dict[str, object]:

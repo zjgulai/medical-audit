@@ -31,6 +31,8 @@ class Permission(StrEnum):
     READ_ALL_ANALYTICS_UPLOADS = "read_all_analytics_uploads"
     SIGN_REPORTS = "sign_reports"
     CREATE_REPORT_DRAFT = "create_report_draft"
+    CREATE_REVIEW_TASK = "create_review_task"
+    CREATE_PROJECT = "create_project"
 
 
 ROLE_LABELS: dict[HospitalRole, str] = {
@@ -82,6 +84,8 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.READ_AUDIT_LOGS,
             Permission.READ_ALL_ANALYTICS_UPLOADS,
             Permission.CREATE_REPORT_DRAFT,
+            Permission.CREATE_REVIEW_TASK,
+            Permission.CREATE_PROJECT,
         }
     ),
     HospitalRole.TECHNICIAN: frozenset(
@@ -103,6 +107,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.READ_AUDIT_LOGS,
             Permission.SIGN_REPORTS,
             Permission.CREATE_REPORT_DRAFT,
+            Permission.CREATE_REVIEW_TASK,
         }
     ),
     HospitalRole.MEMBER: frozenset(
@@ -111,6 +116,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.UPLOAD_PERSONAL_DOCUMENT,
             Permission.ANALYZE_DATA,
             Permission.CREATE_REPORT_DRAFT,
+            Permission.CREATE_REVIEW_TASK,
         }
     ),
 }

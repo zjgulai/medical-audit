@@ -2173,7 +2173,24 @@ def _report_draft_authorized_user(
         )
         raise
 
-    if not project_exists(project_key):
+    store = _report_project_member_store(state)
+    try:
+        exists = project_exists(project_key, store)
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "report-template-draft-create-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "permission": permission.value,
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(status_code=503, detail="project store is unavailable") from exc
+    if not exists:
         _record_report_draft_denial(
             state,
             user=user,
@@ -2183,7 +2200,6 @@ def _report_draft_authorized_user(
         )
         raise HTTPException(status_code=404, detail="project not found")
 
-    store = _report_project_member_store(state)
     try:
         visible_keys = visible_project_keys(
             user_identifier=user.user_identifier,
@@ -2641,7 +2657,26 @@ def _review_task_visible_to_request(
             record_denial=context is None,
         )
 
-    if not project_exists(project_key):
+    project_member_store = _report_project_member_store(state)
+    try:
+        exists = project_exists(project_key, project_member_store)
+    except SQLAlchemyError as exc:
+        _record_operation_best_effort(
+            state,
+            "review-task-project-visibility-unavailable",
+            {
+                "attempted_action": attempted_action,
+                "task_id": str(task.get("task_id") or ""),
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        if raise_on_denied:
+            raise HTTPException(status_code=503, detail="project store is unavailable") from exc
+        return False
+    if not exists:
         return _review_task_access_denied(
             state,
             task=task,
@@ -2653,7 +2688,6 @@ def _review_task_visible_to_request(
             raise_on_denied=raise_on_denied,
             record_denial=context is None,
         )
-    project_member_store = _report_project_member_store(state)
     if user.role is HospitalRole.ADMIN:
         return True
     try:
@@ -3247,9 +3281,57 @@ def _render_review_task_markdown(payload: dict[str, object]) -> str:
 def _render_review_task_dossier_markdown(dossier: dict[str, object]) -> str:
     if dossier.get("format") == "audit-finding-dossier-v1":
         return _render_audit_finding_dossier_markdown(dossier)
+    if dossier.get("format") == "query-history-review-task-dossier-v1":
+        return _render_query_history_review_task_dossier_markdown(dossier)
     if dossier.get("format") == "report-template-draft-dossier-v1":
         return _render_report_template_draft_dossier_markdown(dossier)
     return _render_audit_dossier_markdown(dossier)
+
+
+def _render_query_history_review_task_dossier_markdown(
+    dossier: dict[str, object],
+) -> str:
+    snapshot = _dict_value(dossier.get("query_history_snapshot"))
+    filters = _dict_value(snapshot.get("filters"))
+    retrieved_chunk_ids = _string_list(snapshot.get("retrieved_chunk_ids"))
+    workpaper = _dict_value(dossier.get("workpaper"))
+    owner_signoff = _dict_value(dossier.get("owner_signoff"))
+    answer_summary = str(snapshot.get("answer_summary") or "未保存回答摘要。")
+    lines = [
+        "# AuditScope 历史对话人工复核底稿",
+        "",
+        f"- 历史记录 ID：{snapshot.get('query_log_id') or '未记录'}",
+        f"- 项目：{dossier.get('project_key') or '未记录'}",
+        f"- 创建人：{dossier.get('created_by') or '未记录'}",
+        f"- 原始查询时间：{snapshot.get('created_at') or '未记录'}",
+        f"- 引用数量：{snapshot.get('citation_count') or 0}",
+        f"- 底稿状态：{workpaper.get('status_label') or '未建底稿'}",
+        f"- 负责人确认：{owner_signoff.get('status_label') or '未提交确认'}",
+        "",
+        "> 历史对话快照仅作为人工复核输入，不构成审计疑点或结论。",
+        "",
+        "## 原始问题",
+        "",
+        str(snapshot.get("question") or "未记录问题。"),
+        "",
+        "## 回答摘要",
+        "",
+        answer_summary,
+        "",
+        "## 检索条件",
+        "",
+        "```json",
+        json.dumps(filters, ensure_ascii=False, indent=2),
+        "```",
+        "",
+        "## 引用片段标识",
+        "",
+    ]
+    if retrieved_chunk_ids:
+        lines.extend(f"- `{chunk_id}`" for chunk_id in retrieved_chunk_ids)
+    else:
+        lines.append("- 未记录引用片段。")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _render_report_template_draft_dossier_markdown(dossier: dict[str, object]) -> str:
