@@ -324,6 +324,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       setNotice("安装未完成：当前身份无权安装智能体。");
       return;
     }
+    if (installedAgentIds.has(agent.id)) return;
     if (installInFlightRef.current === identityKey) return;
     const requestGeneration = identityGenerationRef.current.generation;
     installInFlightRef.current = identityKey;
@@ -403,7 +404,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            disabled={!isMine && (!canManageAgents || installingAgentId.length > 0)}
+            disabled={!isMine && (!canManageAgents || installingAgentId.length > 0 || installedAgentId.length > 0)}
             onClick={() => {
               if (isMine || !selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
@@ -417,6 +418,8 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           >
             {isMine
               ? "+ 创建智能体"
+              : installedAgentId
+                ? "已安装"
               : installingAgentId.length > 0
                 ? installingAgentId === selectedAgent?.id ? "加入中" : "其他模板加入中"
                 : "加入我的智能体"}
@@ -667,11 +670,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             <div className="replica-agent-detail-actions is-dialog-actions">
               <button
                 type="button"
-                disabled={!canManageAgents || installingAgentId.length > 0}
-                aria-label={`加入我的智能体：${selectedAgent.name}`}
+                disabled={!canManageAgents || installingAgentId.length > 0 || installedAgentId.length > 0}
+                aria-label={installedAgentId ? `已安装：${selectedAgent.name}` : `加入我的智能体：${selectedAgent.name}`}
                 onClick={() => void installMarketAgent(selectedAgent)}
               >
-                {installingAgentId.length > 0
+                {installedAgentId
+                  ? "已安装"
+                  : installingAgentId.length > 0
                   ? installingAgentId === selectedAgent.id ? "安装中" : "其他模板安装中"
                   : "加入我的智能体"}
               </button>

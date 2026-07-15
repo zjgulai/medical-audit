@@ -301,6 +301,27 @@ describe("ReplicaAgentDirectory", () => {
     );
   });
 
+  it("does not install the same market template again after a successful install", async () => {
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    const dialog = screen.getByRole("dialog", { name: "医保核验" });
+    const installButton = within(dialog).getByRole("button", { name: "加入我的智能体：医保核验" });
+
+    fireEvent.click(installButton);
+
+    await waitFor(() => {
+      expect(createAuditAgent).toHaveBeenCalledTimes(1);
+      expect(installButton).toBeDisabled();
+      expect(installButton).toHaveTextContent("已安装");
+    });
+    expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+
+    installButton.removeAttribute("disabled");
+    fireEvent.click(installButton);
+    expect(createAuditAgent).toHaveBeenCalledTimes(1);
+  });
+
   it.each(auditExtensionValidationCatalog.map(({ id, name }) => ({ id, name })))(
     "labels, opens, installs and links extension template $name",
     async ({ id, name }) => {

@@ -341,6 +341,35 @@ describe("GraphPage", () => {
     expect(screen.queryByText(/乡村振兴|县级财政专户|建设运维单位/)).not.toBeInTheDocument();
   });
 
+  it("retries a degraded project store with the current view and project key", async () => {
+    apiMocks.fetchGraphWorkbench.mockImplementation(async (options?: { view?: string; projectKey?: string }) => (
+      options?.view === "project"
+        ? projectGraph(options.projectKey ?? "", { ready: false })
+        : knowledgeGraph()
+    ));
+    render(<GraphPage />);
+    await screen.findByRole("option", { name: "PROJECT-A 项目" });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "证据链所属项目" }), {
+      target: { value: "PROJECT-A" }
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "项目证据链" }));
+
+    expect(await screen.findByText("项目证据存储尚未就绪")).toBeInTheDocument();
+    const requestCountBeforeRetry = apiMocks.fetchGraphWorkbench.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "重试当前视图" }));
+
+    await waitFor(() => {
+      expect(apiMocks.fetchGraphWorkbench).toHaveBeenCalledTimes(requestCountBeforeRetry + 1);
+    });
+    expect(apiMocks.fetchGraphWorkbench).toHaveBeenLastCalledWith({
+      view: "project",
+      projectKey: "PROJECT-A"
+    });
+    expect(screen.getByRole("tab", { name: "项目证据链" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "证据链所属项目" })).toHaveValue("PROJECT-A");
+  });
+
   it("does not invent topology lines for response relations", async () => {
     const { container } = render(<GraphPage />);
 

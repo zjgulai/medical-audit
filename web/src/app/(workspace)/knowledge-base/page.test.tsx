@@ -10,6 +10,14 @@ const runtimeMock = vi.hoisted(() => ({
   current: null as unknown as ReplicaRuntimeResult<ReplicaKnowledgeBaseData>
 }));
 
+const HUMAN_KNOWLEDGE_LABEL = "医院医保审计依据库";
+const INTERNAL_SOURCE_SENTINEL = "medical-insurance-laws";
+const INTERNAL_ACCESS_SENTINEL = "explicit-read-all";
+const INTERNAL_METADATA_SENTINELS = {
+  sourceCollection: INTERNAL_SOURCE_SENTINEL,
+  access: INTERNAL_ACCESS_SENTINEL
+} as const;
+
 vi.mock("@/components/replica/use-replica-runtime", () => ({
   useReplicaKnowledgeBaseData: () => runtimeMock.current
 }));
@@ -24,8 +32,9 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
     data: {
       knowledgeBases: [
         {
-          id: "kb-medical-insurance-laws",
-          name: "医保法规库",
+          ...INTERNAL_METADATA_SENTINELS,
+          id: `kb-${INTERNAL_SOURCE_SENTINEL}`,
+          name: HUMAN_KNOWLEDGE_LABEL,
           scope: "公开知识库",
           owner: "审计中心",
           documentCount: 12,
@@ -42,7 +51,7 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
           options: [
             {
               value: "medical-insurance-laws",
-              label: "医保法规库",
+              label: HUMAN_KNOWLEDGE_LABEL,
               description: "医保法规、政策解释和处罚依据。",
               scope: "系统",
               queryable: true
@@ -50,7 +59,7 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
           ]
         }
       ],
-      readableSourceCollections: ["医保法规库"],
+      readableSourceCollections: [HUMAN_KNOWLEDGE_LABEL],
       canUploadPersonal: true,
       currentSearchEmbeddingCount: 49051,
       metricsSource: "knowledge-base-catalog",
@@ -113,26 +122,29 @@ describe("KnowledgeBasePage", () => {
   it("renders metrics-ready totals and preserves source-scoped links", () => {
     render(<KnowledgeBasePage />);
 
+    expect(screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 }).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "打开目录" })).toHaveAttribute(
       "href",
-      "/documents?source_collection=medical-insurance-laws"
+      `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
       "href",
-      "/chat?question=%E8%AF%B7%E5%9F%BA%E4%BA%8E%E3%80%8C%E5%8C%BB%E4%BF%9D%E6%B3%95%E8%A7%84%E5%BA%93%E3%80%8D%E5%9B%9E%E7%AD%94%E5%AE%A1%E8%AE%A1%E9%97%AE%E9%A2%98&source_collection=medical-insurance-laws"
+      `/chat?question=${encodeURIComponent(`请基于「${HUMAN_KNOWLEDGE_LABEL}」回答审计问题`)}&source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "查看图谱" })).toHaveAttribute(
       "href",
-      "/graph?source_collection=medical-insurance-laws"
+      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "检索全部目录" })).toHaveAttribute(
       "href",
-      "/documents?source_collection=medical-insurance-laws"
+      `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "查看全部图谱" })).toHaveAttribute(
       "href",
-      "/graph?source_collection=medical-insurance-laws"
+      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
+    expect(screen.queryByText(INTERNAL_SOURCE_SENTINEL)).not.toBeInTheDocument();
+    expect(screen.queryByText(INTERNAL_ACCESS_SENTINEL)).not.toBeInTheDocument();
     expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
     expect(screen.getAllByText("120").length).toBeGreaterThan(0);
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
@@ -178,7 +190,7 @@ describe("KnowledgeBasePage", () => {
     render(<KnowledgeBasePage />);
 
     expect(screen.getByRole("main")).toHaveAttribute("data-replica-status", "degraded");
-    const cardHeading = screen.getAllByRole("heading", { name: "医保法规库", level: 2 })[0];
+    const cardHeading = screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 })[0];
     const card = cardHeading.closest("article");
     expect(card).not.toBeNull();
     expect(within(card as HTMLElement).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
