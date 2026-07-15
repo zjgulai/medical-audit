@@ -75,6 +75,14 @@ type DynamicCard = {
   readonly href: string;
 };
 
+type ReviewStage = {
+  readonly id: "records" | "forms" | "rules" | "workpaper";
+  readonly label: string;
+  readonly href: string;
+  readonly status: string;
+  readonly summary: string;
+};
+
 function useMedicalAuditCompatibilityRuntime(): CompatibilityRuntime {
   const [findings, setFindings] = useState<AuditFindingsResponse | null>(null);
   const [rules, setRules] = useState<RulesWorkbenchResponse | null>(null);
@@ -255,6 +263,96 @@ function buildReviewMetrics(runtime: CompatibilityRuntime): readonly DynamicMetr
   ];
 }
 
+function runtimeStageStatus(status: RuntimeStatus, blockerCount: number): string {
+  if (status === "loading") return "加载中";
+  if (status === "fallback") return "本地样例";
+  return blockerCount > 0 ? "需处理" : "已就绪";
+}
+
+function buildReviewStages(runtime: CompatibilityRuntime): readonly ReviewStage[] {
+  const pendingFindingCount = runtime.findings?.stats.pending_review ?? 0;
+  const templateCount = runtime.reports?.workpaper_templates.length ?? 0;
+  const blockingGateCount = runtime.rules?.metrics.blocked_gate_count ?? 0;
+  const controlGateCount = runtime.rules?.control_gates.length ?? 0;
+  const reportCount = runtime.reports?.metrics.report_count ?? 0;
+  const blockedReportCount = runtime.reports?.metrics.blocked_report_count ?? 0;
+
+  return [
+    {
+      id: "records",
+      label: "单据审查",
+      href: "/medical-audit",
+      status: runtimeStageStatus(runtime.statuses.findings, pendingFindingCount),
+      summary: `${pendingFindingCount} 项待复核疑点`
+    },
+    {
+      id: "forms",
+      label: "费用表单",
+      href: "/analytics",
+      status: runtimeStageStatus(runtime.statuses.reports, Number(templateCount === 0)),
+      summary: `费用汇总、分类汇总、就诊明细 · ${templateCount} 个底稿模板`
+    },
+    {
+      id: "rules",
+      label: "规则复核",
+      href: "/rules",
+      status: runtimeStageStatus(runtime.statuses.rules, blockingGateCount),
+      summary: `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁`
+    },
+    {
+      id: "workpaper",
+      label: "底稿输出",
+      href: "/reports",
+      status: runtimeStageStatus(runtime.statuses.reports, blockedReportCount),
+      summary: `${reportCount} 项底稿 / ${blockedReportCount} 项阻断`
+    }
+  ];
+}
+
+function buildComplianceReadinessCards(runtime: CompatibilityRuntime): readonly DynamicCard[] {
+  const pendingFindingCount = runtime.findings?.stats.pending_review ?? 0;
+  const visibleFindingCount = runtime.findings?.items.length ?? 0;
+  const blockingGateCount = runtime.rules?.metrics.blocked_gate_count ?? 0;
+  const controlGateCount = runtime.rules?.control_gates.length ?? 0;
+  const reportCount = runtime.reports?.metrics.report_count ?? 0;
+  const blockedReportCount = runtime.reports?.metrics.blocked_report_count ?? 0;
+
+  return [
+    {
+      id: "pending-findings",
+      eyebrow: runtimeStageStatus(runtime.statuses.findings, pendingFindingCount),
+      title: "当前待复核疑点",
+      detail: `${pendingFindingCount} 项待复核，当前返回 ${visibleFindingCount} 项。`,
+      value: `${pendingFindingCount}`,
+      href: "/findings"
+    },
+    {
+      id: "blocking-control-gates",
+      eyebrow: runtimeStageStatus(runtime.statuses.rules, blockingGateCount),
+      title: "阻断控制门禁",
+      detail: `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁。`,
+      value: `${blockingGateCount}`,
+      href: "/rules"
+    },
+    {
+      id: "report-readiness",
+      eyebrow: runtimeStageStatus(runtime.statuses.reports, blockedReportCount),
+      title: "底稿就绪状态",
+      detail: `${reportCount} 项底稿 / ${blockedReportCount} 项阻断。`,
+      value: `${Math.max(reportCount - blockedReportCount, 0)}/${reportCount}`,
+      href: "/reports"
+    }
+  ];
+}
+
+function buildGuidedRiskSummary(runtime: CompatibilityRuntime): string {
+  const pendingFindingCount = runtime.findings?.stats.pending_review ?? 0;
+  const blockingGateCount = runtime.rules?.metrics.blocked_gate_count ?? 0;
+  const blockedReportCount = runtime.reports?.metrics.blocked_report_count ?? 0;
+
+  return `${pendingFindingCount} 项待复核 · ${blockingGateCount} 项规则阻断 · ${blockedReportCount} 项底稿阻断`;
+}
+
 function buildGuidedMetrics(runtime: CompatibilityRuntime): readonly DynamicMetric[] {
   return [
     {
@@ -336,6 +434,7 @@ export function FundComplianceWorkbench() {
   const runtime = useMedicalAuditCompatibilityRuntime();
   const summary = buildRuntimeSummary(runtime);
   const metrics = useMemo(() => buildComplianceMetrics(runtime), [runtime]);
+  const readinessCards = useMemo(() => buildComplianceReadinessCards(runtime), [runtime]);
   const riskCards = useMemo(() => buildComplianceRiskCards(runtime), [runtime]);
 
   return (
@@ -354,6 +453,33 @@ export function FundComplianceWorkbench() {
       </section>
 
       <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
+
+      <section className="replica-panel" aria-label="医保基金合规运行状态">
+        <div className="replica-results-head">
+          <div>
+            <p className="replica-kicker">运行状态</p>
+            <h2>疑点、门禁与底稿</h2>
+          </div>
+          <span>只读汇总</span>
+        </div>
+        <div className="replica-kb-grid">
+          {readinessCards.map((item) => (
+            <article key={item.id} className="replica-kb-card">
+              <div className="replica-kb-card-head">
+                <div>
+                  <span>{item.eyebrow}</span>
+                  <h2>{item.title}</h2>
+                </div>
+                <strong>{item.value}</strong>
+              </div>
+              <p>{item.detail}</p>
+              <div className="replica-card-actions">
+                <Link className="replica-card-detail-button" href={item.href}>查看</Link>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="replica-report-layout">
         <div className="replica-panel">
@@ -444,6 +570,7 @@ export function FundComplianceReviewWorkbench() {
   const runtime = useMedicalAuditCompatibilityRuntime();
   const summary = buildRuntimeSummary(runtime);
   const metrics = useMemo(() => buildReviewMetrics(runtime), [runtime]);
+  const reviewStages = useMemo(() => buildReviewStages(runtime), [runtime]);
 
   return (
     <main className="replica-page" data-replica-source="compatibility-route" data-replica-status="ready">
@@ -461,6 +588,32 @@ export function FundComplianceReviewWorkbench() {
       </section>
 
       <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
+
+      <section className="replica-panel" aria-label="医保基金复核四阶段">
+        <div className="replica-results-head">
+          <div>
+            <p className="replica-kicker">复核工作流</p>
+            <h2>从单据审查到底稿输出</h2>
+          </div>
+          <span>运行状态与数量来自只读 API</span>
+        </div>
+        <div className="replica-kb-grid">
+          {reviewStages.map((stage) => (
+            <article key={stage.id} className="replica-kb-card">
+              <div className="replica-kb-card-head">
+                <div>
+                  <span>{stage.status}</span>
+                  <h2>{stage.label}</h2>
+                </div>
+              </div>
+              <p>{stage.summary}</p>
+              <div className="replica-card-actions">
+                <Link className="replica-card-detail-button" href={stage.href}>打开</Link>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="replica-kb-grid" aria-label="医保基金复核表单列表">
         {auditTableTemplates.map((template) => (
@@ -506,6 +659,7 @@ export function GuidedCheckWorkbench() {
   const summary = buildRuntimeSummary(runtime);
   const metrics = useMemo(() => buildGuidedMetrics(runtime), [runtime]);
   const guidedEvidence = useMemo(() => buildGuidedEvidence(runtime), [runtime]);
+  const riskSummary = useMemo(() => buildGuidedRiskSummary(runtime), [runtime]);
 
   return (
     <main className="replica-page" data-replica-source="compatibility-route" data-replica-status="ready">
@@ -523,6 +677,17 @@ export function GuidedCheckWorkbench() {
       </section>
 
       <ReplicaNotice>数据来源：{summary.backendLabel}</ReplicaNotice>
+
+      <section className="replica-panel" aria-label="引导式核查风险摘要">
+        <div className="replica-results-head">
+          <div>
+            <p className="replica-kicker">当前风险</p>
+            <h2>风险摘要</h2>
+          </div>
+          <span>只读运行态</span>
+        </div>
+        <ReplicaNotice>{riskSummary}</ReplicaNotice>
+      </section>
 
       <section className="replica-report-layout">
         <div className="replica-panel">

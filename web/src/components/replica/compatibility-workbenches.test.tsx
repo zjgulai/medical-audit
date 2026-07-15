@@ -1,7 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  addMedicalAuditFindingToReport,
+  createMedicalAuditReviewTask,
+  createProject,
+  createReportDraft,
   fetchAuditFindings,
   fetchReportWorkbench,
   fetchRulesWorkbench,
@@ -15,17 +19,26 @@ import type {
 } from "@/lib/api-types";
 
 import {
+  FundComplianceReviewWorkbench,
   FundComplianceWorkbench,
   GuidedCheckWorkbench
 } from "./compatibility-workbenches";
 
 vi.mock("@/lib/api-client", () => ({
+  addMedicalAuditFindingToReport: vi.fn(),
+  createMedicalAuditReviewTask: vi.fn(),
+  createProject: vi.fn(),
+  createReportDraft: vi.fn(),
   fetchAuditFindings: vi.fn(),
   fetchReportWorkbench: vi.fn(),
   fetchRulesWorkbench: vi.fn(),
   fetchSearchBackendStatus: vi.fn()
 }));
 
+const addMedicalAuditFindingToReportMock = vi.mocked(addMedicalAuditFindingToReport);
+const createMedicalAuditReviewTaskMock = vi.mocked(createMedicalAuditReviewTask);
+const createProjectMock = vi.mocked(createProject);
+const createReportDraftMock = vi.mocked(createReportDraft);
 const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
 const fetchRulesWorkbenchMock = vi.mocked(fetchRulesWorkbench);
@@ -182,6 +195,54 @@ describe("compatibility workbenches", () => {
     expect(screen.getByText("后端种子数据")).toBeInTheDocument();
     expect(screen.getByText("finding-guided-001")).toBeInTheDocument();
     expect(screen.getByText("待复核疑点")).toBeInTheDocument();
+  });
+
+  it("renders four review stages with runtime-derived summaries", async () => {
+    mockBackendReads();
+
+    render(<FundComplianceReviewWorkbench />);
+
+    const workflow = await screen.findByRole("region", { name: "医保基金复核四阶段" });
+    const stages = within(workflow);
+    expect(stages.getByText("单据审查")).toBeInTheDocument();
+    expect(stages.getByText("费用表单")).toBeInTheDocument();
+    expect(stages.getByText("规则复核")).toBeInTheDocument();
+    expect(stages.getByText("底稿输出")).toBeInTheDocument();
+    expect(await stages.findByText("3 项待复核疑点")).toBeInTheDocument();
+    expect(await stages.findByText("费用汇总、分类汇总、就诊明细 · 0 个底稿模板")).toBeInTheDocument();
+    expect(await stages.findByText("1 项阻断门禁 / 1 项控制门禁")).toBeInTheDocument();
+    expect(await stages.findByText("1 项底稿 / 1 项阻断")).toBeInTheDocument();
+  });
+
+  it("does not execute workflow writes while rendering the review stages", async () => {
+    mockBackendReads();
+
+    render(<FundComplianceReviewWorkbench />);
+
+    const workflow = await screen.findByRole("region", { name: "医保基金复核四阶段" });
+    await within(workflow).findByText("3 项待复核疑点");
+    expect(createProjectMock).not.toHaveBeenCalled();
+    expect(createMedicalAuditReviewTaskMock).not.toHaveBeenCalled();
+    expect(createReportDraftMock).not.toHaveBeenCalled();
+    expect(addMedicalAuditFindingToReportMock).not.toHaveBeenCalled();
+  });
+
+  it("summarizes pending findings, blocking gates, report readiness and guided risk", async () => {
+    mockBackendReads();
+
+    const { unmount } = render(<FundComplianceWorkbench />);
+
+    expect(await screen.findByRole("heading", { name: "当前待复核疑点" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "阻断控制门禁" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "底稿就绪状态" })).toBeInTheDocument();
+
+    unmount();
+    mockBackendReads();
+    render(<GuidedCheckWorkbench />);
+
+    expect(await screen.findByRole("heading", { name: "风险摘要" })).toBeInTheDocument();
+    expect(screen.getByText("3 项待复核 · 1 项规则阻断 · 1 项底稿阻断")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "最近进展" })).toBeInTheDocument();
   });
 
   it("connects guided check evidence gates to findings, rules, reports, and search state", async () => {
