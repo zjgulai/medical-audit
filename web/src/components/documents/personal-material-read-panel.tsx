@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useAuditUser } from "@/components/shell/audit-user-context";
 import { fetchDocumentPermissions, fetchDocumentUploads } from "@/lib/api-client";
 import type {
   DocumentPermissionsResponse,
@@ -10,10 +11,13 @@ import type {
   DocumentUploadPermissions
 } from "@/lib/api-types";
 
+import { PersonalMaterialActions } from "./personal-material-actions";
+
 type PersonalMaterialReadState =
   | { readonly status: "loading" }
   | {
       readonly status: "ready" | "empty";
+      readonly loadedRole: string;
       readonly permissions: DocumentPermissionsResponse;
       readonly uploads: DocumentUploadListResponse;
     }
@@ -21,26 +25,27 @@ type PersonalMaterialReadState =
   | { readonly status: "error" };
 
 export function PersonalMaterialReadPanel() {
+  const auditUser = useAuditUser();
   const [state, setState] = useState<PersonalMaterialReadState>({ status: "loading" });
 
   useEffect(() => {
     let active = true;
+    const loadedRole = auditUser.role;
+    setState({ status: "loading" });
 
     Promise.all([fetchDocumentPermissions(), fetchDocumentUploads()])
       .then(([permissions, uploads]) => {
         if (!active) {
           return;
         }
-        if (!uploads.store.ready) {
-          setState({ status: "degraded", reason: "个人材料存储当前未就绪，已停止展示上传明细。" });
-          return;
-        }
-        if (!sameUploadPermissions(permissions.upload_permissions, uploads.permissions)) {
-          setState({ status: "degraded", reason: "个人材料权限响应不一致，已停止展示上传明细。" });
+        const invalidReason = documentUploadsInvalidReason(permissions, uploads);
+        if (invalidReason) {
+          setState({ status: "degraded", reason: invalidReason });
           return;
         }
         setState({
           status: uploads.items.length > 0 ? "ready" : "empty",
+          loadedRole,
           permissions,
           uploads
         });
@@ -54,34 +59,38 @@ export function PersonalMaterialReadPanel() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [auditUser.role]);
+
+  const staleRole = (state.status === "ready" || state.status === "empty")
+    && state.loadedRole !== auditUser.role;
+  const displayStatus = staleRole ? "loading" : state.status;
 
   return (
-    <section className="replica-panel" aria-labelledby="personal-material-title" data-status={state.status}>
+    <section className="replica-panel" aria-labelledby="personal-material-title" data-status={displayStatus}>
       <div className="replica-results-head">
         <div>
-          <p className="replica-kicker">个人材料只读状态</p>
+          <p className="replica-kicker">个人材料权限与状态</p>
           <h2 id="personal-material-title">个人材料</h2>
         </div>
-        <span>HTTP GET-only</span>
+        <span>写入仅由显式操作触发</span>
       </div>
 
-      {state.status === "loading" ? (
+      {displayStatus === "loading" ? (
         <p role="status">个人材料加载中</p>
       ) : null}
 
-      {state.status === "error" ? (
+      {displayStatus === "error" ? (
         <p role="alert">个人材料读取失败</p>
       ) : null}
 
-      {state.status === "degraded" ? (
+      {displayStatus === "degraded" && state.status === "degraded" ? (
         <div role="status">
           <strong>个人材料状态受限</strong>
           <p>{state.reason}</p>
         </div>
       ) : null}
 
-      {state.status === "ready" || state.status === "empty" ? (
+      {!staleRole && (state.status === "ready" || state.status === "empty") ? (
         <>
           <div aria-label="个人材料角色能力">
             <p>当前角色：{state.permissions.role}</p>
@@ -101,10 +110,44 @@ export function PersonalMaterialReadPanel() {
               ))}
             </div>
           )}
+
+          <PersonalMaterialActions
+            permissions={state.permissions.upload_permissions}
+            uploads={state.uploads.items}
+            onChanged={async () => {
+              const uploads = await fetchDocumentUploads();
+              const invalidReason = documentUploadsInvalidReason(state.permissions, uploads);
+              if (invalidReason) {
+                throw new Error(invalidReason);
+              }
+              setState({
+                status: uploads.items.length > 0 ? "ready" : "empty",
+                loadedRole: state.loadedRole,
+                permissions: state.permissions,
+                uploads
+              });
+            }}
+          />
         </>
       ) : null}
     </section>
   );
+}
+
+function documentUploadsInvalidReason(
+  permissions: DocumentPermissionsResponse,
+  uploads: DocumentUploadListResponse
+): string | null {
+  if (!uploads.store.ready) {
+    return "个人材料存储当前未就绪，已停止展示上传明细。";
+  }
+  if (!sameUploadPermissions(permissions.upload_permissions, uploads.permissions)) {
+    return "个人材料权限响应不一致，已停止展示上传明细。";
+  }
+  if (!Array.isArray(uploads.items)) {
+    return "个人材料响应格式无效，已停止展示上传明细。";
+  }
+  return null;
 }
 
 function PersonalMaterialHistoryItem({ item }: { readonly item: DocumentUploadItem }) {
