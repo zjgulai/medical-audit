@@ -798,6 +798,27 @@ export type QueryHistoryResponse = {
   };
 };
 
+export type QueryHistoryReviewTaskRequest = {
+  readonly project_key: string;
+  readonly note?: string;
+};
+
+export type QueryHistoryReviewTaskResponse = {
+  readonly format: "query-history-review-task-v1";
+  readonly query_log_id: string;
+  readonly task_id: string;
+  readonly project_key: string;
+  readonly status: string;
+  readonly created: boolean;
+  readonly review_queue_href: "/reports";
+  readonly provider_call: false;
+  readonly audit: {
+    readonly status: "ready" | "local-only" | "degraded";
+    readonly intent_recorded: boolean;
+    readonly completion_recorded: boolean;
+  };
+};
+
 export type AuditFindingEvidenceItem = {
   readonly evidence_type: string;
   readonly chunk_id: string | null;
@@ -1261,7 +1282,7 @@ export type ProjectSummaryApiItem = {
   readonly name: string;
   readonly audit_topic: string;
   readonly organization_name: string;
-  readonly member_count: number;
+  readonly member_count: number | null;
   readonly creator: string;
   readonly creator_user_identifier: string;
   readonly created_at: string;
@@ -1293,6 +1314,8 @@ export type ProjectsResponse = {
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
+    readonly persistent_writes_ready?: boolean;
+    readonly history_review_task_writes_ready?: boolean;
   };
 };
 
@@ -1382,5 +1405,28 @@ export type ProjectMemberCreateResponse = {
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
+  };
+};
+
+export type ProjectCreateRequest = {
+  readonly project_key: string;
+  readonly name: string;
+  readonly scenario_key: string;
+  readonly audit_topic: string;
+  readonly organization_name: string;
+  readonly owner_department?: string;
+  readonly description?: string;
+};
+
+export type ProjectCreateResponse = {
+  readonly item: ProjectSummaryApiItem;
+  readonly creator_member: ProjectMemberApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+    readonly persistent_writes_ready?: boolean;
+  };
+  readonly audit: {
+    readonly status: "recorded" | "degraded";
   };
 };

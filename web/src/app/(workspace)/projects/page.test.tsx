@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import ProjectsPage from "./page";
 
 vi.mock("@/lib/api-client", () => ({
+  createProject: vi.fn(),
   createProjectMember: vi.fn(),
   fetchProjectDashboard: vi.fn(),
   fetchProjectMembers: vi.fn(),

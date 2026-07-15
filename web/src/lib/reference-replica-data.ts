@@ -14,6 +14,7 @@ export type ReferenceHistoryItem = {
   readonly agentName?: string;
   readonly summary?: string;
   readonly messages?: readonly ReferenceHistoryMessage[];
+  readonly taskConvertible?: boolean;
 };
 
 export type ReferenceHistoryMessage = {
@@ -117,7 +118,7 @@ export type ReferenceProject = {
   readonly name: string;
   readonly type: string;
   readonly owner: string;
-  readonly members: number;
+  readonly members: number | null;
   readonly status: string;
   readonly updatedAt: string;
   readonly progress: number;

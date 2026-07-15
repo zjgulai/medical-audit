@@ -170,7 +170,12 @@ export function ProjectManagementWorkbench() {
       setMembers((current) => [nextMember, ...current.filter((member) => member.id !== nextMember.id)]);
       setProjects((current) =>
         current.map((item) =>
-          item.id === selectedProject.id ? { ...item, memberCount: item.memberCount + 1 } : item
+          item.id === selectedProject.id
+            ? {
+                ...item,
+                memberCount: item.memberCount === null ? null : item.memberCount + 1
+              }
+            : item
         )
       );
       setName("");
@@ -286,7 +291,9 @@ export function ProjectManagementWorkbench() {
                         {item.organizationName} / {item.auditTopic}
                       </p>
                     </td>
-                    <td className="text-[var(--audit-ink-muted)]">{item.id === selectedProject.id ? members.length : item.memberCount}</td>
+                    <td className="text-[var(--audit-ink-muted)]">
+                      {item.id === selectedProject.id ? members.length : item.memberCount ?? "待同步"}
+                    </td>
                     <td className="text-[var(--audit-ink-muted)]">{item.creator}</td>
                     <td className="text-[var(--audit-ink-muted)]">{item.createdAt}</td>
                     <td>
@@ -733,7 +740,7 @@ function ProjectMobileCard({
   onSelect
 }: {
   readonly item: PortalProjectSummary;
-  readonly memberCount: number;
+  readonly memberCount: number | null;
   readonly selected: boolean;
   readonly onSelect: () => void;
 }) {
@@ -753,7 +760,9 @@ function ProjectMobileCard({
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div>
           <dt className="audit-meta">成员</dt>
-          <dd className="mt-1 font-semibold text-[var(--audit-ink)]">{memberCount}</dd>
+          <dd className="mt-1 font-semibold text-[var(--audit-ink)]">
+            {memberCount ?? "待同步"}
+          </dd>
         </div>
         <div>
           <dt className="audit-meta">创建</dt>

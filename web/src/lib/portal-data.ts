@@ -95,7 +95,7 @@ export type PortalProjectSummary = {
   readonly name: string;
   readonly auditTopic: string;
   readonly organizationName: string;
-  readonly memberCount: number;
+  readonly memberCount: number | null;
   readonly creator: string;
   readonly createdAt: string;
   readonly status: "待开始" | "进行中" | "已完成" | "已归档";
