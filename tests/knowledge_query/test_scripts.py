@@ -3297,6 +3297,111 @@ def test_deploy_tencent_cloud_valid_release_manifest_returns_stable_evidence(
     ).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "case",
+    ["empty", "missing", "extra", "invalid-value"],
+)
+def test_deploy_tencent_cloud_release_manifest_requires_exact_public_build_variables(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_release_public_build_variables_{case}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, payload, manifest_path = _deploy_release_fixture(tmp_path)
+    variables = payload["public_build_variables"]
+    assert isinstance(variables, dict)
+    if case == "empty":
+        variables.clear()
+    elif case == "missing":
+        variables.pop("NEXT_PUBLIC_AUDIT_ORG_LOGO")
+    elif case == "extra":
+        variables["NEXT_PUBLIC_UNREVIEWED_FLAG"] = "enabled"
+    elif case == "invalid-value":
+        variables["NEXT_PUBLIC_AUDIT_ORG_LOGO"] = 1
+    else:
+        raise AssertionError(f"unhandled case: {case}")
+    _rewrite_deploy_release_manifest(manifest_path, payload)
+
+    with pytest.raises(module.DeployError, match="public_build_variables"):
+        module._validate_web_release(config)
+
+
+def test_deploy_tencent_cloud_open_release_root_closes_fd_when_fstat_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_root_fstat_failure",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    web_out = tmp_path / "web" / "out"
+    web_out.mkdir(parents=True)
+    closed: list[int] = []
+    monkeypatch.setattr(module.os, "open", lambda *_args, **_kwargs: 73)
+    monkeypatch.setattr(
+        module.os,
+        "fstat",
+        lambda _fd: (_ for _ in ()).throw(OSError("injected fstat failure")),
+    )
+    monkeypatch.setattr(module.os, "close", lambda fd: closed.append(fd))
+
+    with pytest.raises(module.DeployError, match="web/out"):
+        module._open_release_root(web_out)
+
+    assert closed == [73]
+
+
+def test_deploy_tencent_cloud_open_release_root_closes_non_directory_fd(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_root_wrong_type",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    web_out = tmp_path / "web" / "out"
+    web_out.mkdir(parents=True)
+    closed: list[int] = []
+    regular_file_stat = os.stat_result(
+        (stat.S_IFREG | 0o644, 0, 0, 1, 1, 0, 0, 0, 0, 0),
+    )
+    monkeypatch.setattr(module.os, "open", lambda *_args, **_kwargs: 74)
+    monkeypatch.setattr(module.os, "fstat", lambda _fd: regular_file_stat)
+    monkeypatch.setattr(module.os, "close", lambda fd: closed.append(fd))
+
+    with pytest.raises(module.DeployError, match="web/out"):
+        module._open_release_root(web_out)
+
+    assert closed == [74]
+
+
+def test_deploy_tencent_cloud_open_release_root_closes_malformed_fstat_result(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_root_malformed_fstat",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    web_out = tmp_path / "web" / "out"
+    web_out.mkdir(parents=True)
+    closed: list[int] = []
+    monkeypatch.setattr(module.os, "open", lambda *_args, **_kwargs: 75)
+    monkeypatch.setattr(
+        module.os,
+        "fstat",
+        lambda _fd: types.SimpleNamespace(st_mode="not-an-integer-mode"),
+    )
+    monkeypatch.setattr(module.os, "close", lambda fd: closed.append(fd))
+
+    with pytest.raises(module.DeployError, match="web/out"):
+        module._open_release_root(web_out)
+
+    assert closed == [75]
+
+
 def test_deploy_tencent_cloud_release_gate_fails_closed_on_parent_directory_swap(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -3336,6 +3441,82 @@ def test_deploy_tencent_cloud_release_gate_fails_closed_on_parent_directory_swap
         module._validate_web_release(config)
 
     assert swapped is True
+
+
+def test_deploy_tencent_cloud_release_gate_rejects_special_file(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_special_file",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, _manifest_path = _deploy_release_fixture(tmp_path)
+    os.mkfifo(config.repo_root / "web/out/named-pipe")
+
+    with pytest.raises(module.DeployError, match="non-regular file"):
+        module._validate_web_release(config)
+
+
+def test_deploy_tencent_cloud_release_gate_rejects_replaced_root_path(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_replaced_root_path",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, _manifest_path = _deploy_release_fixture(tmp_path)
+    web_out = config.repo_root / "web/out"
+    preserved = config.repo_root / "web/out.preserved"
+    replacement = tmp_path / "replacement-out"
+    replacement.mkdir()
+    original_collect = module._collect_release_files
+    swapped = False
+
+    def collect_then_replace(root_fd: int) -> object:
+        nonlocal swapped
+        result = original_collect(root_fd)
+        if not swapped:
+            web_out.rename(preserved)
+            web_out.symlink_to(replacement, target_is_directory=True)
+            swapped = True
+        return result
+
+    monkeypatch.setattr(module, "_collect_release_files", collect_then_replace)
+
+    with pytest.raises(module.DeployError, match="web/out changed"):
+        module._validate_web_release(config)
+
+    assert swapped is True
+
+
+def test_deploy_tencent_cloud_release_gate_rejects_change_between_stability_scans(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_release_stability_scan_change",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config, _payload, _manifest_path = _deploy_release_fixture(tmp_path)
+    asset = config.repo_root / "web/out/_next/static/app.js"
+    original_collect = module._collect_release_files
+    collect_count = 0
+
+    def collect_then_mutate(root_fd: int) -> object:
+        nonlocal collect_count
+        result = original_collect(root_fd)
+        collect_count += 1
+        if collect_count == 1:
+            asset.write_bytes(b"changed between stability scans\n")
+        return result
+
+    monkeypatch.setattr(module, "_collect_release_files", collect_then_mutate)
+
+    with pytest.raises(module.DeployError, match="changed during release validation"):
+        module._validate_web_release(config)
+
+    assert collect_count == 2
 
 
 def test_deploy_tencent_cloud_release_manifest_has_bounded_read(

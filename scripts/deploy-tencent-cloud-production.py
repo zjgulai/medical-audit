@@ -36,6 +36,12 @@ RELEASE_MANIFEST_FIELDS = {
     "public_build_variables",
     "source_sha",
 }
+PUBLIC_BUILD_VARIABLES = (
+    "NEXT_PUBLIC_AUDIT_ORG_LOGO",
+    "NEXT_PUBLIC_AUDIT_ORG_NAME",
+    "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK",
+    "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS",
+)
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 FILE_HASH_CHUNK_SIZE = 1024 * 1024
 MAX_RELEASE_MANIFEST_BYTES = 16 * 1024 * 1024
@@ -625,8 +631,16 @@ def _open_release_root(web_out: Path) -> tuple[int, os.stat_result]:
         root_fd = os.open(web_out, DIRECTORY_OPEN_FLAGS)
     except OSError as exc:
         raise DeployError("web/out could not be opened safely") from exc
-    opened_stat = os.fstat(root_fd)
-    if not stat.S_ISDIR(opened_stat.st_mode) or not _same_file(root_stat, opened_stat):
+    try:
+        opened_stat = os.fstat(root_fd)
+        opened_root_is_valid = stat.S_ISDIR(opened_stat.st_mode) and _same_file(
+            root_stat,
+            opened_stat,
+        )
+    except (OSError, AttributeError, TypeError, ValueError) as exc:
+        os.close(root_fd)
+        raise DeployError("web/out could not be inspected after opening") from exc
+    if not opened_root_is_valid:
         os.close(root_fd)
         raise DeployError("web/out changed before it could be opened safely")
     return root_fd, opened_stat
@@ -747,9 +761,13 @@ def _validate_manifest_metadata(
         if type(value) is not str or not value:
             raise DeployError(f"web release manifest {field} is invalid")
     public_build_variables = payload["public_build_variables"]
-    if not isinstance(public_build_variables, dict) or any(
-        type(key) is not str or (value is not None and type(value) is not str)
-        for key, value in public_build_variables.items()
+    if (
+        not isinstance(public_build_variables, dict)
+        or set(public_build_variables) != set(PUBLIC_BUILD_VARIABLES)
+        or any(
+            type(key) is not str or (value is not None and type(value) is not str)
+            for key, value in public_build_variables.items()
+        )
     ):
         raise DeployError("web release manifest public_build_variables is invalid")
 
