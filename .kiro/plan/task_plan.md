@@ -242,10 +242,10 @@ Execution TODO:
 - [x] Phase 2 — 修复 conditional L3 合同：使用成功路径零日志的 catalog、全表 count/latest/fingerprint 与唯一 auditor identity 组合快照、补强 side-effect 元数据和 fail-closed 校验，并同步稳定 workflow；鉴权失败可能先写日志的限制已显式记录。
 - [x] Phase 3 — 本地验证：deployment-state 15 项聚焦验证、127 项脚本测试、全仓 Ruff/Mypy、618 项 Pytest 与 `git diff --check` 全部通过。
 - [x] Phase 4 — 独立复审：accepted P0/P1=`0`；认证拒绝、redirect、secret boundary、frontdoor、provider boundary、并发/retention、归因分类和 audit-log 写入路径均已收敛。
-- [ ] Phase 5 — GitHub 推广：原子 commit、push、Draft PR、Ready/merge gate；不得删除远端分支。
+- [x] Phase 5 — GitHub 推广准备：原子 commit `1cf7538` 已 push，Draft PR `#235` 精确包含 8 个文件，GitHub 报告 `MERGEABLE/CLEAN`、checks 未配置/未报告；Ready/merge 作为该 PR 外部最终状态执行并在 closeout 记录，不删除远端分支。
 - [x] Phase 6 — 部署决策：intended diff 仅含 operator-side 脚本/测试/文档/plan/release rules，`runtime_deploy_required=false`；禁止无意义重建生产 runtime。
 - [x] Phase 7 — 生产候选验收：独立 baseline/after 均为 `56066` 且最新时间一致；脚本内 count/latest/fingerprint 不变、唯一 auditor identity `0→0`，生产 marker 仍为 `2bba501...`，四个相关容器健康、49,051 embeddings、`provider_call_status=not_called`。
-- [ ] Phase 8 — 收尾（进行中）：同步 `.kiro/plan`、稳定 workflow 和 release 规则，完成 GitHub promotion，并给出最终允许/阻断结论。
+- [x] Phase 8 — 收尾记录：已同步 `.kiro/plan`、稳定 workflow 和 release rules，保存生产 JSON/Markdown 证据；PR Ready/merge outcome 由 GitHub 外部状态和最终 closeout 给出，避免在待合并 PR 内自称已 merge。
 
 Acceptance matrix:
 

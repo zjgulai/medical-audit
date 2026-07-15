@@ -1738,3 +1738,9 @@ Production candidate acceptance:
 - 报告 `status=pass`、`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`database_write=false`、`provider_call_status=not_called`、issues/warnings 为空。
 - runtime marker 仍为 `2bba501c93eaf1f6f7485241ec15e0c21c209842`；四个相关容器健康，frontdoor/static/mount/search 通过，matching embeddings `49051`。
 - 这是从本地 operator candidate 对现有 production runtime 的 L3 成功运行证据，不表示该 operator commit 已部署到 runtime；本轮 `runtime_deploy_required=false`，production unchanged。
+
+GitHub promotion evidence:
+
+- commit `1cf7538d51d5f1f0eb108ffcad92efc312dfc6a4` 已 push 并创建 Draft PR `#235`。
+- GitHub pre-merge state 为 `MERGEABLE/CLEAN`，head/base 精确匹配；status checks 为 `0`，没有 CI 通过证据。
+- PR 文件集合与 intended 8-file manifest 完全一致；remote branch retention 保持，未删除任何远端分支。

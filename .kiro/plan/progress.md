@@ -1134,3 +1134,11 @@ Phase 7 production candidate acceptance:
 - 生产 marker 匹配 `2bba501...`；app/PostgreSQL/ClamAV/Nginx 健康，frontdoor/static/mount 通过，matching embeddings `49051`，DLP reviewer `ruleset-v1`。
 - 报告：`tmp/outputs/tencent-cloud-deployment-state-conditional-l3-loop54-20260715.json` 与同名 `.md`；报告属于本地 ignored evidence，不进入 Git commit。
 - `provider_call_status=not_called` 来自 catalog boundary 和源码禁止调用测试，不是 provider 外部计量。
+
+Phase 5 GitHub promotion evidence before Ready/merge:
+
+- 原子 commit：`1cf7538d51d5f1f0eb108ffcad92efc312dfc6a4`；分支 `codex/deployment-audit-l3-contract-20260715` 已 push，远端分支保留。
+- Draft PR：`#235`，`https://github.com/zjgulai/medical-audit/pull/235`；base `main@2bba501...`，head 与本地 commit 一致。
+- GitHub 报告 `MERGEABLE`、`CLEAN`；status check count=`0`，只能表述为 checks 未配置/未报告，不能表述为 checks 通过。
+- PR 精确包含 8 个 intended files：三份 plan、release rules、稳定 workflow、operator script 和两份测试；不含 runtime/Web/Compose/Dockerfile/schema/migration。
+- 该记录写入待合并 PR 时，Ready/merge 尚未执行；最终 outcome 只能由后续 GitHub 外部状态和 closeout 证明，不能在本 commit 中预先声明。
