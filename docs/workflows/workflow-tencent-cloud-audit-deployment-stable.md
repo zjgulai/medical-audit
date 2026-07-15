@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-07-15
+updated: 2026-07-16
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,16 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-07-16 versioned Web release 与原子提交合同（本地实现，尚未部署）
+
+- 本地部署脚本已改为不可变版本目录：`/var/www/audit/releases/<approved-sha>`；共享 Nginx 的 audit 三个静态 location 统一读取 `/var/www/audit/current`，`current` 只允许指向 `releases/<40-char-sha>`。
+- 每次静态发布先同步到独占的 `<approved-sha>.incoming`，在远端重新校验 `release-manifest.json`、完整文件集合、size、SHA-256 与 `source_sha` 后再原子晋升；已存在的不可变目录只有在完整复验一致时才允许复用，禁止覆盖。
+- 部署通过 owner token 持有 `$remote_app_dir.deploy.lock`。后台备份 worker 会把自己的 `BASHPID` 写入 `lock/worker.pid`，正常退出时仅按匹配 PID 清除；worker 仍存活时外层 unlock 必须失败并保留锁。
+- Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
+- commit point 是部署后 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke 全部通过后，最后原子写入 `.deploy-sha`。app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。
+- 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
+- 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
 
 ### 2026-07-15 main@2bba501 生产部署与状态审计边界修正
 
@@ -1386,11 +1396,14 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 
 脚本执行的同步规则：
 
-1. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
-2. 将当前工作树同步到 `/opt/medical-audit/app/`。
-3. 排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
-4. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
-5. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
+1. 使用显式 `--approved-sha` 执行 frozen Web release build；`web/out/release-manifest.json` 必须通过本地完整文件集合、size、SHA-256、lockfile hash 与 source SHA 校验，`--skip-web-build` 也不能跳过该门禁。
+2. 获取 `$remote_app_dir.deploy.lock` 后再开始远端写操作；任何阶段都必须核对 owner token。后台备份 worker 存活或 owner 不匹配时，不得释放或接管锁。
+3. 先生成 app/env/db/nginx/web 全套备份。Web 备份排除 `audit/releases` 与 `audit/current`，不可变 release 不做重复打包。
+4. 将当前工作树同步到 `/opt/medical-audit/app/`，排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
+5. 将 `web/out/` 同步到 `/var/www/audit/releases/<approved-sha>.incoming/`；远端 verifier 通过后原子晋升为不可变的 `releases/<approved-sha>`。禁止直接覆盖 release，禁止对 `/var/www/audit/` 做 whole-root `rsync --delete`。
+6. 先验证 Nginx 候选配置，再通过 `current.next -> releases/<approved-sha>` 原子切换静态入口；宿主机共享 Nginx 配置必须保持 inode 不变，以免破坏 bind mount。
+7. app 镜像只使用 `MEDICAL_AUDIT_DEPLOY_SHA=<approved-sha>` 构建并以 `up -d --no-deps app` 重启；PostgreSQL 与 ClamAV 容器 ID 必须保持不变。
+8. 远端 release、公网 manifest/static hash、cache policy、容器 health、正式 Nginx 配置、默认 GET-only smoke 全部通过后，最后以 `.deploy-sha.next` + fsync + `mv -T` 提交 marker。marker 提交成功后不再追加第二次 SSH completion check。
 
 手工同步只作为脚本失败时的排障路径。需要同步 `data/医保审核前期资料` 或 `tmp/knowledge-query-indexes/real-data-kimi-20260531` 时，先确认是否属于索引数据更新任务，不并入普通应用部署。
 
@@ -1446,7 +1459,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 3. 执行 `nginx -t`。
 4. reload `ai_video_nginx`。
 5. 使用 certbot webroot 扩展 SAN，加入 `audit.lute-tlz-dddd.top`。
-6. 将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 中的 server block 合并到 nginx `http` 块。
+6. 常规应用部署由脚本精确更新唯一 audit server 的三个静态 location；禁止手工替换整个共享 Nginx 配置。只有首次接入或证书维护才将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 的 server block 人工合并到 `http` 块。
 7. 再次执行 `nginx -t`。
 8. reload `ai_video_nginx`。
 
@@ -1931,9 +1944,11 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --ssh-key ./ai_video.pem
 ```
 
-脚本会校验当前 `.deploy-sha`、app/web 备份和备份内旧 `.deploy-sha`，保留生产 env，恢复 app/web，仅重建 app，并要求 PostgreSQL/ClamAV 容器 ID 不变、`nginx -t` 和 health 通过；只有这些验证全部成功后才写回旧 marker。该模式不恢复数据库。
+脚本会校验当前 `.deploy-sha`、部署 transaction、app/web 备份和备份内旧 `.deploy-sha`，并保留生产 env。静态回滚优先复验现有不可变 `releases/<restore-sha>`；目标不存在时，从 app backup 的 `web/out` 重建到独占 incoming 后再原子晋升。只有 transaction 记录 `previous-current=LEGACY_NONE` 时才允许移除 `current` 回到未被版本化部署修改的 flat root；脚本绝不以 whole-root `rsync --delete` 恢复 Web。
 
-nginx 回滚：
+app 仅使用显式 `restore-sha` 构建并重启，PostgreSQL/ClamAV 容器 ID 必须不变。脚本在 Nginx backup 候选测试通过后原子切换 `current`，同 inode 恢复共享 Nginx，完成正式 `nginx -t`、reload、health、公网 release/hash/cache 校验，最后才以 `.deploy-sha.next` 原子写回旧 marker。该模式不恢复数据库；任一失败都会保留旧 marker 和生产锁，必须先完成手工恢复再清锁。
+
+仅在自动回滚失败并已保留生产锁时，按 transaction 证据执行手工 Nginx 恢复：
 
 1. 恢复部署前备份的 `/opt/ai-video/deploy/lighthouse/nginx.conf`。
 2. `docker exec ai_video_nginx nginx -t`
