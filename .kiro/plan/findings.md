@@ -1744,3 +1744,89 @@ GitHub promotion evidence:
 - commit `1cf7538d51d5f1f0eb108ffcad92efc312dfc6a4` 已 push 并创建 Draft PR `#235`。
 - GitHub pre-merge state 为 `MERGEABLE/CLEAN`，head/base 精确匹配；status checks 为 `0`，没有 CI 通过证据。
 - PR 文件集合与 intended 8-file manifest 完全一致；remote branch retention 保持，未删除任何远端分支。
+
+## 2026-07-15 Loop 56 PPT Production Closure Findings
+
+Verified baseline:
+
+- 附件 15 页曾被收敛为 R01-R19，并在本地报告中全部标记 pass；该报告是 local deterministic / fixture evidence，不能替代原始 PPT 逐页生产 UAT。
+- PR `#232` merge commit `b88ecdff7f773c8990454009d4a2b33ea8fdc2d4` 是 PPT 产品实现；它是已部署 SHA `2bba501c93eaf1f6f7485241ec15e0c21c209842` 的祖先。PR `#233/#234/#235` 未改变 `src/` 或 `web/` 产品 runtime。
+- 初始 `origin/main@f2e2c7...` 没有 `POST /projects` 或前端 `createProject`；现有项目 API 只包含列表、详情、成员、驾驶舱和新增成员。本 Loop 候选已补齐该缺口，但尚未合入或部署。
+- 初始历史对话抽屉只链接回 `/chat?history=...`；没有选择项目并人工转任务的 action/API。本 Loop 候选已补齐该缺口，但尚未合入或部署。
+- 初始文档 category adapter 使用 `document_count ?? chunk_count ?? 0`，会把未知统计或 chunk 数错误呈现为文档数。本 Loop 候选现只接受 `document_count`，未知保持 `null`，真实 `0` 保持 `0`。
+- 六类报告目录中只有 `workpaper` active，其余五类为 `awaiting-business-template`；业务流程图谱等待医院输入；三个扩展智能体受 feature flag 控制且当前无真实 provider smoke。
+
+Evidence-grade decision:
+
+- 允许声明：PR `#232` 的既有 PPT 产品范围已随生产 SHA `2bba501...` 部署；该生产版本有既有健康证据；本 Loop 三个新缺口仅为 L2 本地候选，尚未合入或部署。
+- 禁止声明：原始 PPT 已逐页生产验收；真实医院数据、业务流程图、五类正式模板或三个扩展智能体真实调用已完成。
+- 下一最小证据：对三个代码缺口先建立 RED tests，并生成覆盖最终代码的本地 Playwright matrix；生产 L4 验收另行执行。
+
+History-to-task architecture facts:
+
+- `QueryHistoryStore` 当前只有 `add_query` 与全量 `list_queries`，没有按 id/owner 读取；`SqlAlchemyQueryHistoryStore.list_queries` 也未按 `user_identifier` 过滤。人工转任务前必须新增 owner-scoped lookup，禁止用前端 history payload 作为可信证据。
+- 持久化 query history 已包含 `id`、`user_identifier`、`question`、`filters`、`answer_summary` 和 `retrieved_chunk_ids`，足以在不改 schema 的情况下形成 conversation-task dossier。
+- `ReviewTaskStore` 已支持持久化 `add_task`，且报告草稿创建已有“权限校验 -> project scope -> audit intent -> add task -> audit completed/degraded”的可复用两阶段模式。
+- 新 endpoint 应显式接收 `project_key`，从持久化 history 读取内容，以 query owner + project visibility + task permission 三重校验后创建 `source=query-history-manual-task` 的 pending-review task；不得自动批量转换。
+- 当前权限枚举没有 `create_review_task` 或 `create_project`；应采用最小权限扩展而不是借用不相干的管理权限。角色分配需 fail closed，并同步前端权限合同。
+
+Project-creation architecture facts:
+
+- `AuditProject` 表和 `AuditWorkflowRepository.create_project` 已存在，因此新建项目不需要 schema migration；表字段覆盖 project key、名称、scenario/status、owner department、created_by、description 和 metadata。
+- 当前门户项目列表并不读取 `audit_projects`，而是读取 `DEFAULT_PROJECT_PAYLOADS`；仅调用现有 repository 写入 `audit_projects` 会产生“写入成功但门户不可见”的伪闭环。
+- `SqlAlchemyProjectMemberStore` 已持有同一 database URL，并通过 `audit_project_members.project_key` 管理可见范围；最小一致路径是在该 collaboration store 中增加动态 project list/create，并在同一事务中创建 project 与创建人 active/负责人 membership。
+- `project_exists`、`project_payloads_with_member_counts` 和 `visible_project_keys` 被 routes_projects、routes_pages、routes_workbench、routes_query 复用；动态项目支持必须同步这些 helper/callers，不能只改 `/projects` 页面。
+- 最小权限建议新增 `CREATE_PROJECT`，先只授予 admin；创建项目后 creator 自动可见。后续如业务要求主任可创建，再通过明确权限决策扩展。
+
+Document metric implementation facts:
+
+- `ReplicaDocumentCategory.count` 已改为 `number | null`；只使用 `document_count`，不再以 `chunk_count` 冒充文档数；缺失时保留未知，真实 `0` 保持 `0`。
+- 页面总数采用保守聚合：任一分类未知则显示“待同步”，不会把未知相加为 `0`；真实空目录仍显示 `0`。
+- targeted frontend regression 已由主线程复验；本地浏览器 `/documents` 已确认真实 `0` 显示为 `0`，混合未知/chunk-only 由单元测试覆盖。
+
+Loop 56 implementation closure:
+
+- 历史转任务新增 owner-scoped history lookup 和 `POST /query/logs/{id}/review-task`。只有用户显式选择可见项目并提交后才创建 `pending-review` 任务；project visibility、task permission 与历史 owner 均 fail-closed。
+- UUID 的标准、uppercase 和无连字符写法统一为 canonical UUID；重复提交返回同一 task id，数据库仅保留一条任务。任务 store 失败时审计链以 `create-failed` 终止，不留下伪成功。
+- 历史任务采用专用 dossier renderer；JSON、Markdown 与 DOCX 均可导出，DOCX 正文包含历史问题、答案摘要、引用片段与审计范围。
+- 项目创建新增 admin-only `POST /projects` 和前端表单；动态项目与创建人成员在同一 transaction 中落库，创建后在 list/detail/members/dashboard/graph/report-draft 等既有可见范围链路可用。
+- 项目写路径要求显式持久化 project store 与 audit store；缺失时在业务写入前返回 `503`，不再回退到进程内 store。审计统一记录 `user_identifier`、`role`、`endpoint` 和 `project_key` entity。
+- 成员统计读取失败时动态项目返回 `member_count=null`，前端显示“待同步”；项目或历史转任务的 audit degraded 状态不会被成功提示隐藏。
+
+Independent review remediation:
+
+- 三路首轮只读复审发现的 canonical UUID、导出、terminal audit、持久化 project/audit store、审计索引、未知成员数、文档/chunk 语义、移动抽屉滚动、降级提示、表单与安全错误映射问题均已修复并补回归。
+- 后续复审补齐 operation-specific capability：项目创建/成员 mutation 同时要求 `store.ready && persistent_writes_ready`；历史转任务同时要求项目读取 ready、持久化项目成员 store 与持久化 review-task store。
+- `JsonFileReviewTaskStore` 的坏 JSON、非法 UTF-8、非 object root/tasks/entry、不可写路径与 Unicode 写入均 fail-closed；接口统一返回 `503`，原非法文件不被覆盖，审计仅留下单一 `intent -> create-failed` 终态。
+- 最终独立复审结论为 `accepted P0/P1/P2=0`，把握高。`codex review --uncommitted` helper 因本机 CLI/模型版本不匹配未产出结果，未计入通过证据。
+
+Fresh local acceptance:
+
+- 后端 targeted：历史/项目共 `28 passed`；全量 Pytest 收集 `645` 项并通过。
+- 前端全量 Vitest：`32 files / 295 tests`。
+- `uv run ruff check .`、`uv run mypy src`、`pnpm web:typecheck`、`pnpm web:lint`、`pnpm web:build`（`24/24` pages）和 `git diff --check` 均通过。
+- `pnpm local:fullstack:e2e`：`13/13 passed`。
+- 本地浏览器：项目创建返回 `201` 且创建人成员为项目负责人；历史转任务返回 `200`、`provider_call=false`、重复 UUID 保持同一 task；移动抽屉 `overflow-y:auto` 且关闭控件可达；Markdown/DOCX 导出均为 `200`。
+- 浏览器使用临时本地 SQLite 和显式 SQL stores；因此边界是 `database_write=local-test-only`、`production unchanged`、`provider_call=false`。
+- 发布准备状态：`ready_for_owner_authorization`；未 stage、commit、push、开 PR、merge 或 deploy。
+
+## 2026-07-15 Loop 57 PPT Candidate Promotion Findings
+
+Atomicity findings:
+
+- 38-file Loop 56 worktree 加 1 个提交计划文件后，最终 PR 候选预计为 39 files；`output/playwright/**`、临时 SQLite、缓存与 backups 均未进入 manifest。
+- 后端、项目/历史前端、文档统计、产品验收依据和推广状态账本按 5 个可独立回滚 concern 拆分；共享文件均整体归入单一 concern，没有同一版本的重复 patch staging。
+- 每个 staged set 都核对 name-status、stat 与 cached diff check；每次 commit 后 index 为空，剩余 concern 继续保持 unstaged。
+- refined secret scan 未发现 private key、GitHub token、OpenAI-style key 或 Tencent-style key；初次 `sk-` broad match 是 `risk-...` 业务字符串的 false positive。
+
+GitHub findings before final ledger push:
+
+- Draft PR `#236` 已存在，初始 head `c03b5ab...`；产品/验收 docs push 后 head 为 `d6b862c...`，local/remote 相等。
+- GitHub 新鲜状态为 `OPEN/Draft/MERGEABLE/CLEAN`，4 commits、36 files；checks count=`0`，不能声称 CI passed。
+- PR body 已包含验证证据、生产路径、回滚方案和 PPT 11/12/13/15 的医院输入/provider 阻塞。
+- 最终状态账本 commit 的 SHA、push 成功和 PR final head 必须在 commit 之后外部核对；该文件不自我引用未产生的 SHA。
+
+Evidence boundary:
+
+- 当前仅完成 GitHub Draft PR 推广，不是 Ready、merge、deploy preflight 或 production deploy。
+- `production unchanged`、`provider_call=false`、`database_write=false`、`deploy_execution=false`。

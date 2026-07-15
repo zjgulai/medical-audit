@@ -1833,6 +1833,7 @@ select {
   .replica-project-shell .replica-history-drawer {
     top: 108px;
     bottom: auto;
+    max-height: calc(100dvh - 132px);
   }
 }
 
@@ -1842,11 +1843,52 @@ select {
   right: 24px;
   bottom: 84px;
   width: min(320px, calc(100vw - 48px));
+  max-height: calc(100dvh - 108px);
+  overflow-y: auto;
   border: 1px solid #d6e4f3;
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgb(15 23 42 / 0.2);
   padding: 16px;
+}
+
+.replica-history-entry {
+  display: grid;
+  gap: 4px;
+}
+
+.replica-history-task-panel {
+  margin-top: 12px;
+  border-top: 1px solid #d6e4f3;
+  padding-top: 12px;
+}
+
+.replica-history-task-panel h3 {
+  margin: 0 0 8px;
+  color: #1e2a40;
+  font-size: 14px;
+}
+
+.replica-history-task-question {
+  margin: 0 0 10px;
+}
+
+.replica-history-task-field {
+  display: grid;
+  gap: 6px;
+}
+
+.replica-history-task-field select {
+  min-height: 38px;
+  border: 1px solid #d8e4f1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 7px 10px;
+  color: #26374f;
+}
+
+.replica-history-task-submit {
+  margin-top: 10px;
 }
 
 .replica-history-drawer .replica-history-header {
@@ -9355,6 +9397,7 @@ button.replica-graph-node.is-selected {
 .replica-project-workbench .replica-project-toolbar h2,
 .replica-project-workbench .replica-project-detail-header h2,
 .replica-project-workbench .replica-project-panel h3,
+.replica-project-workbench .replica-project-member-form h3,
 .replica-project-workbench .replica-project-member-form h4,
 .replica-project-workbench .replica-project-dashboard-list h4 {
   margin: 4px 0 0;
@@ -9371,7 +9414,8 @@ button.replica-graph-node.is-selected {
 }
 
 .replica-project-workbench select,
-.replica-project-workbench input {
+.replica-project-workbench input,
+.replica-project-workbench textarea {
   min-height: 38px;
   border: 1px solid #dbe3ee;
   border-radius: 8px;
@@ -9383,6 +9427,7 @@ button.replica-graph-node.is-selected {
 
 .replica-project-workbench select:focus-visible,
 .replica-project-workbench input:focus-visible,
+.replica-project-workbench textarea:focus-visible,
 .replica-project-workbench button:focus-visible {
   outline: 3px solid rgb(11 99 206 / 20%);
   outline-offset: 2px;
@@ -9518,9 +9563,23 @@ button.replica-graph-node.is-selected {
   padding-top: 16px;
 }
 
+.replica-project-workbench .replica-project-member-form h3,
 .replica-project-workbench .replica-project-member-form h4,
-.replica-project-workbench .replica-project-member-form [role="alert"] {
+.replica-project-workbench .replica-project-member-form [role="alert"],
+.replica-project-workbench .replica-project-member-form [role="status"],
+.replica-project-workbench .replica-project-form-hint {
   grid-column: 1 / -1;
+}
+
+.replica-project-workbench .replica-project-member-form h3,
+.replica-project-workbench .replica-project-form-hint {
+  margin: 0;
+}
+
+.replica-project-workbench .replica-project-form-hint,
+.replica-project-workbench .replica-project-member-form [role="status"] {
+  color: #5f6f84;
+  font-size: 13px;
 }
 
 .replica-project-workbench .replica-project-member-form label {

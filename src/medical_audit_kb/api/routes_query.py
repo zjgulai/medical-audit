@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.parse
 from datetime import UTC, datetime
@@ -9,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from medical_audit_kb.api.agent_store import (
     AgentStore,
@@ -25,8 +26,10 @@ from medical_audit_kb.api.auth import (
     AuthenticatedUser,
     HospitalRole,
     Permission,
+    record_authorization_denied,
     require_permission,
     resolve_authenticated_user,
+    user_has_permission,
 )
 from medical_audit_kb.api.chat_models import (
     ChatModelAlias,
@@ -40,13 +43,25 @@ from medical_audit_kb.api.document_permissions import (
     can_read_all_personal_uploads,
     enforce_source_collection_access,
 )
-from medical_audit_kb.api.project_member_store import ProjectMemberStore, visible_project_keys
-from medical_audit_kb.api.query_history_store import try_add_query_history, try_list_query_history
+from medical_audit_kb.api.project_member_store import (
+    ProjectMemberStore,
+    project_exists,
+    supports_persistent_project_writes,
+    visible_project_keys,
+)
+from medical_audit_kb.api.query_history_store import (
+    QueryHistoryNotFoundError,
+    QueryHistoryStore,
+    try_add_query_history,
+    try_list_query_history,
+)
 from medical_audit_kb.api.review_task_store import (
     ReviewTaskNotFoundError,
     ReviewTaskProjectScopeConflictError,
     ReviewTaskStore,
+    ReviewTaskStoreUnavailableError,
     review_task_project_key,
+    supports_persistent_review_task_writes,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -107,6 +122,13 @@ class MedicalAuditReviewTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     assigned_to: str | None = Field(default=None, max_length=128)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class QueryHistoryReviewTaskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_key: str = Field(min_length=1, max_length=128)
     note: str | None = Field(default=None, max_length=500)
 
 
@@ -382,16 +404,28 @@ def query(
 def query_logs(
     state: Annotated[ApiState, Depends(get_api_state)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
+    owner_identifier = _query_history_owner_identifier(
+        state=state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
     if state.query_history_store is not None:
         history_items, query_history_error = try_list_query_history(
             state.query_history_store,
             limit=limit,
+            user_identifier=owner_identifier,
         )
         if query_history_error is not None:
             record_operation(state, "query-history-list-failed", query_history_error)
             return {
-                "items": list(reversed(state.query_logs[-limit:])),
+                "items": _query_log_fallback_items(
+                    state,
+                    limit=limit,
+                    user_identifier=owner_identifier,
+                ),
                 "store": {
                     "ready": False,
                     "backend": state.query_history_store.__class__.__name__,
@@ -404,9 +438,555 @@ def query_logs(
             "store": {"ready": True, "backend": state.query_history_store.__class__.__name__},
         }
     return {
-        "items": list(reversed(state.query_logs[-limit:])),
+        "items": _query_log_fallback_items(
+            state,
+            limit=limit,
+            user_identifier=owner_identifier,
+        ),
         "store": {"ready": False, "backend": "memory"},
     }
+
+
+@router.post("/query/logs/{query_log_id}/review-task")
+def create_query_history_review_task(
+    query_log_id: str,
+    payload: QueryHistoryReviewTaskRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = _query_history_review_task_user(
+        state,
+        project_key=payload.project_key,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    history = _owned_query_history(
+        state,
+        query_log_id=query_log_id,
+        user_identifier=user.user_identifier,
+    )
+    canonical_query_log_id = str(history["id"])
+    _require_visible_query_history_project(
+        state,
+        project_key=payload.project_key,
+        user=user,
+    )
+    if not user_has_permission(user, Permission.CREATE_REVIEW_TASK):
+        record_authorization_denied(
+            state,
+            attempted_action="query-history-review-task-create",
+            permission=Permission.CREATE_REVIEW_TASK,
+            user_identifier=user.user_identifier,
+            raw_role=user.raw_role,
+            effective_role=user.role.value,
+            auth_source=user.auth_source,
+            profile_status=user.profile_status,
+            auth_scope_type="project",
+            auth_scope_key=payload.project_key,
+            status_code=403,
+            reason="create_review_task requires a higher hospital role",
+        )
+        raise HTTPException(status_code=403, detail="create_review_task is not allowed")
+
+    task_id = _query_history_review_task_id(canonical_query_log_id)
+    safe_audit_payload: dict[str, object] = {
+        "query_log_id": canonical_query_log_id,
+        "task_id": task_id,
+        "project_key": payload.project_key,
+        "user_identifier": user.user_identifier,
+        "role": user.legacy_api_role,
+        "endpoint": f"/api/v1/query/logs/{canonical_query_log_id}/review-task",
+        "provider_call": False,
+    }
+    try:
+        record_operation(
+            state,
+            "query-history-review-task-create-intent",
+            safe_audit_payload,
+        )
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": "query-history-review-task-create-unavailable",
+                "payload": {
+                    **safe_audit_payload,
+                    "status_code": 503,
+                    "reason": "audit-intent-unavailable",
+                    "error_type": type(exc).__name__,
+                },
+            }
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="query history review task audit is unavailable",
+        ) from exc
+
+    try:
+        task, created = _ensure_query_history_review_task(
+            state,
+            history=history,
+            task_id=task_id,
+            project_key=payload.project_key,
+            user=user,
+            note=payload.note,
+        )
+    except HTTPException as exc:
+        conflict = exc.status_code == 409
+        _record_query_history_operation_best_effort(
+            state,
+            (
+                "query-history-review-task-create-conflict"
+                if conflict
+                else "query-history-review-task-create-failed"
+            ),
+            {
+                **safe_audit_payload,
+                "status_code": exc.status_code,
+                "reason": (
+                    "review-task-conflict"
+                    if conflict
+                    else "review-task-store-unavailable"
+                ),
+            },
+        )
+        raise
+    completion_payload = {**safe_audit_payload, "created": created, "status_code": 200}
+    completion_recorded = True
+    try:
+        record_operation(
+            state,
+            "query-history-review-task-create-completed",
+            completion_payload,
+        )
+    except SQLAlchemyError as exc:
+        completion_recorded = False
+        state.operation_logs.append(
+            {
+                "action": "query-history-review-task-create-audit-degraded",
+                "payload": {
+                    **completion_payload,
+                    "reason": "audit-completion-unavailable",
+                    "error_type": type(exc).__name__,
+                },
+            }
+        )
+
+    return {
+        "format": "query-history-review-task-v1",
+        "query_log_id": canonical_query_log_id,
+        "task_id": str(task["task_id"]),
+        "project_key": payload.project_key,
+        "status": str(task["status"]),
+        "created": created,
+        "review_queue_href": "/reports",
+        "provider_call": False,
+        "audit": {
+            "status": (
+                "degraded"
+                if not completion_recorded
+                else "ready"
+                if state.audit_log_store is not None
+                else "local-only"
+            ),
+            "intent_recorded": True,
+            "completion_recorded": completion_recorded,
+        },
+    }
+
+
+def _query_history_owner_identifier(
+    *,
+    state: ApiState,
+    x_user_id: str | None,
+    x_role: str | None,
+) -> str:
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action="query-history-list",
+            permission=Permission.QUERY_KNOWLEDGE,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=normalized_user_identifier,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    if not user_has_permission(user, Permission.QUERY_KNOWLEDGE):
+        record_authorization_denied(
+            state,
+            attempted_action="query-history-list",
+            permission=Permission.QUERY_KNOWLEDGE,
+            user_identifier=user.user_identifier,
+            raw_role=user.raw_role,
+            effective_role=user.role.value,
+            auth_source=user.auth_source,
+            status_code=403,
+            reason="query_knowledge is not allowed",
+        )
+        raise HTTPException(status_code=403, detail="query_knowledge is not allowed")
+    return user.user_identifier
+
+
+def _query_log_fallback_items(
+    state: ApiState,
+    *,
+    limit: int,
+    user_identifier: str,
+) -> list[dict[str, object]]:
+    items = list(reversed(state.query_logs))
+    items = [item for item in items if item.get("user_identifier") == user_identifier]
+    return items[:limit]
+
+
+def _query_history_review_task_user(
+    state: ApiState,
+    *,
+    project_key: str,
+    x_user_id: str | None,
+    x_role: str | None,
+) -> AuthenticatedUser:
+    normalized_user_identifier = (x_user_id or "").strip()
+    if not normalized_user_identifier or normalized_user_identifier == "anonymous":
+        record_authorization_denied(
+            state,
+            attempted_action="query-history-review-task-create",
+            permission=Permission.CREATE_REVIEW_TASK,
+            user_identifier="anonymous",
+            raw_role=x_role,
+            status_code=401,
+            reason="X-User-Id header is required",
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise HTTPException(status_code=401, detail="X-User-Id header is required")
+    try:
+        return resolve_authenticated_user(
+            state,
+            x_user_id=normalized_user_identifier,
+            x_role=x_role,
+            project_key=project_key,
+        )
+    except HTTPException as exc:
+        record_authorization_denied(
+            state,
+            attempted_action="query-history-review-task-create",
+            permission=Permission.CREATE_REVIEW_TASK,
+            user_identifier=normalized_user_identifier,
+            raw_role=x_role,
+            status_code=exc.status_code,
+            reason=str(exc.detail),
+            auth_scope_type="project",
+            auth_scope_key=project_key,
+        )
+        raise
+
+
+def _owned_query_history(
+    state: ApiState,
+    *,
+    query_log_id: str,
+    user_identifier: str,
+) -> dict[str, object]:
+    store = _query_history_store_for_review_task(state)
+    try:
+        return store.get_query(query_log_id, user_identifier=user_identifier)
+    except QueryHistoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="query history not found") from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="query history store is unavailable",
+        ) from exc
+
+
+def _query_history_store_for_review_task(state: ApiState) -> QueryHistoryStore:
+    if state.query_history_store is None:
+        raise HTTPException(status_code=503, detail="query history store is unavailable")
+    return state.query_history_store
+
+
+def _require_visible_query_history_project(
+    state: ApiState,
+    *,
+    project_key: str,
+    user: AuthenticatedUser,
+) -> None:
+    store = state.project_member_store
+    if not supports_persistent_project_writes(store):
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        )
+    assert store is not None
+    try:
+        if not project_exists(project_key, store):
+            _record_query_history_project_denial(state, project_key=project_key, user=user)
+            raise HTTPException(status_code=404, detail="project not found")
+        visible_keys = visible_project_keys(
+            user_identifier=user.user_identifier,
+            is_admin=user.role is HospitalRole.ADMIN,
+            store=store,
+        )
+    except SQLAlchemyError as exc:
+        _record_query_history_operation_best_effort(
+            state,
+            "query-history-review-task-project-visibility-unavailable",
+            {
+                "project_key": project_key,
+                "user_identifier": user.user_identifier,
+                "status_code": 503,
+                "reason": "project-membership-store-unavailable",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project membership store is unavailable",
+        ) from exc
+    if project_key not in visible_keys:
+        _record_query_history_project_denial(state, project_key=project_key, user=user)
+        raise HTTPException(status_code=404, detail="project not found")
+
+
+def _record_query_history_project_denial(
+    state: ApiState,
+    *,
+    project_key: str,
+    user: AuthenticatedUser,
+) -> None:
+    record_authorization_denied(
+        state,
+        attempted_action="query-history-review-task-create",
+        permission=Permission.CREATE_REVIEW_TASK,
+        user_identifier=user.user_identifier,
+        raw_role=user.raw_role,
+        effective_role=user.role.value,
+        auth_source=user.auth_source,
+        profile_status=user.profile_status,
+        auth_scope_type="project",
+        auth_scope_key=project_key,
+        status_code=404,
+        reason="project not found",
+    )
+
+
+def _query_history_review_task_id(query_log_id: str) -> str:
+    digest = hashlib.sha256(query_log_id.encode("utf-8")).hexdigest()[:32]
+    return f"history-task-{digest}"
+
+
+def _ensure_query_history_review_task(
+    state: ApiState,
+    *,
+    history: dict[str, object],
+    task_id: str,
+    project_key: str,
+    user: AuthenticatedUser,
+    note: str | None,
+) -> tuple[dict[str, object], bool]:
+    store = _query_history_review_task_store(state)
+    try:
+        existing = store.get_task(task_id)
+    except ReviewTaskNotFoundError:
+        existing = None
+    except (SQLAlchemyError, ReviewTaskStoreUnavailableError) as exc:
+        raise HTTPException(status_code=503, detail="review task store is unavailable") from exc
+    if existing is not None:
+        _validate_existing_query_history_review_task(
+            existing,
+            query_log_id=str(history["id"]),
+            project_key=project_key,
+            user_identifier=user.user_identifier,
+        )
+        return existing, False
+
+    task = _query_history_review_task_payload(
+        history=history,
+        task_id=task_id,
+        project_key=project_key,
+        user=user,
+        note=note,
+    )
+    try:
+        return store.add_task(task), True
+    except (IntegrityError, ValueError):
+        try:
+            existing = store.get_task(task_id)
+        except ReviewTaskNotFoundError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="query history review task creation conflicted",
+            ) from exc
+        except (SQLAlchemyError, ReviewTaskStoreUnavailableError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="review task store is unavailable",
+            ) from exc
+        _validate_existing_query_history_review_task(
+            existing,
+            query_log_id=str(history["id"]),
+            project_key=project_key,
+            user_identifier=user.user_identifier,
+        )
+        return existing, False
+    except (SQLAlchemyError, ReviewTaskStoreUnavailableError) as exc:
+        raise HTTPException(status_code=503, detail="review task store is unavailable") from exc
+
+
+def _query_history_review_task_store(state: ApiState) -> ReviewTaskStore:
+    if not supports_persistent_review_task_writes(state.review_task_store):
+        raise HTTPException(status_code=503, detail="review task store is unavailable")
+    assert state.review_task_store is not None
+    return state.review_task_store
+
+
+def _query_history_review_task_payload(
+    *,
+    history: dict[str, object],
+    task_id: str,
+    project_key: str,
+    user: AuthenticatedUser,
+    note: str | None,
+) -> dict[str, object]:
+    now = _utc_now_iso()
+    filters = _dict_value(history.get("filters"))
+    filter_keys = (
+        "top_k",
+        "source_collections",
+        "effective_source_collections",
+        "personal_material_scope",
+        "years",
+        "regions",
+        "document_types",
+        "business_topics",
+        "topic",
+        "title_only",
+        "agent",
+        "model",
+        "generation_status",
+        "generation_failure_code",
+        "generation_http_status",
+    )
+    retrieved_chunk_ids = _string_items(history.get("retrieved_chunk_ids"))
+    snapshot = {
+        "query_log_id": str(history["id"]),
+        "question": str(history.get("question") or ""),
+        "answer_summary": _truncated_optional_str(history.get("answer_summary"), limit=500),
+        "filters": {key: filters[key] for key in filter_keys if key in filters},
+        "retrieved_chunk_ids": retrieved_chunk_ids,
+        "citation_count": len(retrieved_chunk_ids),
+        "created_at": str(history.get("created_at") or ""),
+        "user_identifier": user.user_identifier,
+    }
+    return {
+        "task_id": task_id,
+        "created_at": now,
+        "updated_at": now,
+        "status": "pending-review",
+        "status_label": REVIEW_STATUS_LABELS["pending-review"],
+        "question": snapshot["question"],
+        "citation_count": snapshot["citation_count"],
+        "review_gate": "历史对话快照仅作为人工复核输入，不构成审计疑点或结论。",
+        "confidence_label": "待复核",
+        "fallback_label": "历史对话",
+        "source": "query-history-manual",
+        "created_by": user.user_identifier,
+        "assigned_to": user.user_identifier,
+        "reviewer_note": note or "",
+        "conclusion": "",
+        "dossier": {
+            "format": "query-history-review-task-dossier-v1",
+            "project_key": project_key,
+            "created_by": user.user_identifier,
+            "query_history_snapshot": snapshot,
+            "workpaper": {
+                "status": "missing",
+                "status_label": "未建底稿",
+                "workpaper_id": "",
+                "note": "",
+            },
+            "owner_signoff": {
+                "status": "not-requested",
+                "status_label": "未提交确认",
+                "confirmed_by": "",
+                "confirmed_at": "",
+            },
+            "attachments": [],
+            "report_draft": {
+                "title": "",
+                "summary": "",
+                "rectification_request": "",
+                "updated_at": "",
+            },
+            "report_gate": {
+                "source": "query-history-manual",
+                "updated_at": now,
+            },
+        },
+    }
+
+
+def _validate_existing_query_history_review_task(
+    task: dict[str, object],
+    *,
+    query_log_id: str,
+    project_key: str,
+    user_identifier: str,
+) -> None:
+    dossier = _dict_value(task.get("dossier"))
+    existing_project_key = _optional_str(dossier.get("project_key"))
+    if existing_project_key != project_key:
+        raise HTTPException(
+            status_code=409,
+            detail="query history review task project scope conflicts",
+        )
+    snapshot = _dict_value(dossier.get("query_history_snapshot"))
+    if (
+        task.get("source") != "query-history-manual"
+        or _optional_str(snapshot.get("query_log_id")) != query_log_id
+        or _optional_str(task.get("created_by")) != user_identifier
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="query history review task is inconsistent",
+        )
+
+
+def _string_items(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [str(item) for item in value]
+
+
+def _truncated_optional_str(value: object, *, limit: int) -> str | None:
+    normalized = _optional_str(value)
+    if normalized is None:
+        return None
+    return normalized[:limit]
+
+
+def _record_query_history_operation_best_effort(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> None:
+    try:
+        record_operation(state, action, payload)
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": f"{action}-audit-degraded",
+                "payload": {**payload, "error_type": type(exc).__name__},
+            }
+        )
 
 
 def _query_history_item(item: dict[str, object]) -> dict[str, object]:

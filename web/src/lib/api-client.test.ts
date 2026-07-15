@@ -7,7 +7,9 @@ import {
   analyzeChatAttachment,
   createAuditAgent,
   createAuditAgentPromptVersion,
+  createProject,
   createProjectMember,
+  createQueryHistoryReviewTask,
   fetchAnalysisUploadHistory,
   fetchArchiveWorkbench,
   fetchAuthSession,
@@ -478,6 +480,53 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].question).toBe("医保基金审核依据");
+  });
+
+  it("creates a project-scoped review task from an owned query history item", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          format: "query-history-review-task-v1",
+          query_log_id: "query/history 001",
+          task_id: "history-task-001",
+          project_key: "SELF-CHECK-FUND-20260607",
+          status: "pending-review",
+          created: true,
+          review_queue_href: "/reports",
+          provider_call: false,
+          audit: { status: "ready", intent_recorded: true, completion_recorded: true }
+        })
+      }))
+    );
+
+    const result = await createQueryHistoryReviewTask("query/history 001", {
+      project_key: "SELF-CHECK-FUND-20260607",
+      note: "请人工复核"
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/query/logs/query%2Fhistory%20001/review-task",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "X-Project-Key": "SELF-CHECK-FUND-20260607",
+          "X-Role": "admin",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-admin"
+        },
+        body: JSON.stringify({
+          project_key: "SELF-CHECK-FUND-20260607",
+          note: "请人工复核"
+        }),
+        cache: "no-store"
+      }
+    );
+    expect(result.task_id).toBe("history-task-001");
+    expect(result.provider_call).toBe(false);
   });
 
   it("fetches audit findings with an optional review status filter", async () => {
@@ -2306,6 +2355,71 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.items[0].id).toBe("SELF-CHECK-FUND-20260607");
+  });
+
+  it("creates a project without sending a default project scope header", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          item: {
+            id: "FUND-CHECK-202607",
+            name: "医保基金专项检查",
+            audit_topic: "医保基金使用合规",
+            organization_name: "某医院",
+            member_count: 1,
+            creator: "next-admin",
+            creator_user_identifier: "next-admin",
+            created_at: "2026-07-15T04:00:00Z",
+            status: "待开始",
+            operation_label: "进入项目",
+            source: "collaboration-v1"
+          },
+          creator_member: {
+            id: "member-custom-001",
+            project_key: "FUND-CHECK-202607",
+            user_identifier: "next-admin",
+            name: "next-admin",
+            role: "项目负责人",
+            department: "内审部",
+            status: "在项目中",
+            created_by: "next-admin",
+            source: "custom",
+            metadata: {}
+          },
+          store: { ready: true, backend: "SqlAlchemyProjectMemberStore" },
+          audit: { status: "recorded" }
+        })
+      }))
+    );
+
+    const payload = {
+      project_key: "FUND-CHECK-202607",
+      name: "医保基金专项检查",
+      scenario_key: "charging-compliance",
+      audit_topic: "医保基金使用合规",
+      organization_name: "某医院",
+      owner_department: "内审部",
+      description: "专项检查"
+    } as const;
+    const result = await createProject(payload);
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/projects", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Role": "admin",
+        "X-Tenant-Id": "hospital-demo",
+        "X-User-Id": "next-admin"
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store"
+    });
+    expect(result.item.id).toBe("FUND-CHECK-202607");
+    expect(result.creator_member.role).toBe("项目负责人");
+    expect(result.audit.status).toBe("recorded");
   });
 
   it("fetches project members through the versioned API proxy", async () => {

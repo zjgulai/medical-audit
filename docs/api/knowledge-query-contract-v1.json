@@ -3,6 +3,7 @@
   "project": "medical_audit",
   "status": "stable",
   "created_at": "2026-07-04T13:45:00+08:00",
+  "updated_at": "2026-07-15T14:33:00+08:00",
   "evidence_grade": "L1-local-contract-freeze",
   "purpose": "Freeze the frontend-backend query contract while the frontend is being refactored.",
   "source_collections": {
@@ -201,6 +202,14 @@
       "method": "GET",
       "backend_path": "/query/logs",
       "frontend_proxy_path": "/api/v1/query/logs",
+      "authentication": {
+        "required_headers": [
+          "X-User-Id"
+        ],
+        "anonymous_status": 401,
+        "owner_scoped": true,
+        "foreign_records_hidden": true
+      },
       "query_parameters": {
         "limit": {
           "type": "integer",
@@ -220,6 +229,67 @@
           "backend"
         ]
       }
+    },
+    "post_query_log_review_task": {
+      "method": "POST",
+      "backend_path": "/query/logs/{query_log_id}/review-task",
+      "frontend_proxy_path": "/api/v1/query/logs/{query_log_id}/review-task",
+      "authentication": {
+        "required_headers": [
+          "X-User-Id"
+        ],
+        "required_permission": "create_review_task",
+        "owner_scoped_history": true,
+        "visible_project_required": true,
+        "foreign_records_hidden_as": 404
+      },
+      "request": {
+        "content_type": "application/json",
+        "required": [
+          "project_key"
+        ],
+        "optional": [
+          "note"
+        ]
+      },
+      "response": {
+        "required": [
+          "format",
+          "query_log_id",
+          "task_id",
+          "project_key",
+          "status",
+          "created",
+          "review_queue_href",
+          "provider_call",
+          "audit"
+        ],
+        "provider_call": false,
+        "audit_statuses": [
+          "ready",
+          "local-only",
+          "degraded"
+        ]
+      },
+      "idempotency": {
+        "source": "canonical persisted query_log_id",
+        "equivalent_uuid_representations_share_task": true
+      },
+      "side_effects": {
+        "review_task_write": true,
+        "persistent_review_task_store_required": true,
+        "persistent_project_membership_store_required": true,
+        "audit_intent": true,
+        "audit_terminal_event": true,
+        "provider_call": false
+      },
+      "errors": [
+        401,
+        403,
+        404,
+        409,
+        503
+      ]
     }
   },
   "frontend_freeze_points": [
@@ -228,6 +298,8 @@
     "Render citations and basis_groups source_collection fields as the evidence source of record.",
     "Treat query_log_id as nullable; no-history and query-history-store failure modes are valid.",
     "Treat agent_invocation_id as nullable; it is present only when agent selection is active.",
+    "Send X-User-Id for query-history reads and render only the authenticated owner's records.",
+    "Create a review task only after an explicit visible project selection; require store.ready and history_review_task_writes_ready from the project catalog; and surface audit degradation.",
     "Classify 400, 403, 404, and 409 into typed frontend states."
   ],
   "unsupported_claims": [

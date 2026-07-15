@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
@@ -22,6 +22,10 @@ class ReviewTaskNotFoundError(KeyError):
 
 
 class ReviewTaskProjectScopeConflictError(ValueError):
+    pass
+
+
+class ReviewTaskStoreUnavailableError(RuntimeError):
     pass
 
 
@@ -60,6 +64,7 @@ class ReviewTaskStore(Protocol):
 
 @dataclass(slots=True)
 class SqlAlchemyReviewTaskStore:
+    supports_persistent_writes: ClassVar[bool] = True
     database_url: str
     create_schema: bool = False
     _engine: Engine = field(init=False, repr=False)
@@ -159,6 +164,7 @@ class SqlAlchemyReviewTaskStore:
 
 @dataclass(slots=True)
 class JsonFileReviewTaskStore:
+    supports_persistent_writes: ClassVar[bool] = True
     path: Path
     _lock: RLock = field(default_factory=RLock, init=False, repr=False, compare=False)
 
@@ -208,32 +214,52 @@ class JsonFileReviewTaskStore:
         raise ReviewTaskNotFoundError(task_id)
 
     def _read_tasks(self) -> list[dict[str, object]]:
-        if not self.path.exists():
-            return []
-        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            if not self.path.exists():
+                return []
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ReviewTaskStoreUnavailableError(
+                "review task store could not be read"
+            ) from exc
         if not isinstance(raw, dict):
-            raise ValueError(f"review task store must contain an object: {self.path}")
+            raise ReviewTaskStoreUnavailableError(
+                "review task store must contain an object"
+            )
         tasks = raw.get("tasks")
         if not isinstance(tasks, list):
-            raise ValueError(f"review task store must contain a tasks list: {self.path}")
-        return [task for task in tasks if isinstance(task, dict)]
+            raise ReviewTaskStoreUnavailableError(
+                "review task store must contain a tasks list"
+            )
+        if any(not isinstance(task, dict) for task in tasks):
+            raise ReviewTaskStoreUnavailableError(
+                "review task store tasks must contain only objects"
+            )
+        return tasks
 
     def _write_tasks(self, tasks: list[dict[str, object]]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "format": "review-task-store-v1",
-            "tasks": tasks,
-        }
-        tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-        tmp_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(self.path)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "format": "review-task-store-v1",
+                "tasks": tasks,
+            }
+            tmp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+            tmp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+            tmp_path.replace(self.path)
+        except (OSError, UnicodeError) as exc:
+            raise ReviewTaskStoreUnavailableError(
+                "review task store could not be written"
+            ) from exc
 
 
 @dataclass(slots=True)
 class InMemoryReviewTaskStore:
+    supports_persistent_writes: ClassVar[bool] = False
     tasks: list[dict[str, object]] = field(default_factory=list)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False, compare=False)
 
@@ -273,6 +299,10 @@ class InMemoryReviewTaskStore:
 
 def _copy_tasks(tasks: list[dict[str, object]]) -> list[dict[str, object]]:
     return [copy.deepcopy(task) for task in tasks]
+
+
+def supports_persistent_review_task_writes(store: ReviewTaskStore | None) -> bool:
+    return bool(store is not None and getattr(store, "supports_persistent_writes", False))
 
 
 def _sync_database_url(database_url: str) -> str:

@@ -265,3 +265,57 @@ Evidence boundary:
 
 - 当前生产部署已完成；本 Loop 的新目标不是重复部署，而是修复 operator-side 验收工具并证明一次成功运行的全局 audit snapshot 不变且唯一 auditor identity 零事件。
 - Phase 7 已证明本次成功运行可分类为 `L3-production-read-only`；仍不得把工具宣传为 all-path read-only，鉴权失败或并发变化会失败关闭并分类为 `audit-log-only` 或 `unknown`。
+
+## 2026-07-15 Loop 56 PPT Production Closure
+
+Goal:
+
+- 将 `/Users/pray/Desktop/audit/前端页面沟通0710.pptx` 的 15 页反馈重新建立为逐页生产闭环矩阵，不再用收敛后的 R01-R19 本地通过替代原始 PPT 业务语义。
+- 在当前 `origin/main` 基线实现三个明确缺口：历史对话人工转任务、有权限的新建项目、缺失文档统计与真实 `0` 的区分。
+- 对真实数据分析、业务流程图谱、五类未交付正式模板和三个扩展智能体真实调用保持显式阻塞，直到医院输入或独立 provider 授权到位。
+
+Execution TODO:
+
+- [x] Phase 0 — 冻结基线：从 fresh `origin/main` 创建 `codex/ppt-production-closure-20260715`；确认 worktree clean、生产 runtime 仍以 `2bba501...` 为最近验证基线。
+- [x] Phase 1 — 建立 15 页逐项验收矩阵：区分代码实现、最终提交覆盖、本地交互、生产路由、生产业务动作和业务输入阻塞。
+- [x] Phase 2 — 历史对话人工转任务：复用 query history、project scope、ReviewTaskStore 和权限合同；已完成 owner-scoped lookup、显式项目选择、稳定幂等任务、审计 intent/completion/failure 与 Markdown/DOCX 底稿导出，无自动建任务。
+- [x] Phase 3 — 有权限的新建项目：复用现有项目/成员模型；已完成 admin-only API/UI、项目与创建人成员同事务、持久化 project/audit store fail-closed、动态项目跨路由可见和未知成员数语义，无 schema 变更。
+- [x] Phase 4 — 文档统计语义：未知统计显示“待同步”，真实 `0` 保持 `0`；catalog/页面 degraded/error 回归已通过主线程复验。
+- [x] Phase 5 — 本地验收：相关 backend/frontend tests、全量 Ruff/Mypy/Pytest/Vitest、typecheck、lint、build、local full-stack E2E 与 Playwright 交互矩阵均通过；截图覆盖文档真实 0、项目创建及移动端历史转任务。
+- [x] Phase 6 — 独立复审与发布准备：已保存 evidence matrix、检查 38-file 窄 scope worktree、完成多轮 fail-closed 修复与最终复审；accepted P0/P1/P2=`0`，状态为 `ready_for_owner_authorization`。本阶段未 commit、push、开 PR、merge 或 deploy。
+- [ ] Phase 7 — 生产与 provider 门禁：生产浏览器完整矩阵只能以明确的 L4 `audit-log-only` 运行；项目创建、转任务、上传和真实 provider smoke 均是独立 L4 业务写入/外部调用，不与本地验收合并执行。
+
+Acceptance contract:
+
+- 原始 PPT 15 页每页都有 `implemented / partial / blocked / not-applicable` 状态及对应代码、测试或生产证据；不得仅引用 R01-R19 汇总 pass。
+- 历史对话不会自动创建任务；只有用户显式选择项目并提交时才创建一条可追溯任务，失败不得静默或伪成功。
+- 新建项目只有具备明确权限的身份可执行；创建人自动进入可见范围，非成员不可通过直接 URL 读取。
+- 文档统计未知、后端 degraded/error 与真实 `0` 三种状态在 API adapter 和页面展示上可区分。
+- 本轮所有本地验证保持 `provider_call=false`、`database_write=local-test-only`；未取得独立生产执行证据前保持 `production unchanged`。
+
+Stop conditions:
+
+- 任何实现要求 schema migration、历史生产数据 backfill、读取 secrets、生产 SQL 写入或真实 provider 调用时停止并单独列门。
+- 项目创建或转任务若无法复用现有持久化模型与权限合同，不以 fixture/localStorage 伪装完成。
+- 最终生产交互矩阵如会写审计日志，只能在显式 L4 `audit-log-only` 授权下执行并记录 delta；不得标为 L3。
+
+## 2026-07-15 Loop 57 PPT Candidate Promotion
+
+Goal:
+
+- 以生产部署为最终目标，把 Loop 56 的 L2 本地候选整理为可审阅、可回滚、可部署的 GitHub Draft PR。
+- 保持 PR Ready、merge、clean-main deploy preflight 与生产 `--execute` 为后续独立证据门，不把 Draft PR 创建表述为已部署。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复 Loop 56 计划与证据，确认当前分支、无 staged 内容、38-file 候选集合和最终全量门禁。
+- [x] Phase 1 — 按 `drafts/analysis/ppt-production-closure-atomic-commit-plan-draft-20260715.md` 创建三个显式 manifest 的业务原子 commit；第四个 docs-only 推广证据 commit 在 Draft PR 创建后生成。
+- [x] Phase 2 — 确认业务 commit chain 线性、`origin/main` 为祖先，push 当前分支并创建 Draft PR `#236`。
+- [x] Phase 3 — 核对实际 head/base、文件清单、mergeability、checks 和生产部署/回滚说明；第四个 docs-only commit `d6b862c` 已创建、push，并由 GitHub 确认为当前 head。
+- [x] Phase 4 — 创建本地推广状态账本 commit（即包含本条记录的 commit）；其最终 push 与 remote head equality 由 GitHub 外部状态和最终 closeout 证明，不在 commit 内预写自身 SHA。停在 `ready_for_pr_review`，不在本 Loop 隐式 Ready、merge 或 deploy。
+
+Acceptance contract:
+
+- 禁止 `git add .`；每个 commit 的 staged manifest、stat 和 `git diff --cached --check` 必须在提交前核验。
+- Draft PR 必须只包含 Loop 56 的三个产品闭环及其测试/合同/验收记录，不包含 `output/`、临时 SQLite、screenshots 或 secrets。
+- 当前生产保持 `production unchanged`、`provider_call=false`、`database_write=false`、`deploy_execution=false`。

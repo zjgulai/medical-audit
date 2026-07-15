@@ -14,3 +14,19 @@ describe("report draft client permissions", () => {
     expect(hasAuditClientPermission("technician", "create_report_draft")).toBe(false);
   });
 });
+
+describe("PPT closure client permissions", () => {
+  it("allows review-task creation for audit roles but not technicians", () => {
+    expect(hasAuditClientPermission("admin", "create_review_task")).toBe(true);
+    expect(hasAuditClientPermission("director", "create_review_task")).toBe(true);
+    expect(hasAuditClientPermission("member", "create_review_task")).toBe(true);
+    expect(hasAuditClientPermission("technician", "create_review_task")).toBe(false);
+  });
+
+  it("allows project creation only for administrators", () => {
+    expect(hasAuditClientPermission("admin", "create_project")).toBe(true);
+    expect(hasAuditClientPermission("director", "create_project")).toBe(false);
+    expect(hasAuditClientPermission("member", "create_project")).toBe(false);
+    expect(hasAuditClientPermission("technician", "create_project")).toBe(false);
+  });
+});

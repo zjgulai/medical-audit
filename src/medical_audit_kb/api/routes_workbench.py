@@ -954,7 +954,12 @@ def _authorize_project_graph(
     user: AuthenticatedUser,
     project_key: str,
 ) -> None:
-    if not project_exists(project_key):
+    member_store = state.project_member_store
+    try:
+        exists = project_exists(project_key, member_store)
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="project store is not available") from exc
+    if not exists:
         raise HTTPException(status_code=404, detail="project not found")
     if user.user_identifier == "anonymous":
         _record_project_graph_denial(state=state, user=user)
@@ -962,7 +967,6 @@ def _authorize_project_graph(
     if user.role is HospitalRole.ADMIN:
         return
 
-    member_store = state.project_member_store
     if member_store is None:
         raise HTTPException(status_code=503, detail="project member store is not available")
     try:
@@ -1030,7 +1034,7 @@ def _project_evidence_graph(
 
     project = next(
         item
-        for item in project_payloads_with_member_counts({})
+        for item in project_payloads_with_member_counts({}, state.project_member_store)
         if str(item["id"]) == project_key
     )
     project_name = str(project["name"])

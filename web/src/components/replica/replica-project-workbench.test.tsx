@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 import {
+  createProject,
   createProjectMember,
   fetchProjectDashboard,
   fetchProjectMembers,
@@ -32,6 +33,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/api-client", () => ({
+  createProject: vi.fn(),
   createProjectMember: vi.fn(),
   fetchProjectDashboard: vi.fn(),
   fetchProjectMembers: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("@/lib/api-client", () => ({
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchProjectMembersMock = vi.mocked(fetchProjectMembers);
 const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
+const createProjectMock = vi.mocked(createProject);
 const createProjectMemberMock = vi.mocked(createProjectMember);
 const globalsCss = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf-8");
 
@@ -50,7 +53,7 @@ function project(
   id: string,
   name: string,
   status: ApiProjectStatus = "进行中",
-  memberCount = 1
+  memberCount: number | null = 1
 ): ProjectSummaryApiItem {
   return {
     id,
@@ -69,14 +72,20 @@ function project(
 
 function projectsResponse(
   items: readonly ProjectSummaryApiItem[],
-  ready = true
+  ready = true,
+  persistentWritesReady = ready
 ): ProjectsResponse {
   return {
     items,
     roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
     statuses: ["在项目中", "待确认"],
     project_statuses: projectStatuses,
-    store: { ready, backend: ready ? "SqlAlchemyProjectMemberStore" : "unavailable" }
+    store: {
+      ready,
+      backend: ready ? "SqlAlchemyProjectMemberStore" : "unavailable",
+      persistent_writes_ready: persistentWritesReady,
+      history_review_task_writes_ready: persistentWritesReady
+    }
   };
 }
 
@@ -195,6 +204,7 @@ beforeEach(() => {
   fetchProjectsMock.mockResolvedValue(projectsResponse([alpha]));
   fetchProjectMembersMock.mockResolvedValue(membersResponse(alpha.id, [member("ALPHA-M1", alpha.id, "张审计")]));
   fetchProjectDashboardMock.mockResolvedValue(dashboardResponse(alpha));
+  createProjectMock.mockRejectedValue(new Error("not configured"));
   createProjectMemberMock.mockRejectedValue(new Error("not configured"));
 });
 
@@ -205,10 +215,20 @@ describe("ReplicaProjectWorkbench", () => {
     );
   });
 
+  it("lays out the create form as a readable full-width semantic section", () => {
+    expect(globalsCss).toMatch(
+      /\.replica-project-workbench \.replica-project-member-form h3,[^}]*\[role="status"\][^{]*\{[^}]*grid-column:\s*1\s*\/\s*-1;/s
+    );
+    expect(globalsCss).toMatch(
+      /\.replica-project-workbench select,[^}]*\.replica-project-workbench input,[^}]*\.replica-project-workbench textarea\s*\{/s
+    );
+  });
+
   it("renders the API project list, canonical status filter and truthful zero", async () => {
     const alpha = project("ALPHA", "Alpha项目", "进行中", 2);
     const done = project("DONE", "已完成项目", "已完成", 0);
-    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha, done]));
+    const unknown = project("UNKNOWN", "成员待同步项目", "进行中", null);
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha, done, unknown]));
 
     render(<ReplicaProjectWorkbench />);
 
@@ -223,6 +243,8 @@ describe("ReplicaProjectWorkbench", () => {
     ]);
     const doneRow = screen.getByRole("row", { name: /已完成项目/ });
     expect(within(doneRow).getByText("0")).toBeInTheDocument();
+    const unknownRow = screen.getByRole("row", { name: /成员待同步项目/ });
+    expect(within(unknownRow).getByText("待同步")).toBeInTheDocument();
 
     fireEvent.change(statusFilter, { target: { value: "已完成" } });
     expect(screen.getByRole("row", { name: /已完成项目/ })).toBeInTheDocument();
@@ -271,6 +293,90 @@ describe("ReplicaProjectWorkbench", () => {
     expect(screen.getByText("Alpha项目同步完成")).toBeInTheDocument();
     expect(screen.getByText("live-db-connected")).toBeInTheDocument();
     expect(screen.getByText("SqlAlchemyProjectMemberStore / SqlAlchemyAuditFindingStore")).toBeInTheDocument();
+  });
+
+  it("creates a project exactly once from the admin-only form", async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof createProject>>>();
+    const createdProject = {
+      ...project("FUND-CHECK-202607", "医保基金专项检查", "待开始", 1),
+      audit_topic: "医保基金使用合规",
+      organization_name: "测试医院",
+      creator: "next-admin",
+      creator_user_identifier: "next-admin",
+      source: "collaboration-v1"
+    };
+    createProjectMock.mockReturnValue(pendingCreate.promise);
+
+    render(<ReplicaProjectWorkbench />);
+
+    const form = await screen.findByRole("form", { name: "新建项目" });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目编码" }), {
+      target: { value: "  FUND-CHECK-202607  " }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称" }), {
+      target: { value: " 医保基金专项检查 " }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "机构名称" }), {
+      target: { value: " 测试医院 " }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "负责部门" }), {
+      target: { value: " 内审部 " }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目说明" }), {
+      target: { value: " 本地合同测试 " }
+    });
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(createProjectMock).toHaveBeenCalledTimes(1);
+    expect(createProjectMock).toHaveBeenCalledWith({
+      project_key: "FUND-CHECK-202607",
+      name: "医保基金专项检查",
+      scenario_key: "charging-compliance",
+      audit_topic: "医保基金使用合规",
+      organization_name: "测试医院",
+      owner_department: "内审部",
+      description: "本地合同测试"
+    });
+    expect(screen.getByRole("button", { name: "创建中" })).toBeDisabled();
+
+    await act(async () => {
+      pendingCreate.resolve({
+        item: createdProject,
+        creator_member: {
+          ...member("CREATOR-MEMBER", createdProject.id, "next-admin", "next-admin"),
+          role: "项目负责人"
+        },
+        store: { ready: true, backend: "SqlAlchemyProjectMemberStore" },
+        audit: { status: "degraded" }
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("项目已创建：医保基金专项检查")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "项目已创建，但完成审计记录未写入；请联系管理员核查。"
+    );
+    expect(screen.getByRole("button", { name: "查看：医保基金专项检查" })).toBeInTheDocument();
+  });
+
+  it("keeps a 409 conflict out of the project list", async () => {
+    createProjectMock.mockRejectedValue(Object.assign(new Error("conflict"), { status: 409 }));
+    render(<ReplicaProjectWorkbench />);
+    const form = await screen.findByRole("form", { name: "新建项目" });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目编码" }), {
+      target: { value: "DUPLICATE" }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称" }), {
+      target: { value: "重复项目" }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "机构名称" }), {
+      target: { value: "测试医院" }
+    });
+    fireEvent.submit(form);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("项目编码已存在");
+    expect(screen.queryByRole("button", { name: "查看：重复项目" })).not.toBeInTheDocument();
   });
 
   it("opens a visible project from the project URL parameter", async () => {
@@ -493,6 +599,38 @@ describe("ReplicaProjectWorkbench", () => {
     expect(within(screen.getByRole("row", { name: /Alpha项目/ })).getByText("2")).toBeInTheDocument();
   });
 
+  it("keeps an unknown member count unknown and blocks writes while reads are degraded", async () => {
+    const alpha = project("ALPHA", "Alpha项目", "进行中", null);
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha], false, true));
+
+    render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    await screen.findByText("ALPHA-M1-account");
+
+    expect(within(screen.getByRole("row", { name: /Alpha项目/ })).getByText("待同步")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新增成员" })).toBeDisabled();
+    expect(createProjectMemberMock).not.toHaveBeenCalled();
+  });
+
+  it("disables member creation when project reads work but persistent writes are unavailable", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    const response = projectsResponse([alpha]);
+    fetchProjectsMock.mockResolvedValue({
+      ...response,
+      store: {
+        ...response.store,
+        persistent_writes_ready: false
+      }
+    } as ProjectsResponse);
+
+    render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    await screen.findByText("ALPHA-M1-account");
+
+    expect(screen.getByText("项目持久化写入未就绪，暂不能新增成员")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新增成员" })).toBeDisabled();
+  });
+
   it("submits the semantic member form exactly once during synchronous duplicate submits", async () => {
     const alpha = project("ALPHA", "Alpha项目");
     const pendingCreate = deferred<Awaited<ReturnType<typeof createProjectMember>>>();
@@ -569,6 +707,7 @@ describe("ReplicaProjectWorkbench", () => {
     expect(await screen.findByText("ALPHA-M1-account")).toBeInTheDocument();
     expect(screen.getByText("当前角色仅可查看项目成员")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新增成员" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "新建项目" })).not.toBeInTheDocument();
   });
 
   it("reloads role-scoped projects and clears the previous role selection", async () => {

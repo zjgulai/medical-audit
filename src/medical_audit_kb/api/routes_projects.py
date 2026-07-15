@@ -19,15 +19,18 @@ from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_STATUSES,
     PROJECT_STATUSES,
     InMemoryProjectMemberStore,
+    ProjectIdentityConflictError,
     ProjectMemberIdentityConflictError,
     ProjectMemberStore,
     combined_project_members,
     project_exists,
     project_payloads_with_member_counts,
+    supports_persistent_project_writes,
     validate_project_member_role,
     validate_project_member_status,
     visible_project_keys,
 )
+from medical_audit_kb.api.review_task_store import supports_persistent_review_task_writes
 
 router = APIRouter()
 
@@ -75,6 +78,175 @@ class ProjectMemberCreateRequest(BaseModel):
             raise ValueError("unsupported project member status") from exc
 
 
+class ProjectCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_key: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    name: str = Field(min_length=1, max_length=256)
+    scenario_key: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    audit_topic: str = Field(min_length=1, max_length=128)
+    organization_name: str = Field(min_length=1, max_length=256)
+    owner_department: str | None = Field(default=None, max_length=128)
+    description: str | None = Field(default=None, max_length=2000)
+
+    @field_validator(
+        "project_key",
+        "name",
+        "scenario_key",
+        "audit_topic",
+        "organization_name",
+        "owner_department",
+        "description",
+    )
+    @classmethod
+    def normalize_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
+@router.post("/projects", status_code=201)
+def create_project(
+    payload: ProjectCreateRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = require_permission(
+        state,
+        permission=Permission.CREATE_PROJECT,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="project-create",
+    )
+    store = _required_project_member_store(state)
+    if state.audit_log_store is None:
+        state.operation_logs.append(
+            {
+                "action": "project-create-audit-unavailable",
+                "payload": {
+                    "project_key": payload.project_key,
+                    "user_identifier": user.user_identifier,
+                    "role": user.role.value,
+                    "endpoint": "/projects",
+                    "status_code": 503,
+                    "reason": "audit-store-missing",
+                },
+            }
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project creation audit is not available",
+        )
+    intent_payload: dict[str, object] = {
+        "project_key": payload.project_key,
+        "user_identifier": user.user_identifier,
+        "role": user.role.value,
+        "endpoint": "/projects",
+        "scenario_key": payload.scenario_key,
+    }
+    try:
+        record_operation(state, "project-create-intent", intent_payload)
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": "project-create-audit-unavailable",
+                "payload": {
+                    **intent_payload,
+                    "status_code": 503,
+                    "reason": "audit-intent-unavailable",
+                    "error_type": type(exc).__name__,
+                },
+            }
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="project creation audit is not available",
+        ) from exc
+    values = payload.model_dump()
+    values.update(
+        {
+            "status": "待开始",
+            "created_by": user.user_identifier,
+            "creator_display_name": user.user_identifier,
+            "metadata": {
+                "audit_topic": payload.audit_topic,
+                "organization_name": payload.organization_name,
+                "project_surface": "collaboration-v1",
+            },
+        }
+    )
+    try:
+        project, creator_member = store.create_project(values)
+    except ProjectIdentityConflictError as exc:
+        _record_project_operation_best_effort(
+            state,
+            "project-create-conflict",
+            {
+                "project_key": payload.project_key,
+                "user_identifier": user.user_identifier,
+                "role": user.role.value,
+                "endpoint": "/projects",
+                "status_code": 409,
+                "reason": "project key already exists",
+            },
+        )
+        raise HTTPException(status_code=409, detail="project key already exists") from exc
+    except SQLAlchemyError as exc:
+        _record_project_operation_best_effort(
+            state,
+            "project-create-unavailable",
+            {
+                "project_key": payload.project_key,
+                "user_identifier": user.user_identifier,
+                "role": user.role.value,
+                "endpoint": "/projects",
+                "status_code": 503,
+                "reason": "persistent project store is not available",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="persistent project store is not available",
+        ) from exc
+
+    audit_recorded = _record_project_operation_best_effort(
+        state,
+        "project-create",
+        {
+            "project_key": payload.project_key,
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+            "endpoint": "/projects",
+            "scenario_key": payload.scenario_key,
+            "status": "待开始",
+            "status_code": 201,
+        },
+    )
+    return {
+        "item": project,
+        "creator_member": creator_member,
+        "store": {
+            "ready": True,
+            "backend": store.__class__.__name__,
+            "persistent_writes_ready": True,
+        },
+        "audit": {"status": "recorded" if audit_recorded else "degraded"},
+    }
+
+
 @router.get("/projects")
 def list_projects(
     state: Annotated[ApiState, Depends(get_api_state)],
@@ -87,13 +259,18 @@ def list_projects(
         x_role=x_role,
         default_role=HospitalRole.MEMBER,
     )
+    configured_store = state.project_member_store
     store = _project_member_store(state)
-    try:
-        custom_counts = store.member_counts()
-        counts_ready = True
-    except SQLAlchemyError:
+    if configured_store is None:
         custom_counts = {}
         counts_ready = False
+    else:
+        try:
+            custom_counts = store.member_counts()
+            counts_ready = True
+        except SQLAlchemyError:
+            custom_counts = {}
+            counts_ready = False
 
     visible_keys, visibility_ready = _project_visibility(
         user=user,
@@ -101,7 +278,19 @@ def list_projects(
     )
     if not visibility_ready:
         custom_counts = {}
-    all_items = project_payloads_with_member_counts(custom_counts)
+        counts_ready = False
+    all_items = project_payloads_with_member_counts(
+        custom_counts,
+        store if visibility_ready else None,
+    )
+    if not counts_ready:
+        all_items = [
+            {
+                **item,
+                "member_count": None,
+            }
+            for item in all_items
+        ]
     items = [item for item in all_items if str(item["id"]) in visible_keys]
     store_ready = counts_ready and visibility_ready
     store_backend = store.__class__.__name__ if store_ready else "unavailable"
@@ -123,7 +312,17 @@ def list_projects(
         "roles": list(PROJECT_MEMBER_ROLES),
         "statuses": list(PROJECT_MEMBER_STATUSES),
         "project_statuses": list(PROJECT_STATUSES),
-        "store": {"ready": store_ready, "backend": store_backend},
+        "store": {
+            "ready": store_ready,
+            "backend": store_backend,
+            "persistent_writes_ready": supports_persistent_project_writes(
+                configured_store
+            ),
+            "history_review_task_writes_ready": (
+                supports_persistent_project_writes(configured_store)
+                and supports_persistent_review_task_writes(state.review_task_store)
+            ),
+        },
     }
 
 
@@ -144,25 +343,17 @@ def get_project(
         try:
             project = next(
                 item
-                for item in project_payloads_with_member_counts(store.member_counts())
+                for item in project_payloads_with_member_counts(store.member_counts(), store)
                 if item["id"] == project_key
             )
             store_ready = True
             store_backend = store.__class__.__name__
         except SQLAlchemyError:
-            project = next(
-                item
-                for item in project_payloads_with_member_counts({})
-                if item["id"] == project_key
-            )
+            project = _fallback_project_payload(project_key)
             store_ready = False
             store_backend = "unavailable"
     else:
-        project = next(
-            item
-            for item in project_payloads_with_member_counts({})
-            if item["id"] == project_key
-        )
+        project = _fallback_project_payload(project_key)
         store_ready = False
         store_backend = "unavailable"
 
@@ -249,27 +440,19 @@ def project_dashboard(
     if visibility_ready:
         try:
             project = next(
-                item for item in project_payloads_with_member_counts(store.member_counts())
+                item for item in project_payloads_with_member_counts(store.member_counts(), store)
                 if item["id"] == project_key
             )
             members = combined_project_members(project_key, store.list_members(project_key))
             member_store_ready = True
             member_store_backend = store.__class__.__name__
         except SQLAlchemyError:
-            project = next(
-                item
-                for item in project_payloads_with_member_counts({})
-                if item["id"] == project_key
-            )
+            project = _fallback_project_payload(project_key)
             members = combined_project_members(project_key, [])
             member_store_ready = False
             member_store_backend = "unavailable"
     else:
-        project = next(
-            item
-            for item in project_payloads_with_member_counts({})
-            if item["id"] == project_key
-        )
+        project = _fallback_project_payload(project_key)
         members = combined_project_members(project_key, [])
         member_store_ready = False
         member_store_backend = "unavailable"
@@ -333,7 +516,8 @@ def create_project_member(
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    _require_project(project_key)
+    store = _required_project_member_store(state)
+    _require_project(project_key, store)
     user = require_permission(
         state,
         permission=Permission.MANAGE_PROJECT_MEMBERS,
@@ -345,7 +529,7 @@ def create_project_member(
     values = payload.model_dump()
     values["created_by"] = user.user_identifier
     try:
-        member = _project_member_store(state).add_member(project_key, values)
+        member = store.add_member(project_key, values)
     except ProjectMemberIdentityConflictError as exc:
         raise HTTPException(
             status_code=409,
@@ -353,7 +537,7 @@ def create_project_member(
         ) from exc
     except SQLAlchemyError as exc:
         raise HTTPException(
-            status_code=409,
+            status_code=503,
             detail="persistent project member store is not available",
         ) from exc
 
@@ -371,13 +555,53 @@ def create_project_member(
     )
     return {
         "item": member,
-        "store": {"ready": True, "backend": _project_member_store(state).__class__.__name__},
+        "store": {"ready": True, "backend": store.__class__.__name__},
     }
 
 
-def _require_project(project_key: str) -> None:
-    if not project_exists(project_key):
+def _require_project(project_key: str, store: ProjectMemberStore) -> None:
+    try:
+        exists = project_exists(project_key, store)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="project store is not available",
+        ) from exc
+    if not exists:
         raise HTTPException(status_code=404, detail="project not found")
+
+
+def _fallback_project_payload(project_key: str) -> dict[str, object]:
+    project = next(
+        (
+            item
+            for item in project_payloads_with_member_counts({}, None)
+            if item["id"] == project_key
+        ),
+        None,
+    )
+    if project is None:
+        raise HTTPException(status_code=503, detail="project store is not available")
+    project["member_count"] = None
+    return project
+
+
+def _record_project_operation_best_effort(
+    state: ApiState,
+    action: str,
+    payload: dict[str, object],
+) -> bool:
+    try:
+        record_operation(state, action, payload)
+    except SQLAlchemyError as exc:
+        state.operation_logs.append(
+            {
+                "action": f"{action}-audit-degraded",
+                "payload": {**payload, "error_type": type(exc).__name__},
+            }
+        )
+        return False
+    return True
 
 
 def _visible_project_user(
@@ -387,7 +611,9 @@ def _visible_project_user(
     x_user_id: str | None,
     x_role: str | None,
 ) -> tuple[AuthenticatedUser, ProjectMemberStore, frozenset[str], bool]:
-    _require_project(project_key)
+    store_configured = state.project_member_store is not None
+    store = _project_member_store(state)
+    _require_project(project_key, store)
     user = resolve_authenticated_user(
         state,
         x_user_id=x_user_id,
@@ -395,14 +621,13 @@ def _visible_project_user(
         default_role=HospitalRole.MEMBER,
         project_key=project_key,
     )
-    store = _project_member_store(state)
     visible_keys, visibility_ready = _project_visibility(
         user=user,
         store=store,
     )
     if project_key not in visible_keys:
         raise HTTPException(status_code=404, detail="project not found")
-    return user, store, visible_keys, visibility_ready
+    return user, store, visible_keys, visibility_ready and store_configured
 
 
 def _project_visibility(
@@ -431,8 +656,16 @@ def _project_visibility(
 
 
 def _project_member_store(state: ApiState) -> ProjectMemberStore:
-    if state.project_member_store is None:
-        state.project_member_store = InMemoryProjectMemberStore()
+    return state.project_member_store or InMemoryProjectMemberStore()
+
+
+def _required_project_member_store(state: ApiState) -> ProjectMemberStore:
+    if not supports_persistent_project_writes(state.project_member_store):
+        raise HTTPException(
+            status_code=503,
+            detail="persistent project store is not available",
+        )
+    assert state.project_member_store is not None
     return state.project_member_store
 
 

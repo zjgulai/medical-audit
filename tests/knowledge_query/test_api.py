@@ -313,6 +313,14 @@ def test_auth_api_lists_roles_and_manages_users(tmp_path: Path) -> None:
     assert "create_report_draft" in permissions_by_role["director"]
     assert "create_report_draft" in permissions_by_role["member"]
     assert "create_report_draft" not in permissions_by_role["technician"]
+    assert "create_review_task" in permissions_by_role["admin"]
+    assert "create_review_task" in permissions_by_role["director"]
+    assert "create_review_task" in permissions_by_role["member"]
+    assert "create_review_task" not in permissions_by_role["technician"]
+    assert "create_project" in permissions_by_role["admin"]
+    assert "create_project" not in permissions_by_role["director"]
+    assert "create_project" not in permissions_by_role["member"]
+    assert "create_project" not in permissions_by_role["technician"]
 
     session_response = client.get(
         "/auth/session",
@@ -1617,11 +1625,14 @@ def test_projects_api_lists_defaults_and_persists_created_member(tmp_path: Path)
     assert catalog_project["member_count"] == 5
 
 
-def test_projects_api_keeps_pending_custom_member_invisible_and_matches_in_memory(
+def test_projects_api_keeps_pending_custom_member_invisible_with_persistent_store(
     tmp_path: Path,
 ) -> None:
     state = _api_state(tmp_path)
-    state.project_member_store = InMemoryProjectMemberStore()
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'pending-project-members.db'}",
+        create_schema=True,
+    )
     client = TestClient(create_app(state))
     admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
 
@@ -1676,19 +1687,14 @@ def test_projects_api_keeps_pending_custom_member_invisible_and_matches_in_memor
     ).status_code == 404
 
 
-@pytest.mark.parametrize("store_kind", ("memory", "sql"))
 def test_projects_api_rejects_duplicate_project_member_identities(
     tmp_path: Path,
-    store_kind: str,
 ) -> None:
     state = _api_state(tmp_path)
-    if store_kind == "memory":
-        state.project_member_store = InMemoryProjectMemberStore()
-    else:
-        state.project_member_store = SqlAlchemyProjectMemberStore(
-            f"sqlite:///{tmp_path / 'project-member-conflicts.db'}",
-            create_schema=True,
-        )
+    state.project_member_store = SqlAlchemyProjectMemberStore(
+        f"sqlite:///{tmp_path / 'project-member-conflicts.db'}",
+        create_schema=True,
+    )
     client = TestClient(create_app(state))
     admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
 
@@ -1924,7 +1930,12 @@ def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: 
     assert [item["id"] for item in creator_response.json()["items"]] == [
         "CATALOG-LIMIT-202606"
     ]
-    assert creator_response.json()["store"] == {"ready": False, "backend": "unavailable"}
+    assert creator_response.json()["store"] == {
+        "ready": False,
+        "backend": "unavailable",
+        "persistent_writes_ready": False,
+        "history_review_task_writes_ready": False,
+    }
     assert unrelated_response.json()["items"] == []
     assert len(admin_response.json()["items"]) == 4
     fallback_statuses = {item["status"] for item in admin_response.json()["items"]}
@@ -2996,10 +3007,12 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
         assert [item["id"] for item in list_response.json()["items"]] == [
             "SELF-CHECK-FUND-20260607"
         ]
-        assert list_response.json()["items"][0]["member_count"] == 3
+        assert list_response.json()["items"][0]["member_count"] is None
         assert list_response.json()["store"] == {
             "ready": False,
             "backend": "unavailable",
+            "persistent_writes_ready": False,
+            "history_review_task_writes_ready": False,
         }
         assert state.operation_logs[-1]["payload"]["visibility_ready"] is False
 
@@ -3008,7 +3021,7 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
             headers=headers,
         )
         assert detail_response.status_code == 200
-        assert detail_response.json()["item"]["member_count"] == 3
+        assert detail_response.json()["item"]["member_count"] is None
         assert detail_response.json()["store"] == {
             "ready": False,
             "backend": "unavailable",
@@ -3036,7 +3049,7 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
             headers=headers,
         )
         assert dashboard_response.status_code == 200
-        assert dashboard_response.json()["project"]["member_count"] == 3
+        assert dashboard_response.json()["project"]["member_count"] is None
         assert dashboard_response.json()["store"]["backend"] == {
             "project_members": "unavailable",
             "audit_findings": "ReadyAuditFindingStore",
@@ -3057,6 +3070,8 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
         assert response.json()["store"] == {
             "ready": False,
             "backend": "unavailable",
+            "persistent_writes_ready": False,
+            "history_review_task_writes_ready": False,
         }
         for route in (
             "/projects/SELF-CHECK-FUND-20260607",
@@ -3074,6 +3089,8 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
     assert admin_response.json()["store"] == {
         "ready": True,
         "backend": "SplitFailureProjectMemberStore",
+        "persistent_writes_ready": False,
+        "history_review_task_writes_ready": False,
     }
 
 
@@ -4632,7 +4649,10 @@ def test_query_endpoint_returns_citation_answer_and_records_query_log(tmp_path: 
     assert body["generation_failure_code"] is None
     assert body["query_log_index"] == 0
 
-    logs_response = client.get("/query/logs")
+    logs_response = client.get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
     assert logs_response.status_code == 200
     assert logs_response.json()["items"][0]["user_identifier"] == "auditor-1"
     assert logs_response.json()["items"][0]["filters"]["top_k"] == 2
@@ -4925,7 +4945,10 @@ def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
     body = response.json()
     assert body["query_log_id"]
 
-    history_response = client.get("/query/logs?limit=5")
+    history_response = client.get(
+        "/query/logs?limit=5",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
     assert history_response.status_code == 200
     history_body = history_response.json()
     assert history_body["store"]["backend"] == "SqlAlchemyQueryHistoryStore"
@@ -4940,7 +4963,10 @@ def test_query_endpoint_persists_query_history(tmp_path: Path) -> None:
     second_state = _api_state(tmp_path / "second")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
     second_client = TestClient(create_app(second_state))
-    persisted_items = second_client.get("/query/logs").json()["items"]
+    persisted_items = second_client.get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"]
     assert persisted_items[0]["id"] == body["query_log_id"]
     assert persisted_items[0]["generation_status"] == "not_requested"
     assert persisted_items[0]["generation_failure_code"] is None
@@ -4969,7 +4995,10 @@ def test_query_endpoint_persists_generation_fallback_after_restart(
     assert response.status_code == 200
     second_state = _api_state(tmp_path / "second-generation-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get("/query/logs").json()["items"][0]
+    persisted = TestClient(create_app(second_state)).get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"][0]
     assert persisted["generation_status"] == "retrieval_fallback"
     assert persisted["generation_failure_code"] == "provider_exception"
 
@@ -4981,6 +5010,7 @@ def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> Non
 
     response = client.post(
         "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
         json={"question": "医保基金审核依据", "top_k": 2},
     )
 
@@ -4992,7 +5022,10 @@ def test_query_history_store_failure_does_not_block_query(tmp_path: Path) -> Non
         "message": "query history store operation failed",
     }
 
-    logs_response = client.get("/query/logs")
+    logs_response = client.get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    )
     assert logs_response.status_code == 200
     logs_body = logs_response.json()
     assert logs_body["store"] == {
@@ -5303,7 +5336,10 @@ def test_query_endpoint_reports_and_persists_safe_provider_http_status(
 
     second_state = _api_state(tmp_path / "second-http-status-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get("/query/logs").json()["items"][0]
+    persisted = TestClient(create_app(second_state)).get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"][0]
     assert persisted["generation_http_status"] == 429
 
 
@@ -6533,8 +6569,13 @@ class FailingQueryHistoryStore:
     def add_query(self, _values: dict[str, object]) -> dict[str, object]:
         raise RuntimeError("history database unavailable")
 
-    def list_queries(self, *, limit: int = 20) -> list[dict[str, object]]:
-        _ = limit
+    def list_queries(
+        self,
+        *,
+        limit: int = 20,
+        user_identifier: str | None = None,
+    ) -> list[dict[str, object]]:
+        _ = limit, user_identifier
         raise RuntimeError("history database unavailable")
 
 

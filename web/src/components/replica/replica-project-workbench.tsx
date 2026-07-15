@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
+  createProject,
   createProjectMember,
   fetchProjectDashboard,
   fetchProjectMembers,
@@ -64,7 +65,20 @@ export function ReplicaProjectWorkbench() {
   const [memberSaving, setMemberSaving] = useState(false);
   const [memberCreateError, setMemberCreateError] = useState<string | null>(null);
   const [projectLinkError, setProjectLinkError] = useState<string | null>(null);
+  const [projectKey, setProjectKey] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [scenarioKey, setScenarioKey] = useState("charging-compliance");
+  const [auditTopic, setAuditTopic] = useState("医保基金使用合规");
+  const [organizationName, setOrganizationName] = useState("");
+  const [ownerDepartment, setOwnerDepartment] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
+  const [projectCreateSuccess, setProjectCreateSuccess] = useState<string | null>(null);
+  const [projectCreateAuditWarning, setProjectCreateAuditWarning] = useState<string | null>(null);
   const memberSavingRef = useRef(false);
+  const projectSavingRef = useRef(false);
+  const projectCreateGenerationRef = useRef(0);
   const projectsRequestRef = useRef(0);
   const membersRequestRef = useRef(0);
   const dashboardRequestRef = useRef(0);
@@ -107,6 +121,12 @@ export function ReplicaProjectWorkbench() {
   }, []);
 
   useEffect(() => {
+    ++projectCreateGenerationRef.current;
+    projectSavingRef.current = false;
+    setProjectSaving(false);
+    setProjectCreateError(null);
+    setProjectCreateSuccess(null);
+    setProjectCreateAuditWarning(null);
     clearProjectSelection();
     setStatusFilter("全部");
     setProjectLinkError(null);
@@ -169,6 +189,79 @@ export function ReplicaProjectWorkbench() {
   );
   const projectStatuses = roleScopedProjectsState.response?.project_statuses ?? [];
   const canManageMembers = auditUser.can("manage_project_members");
+  const canCreateProjects = auditUser.can("create_project");
+  const projectWritesReady = roleScopedProjectsState.response?.store.ready === true
+    && roleScopedProjectsState.response.store.persistent_writes_ready === true;
+
+  async function submitProject() {
+    if (!canCreateProjects || !projectWritesReady || projectSavingRef.current) return;
+    const normalizedProjectKey = projectKey.trim();
+    const normalizedName = projectName.trim();
+    const normalizedScenarioKey = scenarioKey.trim();
+    const normalizedAuditTopic = auditTopic.trim();
+    const normalizedOrganizationName = organizationName.trim();
+    const normalizedOwnerDepartment = ownerDepartment.trim();
+    const normalizedDescription = projectDescription.trim();
+    if (
+      !normalizedProjectKey ||
+      !normalizedName ||
+      !normalizedScenarioKey ||
+      !normalizedAuditTopic ||
+      !normalizedOrganizationName
+    ) return;
+
+    const generation = projectCreateGenerationRef.current;
+    projectSavingRef.current = true;
+    setProjectSaving(true);
+    setProjectCreateError(null);
+    setProjectCreateSuccess(null);
+    setProjectCreateAuditWarning(null);
+    try {
+      const response = await createProject({
+        project_key: normalizedProjectKey,
+        name: normalizedName,
+        scenario_key: normalizedScenarioKey,
+        audit_topic: normalizedAuditTopic,
+        organization_name: normalizedOrganizationName,
+        ...(normalizedOwnerDepartment ? { owner_department: normalizedOwnerDepartment } : {}),
+        ...(normalizedDescription ? { description: normalizedDescription } : {})
+      });
+      if (generation !== projectCreateGenerationRef.current) return;
+      setProjectsState((current) => {
+        if (!current.response || current.role !== auditUser.role) return current;
+        return {
+          phase: "ready",
+          role: current.role,
+          response: {
+            ...current.response,
+            items: [
+              response.item,
+              ...current.response.items.filter((item) => item.id !== response.item.id)
+            ],
+            store: response.store
+          }
+        };
+      });
+      setProjectCreateSuccess(`项目已创建：${response.item.name}`);
+      setProjectCreateAuditWarning(
+        response.audit.status === "degraded"
+          ? "项目已创建，但完成审计记录未写入；请联系管理员核查。"
+          : null
+      );
+      setProjectKey("");
+      setProjectName("");
+      setProjectDescription("");
+    } catch (error) {
+      if (generation === projectCreateGenerationRef.current) {
+        setProjectCreateError(projectCreateErrorMessage(error));
+      }
+    } finally {
+      if (generation === projectCreateGenerationRef.current) {
+        projectSavingRef.current = false;
+        setProjectSaving(false);
+      }
+    }
+  }
 
   const selectProject = useCallback((project: ProjectSummaryApiItem) => {
     ++selectionGenerationRef.current;
@@ -212,7 +305,7 @@ export function ReplicaProjectWorkbench() {
   ]);
 
   async function submitMember() {
-    if (!selectedProject || !canManageMembers || memberSavingRef.current) return;
+    if (!selectedProject || !canManageMembers || !projectWritesReady || memberSavingRef.current) return;
     const normalizedIdentifier = userIdentifier.trim();
     const normalizedName = memberName.trim();
     const normalizedDepartment = memberDepartment.trim();
@@ -249,7 +342,12 @@ export function ReplicaProjectWorkbench() {
           response: {
             ...current.response,
             items: current.response.items.map((item) =>
-              item.id === selectedProject.id ? { ...item, member_count: item.member_count + 1 } : item
+              item.id === selectedProject.id
+                ? {
+                    ...item,
+                    member_count: item.member_count === null ? null : item.member_count + 1
+                  }
+                : item
             )
           }
         };
@@ -302,6 +400,36 @@ export function ReplicaProjectWorkbench() {
           </label>
         </div>
 
+        {canCreateProjects ? (
+          <form
+            className="replica-project-member-form"
+            aria-label="新建项目"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitProject();
+            }}
+          >
+            <h3>新建项目</h3>
+            <p className="replica-project-form-hint">
+              项目编码与场景编码仅支持字母、数字、点、下划线和短横线。
+            </p>
+            <label>项目编码<input aria-label="项目编码" autoComplete="off" name="project_key" required value={projectKey} onChange={(event) => setProjectKey(event.target.value)} /></label>
+            <label>项目名称<input aria-label="项目名称" autoComplete="off" name="project_name" required value={projectName} onChange={(event) => setProjectName(event.target.value)} /></label>
+            <label>场景编码<input aria-label="场景编码" autoComplete="off" name="scenario_key" required value={scenarioKey} onChange={(event) => setScenarioKey(event.target.value)} /></label>
+            <label>审计专题<input aria-label="审计专题" autoComplete="off" name="audit_topic" required value={auditTopic} onChange={(event) => setAuditTopic(event.target.value)} /></label>
+            <label>机构名称<input aria-label="机构名称" autoComplete="organization" name="organization_name" required value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /></label>
+            <label>负责部门<input aria-label="负责部门" autoComplete="organization-title" name="owner_department" value={ownerDepartment} onChange={(event) => setOwnerDepartment(event.target.value)} /></label>
+            <label>项目说明<textarea aria-label="项目说明" name="description" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /></label>
+            {projectCreateError ? <p role="alert">{projectCreateError}</p> : null}
+            {projectCreateSuccess ? <p role="status">{projectCreateSuccess}</p> : null}
+            {projectCreateAuditWarning ? <p role="alert">{projectCreateAuditWarning}</p> : null}
+            {!projectWritesReady ? <p role="status">项目持久化写入未就绪，暂不可新建项目</p> : null}
+            <button type="submit" disabled={projectSaving || !projectWritesReady}>
+              {projectSaving ? "创建中" : "创建项目"}
+            </button>
+          </form>
+        ) : null}
+
         {roleScopedProjectsState.phase === "loading" ? <ProjectMessage tone="status">项目列表读取中</ProjectMessage> : null}
         {roleScopedProjectsState.phase === "error" ? (
           <ProjectMessage tone="error">
@@ -333,7 +461,7 @@ export function ReplicaProjectWorkbench() {
                     <tr key={project.id} data-selected={project.id === selectedProjectId ? "true" : undefined}>
                       <td>{project.name}</td>
                       <td>{project.audit_topic}</td>
-                      <td>{project.member_count}</td>
+                      <td>{project.member_count ?? "待同步"}</td>
                       <td>{project.creator}</td>
                       <td>{formatDate(project.created_at)}</td>
                       <td>{project.status}</td>
@@ -376,6 +504,7 @@ export function ReplicaProjectWorkbench() {
               onSubmit={submitMember}
               onUserIdentifierChange={setUserIdentifier}
               projectResponse={roleScopedProjectsState.response}
+              persistentWritesReady={projectWritesReady}
               role={memberRole}
               saving={memberSaving}
               status={memberStatus}
@@ -410,6 +539,7 @@ function MembersPanel({
   onSubmit,
   onUserIdentifierChange,
   projectResponse,
+  persistentWritesReady,
   role,
   saving,
   status,
@@ -428,6 +558,7 @@ function MembersPanel({
   readonly onSubmit: () => void;
   readonly onUserIdentifierChange: (value: string) => void;
   readonly projectResponse: ProjectsResponse | null;
+  readonly persistentWritesReady: boolean;
   readonly role: ApiProjectMemberRole;
   readonly saving: boolean;
   readonly status: ApiProjectMemberStatus;
@@ -477,6 +608,7 @@ function MembersPanel({
           }}
         >
           <h4>新增成员</h4>
+          {!persistentWritesReady ? <p role="status">项目持久化写入未就绪，暂不能新增成员</p> : null}
           <label>账号<input aria-label="账号" required value={userIdentifier} onChange={(event) => onUserIdentifierChange(event.target.value)} /></label>
           <label>姓名<input aria-label="姓名" required value={name} onChange={(event) => onNameChange(event.target.value)} /></label>
           <label>
@@ -493,7 +625,7 @@ function MembersPanel({
             </select>
           </label>
           {createError ? <p role="alert">{createError}</p> : null}
-          <button type="submit" disabled={saving}>{saving ? "新增中" : "新增成员"}</button>
+          <button type="submit" disabled={saving || !persistentWritesReady}>{saving ? "新增中" : "新增成员"}</button>
         </form>
       ) : <p className="replica-project-readonly">当前角色仅可查看项目成员</p>}
     </section>
@@ -648,6 +780,20 @@ function dashboardIsEmpty(response: ProjectDashboardResponse): boolean {
     && response.activities.length === 0
     && response.status_distribution.length === 0
     && response.member_workloads.length === 0;
+}
+
+
+function projectCreateErrorMessage(error: unknown): string {
+  const status = (
+    typeof error === "object" && error !== null && "status" in error
+      ? (error as { readonly status?: unknown }).status
+      : null
+  );
+  if (status === 409) return "项目编码已存在，请更换后重试。";
+  if (status === 403) return "当前角色没有新建项目权限。";
+  if (status === 422) return "项目信息不符合要求，请检查后重试。";
+  if (status === 503) return "项目存储暂不可用，请稍后重试。";
+  return "项目创建失败，请稍后重试。";
 }
 
 function dashboardStoreLabel(response: ProjectDashboardResponse): string {

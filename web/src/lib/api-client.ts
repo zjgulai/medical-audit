@@ -37,12 +37,16 @@ import type {
   MedicalAuditReviewTaskRequest,
   MedicalAuditSupplementRequest,
   MedicalAuditWorkflowActionResponse,
+  ProjectCreateRequest,
+  ProjectCreateResponse,
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectDashboardResponse,
   ProjectMembersResponse,
   ProjectsResponse,
   QueryHistoryResponse,
+  QueryHistoryReviewTaskRequest,
+  QueryHistoryReviewTaskResponse,
   QueryRequest,
   QueryResponse,
   RemediationWorkbenchResponse,
@@ -248,6 +252,17 @@ export function fetchQueryModels(): Promise<ChatModelCatalogResponse> {
 
 export function fetchQueryHistory(): Promise<QueryHistoryResponse> {
   return getJsonWithAuditHeaders<QueryHistoryResponse>("/api/v1/query/logs?limit=8");
+}
+
+export function createQueryHistoryReviewTask(
+  queryLogId: string,
+  payload: QueryHistoryReviewTaskRequest
+): Promise<QueryHistoryReviewTaskResponse> {
+  return postJson<QueryHistoryReviewTaskResponse>(
+    `/api/v1/query/logs/${encodeURIComponent(queryLogId)}/review-task`,
+    payload,
+    auditProjectClientHeaders(payload.project_key)
+  );
 }
 
 export function analyzeChatAttachment(
@@ -625,6 +640,10 @@ export function submitAuditAgentFeedback(
 
 export function fetchProjects(): Promise<ProjectsResponse> {
   return getJsonWithAuditHeaders<ProjectsResponse>("/api/v1/projects", auditProjectClientHeaders());
+}
+
+export function createProject(payload: ProjectCreateRequest): Promise<ProjectCreateResponse> {
+  return postJson<ProjectCreateResponse>("/api/v1/projects", payload, auditClientHeaders());
 }
 
 export function fetchProjectMembers(projectId: string): Promise<ProjectMembersResponse> {
