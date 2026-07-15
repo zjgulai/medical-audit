@@ -62,12 +62,13 @@ export default function DocumentsPage() {
     () => runtimeDataVisible ? documentsData.data.searchHistory : [],
     [documentsData.data.searchHistory, runtimeDataVisible]
   );
+  const totalDocumentCount = aggregateDocumentCount(categories);
   const libraryTiles = categories.length > 0
     ? [
       {
         id: "all-documents",
         label: ALL_DOCUMENTS_CATEGORY,
-        count: categories.reduce((sum, item) => sum + item.count, 0),
+        count: totalDocumentCount,
         icon: "archive"
       },
       ...categories.slice(0, 6).map((category, index) => ({
@@ -392,7 +393,7 @@ export default function DocumentsPage() {
           >
             <span className={`replica-doc-library-icon icon-${tile.icon}`} aria-hidden="true" />
             <strong>{tile.label}</strong>
-            <em>({tile.count.toLocaleString()})</em>
+            <em>({formatDocumentCount(tile.count)})</em>
           </button>
         ))}
       </section>
@@ -510,7 +511,10 @@ export default function DocumentsPage() {
         <span>关键词：{displayedQuery}</span>
         <span>范围：{displayedScopeLabel}</span>
         {categories.length > 0 ? (
-          <span>文档库：{categories.length} 类 / {categories.reduce((sum, item) => sum + item.count, 0).toLocaleString()} 份</span>
+          <span>
+            文档库：{categories.length} 类 / {formatDocumentCount(totalDocumentCount)}
+            {totalDocumentCount === null ? "" : " 份"}
+          </span>
         ) : null}
       </section>
 
@@ -528,7 +532,7 @@ export default function DocumentsPage() {
             >
               <strong>{category.name}</strong>
               <span>{category.description}</span>
-              <em>{category.count}</em>
+              <em>{formatDocumentCount(category.count)}</em>
             </button>
           ))}
         </aside>
@@ -633,7 +637,7 @@ function sourceCollectionScopeLabel(
 }
 
 function categoryToDirectoryPreview(
-  category: { readonly id: string; readonly name: string; readonly description: string; readonly count: number }
+  category: { readonly id: string; readonly name: string; readonly description: string; readonly count: number | null }
 ): DocumentPreview {
   const sourceCollection = category.id.startsWith("source-")
     ? category.id.slice("source-".length)
@@ -644,11 +648,30 @@ function categoryToDirectoryPreview(
     title: `${category.name} 文档目录`,
     category: category.name,
     excerpt: category.description,
-    source: `${category.count.toLocaleString()} 份文档`,
+    source: category.count === null
+      ? "文档数量待同步"
+      : `${category.count.toLocaleString()} 份文档`,
     updatedAt: "生产目录",
     previewType: "知识库目录",
     sourceCollection
   };
+}
+
+function aggregateDocumentCount(
+  categories: readonly { readonly count: number | null }[]
+): number | null {
+  let total = 0;
+  for (const category of categories) {
+    if (category.count === null) {
+      return null;
+    }
+    total += category.count;
+  }
+  return total;
+}
+
+function formatDocumentCount(count: number | null): string {
+  return count === null ? "待同步" : count.toLocaleString();
 }
 
 function documentChatHref(item: DocumentPreview, executedQuery: string): string {

@@ -153,6 +153,10 @@ export type ReplicaKnowledgeBaseStore = {
   readonly backend: string;
 };
 
+export type ReplicaDocumentCategory = Omit<ReferenceDocumentCategory, "count"> & {
+  readonly count: number | null;
+};
+
 export type ReplicaKnowledgeBaseBoundaries = {
   readonly productionWrite: false;
   readonly providerCall: false;
@@ -175,7 +179,7 @@ export type ReplicaKnowledgeBaseData = {
 };
 
 export type ReplicaDocumentsData = {
-  readonly categories: readonly ReferenceDocumentCategory[];
+  readonly categories: readonly ReplicaDocumentCategory[];
   readonly searchHistory: readonly string[];
   readonly results: readonly ReferenceDocumentResult[];
 };
@@ -369,7 +373,9 @@ function toReferenceAgentCategory(category: string): ReferenceAgentCategory {
 function mapQueryHistoryItems(history: QueryHistoryResponse): readonly ReferenceHistoryItem[] {
   return history.items.map((item, index) => ({
     id: item.id || `query-history-${index + 1}`,
-    title: normalizeText(item.question, item.answer_summary ?? `查询记录 ${index + 1}`)
+    title: normalizeText(item.question, item.answer_summary ?? `查询记录 ${index + 1}`),
+    summary: item.answer_summary ?? undefined,
+    taskConvertible: history.store.ready && item.id.trim().length > 0
   }));
 }
 
@@ -404,14 +410,14 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
 
 function mapDocumentCategoriesFromCatalog(
   items: readonly DocumentSourceCollectionCatalogItem[]
-): readonly ReferenceDocumentCategory[] {
+): readonly ReplicaDocumentCategory[] {
   return items
     .filter((item) => item.product_queryable || item.queryable)
     .map((item) => ({
       id: `source-${item.source_collection}`,
       name: item.label,
       description: item.description,
-      count: item.metrics.document_count ?? item.metrics.chunk_count ?? 0
+      count: item.metrics.document_count ?? null
     }));
 }
 
@@ -1034,11 +1040,13 @@ export async function loadReplicaDocumentsData(
     knowledgeCatalog ??
     sourceCollectionCatalog;
   const categories = catalog ? mapDocumentCategoriesFromCatalog(catalog.items) : [];
+  const documentMetricsUnavailable = categories.some((category) => category.count === null);
   const searchHistory = history
     ? history.items.map((item) => normalizeText(item.question, "未命名查询"))
     : [];
   const readinessGap = Boolean(
     hasApiFailure(reads) ||
+    documentMetricsUnavailable ||
     (knowledgeCatalog && (
       !knowledgeCatalog.store.ready ||
       !knowledgeCatalog.search_backend.ready

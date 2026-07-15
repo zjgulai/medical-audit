@@ -184,6 +184,59 @@ describe("DocumentsPage", () => {
     expect(screen.queryByText("文档库：1 类 / 12 份")).not.toBeInTheDocument();
   });
 
+  it("shows unknown catalog counts without fabricating zero values", () => {
+    runtimeMock.current = {
+      ...makeApiRuntime(),
+      outcome: "degraded",
+      status: "degraded",
+      data: {
+        ...makeApiRuntime().data,
+        categories: [
+          {
+            id: "source-medical-insurance-laws",
+            name: "医保法规库",
+            description: "医保法规、政策解释和处罚依据。",
+            count: null
+          }
+        ]
+      }
+    };
+
+    render(<DocumentsPage />);
+
+    expect(screen.getByRole("main")).toHaveAttribute("data-replica-status", "degraded");
+    expect(screen.getByRole("button", { name: "全部文档 (待同步)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "医保法规库 (待同步)" })).toBeInTheDocument();
+    expect(screen.getByText("文档库：1 类 / 待同步")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全部文档 (0)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "医保法规库 (0)" })).not.toBeInTheDocument();
+    expect(screen.queryByText("文档目录读取失败")).not.toBeInTheDocument();
+  });
+
+  it("keeps a real zero catalog count visible as zero", () => {
+    runtimeMock.current = {
+      ...makeApiRuntime(),
+      data: {
+        ...makeApiRuntime().data,
+        categories: [
+          {
+            id: "source-medical-insurance-laws",
+            name: "医保法规库",
+            description: "医保法规、政策解释和处罚依据。",
+            count: 0
+          }
+        ]
+      }
+    };
+
+    render(<DocumentsPage />);
+
+    expect(screen.getByRole("main")).toHaveAttribute("data-replica-status", "ready");
+    expect(screen.getByRole("button", { name: "全部文档 (0)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "医保法规库 (0)" })).toBeInTheDocument();
+    expect(screen.getByText("文档库：1 类 / 0 份")).toBeInTheDocument();
+  });
+
   it("renders runtime fixture history and documents only when the source is fixture", () => {
     runtimeMock.current = {
       ...makeApiRuntime(),

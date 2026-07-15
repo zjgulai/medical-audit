@@ -454,6 +454,40 @@ describe("loadReplicaChatData", () => {
     expect(result.data.historyItems).toEqual([]);
   });
 
+  it("marks only durable API history as eligible for manual task creation", async () => {
+    const historyItem = {
+      id: "query-history-001",
+      user_identifier: "next-member",
+      question: "医保基金审核依据",
+      filters: { source_collections: ["medical-insurance-laws" as const] },
+      answer_summary: "应核对证据链。",
+      retrieved_chunk_ids: ["chunk-001"],
+      citation_count: 1,
+      created_at: "2026-07-15T00:00:00Z"
+    };
+    const ready = await loadReplicaChatData({
+      fetchQueryHistory: vi.fn().mockResolvedValue({
+        items: [historyItem],
+        store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
+      })
+    });
+    const degraded = await loadReplicaChatData({
+      fetchQueryHistory: vi.fn().mockResolvedValue({
+        items: [historyItem],
+        store: { ready: false, backend: "memory" }
+      })
+    });
+
+    expect(ready.data.historyItems[0]).toEqual(expect.objectContaining({
+      id: "query-history-001",
+      title: "医保基金审核依据",
+      summary: "应核对证据链。",
+      taskConvertible: true
+    }));
+    expect(degraded.outcome).toBe("degraded");
+    expect(degraded.data.historyItems[0]?.taskConvertible).toBe(false);
+  });
+
   it("preserves the successful agent lane as degraded when history fails", async () => {
     const result = await loadReplicaChatData({
       fetchAgents: vi.fn().mockResolvedValue(makeAgentsResponse(["first-id"])),
@@ -545,6 +579,70 @@ describe("replica backend read adapters", () => {
     expect(result.data.categories).not.toEqual([]);
     expect(result.data.searchHistory).toEqual([]);
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "api-read-failed" }));
+  });
+
+  it("keeps unknown document metrics distinct from a real zero", async () => {
+    const unknownMetricCatalog: DocumentSourceCollectionCatalogResponse = {
+      ...sourceCollectionCatalog,
+      items: [
+        {
+          ...sourceCollectionCatalogItem,
+          metrics: {
+            ...sourceCollectionCatalogItem.metrics,
+            document_count: null,
+            chunk_count: null
+          }
+        }
+      ]
+    };
+    const zeroMetricCatalog: DocumentSourceCollectionCatalogResponse = {
+      ...sourceCollectionCatalog,
+      items: [
+        {
+          ...sourceCollectionCatalogItem,
+          metrics: {
+            ...sourceCollectionCatalogItem.metrics,
+            document_count: 0,
+            chunk_count: 0
+          }
+        }
+      ]
+    };
+    const chunkOnlyMetricCatalog: DocumentSourceCollectionCatalogResponse = {
+      ...sourceCollectionCatalog,
+      items: [
+        {
+          ...sourceCollectionCatalogItem,
+          metrics: {
+            ...sourceCollectionCatalogItem.metrics,
+            document_count: null,
+            chunk_count: 128
+          }
+        }
+      ]
+    };
+
+    const unknown = await loadReplicaDocumentsData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(unknownMetricCatalog),
+      fetchQueryHistory: vi.fn().mockResolvedValue(emptyQueryHistory)
+    });
+    const zero = await loadReplicaDocumentsData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(zeroMetricCatalog),
+      fetchQueryHistory: vi.fn().mockResolvedValue(emptyQueryHistory)
+    });
+    const chunkOnly = await loadReplicaDocumentsData({
+      fetchDocumentSourceCollections: vi.fn().mockResolvedValue(chunkOnlyMetricCatalog),
+      fetchQueryHistory: vi.fn().mockResolvedValue(emptyQueryHistory)
+    });
+
+    expect(unknown.outcome).toBe("degraded");
+    expect(unknown.data.categories[0]?.count).toBeNull();
+    expect(unknown.issues).toContainEqual(expect.objectContaining({ code: "partial-schema-gap" }));
+    expect(zero.outcome).toBe("ready");
+    expect(zero.data.categories[0]?.count).toBe(0);
+    expect(chunkOnly.outcome).toBe("degraded");
+    expect(chunkOnly.data.categories[0]?.count).toBeNull();
+    expect(chunkOnly.issues).toContainEqual(expect.objectContaining({ code: "partial-schema-gap" }));
   });
 
   it("preserves a successful knowledge catalog lane when another catalog read fails", async () => {
