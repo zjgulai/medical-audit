@@ -389,7 +389,6 @@ test("all restored sidebar pages expose their current product skeleton", async (
 test("workspace keeps its redirect while compatibility routes render current product pages", async ({ page }) => {
   const redirects = [
     { from: "/workspace", to: /\/chat$/ },
-    { from: "/knowledge-query", to: /\/documents$/ },
     { from: "/findings", to: /\/medical-audit$/ }
   ] as const;
 
@@ -397,6 +396,16 @@ test("workspace keeps its redirect while compatibility routes render current pro
     await page.goto(redirect.from);
     await expect(page).toHaveURL(redirect.to);
   }
+
+  await page.goto(
+    "/knowledge-query?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials"
+  );
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/documents" &&
+      url.search ===
+        "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&source_collection=personal-materials"
+  );
 
   const compatibilityPages = [
     { href: "/fund-compliance", heading: "医保基金使用合规", text: "医保审计" },

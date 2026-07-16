@@ -186,19 +186,27 @@ const routeCheckProfiles = {
 const aliasRouteChecks = [
   {
     route: "/workspace",
+    inputSearch: "",
     expectedPath: "/chat",
+    expectedSearch: "",
     session: "workspace",
     requiredText: [/AI，让审计更智能/],
   },
   {
     route: "/findings",
+    inputSearch: "",
     expectedPath: "/medical-audit",
+    expectedSearch: "",
     session: "workspace",
     requiredText: [/医保审计/, /智能审计/],
   },
   {
     route: "/knowledge-query",
+    inputSearch:
+      "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials",
     expectedPath: "/documents",
+    expectedSearch:
+      "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&source_collection=personal-materials",
     session: "workspace",
     requiredText: [/文档检索/, /对话文档|检索结果|搜索历史/],
   },
@@ -331,6 +339,14 @@ function sanitizeUrl(value) {
 function finalPath(url) {
   try {
     return new URL(url).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return null;
+  }
+}
+
+function finalSearch(url) {
+  try {
+    return new URL(url).search;
   } catch {
     return null;
   }
@@ -706,6 +722,19 @@ function classify(check, routeCheck, data) {
       );
     }
   }
+  if (typeof routeCheck.expectedSearch === "string") {
+    const observedSearch =
+      typeof check.finalSearch === "string" ? check.finalSearch : finalSearch(check.finalUrl);
+    if (observedSearch !== routeCheck.expectedSearch) {
+      issues.push(
+        issue(
+          "P0",
+          "unexpected-final-search",
+          `expected ${routeCheck.expectedSearch || "<empty>"}; observed ${observedSearch || "<empty>"}`,
+        ),
+      );
+    }
+  }
   if (!check.status || check.status >= 400) {
     issues.push(issue("P0", "http-status", `HTTP ${check.status ?? "unknown"}`));
   }
@@ -974,7 +1003,8 @@ async function run() {
 
           let status = null;
           let error = null;
-          const url = `${baseUrl}${routeCheck.route}`;
+          const inputSearch = routeCheck.inputSearch ?? "";
+          const url = `${baseUrl}${routeCheck.route}${inputSearch}`;
           try {
             const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
             status = response?.status() ?? null;
@@ -992,11 +1022,16 @@ async function run() {
             }
           }
           const data = await snapshot(page);
-          const observedFinalUrl = sanitizeUrl(page.url());
+          const rawFinalUrl = page.url();
+          const observedFinalUrl = sanitizeUrl(rawFinalUrl);
+          const observedFinalSearch = finalSearch(rawFinalUrl);
           const check = {
             route: routeCheck.route,
+            inputSearch,
             expectedPath: routeCheck.expectedPath ?? null,
+            expectedSearch: routeCheck.expectedSearch ?? null,
             finalPath: finalPath(observedFinalUrl),
+            finalSearch: observedFinalSearch,
             contractKind: group.contractKind,
             session,
             viewport: viewport.name,
@@ -1016,7 +1051,15 @@ async function run() {
             failedRequests: failedRequests.map(sanitizeFailedRequest),
             interactionErrorCount: interactionErrors.length,
             issues: classify(
-              { status, error, consoleErrors, failedRequests, interactionErrors, finalUrl: observedFinalUrl },
+              {
+                status,
+                error,
+                consoleErrors,
+                failedRequests,
+                interactionErrors,
+                finalUrl: observedFinalUrl,
+                finalSearch: observedFinalSearch,
+              },
               routeCheck,
               data,
             ),
@@ -1138,6 +1181,7 @@ export {
   buildBrowserContextOptions,
   classify,
   finalPath,
+  finalSearch,
   routeCheckProfiles,
   sanitizeFailedRequest,
   sanitizeUrl,

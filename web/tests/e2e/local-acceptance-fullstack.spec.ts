@@ -118,7 +118,6 @@ test.describe("local fullstack acceptance for restored replica product", () => {
   test("compatibility routes land on the restored replica shell", async ({ page }) => {
     const redirects = [
       { from: "/workspace", to: /\/chat$/ },
-      { from: "/knowledge-query", to: /\/documents$/ },
       { from: "/findings", to: /\/medical-audit$/ }
     ] as const;
 
@@ -127,6 +126,17 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       await expect(page).toHaveURL(redirect.to);
       await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
     }
+
+    await page.goto(
+      "/knowledge-query?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials"
+    );
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/documents" &&
+        url.search ===
+          "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&source_collection=personal-materials"
+    );
+    await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
 
     const compatibilityPages = [
       { route: "/fund-compliance", heading: "医保基金使用合规", marker: "医保审计" },

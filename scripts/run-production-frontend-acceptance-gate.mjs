@@ -216,7 +216,14 @@ function hasValidPngScreenshot(value) {
 
 function hasCompleteRouteEvidence(
   check,
-  { expectedPath = null, requirePathIdentity = false, requireScreenshot = false } = {},
+  {
+    expectedPath = null,
+    expectedInputSearch = null,
+    expectedSearch = null,
+    requirePathIdentity = false,
+    requireSearchIdentity = false,
+    requireScreenshot = false,
+  } = {},
 ) {
   const observedPath = typeof check?.finalUrl === "string" ? finalPath(check.finalUrl) : null;
   return (
@@ -228,6 +235,13 @@ function hasCompleteRouteEvidence(
         typeof check.finalPath === "string" &&
         check.finalPath === expectedPath &&
         observedPath === expectedPath)) &&
+    (!requireSearchIdentity ||
+      (typeof check.inputSearch === "string" &&
+        check.inputSearch === expectedInputSearch &&
+        typeof check.expectedSearch === "string" &&
+        check.expectedSearch === expectedSearch &&
+        typeof check.finalSearch === "string" &&
+        check.finalSearch === expectedSearch)) &&
     (!requireScreenshot || hasValidPngScreenshot(check.screenshot)) &&
     Number.isInteger(check.status) &&
     check.status >= 200 &&
@@ -287,6 +301,12 @@ function assertGate(report) {
   const expectedAliasPaths = new Map(
     expectedAliasRouteChecks.map((check) => [check.route, check.expectedPath]),
   );
+  const expectedAliasInputSearches = new Map(
+    expectedAliasRouteChecks.map((check) => [check.route, check.inputSearch]),
+  );
+  const expectedAliasSearches = new Map(
+    expectedAliasRouteChecks.map((check) => [check.route, check.expectedSearch]),
+  );
   const expectedViewports = acceptanceViewports.map((viewport) => viewport.name);
   const expectedRouteViewportKeys = new Set(
     expectedRoutes.flatMap((route) =>
@@ -316,7 +336,10 @@ function assertGate(report) {
       (check) =>
         !hasCompleteRouteEvidence(check, {
           expectedPath: expectedAliasPaths.get(check?.route),
+          expectedInputSearch: expectedAliasInputSearches.get(check?.route),
+          expectedSearch: expectedAliasSearches.get(check?.route),
           requirePathIdentity: expectedAliasPaths.has(check?.route),
+          requireSearchIdentity: expectedAliasSearches.has(check?.route),
           requireScreenshot: false,
         }),
     )

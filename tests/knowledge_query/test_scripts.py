@@ -2159,14 +2159,53 @@ def test_production_frontend_acceptance_rejects_unexpected_final_path() -> None:
     assert '"type":"unexpected-final-path"' in result.stdout
 
 
+def test_production_frontend_acceptance_rejects_unexpected_final_search() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify } from " + json.dumps(runner_path.as_uri()) + "; "
+        "const routeCheck = { route: '/knowledge-query', expectedPath: '/documents', "
+        "expectedSearch: '?query=%E5%8C%BB%E4%BF%9D&source_collection=regulations"
+        "&source_collection=personal-materials' }; "
+        "const data = { bodyText: 'x'.repeat(120), headings: ['文档检索'], "
+        "controlText: [], fileInputCount: 0, horizontalOverflow: false, "
+        "scrollWidth: 100, clientWidth: 100, overflowOffenders: [] }; "
+        "const hasSearchIssue = (finalUrl) => classify("
+        "{ status: 200, error: null, consoleErrors: [], failedRequests: [], "
+        "interactionErrors: [], finalUrl }, routeCheck, data)"
+        ".some((item) => item.type === 'unexpected-final-search'); "
+        "console.log(JSON.stringify({ "
+        "good: hasSearchIssue('https://audit.example.test/documents"
+        "?query=%E5%8C%BB%E4%BF%9D&source_collection=regulations"
+        "&source_collection=personal-materials'), "
+        "unknown: hasSearchIssue('https://audit.example.test/documents"
+        "?query=%E5%8C%BB%E4%BF%9D&source_collection=regulations"
+        "&source_collection=personal-materials&unknown=forwarded'), "
+        "missingRepeated: hasSearchIssue('https://audit.example.test/documents"
+        "?query=%E5%8C%BB%E4%BF%9D&source_collection=regulations') }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "good": False,
+        "unknown": True,
+        "missingRepeated": True,
+    }
+
+
 def test_production_frontend_acceptance_separates_independent_pages_and_aliases() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (
         "import { aliasRouteChecks, routeCheckProfiles } from "
         + json.dumps(runner_path.as_uri())
         + "; "
-        "const project = (item) => ({ route: item.route, expectedPath: item.expectedPath, "
-        "session: item.session }); "
+        "const project = (item) => ({ route: item.route, "
+        "inputSearch: item.inputSearch ?? '', expectedPath: item.expectedPath, "
+        "expectedSearch: item.expectedSearch ?? '', session: item.session }); "
         "console.log(JSON.stringify({ independent: routeCheckProfiles.hardened.map(project), "
         "aliases: aliasRouteChecks.map(project) }));"
     )
@@ -2208,17 +2247,31 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
     assert payload["aliases"] == [
         {
             "route": "/workspace",
+            "inputSearch": "",
             "expectedPath": "/chat",
+            "expectedSearch": "",
             "session": "workspace",
         },
         {
             "route": "/findings",
+            "inputSearch": "",
             "expectedPath": "/medical-audit",
+            "expectedSearch": "",
             "session": "workspace",
         },
         {
             "route": "/knowledge-query",
+            "inputSearch": (
+                "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98"
+                "&source_collection=medical-insurance-laws&unknown=discard"
+                "&source_collection=personal-materials"
+            ),
             "expectedPath": "/documents",
+            "expectedSearch": (
+                "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98"
+                "&source_collection=medical-insurance-laws"
+                "&source_collection=personal-materials"
+            ),
             "session": "workspace",
         },
     ]
@@ -2328,8 +2381,11 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
         "alias_execution_check_count",
         "total_execution_check_count",
         "alias_checks",
+        "inputSearch",
         "expectedPath",
         "finalPath",
+        "expectedSearch",
+        "finalSearch",
     ):
         assert report_field in script_text
         assert report_field in gate_text
@@ -2484,7 +2540,10 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         "report.summary.alias_check_count = aliases.length; "
         "report.summary.viewports = viewportNames; "
         "const makeCheck = (contract, viewport) => ({ route: contract.route, viewport, "
+        "inputSearch: contract.inputSearch ?? '', "
         "expectedPath: contract.expectedPath, finalPath: contract.expectedPath, "
+        "expectedSearch: contract.expectedSearch ?? '', "
+        "finalSearch: contract.expectedSearch ?? '', "
         "finalUrl: `https://audit.example.test${contract.expectedPath}`, status: 200, "
         "navigationError: false, headingCount: 1, bodyTextLength: 100, "
         "fileInputCount: 0, scrollWidth: 100, clientWidth: 100, "
@@ -2505,6 +2564,13 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         "report.checks[0].finalUrl = 'https://audit.example.test/wrong'; "
         "if (process.env.MUTATE_ALIAS_FINAL_URL === '1') "
         "report.alias_checks[0].finalUrl = 'not-a-valid-url'; "
+        "if (process.env.MUTATE_ALIAS_FINAL_SEARCH === '1') "
+        "report.alias_checks.find((check) => check.route === '/knowledge-query').finalSearch = "
+        "'?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&unknown=forwarded'; "
+        "if (process.env.DROP_REPEATED_ALIAS_SEARCH === '1') "
+        "report.alias_checks.find((check) => check.route === '/knowledge-query').finalSearch = "
+        "'?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98"
+        "&source_collection=medical-insurance-laws'; "
         "if (process.env.DROP_ALIAS === '1') report.alias_checks.pop(); "
         "if (process.env.REQUIRE_SCREENSHOT === '1') { "
         "report.summary.screenshot_capture = true; report.summary.screenshot_policy = 'all'; } "
@@ -2614,6 +2680,38 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
     assert wrong_alias_url_result.returncode == 2
     assert "frontend acceptance alias check evidence is incomplete" in (
         wrong_alias_url_result.stderr
+    )
+
+    wrong_alias_search_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_ALIAS_FINAL_SEARCH": "1",
+        },
+    )
+    assert wrong_alias_search_result.returncode == 2
+    assert "frontend acceptance alias check evidence is incomplete" in (
+        wrong_alias_search_result.stderr
+    )
+
+    missing_repeated_alias_search_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "DROP_REPEATED_ALIAS_SEARCH": "1",
+        },
+    )
+    assert missing_repeated_alias_search_result.returncode == 2
+    assert "frontend acceptance alias check evidence is incomplete" in (
+        missing_repeated_alias_search_result.stderr
     )
 
     missing_alias_result = subprocess.run(
