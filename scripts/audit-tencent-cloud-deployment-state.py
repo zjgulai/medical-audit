@@ -251,7 +251,20 @@ BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
 RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1"
 RELEASE_TARGET_PATTERN = re.compile(r"releases/([0-9a-f]{{40}})")
+DEPLOY_MARKER_PATTERN = re.compile(r"([0-9a-f]{{40}})\\n?")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{{64}}")
+DIRECTORY_OPEN_FLAGS = (
+    os.O_RDONLY
+    | os.O_DIRECTORY
+    | os.O_NOFOLLOW
+    | getattr(os, "O_CLOEXEC", 0)
+)
+FILE_OPEN_FLAGS = (
+    os.O_RDONLY
+    | os.O_NOFOLLOW
+    | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
 GOVERNANCE_ENV_KEYS = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
@@ -460,13 +473,6 @@ def nginx_mounts():
     return {{"audit_mount": audit_mount, "mount_count": len(mounts)}}
 
 
-def read_file(path):
-    try:
-        return Path(path).read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-
-
 def empty_release_state(error):
     return {{
         "ok": False,
@@ -484,32 +490,136 @@ def empty_release_state(error):
     }}
 
 
-def hash_regular_file(path):
+def same_entry_snapshot(left, right):
+    return (
+        left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+        and left.st_mode == right.st_mode
+        and left.st_size == right.st_size
+        and left.st_mtime_ns == right.st_mtime_ns
+        and left.st_ctime_ns == right.st_ctime_ns
+    )
+
+
+def same_identity(left, right):
+    return (
+        left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+        and stat.S_IFMT(left.st_mode) == stat.S_IFMT(right.st_mode)
+    )
+
+
+def empty_deploy_marker_state(error):
+    return {{
+        "ok": False,
+        "error": error,
+        "sha": None,
+        "snapshot": None,
+    }}
+
+
+def regular_file_snapshot(value):
+    return {{
+        "device": value.st_dev,
+        "inode": value.st_ino,
+        "file_type": "regular",
+        "mode": value.st_mode,
+        "size_bytes": value.st_size,
+        "mtime_ns": value.st_mtime_ns,
+        "ctime_ns": value.st_ctime_ns,
+    }}
+
+
+def deploy_marker_state():
+    state = empty_deploy_marker_state("deploy-marker-invalid")
+    app_fd = None
+    marker_fd = None
     try:
-        before = path.lstat()
+        try:
+            app_fd = os.open(APP_DIR, DIRECTORY_OPEN_FLAGS)
+        except OSError:
+            state["error"] = "deploy-marker-app-directory-invalid"
+            return state
+        try:
+            marker_fd = os.open(".deploy-sha", FILE_OPEN_FLAGS, dir_fd=app_fd)
+            before = os.fstat(marker_fd)
+        except OSError:
+            state["error"] = "deploy-marker-open-failed"
+            return state
+        if not stat.S_ISREG(before.st_mode):
+            state["error"] = "deploy-marker-not-regular"
+            return state
+        if before.st_size not in (40, 41):
+            state["error"] = "deploy-marker-size-invalid"
+            return state
+        chunks = []
+        size_bytes = 0
+        try:
+            while chunk := os.read(marker_fd, 64):
+                chunks.append(chunk)
+                size_bytes += len(chunk)
+                if size_bytes > 41:
+                    state["error"] = "deploy-marker-size-invalid"
+                    return state
+            after = os.fstat(marker_fd)
+        except OSError:
+            state["error"] = "deploy-marker-read-failed"
+            return state
+        if not same_entry_snapshot(before, after) or size_bytes != after.st_size:
+            state["error"] = "deploy-marker-changed-during-audit"
+            return state
+        try:
+            marker_text = b"".join(chunks).decode("ascii")
+        except UnicodeDecodeError:
+            state["error"] = "deploy-marker-content-invalid"
+            return state
+        matched_marker = DEPLOY_MARKER_PATTERN.fullmatch(marker_text)
+        if matched_marker is None:
+            state["error"] = "deploy-marker-content-invalid"
+            return state
+        state["ok"] = True
+        state["error"] = None
+        state["sha"] = matched_marker.group(1)
+        state["snapshot"] = regular_file_snapshot(after)
+        return state
+    finally:
+        for descriptor in (marker_fd, app_fd):
+            if descriptor is not None:
+                os.close(descriptor)
+
+
+def read_regular_file_at(parent_fd, name, expected_stat=None, collect_bytes=False):
+    try:
+        file_fd = os.open(name, FILE_OPEN_FLAGS, dir_fd=parent_fd)
     except OSError as exc:
-        raise RuntimeError("release-file-stat-failed") from exc
-    if not stat.S_ISREG(before.st_mode):
-        raise RuntimeError("release-entry-not-regular")
-    digest = hashlib.sha256()
-    size_bytes = 0
+        raise RuntimeError("release-file-open-failed") from exc
     try:
-        with path.open("rb") as handle:
-            while chunk := handle.read(1024 * 1024):
+        try:
+            before = os.fstat(file_fd)
+        except OSError as exc:
+            raise RuntimeError("release-file-stat-failed") from exc
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError("release-entry-not-regular")
+        if expected_stat is not None and not same_entry_snapshot(expected_stat, before):
+            raise RuntimeError("release-entry-changed-before-open")
+        digest = hashlib.sha256()
+        size_bytes = 0
+        chunks = [] if collect_bytes else None
+        try:
+            while chunk := os.read(file_fd, 1024 * 1024):
                 digest.update(chunk)
                 size_bytes += len(chunk)
-        after = path.lstat()
-    except OSError as exc:
-        raise RuntimeError("release-file-read-failed") from exc
-    if (
-        before.st_dev != after.st_dev
-        or before.st_ino != after.st_ino
-        or before.st_size != after.st_size
-        or before.st_mtime_ns != after.st_mtime_ns
-        or size_bytes != after.st_size
-    ):
-        raise RuntimeError("release-file-changed-during-audit")
-    return digest.hexdigest(), size_bytes
+                if chunks is not None:
+                    chunks.append(chunk)
+            after = os.fstat(file_fd)
+        except OSError as exc:
+            raise RuntimeError("release-file-read-failed") from exc
+        if not same_entry_snapshot(before, after) or size_bytes != after.st_size:
+            raise RuntimeError("release-file-changed-during-audit")
+        content = b"".join(chunks) if chunks is not None else None
+        return digest.hexdigest(), size_bytes, content
+    finally:
+        os.close(file_fd)
 
 
 def valid_manifest_path(value):
@@ -524,14 +634,15 @@ def valid_manifest_path(value):
     )
 
 
-def collect_release_files(release_root):
+def collect_release_files(release_fd):
     collected = {{}}
     invalid_count = 0
 
-    def visit(directory, relative_directory):
+    def visit(directory_fd, relative_directory):
         nonlocal invalid_count
         try:
-            entries = list(os.scandir(directory))
+            before_directory = os.fstat(directory_fd)
+            entries = list(os.scandir(directory_fd))
         except OSError as exc:
             raise RuntimeError("release-directory-scan-failed") from exc
         for entry in entries:
@@ -545,151 +656,214 @@ def collect_release_files(release_root):
             except OSError as exc:
                 raise RuntimeError("release-entry-stat-failed") from exc
             if stat.S_ISDIR(entry_stat.st_mode):
-                visit(Path(entry.path), relative_path)
+                try:
+                    child_fd = os.open(
+                        entry.name,
+                        DIRECTORY_OPEN_FLAGS,
+                        dir_fd=directory_fd,
+                    )
+                except OSError as exc:
+                    raise RuntimeError("release-directory-open-failed") from exc
+                try:
+                    try:
+                        opened_stat = os.fstat(child_fd)
+                    except OSError as exc:
+                        raise RuntimeError("release-directory-stat-failed") from exc
+                    if (
+                        not stat.S_ISDIR(opened_stat.st_mode)
+                        or not same_entry_snapshot(entry_stat, opened_stat)
+                    ):
+                        raise RuntimeError("release-directory-changed-before-open")
+                    visit(child_fd, relative_path)
+                finally:
+                    os.close(child_fd)
                 continue
             if not stat.S_ISREG(entry_stat.st_mode):
                 invalid_count += 1
                 continue
             if relative_path == "release-manifest.json":
                 continue
-            file_sha256, size_bytes = hash_regular_file(Path(entry.path))
+            file_sha256, size_bytes, _content = read_regular_file_at(
+                directory_fd,
+                entry.name,
+                expected_stat=entry_stat,
+            )
             collected[relative_path] = {{
                 "sha256": file_sha256,
                 "size_bytes": size_bytes,
             }}
+        try:
+            after_directory = os.fstat(directory_fd)
+        except OSError as exc:
+            raise RuntimeError("release-directory-stat-failed") from exc
+        if not same_entry_snapshot(before_directory, after_directory):
+            raise RuntimeError("release-directory-changed-during-audit")
 
-    visit(release_root, "")
+    visit(release_fd, "")
     return collected, invalid_count
 
 
 def release_state():
     state = empty_release_state("current-release-invalid")
-    web_root = Path(WEB_DIR)
-    current = web_root / "current"
+    web_fd = None
+    releases_fd = None
+    release_fd = None
     try:
-        current_stat = current.lstat()
-    except OSError:
-        return state
-    if not stat.S_ISLNK(current_stat.st_mode):
-        return state
-    try:
-        current_target = os.readlink(current)
-    except OSError:
-        return state
-    state["current_release_target"] = current_target
-    matched_target = RELEASE_TARGET_PATTERN.fullmatch(current_target)
-    if matched_target is None:
-        return state
-    release_sha = matched_target.group(1)
-    state["release_sha"] = release_sha
-    releases_root = web_root / "releases"
-    release_root = releases_root / release_sha
-    try:
-        releases_stat = releases_root.lstat()
-        release_stat = release_root.lstat()
-        resolved_current = current.resolve(strict=True)
-        resolved_release = release_root.resolve(strict=True)
-    except OSError:
-        state["error"] = "current-release-target-missing"
-        return state
-    if (
-        not stat.S_ISDIR(releases_stat.st_mode)
-        or not stat.S_ISDIR(release_stat.st_mode)
-        or resolved_current != resolved_release
-    ):
-        state["error"] = "current-release-target-invalid"
-        return state
-    manifest_path = release_root / "release-manifest.json"
-    try:
-        before_manifest_sha256, before_manifest_size = hash_regular_file(manifest_path)
-        manifest_bytes = manifest_path.read_bytes()
-        after_manifest_sha256, after_manifest_size = hash_regular_file(manifest_path)
-        manifest = json.loads(manifest_bytes.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError):
-        state["error"] = "release-manifest-invalid"
-        return state
-    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
-    state["remote_manifest_sha256"] = manifest_sha256
-    if (
-        before_manifest_sha256 != manifest_sha256
-        or after_manifest_sha256 != manifest_sha256
-        or before_manifest_size != len(manifest_bytes)
-        or after_manifest_size != len(manifest_bytes)
-    ):
-        state["error"] = "release-manifest-changed-during-audit"
-        return state
-    if not isinstance(manifest, dict) or manifest.get("format") != RELEASE_MANIFEST_FORMAT:
-        state["error"] = "release-manifest-format-invalid"
-        return state
-    source_sha = manifest.get("source_sha")
-    state["manifest_source_sha"] = source_sha if isinstance(source_sha, str) else None
-    raw_files = manifest.get("files")
-    if not isinstance(raw_files, list):
-        state["error"] = "release-manifest-files-invalid"
-        return state
-    expected_files = {{}}
-    ordered_paths = []
-    for item in raw_files:
-        if not isinstance(item, dict) or set(item) != {{"path", "size_bytes", "sha256"}}:
-            state["error"] = "release-manifest-entry-invalid"
+        try:
+            web_fd = os.open(WEB_DIR, DIRECTORY_OPEN_FLAGS)
+            current_stat = os.stat("current", dir_fd=web_fd, follow_symlinks=False)
+            current_target = os.readlink("current", dir_fd=web_fd)
+        except OSError:
             return state
-        relative_path = item.get("path")
-        size_bytes = item.get("size_bytes")
-        file_sha256 = item.get("sha256")
+        if not stat.S_ISLNK(current_stat.st_mode):
+            return state
+        state["current_release_target"] = current_target
+        matched_target = RELEASE_TARGET_PATTERN.fullmatch(current_target)
+        if matched_target is None:
+            return state
+        release_sha = matched_target.group(1)
+        state["release_sha"] = release_sha
+        try:
+            releases_fd = os.open("releases", DIRECTORY_OPEN_FLAGS, dir_fd=web_fd)
+            release_fd = os.open(release_sha, DIRECTORY_OPEN_FLAGS, dir_fd=releases_fd)
+            release_stat = os.fstat(release_fd)
+            resolved_current_stat = os.stat(
+                "current",
+                dir_fd=web_fd,
+                follow_symlinks=True,
+            )
+        except OSError:
+            state["error"] = "current-release-target-missing"
+            return state
         if (
-            not valid_manifest_path(relative_path)
-            or isinstance(size_bytes, bool)
-            or not isinstance(size_bytes, int)
-            or size_bytes < 0
-            or not isinstance(file_sha256, str)
-            or SHA256_PATTERN.fullmatch(file_sha256) is None
-            or relative_path in expected_files
+            not stat.S_ISDIR(release_stat.st_mode)
+            or not same_identity(resolved_current_stat, release_stat)
         ):
-            state["error"] = "release-manifest-entry-invalid"
+            state["error"] = "current-release-target-invalid"
             return state
-        ordered_paths.append(relative_path)
-        expected_files[relative_path] = {{
-            "size_bytes": size_bytes,
-            "sha256": file_sha256,
-        }}
-    state["manifest_file_count"] = len(expected_files)
-    if ordered_paths != sorted(ordered_paths, key=lambda path: path.encode("utf-8")):
-        state["error"] = "release-manifest-order-invalid"
+        try:
+            manifest_sha256, manifest_size, manifest_bytes = read_regular_file_at(
+                release_fd,
+                "release-manifest.json",
+                collect_bytes=True,
+            )
+            if manifest_bytes is None:
+                raise RuntimeError("release-manifest-read-failed")
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RuntimeError):
+            state["error"] = "release-manifest-invalid"
+            return state
+        state["remote_manifest_sha256"] = manifest_sha256
+        if not isinstance(manifest, dict) or manifest.get("format") != RELEASE_MANIFEST_FORMAT:
+            state["error"] = "release-manifest-format-invalid"
+            return state
+        source_sha = manifest.get("source_sha")
+        state["manifest_source_sha"] = source_sha if isinstance(source_sha, str) else None
+        raw_files = manifest.get("files")
+        if not isinstance(raw_files, list):
+            state["error"] = "release-manifest-files-invalid"
+            return state
+        expected_files = {{}}
+        ordered_paths = []
+        for item in raw_files:
+            if not isinstance(item, dict) or set(item) != {{"path", "size_bytes", "sha256"}}:
+                state["error"] = "release-manifest-entry-invalid"
+                return state
+            relative_path = item.get("path")
+            size_bytes = item.get("size_bytes")
+            file_sha256 = item.get("sha256")
+            if (
+                not valid_manifest_path(relative_path)
+                or isinstance(size_bytes, bool)
+                or not isinstance(size_bytes, int)
+                or size_bytes < 0
+                or not isinstance(file_sha256, str)
+                or SHA256_PATTERN.fullmatch(file_sha256) is None
+                or relative_path in expected_files
+            ):
+                state["error"] = "release-manifest-entry-invalid"
+                return state
+            ordered_paths.append(relative_path)
+            expected_files[relative_path] = {{
+                "size_bytes": size_bytes,
+                "sha256": file_sha256,
+            }}
+        state["manifest_file_count"] = len(expected_files)
+        if ordered_paths != sorted(ordered_paths, key=lambda path: path.encode("utf-8")):
+            state["error"] = "release-manifest-order-invalid"
+            return state
+        static_paths = [
+            path for path in ordered_paths if path.startswith("_next/static/")
+        ]
+        selected_html_path = "documents.html"
+        if selected_html_path not in expected_files:
+            state["error"] = "release-manifest-html-missing"
+            return state
+        if not static_paths:
+            state["error"] = "release-manifest-static-missing"
+            return state
+        selected_static_path = static_paths[0]
+        state["selected_html_path"] = selected_html_path
+        state["selected_html_sha256"] = expected_files[selected_html_path]["sha256"]
+        state["selected_static_path"] = selected_static_path
+        state["selected_static_sha256"] = expected_files[selected_static_path]["sha256"]
+        if source_sha != release_sha:
+            state["error"] = "release-manifest-source-sha-mismatch"
+            return state
+        try:
+            actual_files, invalid_count = collect_release_files(release_fd)
+            final_manifest_sha256, final_manifest_size, final_manifest_bytes = (
+                read_regular_file_at(
+                    release_fd,
+                    "release-manifest.json",
+                    collect_bytes=True,
+                )
+            )
+            final_current_stat = os.stat(
+                "current",
+                dir_fd=web_fd,
+                follow_symlinks=False,
+            )
+            final_current_target = os.readlink("current", dir_fd=web_fd)
+            final_resolved_current_stat = os.stat(
+                "current",
+                dir_fd=web_fd,
+                follow_symlinks=True,
+            )
+        except (OSError, RuntimeError) as exc:
+            state["error"] = (
+                str(exc) if isinstance(exc, RuntimeError) else "release-observation-failed"
+            )
+            return state
+        if (
+            final_manifest_sha256 != manifest_sha256
+            or final_manifest_size != manifest_size
+            or final_manifest_bytes != manifest_bytes
+        ):
+            state["error"] = "release-manifest-changed-during-audit"
+            return state
+        if (
+            not same_entry_snapshot(current_stat, final_current_stat)
+            or final_current_target != current_target
+            or not same_identity(final_resolved_current_stat, release_stat)
+        ):
+            state["error"] = "current-release-changed-during-audit"
+            return state
+        mismatch_count = invalid_count + len(set(expected_files) ^ set(actual_files))
+        for relative_path in set(expected_files) & set(actual_files):
+            if expected_files[relative_path] != actual_files[relative_path]:
+                mismatch_count += 1
+        state["manifest_mismatch_count"] = mismatch_count
+        if mismatch_count:
+            state["error"] = "release-file-mismatch"
+            return state
+        state["ok"] = True
+        state["error"] = None
         return state
-    static_paths = [
-        path for path in ordered_paths if path.startswith("_next/static/")
-    ]
-    selected_html_path = "documents.html"
-    if selected_html_path not in expected_files:
-        state["error"] = "release-manifest-html-missing"
-        return state
-    if not static_paths:
-        state["error"] = "release-manifest-static-missing"
-        return state
-    selected_static_path = static_paths[0]
-    state["selected_html_path"] = selected_html_path
-    state["selected_html_sha256"] = expected_files[selected_html_path]["sha256"]
-    state["selected_static_path"] = selected_static_path
-    state["selected_static_sha256"] = expected_files[selected_static_path]["sha256"]
-    if source_sha != release_sha:
-        state["error"] = "release-manifest-source-sha-mismatch"
-        return state
-    try:
-        actual_files, invalid_count = collect_release_files(release_root)
-    except RuntimeError as exc:
-        state["error"] = str(exc)
-        return state
-    mismatch_count = invalid_count + len(set(expected_files) ^ set(actual_files))
-    for relative_path in set(expected_files) & set(actual_files):
-        if expected_files[relative_path] != actual_files[relative_path]:
-            mismatch_count += 1
-    state["manifest_mismatch_count"] = mismatch_count
-    if mismatch_count:
-        state["error"] = "release-file-mismatch"
-        return state
-    state["ok"] = True
-    state["error"] = None
-    return state
+    finally:
+        for descriptor in (release_fd, releases_fd, web_fd):
+            if descriptor is not None:
+                os.close(descriptor)
 
 
 def url_origin(url):
@@ -887,6 +1061,8 @@ def backup_index():
     return {{category: backup_entries(category) for category in BACKUP_CATEGORIES}}
 
 
+initial_deploy_marker_state = deploy_marker_state()
+initial_deploy_sha = initial_deploy_marker_state.get("sha")
 active_release = release_state()
 audit_log_before = audit_log_event_snapshot()
 local_backend = {{
@@ -904,14 +1080,24 @@ public_frontdoor = {{
     "next_static": next_static_asset_status(active_release),
 }}
 audit_log_after = audit_log_event_snapshot()
+final_release = release_state()
+final_deploy_marker_state = deploy_marker_state()
+final_deploy_sha = final_deploy_marker_state.get("sha")
 
 report = {{
     "collected_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     "remote_app_dir": APP_DIR,
     "remote_web_dir": WEB_DIR,
     "remote_backup_root": BACKUP_ROOT,
-    "deploy_sha": read_file(str(Path(APP_DIR) / ".deploy-sha")),
+    "deploy_sha": final_deploy_sha,
     "release_state": active_release,
+    "release_observation": {{
+        "initial_deploy_sha": initial_deploy_sha,
+        "final_deploy_sha": final_deploy_sha,
+        "initial_deploy_marker_state": initial_deploy_marker_state,
+        "final_deploy_marker_state": final_deploy_marker_state,
+        "final_release_state": final_release,
+    }},
     "containers": {{
         "medical_audit_app": container_state("medical_audit_app"),
         "medical_audit_pg": container_state("medical_audit_pg"),
@@ -1042,6 +1228,39 @@ def _build_report(
         issues.append("current-release-target-mismatch")
     if not expected_sha_valid or manifest_source_sha != expected_deploy_sha:
         issues.append("remote-manifest-source-sha-mismatch")
+    release_observation = _nested_dict(remote_report, "release_observation")
+    initial_deploy_sha = _string_or_none(release_observation.get("initial_deploy_sha"))
+    final_deploy_sha = _string_or_none(release_observation.get("final_deploy_sha"))
+    initial_deploy_marker = _nested_dict(
+        release_observation,
+        "initial_deploy_marker_state",
+    )
+    final_deploy_marker = _nested_dict(
+        release_observation,
+        "final_deploy_marker_state",
+    )
+    deploy_marker_valid = _deploy_marker_state_valid(
+        initial_deploy_marker,
+    ) and _deploy_marker_state_valid(final_deploy_marker)
+    if not deploy_marker_valid:
+        issues.append("deploy-marker-invalid")
+    deploy_marker_observation_stable = (
+        deploy_marker_valid
+        and initial_deploy_marker == final_deploy_marker
+        and initial_deploy_marker.get("sha") == initial_deploy_sha
+        and final_deploy_marker.get("sha") == final_deploy_sha
+        and final_deploy_marker.get("sha") == deploy_sha
+    )
+    final_release = _nested_dict(release_observation, "final_release_state")
+    release_observation_stable = (
+        deploy_sha is not None
+        and bool(release)
+        and bool(final_release)
+        and deploy_marker_observation_stable
+        and final_release == release
+    )
+    if not release_observation_stable:
+        issues.append("release-observation-drift")
     frontdoor = _nested_dict(remote_report, "public_frontdoor")
     public_manifest = _nested_dict(frontdoor, "manifest")
     public_static = _nested_dict(frontdoor, "next_static")
@@ -1174,6 +1393,7 @@ def _build_report(
             and current_release_target == expected_release_target
             and release_sha == expected_deploy_sha
             and manifest_source_sha == expected_deploy_sha
+            and release_observation_stable
         )
         else "unproven"
     )
@@ -1181,6 +1401,7 @@ def _build_report(
         nginx_config_test_passed
         and _audit_mount_valid(remote_report)
         and release_integrity_valid
+        and release_observation_stable
         and manifest_frontdoor_ready
         and public_manifest_sha256 == remote_manifest_sha256
         and _audit_next_static_healthy(remote_report)
@@ -1218,7 +1439,10 @@ def _build_report(
             "public_static_sha256": public_static_sha256,
             "html_cache_control": html_cache_control,
             "static_cache_control": static_cache_control,
+            "deploy_marker_valid": deploy_marker_valid,
+            "deploy_marker_observation_stable": deploy_marker_observation_stable,
             "release_commit_state": release_commit_state,
+            "release_observation_stable": release_observation_stable,
             "nginx_release_route_ready": nginx_release_route_ready,
             "app_health": _container_health(remote_report, "medical_audit_app"),
             "postgres_health": _container_health(remote_report, "medical_audit_pg"),
@@ -1311,6 +1535,34 @@ def _nonnegative_int_or_none(value: object) -> int | None:
     return value
 
 
+def _deploy_marker_state_valid(value: dict[str, Any]) -> bool:
+    snapshot = _nested_dict(value, "snapshot")
+    integer_fields = (
+        "device",
+        "inode",
+        "mode",
+        "size_bytes",
+        "mtime_ns",
+        "ctime_ns",
+    )
+    if any(
+        _nonnegative_int_or_none(snapshot.get(field)) is None
+        for field in integer_fields
+    ):
+        return False
+    mode = snapshot.get("mode")
+    size_bytes = snapshot.get("size_bytes")
+    return (
+        value.get("ok") is True
+        and value.get("error") is None
+        and _valid_hex_digest(value.get("sha"), length=40)
+        and snapshot.get("file_type") == "regular"
+        and isinstance(mode, int)
+        and mode & 0o170000 == 0o100000
+        and size_bytes in (40, 41)
+    )
+
+
 def _cache_control_directives(value: str | None) -> dict[str, set[str | None]]:
     directives: dict[str, set[str | None]] = {}
     if value is None:
@@ -1326,13 +1578,16 @@ def _cache_control_directives(value: str | None) -> dict[str, set[str | None]]:
 
 def _html_cache_control_valid(value: str | None) -> bool:
     directives = _cache_control_directives(value)
-    return not {"no-store", "no-cache"}.isdisjoint(directives)
+    return (
+        directives.get("no-store") == {None}
+        or directives.get("no-cache") == {None}
+    )
 
 
 def _static_cache_control_valid(value: str | None) -> bool:
     directives = _cache_control_directives(value)
     return (
-        "immutable" in directives
+        directives.get("immutable") == {None}
         and directives.get("max-age") == {"31536000"}
     )
 
@@ -1625,7 +1880,12 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `public_static_sha256`: `{summary.get('public_static_sha256')}`",
             f"- `html_cache_control`: `{summary.get('html_cache_control')}`",
             f"- `static_cache_control`: `{summary.get('static_cache_control')}`",
+            f"- `deploy_marker_valid`: `{summary.get('deploy_marker_valid')}`",
+            f"- `deploy_marker_observation_stable`: "
+            f"`{summary.get('deploy_marker_observation_stable')}`",
             f"- `release_commit_state`: `{summary.get('release_commit_state')}`",
+            f"- `release_observation_stable`: "
+            f"`{summary.get('release_observation_stable')}`",
             f"- `nginx_release_route_ready`: `{summary.get('nginx_release_route_ready')}`",
             f"- `app_health`: `{summary.get('app_health')}`",
             f"- `postgres_health`: `{summary.get('postgres_health')}`",

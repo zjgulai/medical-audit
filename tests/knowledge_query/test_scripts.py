@@ -2925,21 +2925,201 @@ def test_audit_tencent_cloud_deployment_state_hashes_the_manifest_bytes_it_parse
         + "\n"
     ).encode("utf-8")
     namespace = _audit_remote_namespace(remote_web_dir=web_root)
-    original_hash = namespace.get("hash_regular_file")
+    original_reader = namespace.get("read_regular_file_at")
     release_state = namespace.get("release_state")
-    assert callable(original_hash)
+    assert callable(original_reader)
     assert callable(release_state)
+    swapped = False
 
-    def swap_after_hash(path: Path) -> tuple[str, int]:
-        result = original_hash(path)
-        if path.name == "release-manifest.json":
-            path.write_bytes(replacement_bytes)
+    def swap_after_read(
+        parent_fd: int,
+        name: str,
+        expected_stat: object | None = None,
+        collect_bytes: bool = False,
+    ) -> tuple[str, int, bytes | None]:
+        nonlocal swapped
+        result = original_reader(
+            parent_fd,
+            name,
+            expected_stat=expected_stat,
+            collect_bytes=collect_bytes,
+        )
+        if name == "release-manifest.json" and collect_bytes and not swapped:
+            manifest_path.write_bytes(replacement_bytes)
+            swapped = True
         return result
 
-    namespace["hash_regular_file"] = swap_after_hash
+    namespace["read_regular_file_at"] = swap_after_read
     state = release_state()
 
-    assert state["remote_manifest_sha256"] == hashlib.sha256(replacement_bytes).hexdigest()
+    assert swapped is True
+    assert state["ok"] is False
+    assert state["error"] == "release-manifest-changed-during-audit"
+    assert state["remote_manifest_sha256"] == fixture["manifest_sha256"]
+
+
+def test_audit_tencent_cloud_deployment_state_does_not_follow_directory_swap(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_versioned_audit_release_fixture(tmp_path)
+    web_root = fixture["web_root"]
+    release_root = fixture["release_root"]
+    assert isinstance(web_root, Path)
+    assert isinstance(release_root, Path)
+    safe_content = b"expected nested release bytes"
+    nested = release_root / "nested"
+    _write_bytes(nested / "safe.txt", safe_content)
+    manifest_path = release_root / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"].append(
+        {
+            "path": "nested/safe.txt",
+            "size_bytes": len(safe_content),
+            "sha256": hashlib.sha256(safe_content).hexdigest(),
+        }
+    )
+    manifest["files"].sort(key=lambda item: item["path"].encode("utf-8"))
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    outside = tmp_path / "outside"
+    _write_bytes(outside / "safe.txt", safe_content)
+    displaced = tmp_path / "displaced-nested"
+    namespace = _audit_remote_namespace(remote_web_dir=web_root)
+    release_state = namespace.get("release_state")
+    remote_os = namespace.get("os")
+    assert callable(release_state)
+    assert remote_os is os
+    original_open = os.open
+    original_scandir = os.scandir
+    swapped = False
+
+    def swap_directory() -> None:
+        nonlocal swapped
+        if swapped:
+            return
+        nested.rename(displaced)
+        nested.symlink_to(outside, target_is_directory=True)
+        swapped = True
+
+    def racing_open(
+        path: str | bytes | int,
+        flags: int,
+        *args: object,
+        **kwargs: object,
+    ) -> int:
+        if path == "nested" and kwargs.get("dir_fd") is not None:
+            swap_directory()
+        return original_open(path, flags, *args, **kwargs)
+
+    def racing_scandir(path: str | bytes | int | os.PathLike[str]) -> object:
+        if not isinstance(path, int) and Path(path) == nested:
+            swap_directory()
+        return original_scandir(path)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    monkeypatch.setattr(os, "scandir", racing_scandir)
+
+    state = release_state()
+
+    assert swapped is True
+    assert state["ok"] is False
+
+
+def test_audit_tencent_cloud_deployment_state_rejects_symlink_deploy_marker(
+    tmp_path: Path,
+) -> None:
+    deploy_sha = "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    outside_marker = _write_bytes(tmp_path / "outside-deploy-sha", f"{deploy_sha}\n".encode())
+    (app_root / ".deploy-sha").symlink_to(outside_marker)
+    namespace = _audit_remote_namespace(
+        remote_app_dir=app_root,
+        remote_web_dir=tmp_path / "web",
+    )
+    deploy_marker_state = namespace.get("deploy_marker_state")
+
+    assert callable(deploy_marker_state)
+    marker_state = deploy_marker_state()
+
+    assert marker_state["ok"] is False
+    assert marker_state["sha"] is None
+
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_symlink_marker",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    remote_report["deploy_sha"] = None
+    release_observation = remote_report["release_observation"]
+    assert isinstance(release_observation, dict)
+    release_observation["initial_deploy_sha"] = None
+    release_observation["final_deploy_sha"] = None
+    release_observation["initial_deploy_marker_state"] = marker_state
+    release_observation["final_deploy_marker_state"] = marker_state
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha=deploy_sha,
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "deploy-marker-invalid" in report["issues"]
+    assert report["summary"]["release_commit_state"] == "unproven"
+
+
+def test_audit_tencent_cloud_deployment_state_rejects_same_content_marker_replacement(
+    tmp_path: Path,
+) -> None:
+    deploy_sha = "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
+    app_root = tmp_path / "app"
+    marker = _write_bytes(app_root / ".deploy-sha", f"{deploy_sha}\n".encode())
+    namespace = _audit_remote_namespace(
+        remote_app_dir=app_root,
+        remote_web_dir=tmp_path / "web",
+    )
+    deploy_marker_state = namespace.get("deploy_marker_state")
+    assert callable(deploy_marker_state)
+    initial_marker = deploy_marker_state()
+    replacement = _write_bytes(
+        app_root / ".deploy-sha.next",
+        f"{deploy_sha}\n".encode(),
+    )
+    os.replace(replacement, marker)
+    final_marker = deploy_marker_state()
+
+    assert initial_marker["ok"] is True
+    assert final_marker["ok"] is True
+    assert initial_marker["sha"] == final_marker["sha"] == deploy_sha
+    assert initial_marker["snapshot"] != final_marker["snapshot"]
+
+    module = _load_script_module(
+        "audit_tencent_cloud_deployment_state_marker_replacement",
+        Path("scripts/audit-tencent-cloud-deployment-state.py"),
+    )
+    remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
+    release_observation = remote_report["release_observation"]
+    assert isinstance(release_observation, dict)
+    release_observation["initial_deploy_marker_state"] = initial_marker
+    release_observation["final_deploy_marker_state"] = final_marker
+
+    report = module._build_report(
+        remote_report=remote_report,
+        local_smoke_reports=[],
+        expected_deploy_sha=deploy_sha,
+        required_backup_stamp=None,
+        expected_embeddings=48985,
+    )
+
+    assert report["status"] == "fail"
+    assert "release-observation-drift" in report["issues"]
+    assert report["summary"]["release_commit_state"] == "unproven"
 
 
 def test_audit_tencent_cloud_deployment_state_http_evidence_hashes_cache_and_blocks_cross_origin(
@@ -3102,6 +3282,9 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
         "deploy_sha": "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6",
     } == report["summary"]
     assert report["summary"]["release_commit_state"] == "committed_by_marker"
+    assert report["summary"]["deploy_marker_valid"] is True
+    assert report["summary"]["deploy_marker_observation_stable"] is True
+    assert report["summary"]["release_observation_stable"] is True
     assert report["summary"]["manifest_html_sha256"] == "d" * 64
     assert report["summary"]["public_html_sha256"] == "d" * 64
 
@@ -3112,12 +3295,17 @@ def test_audit_tencent_cloud_deployment_state_builds_pass_report(tmp_path: Path)
         ("deploy-sha", "deploy-sha-mismatch"),
         ("current", "current-release-target-mismatch"),
         ("source", "remote-manifest-source-sha-mismatch"),
+        ("post-current", "release-observation-drift"),
+        ("post-manifest", "release-observation-drift"),
+        ("post-deploy", "release-observation-drift"),
         ("manifest-hash", "public-manifest-sha-mismatch"),
         ("html-hash", "public-html-sha-mismatch"),
         ("static-hash", "public-static-sha-mismatch"),
         ("file-mismatch", "remote-release-integrity-failed"),
         ("html-cache", "html-cache-control-invalid"),
+        ("valued-html-cache", "html-cache-control-invalid"),
         ("static-cache", "static-cache-control-invalid"),
+        ("valued-static-cache", "static-cache-control-invalid"),
         ("short-static-cache", "static-cache-control-invalid"),
         ("nginx", "nginx-config-test-failed"),
         ("legacy", "remote-release-integrity-failed"),
@@ -3133,17 +3321,40 @@ def test_audit_tencent_cloud_deployment_state_rejects_release_gate_mutation(
     )
     remote_report = _deployment_state_fixture(stamp="20260611T180655+0800")
     release_state = remote_report["release_state"]
+    release_observation = remote_report["release_observation"]
     frontdoor = remote_report["public_frontdoor"]
     nginx = remote_report["nginx"]
     assert isinstance(release_state, dict)
+    assert isinstance(release_observation, dict)
     assert isinstance(frontdoor, dict)
     assert isinstance(nginx, dict)
     if mutation == "deploy-sha":
         remote_report["deploy_sha"] = "f" * 40
+        release_observation["initial_deploy_sha"] = "f" * 40
+        release_observation["final_deploy_sha"] = "f" * 40
     elif mutation == "current":
         release_state["current_release_target"] = "releases/" + "f" * 40
+        final_release = release_observation["final_release_state"]
+        assert isinstance(final_release, dict)
+        final_release["current_release_target"] = "releases/" + "f" * 40
     elif mutation == "source":
         release_state["manifest_source_sha"] = "f" * 40
+        final_release = release_observation["final_release_state"]
+        assert isinstance(final_release, dict)
+        final_release["manifest_source_sha"] = "f" * 40
+    elif mutation in {"post-current", "post-manifest"}:
+        final_release = release_observation["final_release_state"]
+        assert isinstance(final_release, dict)
+        field = (
+            "current_release_target"
+            if mutation == "post-current"
+            else "remote_manifest_sha256"
+        )
+        final_release[field] = (
+            "releases/" + "f" * 40 if field.startswith("current") else "f" * 64
+        )
+    elif mutation == "post-deploy":
+        release_observation["final_deploy_sha"] = "f" * 40
     elif mutation == "manifest-hash":
         manifest = frontdoor["manifest"]
         assert isinstance(manifest, dict)
@@ -3159,14 +3370,28 @@ def test_audit_tencent_cloud_deployment_state_rejects_release_gate_mutation(
     elif mutation == "file-mismatch":
         release_state["ok"] = False
         release_state["manifest_mismatch_count"] = 1
+        final_release = release_observation["final_release_state"]
+        assert isinstance(final_release, dict)
+        final_release["ok"] = False
+        final_release["manifest_mismatch_count"] = 1
     elif mutation == "html-cache":
         documents = frontdoor["documents"]
         assert isinstance(documents, dict)
         documents["cache_control"] = "private, no-cache-disabled"
+    elif mutation == "valued-html-cache":
+        documents = frontdoor["documents"]
+        assert isinstance(documents, dict)
+        documents["cache_control"] = "private, no-cache=disabled"
     elif mutation == "static-cache":
         static = frontdoor["next_static"]
         assert isinstance(static, dict)
         static["cache_control"] = "public, max-age=31536000, not-immutable"
+    elif mutation == "valued-static-cache":
+        static = frontdoor["next_static"]
+        assert isinstance(static, dict)
+        static["cache_control"] = (
+            "public, max-age=31536000, immutable=disabled"
+        )
     elif mutation == "short-static-cache":
         static = frontdoor["next_static"]
         assert isinstance(static, dict)
@@ -3184,6 +3409,7 @@ def test_audit_tencent_cloud_deployment_state_rejects_release_gate_mutation(
                 "manifest_mismatch_count": 1,
             }
         )
+        release_observation["final_release_state"] = dict(release_state)
 
     report = module._build_report(
         remote_report=remote_report,
@@ -3195,7 +3421,15 @@ def test_audit_tencent_cloud_deployment_state_rejects_release_gate_mutation(
 
     assert report["status"] == "fail"
     assert expected_issue in report["issues"]
-    if mutation in {"deploy-sha", "current", "source", "legacy"}:
+    if mutation in {
+        "deploy-sha",
+        "current",
+        "source",
+        "post-current",
+        "post-manifest",
+        "post-deploy",
+        "legacy",
+    }:
         assert report["summary"]["release_commit_state"] != "committed_by_marker"
     else:
         assert report["summary"]["release_commit_state"] == "committed_by_marker"
@@ -7473,21 +7707,46 @@ def _deployment_state_fixture(stamp: str) -> dict[str, object]:
     deploy_sha = "cf6c1479de0b109d5abc9ee92ac8267e549ec2f6"
     remote_manifest_sha256 = "b" * 64
     static_sha256 = "c" * 64
-    return {
-        "deploy_sha": deploy_sha,
-        "release_state": {
+    release_state: dict[str, object] = {
+        "ok": True,
+        "error": None,
+        "current_release_target": f"releases/{deploy_sha}",
+        "release_sha": deploy_sha,
+        "manifest_source_sha": deploy_sha,
+        "remote_manifest_sha256": remote_manifest_sha256,
+        "manifest_file_count": 2,
+        "manifest_mismatch_count": 0,
+        "selected_html_path": "documents.html",
+        "selected_html_sha256": "d" * 64,
+        "selected_static_path": "_next/static/chunks/app-audit.js",
+        "selected_static_sha256": static_sha256,
+    }
+
+    def deploy_marker_state() -> dict[str, object]:
+        return {
             "ok": True,
             "error": None,
-            "current_release_target": f"releases/{deploy_sha}",
-            "release_sha": deploy_sha,
-            "manifest_source_sha": deploy_sha,
-            "remote_manifest_sha256": remote_manifest_sha256,
-            "manifest_file_count": 2,
-            "manifest_mismatch_count": 0,
-            "selected_html_path": "documents.html",
-            "selected_html_sha256": "d" * 64,
-            "selected_static_path": "_next/static/chunks/app-audit.js",
-            "selected_static_sha256": static_sha256,
+            "sha": deploy_sha,
+            "snapshot": {
+                "device": 1,
+                "inode": 2,
+                "file_type": "regular",
+                "mode": stat.S_IFREG | 0o644,
+                "size_bytes": 41,
+                "mtime_ns": 3,
+                "ctime_ns": 4,
+            },
+        }
+
+    return {
+        "deploy_sha": deploy_sha,
+        "release_state": release_state,
+        "release_observation": {
+            "initial_deploy_sha": deploy_sha,
+            "final_deploy_sha": deploy_sha,
+            "initial_deploy_marker_state": deploy_marker_state(),
+            "final_deploy_marker_state": deploy_marker_state(),
+            "final_release_state": dict(release_state),
         },
         "containers": {
             "medical_audit_app": {
@@ -7654,20 +7913,24 @@ def _write_versioned_audit_release_fixture(
     }
 
 
-def _audit_remote_namespace(*, remote_web_dir: Path) -> dict[str, object]:
+def _audit_remote_namespace(
+    *,
+    remote_web_dir: Path,
+    remote_app_dir: Path | None = None,
+) -> dict[str, object]:
     module = _load_script_module(
         f"audit_tencent_cloud_remote_{hash(remote_web_dir)}",
         Path("scripts/audit-tencent-cloud-deployment-state.py"),
     )
     remote_code = module._remote_audit_code(
-        remote_app_dir="/opt/medical-audit/app",
+        remote_app_dir=str(remote_app_dir or "/opt/medical-audit/app"),
         remote_web_dir=str(remote_web_dir),
         remote_backup_root="/opt/medical-audit/backups",
         base_url="http://127.0.0.1:1",
         backup_limit=1,
     )
     prelude, separator, _main = remote_code.partition(
-        "\naudit_log_before = audit_log_event_snapshot()\n"
+        "\nactive_release = release_state()\n"
     )
     assert separator
     namespace: dict[str, object] = {}

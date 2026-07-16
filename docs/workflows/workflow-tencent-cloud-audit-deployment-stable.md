@@ -1015,11 +1015,11 @@ python3 scripts/run-production-e2e-smoke.py \
 - 默认检查 `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
 - `current` 必须是字面值精确为 `releases/<40-char-lowercase-sha>` 的 symlink；目标 release 目录必须是非 symlink directory。缺少 `current`、绝对 symlink、越界 target 或 legacy flat root 均失败关闭。
-- 审计会读取 active release 的 `release-manifest.json`，按 manifest 重算完整 regular-file 集合、size 与 SHA-256；missing、extra、hash/size mismatch、symlink、special file、manifest source SHA 与 release SHA 不一致均阻断。公网静态样本只能从该 manifest 选择，禁止扫描 legacy root。
-- 公网 GET 必须保持 same-origin；`release-manifest.json` body SHA-256 必须等于远端 manifest，`/documents` HTML 与选定 `_next/static/` 的 body SHA-256 必须分别等于 manifest 中 `documents.html` 和静态样本的 SHA-256。HTML Cache-Control 必须包含完整 directive `no-store` 或 `no-cache`，static 必须同时包含完整 `immutable` 和精确 `max-age=31536000`；`not-immutable`、`no-cache-disabled` 等子串不算通过。
+- 审计会读取 active release 的 `release-manifest.json`，按 manifest 重算完整 regular-file 集合、size 与 SHA-256；目录与文件遍历固定在已打开的 release directory fd 上，子目录/文件只允许通过 `openat` 语义的 `dir_fd + O_NOFOLLOW` 打开，并复核 inode/type/size/mtime/ctime，目录换成 symlink 的竞态必须失败关闭。missing、extra、hash/size mismatch、symlink、special file、manifest source SHA 与 release SHA 不一致均阻断。公网静态样本只能从该 manifest 选择，禁止扫描 legacy root。
+- 公网 GET 必须保持 same-origin；`release-manifest.json` body SHA-256 必须等于远端 manifest，`/documents` HTML 与选定 `_next/static/` 的 body SHA-256 必须分别等于 manifest 中 `documents.html` 和静态样本的 SHA-256。HTML Cache-Control 必须包含无值的 bare directive `no-store` 或 `no-cache`，static 必须同时包含无值的 bare `immutable` 和精确 `max-age=31536000`；`no-cache=disabled`、`immutable=disabled`、`not-immutable`、`no-cache-disabled` 等均不算通过。
 - `nginx -t`、mount、active release、public manifest/static、cache policy 共同构成 Nginx release route 硬门禁；任一失败进入 `issues`，不得降级为 warning。
-- JSON/Markdown 稳定输出至少包括 `remote_manifest_sha256`、`public_manifest_sha256`、`manifest_file_count`、`manifest_mismatch_count`、`html_cache_control`、`static_cache_control`、`current_release_target`、`deploy_sha`，并保留原有报告字段。
-- `.deploy-sha` 是唯一发布 commit point。只有 marker、`current` release SHA、manifest `source_sha` 与命令行 expected SHA 四者一致时，报告才标记 `release_commit_state=committed_by_marker`；transaction 的 `ready-to-commit` 或其他 status 不能单独证明提交。当前审计不枚举 transaction 目录，需人工判定时必须把 transaction SHA 与上述只读证据成对复核。
+- JSON/Markdown 稳定输出至少包括 `remote_manifest_sha256`、`public_manifest_sha256`、`manifest_file_count`、`manifest_mismatch_count`、`html_cache_control`、`static_cache_control`、`current_release_target`、`deploy_sha`、`deploy_marker_valid`、`deploy_marker_observation_stable`，并保留原有报告字段。
+- `.deploy-sha` 是唯一发布 commit point。审计通过已打开的 app directory fd 和 `O_NOFOLLOW` 读取 marker，要求它是 non-symlink regular file，并从同一 fd 校验内容、device/inode/type/mode/size/mtime/ctime。公网 GET 前后各读取一次 marker 与完整 active release 状态；两次 marker snapshot/current/manifest 身份必须完全相同并输出 `deploy_marker_valid=true`、`deploy_marker_observation_stable=true`、`release_observation_stable=true`。只有此前后稳定证据、marker、`current` release SHA、manifest `source_sha` 与命令行 expected SHA 全部一致时，报告才标记 `release_commit_state=committed_by_marker`；transaction 的 `ready-to-commit` 或其他 status 不能单独证明提交。当前审计不枚举 transaction 目录，需人工判定时必须把 transaction SHA 与上述只读证据成对复核。
 - 默认通过本机 `/knowledge-base/catalog` 检查 PostgreSQL runtime ready 与 `matching_embedding_count >= 1`；只保留规范化状态，不保存 catalog 原始大响应。
 - catalog/frontdoor 请求前后分别读取 `audit_log_events` 的全表计数、最新 `created_at`、有序 event-id fingerprint，以及本次唯一 auditor identity 的事件计数。只有全表 delta `0`、最新时间/fingerprint 不变、该身份前后均无事件、快照事务为只读且 catalog 声明 `database_write=false`、`provider_call=false`、`query_history_write=false` 时才输出 L3。
 - delta、fingerprint、最新时间或本次身份事件任一发生变化，任一快照不可测，frontdoor 不健康，或 catalog side-effect boundaries 缺失时均失败关闭。只有本次 identity 从 `0` 增至正数且 catalog boundaries 安全时，才按 `audit-log-only` 报告；纯全局并发/retention 变化、缺失 boundaries 或无法归因的变化均报告为 `unknown`。鉴权失败仍可能先写一条 `authorization-denied`，所以不能把工具描述成 all-path read-only。
@@ -1043,9 +1043,9 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 通过条件：
 
 - 远端 `.deploy-sha` 等于期望 SHA。
-- `current_release_target=releases/<期望 SHA>`、manifest `source_sha`、release 目录 SHA 与 `.deploy-sha` 全部一致，`release_commit_state=committed_by_marker`。
+- `.deploy-sha` 是 non-symlink regular file，`deploy_marker_valid=true`；公网 GET 前后的 marker 完整 snapshot、`current`、manifest 与完整 release 状态一致，`deploy_marker_observation_stable=true`、`release_observation_stable=true`；同时 `current_release_target=releases/<期望 SHA>`、manifest `source_sha`、release 目录 SHA 与 `.deploy-sha` 全部一致，`release_commit_state=committed_by_marker`。
 - `manifest_mismatch_count=0` 且公网 manifest/static body hash 分别与远端 manifest/选定 static hash 一致。
-- HTML cache 包含 `no-store` 或 `no-cache`；static cache 包含 `immutable` 且 `max-age=31536000`。
+- HTML cache 包含无值的 bare `no-store` 或 `no-cache`；static cache 包含无值的 bare `immutable` 且 `max-age=31536000`。
 - `medical_audit_app` 和 `medical_audit_pg` 为 `healthy`。
 - `ai_video_nginx nginx -t` 通过。
 - `/var/www/audit` bind mount 存在且为只读。
