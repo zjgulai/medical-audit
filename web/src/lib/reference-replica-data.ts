@@ -143,6 +143,25 @@ export const referenceTopicNavigation: ReferenceNavigationItem = {
   icon: "shield"
 };
 
+export const referenceIndependentPageNavigation: readonly ReferenceNavigationItem[] = [
+  {
+    id: "fund-compliance-review",
+    label: "医保基金复核表单",
+    href: "/fund-compliance/review",
+    icon: "shield"
+  },
+  {
+    id: "fund-compliance",
+    label: "医保基金使用合规",
+    href: "/fund-compliance",
+    icon: "shield"
+  },
+  { id: "rules", label: "规则运行工作台", href: "/rules", icon: "book" },
+  { id: "remediation", label: "整改工作台", href: "/remediation", icon: "paper" },
+  { id: "archive", label: "归档工作台", href: "/archive", icon: "folder" },
+  { id: "guided-check", label: "引导式核查", href: "/guided-check", icon: "shield" }
+];
+
 export const referenceHistoryItems: readonly ReferenceHistoryItem[] = [
   {
     id: "history-1",

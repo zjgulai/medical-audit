@@ -141,6 +141,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     const compatibilityPages = [
       { route: "/fund-compliance", heading: "医保基金使用合规", marker: "医保审计" },
       { route: "/fund-compliance/review", heading: "医保基金复核表单", marker: "费用汇总表" },
+      { route: "/rules", heading: "规则运行工作台", marker: "规则法规库" },
       { route: "/archive", heading: "归档工作台", marker: "归档包" },
       { route: "/guided-check", heading: "引导式核查", marker: "核查步骤" },
       { route: "/remediation", heading: "整改工作台", marker: "整改事项、补证请求、关闭门禁" }
@@ -152,6 +153,12 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       await expect(page.getByRole("heading", { name: compatibilityPage.heading })).toBeVisible();
       await expect(page.getByText(compatibilityPage.marker).first()).toBeVisible();
       await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
+      await expect(page.getByRole("banner").getByText(compatibilityPage.heading, { exact: true })).toBeVisible();
+      await expect(
+        page
+          .getByLabel("打开页面")
+          .getByRole("button", { name: `关闭${compatibilityPage.heading}页签`, exact: true })
+      ).toBeVisible();
     }
   });
 });

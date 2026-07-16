@@ -1,5 +1,14 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function WorkspacePage() {
-  redirect("/chat");
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/chat");
+  }, [router]);
+
+  return null;
 }

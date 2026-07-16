@@ -91,6 +91,27 @@ describe("ReplicaShell", () => {
     expect(within(screen.getByLabelText("打开页面")).getByText("医保审计专题")).toBeInTheDocument();
   });
 
+  it.each([
+    ["/fund-compliance", "医保基金使用合规"],
+    ["/fund-compliance/review", "医保基金复核表单"],
+    ["/rules", "规则运行工作台"],
+    ["/remediation", "整改工作台"],
+    ["/archive", "归档工作台"],
+    ["/guided-check", "引导式核查"]
+  ])("uses the independent route identity in page chrome for %s", (pathname, label) => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    usePathnameMock.mockReturnValue(pathname);
+
+    render(
+      <ReplicaShell>
+        <main>独立工作台内容</main>
+      </ReplicaShell>
+    );
+
+    expect(within(screen.getByRole("banner")).getByText(label)).toBeInTheDocument();
+    expect(within(screen.getByLabelText("打开页面")).getByText(label)).toBeInTheDocument();
+  });
+
   it("marks the project route so floating history stays clear of row actions", () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
     usePathnameMock.mockReturnValue("/projects");

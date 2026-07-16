@@ -1582,6 +1582,7 @@ select {
   --replica-line-soft: #e8eef5;
   --replica-text: #17233b;
   --replica-muted: #617087;
+  position: relative;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -5783,6 +5784,24 @@ select {
     left: 16px;
   }
 
+  .replica-history-fab,
+  .replica-project-shell .replica-history-fab {
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    bottom: auto;
+    left: auto;
+    width: 38px;
+    height: 38px;
+    justify-content: center;
+    border-radius: 50%;
+    padding: 0;
+  }
+
+  .replica-history-fab > span:last-child {
+    display: none;
+  }
+
   .replica-topic-entry,
   .replica-sidebar-collapsed .replica-topic-entry {
     position: static;
@@ -5960,10 +5979,10 @@ select {
 
 @media (max-width: 560px) {
   .replica-history-fab {
-    right: 16px;
-    bottom: 16px;
-    height: 42px;
-    padding: 0 14px;
+    right: 12px;
+    bottom: auto;
+    height: 38px;
+    padding: 0;
   }
 
   .replica-main-nav {

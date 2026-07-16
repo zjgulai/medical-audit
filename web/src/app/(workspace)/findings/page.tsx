@@ -1,5 +1,14 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function FindingsPage() {
-  redirect("/medical-audit");
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/medical-audit");
+  }, [router]);
+
+  return null;
 }

@@ -14,6 +14,7 @@ import {
 import type { ProjectsResponse, QueryHistoryReviewTaskResponse } from "@/lib/api-types";
 import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
 import {
+  referenceIndependentPageNavigation,
   referenceTopicNavigation,
   type ReferenceHistoryItem,
   type ReferenceNavigationItem
@@ -50,9 +51,11 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
   const historyTaskSubmission = useRef(false);
   const shellData = useReplicaShellData();
   const isTopicActive = isActivePath(pathname, referenceTopicNavigation.href);
-  const activeItem = isTopicActive
-    ? referenceTopicNavigation
-    : shellData.data.navigation.find((item) => isActivePath(pathname, item.href));
+  const activeItem =
+    referenceIndependentPageNavigation.find((item) => isActivePath(pathname, item.href))
+    ?? (isTopicActive
+      ? referenceTopicNavigation
+      : shellData.data.navigation.find((item) => isActivePath(pathname, item.href)));
   const activeTagLabel = activeItem?.id === "chat" ? "新对话" : activeItem?.label ?? "新对话";
   const isActiveTagClosed = closedTagPath === pathname;
   const isChatRoute = isActivePath(pathname, "/chat");

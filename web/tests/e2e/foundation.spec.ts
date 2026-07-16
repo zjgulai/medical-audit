@@ -410,6 +410,7 @@ test("workspace keeps its redirect while compatibility routes render current pro
   const compatibilityPages = [
     { href: "/fund-compliance", heading: "医保基金使用合规", text: "医保审计" },
     { href: "/fund-compliance/review", heading: "医保基金复核表单", text: "费用汇总表" },
+    { href: "/rules", heading: "规则运行工作台", text: "规则法规库" },
     { href: "/archive", heading: "归档工作台", text: "归档包" },
     { href: "/guided-check", heading: "引导式核查", text: "核查步骤" },
     { href: "/remediation", heading: "整改工作台", text: "整改事项、补证请求、关闭门禁" }
@@ -420,7 +421,66 @@ test("workspace keeps its redirect while compatibility routes render current pro
     await expect(page).toHaveURL(new RegExp(`${route.href.replace(/\//g, "\\/")}$`));
     await expect(page.getByRole("heading", { name: route.heading, exact: true })).toBeVisible();
     await expect(page.getByText(route.text).first()).toBeVisible();
+    await expect(page.getByRole("banner").getByText(route.heading, { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel("打开页面").getByRole("button", { name: `关闭${route.heading}页签`, exact: true })
+    ).toBeVisible();
   }
+});
+
+test("mobile history control stays inside the brand header across shell variants", async ({ page }) => {
+  const mobileCases = [
+    { route: "/remediation", width: 390 },
+    { route: "/remediation", width: 900 },
+    { route: "/projects", width: 390 },
+    { route: "/projects", width: 900 }
+  ] as const;
+
+  for (const mobileCase of mobileCases) {
+    await page.setViewportSize({ width: mobileCase.width, height: 900 });
+    await page.goto(mobileCase.route);
+
+    const historyButton = page.getByRole("button", { name: "打开历史对话" });
+    const brandHeader = page.getByRole("link", {
+      name: "AI审计一体化协作平台",
+      exact: true
+    });
+    const brandLabel = brandHeader.getByText("AI审计一体化协作平台", { exact: true });
+    const [historyBox, brandHeaderBox, brandLabelBox] = await Promise.all([
+      historyButton.boundingBox(),
+      brandHeader.boundingBox(),
+      brandLabel.boundingBox()
+    ]);
+
+    expect(historyBox).not.toBeNull();
+    expect(brandHeaderBox).not.toBeNull();
+    expect(brandLabelBox).not.toBeNull();
+    expect(historyBox!.width).toBeLessThanOrEqual(42);
+    expect(historyBox!.x).toBeGreaterThanOrEqual(0);
+    expect(historyBox!.x + historyBox!.width).toBeLessThanOrEqual(mobileCase.width);
+    expect(historyBox!.y).toBeGreaterThanOrEqual(brandHeaderBox!.y);
+    expect(historyBox!.y + historyBox!.height).toBeLessThanOrEqual(
+      brandHeaderBox!.y + brandHeaderBox!.height
+    );
+    expect(historyBox!.x).toBeGreaterThanOrEqual(brandLabelBox!.x + brandLabelBox!.width);
+  }
+});
+
+test("history control keeps its desktop floating layout above the mobile breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 901, height: 900 });
+  await page.goto("/remediation");
+
+  const historyButton = page.getByRole("button", { name: "打开历史对话" });
+  const historyLabel = historyButton.getByText("历史对话", { exact: true });
+  const historyBox = await historyButton.boundingBox();
+  const position = await historyButton.evaluate((element) => getComputedStyle(element).position);
+
+  expect(historyBox).not.toBeNull();
+  expect(position).toBe("fixed");
+  await expect(historyLabel).toBeVisible();
+  expect(historyBox!.width).toBeGreaterThan(42);
+  expect(901 - historyBox!.x - historyBox!.width).toBeCloseTo(26, 0);
+  expect(900 - historyBox!.y - historyBox!.height).toBeCloseTo(26, 0);
 });
 
 test("compatibility route CTAs keep the medical audit workflow reachable", async ({ page }) => {
