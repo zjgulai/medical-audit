@@ -360,6 +360,87 @@ def test_run_production_e2e_smoke_allows_confirmed_live_query(
     module._validate_side_effect_authorization(args)
 
 
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_run_production_e2e_smoke_rejects_cross_origin_redirects_without_forwarding_auth(
+    method: str,
+) -> None:
+    module = _load_script_module(
+        f"run_production_e2e_smoke_cross_origin_redirect_{method.lower()}",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    target_hits: list[dict[str, str]] = []
+
+    class TargetHandler(BaseHTTPRequestHandler):
+        def _capture(self) -> None:
+            target_hits.append({key.lower(): value for key, value in self.headers.items()})
+            self.send_response(200)
+            self.end_headers()
+
+        def do_GET(self) -> None:  # noqa: N802
+            self._capture()
+
+        def do_POST(self) -> None:  # noqa: N802
+            self._capture()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    target_server = ThreadingHTTPServer(("127.0.0.1", 0), TargetHandler)
+    target_thread = threading.Thread(target=target_server.serve_forever, daemon=True)
+    target_thread.start()
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def _redirect(self) -> None:
+            self.send_response(307)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{target_server.server_port}/target",
+            )
+            self.end_headers()
+
+        def do_GET(self) -> None:  # noqa: N802
+            self._redirect()
+
+        def do_POST(self) -> None:  # noqa: N802
+            self._redirect()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirect_thread = threading.Thread(
+        target=redirect_server.serve_forever,
+        daemon=True,
+    )
+    redirect_thread.start()
+    sensitive_headers = {
+        "X-API-Key": "secret-api-key",
+        "X-Role": "admin",
+        "X-User-Id": "deploy-user",
+        "X-Project-Key": "project-a",
+        "X-Tenant-Id": "tenant-a",
+    }
+
+    try:
+        with pytest.raises(module.SmokeError, match="cross-origin redirect"):
+            module._request(
+                f"http://127.0.0.1:{redirect_server.server_port}/redirect",
+                method=method,
+                body=b"payload" if method == "POST" else None,
+                headers=sensitive_headers,
+                timeout_seconds=1,
+            )
+    finally:
+        redirect_server.shutdown()
+        target_server.shutdown()
+        redirect_thread.join(timeout=2)
+        target_thread.join(timeout=2)
+        redirect_server.server_close()
+        target_server.server_close()
+
+    assert target_hits == []
+
+
 def test_run_production_e2e_smoke_reads_search_status_from_no_write_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3728,78 +3809,36 @@ def test_deploy_tencent_cloud_wrong_release_source_sha_has_exact_error(
     )
 
 
-def test_deploy_tencent_cloud_skip_build_still_runs_manifest_gate_before_ssh(
+def test_deploy_tencent_cloud_execute_forbids_skip_web_build(
     monkeypatch: MonkeyPatch,
 ) -> None:
     module = _load_script_module(
-        "deploy_tencent_cloud_skip_build_manifest_gate",
+        "deploy_tencent_cloud_skip_web_build_denied",
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
-    config = types.SimpleNamespace(
-        execute=True,
-        rollback=False,
-        apply_schema=False,
-        skip_web_build=True,
-        skip_app_rebuild=False,
-    )
-    _patch_deploy_execute_snapshot(monkeypatch, module, config)
-    events: list[str] = []
-    monkeypatch.setattr(module, "_parse_args", lambda: object())
-    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
-    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
-    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
     monkeypatch.setattr(
-        module,
-        "_validate_locked_python_dependencies",
-        lambda _config: None,
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--skip-web-build",
+        ],
     )
-    monkeypatch.setattr(
-        module,
-        "_build_static_frontend",
-        lambda value: events.append(f"build-skip={value.skip_web_build}"),
-    )
-    monkeypatch.setattr(
-        module,
-        "_validate_web_release",
-        lambda _config: (
-            events.append("validate")
-            or module.ReleaseEvidence("a" * 64, 1, "_next/static/app.js", "b" * 64)
-        ),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        module,
-        "_run_remote_preflight",
-        lambda _config: events.append("ssh"),
-    )
-    monkeypatch.setattr(
-        module,
-        "_acquire_remote_deploy_lock",
-        lambda _config: "owner-token",
-    )
-    monkeypatch.setattr(
-        module,
-        "_release_remote_deploy_lock",
-        lambda _config, _token: None,
-    )
-    for name in (
-        "_create_remote_backups",
-        "_cleanup_remote_sync_artifacts",
-        "_sync_application",
-        "_prepare_remote_release_incoming",
-        "_sync_static_frontend",
-            "_verify_and_promote_remote_release",
-            "_rebuild_application",
-            "_activate_remote_release",
-            "_run_remote_post_checks",
-            "_verify_remote_release_commit_point",
-            "_write_remote_deploy_sha",
-        "_run_production_smoke",
-    ):
-        monkeypatch.setattr(module, name, lambda *_args: None)
 
-    assert module.main() == 0
-    assert events[:4] == ["validate", "build-skip=True", "validate", "ssh"]
+    with pytest.raises(module.DeployError, match="forbids --skip-web-build"):
+        module._config_from_args(module._parse_args())
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["deploy-tencent-cloud-production.py", "--skip-web-build"],
+    )
+    assert module._config_from_args(module._parse_args()).skip_web_build is True
 
 
 def test_deploy_tencent_cloud_readonly_preflight_does_not_require_manifest(
@@ -4789,6 +4828,143 @@ def test_deploy_tencent_cloud_activation_unknown_retains_lock_without_reconcile(
     )
 
     assert module.main() == 2
+    assert events == ["lock", "activate"]
+
+
+def test_deploy_tencent_cloud_activation_precondition_failure_does_not_restore_old_transaction(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_activation_precondition_failure",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=False,
+        skip_web_build=False,
+    )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
+    evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_locked_python_dependencies", lambda _config: None)
+    monkeypatch.setattr(module, "_build_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_web_release", lambda _config: evidence)
+    monkeypatch.setattr(module, "_run_remote_preflight", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_acquire_remote_deploy_lock",
+        lambda _config: events.append("lock") or "token",
+    )
+    monkeypatch.setattr(
+        module,
+        "_release_remote_deploy_lock",
+        lambda *_args: events.append("unlock"),
+    )
+    for name in (
+        "_create_remote_backups",
+        "_cleanup_remote_sync_artifacts",
+        "_sync_application",
+        "_prepare_remote_release_incoming",
+        "_sync_static_frontend",
+        "_verify_and_promote_remote_release",
+        "_rebuild_application",
+    ):
+        monkeypatch.setattr(module, name, lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "_activate_remote_release",
+        lambda *_args: (
+            events.append("activate")
+            or (_ for _ in ()).throw(subprocess.CalledProcessError(77, ["ssh"]))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("restore"),
+    )
+
+    assert module.main() == 77
+    assert events == ["lock", "activate", "unlock"]
+
+
+@pytest.mark.parametrize(
+    "interrupt",
+    [KeyboardInterrupt(), SystemExit(9)],
+    ids=["keyboard-interrupt", "system-exit"],
+)
+def test_deploy_tencent_cloud_base_exception_retains_lock_without_restore(
+    monkeypatch: MonkeyPatch,
+    interrupt: BaseException,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_{type(interrupt).__name__.lower()}_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=False,
+        skip_web_build=False,
+    )
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
+    evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
+    events: list[str] = []
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_locked_python_dependencies", lambda _config: None)
+    monkeypatch.setattr(module, "_build_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_web_release", lambda _config: evidence)
+    monkeypatch.setattr(module, "_run_remote_preflight", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_acquire_remote_deploy_lock",
+        lambda _config: events.append("lock") or "token",
+    )
+    monkeypatch.setattr(
+        module,
+        "_release_remote_deploy_lock",
+        lambda *_args: events.append("unlock"),
+    )
+    for name in (
+        "_create_remote_backups",
+        "_cleanup_remote_sync_artifacts",
+        "_sync_application",
+        "_prepare_remote_release_incoming",
+        "_sync_static_frontend",
+        "_verify_and_promote_remote_release",
+        "_rebuild_application",
+    ):
+        monkeypatch.setattr(module, name, lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "_activate_remote_release",
+        lambda *_args: events.append("activate"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_remote_post_checks",
+        lambda *_args: (_ for _ in ()).throw(interrupt),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("restore"),
+    )
+
+    with pytest.raises(type(interrupt)):
+        module.main()
     assert events == ["lock", "activate"]
 
 
@@ -5785,6 +5961,98 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     assert calls[2]["capture_output"] is True
     assert calls[2]["check"] is False
     assert not poll_results
+
+
+@pytest.mark.parametrize("failure_phase", ["command", "completion-check"])
+def test_deploy_tencent_cloud_ssh_signal_termination_is_outcome_unknown(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    failure_phase: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_ssh_signal_{failure_phase}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+    calls = 0
+
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        if failure_phase == "command" or calls == 2:
+            raise subprocess.CalledProcessError(-9, ["ssh"])
+        return subprocess.CompletedProcess(args=["ssh"], returncode=0)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    with pytest.raises(module.RemoteOutcomeUnknownError, match="outcome is unknown"):
+        module._ssh(
+            config,
+            "true",
+            completion_check_script=(
+                "test -f /tmp/complete" if failure_phase == "completion-check" else None
+            ),
+            timeout_description="test remote write",
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure_case", "poll_returncode", "poll_stdout"),
+    [
+        ("starter-rc1", None, ""),
+        ("poll-rc1", 1, ""),
+        ("poll-signal", -9, ""),
+        ("poll-garbage", 0, "not-a-status\n"),
+    ],
+)
+def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unknown(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    failure_case: str,
+    poll_returncode: int | None,
+    poll_stdout: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_background_{failure_case}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if not bool(kwargs.get("capture_output")):
+            if failure_case == "starter-rc1":
+                raise subprocess.CalledProcessError(1, args)
+            return subprocess.CompletedProcess(args=args, returncode=0)
+        assert poll_returncode is not None
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=poll_returncode,
+            stdout=poll_stdout,
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    with pytest.raises(module.RemoteOutcomeUnknownError, match="outcome is unknown"):
+        module._ssh_background_with_completion(
+            config,
+            "true",
+            "test -f /tmp/complete",
+            timeout_seconds=5,
+            timeout_description="test remote job",
+            job_name="deploy-test-job",
+        )
 
 
 def test_deploy_tencent_cloud_background_completion_reports_failed_status(

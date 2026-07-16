@@ -835,8 +835,8 @@ def _run_nonrollback(config: DeployConfig) -> int:
             schema_applied = True
         app_rebuild_attempted = not config.skip_app_rebuild
         _rebuild_application(config, owner_token)
-        activation_reconcile_required = True
         _activate_remote_release(config, owner_token)
+        activation_reconcile_required = True
         _run_remote_post_checks(config)
         _verify_remote_release_commit_point(
             config,
@@ -847,6 +847,9 @@ def _run_nonrollback(config: DeployConfig) -> int:
         marker_commit_attempted = True
         _write_remote_deploy_sha(config, owner_token)
     except BaseException as original_error:
+        if not isinstance(original_error, Exception):
+            release_lock = False
+            raise
         if marker_commit_attempted:
             release_lock = False
             raise DeployError(
@@ -1018,6 +1021,8 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         )
     if execute and bool(args.skip_smoke):
         raise DeployError("production execute forbids --skip-smoke")
+    if execute and bool(args.skip_web_build):
+        raise DeployError("production execute forbids --skip-web-build")
     allow_first_legacy_migration = bool(args.allow_first_legacy_migration)
     if allow_first_legacy_migration and not execute:
         raise DeployError("--allow-first-legacy-migration requires --execute")
@@ -3033,7 +3038,7 @@ def _ssh(
         )
         return
     except subprocess.CalledProcessError as exc:
-        if exc.returncode == 255:
+        if exc.returncode == 255 or exc.returncode < 0:
             raise RemoteOutcomeUnknownError(
                 f"{timeout_description} SSH outcome is unknown",
             ) from exc
@@ -3052,7 +3057,7 @@ def _ssh(
                 f"{timeout_description} completion outcome is unknown",
             ) from exc
         except subprocess.CalledProcessError as exc:
-            if exc.returncode == 255:
+            if exc.returncode == 255 or exc.returncode < 0:
                 raise RemoteOutcomeUnknownError(
                     f"{timeout_description} completion outcome is unknown",
                 ) from exc
@@ -3099,11 +3104,9 @@ printf '%s\\n' "$!" > "$job_pid"
             timeout=REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS,
         )
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-        if isinstance(exc, subprocess.TimeoutExpired) or exc.returncode == 255:
-            raise RemoteOutcomeUnknownError(
-                f"{timeout_description} background starter outcome is unknown",
-            ) from exc
-        raise
+        raise RemoteOutcomeUnknownError(
+            f"{timeout_description} background starter outcome is unknown",
+        ) from exc
     deadline = time.monotonic() + timeout_seconds
     poll_script = f"""
 set -euo pipefail
@@ -3137,7 +3140,7 @@ exit 0
             raise RemoteOutcomeUnknownError(
                 f"{timeout_description} background poll outcome is unknown",
             ) from exc
-        if completed.returncode == 255:
+        if completed.returncode != 0:
             raise RemoteOutcomeUnknownError(
                 f"{timeout_description} background poll outcome is unknown",
             )
@@ -3156,13 +3159,8 @@ exit 0
                 + (f":\n{detail}" if detail else ""),
             )
         if status != "running":
-            if completed.returncode != 0:
-                raise DeployError(
-                    f"{timeout_description} poll command failed"
-                    + (f":\n{detail}" if detail else ""),
-                )
-            raise DeployError(
-                f"{timeout_description} returned unknown poll status"
+            raise RemoteOutcomeUnknownError(
+                f"{timeout_description} background poll outcome is unknown"
                 + (f":\n{detail}" if detail else ""),
             )
         if time.monotonic() >= deadline:

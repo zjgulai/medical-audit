@@ -41,9 +41,9 @@ source: human+ai
 - Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
 - commit point 是部署后 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke 全部通过后，最后原子写入 `.deploy-sha`。app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。
 - 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
-- execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。`--skip-web-build` 只允许先复验本地 `web/out`、复制到该快照后再次复验；快照在整个同步事务退出后销毁。
-- execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 拒绝跨 origin redirect，并按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
-- execute 禁止 `--skip-smoke`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、rsync timeout/30、SSH 255 或 activation restore 79/cleanup 85 都按远端结果未知处理，必须保留生产锁并人工核对，不能自动宣称回滚或部署成功。
+- execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。execute 参数门禁直接拒绝 `--skip-web-build`；该参数只保留给不写生产的 preflight。快照在整个同步事务退出后销毁。
+- execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 和 mandatory production smoke 的 GET/POST requester 都拒绝跨 origin redirect，带鉴权 header 的请求不会转发到其他 origin；cache policy 按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
+- execute 禁止 `--skip-smoke` 和 `--skip-web-build`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、SSH 255、SSH 进程被 signal 终止、rsync timeout/30、background starter 任意非零、background poll 任意非零或不可解析状态，以及 activation restore 79/cleanup 85 都按远端结果未知处理。持锁阶段收到 `KeyboardInterrupt`、`SystemExit` 等非普通异常时不得自动 restore 或 unlock；必须保留生产锁并人工核对，不能自动宣称回滚或部署成功。
 - 首次从 legacy flat root 迁移必须显式传 `--allow-first-legacy-migration`，且仅在 `current` 和 migration sentinel 都不存在、flat `index.html` 与旧 `.deploy-sha` 均合法时放行。activation 在最终 marker 前原子创建 migration sentinel；marker 前失败恢复必须删除 sentinel。回滚到 legacy 时先删除 sentinel，若 marker 尚未尝试则失败恢复会重建 sentinel；`.deploy-sha` 始终是最后的状态提交点。
 - app/env/db/Nginx/Web 五类备份及 completion marker 必须是非 symlink regular file、非空且 mode `0600`。Nginx secret-bearing candidate 的 host/container cleanup trap 必须先于生成或 `docker cp` 安装；清理失败按 fail-closed 保留锁。正式 `nginx -t` 的 stdout/stderr 不进入部署日志，只返回通用失败信息。
 - 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
@@ -1394,14 +1394,14 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 
 - schema 变更部署：追加 `--apply-schema`。
 - 只同步静态前端或文档、不重建 app：追加 `--skip-app-rebuild`。
-- 已提前生成 `web/out/`：追加 `--skip-web-build`。
+- 只读 preflight 可追加 `--skip-web-build`；`--execute` 禁止该参数并始终执行 frozen Web build。
 - 默认部署 smoke 只执行 GET，不运行 query/provider 或复核写入。
 - 验证 query/provider 链路：追加 `--include-query-provider-smoke --confirm-production-write audit.lute-tlz-dddd.top`；这是单独的 L4 写入/provider 门，执行前必须确认数据库备份和授权。
 - 验证复核写入链路：在上述参数基础上再追加 `--include-review-write`。
 
 脚本执行的同步规则：
 
-1. 使用显式 `--approved-sha` 执行 frozen Web release build；`web/out/release-manifest.json` 必须通过本地完整文件集合、size、SHA-256、lockfile hash 与 source SHA 校验，`--skip-web-build` 也不能跳过该门禁。
+1. 使用显式 `--approved-sha` 执行 frozen Web release build；`web/out/release-manifest.json` 必须通过本地完整文件集合、size、SHA-256、lockfile hash 与 source SHA 校验。execute 不接受 `--skip-web-build`，因此不能用自洽但未批准的既有 `web/out` 绕过 frozen build。
 2. 获取 `$remote_app_dir.deploy.lock` 后再开始远端写操作；任何阶段都必须核对 owner token。后台备份 worker 存活或 owner 不匹配时，不得释放或接管锁。
 3. 先生成 app/env/db/nginx/web 全套备份。Web 备份排除 `audit/releases` 与 `audit/current`，不可变 release 不做重复打包。
 4. 将当前工作树同步到 `/opt/medical-audit/app/`，排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。

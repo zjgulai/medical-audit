@@ -13,7 +13,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from http.client import HTTPMessage
 from pathlib import Path
+from typing import IO
 
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
 DEFAULT_QUESTION = "医保基金审核发现异常收费时应优先核验证据链的哪些要点？"
@@ -37,6 +39,45 @@ REQUIRED_PAGES = {
 
 class SmokeError(RuntimeError):
     pass
+
+
+def _url_origin(url: str) -> tuple[str, str, int]:
+    parsed = urllib.parse.urlsplit(url)
+    scheme = parsed.scheme.lower()
+    if (
+        scheme not in {"http", "https"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.hostname is None
+    ):
+        raise SmokeError("request URL has an invalid origin")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise SmokeError("request URL has an invalid origin") from exc
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    return scheme, parsed.hostname.lower(), port
+
+
+class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, expected_origin: tuple[str, str, int]) -> None:
+        super().__init__()
+        self.expected_origin = expected_origin
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        redirect_url = urllib.parse.urljoin(req.full_url, newurl)
+        if _url_origin(redirect_url) != self.expected_origin:
+            raise SmokeError("cross-origin redirect rejected")
+        return super().redirect_request(req, fp, code, msg, headers, redirect_url)
 
 
 @dataclass(frozen=True)
@@ -823,6 +864,7 @@ def _request(
     body: bytes | None = None,
     headers: dict[str, str] | None = None,
 ) -> HttpResponse:
+    expected_origin = _url_origin(url)
     request_headers = {"User-Agent": "medical-audit-production-e2e/1.0"}
     request_headers.update(headers or {})
     request = urllib.request.Request(
@@ -831,20 +873,29 @@ def _request(
         headers=request_headers,
         method=method,
     )
+    opener = urllib.request.build_opener(
+        _SameOriginRedirectHandler(expected_origin),
+    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with opener.open(request, timeout=timeout_seconds) as response:
             raw = response.read()
+            response_url = response.geturl()
+            if _url_origin(response_url) != expected_origin:
+                raise SmokeError("cross-origin final response rejected")
             return HttpResponse(
                 status=response.status,
-                url=response.geturl(),
+                url=response_url,
                 text=raw.decode("utf-8", errors="replace"),
                 headers={key.lower(): value for key, value in response.headers.items()},
             )
     except urllib.error.HTTPError as exc:
         raw = exc.read()
+        response_url = exc.geturl()
+        if _url_origin(response_url) != expected_origin:
+            raise SmokeError("cross-origin final response rejected") from exc
         return HttpResponse(
             status=exc.code,
-            url=exc.geturl(),
+            url=response_url,
             text=raw.decode("utf-8", errors="replace"),
             headers={key.lower(): value for key, value in exc.headers.items()},
         )
