@@ -363,3 +363,47 @@ Evidence boundary:
 - D0 is local implementation evidence only: `L2-fixture-or-dry-run`, `local_only`, `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
 - Final independent read-only reviews for release guard and frontend acceptance both report `accepted P0/P1=0` with high confidence under the documented controlled-operator threat model.
 - No commit, push, PR state change, merge, production probe, backup, Docker/Nginx change, provider call or production write was executed.
+
+## 2026-07-16 Loop 59 Production Readiness Audit And Final Sprint
+
+Goal:
+
+- 用 fresh L3 read-only 与全路由静态视觉证据回答当前能否继续部署、知识库覆盖、100+ 智能体运行状态及页面专业度问题。
+- 把现网健康、候选发布完整性、数据激活、L4 authenticated acceptance 和业务/provider UAT 分为独立证据与授权门。
+- 形成最后冲刺的 P1/P2、批次、停止条件、回滚和 Definition of Done，不用单一“部署成功”压平后续验收。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复 exact candidate、Draft PR、production SHA 和 L3/L4 边界；隔离 primary dirty worktree。
+- [x] Phase 1 — 完成 fresh public/SSH/strict-read-only SQL audit：运行健康、legacy topology、knowledge coverage、agent inventory/invocation/duplicate identity。
+- [x] Phase 2 — 复核历史 same-SHA L4 metrics，并完成 20 routes × 3 viewports 的 API-blocked static Playwright matrix 与代表性人工视觉审查。
+- [x] Phase 3 — 发布 `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md`，冻结 NO-GO、P1/P2 和 Batch A-H TODO。
+- [x] Phase 4 — Batch A local P1 closure：Python 3.10 release-guard、mobile clipping/navigation/archive/overlay、visual detector、technical copy、agent cleanup dry-run 和 knowledge scope freeze；最终 local structural matrix `60/60`。
+- [ ] Phase 5 — **IN PROGRESS; LOCAL EXACT-SHA FREEZE AUTHORIZED** — Batch B exact-SHA L2 regression、release manifest、60/60 all-screenshot matrix、人工 visual sign-off 和独立 P0/P1 review。Batch A 已拆为审计工具/测试 `02256fe`、UI `1c2d0e4` 与本计划组；最终候选 SHA 必须在计划组提交后外部读取，不在 commit 内自指猜测。
+- [ ] Phase 6 — 经独立授权 push/update Draft PR #239；Ready 与 merge 分开授权。
+- [ ] Phase 7 — 经 L3 read-only 授权在 legacy production 捕获 fresh S0 并运行 first-migration deploy preflight；只接受 `legacy_ready`。
+- [ ] Phase 8 — 经 exact-SHA deploy + rollback 明确授权执行 versioned deploy；成功 exit 只标记 `deployed_pending_l3`。
+- [ ] Phase 9 — 捕获 S1 并完成 conditional L3 identity/health/zero-business-delta 验证；通过后标记 `deployed_l3_verified`。
+- [ ] Phase 10 — 经独立 L4 `audit-log-only` 授权运行 permission/frontend acceptance，捕获 S2 并证明 run-attributable audit delta；通过后标记 `release_accepted_l4`。
+- [ ] Phase 11 — knowledge query/provider、agent duplicate cleanup、agent execution UAT 和 20 个 missing collection activation 各自使用独立业务写入/外部调用授权。
+
+Current verdict:
+
+- Deployment：`NO-GO`；当前现网健康，但 mandatory S0 在 production Python 3.10 失败，且 legacy→versioned migration integrity 尚未证明。
+- Knowledge：core medical retrieval healthy；只有 `5/25` registered collections 有数据，端到端 query/citation/provider quality 未验收。
+- Agents：304 persisted historical rows 只有 13 active、7 distinct templates、7 invoked keys；3 个 active identity group 重复，6 excess rows。100+ normal claim rejected。
+- UI：已部署 production 仍是旧 SHA，不能继承本地修复结论；当前 local candidate 已关闭 mobile clipping、history/AI overlay、archive card 和 collapsed-sidebar P1，并通过 API-blocked `60/60` structural matrix。全页 exact-SHA 截图和 populated/authenticated 专业度签字仍在 Batch B/G，故 production professional readiness 仍未证明。
+
+Detailed source of truth:
+
+- `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md`.
+
+Stop conditions:
+
+- Python 3.10 S0、migration topology、backup/rollback、exact SHA identity、zero business delta 或 mobile P1 任一不满足即停止推进。
+- PR Ready、merge、production deploy、audit-log writes、SQL cleanup、provider query 和 missing-collection ingestion 均不得由本 Loop 的调查/计划授权自动跨越。
+
+Evidence boundary:
+
+- Current fresh audit：qualified path 为 `L3-production-read-only`；static visual matrix 使用 production static shell + locally blocked APIs，不是 authenticated data acceptance。
+- `production unchanged`, `deploy_execution=false`, qualified collector `database_write=false`, one unauthenticated denial attempt `database_write=unknown`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.

@@ -1333,3 +1333,91 @@ Boundary and next gate:
 - Commit 2 complete: `85859a6` (`fix: preserve workspace route identity`), exact 8-file UI manifest, cached check PASS, refined staged secret candidates `0`; index returned empty afterward.
 - Evidence collect-only inventory is `11 + 40 + 270 + 1 = 322` tests; the executed combined run completed with no failures.
 - Commit 3 is the five-file planning manifest containing this ledger, the formal plan and the atomic staging plan. Its SHA/final clean status must be verified externally after commit and must not be guessed inside this commit.
+
+## 2026-07-16 Loop 59 Final Sprint Production Audit Start
+
+- Activated `planning-with-files`, `evidence-grade-gate`, and `playwright` for the production audit and final-sprint plan.
+- Restored Loop 58 plan/progress, verified candidate/upstream identity at `846aa89187867339feb6d6c90c102ca1336e4105`, and confirmed the separate primary worktree is unsuitable for scoped audit writes because it contains extensive user-owned changes.
+- Verified Playwright prerequisite `npx` at `/Users/pray/.nvm/versions/node/v22.22.0/bin/npx`.
+- Created a pre-edit backup of the three planning ledgers at `/Users/pray/.Codex/file-history/medical-audit-loop59-final-sprint-20260716T234356+0800/`.
+- Current phase: inspect the candidate's production-safe audit contracts, then run fresh public/SSH L3 checks. No Ready, merge, deploy, production write, provider call, or live send is authorized in this audit phase.
+- Reviewed the three relevant production contracts. Full frontend acceptance is L4 `audit-log-only` and was excluded; the release-guard live capture and documented public knowledge catalog remain in the L3 allowlist.
+- Confirmed the production SSH key permissions without reading key contents and identified the need for a separate read-only `audit_agents` inventory query because the release guard does not count that table.
+- Public route probe completed: health, knowledge-base page and agent-market page returned `200`.
+- Logged two fail-closed observations: catalog without tenant returned `401` and may have produced an audit event; release-manifest body was non-JSON and the parsing command exited `5`. Both checks now switch to safer, assumption-specific paths rather than retrying unchanged.
+- Separated historical evidence from current evidence: prior `main@1376bae` reports are useful baselines but cannot close the current deployment, knowledge, agent, or visual questions.
+- Confirmed production still serves an HTML fallback at `/release-manifest.json`, so the versioned-static candidate has not been deployed and first-migration topology must be assessed by the release guard.
+- Attempted the fresh S0 release-guard capture once. It exited `2` because the streamed collector imports `datetime.UTC` on production Python 3.10. Logged as a P1 and switched approach; the same command will not be retried.
+- Ran the production-compatible conditional-L3 deployment-state audit. It proved zero audit-log delta and healthy runtime/knowledge backend at `1376bae`, but returned overall `fail` because production is still legacy rather than the candidate's required versioned-release topology.
+- Audited the agent catalog contract: `169` prompt-source rows are narrowed to `3` default agents plus `3` opt-in extension validations, not 100+ enabled production agents. Prepared a separate read-only database inventory check because API enumeration writes operation logs.
+- Completed strict read-only production agent inventory: 304 persisted rows, only 13 active; 1,707 invocations cover 7 agent keys. The “100+ normal agents” claim is not supported.
+- Confirmed 3 duplicate active agent identity groups (6 excess rows). Completed production knowledge coverage inventory: only 5 of 25 registered collections contain data; the core search backend is ready at 49,051 matching embeddings, but broad knowledge coverage is incomplete.
+- Reviewed the most recent same-SHA production browser report: 36/36 desktop/mobile checks had no mechanical issues, but no screenshots were retained because the policy captured issues only. A qualitative all-page judgment still needs a safe screenshot corpus or separately authorized L4 rerun.
+
+## 2026-07-16 Loop 59 Production Audit And Plan Closure
+
+Completed:
+
+- Ran an API-blocked real-browser matrix for 20 routes at `1440×1100`, `1280×800` and `390×900`: 60/60 navigations returned 200 with no root overflow, missing heading, short body or page error. All production API calls were locally intercepted, so this is static-structure evidence only.
+- Manually reviewed representative screenshots across every page family and found a coherent desktop design baseline plus release-significant mobile issues: global nav height, internal medical-audit tab clipping, archive compression, extreme long-page density, floating-history overlap and internal technical copy.
+- Confirmed root-overflow automation misses the mobile medical-audit defect because overflow is clipped/scrollable inside a nested tab container; the next test must assert component bounding boxes/internal scroll width.
+- Closed the Playwright `loop59ui` session after evidence capture.
+- Finalized the production verdict: current runtime is available, but candidate deployment is `NO-GO`; knowledge is partial (`5/25` populated), “100+ agents normal” is false, and all-page professional readiness is not yet proven.
+- Created the full Batch A-H final sprint plan at `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md` and synchronized task/findings/progress ledgers.
+
+Next executable item:
+
+- Batch A local P1 closure: fix Python 3.10 S0 compatibility first, then mobile layout/detector and read-only agent/knowledge preparation. This remains local code/test/docs only.
+
+Boundary:
+
+- No PR Ready, merge, deploy, production backup/change, database cleanup, provider call, knowledge query, ingestion or live send ran.
+- `production unchanged`, `deploy_execution=false`, qualified L3 collector `database_write=false`, one unauthenticated catalog denial `database_write=unknown`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch A Local P1 Closure Start
+
+- Owner approved the next executable item and automatic continuation around the final-sprint plan. Authorization is interpreted as Batch A local code/test/docs/dry-run work only.
+- Restored candidate `846aa89187867339feb6d6c90c102ca1336e4105`, existing Loop 59 plan ledgers and the uncommitted plan-only delta from the prior audit.
+- Activated `planning-with-files`, `evidence-grade-gate` and `playwright`; `npx` is available. The optional `planning-rules.md` reference remains absent, so the fully read skill contract is used directly.
+- Phase 4 is now in progress. First implementation pass will close Python 3.10 release-guard compatibility, then mobile layout/detector issues, then agent duplicate dry-run and knowledge coverage labeling.
+- Existing helper-generated untracked `.claude/`, `.playwright-cli/`, `AGENTS.md` and `CLAUDE.md` remain out of scope and will not be read, modified, staged or deleted.
+- Evidence ceiling remains `L2-fixture-or-dry-run`; no push, PR state transition, merge, SSH, deploy, production/database/object write, provider call or live send is authorized.
+- Created pre-edit backups at `/Users/pray/.Codex/file-history/medical-audit-loop59-batch-a-20260717T003135+0800/`.
+- Added a real Python 3.10 fixture-capture regression test. RED is reproduced on the same import boundary as production: `ImportError: cannot import name 'UTC' from 'datetime'`; focused test exit `1`.
+- First compatibility implementation made the Python 3.10 test GREEN, but focused Ruff failed with `UP017` because its generic upgrade rule prefers the Python 3.11-only `datetime.UTC`. The same form will not be retried; the fix will use a named Python 3.10-compatible timezone constant so both runtime and lint contracts remain true.
+- Ruff also flags the named constant assignment itself, confirming the rule is syntax-based rather than use-site-based. The next and final narrow approach is a documented line-level `UP017` exception on the compatibility constant; no global lint suppression or project Python-floor change is needed.
+- Python 3.10 closure is GREEN: the real interpreter fixture capture passes, focused Ruff passes with one documented compatibility-only `UP017` exception, and targeted Mypy reports no issues.
+- Added the acceptance-classification regression for nested interactive overflow and route-content occlusion. RED is confirmed: current `classify()` returns no issues for both defects even when root horizontal overflow is false.
+- Extended the production acceptance snapshot/classifier with `interactiveOverflowOffenders` and `floatingControlOcclusions`, bound the history control as an audited floating element, and turned the same regression GREEN. Node syntax is valid.
+- Replaced the phone-only two-column global navigation with three columns and replaced horizontally scrolling medical tabs with full-width responsive grids.
+- Added archive-specific mobile card layout and moved raw backend, evidence, side-effect, archive-root, signature and internal ID values into diagnostic disclosures. Archive now shows human-readable owner/status/retention labels by default; focused Vitest reports 5/5 passed.
+- One combined multi-file copy patch was rejected before writing because of an invalid hunk boundary. It was not retried in the same form; the work is split into smaller component patches. Analytics primary copy is now user-facing while the raw provider flag remains in diagnostics.
+- Analytics/report/archive focused Vitest is GREEN at 40/40. The first Web typecheck exposed one graph diagnostics key using nonexistent `issue.read`; the authoritative issue type provides `code`, so the key will be corrected without changing behavior.
+- Corrected the graph diagnostic key to `issue.code`; Web typecheck is GREEN and the 40 focused UI tests remain GREEN. Analytics, graph and report now lead with user-facing status while preserving raw boundary/error values under diagnostics.
+- Implemented the read-only agent-market inventory SQL generator and deterministic cleanup dry-run analyzer with six focused tests. First run reached 5/6: the failing assertion confused a documented identity field name with an exposed actor value; Ruff also found three formatting-only E501 items. Targeted Mypy already passes.
+- Agent duplicate dry-run closure is GREEN: 6/6 tests, focused Ruff and targeted Mypy pass. The tool emits only strict read-only SQL, hashes actor/project identity, preserves rows/invocation history in proposed actions, and requires a separate write authorization whenever ambiguity exists.
+- Froze the app release claim to `core-5` and added dynamic populated/registered coverage to the knowledge page. The UI distinguishes `core-ready`, `core-incomplete` and `unknown` without hardcoding production `5/25`; knowledge page Vitest is 6/6 and Web typecheck remains GREEN.
+- Completed the post-edit CSS cascade inspection: no later selector overrides the phone three-column navigation or responsive medical-tab grids. A fresh `git diff --check` is GREEN.
+- Batch A implementation is now feature-complete and has entered broad L2 regression, build and local three-viewport browser acceptance. External and production boundaries remain unchanged.
+- First broad backend/static pass: release-guard plus duplicate suite reached 47/47; targeted Mypy and Node syntax passed. Ruff found one `E501` in the new detector test, which was corrected by splitting the fixture string; the same full checks will be rerun.
+- Broad rerun is GREEN: 318 related Python tests, full Ruff, targeted Mypy, 11 non-regression tests, the exact historical Mypy non-regression gate, Node syntax, 38 Web files / 363 tests, Web typecheck, lint, 24-page build and diff-check all passed.
+- The first `390×900` browser inspection proved the global nav is now 150px, all 11 medical tab controls fit within x=`10..380`, root width is exactly `390`, and the history control overlaps no route control. It also exposed the separate fixed medical AI button covering the first tab row; a narrow responsive in-flow fix plus detector marker is now under focused revalidation.
+- The medical AI action is now in-flow at `<=900px` and retains fixed desktop behavior. The acceptance detector ignores `static`/`relative` markers and continues to audit positioned overlays; a focused exported-position contract test was added before repeating browser geometry.
+- First full local matrix completed 60 executions but is RED by design: desktop `14/20`, tablet `14/20`, mobile `18/20`. Eight true occlusion observations share the out-of-rail history FAB root cause; six remaining alias timing observations were sampled before client redirects completed. The shell ownership fix is applied and the matrix must rerun with a longer alias settle window.
+- Second full local matrix is GREEN at desktop `20/20`, tablet `20/20`, mobile `20/20` with no root/interactive/nested-tab overflow, positioned route-control occlusion, missing heading, thin page or alias path failure. Manual screenshot review then found the sidebar history/topic overlap outside the route detector scope; its 86px separation and collapsed icon-only contract are now under final focused/browser verification.
+- Desktop geometry proves history/topic separation (`history bottom=1014`, `topic top=1026`) with no overlap. The same check revealed the sidebar remained 256px after collapse due to a later cascade override; the 92px collapsed-grid rule and component/CSS regression are now applied.
+- The collapsed-grid override is desktop-only (`min-width:901px`) so a responsive resize cannot force the 92px desktop rail onto the mobile one-column shell.
+- Final collapsed-shell recheck is GREEN: sidebar `92px`, history `clientWidth=scrollWidth=65`, label hidden, history/topic overlap false. The final 60-execution route matrix is also GREEN at `20/20` per desktop/tablet/mobile viewport.
+- Batch A final gates are GREEN: related Python `41 + 6 + 272 = 319`, full Ruff, targeted Mypy, Node syntax, non-regression tests `11`, exact historical Mypy gate `allowed-with-label` with unchanged `195` diagnostics, Web `38 files / 363 tests`, typecheck, lint, 24-page build and `git diff --check`.
+- Phase 4 is complete at `L2-fixture-or-dry-run`; local accepted P0/P1=`0` within the frozen Batch A contract. Next is a clean local exact-SHA freeze before Batch B. No local commit, staging, push, PR state change, merge, SSH, deploy, production/database/object write, provider call or live send ran.
+- Boundary remains: `production unchanged`, `deploy_execution=false`, `database_write=false` for Batch A tools/tests, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+- Evidence/boundary audit complete: no staged files; tracked/untracked scoped secret candidates `0`; emitted agent inventory SQL contains no UPDATE/DELETE/INSERT/DDL and retains the strict read-only transaction contract. Helper-generated `.claude/`, `.playwright-cli/`, root `AGENTS.md` and `CLAUDE.md` remain untouched and out of scope.
+
+## 2026-07-17 Loop 59 Batch B Exact-SHA Freeze Start
+
+- Owner explicitly approved the next executable item. Authorization now covers local atomic commits and Batch B local tests/build/browser evidence, but still excludes push, PR state change, Ready, merge, SSH, production probe/write, deploy, provider call and live send.
+- Restored the ledger after context compaction and verified branch/upstream identity at `846aa89187867339feb6d6c90c102ca1336e4105`, an empty index, the expected 21 tracked Batch A changes plus three intended untracked files, and four isolated helper artifact classes.
+- Atomic group 1 committed as `02256fe` (`fix: harden release readiness evidence`) with exactly six audit-tool/test files. Staged secret candidates=`0`; the related 319-test path exited `0`, focused Ruff, targeted Mypy, Node syntax and cached diff checks passed.
+- Atomic group 2 committed as `1c2d0e4` (`fix: close responsive workspace layout gaps`) with exactly fourteen UI/test files. Staged secret candidates=`0`; Web `38 files / 363 tests`, typecheck, lint and cached diff checks passed.
+- Group 3 contains only `.kiro/plan/{task_plan,findings,progress}.md` and the Loop 59 formal plan. Its resulting SHA will be read after commit and used as the clean Batch B source identity; no self-referential SHA is asserted inside the commit.
+- Evidence ceiling remains `L2-fixture-or-dry-run`; `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `live_send=false`.
