@@ -5017,6 +5017,76 @@ def test_deploy_tencent_cloud_schema_side_effect_retains_lock_on_later_failure(
     assert events == ["lock", "schema", "activate"]
 
 
+def test_deploy_tencent_cloud_partial_schema_failure_retains_lock(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_partial_schema_failure_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=True,
+        approved_sha="a" * 40,
+        skip_app_rebuild=True,
+        skip_web_build=False,
+    )
+    events: list[str] = []
+    _patch_deploy_locked_path(monkeypatch, module, config, events)
+    monkeypatch.setattr(
+        module,
+        "_apply_schema",
+        lambda *_args: (
+            events.append("schema-partial-side-effect")
+            or (_ for _ in ()).throw(module.DeployError("schema failed after DDL"))
+        ),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "schema-partial-side-effect"]
+
+
+def test_deploy_tencent_cloud_activation_only_failure_restores_and_retains_lock(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_activation_only_failure_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=True,
+        skip_web_build=False,
+    )
+    events: list[str] = []
+    _patch_deploy_locked_path(monkeypatch, module, config, events)
+    monkeypatch.setattr(
+        module,
+        "_activate_remote_release",
+        lambda *_args: events.append("activate"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_remote_post_checks",
+        lambda *_args: (
+            events.append("postcheck-failure")
+            or (_ for _ in ()).throw(module.DeployError("postcheck failed"))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("restore"),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "activate", "postcheck-failure", "restore"]
+
+
 def test_deploy_tencent_cloud_early_determinate_failure_still_unlocks(
     monkeypatch: MonkeyPatch,
 ) -> None:

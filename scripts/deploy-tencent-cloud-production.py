@@ -816,7 +816,7 @@ def _run_nonrollback(config: DeployConfig) -> int:
     owner_token = _acquire_remote_deploy_lock(config)
     activation_reconcile_required = False
     release_lock = True
-    schema_applied = False
+    schema_apply_attempted = False
     app_rebuild_attempted = False
     marker_commit_attempted = False
     try:
@@ -831,8 +831,8 @@ def _run_nonrollback(config: DeployConfig) -> int:
             release_evidence,
         )
         if config.apply_schema:
+            schema_apply_attempted = True
             _apply_schema(config, owner_token)
-            schema_applied = True
         app_rebuild_attempted = not config.skip_app_rebuild
         _rebuild_application(config, owner_token)
         _activate_remote_release(config, owner_token)
@@ -874,12 +874,16 @@ def _run_nonrollback(config: DeployConfig) -> int:
                 "remote write outcome is unknown; production lock retained for "
                 "manual reconciliation",
             ) from original_error
-        if schema_applied or app_rebuild_attempted:
+        if (
+            activation_reconcile_required
+            or schema_apply_attempted
+            or app_rebuild_attempted
+        ):
             release_lock = False
             print(
-                "MANUAL_ROLLBACK_REQUIRED: app rebuild or schema may already be "
-                "active; .deploy-sha was not committed and the production lock "
-                "was retained",
+                "MANUAL_ROLLBACK_REQUIRED: activation, app rebuild, or schema "
+                "side effects may have occurred; .deploy-sha was not committed "
+                "and the production lock was retained",
                 file=sys.stderr,
             )
         raise original_error
