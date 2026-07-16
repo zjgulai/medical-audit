@@ -35,7 +35,7 @@ source: human+ai
 
 ### 2026-07-16 versioned Web release 与原子提交合同（本地实现，尚未部署）
 
-- 本地部署脚本已改为不可变版本目录：`/var/www/audit/releases/<approved-sha>`；共享 Nginx 的 audit 三个静态 location 统一读取 `/var/www/audit/current`，`current` 只允许指向 `releases/<40-char-sha>`。
+- 本地部署脚本已改为不可变版本目录：`/var/www/audit/releases/<approved-sha>`；共享 Nginx 的 audit 三个静态 location 统一读取 `/var/www/audit/current`，`current` 只允许精确指向 `releases/<40-char-lowercase-sha>`。
 - 每次静态发布先同步到独占的 `<approved-sha>.incoming`，在远端重新校验 `release-manifest.json`、完整文件集合、size、SHA-256 与 `source_sha` 后再原子晋升；已存在的不可变目录只有在完整复验一致时才允许复用，禁止覆盖。
 - 部署通过 owner token 持有 `$remote_app_dir.deploy.lock`。后台备份 worker 会把自己的 `BASHPID` 写入 `lock/worker.pid`，正常退出时仅按匹配 PID 清除；worker 仍存活时外层 unlock 必须失败并保留锁。
 - Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
@@ -1014,6 +1014,12 @@ python3 scripts/run-production-e2e-smoke.py \
 - 不打开 `medical-audit.env`，不枚举容器完整环境，也不输出或读取 secret 值；仅在运行中的 `medical_audit_app` 内 allowlist 读取 virus scanner、DLP reviewer、ClamAV host/port/timeout/chunk-size 六个非 secret runtime 配置，并检查备份文件路径、大小和修改时间。
 - 默认检查 `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
+- `current` 必须是字面值精确为 `releases/<40-char-lowercase-sha>` 的 symlink；目标 release 目录必须是非 symlink directory。缺少 `current`、绝对 symlink、越界 target 或 legacy flat root 均失败关闭。
+- 审计会读取 active release 的 `release-manifest.json`，按 manifest 重算完整 regular-file 集合、size 与 SHA-256；missing、extra、hash/size mismatch、symlink、special file、manifest source SHA 与 release SHA 不一致均阻断。公网静态样本只能从该 manifest 选择，禁止扫描 legacy root。
+- 公网 GET 必须保持 same-origin；`release-manifest.json` body SHA-256 必须等于远端 manifest，`/documents` HTML 与选定 `_next/static/` 的 body SHA-256 必须分别等于 manifest 中 `documents.html` 和静态样本的 SHA-256。HTML Cache-Control 必须包含完整 directive `no-store` 或 `no-cache`，static 必须同时包含完整 `immutable` 和精确 `max-age=31536000`；`not-immutable`、`no-cache-disabled` 等子串不算通过。
+- `nginx -t`、mount、active release、public manifest/static、cache policy 共同构成 Nginx release route 硬门禁；任一失败进入 `issues`，不得降级为 warning。
+- JSON/Markdown 稳定输出至少包括 `remote_manifest_sha256`、`public_manifest_sha256`、`manifest_file_count`、`manifest_mismatch_count`、`html_cache_control`、`static_cache_control`、`current_release_target`、`deploy_sha`，并保留原有报告字段。
+- `.deploy-sha` 是唯一发布 commit point。只有 marker、`current` release SHA、manifest `source_sha` 与命令行 expected SHA 四者一致时，报告才标记 `release_commit_state=committed_by_marker`；transaction 的 `ready-to-commit` 或其他 status 不能单独证明提交。当前审计不枚举 transaction 目录，需人工判定时必须把 transaction SHA 与上述只读证据成对复核。
 - 默认通过本机 `/knowledge-base/catalog` 检查 PostgreSQL runtime ready 与 `matching_embedding_count >= 1`；只保留规范化状态，不保存 catalog 原始大响应。
 - catalog/frontdoor 请求前后分别读取 `audit_log_events` 的全表计数、最新 `created_at`、有序 event-id fingerprint，以及本次唯一 auditor identity 的事件计数。只有全表 delta `0`、最新时间/fingerprint 不变、该身份前后均无事件、快照事务为只读且 catalog 声明 `database_write=false`、`provider_call=false`、`query_history_write=false` 时才输出 L3。
 - delta、fingerprint、最新时间或本次身份事件任一发生变化，任一快照不可测，frontdoor 不健康，或 catalog side-effect boundaries 缺失时均失败关闭。只有本次 identity 从 `0` 增至正数且 catalog boundaries 安全时，才按 `audit-log-only` 报告；纯全局并发/retention 变化、缺失 boundaries 或无法归因的变化均报告为 `unknown`。鉴权失败仍可能先写一条 `authorization-denied`，所以不能把工具描述成 all-path read-only。
@@ -1037,6 +1043,9 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 通过条件：
 
 - 远端 `.deploy-sha` 等于期望 SHA。
+- `current_release_target=releases/<期望 SHA>`、manifest `source_sha`、release 目录 SHA 与 `.deploy-sha` 全部一致，`release_commit_state=committed_by_marker`。
+- `manifest_mismatch_count=0` 且公网 manifest/static body hash 分别与远端 manifest/选定 static hash 一致。
+- HTML cache 包含 `no-store` 或 `no-cache`；static cache 包含 `immutable` 且 `max-age=31536000`。
 - `medical_audit_app` 和 `medical_audit_pg` 为 `healthy`。
 - `ai_video_nginx nginx -t` 通过。
 - `/var/www/audit` bind mount 存在且为只读。
@@ -1427,8 +1436,9 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 - `deploy-sha-mismatch`：先确认是否存在“代码已合并但未部署”的正常差异。
 - `medical_audit_app-not-healthy`：先查看 app 容器日志和 healthcheck，不直接重建数据库。
-- `nginx-config-test-failed`：先区分共享 Nginx 全局配置失败和本项目 audit 路由失败；若报告中 `public_frontdoor`、`audit_frontdoor_healthy`、`audit_mount_present`、app/pg 健康和 search backend 均正常，则按共享 Nginx 依赖 warning 处理，并排查对应外部 upstream；若 audit 路由不健康或 bind mount 缺失，再恢复最近的 Nginx 备份后 reload。
-- `shared-nginx-config-test-failed-audit-route-healthy`：共享 Nginx 的某个非本项目 upstream 解析失败，但 `https://audit.lute-tlz-dddd.top/api/v1/health` 与 `/documents` 已通过公网只读复核；不得写成生产部署失败，应同步处理外部 upstream 稳定性。
+- `nginx-config-test-failed`：属于硬阻断；即使 app、前门与 search backend 健康也不得降级为 warning。先在不输出配置正文或 secret 的前提下定位共享 Nginx 错误，修复并重新执行正式 `nginx -t` 后再重跑审计。
+- `remote-release-integrity-failed`、`current-release-target-mismatch` 或 `remote-manifest-source-sha-mismatch`：停止后续部署/回滚，核对 `.deploy-sha`、`current`、immutable release 与 manifest；legacy flat root 不能通过新合同。
+- `public-manifest-sha-mismatch`、`public-static-sha-mismatch`、`html-cache-control-invalid` 或 `static-cache-control-invalid`：视为 Nginx release route 未收敛，不以 HTTP `200` 替代 hash/cache 修复。
 - `audit-static-bind-mount-missing`：检查共享 Nginx Compose 中 `/var/www/audit:/var/www/audit:ro`。
 - `search-backend-not-ready`：检查 PostgreSQL 容器、env 和 active index，不先动前端静态文件。
 - `missing-required-backup-stamp:*`：先补齐或确认备份，不继续写入型 E2E。

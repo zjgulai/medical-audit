@@ -230,14 +230,18 @@ def _remote_audit_code(
     backup_limit: int,
 ) -> str:
     return f"""
+import hashlib
 import json
+import os
+import re
+import stat
 import subprocess
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 APP_DIR = {json.dumps(remote_app_dir, ensure_ascii=False)}
 WEB_DIR = {json.dumps(remote_web_dir, ensure_ascii=False)}
@@ -245,6 +249,9 @@ BACKUP_ROOT = {json.dumps(remote_backup_root, ensure_ascii=False)}
 BASE_URL = {json.dumps(base_url, ensure_ascii=False)}
 BACKUP_LIMIT = {backup_limit}
 BACKUP_CATEGORIES = {json.dumps(BACKUP_CATEGORIES)}
+RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1"
+RELEASE_TARGET_PATTERN = re.compile(r"releases/([0-9a-f]{{40}})")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{{64}}")
 GOVERNANCE_ENV_KEYS = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_VIRUS_SCANNER_PROVIDER",
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_DLP_REVIEWER_PROVIDER",
@@ -460,6 +467,255 @@ def read_file(path):
         return None
 
 
+def empty_release_state(error):
+    return {{
+        "ok": False,
+        "error": error,
+        "current_release_target": None,
+        "release_sha": None,
+        "manifest_source_sha": None,
+        "remote_manifest_sha256": None,
+        "manifest_file_count": 0,
+        "manifest_mismatch_count": 1,
+        "selected_html_path": None,
+        "selected_html_sha256": None,
+        "selected_static_path": None,
+        "selected_static_sha256": None,
+    }}
+
+
+def hash_regular_file(path):
+    try:
+        before = path.lstat()
+    except OSError as exc:
+        raise RuntimeError("release-file-stat-failed") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise RuntimeError("release-entry-not-regular")
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+                size_bytes += len(chunk)
+        after = path.lstat()
+    except OSError as exc:
+        raise RuntimeError("release-file-read-failed") from exc
+    if (
+        before.st_dev != after.st_dev
+        or before.st_ino != after.st_ino
+        or before.st_size != after.st_size
+        or before.st_mtime_ns != after.st_mtime_ns
+        or size_bytes != after.st_size
+    ):
+        raise RuntimeError("release-file-changed-during-audit")
+    return digest.hexdigest(), size_bytes
+
+
+def valid_manifest_path(value):
+    if not isinstance(value, str) or not value or "\\\\" in value:
+        return False
+    candidate = PurePosixPath(value)
+    return (
+        not candidate.is_absolute()
+        and candidate.as_posix() == value
+        and value != "release-manifest.json"
+        and all(part not in ("", ".", "..") for part in candidate.parts)
+    )
+
+
+def collect_release_files(release_root):
+    collected = {{}}
+    invalid_count = 0
+
+    def visit(directory, relative_directory):
+        nonlocal invalid_count
+        try:
+            entries = list(os.scandir(directory))
+        except OSError as exc:
+            raise RuntimeError("release-directory-scan-failed") from exc
+        for entry in entries:
+            relative_path = (
+                f"{{relative_directory}}/{{entry.name}}"
+                if relative_directory
+                else entry.name
+            )
+            try:
+                entry_stat = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise RuntimeError("release-entry-stat-failed") from exc
+            if stat.S_ISDIR(entry_stat.st_mode):
+                visit(Path(entry.path), relative_path)
+                continue
+            if not stat.S_ISREG(entry_stat.st_mode):
+                invalid_count += 1
+                continue
+            if relative_path == "release-manifest.json":
+                continue
+            file_sha256, size_bytes = hash_regular_file(Path(entry.path))
+            collected[relative_path] = {{
+                "sha256": file_sha256,
+                "size_bytes": size_bytes,
+            }}
+
+    visit(release_root, "")
+    return collected, invalid_count
+
+
+def release_state():
+    state = empty_release_state("current-release-invalid")
+    web_root = Path(WEB_DIR)
+    current = web_root / "current"
+    try:
+        current_stat = current.lstat()
+    except OSError:
+        return state
+    if not stat.S_ISLNK(current_stat.st_mode):
+        return state
+    try:
+        current_target = os.readlink(current)
+    except OSError:
+        return state
+    state["current_release_target"] = current_target
+    matched_target = RELEASE_TARGET_PATTERN.fullmatch(current_target)
+    if matched_target is None:
+        return state
+    release_sha = matched_target.group(1)
+    state["release_sha"] = release_sha
+    releases_root = web_root / "releases"
+    release_root = releases_root / release_sha
+    try:
+        releases_stat = releases_root.lstat()
+        release_stat = release_root.lstat()
+        resolved_current = current.resolve(strict=True)
+        resolved_release = release_root.resolve(strict=True)
+    except OSError:
+        state["error"] = "current-release-target-missing"
+        return state
+    if (
+        not stat.S_ISDIR(releases_stat.st_mode)
+        or not stat.S_ISDIR(release_stat.st_mode)
+        or resolved_current != resolved_release
+    ):
+        state["error"] = "current-release-target-invalid"
+        return state
+    manifest_path = release_root / "release-manifest.json"
+    try:
+        before_manifest_sha256, before_manifest_size = hash_regular_file(manifest_path)
+        manifest_bytes = manifest_path.read_bytes()
+        after_manifest_sha256, after_manifest_size = hash_regular_file(manifest_path)
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError):
+        state["error"] = "release-manifest-invalid"
+        return state
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    state["remote_manifest_sha256"] = manifest_sha256
+    if (
+        before_manifest_sha256 != manifest_sha256
+        or after_manifest_sha256 != manifest_sha256
+        or before_manifest_size != len(manifest_bytes)
+        or after_manifest_size != len(manifest_bytes)
+    ):
+        state["error"] = "release-manifest-changed-during-audit"
+        return state
+    if not isinstance(manifest, dict) or manifest.get("format") != RELEASE_MANIFEST_FORMAT:
+        state["error"] = "release-manifest-format-invalid"
+        return state
+    source_sha = manifest.get("source_sha")
+    state["manifest_source_sha"] = source_sha if isinstance(source_sha, str) else None
+    raw_files = manifest.get("files")
+    if not isinstance(raw_files, list):
+        state["error"] = "release-manifest-files-invalid"
+        return state
+    expected_files = {{}}
+    ordered_paths = []
+    for item in raw_files:
+        if not isinstance(item, dict) or set(item) != {{"path", "size_bytes", "sha256"}}:
+            state["error"] = "release-manifest-entry-invalid"
+            return state
+        relative_path = item.get("path")
+        size_bytes = item.get("size_bytes")
+        file_sha256 = item.get("sha256")
+        if (
+            not valid_manifest_path(relative_path)
+            or isinstance(size_bytes, bool)
+            or not isinstance(size_bytes, int)
+            or size_bytes < 0
+            or not isinstance(file_sha256, str)
+            or SHA256_PATTERN.fullmatch(file_sha256) is None
+            or relative_path in expected_files
+        ):
+            state["error"] = "release-manifest-entry-invalid"
+            return state
+        ordered_paths.append(relative_path)
+        expected_files[relative_path] = {{
+            "size_bytes": size_bytes,
+            "sha256": file_sha256,
+        }}
+    state["manifest_file_count"] = len(expected_files)
+    if ordered_paths != sorted(ordered_paths, key=lambda path: path.encode("utf-8")):
+        state["error"] = "release-manifest-order-invalid"
+        return state
+    static_paths = [
+        path for path in ordered_paths if path.startswith("_next/static/")
+    ]
+    selected_html_path = "documents.html"
+    if selected_html_path not in expected_files:
+        state["error"] = "release-manifest-html-missing"
+        return state
+    if not static_paths:
+        state["error"] = "release-manifest-static-missing"
+        return state
+    selected_static_path = static_paths[0]
+    state["selected_html_path"] = selected_html_path
+    state["selected_html_sha256"] = expected_files[selected_html_path]["sha256"]
+    state["selected_static_path"] = selected_static_path
+    state["selected_static_sha256"] = expected_files[selected_static_path]["sha256"]
+    if source_sha != release_sha:
+        state["error"] = "release-manifest-source-sha-mismatch"
+        return state
+    try:
+        actual_files, invalid_count = collect_release_files(release_root)
+    except RuntimeError as exc:
+        state["error"] = str(exc)
+        return state
+    mismatch_count = invalid_count + len(set(expected_files) ^ set(actual_files))
+    for relative_path in set(expected_files) & set(actual_files):
+        if expected_files[relative_path] != actual_files[relative_path]:
+            mismatch_count += 1
+    state["manifest_mismatch_count"] = mismatch_count
+    if mismatch_count:
+        state["error"] = "release-file-mismatch"
+        return state
+    state["ok"] = True
+    state["error"] = None
+    return state
+
+
+def url_origin(url):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.username is not None or parsed.password is not None or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if port is None:
+        port = 443 if parsed.scheme.lower() == "https" else 80
+    return parsed.scheme.lower(), parsed.hostname.lower(), port
+
+
+def normalized_cache_control(headers):
+    values = headers.get_all("Cache-Control") or []
+    directives = []
+    for value in values:
+        for part in value.split(","):
+            normalized = part.strip().lower()
+            if normalized:
+                directives.append(normalized)
+    return ", ".join(directives)
+
+
 def http_json(url, headers=None):
     try:
         request = urllib.request.Request(url, headers=headers or {{}})
@@ -546,41 +802,61 @@ def http_status(url, expected_texts=None, headers=None):
             body = response.read()
             status_code = response.getcode()
             content_type = response.headers.get("content-type")
+            cache_control = normalized_cache_control(response.headers)
+            final_url = response.geturl()
+        same_origin = url_origin(url) == url_origin(final_url)
         expected_utf8_text = {{
             text: text.encode("utf-8") in body for text in expected_texts
         }}
         return {{
-            "ok": status_code == 200 and all(expected_utf8_text.values()),
+            "ok": (
+                status_code == 200
+                and same_origin
+                and all(expected_utf8_text.values())
+            ),
             "status_code": status_code,
             "content_type": content_type,
             "content_length": len(body),
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "cache_control": cache_control,
+            "final_url": final_url,
+            "same_origin": same_origin,
             "expected_utf8_text": expected_utf8_text,
         }}
     except urllib.error.HTTPError as exc:
-        return {{"ok": False, "status_code": exc.code, "error": str(exc)}}
+        location = exc.headers.get("Location") if exc.headers is not None else None
+        final_url = urllib.parse.urljoin(url, location) if location else exc.geturl()
+        return {{
+            "ok": False,
+            "status_code": exc.code,
+            "error": str(exc),
+            "final_url": final_url,
+            "same_origin": url_origin(url) == url_origin(final_url),
+        }}
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return {{"ok": False, "error": str(exc)}}
+        return {{
+            "ok": False,
+            "error": str(exc),
+            "final_url": None,
+            "same_origin": False,
+        }}
 
 
-def next_static_asset_status():
-    static_root = Path(WEB_DIR) / "_next" / "static"
-    if not static_root.exists():
-        return {{"ok": False, "error": "next-static-root-missing"}}
-    candidates = sorted(static_root.rglob("*.js"))
-    if not candidates:
-        return {{"ok": False, "error": "next-static-js-missing"}}
-    selected = next(
-        (
-            path
-            for path in candidates
-            if "/chunks/app/(workspace)/archive/" in path.as_posix()
-        ),
-        next((path for path in candidates if "/chunks/app/" in path.as_posix()), candidates[0]),
-    )
-    relative = selected.relative_to(Path(WEB_DIR)).as_posix()
+def next_static_asset_status(active_release):
+    if active_release.get("ok") is not True:
+        return {{"ok": False, "error": "active-release-invalid"}}
+    relative = active_release.get("selected_static_path")
+    expected_sha256 = active_release.get("selected_static_sha256")
+    if (
+        not isinstance(relative, str)
+        or not relative.startswith("_next/static/")
+        or not isinstance(expected_sha256, str)
+    ):
+        return {{"ok": False, "error": "next-static-manifest-entry-missing"}}
     url_path = "/" + urllib.parse.quote(relative, safe="/-._~")
     status = http_status(BASE_URL + url_path)
     status["path"] = url_path
+    status["expected_sha256"] = expected_sha256
     return status
 
 
@@ -611,6 +887,7 @@ def backup_index():
     return {{category: backup_entries(category) for category in BACKUP_CATEGORIES}}
 
 
+active_release = release_state()
 audit_log_before = audit_log_event_snapshot()
 local_backend = {{
     "health": http_json("http://127.0.0.1:18080/health"),
@@ -623,7 +900,8 @@ public_frontdoor = {{
         ["登录工作台", "AI审计一体化协作平台"],
         headers=AUDIT_HEADERS,
     ),
-    "next_static": next_static_asset_status(),
+    "manifest": http_status(BASE_URL + "/release-manifest.json"),
+    "next_static": next_static_asset_status(active_release),
 }}
 audit_log_after = audit_log_event_snapshot()
 
@@ -633,6 +911,7 @@ report = {{
     "remote_web_dir": WEB_DIR,
     "remote_backup_root": BACKUP_ROOT,
     "deploy_sha": read_file(str(Path(APP_DIR) / ".deploy-sha")),
+    "release_state": active_release,
     "containers": {{
         "medical_audit_app": container_state("medical_audit_app"),
         "medical_audit_pg": container_state("medical_audit_pg"),
@@ -709,8 +988,108 @@ def _build_report(
         else DEFAULT_MIN_MATCHING_EMBEDDINGS
     )
     deploy_sha = _string_or_none(remote_report.get("deploy_sha"))
-    if expected_deploy_sha and deploy_sha != expected_deploy_sha:
+    expected_sha_valid = _valid_hex_digest(expected_deploy_sha, length=40)
+    if expected_deploy_sha is None:
+        issues.append("expected-deploy-sha-required")
+    elif not expected_sha_valid:
+        issues.append("expected-deploy-sha-invalid")
+    elif deploy_sha != expected_deploy_sha:
         issues.append("deploy-sha-mismatch")
+    release = _nested_dict(remote_report, "release_state")
+    current_release_target = _string_or_none(release.get("current_release_target"))
+    release_sha = _string_or_none(release.get("release_sha"))
+    manifest_source_sha = _string_or_none(release.get("manifest_source_sha"))
+    remote_manifest_sha256 = _valid_digest_or_none(
+        release.get("remote_manifest_sha256"),
+        length=64,
+    )
+    manifest_file_count = _nonnegative_int_or_none(release.get("manifest_file_count"))
+    manifest_mismatch_count = _nonnegative_int_or_none(
+        release.get("manifest_mismatch_count")
+    )
+    selected_html_path = _string_or_none(release.get("selected_html_path"))
+    selected_html_sha256 = _valid_digest_or_none(
+        release.get("selected_html_sha256"),
+        length=64,
+    )
+    selected_static_path = _string_or_none(release.get("selected_static_path"))
+    selected_static_sha256 = _valid_digest_or_none(
+        release.get("selected_static_sha256"),
+        length=64,
+    )
+    release_integrity_valid = (
+        release.get("ok") is True
+        and manifest_file_count is not None
+        and manifest_file_count > 0
+        and manifest_mismatch_count == 0
+        and remote_manifest_sha256 is not None
+        and selected_html_path == "documents.html"
+        and selected_html_sha256 is not None
+        and selected_static_path is not None
+        and selected_static_path.startswith("_next/static/")
+        and selected_static_sha256 is not None
+    )
+    if not release_integrity_valid:
+        issues.append("remote-release-integrity-failed")
+    expected_release_target = (
+        f"releases/{expected_deploy_sha}" if expected_sha_valid else None
+    )
+    if (
+        expected_release_target is None
+        or current_release_target != expected_release_target
+        or release_sha != expected_deploy_sha
+    ):
+        issues.append("current-release-target-mismatch")
+    if not expected_sha_valid or manifest_source_sha != expected_deploy_sha:
+        issues.append("remote-manifest-source-sha-mismatch")
+    frontdoor = _nested_dict(remote_report, "public_frontdoor")
+    public_manifest = _nested_dict(frontdoor, "manifest")
+    public_static = _nested_dict(frontdoor, "next_static")
+    documents_frontdoor = _nested_dict(frontdoor, "documents")
+    public_manifest_sha256 = _valid_digest_or_none(
+        public_manifest.get("body_sha256"),
+        length=64,
+    )
+    public_static_sha256 = _valid_digest_or_none(
+        public_static.get("body_sha256"),
+        length=64,
+    )
+    public_html_sha256 = _valid_digest_or_none(
+        documents_frontdoor.get("body_sha256"),
+        length=64,
+    )
+    manifest_frontdoor_ready = (
+        public_manifest.get("ok") is True
+        and public_manifest.get("status_code") == 200
+        and public_manifest.get("same_origin") is True
+    )
+    if not manifest_frontdoor_ready:
+        issues.append("public-manifest-not-ready")
+    elif (
+        remote_manifest_sha256 is None
+        or public_manifest_sha256 != remote_manifest_sha256
+    ):
+        issues.append("public-manifest-sha-mismatch")
+    if (
+        _audit_frontdoor_healthy(remote_report)
+        and selected_html_sha256 is not None
+        and public_html_sha256 != selected_html_sha256
+    ):
+        issues.append("public-html-sha-mismatch")
+    if (
+        _audit_next_static_healthy(remote_report)
+        and selected_static_sha256 is not None
+        and public_static_sha256 != selected_static_sha256
+    ):
+        issues.append("public-static-sha-mismatch")
+    html_cache_control = _string_or_none(documents_frontdoor.get("cache_control"))
+    static_cache_control = _string_or_none(public_static.get("cache_control"))
+    html_cache_valid = _html_cache_control_valid(html_cache_control)
+    static_cache_valid = _static_cache_control_valid(static_cache_control)
+    if not html_cache_valid:
+        issues.append("html-cache-control-invalid")
+    if not static_cache_valid:
+        issues.append("static-cache-control-invalid")
     for name in ("medical_audit_app", "medical_audit_pg"):
         health = _container_health(remote_report, name)
         if health != "healthy":
@@ -719,12 +1098,7 @@ def _build_report(
     audit_frontdoor_healthy = _audit_frontdoor_healthy(remote_report)
     if not audit_frontdoor_healthy:
         issues.append("audit-frontdoor-not-ready")
-    if not nginx_config_test_passed and _shared_nginx_failure_is_non_blocking(
-        remote_report,
-        matching_embedding_floor,
-    ):
-        warnings.append("shared-nginx-config-test-failed-audit-route-healthy")
-    elif not nginx_config_test_passed:
+    if not nginx_config_test_passed:
         issues.append("nginx-config-test-failed")
     if not _audit_mount_valid(remote_report):
         issues.append("audit-static-bind-mount-missing")
@@ -792,6 +1166,30 @@ def _build_report(
         if audit_log_observation_safe and search_backend_boundaries_safe
         else "L1-public-or-runtime"
     )
+    release_commit_state = (
+        "committed_by_marker"
+        if (
+            expected_sha_valid
+            and deploy_sha == expected_deploy_sha
+            and current_release_target == expected_release_target
+            and release_sha == expected_deploy_sha
+            and manifest_source_sha == expected_deploy_sha
+        )
+        else "unproven"
+    )
+    nginx_release_route_ready = (
+        nginx_config_test_passed
+        and _audit_mount_valid(remote_report)
+        and release_integrity_valid
+        and manifest_frontdoor_ready
+        and public_manifest_sha256 == remote_manifest_sha256
+        and _audit_next_static_healthy(remote_report)
+        and public_static_sha256 == selected_static_sha256
+        and _audit_frontdoor_healthy(remote_report)
+        and public_html_sha256 == selected_html_sha256
+        and html_cache_valid
+        and static_cache_valid
+    )
     return {
         "status": "pass" if not issues else "fail",
         "evidence_grade": evidence_grade,
@@ -808,6 +1206,20 @@ def _build_report(
         "expected_matching_embeddings": matching_embedding_floor,
         "summary": {
             "deploy_sha": deploy_sha,
+            "current_release_target": current_release_target,
+            "manifest_source_sha": manifest_source_sha,
+            "remote_manifest_sha256": remote_manifest_sha256,
+            "public_manifest_sha256": public_manifest_sha256,
+            "manifest_file_count": manifest_file_count,
+            "manifest_mismatch_count": manifest_mismatch_count,
+            "manifest_html_sha256": selected_html_sha256,
+            "public_html_sha256": public_html_sha256,
+            "manifest_static_sha256": selected_static_sha256,
+            "public_static_sha256": public_static_sha256,
+            "html_cache_control": html_cache_control,
+            "static_cache_control": static_cache_control,
+            "release_commit_state": release_commit_state,
+            "nginx_release_route_ready": nginx_release_route_ready,
             "app_health": _container_health(remote_report, "medical_audit_app"),
             "postgres_health": _container_health(remote_report, "medical_audit_pg"),
             "clamav_health": _container_health(remote_report, "medical_audit_clamav"),
@@ -879,17 +1291,49 @@ def _nginx_test_passed(remote_report: dict[str, Any]) -> bool:
     return config_test.get("passed") is True
 
 
-def _shared_nginx_failure_is_non_blocking(
-    remote_report: dict[str, Any],
-    min_matching_embeddings: int,
-) -> bool:
+def _valid_hex_digest(value: object, *, length: int) -> bool:
     return (
-        _container_health(remote_report, "medical_audit_app") == "healthy"
-        and _container_health(remote_report, "medical_audit_pg") == "healthy"
-        and _audit_mount_valid(remote_report)
-        and _audit_next_static_healthy(remote_report)
-        and _search_backend_ready(remote_report, min_matching_embeddings)
-        and _audit_frontdoor_healthy(remote_report)
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_digest_or_none(value: object, *, length: int) -> str | None:
+    if not isinstance(value, str) or not _valid_hex_digest(value, length=length):
+        return None
+    return value
+
+
+def _nonnegative_int_or_none(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _cache_control_directives(value: str | None) -> dict[str, set[str | None]]:
+    directives: dict[str, set[str | None]] = {}
+    if value is None:
+        return directives
+    for part in value.split(","):
+        name, separator, raw_value = part.strip().lower().partition("=")
+        if not name:
+            continue
+        directive_value = raw_value.strip() if separator else None
+        directives.setdefault(name, set()).add(directive_value)
+    return directives
+
+
+def _html_cache_control_valid(value: str | None) -> bool:
+    directives = _cache_control_directives(value)
+    return not {"no-store", "no-cache"}.isdisjoint(directives)
+
+
+def _static_cache_control_valid(value: str | None) -> bool:
+    directives = _cache_control_directives(value)
+    return (
+        "immutable" in directives
+        and directives.get("max-age") == {"31536000"}
     )
 
 
@@ -902,13 +1346,18 @@ def _audit_frontdoor_healthy(remote_report: dict[str, Any]) -> bool:
         and health.get("status_code") == 200
         and documents.get("ok") is True
         and documents.get("status_code") == 200
+        and documents.get("same_origin") is True
     )
 
 
 def _audit_next_static_healthy(remote_report: dict[str, Any]) -> bool:
     frontdoor = _nested_dict(remote_report, "public_frontdoor")
     next_static = _nested_dict(frontdoor, "next_static")
-    return next_static.get("ok") is True and next_static.get("status_code") == 200
+    return (
+        next_static.get("ok") is True
+        and next_static.get("status_code") == 200
+        and next_static.get("same_origin") is True
+    )
 
 
 def _audit_mount_valid(remote_report: dict[str, Any]) -> bool:
@@ -1164,6 +1613,20 @@ def _write_markdown(path: Path, report: dict[str, Any]) -> None:
             f"- `provider_call_status`: `{report.get('provider_call_status')}`",
             f"- `http_methods`: `{report.get('http_methods')}`",
             f"- `deploy_sha`: `{summary.get('deploy_sha')}`",
+            f"- `current_release_target`: `{summary.get('current_release_target')}`",
+            f"- `manifest_source_sha`: `{summary.get('manifest_source_sha')}`",
+            f"- `remote_manifest_sha256`: `{summary.get('remote_manifest_sha256')}`",
+            f"- `public_manifest_sha256`: `{summary.get('public_manifest_sha256')}`",
+            f"- `manifest_file_count`: `{summary.get('manifest_file_count')}`",
+            f"- `manifest_mismatch_count`: `{summary.get('manifest_mismatch_count')}`",
+            f"- `manifest_html_sha256`: `{summary.get('manifest_html_sha256')}`",
+            f"- `public_html_sha256`: `{summary.get('public_html_sha256')}`",
+            f"- `manifest_static_sha256`: `{summary.get('manifest_static_sha256')}`",
+            f"- `public_static_sha256`: `{summary.get('public_static_sha256')}`",
+            f"- `html_cache_control`: `{summary.get('html_cache_control')}`",
+            f"- `static_cache_control`: `{summary.get('static_cache_control')}`",
+            f"- `release_commit_state`: `{summary.get('release_commit_state')}`",
+            f"- `nginx_release_route_ready`: `{summary.get('nginx_release_route_ready')}`",
             f"- `app_health`: `{summary.get('app_health')}`",
             f"- `postgres_health`: `{summary.get('postgres_health')}`",
             f"- `clamav_health`: `{summary.get('clamav_health')}`",
