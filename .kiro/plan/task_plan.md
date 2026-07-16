@@ -319,3 +319,47 @@ Acceptance contract:
 - 禁止 `git add .`；每个 commit 的 staged manifest、stat 和 `git diff --cached --check` 必须在提交前核验。
 - Draft PR 必须只包含 Loop 56 的三个产品闭环及其测试/合同/验收记录，不包含 `output/`、临时 SQLite、screenshots 或 secrets。
 - 当前生产保持 `production unchanged`、`provider_call=false`、`database_write=false`、`deploy_execution=false`。
+
+## 2026-07-16 Loop 58 Next-Batch Deployment Planning
+
+Goal:
+
+- 将 `codex/production-ui-reconciliation-20260716` 的 `29` 个已提交 commit、当前 UI/acceptance checkpoint 和缺失的部署证据合同收敛为 clean exact-SHA release candidate。
+- 在任何生产执行前补齐首次 versioned-release migration readiness、S0/S1/S2 schema/business snapshot、全截图 exact-SHA frontend acceptance 与 run-specific audit attribution。
+- 把 local candidate、Draft PR、Ready、merge、production preflight、deploy、L3 验证、L4 `audit-log-only` 验收和业务写入 UAT 保持为独立状态与授权门。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复 branch/worktree/Task 11 断点，审查部署、回滚和 L3/L4 工具，完成下一批方案与 TODO；本 Phase 仅计划文件写入。
+- [x] Phase 1 — 完成 release evidence contract：migration readiness、S0/S1/S2 guard snapshot/compare、schema/business delta、first-migration rollback acceptance；当前证据为 L2 fixture/dry-run。
+- [x] Phase 2 — 强化 production frontend gate：全部 `40` 次 execution 截图、expected deploy SHA/public manifest、canonical guard snapshot hash、unique run identity 和 collector/provider scope 分层；保持 L4 `audit-log-only`。
+- [x] Phase 3 — 已实施显式 non-regression exception：exact base/tool/command/diagnostic/source fingerprint gate 返回 `allowed-with-label`，六个候选 Python scripts targeted Mypy PASS；不得表述为 full PASS。
+- [x] Phase 4 — 已按 evidence/UI/planning 三个显式 manifest 创建本地原子 commit；前两项为 `0d34a94`、`85859a6`，本 planning ledger commit 形成最终 clean exact SHA，提交后的 SHA 由 Git 外部核验。
+- [ ] Phase 5 — 从 exact SHA 重跑 L2 全量门禁、release manifest 与 `17 independent + 3 aliases` 三 viewport 本地矩阵；旧 `source_sha=null` matrix 仅保留为 pre-fix evidence。
+- [ ] Phase 6 — 经单独授权 push/Create Draft PR；独立复审 accepted P0/P1=`0` 后，再分别取得 Ready 和 merge 授权。
+- [ ] Phase 7 — 在 clean `main == origin/main == approved SHA` 下，经 production read-only 授权捕获 S0/topology 并运行 default deploy preflight；`partial_or_unknown` hard stop。
+- [ ] Phase 8 — 经 exact-SHA deploy + rollback pre-authorization 执行备份、frozen build、app rebuild、versioned static/Nginx/marker；禁止 schema/provider/review/business writes。
+- [ ] Phase 9 — 捕获 S1，运行 conditional L3 deployment-state audit，并证明 S0→S1 schema/business/object zero delta；成功状态仅为 `deployed_l3_verified`。
+- [ ] Phase 10 — 分别授权 full permission matrix 和 full frontend acceptance 的 L4 `audit-log-only`；捕获 S2 并证明 S1→S2 只有 run-attributable audit delta，形成 `release_accepted_l4`。
+- [ ] Phase 11 — 每个 business-write/provider UAT lane 独立授权、备份、snapshot、fixture、delta、可选 cleanup 与报告。
+
+Current blockers:
+
+- Phase 4 三个 manifest 已冻结；本 planning ledger commit 完成后，最终 clean exact SHA 由 `git rev-parse HEAD` 和空 `git status --short` 外部核验，不在 commit 内自我预写。
+- Full route matrix is stale and unbound (`source_sha=null`).
+- `mypy src scripts` 保留 `195` 个继承错误/`10` 个 untouched files；D1.1 exact-fingerprint non-regression gate 已通过，但 `mypy_full_pass=false`，历史债务仍未修复。
+- D0 SQL/SSH paths are fixture/static verified only because no matching local PostgreSQL container is running; no L3 production capture has executed.
+- Object-storage evidence currently covers only the `document_storage_objects` database ledger; COS object enumeration remains unobserved.
+- The guard proves only that its collector made no provider attempt. Whole-runtime provider telemetry remains `provider_call_status=not_observed` and must not be promoted to `provider_call=false`.
+- SSH provenance/envelope is an operator-workspace evidence contract, not an external signed attestation against a malicious local operator who can replace both code and report; that stronger threat model requires separate architecture/authorization.
+- Phase 3 采用显式 non-regression exception；只允许证明当前候选未新增 Mypy 错误，不得声称 `mypy src scripts` full PASS。Phase 4 本地原子 commit 已获本次“自动授权”，但必须等 Phase 3 验证完成后再进入；push、PR、Ready、merge 和生产操作仍为独立门。
+
+Detailed source of truth:
+
+- `docs/superpowers/plans/2026-07-16-production-ui-reconciliation-and-release-integrity.md`, section `2026-07-16 Next-Batch Deployment Plan (Loop 58)`.
+
+Evidence boundary:
+
+- D0 is local implementation evidence only: `L2-fixture-or-dry-run`, `local_only`, `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
+- Final independent read-only reviews for release guard and frontend acceptance both report `accepted P0/P1=0` with high confidence under the documented controlled-operator threat model.
+- No commit, push, PR state change, merge, production probe, backup, Docker/Nginx change, provider call or production write was executed.

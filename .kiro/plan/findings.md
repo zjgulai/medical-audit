@@ -1830,3 +1830,125 @@ Evidence boundary:
 
 - 当前仅完成 GitHub Draft PR 推广，不是 Ready、merge、deploy preflight 或 production deploy。
 - `production unchanged`、`provider_call=false`、`database_write=false`、`deploy_execution=false`。
+
+## 2026-07-16 Loop 58 Next Batch Deployment Planning Intake
+
+Current verified state:
+
+- Active release worktree is `/Users/pray/project/medical_audit_release_reconciliation_20260714` on `codex/production-ui-reconciliation-20260716` at `HEAD=489ff70185c70b008d1d30b41ce239386e9debd9`, descending from `origin/main@1376baef0d8d47f1e1ef60b2cec130451af5af4f` and `29` commits ahead.
+- The current candidate contains `12` modified tracked files and remains intentionally uncommitted. Exact-SHA build, commit, push, PR, merge, deploy and production acceptance have not been executed for this candidate.
+- Task 11 local checkpoint has fresh route-identity evidence and a mobile history-control safe-area fix. The earlier `task11-local-browser-matrix-current.json` is pre-fix evidence with `source_sha=null`; it cannot be promoted into current acceptance.
+- Fresh local gates already cover Web lint/typecheck/Vitest/static export, backend Pytest/Ruff/`mypy src`, focused Playwright and `git diff --check`. `uv run mypy src scripts` still reports `195` errors in `10` pre-existing files outside the current diff and outside `origin/main..HEAD`; this is a named repository gate debt, not a current-candidate regression.
+- Loop 54's production SHA is historical evidence only. A future deploy decision must refresh the current production marker, backup inventory, container health and front-door state before using any production baseline claim.
+
+Planning decision:
+
+- Reuse the existing Task 12 exact-SHA deployment contract instead of creating a second competing deploy path.
+- Split the next batch into independent authorization/evidence gates: candidate freeze, local commit and review, exact-SHA release proof, Draft PR, Ready/merge decision, clean-main preflight, production deploy, L3 post-deploy state audit, optional L4 `audit-log-only` browser/permission acceptance, and separately authorized business-write/provider lanes.
+- Keep rollback identity bound to the pre-deploy marker plus versioned static release and backup stamp; never accept a symbolic `main` target as deployment identity.
+- Plan-only boundary for this turn: `local_only`, `production unchanged`, `provider_call=false`, `database_write=false`, `live_send=false`, `deploy_execution=false`.
+
+Tooling note:
+
+- The `planning-with-files` session-catchup command could not run because `/Users/pray/.agents/skills/planning-with-files/assets/scripts/session-catchup.py` is absent. Per the skill's no-repeat rule, the same command was not retried; context reconciliation continues from fresh `git status`, `.kiro/plan` ledgers, the active release plan and current scripts.
+
+Active plan reconciliation:
+
+- Tasks 9 and 10 already define the canonical frozen release-manifest and versioned/atomic static-release path. The next-batch plan should consume those contracts, not invent a parallel rsync/deploy procedure.
+- Task 12 already separates Ready, merge and exact-SHA deployment authorization, but its production acceptance wording needs an explicit evidence split: conditional L3 deployment-state audit versus explicit L4 `audit-log-only` full browser/permission acceptance.
+- The final `Current decision` line in the active plan still points to Task 1 despite the current Task 11 checkpoint; it is stale and must be replaced with the current `NO-GO` reason and next authorized batch.
+- Task 12's before/after snapshot requirement is directionally correct but not yet an operator-ready TODO: the next batch must name snapshot scope, artifact paths, allowed audit delta, prohibited business deltas and stop conditions before any deploy execution can be authorized.
+
+Candidate topology and gate implications:
+
+- `origin/main..HEAD` is a linear `29`-commit chain touching `41` files (`13,319` insertions / `940` deletions) before the current `12`-file uncommitted checkpoint. The release candidate is therefore the whole branch plus the current delta, not merely the latest UI fix.
+- The committed branch delta contains Web runtime, release-manifest tooling, hardened deploy/audit operator code, Nginx release policy, tests and workflow docs; it contains no `src/` application-runtime or schema/migration change. App rebuild eligibility must still be recomputed from the final merge SHA before deployment.
+- The current local branch has no configured remote feature-branch upstream. Push/Draft PR remains an external side effect requiring separate authorization.
+- The production frontend acceptance runner intentionally requires `--allow-audit-log-writes` plus `--confirm-production-write`; even though its browser HTTP method contract is `GET`, its evidence is L4 `audit-log-only`, with `database_write=audit-log-only` and `provider_call_status=not_called`.
+- The deploy CLI exposes separate preflight/default, `--execute`, and `--rollback` modes. Production execute requires exact `--approved-sha` plus `--confirm-production audit.lute-tlz-dddd.top`; `--allow-dirty`, `--apply-schema`, provider smoke and review-write flags must remain absent from this batch.
+
+Deploy/rollback implementation facts:
+
+- Execute mode builds from a temporary `git archive` of the approved SHA, then performs remote preflight, lock acquisition, five-category backups, app sync, versioned static staging/verification, optional app rebuild, atomic activation, post-check, smoke and final `.deploy-sha` commit. Preflight mode stops before those writes.
+- Any unknown remote write outcome retains the production lock and requires manual reconciliation. Failures after activation/app rebuild/schema side effects also retain the lock and require manual rollback; the plan must not prescribe an automatic retry.
+- Rollback is bound to the original deployment `--stamp`, its app/Web backups and transaction directory, plus exact `--expected-current-sha` and `--restore-sha`. It validates the current marker before restoring and rebuilds the app as part of rollback; therefore rollback itself requires separate production-write authorization.
+- The current L3 deployment-state auditor snapshots the audit log and release/runtime identity, but the repository has no dedicated operator script for the broader prohibited business-table/object-store before/after matrix required by Task 12. That evidence gap must be closed before full L4 frontend acceptance or the plan must explicitly narrow the acceptance claim.
+
+Independent deployment/acceptance review:
+
+- Two read-only reviews confirmed the current candidate is not yet an operator-ready Task 12 `GO`. Required pre-promotion work is: migration-readiness classification, broad read-only S0/S1/S2 snapshot tooling, full-screenshot enforcement, exact deploy-SHA/public-manifest binding and run-specific frontend acceptance identity.
+- The first versioned-release deployment is likely a legacy flat-root migration. This must be proven by a fresh read-only topology probe as exactly one of `legacy_ready`, `versioned_ready` or `partial_or_unknown`; only `legacy_ready` permits `--allow-first-legacy-migration`, while `partial_or_unknown` is a hard stop.
+- Current deployment metadata is bound to `MEDICAL_AUDIT_DEPLOY_SHA` at app container build/start. Therefore `--skip-app-rebuild` would create split identity between app metadata and the new marker/public manifest; this batch must rebuild the app unless that runtime contract is separately redesigned first.
+- Full frontend acceptance currently covers `17` hardened independent routes and `3` aliases at desktop/mobile (`34 + 6` executions). The gate permits screenshot policy `disabled` or `issues`; this conflicts with the plan's all-page screenshot requirement and must be hardened before production use.
+- The frontend runner uses fixed identity `frontend-acceptance-admin`, does not bind its report to expected deploy SHA/public manifest and reports provider status from a static contract. Run-specific attribution and runtime-derived release/provider evidence are required before S1→S2 can prove the allowed audit-log delta.
+- Verified schema tables needed for prohibited-delta coverage include `query_logs`, `review_tasks`, `review_actions`, `review_comments`, `audit_projects`, `audit_project_members`, `analytics_upload_records`, `document_upload_records`, `document_storage_objects`, `document_upload_governance_jobs`, `audit_agent_invocations` and `audit_log_events`.
+- The default permission observation covers only `2` public GET probes and skips `33`; it is L3-limited observation, not a full permission matrix. Full permission and full browser acceptance remain separate L4 `audit-log-only` lanes.
+
+Plan output:
+
+- The active release plan now contains Loop 58 batches D0-D9, exact state transitions, migration/readiness and rollback gates, S0/S1/S2 evidence, command templates, hard stops and an authorization matrix.
+- The stale `next Task 1` decision has been replaced with a current `NO-GO`: the next executable work is D0 local evidence-contract implementation after a new instruction, not commit, merge or deploy.
+- Direct deploy and `--skip-app-rebuild` are explicitly rejected for the current contract. Exact-SHA deploy remains blocked until the candidate is clean, D0 exists, the Mypy policy is recorded, the full matrix is SHA-bound, and D5 fresh read-only topology is safe.
+
+## 2026-07-16 Loop 58 D0 Implementation Start
+
+- User authorized the next executable item only: D0 local release-evidence contract implementation. Commit, push, PR, Ready, merge, production observation and production mutation remain outside authorization.
+- The stable operator workflow to update for D0 is `docs/workflows/workflow-tencent-cloud-audit-deployment-stable.md`; existing frontend-only workflow examples do not yet encode the new S0/S1/S2 release-guard contract.
+- D0 implementation is split into two non-overlapping local lanes: a Python release-guard snapshot/compare tool plus focused tests, and Node frontend acceptance/gate hardening plus focused tests. Both lanes are fixture/dry-run only.
+- The deploy activation path already checks the basic legacy/versioned filesystem shape, but it is write-path-local and does not emit a reusable pre-deploy topology classification or broad schema/business/object snapshot. The D0 guard must remain consistent with those checks while adding standalone fail-closed capture/compare evidence.
+- Existing first-migration rollback code distinguishes a legacy backup by the absence of `web/out/release-manifest.json`; D0 fixture coverage must therefore verify both versioned identity agreement and the legacy restore shape, not treat rollback exit alone as acceptance.
+- The twelve allowlisted tables all have UUID `id` primary keys in `sql/knowledge-query-schema.sql`; each has `created_at`, while mutable review/project/member/storage/governance tables also expose `updated_at`. This supports row-count + ordered-PK fingerprint + max relevant timestamp without inventing table-specific identifiers.
+- The existing deployment-state auditor provides a safe SSH/remote-Python pattern and already demonstrates `PGOPTIONS="-c default_transaction_read_only=on"` inside `medical_audit_pg`. The new guard can reuse that operational shape without reading or printing `.env` values.
+- Integration review found one plan/code semantic conflict: the migration sentinel records the first successful legacy-to-versioned migration SHA and is intentionally not rotated on later versioned deployments. Therefore `versioned_ready` must require a valid non-symlink sentinel as migration-lineage evidence, while exact equality applies to marker/current/release/manifest; requiring sentinel==current SHA would incorrectly block every second versioned deployment.
+- Frontend evidence integration must not reduce “valid PNG” to the 8-byte signature; the gate needs structural PNG/IHDR evidence plus hash/dimensions for each independent execution. The public deployment metadata endpoint proves the app deploy SHA but does not expose the Web `current` symlink, so exact current-target evidence must come from the S1 release guard or remain explicitly unverified.
+- The S0 collector cannot depend on the new guard script already existing in the production app directory, because S0 runs before that SHA is deployed. The live capture path must stream a self-contained remote collector over strict SSH (`python3 -`) from the clean local candidate.
+- The completed frontend lane now consumes a passing S1 guard with exact current target, derives a run-specific audit user, binds public manifest/app deploy metadata before and after the run, and requires fresh, unique, run-bound structural PNG evidence for all `34` independent plus `6` alias executions.
+- Stable deployment workflow has a tested single-source rule: `pnpm production:frontend-acceptance --` may appear exactly once in §7.6.1. New D0 arguments must update that canonical command instead of adding another template elsewhere.
+- Maximum evidence grade for this phase is `L2-fixture-or-dry-run`; local code/tests cannot establish L3 or L4.
+- Completion contract: migration topology and first-migration rollback are fixture-tested; release guard capture/compare is fail-closed; frontend acceptance requires all screenshots, exact deploy/release identity and a unique run identity; focused and relevant broad local gates pass; planning ledgers reflect remaining blockers.
+- The release clone has no physical `AGENTS.md`; the repository contract supplied in the active task remains controlling.
+- Pre-edit backup: `/Users/pray/.Codex/file-history/medical-audit-loop58-d0-20260716T152243+0800/`.
+
+## 2026-07-16 Loop 58 D0 Closure Findings
+
+- A report-level `provider_call_status=not_called` was initially too broad: the collector can prove only its own command/endpoint boundary. The final contract records global `provider_call_status=not_observed`, `provider_evidence_source=outside-release-guard-scope`, and separate collector `not_called`/zero-attempt evidence.
+- A count/fingerprint-only table snapshot could miss balanced or in-place mutations. The final snapshot adds complete canonical row-content fingerprints; `audit_log_events` additionally carries exact IDs and row hashes so S1→S2 can prove the new global ID set exactly equals the run-user ID set and old rows did not change.
+- Schema identity now covers columns, constraints, indexes, ACL, RLS flags/policies, triggers and trigger-function definitions. This is materially stronger than a columns-only fingerprint but remains a database-schema observation, not runtime/provider telemetry.
+- Runtime topology must be part of S1→S2 immutability. The final contract observes `.deploy-sha.next`, app status/health/deploy SHA, Nginx config and read-only Web mount, then compares full topology evidence rather than only marker/current strings.
+- Screenshot freshness requires more than a PNG signature or one file per route. Filenames now bind run/contract/viewport/route/query; the gate requires unique paths for all `40` executions and validates CRC, IDAT decompression, supported color format, exact dimensions and scanline length.
+- Anonymous and missing-role API rejection probes still write audit events in L4. They now retain the run-specific `X-User-Id` while omitting the permission field under test, so their events remain attributable without weakening the denial scenario.
+- Object-storage proof remains database-ledger-only. The guard fingerprints `document_storage_objects`; it does not list or hash Tencent COS objects, so COS parity must remain an explicit unverified item or a separately authorized observation lane.
+- Follow-up adversarial review proved that `observation_scope`, S0→S1 topology direction and `releases/` root shape must be contract fields, not documentation assumptions. The final guard requires `database-ledger`, permits only deploy transitions ending in `versioned_ready`, and rejects symlink/file/other `releases/` roots.
+- S1 must be captured for the exact forthcoming L4 run. The frontend loader now requires the same acceptance run ID/user and a zero-event exact-ID baseline; another run's structurally valid S1 report is rejected.
+- L3 source binding now includes the configured production host/user, hidden `capture-live` confirmation, strict outer-SSH transport evidence, SSH exit `0`, current collector source hash and an envelope over snapshot+provenance. This is tamper-evident under the controlled operator-workspace model, not an external signed attestation against a malicious local operator.
+- Production scope and time are integrity fields: app/Web/PostgreSQL paths cannot be redirected to shadow targets, hidden capture cannot write a remote output file, and `generated_at` is part of the canonical snapshot/envelope validation.
+- The production browser target is now inseparable from the SSH guard: runner and gate accept only the exact normalized HTTPS production origin, reject alternate host/scheme/port/userinfo/path/query/fragment, and require the final report URL to match.
+- No matching local PostgreSQL container was available at closure. SQL generation, transaction mode and parser behavior are covered by tests, but a real PostgreSQL execution is not part of the current L2 evidence.
+- Fresh local result: `40` guard tests, `22` focused frontend tests and `311` combined related tests passed; Ruff, targeted Mypy, Node syntax and diff checks passed. Final independent reviews report `accepted P0/P1=0`, confidence high. Production, SSH, browser L4, audit-log write, provider and deploy evidence remain absent by design.
+
+## 2026-07-16 Loop 58 Phase 3 Initial Decision
+
+- The selected policy is a fail-closed non-regression gate, not bulk repair of `195` historical errors in `10` untouched files.
+- The baseline must be derived from the approved base/current candidate comparison and stored as reviewable repository policy or test data; a raw count-only exception is insufficient because errors can be exchanged while the total remains constant.
+- Phase 3 completion requires a fresh failing full command retained as historical-debt evidence plus a separate candidate-delta proof showing no newly introduced Mypy diagnostics.
+- Local commit authorization is available only after the policy and its tests pass. Push, PR, Ready, merge, deploy and all production/provider/database side effects remain blocked.
+- Installed Mypy is `2.1.0`; repository configuration is strict and currently applies `mypy_path = "src"` without an existing baseline/non-regression mechanism.
+- The release clone still has no physical `AGENTS.md` or `.codex/context-pack.md`; the task-supplied repository contract remains controlling.
+- Candidate comparison against exact base `1376baef0d8d47f1e1ef60b2cec130451af5af4f` confirms the broad release delta and two D0 untracked Python test/tool files; the exception must include untracked paths when determining candidate-touched files.
+- Mypy `2.1.0` supports machine-readable `--output=json`; the fresh repository-wide `uv run mypy src scripts --output=json --no-error-summary` run exits `1` as expected for debt evidence. The raw tool output is too large for reliable visual review, so Phase 3 must consume it structurally and hash canonical diagnostics instead of relying on truncated console text.
+- Fresh structured current-candidate evidence is exactly `195` diagnostics in `10` files with canonical diagnostic SHA-256 `fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f`; Mypy exit is `1` and stderr is empty.
+- All ten diagnostic-bearing files are byte-for-byte unchanged in `git diff` from exact base `1376baef0d8d47f1e1ef60b2cec130451af5af4f` through the current working tree. This supports classification as inherited debt, but the gate still needs an isolated base run to prove the diagnostic set itself matches the base under the same tool/config.
+- An isolated `git archive` run of exact base `1376baef0d8d47f1e1ef60b2cec130451af5af4f`, using the same Mypy `2.1.0` executable and archived `pyproject.toml`, produced the identical `195` diagnostics, identical per-file counts and identical canonical SHA-256 `fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f`.
+- Official Mypy guidance permits per-module suppression for gradual adoption, but this release gate will not alter `strict`, add `ignore_errors`, or add `type: ignore`; it will preserve the full failing command and compare an exact machine-readable baseline. Mypy also documents that the flags implied by `strict` can change across versions, so the baseline must bind the tool version.
+- The candidate has four tracked changed Python scripts plus untracked `scripts/audit-production-release-guard-snapshot.py`. A fresh targeted Mypy run across all five reports `Success: no issues found in 5 source files`.
+- The formal Loop 58 D1 policy currently says “changed Python files” while D2 says “every changed Python script”; implementation will use the explicit five-script set for Mypy and rely on Ruff/Pytest for changed test files, then synchronize D1 wording to remove ambiguity.
+- The implemented gate adds itself to the candidate set, so the final targeted Mypy set contains six scripts, not the five observed before implementation.
+- The gate binds exact base SHA, Mypy version, command, exit `1`, global/per-file diagnostic fingerprints, current/base source hashes and unchanged debt-file paths. Any improvement, diagnostic exchange, tool drift or debt-file touch fails closed and requires explicit baseline refresh; it never emits `mypy src scripts PASS`.
+
+## 2026-07-16 Loop 58 Phase 3/4 Closure Findings
+
+- Exact isolated-base and current-candidate Mypy observations match at `195` diagnostics / `10` files / SHA-256 `fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f`; the repository-wide command still exits `1` and is not a PASS.
+- The non-regression gate returns only `allowed-with-label`, while all six candidate-changed Python scripts pass targeted Mypy. Focused tests cover count-preserving diagnostic replacement, diagnostic removal, tool/exit/stderr/ancestry drift, source-hash drift, touched debt files and malformed JSON.
+- Atomic commit 1 `0d34a94` contains only the ten evidence/tool/test/workflow files. Atomic commit 2 `85859a6` contains only the eight UI/chrome/mobile files. The final planning manifest contains only the three `.kiro` ledgers, formal plan and atomic commit plan.
+- All staged groups passed exact manifest, cached check and refined added-content secret scans. Ignored output, `tmp/`, screenshots, SQLite, build output and caches remained untracked/unstaged.
+- Phase 5 remains the next local evidence gate: clean exact-SHA full local gates, release manifest and SHA-bound three-viewport route matrix. Push, PR, Ready, merge and all production/provider/database actions remain blocked.

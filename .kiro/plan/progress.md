@@ -1233,3 +1233,103 @@ Boundary:
 - `database_write=false`
 - `deploy_execution=false`
 - 未执行 PR Ready、merge、production preflight、生产业务写入或生产部署。
+
+## 2026-07-16 Loop 58 Next-Batch Deployment Planning
+
+Completed:
+
+- Restored the actual release candidate from `/Users/pray/project/medical_audit_release_reconciliation_20260714`, branch `codex/production-ui-reconciliation-20260716`, committed head `489ff70185c70b008d1d30b41ce239386e9debd9`, base `origin/main@1376baef0d8d47f1e1ef60b2cec130451af5af4f`.
+- Reconciled the active Task 11 checkpoint with the `29`-commit / `41`-file branch topology and the current uncommitted route/chrome/mobile/acceptance delta.
+- Reviewed the actual deploy, rollback, manifest, deployment-state, permission, documents and frontend acceptance tools without running them against production.
+- Completed two independent read-only reviews: one for deploy/rollback/migration identity and one for L3/L4 acceptance/side effects.
+- Replaced the stale “next Task 1” decision with the current `NO-GO` reason and added the full Loop 58 batch/authorization/TODO plan.
+- Backed up the four key planning files before edits under `/Users/pray/.Codex/file-history/medical-audit-loop58-next-batch-plan-20260716T150714+0800/`.
+
+Key decisions:
+
+- Recommended path is evidence-first gated promotion; direct deploy is rejected.
+- Next implementation batch is local release-evidence closure, not commit/deploy: migration readiness, S0/S1/S2 guard snapshots, broad schema/business delta, exact-SHA all-screenshot frontend acceptance and run-specific audit attribution.
+- `--skip-app-rebuild` is not allowed for this release because app deployment metadata is bound at container start and must match the new `.deploy-sha`/manifest identity.
+- First legacy-to-versioned migration remains an inference until fresh read-only topology proves `legacy_ready`; `partial_or_unknown` is a hard stop.
+- Successful deploy script exit yields `deployed_pending_l3`; L3 state audit yields `deployed_l3_verified`; only separately authorized L4 acceptance plus S2 comparison yields `release_accepted_l4`.
+- Business-write and provider UAT remains outside frontend acceptance and requires independent lane authorization.
+
+Tooling limitation:
+
+- The `planning-with-files` session-catchup helper referenced by the skill is absent at `/Users/pray/.agents/skills/planning-with-files/assets/scripts/session-catchup.py`. The failed command was logged once and not retried; direct file/Git reconciliation was used instead.
+
+Boundary:
+
+- Plan/docs only; no code implementation in Loop 58 Phase 0.
+- No staging, commit, push, PR update, Ready, merge, production preflight, SSH observation, backup, deploy, rollback, Docker/Nginx change, database/object write, provider call or live send.
+- `local_only`, `production unchanged`, `provider_call=false`, `database_write=false`, `live_send=false`, `deploy_execution=false`.
+
+## 2026-07-16 Loop 58 D0 Implementation Start
+
+- User authorized D0 local implementation only.
+- Restored Loop 58 task/progress/findings and assigned the phase `L2-fixture-or-dry-run` under `evidence-grade-gate`.
+- Preserved the current dirty candidate and created pre-edit backups at `/Users/pray/.Codex/file-history/medical-audit-loop58-d0-20260716T152243+0800/`.
+- Active work is limited to release guard/migration snapshot contracts and frontend acceptance identity/evidence hardening; no external or production action is authorized.
+- Started both local implementation lanes with disjoint file ownership; integration review, stable-workflow synchronization and broad local verification remain pending.
+- Reviewed the current activation/rollback topology contract and identified the exact stable deployment workflow section that must be synchronized after implementation.
+- Verified the database table key/timestamp contract and the existing read-only SSH/PostgreSQL collection pattern needed for release-guard integration review.
+- Flagged the migration-sentinel lineage semantics to the release-guard lane before implementation completion; the formal Loop 58 wording must be corrected during documentation sync.
+- Started cross-lane contract review for boolean read-only evidence, run-specific attribution, structurally valid screenshots and release-guard-derived current release target.
+- Redirected the live S0 design from a remote-script dependency to a streamed read-only collector so first deployment remains executable.
+- Frontend acceptance lane implementation completed and passed a fresh main-agent focused verification: `20` production-frontend-acceptance tests, both Node syntax checks, focused Ruff and lane `git diff --check`. Independent review remains pending before D0 closure.
+- The first broad related suite run exposed one docs-contract regression: a duplicated frontend command made the workflow test fail. Removed the duplicate, updated the canonical §7.6.1 command/test with all three D0 arguments, and reran the workflow test green.
+
+## 2026-07-16 Loop 58 D0 Local Closure
+
+Completed implementation:
+
+- Added `scripts/audit-production-release-guard-snapshot.py` with fail-closed fixture and streamed SSH capture contracts, S0/S1/S2 compare, exact expected-SHA binding, capture-contract/snapshot-ID revalidation, serializable read-only deferrable PostgreSQL evidence, WAL/double-capture ambiguity detection and strict collector record parsing.
+- Release topology now covers legacy/versioned/partial state, `.deploy-sha.next` and other residue, app container status/health/deploy SHA, Nginx config and read-only Web mount. First-migration rollback fixture coverage verifies restored filesystem shape rather than trusting an exit code.
+- Schema fingerprints cover columns, constraints, indexes, table ACL, RLS policies, triggers and trigger-function definitions. Each allowlisted table includes row count, ordered PK fingerprint, complete row-content fingerprint and relevant max timestamp; audit attribution uses exact event IDs/row hashes and a zero-baseline run user.
+- Hardened frontend acceptance now requires a fresh L3 S1 guard with recomputed canonical snapshot ID, exact deploy/current/public/app identity, run-specific audit attribution, same-origin GET-only requests and unique run-bound structurally decoded PNG evidence for all `34 + 6 = 40` executions.
+- Global provider status is intentionally `not_observed`; only the release-guard collector is proven `not_called` with zero attempts. Object evidence is intentionally limited to the database storage ledger and does not enumerate COS.
+
+Independent review remediation:
+
+- Frontend review identified three P1 gaps: manual/L2 guard acceptance, unattributed anonymous audit probes and reused screenshot files. The gate now requires L3 `ssh-live-readonly`, recomputes the snapshot hash, preserves run user attribution and binds a unique decoded PNG to every execution.
+- Release-guard review identified capture/hash revalidation, cumulative audit attribution, provider-scope overclaim, incomplete schema/row fingerprints, topology gaps and parser fail-open issues. All were converted into fail-closed contracts and regression tests before closure.
+- Follow-up review found six further P1s: S1 run baseline was not bound, L3 target/provenance was under-specified, object-ledger scope was optional, S0→S1 allowed a versioned→legacy transition, `releases/` root shape was absent, and report-only provenance could be overstated. The implementation now binds exact run/user/zero baseline, production host/user, strict outer-SSH receipt, current collector hash and envelope; requires `database-ledger`; enforces a deploy transition profile; validates `releases/` as absent/real directory only; and documents the controlled-operator trust boundary rather than claiming external signed attestation.
+- Final adversarial pass also fixed shadow app/Web/PostgreSQL scope overrides, hidden `capture-live --output`, unbound `generated_at`, versioned sentinel rotation and production-SSH/alternate-HTTP-origin splicing. Hidden capture now emits only stdout fixture evidence; exact production origin validation is shared by runner/gate and the final report URL is checked.
+- Final independent release-guard and frontend reviews both report `accepted P0/P1=0`, confidence high, under the documented controlled-operator threat model.
+
+Fresh verification:
+
+- `40` release-guard tests passed.
+- `22` focused production-frontend-acceptance tests passed; the stable-workflow contract is a separate `1` pass.
+- Combined related suite collected and passed `311` tests (`40` release guard + `270` script + `1` stable-workflow contract); only the existing Starlette/httpx deprecation warning appeared.
+- `uv run ruff check .`, targeted Mypy for `scripts/audit-production-release-guard-snapshot.py`, both Node syntax checks and `git diff --check` passed.
+- No matching local PostgreSQL container is running, so generated SQL and live collector behavior are static/fixture verified only; no local or production SQL capture was executed.
+- The provenance/envelope is not a cryptographic third-party attestation. It detects wrong target, direct hidden capture, stale collector and ordinary report drift within the controlled operator workspace; a malicious-local-operator threat model remains a separate design lane.
+
+Boundary and next gate:
+
+- Maximum evidence remains `L2-fixture-or-dry-run`; `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
+- No commit, push, PR state transition, merge, SSH production observation, browser production acceptance, audit-log write, deploy or rollback ran.
+- The next executable gate is Loop 58 Phase 3: owner selects the historical `mypy src scripts` policy. Any local commit remains a separate authorization.
+
+## 2026-07-16 Loop 58 Phase 3 Non-Regression Gate Start
+
+- Owner approved the recommended explicit non-regression exception and automatic execution of the next local gate. Authorization is interpreted as local code/test/docs and, after Phase 3 passes, local atomic commits only.
+- External side effects remain excluded: no push, PR state transition, merge, SSH production observation, deploy, production/database write, provider call or live send.
+- Maximum evidence grade remains `L2-fixture-or-dry-run`; the gate must not rename a repository-wide failing `mypy src scripts` run as a full PASS.
+- Pre-edit backup: `/Users/pray/.Codex/file-history/medical-audit-loop58-phase3-20260716T171017+0800/`.
+- One backup command construction failed before shell execution because JavaScript interpolated the shell variable name; the corrected command succeeded and the failed form was not retried.
+- RED evidence captured: `tests/knowledge_query/test_mypy_non_regression.py` has `11` expected failures because `scripts/check-mypy-non-regression.py` does not yet exist. Acceptance requires this same focused path to turn GREEN without weakening the assertions.
+- GREEN evidence: the same focused test path now reports `11 passed` after implementing the exact baseline gate.
+- Fresh real gate execution exits `0` with `status=pass`, `decision=allowed-with-label`, `mypy_full_pass=false`, `195` diagnostics, exact SHA-256 `fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f`, six candidate-changed Python scripts passing targeted Mypy and no issues.
+- Local ignored report: `tmp/outputs/mypy-non-regression-loop58-phase3.json`.
+- First focused Ruff pass found only import ordering and one overlong condition in the two new files. Ruff fixed the imports mechanically; the condition was wrapped narrowly. Mypy, py_compile and diff-check were already green on that pass.
+- Post-fix focused verification is green: `11 passed`, focused Ruff PASS, targeted Mypy PASS, and the real non-regression gate again returns `status=pass` with no issues.
+- The first high-risk scan loop used zsh's special `path` variable and unintentionally replaced `PATH`, so its zero result was discarded. The corrected scan first identified one pre-existing candidate in the historical stable workflow, then a diff-additions plus untracked-content scan reported `secret_candidates=0` across private-key, GitHub, `sk-`, Tencent and Google key patterns; no value was printed.
+- Pre-staging evidence gate is green: the four-file Python evidence suite completed fully with no failures (only the existing Starlette/httpx deprecation warning), full Ruff PASS, both Node syntax checks PASS and diff-check PASS.
+- UI group gate is green: `38` Vitest files / `352` tests passed, `pnpm web:typecheck` PASS and `pnpm web:lint` PASS.
+- Atomic staging plan: `drafts/analysis/loop58-phase4-atomic-commit-plan-draft-20260716.md`.
+- Commit 1 complete: `0d34a94` (`feat: bind release acceptance evidence`), exact 10-file evidence manifest, cached check PASS, refined staged secret candidates `0`; index returned empty afterward.
+- Commit 2 complete: `85859a6` (`fix: preserve workspace route identity`), exact 8-file UI manifest, cached check PASS, refined staged secret candidates `0`; index returned empty afterward.
+- Evidence collect-only inventory is `11 + 40 + 270 + 1 = 322` tests; the executed combined run completed with no failures.
+- Commit 3 is the five-file planning manifest containing this ledger, the formal plan and the atomic staging plan. Its SHA/final clean status must be verified externally after commit and must not be guessed inside this commit.
