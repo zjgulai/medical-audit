@@ -15,10 +15,13 @@ def test_workflow_has_one_audit_log_only_frontend_acceptance_command() -> None:
 MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all \\
 pnpm production:frontend-acceptance -- \\
   --base-url https://audit.lute-tlz-dddd.top \\
+  --expected-deploy-sha <APPROVED_SHA> \\
+  --acceptance-run-id fa-<YYYYMMDD>t<HHMMSS>z-<8..32-lowercase-hex> \\
+  --release-guard-report tmp/outputs/release-guard-s1-<STAMP>.json \\
   --allow-audit-log-writes \\
   --confirm-production-write audit.lute-tlz-dddd.top \\
-  --output tmp/outputs/production-frontend-acceptance-latest.json \\
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \\
+  --output tmp/outputs/production-frontend-acceptance-<STAMP>.json \\
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-<STAMP> \\
   --admin-role it-admin"""
     assert "audit-log-only" in section
     assert "只读前端语义验收" not in section
@@ -32,4 +35,7 @@ pnpm production:frontend-acceptance -- \\
         in gate_text
     )
     assert "requireScreenshot: requireIndependentScreenshot" in gate_text
-    assert "(!requireScreenshot || hasValidPngScreenshot(check.screenshot))" in gate_text
+    assert (
+        "hasValidPngScreenshot(check.screenshot, check.screenshot_evidence)"
+        in gate_text
+    )

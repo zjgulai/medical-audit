@@ -1,0 +1,68 @@
+{
+  "approved_base_sha": "1376baef0d8d47f1e1ef60b2cec130451af5af4f",
+  "command": [
+    "mypy",
+    "src",
+    "scripts",
+    "--output=json",
+    "--no-error-summary"
+  ],
+  "diagnostic_count": 195,
+  "diagnostics_sha256": "fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f",
+  "expected_exit_code": 1,
+  "files": {
+    "scripts/audit-auth-sso-contract-readiness.py": {
+      "diagnostic_count": 15,
+      "diagnostics_sha256": "1cd3657d6ad360717dfee875e0d7dcbb61f1c57acfcfb5711b5c2ef051c24944",
+      "source_sha256": "2be95f450c2f22885b905f7d3b568df4f69fa1df72ec0f9f95ae7076863ea496"
+    },
+    "scripts/audit-document-governance-contract-readiness.py": {
+      "diagnostic_count": 3,
+      "diagnostics_sha256": "37b4b7f1882e6435d826a5acdd061de5a9539f69b747435620dea0a7ce2a4c75",
+      "source_sha256": "7294bc650de6f53f5fc288ca8b42edec8057c99455c0d02324e93818bfac26b1"
+    },
+    "scripts/audit-frontend-backend-api-contract-schema.py": {
+      "diagnostic_count": 11,
+      "diagnostics_sha256": "a8448dfac0b55fd6cf73d69a15b6009ff62343b2872252e5341e96f2e65acaf0",
+      "source_sha256": "4a0578c76389744486fee07b166cf72c6b79d2a4698e91038869204517406b03"
+    },
+    "scripts/run-document-governance-production-readonly-precheck.py": {
+      "diagnostic_count": 1,
+      "diagnostics_sha256": "de01bd539adb7f2f9b057556f118e680524f96cfe7ea1fc4b3ff225230debdae",
+      "source_sha256": "3e976544d22eb71255432c144d6d51f2126f2be13c6c9d1dacaf4f5aaa2d5e18"
+    },
+    "scripts/run-local-fullstack-e2e.py": {
+      "diagnostic_count": 3,
+      "diagnostics_sha256": "a78ac2cfdb692647a329cde44b8e94c8527a8d6c5471408803089a43c6f3b855",
+      "source_sha256": "ee5ede5a9ac6b17d34ce36d5a4f9ae099085380885386f069002faedc6357994"
+    },
+    "scripts/run-production-documents-clamav-sidecar-write-e2e.py": {
+      "diagnostic_count": 13,
+      "diagnostics_sha256": "b024c68a2b7caef9b9f089ec2e632d6f8a3f0132595daa36bd44ba4169d266ae",
+      "source_sha256": "b224531498ce67d33fc691cc5113f2eacb9355ad2a1902db68804126bdcf26bb"
+    },
+    "scripts/run-production-documents-governance-result-e2e.py": {
+      "diagnostic_count": 13,
+      "diagnostics_sha256": "5402df114ab23bc42e08c70c4b01bc4a04f4841d78dc3db3cf809e76c369e545",
+      "source_sha256": "a3b2b9f2456899b2dfe1368ed808e8d76ec25ef670705e33666b1d81f759571b"
+    },
+    "scripts/run-production-documents-ruleset-dlp-write-e2e.py": {
+      "diagnostic_count": 15,
+      "diagnostics_sha256": "171b70b1736c81efd3c79f86c2073da41de27e347cb146a31140b463c72b664a",
+      "source_sha256": "78b779d87cc44f1038715f0b1e86b0ec34ee13214dc11cbc1df94b1574e3947c"
+    },
+    "scripts/run-production-personal-material-index-staging-e2e.py": {
+      "diagnostic_count": 2,
+      "diagnostics_sha256": "c4a01879fc663ccf0180a8c9f6baecff3aa4312a7e211987ecf739d63fca9e80",
+      "source_sha256": "7687ba531822e5c7374f98c5bc1b95ccbcaef58ababcd42583e632c7122a1296"
+    },
+    "tests/knowledge_query/test_api.py": {
+      "diagnostic_count": 119,
+      "diagnostics_sha256": "763bc974fe2ead741bc4f4cd347b0da310fe3beeba0e1b6669d136a42b426657",
+      "source_sha256": "7dd2b67822cb8cf7f44722bcdc2ca657ea7997f06e3696287bf698762078cd15"
+    }
+  },
+  "mypy_version": "mypy 2.1.0 (compiled: yes)",
+  "policy": "exact-diagnostic-non-regression",
+  "schema_version": 1
+}

@@ -48,6 +48,77 @@ source: human+ai
 - app/env/db/Nginx/Web 五类备份及 completion marker 必须是非 symlink regular file、非空且 mode `0600`。Nginx secret-bearing candidate 的 host/container cleanup trap 必须先于生成或 `docker cp` 安装；清理失败按 fail-closed 保留锁。正式 `nginx -t` 的 stdout/stderr 不进入部署日志，只返回通用失败信息。
 - 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
 
+### 2026-07-16 Loop 58 D0 发布守卫与前端验收证据合同（本地实现，尚未生产运行）
+
+- 新增 `scripts/audit-production-release-guard-snapshot.py`，提供 `capture` 与 `compare` 两个 operator 模式。本地 fixture 只形成 `L2-fixture-or-dry-run`；带 `--ssh-key` 的 capture 会把当前本地脚本通过 strict SSH stdin 流式发送到远端，不依赖旧生产 checkout 已存在该脚本，且只有同时给出匹配的 `--confirm-production-readonly` 才允许执行。
+- live capture 的精确 allowlist 是 filesystem read、`medical_audit_pg` 内 PostgreSQL read-only、Docker inspect、app deploy-SHA read、Nginx config test 与 Web mount read；不读取 provider credential、不访问 provider endpoint、不打印 secret。数据库捕获使用 `SERIALIZABLE READ ONLY DEFERRABLE`，同时记录 `transaction_read_only`、隔离级别、deferrable 状态、前后 WAL LSN 和双快照一致性；任一并发歧义均失败关闭。L3 capture 必须绑定配置的生产 SSH target `101.34.52.232`、`ubuntu`、固定 app/Web/PostgreSQL scope、strict-host-key/batch/identity-only transport、SSH exit `0`、生成时间、当前 collector source SHA-256 和 snapshot+provenance envelope；不能用 shadow container/path 代替生产 scope。隐藏的 `capture-live` 只向 stdout 返回待外层重验的 fixture，不接受 `--output`、不产生 L3 报告，也不能单独伪装为外层 SSH 成功或在只读确认下写远端文件。
+- 拓扑只允许 `legacy_ready`、`versioned_ready`、`partial_or_unknown`。`legacy_ready` 要求 flat-root `index.html`、旧 marker、无 `current`/sentinel/residue，且 `releases/` 只能缺失或为真实目录；`versioned_ready` 要求 `releases/` 为真实目录、marker/current/release/manifest exact SHA 一致、sentinel 为合法的首次迁移谱系证据，且无 `.incoming`/`.next`/`.deploy-sha.next` residue。sentinel 不随后续 release SHA 轮换；collector 同时核验 app container status/health/deploy SHA、Nginx config 与只读 Web mount。固定 deploy comparison profile 只允许 `legacy_ready|versioned_ready → versioned_ready`；`versioned_ready → legacy_ready` 属于 rollback，不得借 S0→S1 deploy compare 放行。
+- schema fingerprint 固定覆盖列、约束、索引、table ACL、RLS flags/policies、triggers 与 trigger-function definitions。数据快照固定覆盖 `query_logs`、`review_tasks`、`review_actions`、`review_comments`、`audit_projects`、`audit_project_members`、`analytics_upload_records`、`document_upload_records`、`document_storage_objects`、`document_upload_governance_jobs`、`audit_agent_invocations`、`audit_log_events`；每表记录 row count、ordered primary-key fingerprint、完整 row-content fingerprint 与 relevant max timestamp，审计表另记录 exact event IDs/row hashes。对象证据当前仅来自 `document_storage_objects` 数据库 ledger 的完整 fingerprint，不枚举 COS 远端对象，不能外推为 COS 内容已核验。
+- `S0→S1` 只允许 deploy profile 规定的 release identity/topology 变化，schema、十二表与对象 ledger 必须零差异；`S1→S2` 要求两端均为同一 `versioned_ready` topology，只允许与唯一 `acceptance_run_id`/`frontend-acceptance-<run-id>` 精确归因的 `audit_log_events` exact-ID 增量，且旧审计行不得变化、该 run identity 的 S1 baseline 必须为零。compare 会重新构造并校验两个 capture 合同、生产 observation target、SSH provenance/envelope 及 snapshot hash；缺表、duplicate/unknown/malformed collector record、partial/illegal topology、snapshot race 或未知归因均返回 `status=blocked`。
+- release guard 只证明自身 collector 的执行边界：`collector_provider_call_status=not_called`、attempt count `0`。它不具备整个生产 runtime 的 provider telemetry，因此全局字段必须为 `provider_call_status=not_observed`、`provider_evidence_source=outside-release-guard-scope`；不得把 collector-only 证据扩写成全系统 `provider_call=false`。
+- frontend hardened gate 强制参数 `--expected-deploy-sha`、`--acceptance-run-id`、`--release-guard-report`。S1 guard 必须是 passing L3 `ssh-live-readonly` capture，且 exact production observation target/scope/SSH provenance/current collector hash、exact SHA/current target、database-ledger scope、collector-only boundary、`database_write=false`、serializable/read-only/deferrable transaction、与本次 run 完全相同且 event count 为零的 S1 attribution baseline，以及重新计算的 canonical snapshot/envelope hash 全部匹配。HTTP target 只允许精确生产 origin `https://audit.lute-tlz-dddd.top`（显式 `:443` 规范化后等价）；拒绝 HTTP、其他 host/port、userinfo、path、query 与 fragment，报告 `base_url` 也必须与该规范化 origin 完全一致。
+- frontend acceptance 在运行前后分别读取 public `release-manifest.json` 与 app deployment metadata，并在 gate 前再次复核 S1 guard 文件 hash/snapshot ID。覆盖保持 `17` 个 independent routes 与 `3` 个 aliases、desktop/mobile 共 `34 + 6` 次 execution；全部 `40` 次 execution 都必须具有 run/contract/viewport/route/query 绑定且不重复的 fresh PNG path，并通过 SHA-256、CRC、IDAT 解压、色彩格式、精确 width/height 和完整 scanline 校验。anonymous/missing-role 权限探针也必须保留本次 run-specific `X-User-Id`，避免产生无法归因的 audit event；browser/API 仍只允许 same-origin GET。
+
+生产只读阶段的命令模板（本 D0 未执行）：
+
+```bash
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S0 \
+  --expected-deploy-sha <CURRENT_PRODUCTION_SHA> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s0-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S1 \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s1-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py compare \
+  --before tmp/outputs/release-guard-s0-<STAMP>.json \
+  --after tmp/outputs/release-guard-s1-<STAMP>.json \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --output tmp/outputs/release-guard-s0-s1-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S2 \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s2-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py compare \
+  --before tmp/outputs/release-guard-s1-<STAMP>.json \
+  --after tmp/outputs/release-guard-s2-<STAMP>.json \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --output tmp/outputs/release-guard-s1-s2-<STAMP>.json
+```
+
+单独授权的 L4 frontend acceptance 继续只使用 §7.6.1 的唯一标准命令；不得在其他章节复制出第二套参数口径。
+
+本节仅同步本地 D0 合同与 fixture tests：`production unchanged`、`provider_attempt_made=false`、`provider_call_status=not_observed`、`collector_provider_call_status=not_called`、`database_write=local-test-only`、`deploy_execution=false`。SSH capture、生产浏览器、audit-log write、merge 与 deploy 仍需各自授权。
+
+### 2026-07-16 Loop 58 D1.1 Mypy non-regression exception（本地门禁）
+
+- `uv run mypy src scripts` 当前仍退出 `1`，包含精确 `195` 个继承诊断、`10` 个未被候选修改的历史债务文件；不得记录为 Mypy full PASS。
+- 已批准的窄范围策略由 `scripts/check-mypy-non-regression.py` 和 `configs/mypy-non-regression-baseline-v1.json` 实施。基线固定 exact base SHA、Mypy version、命令、退出码、全局/逐文件诊断 hash，以及 base/current source hash；同计数诊断交换、诊断减少、工具漂移、债务文件被触碰或 source hash 漂移均失败关闭。
+- 运行命令：
+
+```bash
+uv run python scripts/check-mypy-non-regression.py \
+  --output tmp/outputs/mypy-non-regression-loop58-phase3.json
+```
+
+- 合法成功标签只能是 `status=pass`、`decision=allowed-with-label`、`mypy_full_pass=false`。当前六个候选 changed Python scripts 必须同时 targeted Mypy PASS；测试、Ruff 或 baseline gate 任一失败都阻止候选冻结。
+- 本门禁仅为 `L2-fixture-or-dry-run` 本地发布证据，不授予 push、PR、Ready、merge、SSH、deploy、生产写入或 provider 调用权限。
+
+证据威胁模型：上述 provenance/envelope 用于阻断错误主机、直接 `capture-live`、旧 collector 和普通 artifact 漂移；它依赖受控 operator 工作区与当前代码，不是外部 CA/硬件签名的不可伪造 attestation。若将“恶意本地 operator 可任意改报告和代码”纳入威胁模型，必须另设签名/远端审计服务，当前 D0 不得声称具备该能力。
+
 ### 2026-07-15 main@2bba501 生产部署与状态审计边界修正
 
 - PR `#234` 已合并并部署；当前生产 `.deploy-sha=2bba501c93eaf1f6f7485241ec15e0c21c209842`，app/PostgreSQL/ClamAV/共享 Nginx 均为 `running/healthy`。
@@ -1593,21 +1664,29 @@ MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1 \
 MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all \
 pnpm production:frontend-acceptance -- \
   --base-url https://audit.lute-tlz-dddd.top \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id fa-<YYYYMMDD>t<HHMMSS>z-<8..32-lowercase-hex> \
+  --release-guard-report tmp/outputs/release-guard-s1-<STAMP>.json \
   --allow-audit-log-writes \
   --confirm-production-write audit.lute-tlz-dddd.top \
-  --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --output tmp/outputs/production-frontend-acceptance-<STAMP>.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-<STAMP> \
   --admin-role it-admin
 ```
 
 该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。
 
-以上是唯一标准命令。`MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1` 与 `MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all` 必须同时设置；验收门禁要求每个独立页面、每个规定视口都有有效 PNG 截图，不得用 `issues` 或关闭截图降级标准验收。
+以上是唯一标准命令。`MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1` 与 `MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all` 必须同时设置；验收门禁要求全部 `34 + 6 = 40` 次规定 execution 都有唯一、run-bound、精确视口尺寸且可完整解码的 PNG 截图，不得复用文件，也不得用 `issues` 或关闭截图降级标准验收。
+
+`<APPROVED_SHA>` 必须是完整 40 位 lowercase merge/deploy SHA；`acceptance_run_id` 必须匹配 `fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>` 并为本次运行唯一值；`release-guard-s1-<STAMP>.json` 必须是刚刚捕获、`current_release_target=releases/<APPROVED_SHA>` 的 passing S1 guard。任一 identity、guard hash/snapshot ID、public manifest、app deployment metadata 或截图 fresh-file evidence 不一致时，gate 必须失败关闭。
+
+`--base-url` 必须是精确生产 origin `https://audit.lute-tlz-dddd.top`（允许等价的显式 `:443`）；HTTP、其他 host/port、userinfo、额外 path、query 或 fragment 均在浏览器/本地文件副作用发生前拒绝。最终报告的 `base_url` 必须为规范化后的 `https://audit.lute-tlz-dddd.top/`，避免把生产 SSH guard 与 staging HTTP 页面拼接。
 
 该脚本新增以下 API 鉴权闭环：
 
 - `/audit/logs` 和 `/audit/logs/export`：无授权/缺少租户上下文期望 `401/403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
 - 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=401/403`、`allowed_status=200`。
+- 无授权与缺少 role/tenant 的拒绝探针仍携带本次 `frontend-acceptance-<acceptance_run_id>` user identity，只删除正在验证的权限 header，保证允许产生的审计事件可精确归因。
 - 不执行 schema、provider/query、review、项目创建或对象存储写入；允许的唯一写入类型是上述鉴权探针产生的审计日志，并且必须同时传入 `--allow-audit-log-writes` 与精确生产主机确认参数。
 
 ### 7.7 增量更新 dry-run 演练

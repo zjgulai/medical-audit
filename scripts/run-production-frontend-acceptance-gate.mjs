@@ -6,8 +6,14 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   aliasRouteChecks,
+  deriveAcceptanceUserId,
   finalPath,
+  loadReleaseGuardEvidence,
+  normalizeProductionBaseUrl,
+  readPngEvidence,
   routeCheckProfiles,
+  screenshotFileName,
+  validateAcceptanceEvidenceOptions,
   viewports as acceptanceViewports,
 } from "./run-production-frontend-acceptance.mjs";
 
@@ -30,6 +36,9 @@ function parseArgs(argv) {
     contractProfile: "hardened",
     allowAuditLogWrites: false,
     confirmProductionWrite: null,
+    expectedDeploySha: null,
+    acceptanceRunId: null,
+    releaseGuardReport: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +76,21 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--confirm-production-write=")) {
       options.confirmProductionWrite = arg.split("=", 2)[1];
+    } else if (arg === "--expected-deploy-sha" && next) {
+      options.expectedDeploySha = next;
+      index += 1;
+    } else if (arg.startsWith("--expected-deploy-sha=")) {
+      options.expectedDeploySha = arg.split("=", 2)[1];
+    } else if (arg === "--acceptance-run-id" && next) {
+      options.acceptanceRunId = next;
+      index += 1;
+    } else if (arg.startsWith("--acceptance-run-id=")) {
+      options.acceptanceRunId = arg.split("=", 2)[1];
+    } else if (arg === "--release-guard-report" && next) {
+      options.releaseGuardReport = next;
+      index += 1;
+    } else if (arg.startsWith("--release-guard-report=")) {
+      options.releaseGuardReport = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -96,16 +120,14 @@ Options:
   --confirm-production-write <host>
                             Required with --allow-audit-log-writes for every target;
                             must equal ${PRODUCTION_HOST}.
+  --expected-deploy-sha <sha> Exact 40-character lowercase release commit SHA.
+  --acceptance-run-id <id>   Unique run id: fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>.
+  --release-guard-report <path>
+                            Passing S1 medical-audit-production-release-guard-v1 report.
 `);
 }
 
 function validateSideEffectAuthorization(options) {
-  try {
-    new URL(options.baseUrl);
-  } catch {
-    throw new Error(`Invalid --base-url: ${options.baseUrl}`);
-  }
-
   if (!options.allowAuditLogWrites) {
     throw new Error(
       "Frontend acceptance gate fails closed by default because the full flow can write audit-log records. " +
@@ -118,6 +140,7 @@ function validateSideEffectAuthorization(options) {
       `Audit-log writes require --confirm-production-write ${PRODUCTION_HOST} for every target.`,
     );
   }
+  return normalizeProductionBaseUrl(options.baseUrl);
 }
 
 function resolveRepoPath(value) {
@@ -138,6 +161,12 @@ function runAcceptance(options) {
     options.adminRole,
     "--contract-profile",
     options.contractProfile,
+    "--expected-deploy-sha",
+    options.expectedDeploySha,
+    "--acceptance-run-id",
+    options.acceptanceRunId,
+    "--release-guard-report",
+    options.releaseGuardReport,
   ];
   if (options.timeoutMs) {
     args.push("--timeout-ms", options.timeoutMs);
@@ -154,7 +183,11 @@ function runAcceptance(options) {
 
   const result = spawnSync(process.execPath, args, {
     cwd: repoRoot,
-    env: process.env,
+    env: {
+      ...process.env,
+      MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS: "1",
+      MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY: "all",
+    },
     stdio: "inherit",
   });
 
@@ -189,29 +222,19 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-function hasValidPngScreenshot(value) {
-  if (typeof value !== "string" || value.trim().length === 0 || path.extname(value).toLowerCase() !== ".png") {
-    return false;
-  }
-  let descriptor = null;
-  try {
-    const stats = fs.statSync(value);
-    if (!stats.isFile() || stats.size < PNG_SIGNATURE.length) {
-      return false;
-    }
-    descriptor = fs.openSync(value, "r");
-    const signature = Buffer.alloc(PNG_SIGNATURE.length);
-    const bytesRead = fs.readSync(descriptor, signature, 0, signature.length, 0);
-    return bytesRead === PNG_SIGNATURE.length && signature.equals(PNG_SIGNATURE);
-  } catch {
-    return false;
-  } finally {
-    if (descriptor !== null) {
-      fs.closeSync(descriptor);
-    }
-  }
+function hasValidPngScreenshot(value, reportedEvidence) {
+  const freshEvidence = readPngEvidence(value);
+  return (
+    freshEvidence !== null &&
+    reportedEvidence !== null &&
+    typeof reportedEvidence === "object" &&
+    reportedEvidence.path === freshEvidence.path &&
+    reportedEvidence.sha256 === freshEvidence.sha256 &&
+    reportedEvidence.size_bytes === freshEvidence.size_bytes &&
+    reportedEvidence.width === freshEvidence.width &&
+    reportedEvidence.height === freshEvidence.height &&
+    reportedEvidence.format === "png"
+  );
 }
 
 function hasCompleteRouteEvidence(
@@ -220,9 +243,14 @@ function hasCompleteRouteEvidence(
     expectedPath = null,
     expectedInputSearch = null,
     expectedSearch = null,
+    expectedChromeTitle = null,
     requirePathIdentity = false,
     requireSearchIdentity = false,
+    requireChromeIdentity = false,
     requireScreenshot = false,
+    expectedScreenshotName = null,
+    expectedScreenshotWidth = null,
+    expectedScreenshotHeight = null,
   } = {},
 ) {
   const observedPath = typeof check?.finalUrl === "string" ? finalPath(check.finalUrl) : null;
@@ -242,7 +270,17 @@ function hasCompleteRouteEvidence(
         check.expectedSearch === expectedSearch &&
         typeof check.finalSearch === "string" &&
         check.finalSearch === expectedSearch)) &&
-    (!requireScreenshot || hasValidPngScreenshot(check.screenshot)) &&
+    (!requireChromeIdentity ||
+      (typeof check.expectedChromeTitle === "string" &&
+        check.expectedChromeTitle === expectedChromeTitle &&
+        typeof check.chromeTitle === "string" &&
+        check.chromeTitle === expectedChromeTitle)) &&
+    (!requireScreenshot ||
+      (hasValidPngScreenshot(check.screenshot, check.screenshot_evidence) &&
+        typeof check.screenshot === "string" &&
+        path.basename(check.screenshot) === expectedScreenshotName &&
+        check.screenshot_evidence?.width === expectedScreenshotWidth &&
+        check.screenshot_evidence?.height === expectedScreenshotHeight)) &&
     Number.isInteger(check.status) &&
     check.status >= 200 &&
     check.status < 400 &&
@@ -266,7 +304,7 @@ function hasCompleteRouteEvidence(
   );
 }
 
-function assertGate(report) {
+function assertGate(report, expected = {}) {
   const summary = report.summary ?? {};
   const apiChecks = summary.api_checks ?? {};
   const auditLogs = apiChecks["/audit/logs"] ?? {};
@@ -296,6 +334,13 @@ function assertGate(report) {
       ? expectedRouteChecks.map((check) => [check.route, check.expectedPath ?? null])
       : [],
   );
+  const expectedRouteChromeTitles = new Map(
+    Array.isArray(expectedRouteChecks)
+      ? expectedRouteChecks
+          .filter((check) => typeof check.expectedChromeTitle === "string")
+          .map((check) => [check.route, check.expectedChromeTitle])
+      : [],
+  );
   const expectedAliasRouteChecks = report.contract_profile === "hardened" ? aliasRouteChecks : [];
   const expectedAliasRoutes = expectedAliasRouteChecks.map((check) => check.route);
   const expectedAliasPaths = new Map(
@@ -308,6 +353,9 @@ function assertGate(report) {
     expectedAliasRouteChecks.map((check) => [check.route, check.expectedSearch]),
   );
   const expectedViewports = acceptanceViewports.map((viewport) => viewport.name);
+  const expectedViewportDimensions = new Map(
+    acceptanceViewports.map((viewport) => [viewport.name, viewport]),
+  );
   const expectedRouteViewportKeys = new Set(
     expectedRoutes.flatMap((route) =>
       expectedViewports.map((viewport) => `${route}:${viewport}`),
@@ -319,15 +367,26 @@ function assertGate(report) {
     ),
   );
   const requirePathIdentity = report.contract_profile === "hardened";
-  const requireIndependentScreenshot =
-    summary.screenshot_capture === true && summary.screenshot_policy === "all";
+  const requireIndependentScreenshot = true;
+  const acceptanceRunId = expected.acceptanceRunId ?? report.acceptance_run_id;
   const incompleteRouteChecks = routeChecks
     .filter(
       (check) =>
         !hasCompleteRouteEvidence(check, {
           expectedPath: expectedRoutePaths.get(check?.route),
+          expectedChromeTitle: expectedRouteChromeTitles.get(check?.route),
           requirePathIdentity: requirePathIdentity && expectedRoutePaths.has(check?.route),
+          requireChromeIdentity: expectedRouteChromeTitles.has(check?.route),
           requireScreenshot: requireIndependentScreenshot,
+          expectedScreenshotName: screenshotFileName({
+            acceptanceRunId,
+            contractKind: "independent",
+            viewport: check?.viewport,
+            route: check?.route,
+            inputSearch: check?.inputSearch,
+          }),
+          expectedScreenshotWidth: expectedViewportDimensions.get(check?.viewport)?.width,
+          expectedScreenshotHeight: expectedViewportDimensions.get(check?.viewport)?.height,
         }),
     )
     .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));
@@ -340,7 +399,16 @@ function assertGate(report) {
           expectedSearch: expectedAliasSearches.get(check?.route),
           requirePathIdentity: expectedAliasPaths.has(check?.route),
           requireSearchIdentity: expectedAliasSearches.has(check?.route),
-          requireScreenshot: false,
+          requireScreenshot: true,
+          expectedScreenshotName: screenshotFileName({
+            acceptanceRunId,
+            contractKind: "alias",
+            viewport: check?.viewport,
+            route: check?.route,
+            inputSearch: check?.inputSearch,
+          }),
+          expectedScreenshotWidth: expectedViewportDimensions.get(check?.viewport)?.width,
+          expectedScreenshotHeight: expectedViewportDimensions.get(check?.viewport)?.height,
         }),
     )
     .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));
@@ -365,10 +433,32 @@ function assertGate(report) {
     "/audit/logs/export:missing-tenant",
     "/audit/logs/export:allowed",
   ];
+  const releaseGuard = report.release_guard ?? {};
+  const releaseIdentity = report.release_identity ?? {};
+  const publicManifest = releaseIdentity.public_manifest ?? {};
+  const deploymentMetadata = releaseIdentity.deployment_metadata ?? {};
+  const expectedDeploySha = expected.expectedDeploySha ?? report.expected_deploy_sha;
+  const expectedBaseUrl = expected.baseUrl ?? `${DEFAULT_BASE_URL}/`;
+  let expectedAcceptanceUserId = null;
+  try {
+    expectedAcceptanceUserId = deriveAcceptanceUserId(acceptanceRunId);
+  } catch {
+    expectedAcceptanceUserId = null;
+  }
 
+  requireStatus(
+    report.contract_profile === "hardened",
+    "frontend acceptance gate requires the hardened contract profile",
+    { contract_profile: report.contract_profile },
+  );
   requireStatus(report.status === "pass", "frontend acceptance report is not pass", {
     status: report.status,
   });
+  requireStatus(
+    report.base_url === expectedBaseUrl,
+    "frontend acceptance report base URL is not the exact production origin",
+    { base_url: report.base_url, expected_base_url: expectedBaseUrl },
+  );
   requireStatus(p0.length === 0 && p1.length === 0, "frontend acceptance found P0/P1 issues", {
     p0_count: p0.length,
     p1_count: p1.length,
@@ -387,13 +477,147 @@ function assertGate(report) {
     },
   );
   requireStatus(
-    (summary.screenshot_capture === false && summary.screenshot_policy === "disabled") ||
-      (summary.screenshot_capture === true && ["all", "issues"].includes(summary.screenshot_policy)),
+    summary.screenshot_capture === true && summary.screenshot_policy === "all",
     "frontend acceptance screenshot contract is inconsistent",
     {
       screenshot_capture: summary.screenshot_capture,
       screenshot_policy: summary.screenshot_policy,
     },
+  );
+  requireStatus(
+    typeof expectedDeploySha === "string" &&
+      /^[0-9a-f]{40}$/.test(expectedDeploySha) &&
+      report.expected_deploy_sha === expectedDeploySha &&
+      report.acceptance_run_id === acceptanceRunId &&
+      report.acceptance_user_id === expectedAcceptanceUserId,
+    "frontend acceptance run identity is inconsistent",
+    {
+      expected_deploy_sha: report.expected_deploy_sha,
+      acceptance_run_id: report.acceptance_run_id,
+      acceptance_user_id: report.acceptance_user_id,
+    },
+  );
+  requireStatus(
+    releaseGuard.format === "medical-audit-production-release-guard-v1" &&
+      releaseGuard.mode === "capture" &&
+      releaseGuard.phase === "S1" &&
+      releaseGuard.status === "pass" &&
+      releaseGuard.evidence_grade === "L3-production-read-only" &&
+      releaseGuard.source === "ssh-live-readonly" &&
+      releaseGuard.observation_target?.format ===
+        "medical-audit-release-guard-observation-target-v1" &&
+      releaseGuard.observation_target?.kind === "production-ssh" &&
+      releaseGuard.observation_target?.ssh_host === "101.34.52.232" &&
+      releaseGuard.observation_target?.remote_app_dir === "/opt/medical-audit/app" &&
+      releaseGuard.observation_target?.remote_web_dir === "/var/www/audit" &&
+      releaseGuard.observation_target?.postgres_container === "medical_audit_pg" &&
+      releaseGuard.capture_provenance?.format ===
+        "medical-audit-release-guard-capture-provenance-v1" &&
+      releaseGuard.capture_provenance?.transport === "ssh-stdin" &&
+      releaseGuard.capture_provenance?.ssh_host === "101.34.52.232" &&
+      releaseGuard.capture_provenance?.ssh_user === "ubuntu" &&
+      releaseGuard.capture_provenance?.batch_mode === true &&
+      releaseGuard.capture_provenance?.strict_host_key_checking === true &&
+      releaseGuard.capture_provenance?.identities_only === true &&
+      releaseGuard.capture_provenance?.ssh_exit_code === 0 &&
+      releaseGuard.capture_provenance?.remote_app_dir === "/opt/medical-audit/app" &&
+      releaseGuard.capture_provenance?.remote_web_dir === "/var/www/audit" &&
+      releaseGuard.capture_provenance?.postgres_container === "medical_audit_pg" &&
+      /^[0-9a-f]{64}$/.test(
+        releaseGuard.capture_provenance?.collector_source_sha256 ?? "",
+      ) &&
+      /^[0-9a-f]{64}$/.test(releaseGuard.capture_envelope_id ?? "") &&
+      releaseGuard.expected_deploy_sha === expectedDeploySha &&
+      releaseGuard.observed_deploy_sha === expectedDeploySha &&
+      releaseGuard.provider_call_status === "not_observed" &&
+      releaseGuard.provider_evidence_source === "outside-release-guard-scope" &&
+      releaseGuard.collector_provider_call_status === "not_called" &&
+      releaseGuard.collector_provider_attempt_count === 0 &&
+      releaseGuard.collector_execution_boundary?.format ===
+        "medical-audit-release-guard-execution-boundary-v1" &&
+      releaseGuard.collector_execution_boundary?.collector_protocol ===
+        "ssh-stdin-release-topology-postgresql-readonly-v2" &&
+      JSON.stringify(releaseGuard.collector_execution_boundary?.allowed_operations) ===
+        JSON.stringify([
+          "filesystem-read",
+          "docker-exec-psql-readonly",
+          "docker-inspect-readonly",
+          "docker-exec-app-deploy-sha-readonly",
+          "docker-exec-nginx-config-test",
+        ]) &&
+      releaseGuard.collector_execution_boundary?.executed_postgresql_readonly_commands === 2 &&
+      releaseGuard.collector_execution_boundary?.executed_runtime_readonly_commands === 8 &&
+      releaseGuard.collector_execution_boundary?.rejected_command_count === 0 &&
+      releaseGuard.collector_execution_boundary?.collector_provider_endpoint_attempt_count === 0 &&
+      releaseGuard.collector_execution_boundary?.provider_environment_read === false &&
+      releaseGuard.collector_execution_boundary?.secret_values_reported === false &&
+      releaseGuard.database_write === false &&
+      releaseGuard.transaction_read_only === true &&
+      releaseGuard.transaction_read_only_observed === "on" &&
+      releaseGuard.transaction_isolation_observed === "serializable" &&
+      releaseGuard.transaction_deferrable_observed === "on" &&
+      releaseGuard.release_topology === "versioned_ready" &&
+      releaseGuard.release_topology_evidence?.releases_root?.kind === "directory" &&
+      releaseGuard.release_topology_evidence?.current?.target ===
+        `releases/${expectedDeploySha}` &&
+      releaseGuard.release_topology_evidence?.deploy_marker?.sha === expectedDeploySha &&
+      releaseGuard.release_topology_evidence?.release?.sha === expectedDeploySha &&
+      releaseGuard.current_release_target === `releases/${expectedDeploySha}` &&
+      releaseGuard.object_storage?.status === "observed" &&
+      releaseGuard.object_storage?.observation_scope === "database-ledger" &&
+      releaseGuard.audit_attribution?.acceptance_run_id === acceptanceRunId &&
+      releaseGuard.audit_attribution?.audit_user_identifier ===
+        expectedAcceptanceUserId &&
+      releaseGuard.audit_attribution?.attributable_event_count === 0 &&
+      releaseGuard.audit_attribution?.event_id_fingerprint ===
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" &&
+      Array.isArray(releaseGuard.audit_attribution?.event_ids) &&
+      releaseGuard.audit_attribution.event_ids.length === 0 &&
+      releaseGuard.evidence_source === "release-guard-report:S1" &&
+      typeof releaseGuard.report_path === "string" &&
+      releaseGuard.report_path.length > 0 &&
+      /^[0-9a-f]{64}$/.test(releaseGuard.report_sha256 ?? "") &&
+      /^[0-9a-f]{64}$/.test(releaseGuard.snapshot_id ?? "") &&
+      Array.isArray(releaseGuard.blocking_reasons) &&
+      releaseGuard.blocking_reasons.length === 0 &&
+      releaseGuard.guard_execution_write === false &&
+      releaseGuard.capture_side_effect === "none" &&
+      report.provider_call_status === releaseGuard.provider_call_status &&
+      report.provider_evidence_source === "outside-frontend-acceptance-scope" &&
+      report.collector_provider_call_status === releaseGuard.collector_provider_call_status &&
+      (!expected.releaseGuardEvidence ||
+        (releaseGuard.report_path === expected.releaseGuardEvidence.report_path &&
+          releaseGuard.report_sha256 === expected.releaseGuardEvidence.report_sha256 &&
+          releaseGuard.snapshot_id === expected.releaseGuardEvidence.snapshot_id)),
+    "frontend acceptance release guard evidence is inconsistent",
+    {
+      release_guard: releaseGuard,
+      provider_call_status: report.provider_call_status,
+    },
+  );
+  requireStatus(
+    releaseIdentity.stable === true &&
+      releaseIdentity.expected_deploy_sha === expectedDeploySha &&
+      releaseIdentity.current_release_target === `releases/${expectedDeploySha}` &&
+      releaseIdentity.current_release_target_source === "release-guard-report:S1" &&
+      publicManifest.path === "/release-manifest.json" &&
+      publicManifest.format === "medical-audit-web-release-manifest-v1" &&
+      publicManifest.source_sha === expectedDeploySha &&
+      /^[0-9a-f]{64}$/.test(publicManifest.body_sha256 ?? "") &&
+      publicManifest.initial_body_sha256 === publicManifest.body_sha256 &&
+      publicManifest.final_body_sha256 === publicManifest.body_sha256 &&
+      deploymentMetadata.path === "/api/v1/deployment/metadata" &&
+      deploymentMetadata.status === "deployment_metadata_available" &&
+      deploymentMetadata.deploy_sha_status === "set" &&
+      deploymentMetadata.observed_deploy_sha === expectedDeploySha &&
+      typeof deploymentMetadata.deploy_sha_source === "string" &&
+      deploymentMetadata.deploy_sha_source.length > 0 &&
+      /^[0-9a-f]{64}$/.test(deploymentMetadata.initial_body_sha256 ?? "") &&
+      deploymentMetadata.final_body_sha256 === deploymentMetadata.initial_body_sha256 &&
+      deploymentMetadata.current_release_target === null &&
+      deploymentMetadata.current_release_target_status === "not_exposed_by_endpoint",
+    "frontend acceptance release identity evidence is inconsistent",
+    { release_identity: releaseIdentity },
   );
   requireStatus(
     incompleteRouteChecks.length === 0 && routeP0.length === 0 && routeP1.length === 0,
@@ -409,6 +633,16 @@ function assertGate(report) {
     "frontend acceptance alias check evidence is incomplete",
     {
       incomplete_alias_checks: incompleteAliasChecks,
+    },
+  );
+  const screenshotPaths = allRouteChecks.map((check) => check?.screenshot);
+  requireStatus(
+    screenshotPaths.every((value) => typeof value === "string" && path.isAbsolute(value)) &&
+      new Set(screenshotPaths).size === allRouteChecks.length,
+    "frontend acceptance screenshot executions are not uniquely bound",
+    {
+      screenshot_count: screenshotPaths.length,
+      unique_screenshot_count: new Set(screenshotPaths).size,
     },
   );
   requireStatus(
@@ -475,6 +709,7 @@ function assertGate(report) {
       auditLogs.anonymous_check === "executed" &&
       auditLogs.missing_tenant_check === "executed" &&
       auditLogs.allowed_check === "executed" &&
+      auditLogs.anonymous_attribution_user_id === expectedAcceptanceUserId &&
       [401, 403].includes(auditLogs.anonymous_status) &&
       [401, 403].includes(auditLogs.missing_tenant_status) &&
       auditLogs.allowed_status === 200,
@@ -486,6 +721,7 @@ function assertGate(report) {
       auditLogExports.anonymous_check === "executed" &&
       auditLogExports.missing_tenant_check === "executed" &&
       auditLogExports.allowed_check === "executed" &&
+      auditLogExports.anonymous_attribution_user_id === expectedAcceptanceUserId &&
       [401, 403].includes(auditLogExports.anonymous_status) &&
       [401, 403].includes(auditLogExports.missing_tenant_status) &&
       auditLogExports.allowed_status === 200,
@@ -501,6 +737,12 @@ function assertGate(report) {
         production_side_effect: report.production_side_effect,
         database_write: report.database_write,
         audit_log_write_expected: report.audit_log_write_expected,
+        expected_deploy_sha: report.expected_deploy_sha,
+        acceptance_run_id: report.acceptance_run_id,
+        acceptance_user_id: report.acceptance_user_id,
+        current_release_target: releaseIdentity.current_release_target,
+        public_manifest_sha256: publicManifest.body_sha256,
+        release_guard_report_sha256: releaseGuard.report_sha256,
         route_count: summary.route_count,
         independent_page_count: summary.independent_page_count,
         alias_check_count: summary.alias_check_count,
@@ -530,9 +772,35 @@ function assertGate(report) {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  validateSideEffectAuthorization(options);
+  const normalizedBaseUrl = validateSideEffectAuthorization(options);
+  options.baseUrl = normalizedBaseUrl;
+  validateAcceptanceEvidenceOptions(options);
+  if (options.contractProfile !== "hardened") {
+    throw new Error("Frontend acceptance gate requires --contract-profile hardened");
+  }
+  const releaseGuardEvidence = loadReleaseGuardEvidence(
+    options.releaseGuardReport,
+    options.expectedDeploySha,
+    options.acceptanceRunId,
+  );
   runAcceptance(options);
-  assertGate(readReport(options.output));
+  const finalReleaseGuardEvidence = loadReleaseGuardEvidence(
+    options.releaseGuardReport,
+    options.expectedDeploySha,
+    options.acceptanceRunId,
+  );
+  if (
+    finalReleaseGuardEvidence.report_sha256 !== releaseGuardEvidence.report_sha256 ||
+    finalReleaseGuardEvidence.snapshot_id !== releaseGuardEvidence.snapshot_id
+  ) {
+    throw new Error("release guard report changed during frontend acceptance");
+  }
+  assertGate(readReport(options.output), {
+    expectedDeploySha: options.expectedDeploySha,
+    acceptanceRunId: options.acceptanceRunId,
+    baseUrl: `${normalizedBaseUrl}/`,
+    releaseGuardEvidence: finalReleaseGuardEvidence,
+  });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

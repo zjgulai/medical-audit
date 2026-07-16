@@ -1,12 +1,15 @@
+import binascii
 import hashlib
 import json
 import os
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import threading
 import types
+import zlib
 from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import util as importlib_util
@@ -15,6 +18,199 @@ from typing import ClassVar
 
 import pytest
 from pytest import MonkeyPatch
+
+
+def _rgba_png_bytes(width: int, height: int) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        checksum = binascii.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", checksum)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    scanline = b"\x00" + (b"\x00" * width * 4)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(scanline * height))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _frontend_live_release_guard(
+    expected_sha: str,
+    run_id: str = "fa-20260716t153000z-deadbeef",
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "format": "medical-audit-production-release-guard-v1",
+        "mode": "capture",
+        "phase": "S1",
+        "status": "pass",
+        "evidence_grade": "L3-production-read-only",
+        "source": "ssh-live-readonly",
+        "generated_at": "2026-07-16T08:30:00Z",
+        "observation_target": {
+            "format": "medical-audit-release-guard-observation-target-v1",
+            "kind": "production-ssh",
+            "ssh_host": "101.34.52.232",
+            "remote_app_dir": "/opt/medical-audit/app",
+            "remote_web_dir": "/var/www/audit",
+            "postgres_container": "medical_audit_pg",
+        },
+        "expected_deploy_sha": expected_sha,
+        "observed_deploy_sha": expected_sha,
+        "provider_call_status": "not_observed",
+        "provider_evidence_source": "outside-release-guard-scope",
+        "collector_provider_call_status": "not_called",
+        "collector_provider_attempt_count": 0,
+        "collector_execution_boundary": {
+            "format": "medical-audit-release-guard-execution-boundary-v1",
+            "collector_protocol": "ssh-stdin-release-topology-postgresql-readonly-v2",
+            "allowed_operations": [
+                "filesystem-read",
+                "docker-exec-psql-readonly",
+                "docker-inspect-readonly",
+                "docker-exec-app-deploy-sha-readonly",
+                "docker-exec-nginx-config-test",
+            ],
+            "executed_postgresql_readonly_commands": 2,
+            "executed_runtime_readonly_commands": 8,
+            "rejected_command_count": 0,
+            "collector_provider_endpoint_attempt_count": 0,
+            "provider_environment_read": False,
+            "secret_values_reported": False,
+        },
+        "database_write": False,
+        "transaction_read_only": True,
+        "transaction_read_only_observed": "on",
+        "transaction_isolation_observed": "serializable",
+        "transaction_deferrable_observed": "on",
+        "release_topology": "versioned_ready",
+        "release_topology_evidence": {
+            "releases_root": {"kind": "directory"},
+            "current": {"kind": "symlink", "target": f"releases/{expected_sha}"},
+            "current_next": {"kind": "absent"},
+            "migration_sentinel": {"kind": "regular_file", "sha": expected_sha},
+            "migration_sentinel_next": {"kind": "absent"},
+            "incoming_entries": [],
+            "legacy_index": {"kind": "regular_file", "sha256": "9" * 64},
+            "deploy_marker": {"kind": "regular_file", "sha": expected_sha},
+            "deploy_marker_next": {"kind": "absent"},
+            "release": {
+                "kind": "directory",
+                "sha": expected_sha,
+                "manifest_format": "medical-audit-web-release-manifest-v1",
+                "manifest_source_sha": expected_sha,
+                "manifest_sha256": "a" * 64,
+            },
+            "runtime": {
+                "app_container": {
+                    "status": "running",
+                    "health": "healthy",
+                    "deploy_sha": expected_sha,
+                },
+                "nginx": {
+                    "config_test": True,
+                    "web_mount_source": "/var/www/audit",
+                    "web_mount_read_only": True,
+                    "expected_web_root": "/var/www/audit",
+                },
+            },
+        },
+        "current_release_target": f"releases/{expected_sha}",
+        "manifest_source_sha": expected_sha,
+        "manifest_sha256": "a" * 64,
+        "schema_fingerprint": "b" * 64,
+        "schema_tables": [],
+        "schema_fingerprint_scope": [],
+        "tables": {},
+        "object_storage": {
+            "status": "observed",
+            "fingerprint": "c" * 64,
+            "object_count": 8,
+            "max_timestamp": "2026-07-16T07:00:00+00:00",
+            "observation_scope": "database-ledger",
+        },
+        "capture_consistency": {
+            "database_snapshot_before": "d" * 64,
+            "database_snapshot_after": "d" * 64,
+            "concurrent_activity_detected": False,
+        },
+        "audit_attribution": {
+            "acceptance_run_id": run_id,
+            "audit_user_identifier": f"frontend-acceptance-{run_id}",
+            "attributable_event_count": 0,
+            "event_id_fingerprint": hashlib.sha256(b"").hexdigest(),
+            "event_ids": [],
+        },
+        "blocking_reasons": [],
+        "guard_execution_write": False,
+        "capture_side_effect": "none",
+    }
+    snapshot_core_fields = (
+        "phase",
+        "generated_at",
+        "observation_target",
+        "expected_deploy_sha",
+        "observed_deploy_sha",
+        "transaction_read_only",
+        "transaction_read_only_observed",
+        "transaction_isolation_observed",
+        "transaction_deferrable_observed",
+        "release_topology",
+        "release_topology_evidence",
+        "current_release_target",
+        "manifest_source_sha",
+        "manifest_sha256",
+        "schema_fingerprint",
+        "schema_tables",
+        "schema_fingerprint_scope",
+        "tables",
+        "object_storage",
+        "provider_call_status",
+        "provider_evidence_source",
+        "collector_provider_call_status",
+        "collector_provider_attempt_count",
+        "collector_execution_boundary",
+        "capture_consistency",
+        "audit_attribution",
+    )
+    core = {field: report[field] for field in snapshot_core_fields}
+    report["snapshot_id"] = hashlib.sha256(
+        json.dumps(
+            core,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    provenance = {
+        "format": "medical-audit-release-guard-capture-provenance-v1",
+        "transport": "ssh-stdin",
+        "ssh_host": "101.34.52.232",
+        "ssh_user": "ubuntu",
+        "batch_mode": True,
+        "strict_host_key_checking": True,
+        "identities_only": True,
+        "ssh_exit_code": 0,
+        "remote_app_dir": "/opt/medical-audit/app",
+        "remote_web_dir": "/var/www/audit",
+        "postgres_container": "medical_audit_pg",
+        "collector_source_sha256": hashlib.sha256(
+            Path("scripts/audit-production-release-guard-snapshot.py").read_bytes()
+        ).hexdigest(),
+    }
+    report["capture_provenance"] = provenance
+    report["capture_envelope_id"] = hashlib.sha256(
+        json.dumps(
+            {
+                "snapshot_id": report["snapshot_id"],
+                "capture_provenance": provenance,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return report
 
 
 def _documents_governance_status_payload() -> dict[str, object]:
@@ -2197,6 +2393,262 @@ def test_production_frontend_acceptance_rejects_unexpected_final_search() -> Non
     }
 
 
+def test_production_frontend_acceptance_rejects_unexpected_chrome_title() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify } from " + json.dumps(runner_path.as_uri()) + "; "
+        "const routeCheck = { route: '/rules', expectedPath: '/rules', "
+        "expectedChromeTitle: '规则运行工作台' }; "
+        "const baseData = { bodyText: 'x'.repeat(120), headings: ['规则运行工作台'], "
+        "controlText: [], fileInputCount: 0, horizontalOverflow: false, "
+        "scrollWidth: 100, clientWidth: 100, overflowOffenders: [] }; "
+        "const hasChromeIssue = (chromeTitle) => classify("
+        "{ status: 200, error: null, consoleErrors: [], failedRequests: [], "
+        "interactionErrors: [], finalUrl: 'https://audit.example.test/rules' }, "
+        "routeCheck, { ...baseData, chromeTitle })"
+        ".some((item) => item.type === 'unexpected-chrome-title'); "
+        "console.log(JSON.stringify({ good: hasChromeIssue('规则运行工作台'), "
+        "wrong: hasChromeIssue('AI 对话'), missing: hasChromeIssue(null) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "good": False,
+        "wrong": True,
+        "missing": True,
+    }
+
+
+def test_production_frontend_acceptance_recognizes_current_login_gate() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { isLoginGateSnapshot } from "
+        + json.dumps(runner_path.as_uri())
+        + "; "
+        "console.log(JSON.stringify({ "
+        "current: isLoginGateSnapshot({ headings: ['登录工作台'], submitControls: ['登录'] }), "
+        "legacy: isLoginGateSnapshot({ headings: ['登录工作台'], submitControls: ['进入系统'] }), "
+        "partial: isLoginGateSnapshot({ headings: ['登录工作台'], submitControls: [] }) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "current": True,
+        "legacy": False,
+        "partial": False,
+    }
+
+
+def test_production_frontend_acceptance_binds_run_guard_and_release_identity(
+    tmp_path: Path,
+) -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    expected_sha = "a" * 40
+    run_id = "fa-20260716t153000z-deadbeef"
+    guard_path = tmp_path / "release-guard-s1.json"
+    guard_path.write_text(
+        json.dumps(_frontend_live_release_guard(expected_sha)),
+        encoding="utf-8",
+    )
+    observation = {
+        "public_manifest": {
+            "http_status": 200,
+            "content_type": "application/json",
+            "format": "medical-audit-web-release-manifest-v1",
+            "source_sha": expected_sha,
+            "body_sha256": "b" * 64,
+        },
+        "deployment_metadata": {
+            "http_status": 200,
+            "content_type": "application/json",
+            "status": "deployment_metadata_available",
+            "deploy_sha_status": "set",
+            "observed_deploy_sha": expected_sha,
+            "deploy_sha_source": "default_file",
+            "body_sha256": "c" * 64,
+        },
+    }
+    program = (
+        "import { deriveAcceptanceUserId, loadReleaseGuardEvidence, "
+        "validateReleaseIdentityPair } from "
+        + json.dumps(runner_path.as_uri())
+        + "; "
+        "const expectedSha = process.env.EXPECTED_SHA; "
+        "const guard = loadReleaseGuardEvidence("
+        "process.env.GUARD_PATH, expectedSha, process.env.RUN_ID); "
+        "const observation = JSON.parse(process.env.OBSERVATION); "
+        "const identity = validateReleaseIdentityPair("
+        "observation, observation, expectedSha, `releases/${expectedSha}`); "
+        "console.log(JSON.stringify({ userId: deriveAcceptanceUserId(process.env.RUN_ID), "
+        "guard, identity }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EXPECTED_SHA": expected_sha,
+            "RUN_ID": run_id,
+            "GUARD_PATH": str(guard_path),
+            "OBSERVATION": json.dumps(observation),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["userId"] == f"frontend-acceptance-{run_id}"
+    assert payload["guard"]["report_path"] == str(guard_path)
+    assert payload["guard"]["report_sha256"] == hashlib.sha256(
+        guard_path.read_bytes()
+    ).hexdigest()
+    assert payload["guard"]["evidence_source"] == "release-guard-report:S1"
+    assert (
+        payload["guard"]["snapshot_id"]
+        == _frontend_live_release_guard(expected_sha)["snapshot_id"]
+    )
+    assert payload["identity"]["stable"] is True
+    assert payload["identity"]["current_release_target"] == f"releases/{expected_sha}"
+    assert payload["guard"]["audit_attribution"] == {
+        "acceptance_run_id": run_id,
+        "audit_user_identifier": f"frontend-acceptance-{run_id}",
+        "attributable_event_count": 0,
+        "event_id_fingerprint": hashlib.sha256(b"").hexdigest(),
+        "event_ids": [],
+    }
+    assert payload["identity"]["public_manifest"]["source_sha"] == expected_sha
+    assert (
+        payload["identity"]["deployment_metadata"]["observed_deploy_sha"]
+        == expected_sha
+    )
+    assert (
+        payload["identity"]["deployment_metadata"]["current_release_target_status"]
+        == "not_exposed_by_endpoint"
+    )
+
+    tampered_guard = _frontend_live_release_guard(expected_sha)
+    tampered_guard["schema_fingerprint"] = "f" * 64
+    guard_path.write_text(json.dumps(tampered_guard), encoding="utf-8")
+    tampered_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EXPECTED_SHA": expected_sha,
+            "RUN_ID": run_id,
+            "GUARD_PATH": str(guard_path),
+            "OBSERVATION": json.dumps(observation),
+        },
+    )
+    assert tampered_result.returncode != 0
+    assert "complete L3 ssh-live-readonly S1 capture" in tampered_result.stderr
+
+    wrong_run_guard = _frontend_live_release_guard(
+        expected_sha,
+        "fa-20260716t153001z-feedbeef",
+    )
+    guard_path.write_text(json.dumps(wrong_run_guard), encoding="utf-8")
+    wrong_run_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EXPECTED_SHA": expected_sha,
+            "RUN_ID": run_id,
+            "GUARD_PATH": str(guard_path),
+            "OBSERVATION": json.dumps(observation),
+        },
+    )
+    assert wrong_run_result.returncode != 0
+    assert "complete L3 ssh-live-readonly S1 capture" in wrong_run_result.stderr
+
+    invalid_guard = _frontend_live_release_guard(expected_sha)
+    invalid_guard.pop("current_release_target")
+    guard_path.write_text(json.dumps(invalid_guard), encoding="utf-8")
+    invalid_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EXPECTED_SHA": expected_sha,
+            "RUN_ID": run_id,
+            "GUARD_PATH": str(guard_path),
+            "OBSERVATION": json.dumps(observation),
+        },
+    )
+    assert invalid_result.returncode != 0
+    assert "complete L3 ssh-live-readonly S1 capture" in invalid_result.stderr
+
+    fixture_guard = _frontend_live_release_guard(expected_sha)
+    fixture_guard["evidence_grade"] = "L2-fixture-or-dry-run"
+    fixture_guard["source"] = "fixture"
+    guard_path.write_text(json.dumps(fixture_guard), encoding="utf-8")
+    fixture_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EXPECTED_SHA": expected_sha,
+            "RUN_ID": run_id,
+            "GUARD_PATH": str(guard_path),
+            "OBSERVATION": json.dumps(observation),
+        },
+    )
+    assert fixture_result.returncode != 0
+    assert "complete L3 ssh-live-readonly S1 capture" in fixture_result.stderr
+
+
+def test_production_frontend_acceptance_permission_probes_keep_run_attribution() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    run_id = "fa-20260716t153000z-deadbeef"
+    user_id = f"frontend-acceptance-{run_id}"
+    program = (
+        "import { buildAuditPermissionProbeHeaders } from "
+        + json.dumps(runner_path.as_uri())
+        + "; "
+        "console.log(JSON.stringify(buildAuditPermissionProbeHeaders({ "
+        f"adminRole: 'it-admin', adminApiKey: null, adminUserId: {json.dumps(user_id)} "
+        "})));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    headers = json.loads(result.stdout)
+    assert headers["anonymous"] == {
+        "Accept": "application/json",
+        "X-User-Id": user_id,
+    }
+    assert "X-Role" not in headers["anonymous"]
+    assert headers["missingTenant"]["X-User-Id"] == user_id
+    assert "X-Tenant-Id" not in headers["missingTenant"]
+    assert headers["allowed"]["X-User-Id"] == user_id
+    assert headers["allowed"]["X-Tenant-Id"] == "hospital-demo"
+
+
 def test_production_frontend_acceptance_separates_independent_pages_and_aliases() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (
@@ -2207,7 +2659,13 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "inputSearch: item.inputSearch ?? '', expectedPath: item.expectedPath, "
         "expectedSearch: item.expectedSearch ?? '', session: item.session }); "
         "console.log(JSON.stringify({ independent: routeCheckProfiles.hardened.map(project), "
-        "aliases: aliasRouteChecks.map(project) }));"
+        "aliases: aliasRouteChecks.map(project), "
+        "loginRequiredText: routeCheckProfiles.hardened[0].requiredText.map(String), "
+        "loginRequiredControlText: "
+        "routeCheckProfiles.hardened[0].requiredControlText.map(String), "
+        "chromeTitles: Object.fromEntries(routeCheckProfiles.hardened"
+        ".filter((item) => item.expectedChromeTitle)"
+        ".map((item) => [item.route, item.expectedChromeTitle])) }));"
     )
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", program],
@@ -2244,6 +2702,16 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
     assert all(
         item["session"] == "workspace" for item in payload["independent"][1:]
     )
+    assert payload["loginRequiredText"] == ["/登录工作台/"]
+    assert payload["loginRequiredControlText"] == ["/(^|\\s)登录($|\\s)/"]
+    assert payload["chromeTitles"] == {
+        "/fund-compliance": "医保基金使用合规",
+        "/fund-compliance/review": "医保基金复核表单",
+        "/rules": "规则运行工作台",
+        "/remediation": "整改工作台",
+        "/archive": "归档工作台",
+        "/guided-check": "引导式核查",
+    }
     assert payload["aliases"] == [
         {
             "route": "/workspace",
@@ -2310,10 +2778,7 @@ def test_production_frontend_acceptance_anonymous_context_omits_acceptance_heade
 
 @pytest.mark.parametrize(
     "script_name",
-    (
-        "run-production-frontend-acceptance.mjs",
-        "run-production-frontend-acceptance-gate.mjs",
-    ),
+    ("run-production-frontend-acceptance.mjs",),
 )
 def test_production_frontend_acceptance_rejects_invalid_screenshot_policy_before_browser(
     script_name: str,
@@ -2329,7 +2794,7 @@ def test_production_frontend_acceptance_rejects_invalid_screenshot_policy_before
             "--confirm-production-write",
             "audit.lute-tlz-dddd.top",
             "--base-url",
-            "http://127.0.0.1:9",
+            "https://audit.lute-tlz-dddd.top",
             "--output",
             str(output_path),
             "--screenshot-dir",
@@ -2375,6 +2840,9 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
     assert "missing_tenant_body_length" in script_text
     assert "allowed_body_length" in script_text
     assert 'screenshotPolicy === "all"' in script_text
+    assert 'MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS: "1"' in gate_text
+    assert 'MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY: "all"' in gate_text
+    assert "frontend-acceptance-admin" not in script_text
     for report_field in (
         "independent_page_count",
         "alias_check_count",
@@ -2473,27 +2941,127 @@ def test_production_frontend_acceptance_requires_exact_write_confirmation(
     assert not screenshot_dir.exists()
 
 
+@pytest.mark.parametrize(
+    "script_name",
+    (
+        "run-production-frontend-acceptance.mjs",
+        "run-production-frontend-acceptance-gate.mjs",
+    ),
+)
+def test_production_frontend_acceptance_binds_exact_production_origin(
+    script_name: str,
+) -> None:
+    script_path = Path(f"scripts/{script_name}").resolve()
+    candidates = [
+        "https://audit.lute-tlz-dddd.top",
+        "https://audit.lute-tlz-dddd.top:443",
+        "http://audit.lute-tlz-dddd.top",
+        "https://staging.example.test",
+        "https://audit.lute-tlz-dddd.top:444",
+        "https://user@audit.lute-tlz-dddd.top",
+        "https://audit.lute-tlz-dddd.top/path",
+        "https://audit.lute-tlz-dddd.top?query=1",
+        "https://audit.lute-tlz-dddd.top#fragment",
+    ]
+    program = (
+        "import { validateSideEffectAuthorization } from "
+        + json.dumps(script_path.as_uri())
+        + "; const values = JSON.parse(process.env.CANDIDATES); "
+        "const results = values.map((baseUrl) => { try { return { baseUrl, accepted: true, "
+        "normalized: validateSideEffectAuthorization({ baseUrl, allowAuditLogWrites: true, "
+        "confirmProductionWrite: 'audit.lute-tlz-dddd.top' }) }; } catch (error) { "
+        "return { baseUrl, accepted: false, error: String(error.message ?? error) }; } }); "
+        "console.log(JSON.stringify(results));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CANDIDATES": json.dumps(candidates)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    observed = {item["baseUrl"]: item for item in json.loads(result.stdout)}
+    for value in candidates[:2]:
+        assert observed[value] == {
+            "baseUrl": value,
+            "accepted": True,
+            "normalized": "https://audit.lute-tlz-dddd.top",
+        }
+    for value in candidates[2:]:
+        assert observed[value]["accepted"] is False
+        assert "exact production origin" in observed[value]["error"]
+
+
 def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
     tmp_path: Path,
 ) -> None:
     gate_path = Path("scripts/run-production-frontend-acceptance-gate.mjs").resolve()
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    expected_sha = "a" * 40
+    run_id = "fa-20260716t153000z-deadbeef"
+    desktop_png_path = tmp_path / "desktop-template.png"
+    mobile_png_path = tmp_path / "mobile-template.png"
+    screenshot_dir = tmp_path / "screenshots"
+    screenshot_dir.mkdir()
+    desktop_png_path.write_bytes(_rgba_png_bytes(1440, 1100))
+    mobile_png_path.write_bytes(_rgba_png_bytes(390, 900))
     api_check = {
         "execution_status": "executed",
         "anonymous_check": "executed",
         "missing_tenant_check": "executed",
         "allowed_check": "executed",
+        "anonymous_attribution_user_id": f"frontend-acceptance-{run_id}",
         "anonymous_status": 403,
         "missing_tenant_status": 401,
         "allowed_status": 200,
     }
     report = {
         "status": "pass",
+        "base_url": "https://audit.lute-tlz-dddd.top/",
         "contract_profile": "hardened",
         "side_effect_mode": "audit-log-write-enabled",
         "production_side_effect": "audit-log-only",
         "database_write": "audit-log-only",
         "audit_log_write_expected": True,
+        "provider_call_status": "not_observed",
+        "provider_evidence_source": "outside-frontend-acceptance-scope",
+        "collector_provider_call_status": "not_called",
+        "expected_deploy_sha": expected_sha,
+        "acceptance_run_id": run_id,
+        "acceptance_user_id": f"frontend-acceptance-{run_id}",
+        "release_guard": {
+            **_frontend_live_release_guard(expected_sha),
+            "report_path": str(tmp_path / "release-guard-s1.json"),
+            "report_sha256": "d" * 64,
+            "evidence_source": "release-guard-report:S1",
+        },
+        "release_identity": {
+            "stable": True,
+            "expected_deploy_sha": expected_sha,
+            "current_release_target": f"releases/{expected_sha}",
+            "current_release_target_source": "release-guard-report:S1",
+            "public_manifest": {
+                "path": "/release-manifest.json",
+                "format": "medical-audit-web-release-manifest-v1",
+                "source_sha": expected_sha,
+                "body_sha256": "b" * 64,
+                "initial_body_sha256": "b" * 64,
+                "final_body_sha256": "b" * 64,
+            },
+            "deployment_metadata": {
+                "path": "/api/v1/deployment/metadata",
+                "status": "deployment_metadata_available",
+                "deploy_sha_status": "set",
+                "observed_deploy_sha": expected_sha,
+                "deploy_sha_source": "default_file",
+                "initial_body_sha256": "c" * 64,
+                "final_body_sha256": "c" * 64,
+                "current_release_target": None,
+                "current_release_target_status": "not_exposed_by_endpoint",
+            },
+        },
         "summary": {
             "route_count": 0,
             "independent_page_count": 0,
@@ -2502,8 +3070,8 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
             "alias_execution_check_count": 0,
             "total_execution_check_count": 0,
             "viewports": [],
-            "screenshot_capture": False,
-            "screenshot_policy": "disabled",
+            "screenshot_capture": True,
+            "screenshot_policy": "all",
             "p0": [],
             "p1": [],
             "api_checks": {
@@ -2529,7 +3097,9 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
     }
     node_program = (
         f"import {{ assertGate }} from {json.dumps(gate_path.as_uri())}; "
-        "import { aliasRouteChecks, routeCheckProfiles, viewports } from "
+        "import fs from 'node:fs'; import path from 'node:path'; "
+        "import { aliasRouteChecks, readPngEvidence, routeCheckProfiles, "
+        "screenshotFileName, viewports } from "
         f"{json.dumps(runner_path.as_uri())}; "
         "const report = JSON.parse(process.env.REPORT); "
         "const routes = routeCheckProfiles[report.contract_profile]; "
@@ -2539,21 +3109,30 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         "report.summary.independent_page_count = routes.length; "
         "report.summary.alias_check_count = aliases.length; "
         "report.summary.viewports = viewportNames; "
-        "const makeCheck = (contract, viewport) => ({ route: contract.route, viewport, "
+        "const makeCheck = (contract, viewport, contractKind) => { "
+        f"const screenshot = path.join({json.dumps(str(screenshot_dir))}, screenshotFileName({{ "
+        "acceptanceRunId: report.acceptance_run_id, contractKind, viewport, "
+        "route: contract.route, inputSearch: contract.inputSearch ?? '' })); "
+        f"fs.copyFileSync(viewport === 'desktop' ? {json.dumps(str(desktop_png_path))} : "
+        f"{json.dumps(str(mobile_png_path))}, screenshot); "
+        "return ({ route: contract.route, viewport, "
         "inputSearch: contract.inputSearch ?? '', "
         "expectedPath: contract.expectedPath, finalPath: contract.expectedPath, "
         "expectedSearch: contract.expectedSearch ?? '', "
         "finalSearch: contract.expectedSearch ?? '', "
+        "expectedChromeTitle: contract.expectedChromeTitle ?? null, "
+        "chromeTitle: contract.expectedChromeTitle ?? null, "
         "finalUrl: `https://audit.example.test${contract.expectedPath}`, status: 200, "
         "navigationError: false, headingCount: 1, bodyTextLength: 100, "
         "fileInputCount: 0, scrollWidth: 100, clientWidth: 100, "
         "horizontalOverflow: false, overflowOffenders: [], consoleErrorCount: 0, "
         "failedRequestCount: 0, failedRequests: [], interactionErrorCount: 0, "
-        "issues: [] }); "
+        "screenshot, screenshot_evidence: readPngEvidence(screenshot), "
+        "issues: [] }); }; "
         "report.checks = routes.flatMap((contract) => "
-        "viewportNames.map((viewport) => makeCheck(contract, viewport))); "
+        "viewportNames.map((viewport) => makeCheck(contract, viewport, 'independent'))); "
         "report.alias_checks = aliases.flatMap((contract) => "
-        "viewportNames.map((viewport) => makeCheck(contract, viewport))); "
+        "viewportNames.map((viewport) => makeCheck(contract, viewport, 'alias'))); "
         "report.summary.check_count = report.checks.length; "
         "report.summary.alias_execution_check_count = report.alias_checks.length; "
         "report.summary.total_execution_check_count = "
@@ -2562,6 +3141,8 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         "if (process.env.MUTATE_FINAL_PATH === '1') report.checks[0].finalPath = '/wrong'; "
         "if (process.env.MUTATE_FINAL_URL === '1') "
         "report.checks[0].finalUrl = 'https://audit.example.test/wrong'; "
+        "if (process.env.MUTATE_CHROME_TITLE === '1') "
+        "report.checks.find((check) => check.expectedChromeTitle).chromeTitle = 'AI 对话'; "
         "if (process.env.MUTATE_ALIAS_FINAL_URL === '1') "
         "report.alias_checks[0].finalUrl = 'not-a-valid-url'; "
         "if (process.env.MUTATE_ALIAS_FINAL_SEARCH === '1') "
@@ -2572,10 +3153,26 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         "'?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98"
         "&source_collection=medical-insurance-laws'; "
         "if (process.env.DROP_ALIAS === '1') report.alias_checks.pop(); "
-        "if (process.env.REQUIRE_SCREENSHOT === '1') { "
-        "report.summary.screenshot_capture = true; report.summary.screenshot_policy = 'all'; } "
+        "if (process.env.DROP_SCREENSHOT === '1') delete report.checks[0].screenshot; "
         "if (process.env.SCREENSHOT_PATH) { "
-        "report.checks.forEach((check) => { check.screenshot = process.env.SCREENSHOT_PATH; }); } "
+        "report.checks.forEach((check) => { check.screenshot = process.env.SCREENSHOT_PATH; "
+        "check.screenshot_evidence = readPngEvidence(process.env.SCREENSHOT_PATH); }); } "
+        "if (process.env.MUTATE_GUARD_TRANSACTION === '1') "
+        "report.release_guard.transaction_read_only = false; "
+        "if (process.env.MUTATE_GUARD_EVIDENCE_GRADE === '1') "
+        "report.release_guard.evidence_grade = 'L2-fixture-or-dry-run'; "
+        "if (process.env.MUTATE_GUARD_PROVIDER_BOUNDARY === '1') "
+        "delete report.release_guard.collector_execution_boundary; "
+        "if (process.env.MUTATE_ACCEPTANCE_USER === '1') "
+        "report.acceptance_user_id = 'frontend-acceptance-wrong'; "
+        "if (process.env.REUSE_SCREENSHOTS === '1') { "
+        "const first = report.checks[0]; "
+        "[...report.checks, ...report.alias_checks].forEach((check) => { "
+        "check.screenshot = first.screenshot; "
+        "check.screenshot_evidence = first.screenshot_evidence; "
+        "}); } "
+        "if (process.env.MUTATE_MANIFEST_SHA === '1') "
+        "report.release_identity.public_manifest.source_sha = 'f'.repeat(40); "
         "if (process.env.DROP_RESULTS === '1') { "
         "delete report.checks[0].status; delete report.checks[0].issues; } "
         "assertGate(report);"
@@ -2602,6 +3199,81 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
     assert "frontend acceptance side-effect contract is inconsistent" in invalid_result.stderr
 
     report["database_write"] = "audit-log-only"
+    invalid_guard_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_GUARD_TRANSACTION": "1",
+        },
+    )
+    assert invalid_guard_result.returncode == 2
+    assert "frontend acceptance release guard evidence is inconsistent" in (
+        invalid_guard_result.stderr
+    )
+
+    for mutation in ("MUTATE_GUARD_EVIDENCE_GRADE", "MUTATE_GUARD_PROVIDER_BOUNDARY"):
+        invalid_guard_contract = subprocess.run(
+            ["node", "--input-type=module", "--eval", node_program],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "REPORT": json.dumps(report), mutation: "1"},
+        )
+        assert invalid_guard_contract.returncode == 2
+        assert "frontend acceptance release guard evidence is inconsistent" in (
+            invalid_guard_contract.stderr
+        )
+
+    invalid_user_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_ACCEPTANCE_USER": "1",
+        },
+    )
+    assert invalid_user_result.returncode == 2
+    assert "frontend acceptance run identity is inconsistent" in invalid_user_result.stderr
+
+    reused_screenshot_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "REUSE_SCREENSHOTS": "1",
+        },
+    )
+    assert reused_screenshot_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        reused_screenshot_result.stderr
+    )
+
+    invalid_manifest_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_MANIFEST_SHA": "1",
+        },
+    )
+    assert invalid_manifest_result.returncode == 2
+    assert "frontend acceptance release identity evidence is inconsistent" in (
+        invalid_manifest_result.stderr
+    )
+
     route_invalid_result = subprocess.run(
         ["node", "--input-type=module", "--eval", node_program],
         check=False,
@@ -2614,7 +3286,7 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         },
     )
     assert route_invalid_result.returncode == 2
-    assert "frontend acceptance route coverage is incomplete" in (
+    assert "frontend acceptance route check evidence is incomplete" in (
         route_invalid_result.stderr
     )
 
@@ -2664,6 +3336,22 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
     assert wrong_url_result.returncode == 2
     assert "frontend acceptance route check evidence is incomplete" in (
         wrong_url_result.stderr
+    )
+
+    wrong_chrome_title_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "MUTATE_CHROME_TITLE": "1",
+        },
+    )
+    assert wrong_chrome_title_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        wrong_chrome_title_result.stderr
     )
 
     wrong_alias_url_result = subprocess.run(
@@ -2738,7 +3426,7 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         env={
             **os.environ,
             "REPORT": json.dumps(report),
-            "REQUIRE_SCREENSHOT": "1",
+            "DROP_SCREENSHOT": "1",
         },
     )
     assert missing_screenshot_result.returncode == 2
@@ -2754,7 +3442,6 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         env={
             **os.environ,
             "REPORT": json.dumps(report),
-            "REQUIRE_SCREENSHOT": "1",
             "SCREENSHOT_PATH": str(tmp_path / "missing.png"),
         },
     )
@@ -2773,7 +3460,6 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         env={
             **os.environ,
             "REPORT": json.dumps(report),
-            "REQUIRE_SCREENSHOT": "1",
             "SCREENSHOT_PATH": str(non_png_path),
         },
     )
@@ -2782,14 +3468,24 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         non_png_screenshot_result.stderr
     )
 
-    valid_png_path = tmp_path / "valid.png"
-    valid_png_path.write_bytes(
-        bytes.fromhex(
-            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-            "0000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44"
-            "ae426082"
-        )
+    truncated_png_path = tmp_path / "truncated.png"
+    truncated_png_path.write_bytes(bytes.fromhex("89504e470d0a1a0a"))
+    truncated_png_screenshot_result = subprocess.run(
+        ["node", "--input-type=module", "--eval", node_program],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "REPORT": json.dumps(report),
+            "SCREENSHOT_PATH": str(truncated_png_path),
+        },
     )
+    assert truncated_png_screenshot_result.returncode == 2
+    assert "frontend acceptance route check evidence is incomplete" in (
+        truncated_png_screenshot_result.stderr
+    )
+
     valid_screenshot_result = subprocess.run(
         ["node", "--input-type=module", "--eval", node_program],
         check=False,
@@ -2798,8 +3494,6 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
         env={
             **os.environ,
             "REPORT": json.dumps(report),
-            "REQUIRE_SCREENSHOT": "1",
-            "SCREENSHOT_PATH": str(valid_png_path),
         },
     )
     assert valid_screenshot_result.returncode == 0, valid_screenshot_result.stderr
