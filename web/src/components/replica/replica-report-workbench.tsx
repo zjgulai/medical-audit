@@ -25,6 +25,13 @@ import type { AuditClientRole } from "@/lib/audit-user";
 
 type LanePhase = "loading" | "ready" | "degraded" | "error";
 
+const lanePhaseLabels: Readonly<Record<LanePhase, string>> = {
+  loading: "读取中",
+  ready: "已连接",
+  degraded: "有限可用",
+  error: "读取异常"
+};
+
 type LaneState<T> = {
   readonly phase: LanePhase;
   readonly response: T | null;
@@ -696,7 +703,7 @@ export function ReplicaReportWorkbench() {
         <div>
           <p>报告数据来源</p>
           <strong>{roleReportState.response?.store.backend ?? "尚未就绪"}</strong>
-          <span>{roleReportState.phase}</span>
+          <span>{lanePhaseLabels[roleReportState.phase]}</span>
         </div>
       </section>
 

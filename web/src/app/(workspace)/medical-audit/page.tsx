@@ -754,12 +754,16 @@ export default function MedicalAuditPage() {
               </button>
             ))}
           </div>
-          <div className="replica-medical-notice">
-            数据源：疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
-            <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
-            <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
-            <code>/api/v1/projects/:id/dashboard</code>。本批次只做生产流程入口和只读联通，写入类动作进入确认门禁。
-          </div>
+          <details className="replica-medical-notice">
+            <summary>查看数据与权限说明</summary>
+            <p>当前页面只读取生产数据；写入类动作仍需经过独立确认门禁。</p>
+            <p>
+              疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
+              <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
+              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
+              <code>/api/v1/projects/:id/dashboard</code>。
+            </p>
+          </details>
           {activeView === "audit" ? (
             <SmartAuditView
               activeRule={activeRule}
@@ -842,7 +846,8 @@ function MedicalStatusRail({
           type="button"
           onClick={() => onToolChange(module.id)}
         >
-          {module.symbol}
+          <span aria-hidden="true" className="replica-medical-tool-symbol">{module.symbol}</span>
+          <span className="replica-medical-tool-label">{module.label}</span>
           {badges[module.id] ? <em>{badges[module.id]}</em> : null}
         </button>
       ))}
@@ -1028,7 +1033,11 @@ function SmartAuditView({
       {auditState.status === "error" ? (
         <section className="replica-medical-evidence is-danger">
           <strong>疑点接口读取异常</strong>
-          <p>{auditState.message}</p>
+          <p>请检查审计数据服务后重试；当前不会注入本地样例数据。</p>
+          <details className="replica-runtime-diagnostics">
+            <summary>查看技术诊断</summary>
+            <code>{auditState.message}</code>
+          </details>
         </section>
       ) : null}
       {auditData && auditData.items.length === 0 ? (

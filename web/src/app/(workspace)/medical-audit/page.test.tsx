@@ -336,8 +336,27 @@ describe("MedicalAuditPage", () => {
       "data-layout-floating-control",
       "medical-ai"
     );
+    expect(screen.getByRole("button", { name: "DIP/DRG审计" })).toHaveTextContent("DIP/DRG审计");
+    expect(screen.getByText("查看数据与权限说明").closest("details")).not.toHaveAttribute("open");
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
+  });
+
+  it("keeps backend failure detail behind a diagnostic disclosure", async () => {
+    mockApis();
+    fetchAuditFindingsMock.mockRejectedValueOnce(
+      new Error("Backend request failed: GET /api/v1/audit-findings returned 503")
+    );
+
+    render(<MedicalAuditPage />);
+
+    expect(await screen.findByText("疑点接口读取异常")).toBeInTheDocument();
+    expect(screen.getByText("请检查审计数据服务后重试；当前不会注入本地样例数据。")).toBeInTheDocument();
+    const diagnostics = screen.getByText("查看技术诊断").closest("details");
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics).toHaveTextContent(
+      "Backend request failed: GET /api/v1/audit-findings returned 503"
+    );
   });
 
   it("keeps audit findings visible when the project dashboard is unavailable", async () => {

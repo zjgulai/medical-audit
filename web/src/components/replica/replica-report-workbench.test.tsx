@@ -632,11 +632,14 @@ describe("ReplicaReportWorkbench", () => {
     renderWorkbench();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("报表工作台读取失败");
+    expect(screen.getByText("读取异常")).toBeInTheDocument();
+    expect(screen.queryByText("error")).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Alpha 医保专项" })).toBeInTheDocument();
     expect(screen.queryByText("报告总数")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试工作台" }));
 
     expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(screen.getByText("已连接")).toBeInTheDocument();
     expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
     expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
   });

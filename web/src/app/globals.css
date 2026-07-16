@@ -4337,6 +4337,14 @@ select {
   transform: translateY(1px);
 }
 
+.replica-medical-tool-symbol {
+  line-height: 1;
+}
+
+.replica-medical-tool-label {
+  display: none;
+}
+
 .replica-medical-iconrail em {
   position: absolute;
   top: -5px;
@@ -4511,6 +4519,16 @@ select {
   font-size: 12px;
   line-height: 1.5;
   padding: 9px 12px;
+}
+
+.replica-medical-notice summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.replica-medical-notice p {
+  margin: 8px 0 0;
 }
 
 .replica-medical-project-panel {
@@ -5905,6 +5923,18 @@ select {
 
   .replica-medical-iconrail button {
     width: 100%;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    justify-items: start;
+    padding: 0 8px;
+    text-align: left;
+  }
+
+  .replica-medical-tool-label {
+    display: block;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
   }
 
   .replica-medical-rules {
@@ -6067,6 +6097,10 @@ select {
 
   .replica-medical-iconrail {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .replica-medical-rules {
+    max-height: 200px;
   }
 
   .replica-medical-tabs {
