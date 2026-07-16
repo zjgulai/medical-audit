@@ -398,7 +398,7 @@ test("workspace keeps its redirect while compatibility routes render current pro
   }
 
   await page.goto(
-    "/knowledge-query?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials"
+    "/knowledge-query?q=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials"
   );
   await expect(page).toHaveURL(
     (url) =>

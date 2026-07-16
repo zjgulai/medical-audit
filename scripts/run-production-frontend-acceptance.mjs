@@ -239,7 +239,7 @@ const aliasRouteChecks = [
   {
     route: "/knowledge-query",
     inputSearch:
-      "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials",
+      "?q=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials",
     expectedPath: "/documents",
     expectedSearch:
       "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&source_collection=personal-materials",

@@ -1131,6 +1131,15 @@ export type AgentPromptVersionApiItem = {
 export type AgentsResponse = {
   readonly items: readonly AuditAgentApiItem[];
   readonly categories: readonly ApiAgentCategory[];
+  readonly market_installations?: readonly {
+    readonly template_id: string;
+    readonly agent_id: string;
+  }[];
+  readonly market_installation_issues?: readonly {
+    readonly code: "ambiguous-market-installations";
+    readonly template_id: string;
+    readonly agent_ids: readonly string[];
+  }[];
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
@@ -1151,6 +1160,8 @@ export type AgentCreateRequest = {
 
 export type AgentCreateResponse = {
   readonly item: AuditAgentApiItem;
+  readonly created?: boolean;
+  readonly reactivated?: boolean;
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;

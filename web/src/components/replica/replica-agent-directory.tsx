@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
-import { useReplicaAgentsData } from "./use-replica-runtime";
+import {
+  useReplicaAgentsData,
+  useReplicaMarketInstallations
+} from "./use-replica-runtime";
 import { createAuditAgent, isBackendRequestError } from "@/lib/api-client";
 import type { ApiAgentCategory } from "@/lib/api-types";
 import { auditClientUserId, DEFAULT_AUDIT_PROJECT_NAME } from "@/lib/audit-user";
@@ -186,21 +189,25 @@ function toApiAgentCategory(category: ReferenceAgentCategory): ApiAgentCategory 
 
 type MarketAgentInstallBlockReason =
   | "permission-denied"
+  | "install-state-loading"
   | "already-installed"
   | "install-pending";
 
 export function getMarketAgentInstallBlockReason({
   canManageAgents,
+  installStateLoading,
   isInstalled,
   inFlightIdentityKey,
   identityKey
 }: {
   readonly canManageAgents: boolean;
+  readonly installStateLoading: boolean;
   readonly isInstalled: boolean;
   readonly inFlightIdentityKey: string | null;
   readonly identityKey: string;
 }): MarketAgentInstallBlockReason | null {
   if (!canManageAgents) return "permission-denied";
+  if (installStateLoading) return "install-state-loading";
   if (isInstalled) return "already-installed";
   if (inFlightIdentityKey === identityKey) return "install-pending";
   return null;
@@ -256,6 +263,8 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const agentData = useReplicaAgentsData(mode);
+  const marketInstallations = useReplicaMarketInstallations(mode === "market");
+  const restoredInstalledAgentIds = marketInstallations.installedAgentIds;
   const sourceAgents = agentData.data.agents;
   const agentFilters = useMemo(
     () => getAgentCategoryOptions(sourceAgents, agentData.data.categories),
@@ -269,6 +278,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
 
   const isMine = mode === "mine";
   const canManageAgents = auditUser.can("manage_agents");
+  const installStateLoading = !isMine && marketInstallations.status === "loading";
   const pageCount = Math.max(1, Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
   const pageStartIndex = (safePage - 1) * AGENT_PAGE_SIZE;
@@ -280,7 +290,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       visibleAgents[0] ??
       filteredAgents[0] ??
       sourceAgents[0];
-  const installedAgentId = selectedAgent ? installedAgentIds.get(selectedAgent.id) ?? "" : "";
+  const installedAgentId = !installStateLoading && selectedAgent
+    ? installedAgentIds.get(selectedAgent.id) ?? ""
+    : "";
   const actionPanel = (isMine ? mineActionPanels : marketActionPanels)[activeAction];
   const isSelectedAgentFavorite = selectedAgent ? favoriteAgentIds.has(selectedAgent.id) : false;
 
@@ -306,6 +318,11 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     setFavoriteAgentIds(new Set());
     setNotice("");
   }, [identityKey]);
+
+  useEffect(() => {
+    if (isMine || marketInstallations.status === "loading") return;
+    setInstalledAgentIds(new Map(restoredInstalledAgentIds));
+  }, [isMine, marketInstallations.status, restoredInstalledAgentIds]);
 
   function recordAction(agent: ReferenceAgentCard, action: AgentAction) {
     setSelectedAgentId(agent.id);
@@ -344,12 +361,17 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   async function installMarketAgent(agent: ReferenceAgentCard) {
     const blockReason = getMarketAgentInstallBlockReason({
       canManageAgents,
+      installStateLoading,
       isInstalled: installedAgentIds.has(agent.id),
       inFlightIdentityKey: installInFlightRef.current,
       identityKey
     });
     if (blockReason === "permission-denied") {
       setNotice("安装未完成：当前身份无权安装智能体。");
+      return;
+    }
+    if (blockReason === "install-state-loading") {
+      setNotice("正在读取当前身份的已安装状态，请稍后重试。");
       return;
     }
     if (blockReason !== null) return;
@@ -394,12 +416,16 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       });
       if (requestGeneration !== identityGenerationRef.current.generation) return;
       setInstalledAgentIds((previous) => new Map(previous).set(agent.id, response.item.id));
-      setNotice(`已安装「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
+      setNotice(`${response.reactivated ? "已恢复" : "已安装"}「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
     } catch (error) {
       if (requestGeneration !== identityGenerationRef.current.generation) return;
+      const backendError = isBackendRequestError(error) ? error : null;
       setNotice(
-        isBackendRequestError(error) && error.status === 403
+        backendError?.status === 403
           ? "安装未完成：当前身份无权安装智能体。"
+          : backendError?.status === 409 &&
+            backendError.detail === "multiple market agent installations already exist"
+          ? "安装未完成：检测到多个历史安装记录，请联系管理员处理。"
           : "安装未完成：智能体创建接口暂不可用，请稍后重试。"
       );
     } finally {
@@ -431,7 +457,12 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            disabled={!isMine && (!canManageAgents || installingAgentId.length > 0 || installedAgentId.length > 0)}
+            disabled={!isMine && (
+              !canManageAgents ||
+              installStateLoading ||
+              installingAgentId.length > 0 ||
+              installedAgentId.length > 0
+            )}
             onClick={() => {
               if (isMine || !selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
@@ -445,6 +476,8 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           >
             {isMine
               ? "+ 创建智能体"
+              : installStateLoading
+                ? "安装状态读取中"
               : installedAgentId
                 ? "已安装"
               : installingAgentId.length > 0
@@ -456,6 +489,14 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
 
       {!isMine && !canManageAgents ? (
         <ReplicaNotice>当前角色无智能体安装权限</ReplicaNotice>
+      ) : null}
+
+      {!isMine && marketInstallations.status === "error" ? (
+        <ReplicaNotice>已安装状态读取失败；再次安装仍由服务端幂等保护。</ReplicaNotice>
+      ) : null}
+
+      {!isMine && marketInstallations.status === "degraded" ? (
+        <ReplicaNotice>已安装状态不完整；再次安装仍由服务端幂等保护。</ReplicaNotice>
       ) : null}
 
       <section className="replica-panel">
@@ -697,11 +738,18 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
             <div className="replica-agent-detail-actions is-dialog-actions">
               <button
                 type="button"
-                disabled={!canManageAgents || installingAgentId.length > 0 || installedAgentId.length > 0}
+                disabled={
+                  !canManageAgents ||
+                  installStateLoading ||
+                  installingAgentId.length > 0 ||
+                  installedAgentId.length > 0
+                }
                 aria-label={installedAgentId ? `已安装：${selectedAgent.name}` : `加入我的智能体：${selectedAgent.name}`}
                 onClick={() => void installMarketAgent(selectedAgent)}
               >
-                {installedAgentId
+                {installStateLoading
+                  ? "安装状态读取中"
+                  : installedAgentId
                   ? "已安装"
                   : installingAgentId.length > 0
                   ? installingAgentId === selectedAgent.id ? "安装中" : "其他模板安装中"
