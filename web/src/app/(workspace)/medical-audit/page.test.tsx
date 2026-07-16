@@ -327,7 +327,10 @@ describe("MedicalAuditPage", () => {
     expect(fetchProjectsMock).toHaveBeenCalled();
     expect(fetchProjectDashboardMock).toHaveBeenCalledWith("SELF-CHECK-FUND-20260607");
     expect(fetchReportWorkbenchMock).toHaveBeenCalled();
-    expect(screen.getByText(/SqlAlchemyAuditFindingStore/)).toBeInTheDocument();
+    expect(screen.getByText("疑点数据已同步")).toBeInTheDocument();
+    expect(screen.getByText("知识库分类已同步")).toBeInTheDocument();
+    expect(screen.getByText("底稿与报告数据已同步")).toBeInTheDocument();
+    expect(screen.queryByText(/SqlAlchemyAuditFindingStore/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
     expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
     expect(screen.getByText("张主任")).toBeInTheDocument();
@@ -352,6 +355,8 @@ describe("MedicalAuditPage", () => {
 
     expect(await screen.findByText("疑点接口读取异常")).toBeInTheDocument();
     expect(screen.getByText("请检查审计数据服务后重试；当前不会注入本地样例数据。")).toBeInTheDocument();
+    expect(screen.getByText("疑点数据暂未同步")).toBeInTheDocument();
+    expect(screen.queryByText("读取 /api/v1/audit-findings")).not.toBeInTheDocument();
     const diagnostics = screen.getByText("查看技术诊断").closest("details");
     expect(diagnostics).not.toBeNull();
     expect(diagnostics).toHaveTextContent(

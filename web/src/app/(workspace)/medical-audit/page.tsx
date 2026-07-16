@@ -1184,9 +1184,14 @@ function MetricCards({
       label: "生产疑点总数",
       value: metricValueFromState(auditState, (data) => data.stats.total),
       tone: "blue",
-      change: readinessStatusLabels[readiness?.status ?? ""] ?? readiness?.status ?? "等待接口",
+      change: readinessStatusLabels[readiness?.status ?? ""] ?? readiness?.status ?? "等待同步",
       changeTone: readiness?.ready ? "down" : "up",
-      sub: auditData ? `后端：${auditData.store.backend}` : "读取 /api/v1/audit-findings"
+      sub:
+        auditState.status === "ready"
+          ? "疑点数据已同步"
+          : auditState.status === "loading"
+            ? "正在同步疑点数据"
+            : "疑点数据暂未同步"
     },
     {
       label: "待处理疑点",
@@ -1202,7 +1207,12 @@ function MetricCards({
       tone: "green",
       change: sourceData?.search_backend.ready ? "检索后端可用" : "检索后端待确认",
       changeTone: sourceData?.search_backend.ready ? "down" : "up",
-      sub: sourceData ? `后端：${sourceData.search_backend.backend}` : "读取知识库分类"
+      sub:
+        sourceState.status === "ready"
+          ? "知识库分类已同步"
+          : sourceState.status === "loading"
+            ? "正在同步知识库分类"
+            : "知识库分类暂未同步"
     },
     {
       label: "报告工作台",
@@ -1210,7 +1220,12 @@ function MetricCards({
       tone: "green",
       change: reportState.status === "ready" ? `${reportState.data.metrics.included_finding_count} 条疑点已纳入` : "读取中",
       changeTone: "down",
-      sub: reportState.status === "ready" ? `后端：${reportState.data.store.backend}` : "读取报告模板与底稿"
+      sub:
+        reportState.status === "ready"
+          ? "底稿与报告数据已同步"
+          : reportState.status === "loading"
+            ? "正在同步底稿与报告"
+            : "底稿与报告暂未同步"
     }
   ];
   return (
