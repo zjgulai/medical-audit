@@ -1586,21 +1586,15 @@ uv run python scripts/run-production-e2e-smoke.py \
 
 ### 7.6.1 生产前端语义验收
 
-静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行只读前端语义验收：
+静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行完整前端语义验收。该流程的鉴权拒绝探针会写入审计日志，因此生产副作用边界是 `audit-log-only`，并非只读：
 
 ```bash
+MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1 \
+MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all \
 pnpm production:frontend-acceptance -- \
   --base-url https://audit.lute-tlz-dddd.top \
-  --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
-  --admin-role it-admin
-```
-
-标准复用模板：
-
-```bash
-pnpm production:frontend-acceptance -- \
-  --base-url https://audit.lute-tlz-dddd.top \
+  --allow-audit-log-writes \
+  --confirm-production-write audit.lute-tlz-dddd.top \
   --output tmp/outputs/production-frontend-acceptance-latest.json \
   --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
   --admin-role it-admin
@@ -1608,11 +1602,13 @@ pnpm production:frontend-acceptance -- \
 
 该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。
 
+以上是唯一标准命令。`MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1` 与 `MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all` 必须同时设置；验收门禁要求每个独立页面、每个规定视口都有有效 PNG 截图，不得用 `issues` 或关闭截图降级标准验收。
+
 该脚本新增以下 API 鉴权闭环：
 
 - `/audit/logs` 和 `/audit/logs/export`：无授权/缺少租户上下文期望 `401/403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
 - 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=401/403`、`allowed_status=200`。
-- 无需提交业务数据；脚本只读。
+- 不执行 schema、provider/query、review、项目创建或对象存储写入；允许的唯一写入类型是上述鉴权探针产生的审计日志，并且必须同时传入 `--allow-audit-log-writes` 与精确生产主机确认参数。
 
 ### 7.7 增量更新 dry-run 演练
 
@@ -1818,7 +1814,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
-- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=401/403` 且 `allowed_status=200`。
+- 生产前端语义验收按 §7.6.1 的唯一标准命令执行并返回 `status=pass`，P0/P1 均为 `0`；`summary.screenshot_capture=true`、`summary.screenshot_policy=all`，每个独立页面与规定视口均有有效 PNG；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=401/403` 且 `allowed_status=200`。
 - `/documents` 个人上传链路必须证明 DB 行、宿主机留存文件 `sha256`、本人可读、其他普通审计员不可读和管理员可读全部上传同时成立；个人上传未入索引时必须明确显示 `index_status=not-indexed`。
 - 索引管理写接口拒绝审计必须证明普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，且持久化审计日志中可按 `action=index-admin-access-denied` 与 `user_identifier` 查到对应事件。
 - 固定 smoke question 返回至少 1 条引用。
