@@ -21,6 +21,7 @@ const DEFAULT_TENANT_ID = "hospital-demo";
 const DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
 const AUDIT_AUTH_STORAGE_KEY = "medical-audit-authenticated";
 const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
+const FLOATING_LAYOUT_POSITIONS = Object.freeze(["fixed", "absolute", "sticky"]);
 const DEFAULT_AUDIT_ROLE = "admin";
 const RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1";
 const RELEASE_GUARD_FORMAT = "medical-audit-production-release-guard-v1";
@@ -834,6 +835,19 @@ function sanitizeOverflowOffenders(items) {
   }));
 }
 
+function sanitizeFloatingControlOcclusions(items) {
+  return items.map((item) => ({
+    floating: {
+      tag: item.floating.tag,
+      rect: item.floating.rect,
+    },
+    covered: {
+      tag: item.covered.tag,
+      rect: item.covered.rect,
+    },
+  }));
+}
+
 function resolveRepoPath(value) {
   return path.isAbsolute(value) ? value : path.join(repoRoot, value);
 }
@@ -890,10 +904,14 @@ function readBooleanEnv(name) {
   return ["1", "true", "yes"].includes((process.env[name] ?? "").trim().toLowerCase());
 }
 
+function isFloatingLayoutPosition(position) {
+  return FLOATING_LAYOUT_POSITIONS.includes(position);
+}
+
 async function snapshot(page) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await page.evaluate(() => {
+      return await page.evaluate((floatingLayoutPositions) => {
         const isVisible = (element) => {
           const style = window.getComputedStyle(element);
           const rect = element.getBoundingClientRect();
@@ -934,8 +952,10 @@ async function snapshot(page) {
           }
           return parts.join(" > ");
         };
-        const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
-          .filter(isVisible)
+        const interactiveElements = Array.from(
+          document.querySelectorAll("input, textarea, select, button, a, [role='button'], [role='tab']"),
+        ).filter(isVisible);
+        const controlText = interactiveElements
           .map((element) =>
             [
               element.textContent,
@@ -950,6 +970,26 @@ async function snapshot(page) {
           .filter(Boolean);
         const root = document.documentElement;
         const clientWidth = root.clientWidth;
+        const layoutDescriptor = (element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tag: element.tagName.toLowerCase(),
+            id: element.getAttribute("id") ?? "",
+            className: elementClassName(element).slice(0, 160),
+            role: element.getAttribute("role") ?? "",
+            ariaLabel: element.getAttribute("aria-label") ?? "",
+            selector: selectorPath(element),
+            text: compact(element.textContent ?? "").slice(0, 160),
+            rect: {
+              left: Math.round(rect.left),
+              right: Math.round(rect.right),
+              top: Math.round(rect.top),
+              bottom: Math.round(rect.bottom),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          };
+        };
         const overflowOffenders = Array.from(document.querySelectorAll("body *"))
           .filter((element) => element !== document.body && element !== document.documentElement && isVisible(element))
           .map((element) => {
@@ -960,23 +1000,44 @@ async function snapshot(page) {
             if (!overflowsRight && !overflowsLeft && !widerThanViewport) {
               return null;
             }
-            return {
-              tag: element.tagName.toLowerCase(),
-              id: element.getAttribute("id") ?? "",
-              className: elementClassName(element).slice(0, 160),
-              role: element.getAttribute("role") ?? "",
-              ariaLabel: element.getAttribute("aria-label") ?? "",
-              selector: selectorPath(element),
-              text: compact(element.textContent ?? "").slice(0, 160),
-              rect: {
-                left: Math.round(rect.left),
-                right: Math.round(rect.right),
-                width: Math.round(rect.width),
-              },
-            };
+            return layoutDescriptor(element);
           })
           .filter(Boolean)
           .sort((left, right) => right.rect.right - left.rect.right || right.rect.width - left.rect.width)
+          .slice(0, 10);
+        const interactiveOverflowOffenders = interactiveElements
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.right <= clientWidth + 2 && rect.left >= -2) {
+              return null;
+            }
+            return layoutDescriptor(element);
+          })
+          .filter(Boolean)
+          .sort((left, right) => right.rect.right - left.rect.right)
+          .slice(0, 10);
+        const intersects = (left, right) => (
+          Math.min(left.right, right.right) - Math.max(left.left, right.left) > 4
+          && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 4
+        );
+        const routeInteractiveElements = interactiveElements.filter((element) =>
+          element.closest(".replica-page-scroll") !== null
+        );
+        const floatingControlOcclusions = Array.from(
+          document.querySelectorAll("[data-layout-floating-control]"),
+        )
+          .filter(isVisible)
+          .filter((floating) => floatingLayoutPositions.includes(window.getComputedStyle(floating).position))
+          .flatMap((floating) => {
+            const floatingRect = floating.getBoundingClientRect();
+            return routeInteractiveElements
+              .filter((covered) => covered !== floating && !floating.contains(covered))
+              .filter((covered) => intersects(floatingRect, covered.getBoundingClientRect()))
+              .map((covered) => ({
+                floating: layoutDescriptor(floating),
+                covered: layoutDescriptor(covered),
+              }));
+          })
           .slice(0, 10);
         const chromeTitleElement = Array.from(document.querySelectorAll(".replica-topbar-title")).find(isVisible);
         return {
@@ -993,8 +1054,10 @@ async function snapshot(page) {
           clientWidth,
           horizontalOverflow: root.scrollWidth > clientWidth + 2,
           overflowOffenders,
+          interactiveOverflowOffenders,
+          floatingControlOcclusions,
         };
-      });
+      }, FLOATING_LAYOUT_POSITIONS);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("Execution context was destroyed") || attempt === 3) {
@@ -1242,6 +1305,24 @@ function classify(check, routeCheck, data) {
         "P1",
         "horizontal-overflow",
         `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}; offenders ${data.overflowOffenders.length}`,
+      ),
+    );
+  }
+  if ((data.interactiveOverflowOffenders?.length ?? 0) > 0) {
+    issues.push(
+      issue(
+        "P1",
+        "interactive-control-overflow",
+        `${data.interactiveOverflowOffenders.length} interactive control(s) outside the viewport`,
+      ),
+    );
+  }
+  if ((data.floatingControlOcclusions?.length ?? 0) > 0) {
+    issues.push(
+      issue(
+        "P1",
+        "floating-control-occlusion",
+        `${data.floatingControlOcclusions.length} route control(s) covered by a floating control`,
       ),
     );
   }
@@ -1684,6 +1765,12 @@ async function run() {
             clientWidth: data.clientWidth,
             horizontalOverflow: data.horizontalOverflow,
             overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
+            interactiveOverflowOffenders: sanitizeOverflowOffenders(
+              data.interactiveOverflowOffenders,
+            ),
+            floatingControlOcclusions: sanitizeFloatingControlOcclusions(
+              data.floatingControlOcclusions,
+            ),
             consoleErrorCount: consoleErrors.length,
             failedRequestCount: failedRequests.length,
             failedRequests: failedRequests.map(sanitizeFailedRequest),
@@ -1853,6 +1940,7 @@ export {
   deriveAcceptanceUserId,
   finalPath,
   finalSearch,
+  isFloatingLayoutPosition,
   isLoginGateSnapshot,
   loadReleaseGuardEvidence,
   normalizeProductionBaseUrl,

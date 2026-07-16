@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import types
@@ -857,6 +858,49 @@ def test_ssh_capture_builds_strict_stdin_command_and_remote_readonly_collector()
     assert "medical_audit_pg" in remote_source
     assert "BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE" in remote_source
     assert "audit_agent_invocations" in remote_source
+
+
+def test_release_guard_fixture_capture_executes_under_python_310(tmp_path: Path) -> None:
+    uv = shutil.which("uv")
+    assert uv is not None, "uv is required to locate the production-compatible Python 3.10 runtime"
+    interpreter_result = subprocess.run(
+        [uv, "python", "find", "3.10"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert interpreter_result.returncode == 0, interpreter_result.stderr
+    python310 = interpreter_result.stdout.strip()
+    assert python310, "uv did not return a Python 3.10 interpreter path"
+
+    fixture = tmp_path / "python310-input.json"
+    report_path = tmp_path / "python310-report.json"
+    fixture.write_text(json.dumps(_base_fixture()), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            python310,
+            str(SCRIPT_PATH),
+            "capture",
+            "--phase",
+            "S0",
+            "--expected-deploy-sha",
+            SHA_A,
+            "--input-json",
+            str(fixture),
+            "--output",
+            str(report_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "pass"
+    assert report["phase"] == "S0"
+    assert report["generated_at"].endswith("Z")
 
 
 def test_ssh_capture_streams_local_source_without_using_remote_checkout(

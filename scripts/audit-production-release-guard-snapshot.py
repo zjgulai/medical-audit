@@ -11,7 +11,7 @@ import stat
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
@@ -32,6 +32,7 @@ DEFAULT_SSH_HOST = "101.34.52.232"
 DEFAULT_REMOTE_APP_DIR = "/opt/medical-audit/app"
 DEFAULT_REMOTE_WEB_DIR = "/var/www/audit"
 DEFAULT_POSTGRES_CONTAINER = "medical_audit_pg"
+UTC_TIMEZONE = timezone.utc  # noqa: UP017 - streamed collector must run on Python 3.10.
 
 ALLOWLISTED_TABLES = (
     "query_logs",
@@ -361,7 +362,9 @@ def _capture_snapshot(
         blocking.append("expected-deploy-sha-invalid")
     if source not in {"fixture", "ssh-live-readonly"}:
         blocking.append("capture-source-invalid")
-    generated_at_value = generated_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    generated_at_value = generated_at or datetime.now(UTC_TIMEZONE).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     if (
         re.fullmatch(
             r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",

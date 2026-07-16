@@ -2355,6 +2355,55 @@ def test_production_frontend_acceptance_rejects_unexpected_final_path() -> None:
     assert '"type":"unexpected-final-path"' in result.stdout
 
 
+def test_production_frontend_acceptance_rejects_clipped_controls_and_occluding_floats() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify } from " + json.dumps(runner_path.as_uri()) + "; "
+        "const issues = classify("
+        "{ status: 200, error: null, consoleErrors: [], failedRequests: [], "
+        "interactionErrors: [], finalUrl: 'https://audit.example.test/medical-audit' }, "
+        "{ route: '/medical-audit', expectedPath: '/medical-audit' }, "
+        "{ bodyText: 'x'.repeat(120), headings: ['医保审计'], controlText: [], "
+        "fileInputCount: 0, horizontalOverflow: false, scrollWidth: 390, "
+        "clientWidth: 390, overflowOffenders: [], "
+        "interactiveOverflowOffenders: [{ tag: 'button', "
+        "rect: { left: 586, right: 682, width: 96 } }], "
+        "floatingControlOcclusions: [{ floating: { tag: 'button' }, covered: { tag: 'a' } }] }); "
+        "console.log(JSON.stringify(issues.map((item) => item.type).sort()));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        "floating-control-occlusion",
+        "interactive-control-overflow",
+    ]
+
+
+def test_production_frontend_acceptance_only_audits_positioned_floating_markers() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { isFloatingLayoutPosition } from "
+        + json.dumps(runner_path.as_uri())
+        + "; console.log(JSON.stringify(['static', 'relative', 'absolute', 'fixed', 'sticky']"
+        ".map((value) => isFloatingLayoutPosition(value))));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [False, False, True, True, True]
+
+
 def test_production_frontend_acceptance_rejects_unexpected_final_search() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (
