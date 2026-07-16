@@ -39,11 +39,11 @@ source: human+ai
 - 每次静态发布先同步到独占的 `<approved-sha>.incoming`，在远端重新校验 `release-manifest.json`、完整文件集合、size、SHA-256 与 `source_sha` 后再原子晋升；已存在的不可变目录只有在完整复验一致时才允许复用，禁止覆盖。
 - 部署通过 owner token 持有 `$remote_app_dir.deploy.lock`。后台备份 worker 会把自己的 `BASHPID` 写入 `lock/worker.pid`，正常退出时仅按匹配 PID 清除；worker 仍存活时外层 unlock 必须失败并保留锁。
 - Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
-- commit point 是部署后 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke 全部通过后，最后原子写入 `.deploy-sha`。app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。
+- `.deploy-sha` 的原子 rename、目录 fsync 与内容读回是唯一权威 production commit point。部署前必须先通过 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke；app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。rollback transaction 的 `ready-to-commit` 只是 marker 前过程证据；只有它与 transaction `restore-sha`、当前 `.deploy-sha` 成对一致时才判定 `committed_by_marker`，不在 marker 后追加第二个 `committed` 权威写入。
 - 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
 - execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。execute 参数门禁直接拒绝 `--skip-web-build`；该参数只保留给不写生产的 preflight。快照在整个同步事务退出后销毁。
 - execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 和 mandatory production smoke 的 GET/POST requester 都拒绝跨 origin redirect，带鉴权 header 的请求不会转发到其他 origin；cache policy 按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
-- execute 禁止 `--skip-smoke` 和 `--skip-web-build`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、SSH 255、SSH 进程被 signal 终止、rsync timeout/30、background starter 任意非零、background poll 任意非零或不可解析状态，以及 activation restore 79/cleanup 85 都按远端结果未知处理。持锁阶段收到 `KeyboardInterrupt`、`SystemExit` 等非普通异常时不得自动 restore 或 unlock；必须保留生产锁并人工核对，不能自动宣称回滚或部署成功。
+- execute 禁止 `--skip-smoke` 和 `--skip-web-build`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、SSH 255、SSH 进程被 signal 终止、rsync timeout/30、background starter 任意非零、background poll 任意非零或不可解析状态，以及 activation restore 79/cleanup 85 都按远端结果未知处理。持锁阶段收到 `KeyboardInterrupt`、`SystemExit` 等非普通异常时不得自动 restore 或 unlock。任何 app rebuild 已尝试或 schema 已应用后的 marker 前失败，即使 UI/Nginx restore 成功，也必须保留生产锁；人工解锁前必须核对 marker/current、transaction SHA、实际 app 容器版本、schema 影响、Nginx/public gates，不能在 backend 新 SHA 与 UI/marker 旧 SHA 的混合态自动解锁或宣称回滚成功。
 - 首次从 legacy flat root 迁移必须显式传 `--allow-first-legacy-migration`，且仅在 `current` 和 migration sentinel 都不存在、flat `index.html` 与旧 `.deploy-sha` 均合法时放行。activation 在最终 marker 前原子创建 migration sentinel；marker 前失败恢复必须删除 sentinel。回滚到 legacy 时先删除 sentinel，若 marker 尚未尝试则失败恢复会重建 sentinel；`.deploy-sha` 始终是最后的状态提交点。
 - app/env/db/Nginx/Web 五类备份及 completion marker 必须是非 symlink regular file、非空且 mode `0600`。Nginx secret-bearing candidate 的 host/container cleanup trap 必须先于生成或 `docker cp` 安装；清理失败按 fail-closed 保留锁。正式 `nginx -t` 的 stdout/stderr 不进入部署日志，只返回通用失败信息。
 - 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
@@ -1408,7 +1408,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 5. 将 `web/out/` 同步到 `/var/www/audit/releases/<approved-sha>.incoming/`；远端 verifier 通过后原子晋升为不可变的 `releases/<approved-sha>`。禁止直接覆盖 release，禁止对 `/var/www/audit/` 做 whole-root `rsync --delete`。
 6. 先验证 Nginx 候选配置，再通过 `current.next -> releases/<approved-sha>` 原子切换静态入口；宿主机共享 Nginx 配置必须保持 inode 不变，以免破坏 bind mount。
 7. app 镜像只使用 `MEDICAL_AUDIT_DEPLOY_SHA=<approved-sha>` 构建并以 `up -d --no-deps app` 重启；PostgreSQL 与 ClamAV 容器 ID 必须保持不变。
-8. 远端 release、公网 manifest/static hash、cache policy、容器 health、正式 Nginx 配置、默认 GET-only smoke 全部通过后，最后以 `.deploy-sha.next` + fsync + `mv -T` 提交 marker。marker 提交成功后不再追加第二次 SSH completion check。
+8. 远端 release、公网 manifest/static hash、cache policy、容器 health、正式 Nginx 配置、默认 GET-only smoke 全部通过后，最后以 `.deploy-sha.next` + fsync + `mv -T` 提交 marker。marker 提交成功后不再追加第二次 SSH completion check，也不追加 rollback `committed` 状态写；transaction 状态必须与 marker 成对审计。
 
 手工同步只作为脚本失败时的排障路径。需要同步 `data/医保审核前期资料` 或 `tmp/knowledge-query-indexes/real-data-kimi-20260531` 时，先确认是否属于索引数据更新任务，不并入普通应用部署。
 

@@ -875,9 +875,11 @@ def _run_nonrollback(config: DeployConfig) -> int:
                 "manual reconciliation",
             ) from original_error
         if schema_applied or app_rebuild_attempted:
+            release_lock = False
             print(
                 "MANUAL_ROLLBACK_REQUIRED: app rebuild or schema may already be "
-                "active; .deploy-sha was not committed",
+                "active; .deploy-sha was not committed and the production lock "
+                "was retained",
                 file=sys.stderr,
             )
         raise original_error

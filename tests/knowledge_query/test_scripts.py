@@ -3228,6 +3228,49 @@ def _patch_deploy_execute_snapshot(
     )
 
 
+def _patch_deploy_locked_path(
+    monkeypatch: MonkeyPatch,
+    module: types.ModuleType,
+    config: types.SimpleNamespace,
+    events: list[str],
+) -> None:
+    _patch_deploy_execute_snapshot(monkeypatch, module, config)
+    evidence = module.ReleaseEvidence("b" * 64, 2, "_next/static/app.js", "c" * 64)
+    monkeypatch.setattr(module, "_parse_args", lambda: object())
+    monkeypatch.setattr(module, "_config_from_args", lambda _args: config)
+    monkeypatch.setattr(module, "_print_plan", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_local_state", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_locked_python_dependencies", lambda _config: None)
+    monkeypatch.setattr(module, "_build_static_frontend", lambda _config: None)
+    monkeypatch.setattr(module, "_validate_web_release", lambda _config: evidence)
+    monkeypatch.setattr(module, "_run_remote_preflight", lambda _config: None)
+    monkeypatch.setattr(
+        module,
+        "_acquire_remote_deploy_lock",
+        lambda _config: events.append("lock") or "token",
+    )
+    monkeypatch.setattr(
+        module,
+        "_release_remote_deploy_lock",
+        lambda *_args: events.append("unlock"),
+    )
+    for name in (
+        "_create_remote_backups",
+        "_cleanup_remote_sync_artifacts",
+        "_sync_application",
+        "_prepare_remote_release_incoming",
+        "_sync_static_frontend",
+        "_verify_and_promote_remote_release",
+        "_rebuild_application",
+        "_activate_remote_release",
+        "_run_remote_post_checks",
+        "_verify_remote_release_commit_point",
+        "_run_production_smoke",
+        "_write_remote_deploy_sha",
+    ):
+        monkeypatch.setattr(module, name, lambda *_args: None)
+
+
 def test_deploy_tencent_cloud_execute_requires_clean_approved_main(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -4645,7 +4688,7 @@ def test_deploy_tencent_cloud_precommit_failure_restores_activation_and_keeps_ma
     monkeypatch.setattr(module, "_run_production_smoke", lambda _config: None)
 
     assert module.main() == 2
-    assert events == ["activate", "restore", "unlock"]
+    assert events == ["activate", "restore"]
 
 
 def test_deploy_tencent_cloud_marker_commit_error_retains_lock_without_restore(
@@ -4874,9 +4917,13 @@ def test_deploy_tencent_cloud_activation_precondition_failure_does_not_restore_o
         "_prepare_remote_release_incoming",
         "_sync_static_frontend",
         "_verify_and_promote_remote_release",
-        "_rebuild_application",
     ):
         monkeypatch.setattr(module, name, lambda *_args: None)
+    monkeypatch.setattr(
+        module,
+        "_rebuild_application",
+        lambda *_args: events.append("rebuild"),
+    )
     monkeypatch.setattr(
         module,
         "_activate_remote_release",
@@ -4892,7 +4939,112 @@ def test_deploy_tencent_cloud_activation_precondition_failure_does_not_restore_o
     )
 
     assert module.main() == 77
-    assert events == ["lock", "activate", "unlock"]
+    assert events == ["lock", "rebuild", "activate"]
+
+
+def test_deploy_tencent_cloud_rebuild_failure_retains_lock(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_rebuild_failure_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=False,
+        skip_web_build=False,
+    )
+    events: list[str] = []
+    _patch_deploy_locked_path(monkeypatch, module, config, events)
+    monkeypatch.setattr(
+        module,
+        "_rebuild_application",
+        lambda *_args: (
+            events.append("rebuild")
+            or (_ for _ in ()).throw(module.DeployError("rebuild failed"))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("restore"),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "rebuild"]
+
+
+def test_deploy_tencent_cloud_schema_side_effect_retains_lock_on_later_failure(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_schema_side_effect_lock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=True,
+        approved_sha="a" * 40,
+        skip_app_rebuild=True,
+        skip_web_build=False,
+    )
+    events: list[str] = []
+    _patch_deploy_locked_path(monkeypatch, module, config, events)
+    monkeypatch.setattr(
+        module,
+        "_apply_schema",
+        lambda *_args: events.append("schema"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_activate_remote_release",
+        lambda *_args: (
+            events.append("activate")
+            or (_ for _ in ()).throw(module.DeployError("activation precondition failed"))
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_restore_remote_activation",
+        lambda *_args: events.append("restore"),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "schema", "activate"]
+
+
+def test_deploy_tencent_cloud_early_determinate_failure_still_unlocks(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_early_failure_unlock",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        execute=True,
+        rollback=False,
+        apply_schema=False,
+        approved_sha="a" * 40,
+        skip_app_rebuild=True,
+        skip_web_build=False,
+    )
+    events: list[str] = []
+    _patch_deploy_locked_path(monkeypatch, module, config, events)
+    monkeypatch.setattr(
+        module,
+        "_create_remote_backups",
+        lambda *_args: (
+            events.append("early-failure")
+            or (_ for _ in ()).throw(module.DeployError("backup precondition failed"))
+        ),
+    )
+
+    assert module.main() == 2
+    assert events == ["lock", "early-failure", "unlock"]
 
 
 @pytest.mark.parametrize(
