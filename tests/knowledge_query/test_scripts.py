@@ -6315,6 +6315,24 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
         valid = subprocess.run(command, check=False, capture_output=True, text=True)
         assert valid.returncode == 0, valid.stderr
 
+        Handler.html_cache = "private, no-cache, must-revalidate"
+        bare_no_cache = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert bare_no_cache.returncode == 0, bare_no_cache.stderr
+
+        Handler.html_cache = "no-store, must-revalidate"
+        bare_no_store = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert bare_no_store.returncode == 0, bare_no_store.stderr
+
         Handler.static_cache = "public, max-age=60"
         bad_cache = subprocess.run(command, check=False, capture_output=True, text=True)
         assert bad_cache.returncode != 0
@@ -6357,6 +6375,101 @@ def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_and_hash_dri
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+@pytest.mark.parametrize(
+    ("html_cache", "static_cache"),
+    [
+        (
+            "private, no-cache=disabled",
+            "public, max-age=31536000, immutable",
+        ),
+        (
+            "private, no-store=disabled",
+            "public, max-age=31536000, immutable",
+        ),
+        (
+            "no-store, must-revalidate",
+            "public, max-age=31536000, immutable=disabled",
+        ),
+        (
+            "no-store, must-revalidate",
+            "public, immutable",
+        ),
+        (
+            "no-store, must-revalidate",
+            "public, max-age=invalid, immutable",
+        ),
+        (
+            "no-store, must-revalidate",
+            "public, max-age=60, immutable",
+        ),
+    ],
+    ids=(
+        "valued-no-cache",
+        "valued-no-store",
+        "valued-immutable",
+        "missing-max-age",
+        "invalid-max-age",
+        "short-max-age",
+    ),
+)
+def test_deploy_tencent_cloud_public_release_verifier_rejects_cache_directive_mutations(
+    html_cache: str,
+    static_cache: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_public_cache_mutation_{hash((html_cache, static_cache))}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    verifier_builder = getattr(module, "_public_release_verifier_code", None)
+    assert verifier_builder is not None
+    manifest = b'{"release":"verified"}\n'
+    static = b"static-release-bytes"
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path == "/release-manifest.json":
+                body = manifest
+                cache = "no-store"
+            elif self.path == "/_next/static/app.js":
+                body = static
+                cache = static_cache
+            else:
+                body = b"<html>release</html>"
+                cache = html_cache
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", cache)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        command = [
+            sys.executable,
+            "-c",
+            verifier_builder(),
+            f"http://127.0.0.1:{server.server_port}",
+            "_next/static/app.js",
+            hashlib.sha256(manifest).hexdigest(),
+            hashlib.sha256(static).hexdigest(),
+        ]
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert result.returncode != 0, (
+        f"cache mutation unexpectedly passed: html={html_cache!r}, "
+        f"static={static_cache!r}"
+    )
 
 
 def test_deploy_tencent_cloud_deploy_marker_is_atomic_and_uses_approved_sha(

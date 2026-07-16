@@ -657,13 +657,31 @@ class SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def cache_directives(values):
-    result = set()
+    result = {}
     for value in values:
         for part in value.split(","):
-            name = part.split("=", 1)[0].strip().lower()
+            name, separator, raw_value = part.strip().lower().partition("=")
+            name = name.strip()
             if name:
-                result.add(name)
+                directive_value = raw_value.strip() if separator else None
+                result.setdefault(name, set()).add(directive_value)
     return result
+
+
+def html_cache_valid(directives):
+    relevant = [
+        directives[name]
+        for name in ("no-store", "no-cache")
+        if name in directives
+    ]
+    return bool(relevant) and all(values == {None} for values in relevant)
+
+
+def static_cache_valid(directives):
+    return (
+        directives.get("immutable") == {None}
+        and directives.get("max-age") == {"31536000"}
+    )
 
 
 def fetch(url, expected_origin):
@@ -713,13 +731,13 @@ def verify():
     if hashlib.sha256(manifest).hexdigest() != expected_manifest_sha:
         raise RuntimeError("public manifest mismatch")
     _html, html_cache = fetch(base_url + "/", expected_origin)
-    if html_cache.isdisjoint({"no-store", "no-cache"}):
+    if not html_cache_valid(html_cache):
         raise RuntimeError("html cache mismatch")
     quoted_static = urllib.parse.quote(static_path, safe="/-._~")
     static, static_cache = fetch(base_url + "/" + quoted_static, expected_origin)
     if hashlib.sha256(static).hexdigest() != expected_static_sha:
         raise RuntimeError("public static mismatch")
-    if "immutable" not in static_cache:
+    if not static_cache_valid(static_cache):
         raise RuntimeError("static cache mismatch")
 
 
