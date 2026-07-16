@@ -390,8 +390,7 @@ test("workspace keeps its redirect while compatibility routes render current pro
   const redirects = [
     { from: "/workspace", to: /\/chat$/ },
     { from: "/knowledge-query", to: /\/documents$/ },
-    { from: "/findings", to: /\/medical-audit$/ },
-    { from: "/remediation", to: /\/medical-audit$/ }
+    { from: "/findings", to: /\/medical-audit$/ }
   ] as const;
 
   for (const redirect of redirects) {
@@ -402,8 +401,9 @@ test("workspace keeps its redirect while compatibility routes render current pro
   const compatibilityPages = [
     { href: "/fund-compliance", heading: "医保基金使用合规", text: "医保审计" },
     { href: "/fund-compliance/review", heading: "医保基金复核表单", text: "费用汇总表" },
-    { href: "/archive", heading: "项目档案归档", text: "归档包" },
-    { href: "/guided-check", heading: "引导式核查", text: "核查步骤" }
+    { href: "/archive", heading: "归档工作台", text: "归档包" },
+    { href: "/guided-check", heading: "引导式核查", text: "核查步骤" },
+    { href: "/remediation", heading: "整改工作台", text: "整改事项、补证请求、关闭门禁" }
   ] as const;
 
   for (const route of compatibilityPages) {

@@ -119,8 +119,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     const redirects = [
       { from: "/workspace", to: /\/chat$/ },
       { from: "/knowledge-query", to: /\/documents$/ },
-      { from: "/findings", to: /\/medical-audit$/ },
-      { from: "/remediation", to: /\/medical-audit$/ }
+      { from: "/findings", to: /\/medical-audit$/ }
     ] as const;
 
     for (const redirect of redirects) {
@@ -132,8 +131,9 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     const compatibilityPages = [
       { route: "/fund-compliance", heading: "医保基金使用合规", marker: "医保审计" },
       { route: "/fund-compliance/review", heading: "医保基金复核表单", marker: "费用汇总表" },
-      { route: "/archive", heading: "项目档案归档", marker: "归档包" },
-      { route: "/guided-check", heading: "引导式核查", marker: "核查步骤" }
+      { route: "/archive", heading: "归档工作台", marker: "归档包" },
+      { route: "/guided-check", heading: "引导式核查", marker: "核查步骤" },
+      { route: "/remediation", heading: "整改工作台", marker: "整改事项、补证请求、关闭门禁" }
     ] as const;
 
     for (const compatibilityPage of compatibilityPages) {
