@@ -332,6 +332,10 @@ describe("MedicalAuditPage", () => {
     expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
     expect(screen.getByText("张主任")).toBeInTheDocument();
     expect(screen.getByText("医保法规库")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开医保审计助手" })).toHaveAttribute(
+      "data-layout-floating-control",
+      "medical-ai"
+    );
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
   });

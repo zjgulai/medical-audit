@@ -20,6 +20,48 @@ type ArchiveState =
   | { readonly status: "empty"; readonly data: ArchiveWorkbenchResponse }
   | { readonly status: "error"; readonly data: null };
 
+const archiveStatusLabels: Readonly<Record<string, string>> = {
+  active: "使用中",
+  archived: "已归档",
+  blocked: "存在阻断",
+  complete: "已完成",
+  completed: "已完成",
+  failed: "未通过",
+  pass: "通过",
+  passed: "通过",
+  pending: "待处理",
+  ready: "已就绪",
+  success: "成功",
+  "audit-log-only": "仅记录审计日志",
+  "production-readonly-api": "生产只读证据"
+};
+
+const archiveOwnerLabels: Readonly<Record<string, string>> = {
+  "department-head": "部门负责人",
+  "it-admin": "系统管理员",
+  admin: "管理员",
+  auditor: "审计人员"
+};
+
+function archiveStatusLabel(value: string): string {
+  return archiveStatusLabels[value.trim().toLowerCase()] ?? value;
+}
+
+function archiveOwnerLabel(value: string): string {
+  return value
+    .split(/\s*[/,]\s*/)
+    .filter(Boolean)
+    .map((item) => archiveOwnerLabels[item.toLowerCase()] ?? item)
+    .join("、");
+}
+
+function archivePolicyValue(value: string): string {
+  const days = /^(\d+)\s*days?$/i.exec(value.trim());
+  if (days) return `${days[1]} 天`;
+  if (value.trim().toLowerCase() === "response-only") return "仅保留响应记录";
+  return archiveStatusLabel(value);
+}
+
 function ArchiveMetrics({ metrics }: { readonly metrics: ArchiveWorkbenchResponse["metrics"] }) {
   const items = [
     ["归档包", metrics.package_count, "blue"],
@@ -64,7 +106,7 @@ export function ReplicaArchiveWorkbench() {
   const hasSeedData = data?.store.backend === "ReadonlyArchiveWorkbenchSeed";
 
   return (
-    <main className="replica-page replica-page-standard" data-replica-source="api" data-replica-status={state.status}>
+    <main className="replica-page replica-page-standard replica-archive-workbench" data-replica-source="api" data-replica-status={state.status}>
       <ReplicaPageHeader
         kicker="审计归档"
         title="归档工作台"
@@ -80,7 +122,17 @@ export function ReplicaArchiveWorkbench() {
         <>
           <ArchiveMetrics metrics={data.metrics} />
           <ReplicaNotice>
-            {data.archive_title} · 数据后端：<strong>{data.store.backend}</strong> · store.ready={String(data.store.ready)} · latest_archive_run_status=<strong>{data.metrics.latest_archive_run_status}</strong> · evidence_grade=<strong>{data.evidence_grade}</strong> · production_side_effect=<strong>{data.production_side_effect}</strong>
+            {data.archive_title} · 当前为{archiveStatusLabel(data.evidence_grade)}，最近一次完整性检查
+            <strong>{archiveStatusLabel(data.metrics.latest_archive_run_status)}</strong>。本页只读展示，不执行归档或导出写入。
+            <details className="replica-runtime-diagnostics">
+              <summary>查看运行诊断</summary>
+              <ul>
+                <li>数据后端：<code>{data.store.backend}</code></li>
+                <li>存储状态：<code>store.ready={String(data.store.ready)}</code></li>
+                <li>证据等级：<code>{data.evidence_grade}</code></li>
+                <li>生产副作用：<code>{data.production_side_effect}</code></li>
+              </ul>
+            </details>
           </ReplicaNotice>
 
           {state.status === "empty" ? (
@@ -95,11 +147,17 @@ export function ReplicaArchiveWorkbench() {
             <div className="replica-record-list">
               {data.archive_packages.map((item) => (
                 <article key={item.id}>
-                  <div><h3>{item.id}</h3><p>{item.projectName} · {item.archiveNo} · {item.reportNo}</p><small>{item.archiveScope} · 保留至 {item.retainedUntil}</small></div>
-                  <span>{item.owner}</span>
-                  <strong>{item.status}</strong>
-                  <Link href={item.href}>查看只读归档</Link>
-                  <Link href={item.logHref}>查看审计日志</Link>
+                  <div><h3>{item.projectName}</h3><p>归档编号：{item.archiveNo} · 报告编号：{item.reportNo}</p><small>{item.archiveScope} · 保留至 {item.retainedUntil}</small></div>
+                  <span>{archiveOwnerLabel(item.owner)}</span>
+                  <strong>{archiveStatusLabel(item.status)}</strong>
+                  <div className="replica-record-actions">
+                    <Link href={item.href}>查看只读归档</Link>
+                    <Link href={item.logHref}>查看审计日志</Link>
+                  </div>
+                  <details className="replica-runtime-diagnostics">
+                    <summary>查看归档标识</summary>
+                    <code>{item.id}</code>
+                  </details>
                 </article>
               ))}
             </div>
@@ -113,9 +171,13 @@ export function ReplicaArchiveWorkbench() {
             <div className="replica-record-list">
               {data.audit_runs.map((item) => (
                 <article key={item.id}>
-                  <div><h3>{item.title}</h3><p>{item.detail}</p><small>{item.time} · {item.archiveRoot}</small></div>
+                  <div><h3>{item.title}</h3><p>{item.detail}</p><small>{item.time}</small></div>
                   <span>{item.manifestCount} 清单 · {item.failedCount} 失败</span>
-                  <strong>{item.status}</strong>
+                  <strong>{archiveStatusLabel(item.status)}</strong>
+                  <details className="replica-runtime-diagnostics">
+                    <summary>查看存储诊断</summary>
+                    <code>{item.archiveRoot}</code>
+                  </details>
                 </article>
               ))}
             </div>
@@ -129,8 +191,12 @@ export function ReplicaArchiveWorkbench() {
             <div className="replica-record-list">
               {data.signature_items.map((item) => (
                 <article key={item.id}>
-                  <div><h3>{item.label}</h3><p>{item.detail}</p><small>{item.sha256}</small></div>
-                  <strong>{item.status}</strong>
+                  <div><h3>{item.label}</h3><p>{item.detail}</p></div>
+                  <strong>{archiveStatusLabel(item.status)}</strong>
+                  <details className="replica-runtime-diagnostics">
+                    <summary>查看签名摘要</summary>
+                    <code>{item.sha256}</code>
+                  </details>
                 </article>
               ))}
             </div>
@@ -145,7 +211,7 @@ export function ReplicaArchiveWorkbench() {
               {data.policy_items.map((item) => (
                 <article key={item.id}>
                   <div><h3>{item.label}</h3><p>{item.detail}</p></div>
-                  <strong>{item.value}</strong>
+                  <strong>{archivePolicyValue(item.value)}</strong>
                 </article>
               ))}
             </div>
@@ -160,7 +226,7 @@ export function ReplicaArchiveWorkbench() {
               {data.timeline.map((item) => (
                 <article key={item.id}>
                   <div><h3>{item.title}</h3><p>{item.detail}</p><small>{item.time}</small></div>
-                  <strong>{item.status}</strong>
+                  <strong>{archiveStatusLabel(item.status)}</strong>
                 </article>
               ))}
             </div>

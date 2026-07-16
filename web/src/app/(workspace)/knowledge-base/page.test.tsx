@@ -148,6 +148,52 @@ describe("KnowledgeBasePage", () => {
     expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
     expect(screen.getAllByText("120").length).toBeGreaterThan(0);
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-knowledge-release-scope",
+      "core-5"
+    );
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-coverage-status",
+      "core-incomplete"
+    );
+    expect(screen.getByText(/已装载 1 \/ 1 个注册集合/)).toBeInTheDocument();
+  });
+
+  it("labels five populated collections as core-ready without claiming full registry coverage", () => {
+    const ready = makeMetricsReadyRuntime();
+    const sourceIds = [
+      "medical-insurance-laws",
+      "supervision-rules-knowledge",
+      "medical-insurance-catalog",
+      "risk-negative-list",
+      "personal-materials"
+    ] as const;
+    runtimeMock.current = {
+      ...ready,
+      data: {
+        ...ready.data,
+        knowledgeBases: sourceIds.map((sourceId, index) => ({
+          ...ready.data.knowledgeBases[0]!,
+          id: `kb-${sourceId}`,
+          name: `核心知识集合 ${index + 1}`,
+          documentCount: index + 1,
+          chunkCount: (index + 1) * 10
+        })),
+        summary: {
+          ...ready.data.summary!,
+          sourceCollectionCount: 25,
+          queryableCollectionCount: 5
+        }
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    const coverage = screen.getByLabelText("知识库发布覆盖");
+    expect(coverage).toHaveAttribute("data-coverage-status", "core-ready");
+    expect(within(coverage).getByText(/已装载 5 \/ 25 个注册集合/)).toBeInTheDocument();
+    expect(within(coverage).getByText(/本次仅承诺核心范围/)).toBeInTheDocument();
+    expect(within(coverage).queryByText(/全量可用/)).not.toBeInTheDocument();
   });
 
   it("keeps registry cards while marking every unavailable metric as pending sync", () => {
@@ -197,6 +243,10 @@ describe("KnowledgeBasePage", () => {
     expect(within(card as HTMLElement).queryByText(/^0$/)).not.toBeInTheDocument();
     expect(within(card as HTMLElement).queryByText("0 个片段")).not.toBeInTheDocument();
     expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-coverage-status",
+      "unknown"
+    );
   });
 
   it("does not present a partial category sum when any item metric is unavailable", () => {

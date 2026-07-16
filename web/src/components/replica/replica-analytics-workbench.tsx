@@ -109,8 +109,12 @@ export function ReplicaAnalyticsWorkbench() {
         </div>
         <p className="replica-analytics-boundary">
           上传是受控写入；只有 analytics store ready 时才保留历史。当前分析不调用外部模型，
-          <code>provider_call=false</code>。选择文件只记录待提交项，不代表已经上传。
+          选择文件只记录待提交项，不代表已经上传。
         </p>
+        <details className="replica-runtime-diagnostics">
+          <summary>查看处理边界</summary>
+          <code>provider_call=false</code>
+        </details>
         <label className="replica-analytics-file-field">
           <span>选择分析表格</span>
           <input

@@ -98,9 +98,37 @@ describe("ReplicaArchiveWorkbench", () => {
 
     render(<ReplicaArchiveWorkbench />);
 
-    expect(await screen.findByText("archive-package-001")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "医保基金专项审计" })).toBeInTheDocument();
     expect(screen.getByText("验签通过")).toBeInTheDocument();
     expect(screen.getByText("SqlAlchemyArchiveWorkbenchStore")).toBeInTheDocument();
+    expect(screen.getByText("archive-package-001").closest("details")).not.toBeNull();
+  });
+
+  it("keeps technical production values in diagnostics and presents readable labels", async () => {
+    fetchArchiveWorkbenchMock.mockResolvedValue({
+      ...archiveResponse,
+      archive_packages: [{
+        ...archiveResponse.archive_packages[0]!,
+        owner: "it-admin / department-head"
+      }],
+      audit_runs: [{
+        ...archiveResponse.audit_runs[0]!,
+        archiveRoot: "audit-log-events/YYYY/MM/DD/<batch-key>.jsonl"
+      }],
+      policy_items: [{
+        ...archiveResponse.policy_items[0]!,
+        value: "180 days",
+        detail: "response-only"
+      }]
+    });
+
+    render(<ReplicaArchiveWorkbench />);
+
+    expect(await screen.findByText("系统管理员、部门负责人")).toBeInTheDocument();
+    expect(screen.getByText("180 天")).toBeInTheDocument();
+    expect(screen.getByText("audit-log-events/YYYY/MM/DD/<batch-key>.jsonl").closest("details")).not.toBeNull();
+    expect(screen.getByText(/当前为生产只读证据/)).toBeInTheDocument();
+    expect(screen.getByText("production-readonly-api").closest("details")).not.toBeNull();
   });
 
   it("does not expose zero metrics or retired fixtures while the initial read is pending", () => {

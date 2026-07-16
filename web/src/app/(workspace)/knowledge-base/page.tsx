@@ -72,6 +72,11 @@ const productCategoryMeta: readonly Omit<ProductKnowledgeCategory, "items">[] = 
 ];
 
 const allCategory = "all" as const;
+const releaseKnowledgeScope = {
+  id: "core-5",
+  label: "核心 5 个知识集合",
+  minimumPopulatedCollections: 5
+} as const;
 const knowledgeBaseSourceCollectionMap: Record<string, readonly SourceCollection[]> = {
   "kb-personal": ["personal-materials"],
   "kb-public-policy": [
@@ -180,6 +185,18 @@ function sourceCollectionsFromKnowledgeBases(items: readonly ReplicaKnowledgeBas
   );
 }
 
+function populatedKnowledgeBaseCount(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
+  if (
+    items.length === 0
+    || items.some((item) => documentCountForItem(item) === null || chunkCountForItem(item) === null)
+  ) {
+    return null;
+  }
+  return items.filter((item) => (
+    (documentCountForItem(item) ?? 0) > 0 || (chunkCountForItem(item) ?? 0) > 0
+  )).length;
+}
+
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<ProductKnowledgeCategoryId>(allCategory);
@@ -203,6 +220,16 @@ export default function KnowledgeBasePage() {
     (knowledgeBaseData.source === "fixture"
       ? knowledgeBaseData.data.currentSearchEmbeddingCount ?? sumChunks(knowledgeBases)
       : null);
+  const registeredKnowledgeBaseCount = knowledgeBaseData.data.summary?.sourceCollectionCount
+    ?? (knowledgeBases.length > 0 ? knowledgeBases.length : null);
+  const populatedCount = knowledgeBaseData.data.metricsSource === "knowledge-base-catalog"
+    ? populatedKnowledgeBaseCount(knowledgeBases)
+    : null;
+  const releaseCoverageStatus = populatedCount === null || registeredKnowledgeBaseCount === null
+    ? "unknown"
+    : populatedCount >= releaseKnowledgeScope.minimumPopulatedCollections
+      ? "core-ready"
+      : "core-incomplete";
   const selectedKnowledgeBase =
     knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ??
     activeItems[0] ??
@@ -257,9 +284,11 @@ export default function KnowledgeBasePage() {
 
       <section className="replica-kb-summary-band" aria-label="知识库数据口径">
         <article>
-          <span>一级分类</span>
-          <strong>{productCategories.length}</strong>
-          <p>5 类公共知识库 + 我的知识库</p>
+          <span>装载覆盖</span>
+          <strong>{populatedCount === null || registeredKnowledgeBaseCount === null
+            ? "待同步"
+            : `${populatedCount} / ${registeredKnowledgeBaseCount}`}</strong>
+          <p>发布口径：{releaseKnowledgeScope.label}</p>
         </article>
         <article>
           <span>文档数</span>
@@ -276,6 +305,31 @@ export default function KnowledgeBasePage() {
           <strong>{knowledgeBaseData.source === "fixture" ? "本地目录" : "后端目录"}</strong>
           <p>页面仅展示，不执行生产写入</p>
         </article>
+      </section>
+
+      <section
+        className={`replica-kb-coverage-state is-${releaseCoverageStatus}`}
+        aria-label="知识库发布覆盖"
+        data-knowledge-release-scope={releaseKnowledgeScope.id}
+        data-coverage-status={releaseCoverageStatus}
+      >
+        <div>
+          <span>当前发布范围</span>
+          <strong>{releaseKnowledgeScope.label}</strong>
+        </div>
+        {releaseCoverageStatus === "unknown" ? (
+          <p>知识集合装载指标尚未同步，本页面不会把未知状态显示为全量可用。</p>
+        ) : releaseCoverageStatus === "core-ready" ? (
+          <p>
+            已装载 {populatedCount} / {registeredKnowledgeBaseCount} 个注册集合；本次仅承诺核心范围，
+            其余空集合继续标记为待激活。
+          </p>
+        ) : (
+          <p>
+            已装载 {populatedCount} / {registeredKnowledgeBaseCount} 个注册集合，尚未达到
+            {releaseKnowledgeScope.label}的发布门槛。
+          </p>
+        )}
       </section>
 
       <section className="replica-panel">

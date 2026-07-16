@@ -336,9 +336,9 @@ describe("ReplicaReportWorkbench", () => {
     const handoff = await screen.findByRole("link", { name: "转入项目管理" });
     expect(handoff).toHaveAttribute("href", "/projects?project=ALPHA");
     expect(screen.getByText("未生成正式报告")).toBeInTheDocument();
-    expect(screen.getByText("未调用外部 provider")).toBeInTheDocument();
-    expect(screen.getByText("formal_report_created=false")).toBeInTheDocument();
-    expect(screen.getByText("provider_call=false")).toBeInTheDocument();
+    expect(screen.getByText("未调用外部服务")).toBeInTheDocument();
+    expect(screen.getByText("formal_report_created=false").closest("details")).not.toBeNull();
+    expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
     expect(screen.getByText("审计记录：intent-only（降级）")).toBeInTheDocument();
     expect(screen.queryByText("正式报告已生成")).not.toBeInTheDocument();
   });
@@ -357,8 +357,10 @@ describe("ReplicaReportWorkbench", () => {
     });
     fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
 
-    expect(await screen.findByText("formal_report_created=true")).toBeInTheDocument();
-    expect(screen.getByText("provider_call=true")).toBeInTheDocument();
+    expect((await screen.findByText("formal_report_created=true")).closest("details")).not.toBeNull();
+    expect(screen.getByText("provider_call=true").closest("details")).not.toBeNull();
+    expect(screen.getByText("正式报告状态异常")).toBeInTheDocument();
+    expect(screen.getByText("检测到外部服务调用")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("草稿响应违反无副作用边界");
     expect(screen.queryByText("草稿已进入待复核队列")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "转入项目管理" })).not.toBeInTheDocument();
@@ -367,7 +369,7 @@ describe("ReplicaReportWorkbench", () => {
       "/projects?project=ALPHA"
     );
     expect(screen.queryByText("未生成正式报告")).not.toBeInTheDocument();
-    expect(screen.queryByText("未调用外部 provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("未调用外部服务")).not.toBeInTheDocument();
   });
 
   it("renders report metrics, evidence, gate status and only non-null controlled downloads", async () => {

@@ -118,7 +118,8 @@ describe("ReplicaAnalyticsWorkbench", () => {
     expect(uploadMock).not.toHaveBeenCalled();
     expect(screen.getByText(/上传是受控写入/)).toBeInTheDocument();
     expect(screen.getByText(/analytics store ready/)).toBeInTheDocument();
-    expect(screen.getByText(/provider_call=false/)).toBeInTheDocument();
+    expect(screen.getByText(/当前分析不调用外部模型/)).toBeInTheDocument();
+    expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /OCR/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /OCR/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/OCR/i)).not.toBeInTheDocument();

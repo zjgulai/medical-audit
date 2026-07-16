@@ -208,6 +208,24 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
           {navIcon(referenceTopicNavigation.icon)}
           <strong>{referenceTopicNavigation.label}</strong>
         </Link>
+
+        <button
+          type="button"
+          className="replica-history-fab"
+          data-layout-floating-control="history"
+          aria-expanded={historyOpen}
+          aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
+          onClick={() => {
+            if (historyOpen) {
+              closeHistory();
+            } else {
+              setHistoryOpen(true);
+            }
+          }}
+        >
+          <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
+          <span>历史对话</span>
+        </button>
       </aside>
 
       <div className="replica-workspace">
@@ -250,22 +268,6 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
 
         <div className="replica-page-scroll">{children}</div>
       </div>
-      <button
-        type="button"
-        className="replica-history-fab"
-        aria-expanded={historyOpen}
-        aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
-        onClick={() => {
-          if (historyOpen) {
-            closeHistory();
-          } else {
-            setHistoryOpen(true);
-          }
-        }}
-      >
-        <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
-        <span>历史对话</span>
-      </button>
       {historyOpen ? (
         <section className="replica-history-drawer" aria-labelledby="replica-history-title">
           <div className="replica-history-header">

@@ -730,6 +730,16 @@ export default function MedicalAuditPage() {
         className={`replica-medical-content ${selectedFinding && activeView === "audit" ? "has-drawer" : ""} ${isAiOpen ? "has-drawer" : ""}`}
       >
         <main className="replica-medical-main">
+          <button
+            aria-label={isAiOpen ? "关闭医保审计助手" : "打开医保审计助手"}
+            className={`replica-medical-ai-fab ${isAiOpen ? "is-open is-shifted" : selectedFinding ? "is-shifted" : ""}`}
+            data-layout-floating-control="medical-ai"
+            type="button"
+            onClick={() => setIsAiOpen((current) => !current)}
+          >
+            <span>AI</span>
+            <strong>审计助手</strong>
+          </button>
           <div className="replica-medical-tabs" role="tablist" aria-label="医保审计视图">
             {viewTabs.map((tab) => (
               <button
@@ -799,14 +809,6 @@ export default function MedicalAuditPage() {
           />
         ) : null}
       </section>
-      <button
-        className={`replica-medical-ai-fab ${isAiOpen ? "is-open is-shifted" : selectedFinding ? "is-shifted" : ""}`}
-        type="button"
-        onClick={() => setIsAiOpen((current) => !current)}
-      >
-        <span>AI</span>
-        <strong>审计助手</strong>
-      </button>
       <WorkflowGateDialog
         actionState={workflowActionState}
         dialog={workflowDialog}
