@@ -5624,7 +5624,16 @@ def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
     assert "docker exec ai_video_nginx nginx -t >/dev/null 2>&1" in script
     assert "production nginx configuration test failed" in script
     assert "WARNING shared-nginx-test-failed" not in script
-    assert "/knowledge-base/catalog" in script
+    assert "/knowledge-base/catalog" not in script
+    assert "X-User-Id" not in script
+    for forbidden in (
+        "/documents",
+        "auth_headers",
+        "X-Role",
+        "X-Project-Key",
+        "X-Tenant-Id",
+    ):
+        assert forbidden not in script
     assert "/index/search-backend" not in script
     assert "/tmp/medical-audit-nginx-test.log" not in script
     assert "/var/www/audit -> /var/www/audit" not in script

@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-07-16
+updated: 2026-07-17
 owner: self
 source: human+ai
 ---
@@ -42,6 +42,7 @@ source: human+ai
 - `.deploy-sha` 的原子 rename、目录 fsync 与内容读回是唯一权威 production commit point。部署前必须先通过 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke；app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。rollback transaction 的 `ready-to-commit` 只是 marker 前过程证据；只有它与 transaction `restore-sha`、当前 `.deploy-sha` 成对一致时才判定 `committed_by_marker`，不在 marker 后追加第二个 `committed` 权威写入。
 - 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
 - execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。execute 参数门禁直接拒绝 `--skip-web-build`；该参数只保留给不写生产的 preflight。快照在整个同步事务退出后销毁。
+- 默认 read-only preflight 仅检查远端目录、容器、Nginx 配置和公共 `/health`，不请求受控鉴权 API。知识库、数据库和发布拓扑状态必须由独立的生产只读 S0/部署状态审计证明；不得把可能因鉴权失败写入 `authorization-denied` 的 `/knowledge-base/catalog` 纳入结构性零写入 preflight。
 - execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 和 mandatory production smoke 的 GET/POST requester 都拒绝跨 origin redirect，带鉴权 header 的请求不会转发到其他 origin；cache policy 按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
 - execute 禁止 `--skip-smoke` 和 `--skip-web-build`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、SSH 255、SSH 进程被 signal 终止、rsync timeout/30、background starter 任意非零、background poll 任意非零或不可解析状态，以及 activation restore 79/cleanup 85 都按远端结果未知处理。持锁阶段收到 `KeyboardInterrupt`、`SystemExit` 等非普通异常时不得自动 restore 或 unlock。任何 app rebuild 或 schema apply 已尝试后的 marker 前失败，以及 activation 已成功返回后的 marker 前失败，即使 UI/Nginx restore 成功，也必须保留生产锁；不能假设 `psql ON_ERROR_STOP` 会自动回滚此前已提交的 DDL。人工解锁前必须核对 marker/current、transaction SHA、实际 app 容器版本、schema 影响、Nginx/public gates，不能在 backend 新 SHA 与 UI/marker 旧 SHA 的混合态自动解锁或宣称回滚成功。
 - 首次从 legacy flat root 迁移必须显式传 `--allow-first-legacy-migration`，且仅在 `current` 和 migration sentinel 都不存在、flat `index.html` 与旧 `.deploy-sha` 均合法时放行。activation 在最终 marker 前原子创建 migration sentinel；marker 前失败恢复必须删除 sentinel。回滚到 legacy 时先删除 sentinel，若 marker 尚未尝试则失败恢复会重建 sentinel；`.deploy-sha` 始终是最后的状态提交点。

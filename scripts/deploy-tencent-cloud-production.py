@@ -1230,14 +1230,6 @@ if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
   exit 80
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
-auth_headers=(
-  -H 'X-User-Id: deploy-smoke-admin'
-  -H 'X-Role: it-admin'
-  -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
-  -H 'X-Tenant-Id: hospital-demo'
-)
-curl -fsS "${{auth_headers[@]}}" \
-  http://127.0.0.1:18080/knowledge-base/catalog >/dev/null
 """
     _ssh(config, script)
 
