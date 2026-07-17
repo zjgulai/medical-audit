@@ -13,21 +13,21 @@ source: repository+production-readonly+playwright
 
 ## 1. 执行结论
 
-当前部署决策仍为 **NO-GO**。生产现网仍可用，Batch A/B、C2 review、C3 Ready 与 desktop-first/mobile-second 本地闭环已完成；Ready-context CodeRabbit 后续已收敛为 `SUCCESS` 并提交 18 条可执行评论和 1 条测试建议。评论核验、独立复审与修复已形成本地 runtime candidate commit `9d9b19204868cc0fbd2e31f3cd138dacc8228021`，并完成 exact-SHA 回归与三 viewport 验收；尚未 push，远端 PR #239 仍指向 `7a44c191501b19a24aae72c408f010054022d7d5`。下一门是独立授权 push/PR refresh；不能直接 merge 或 deploy。
+当前部署决策仍为 **NO-GO**。生产现网仍可用，Batch A/B、C2 review、C3 Ready 与 desktop-first/mobile-second remediation 已完成。runtime 修复冻结为 `9d9b19204868cc0fbd2e31f3cd138dacc8228021`，证据账本与 exact-head 浏览器回归推进到 `1b3e44a80f9cd5c89341b51f334c698b66de11e3`；该 head 已 normal fast-forward push 到 PR #239，并通过 fresh CodeRabbit `SUCCESS`。最新 review 的 ledger/evidence/privacy 评论已在本次 docs-only closure 中处理；下一门仍是独立 C3-MERGE 决策，不能直接 deploy。
 
 | 问题 | 当前结论 | 证据层级 | 把握 |
 |---|---|---|---|
-| 是否可以继续部署 | 尚不能；CodeRabbit remediation 已形成本地 exact-SHA candidate 并完成测试与三 viewport 验收，但尚未 push，远端检查不覆盖 `9d9b192...`；merge、fresh S0、首次迁移 preflight 与部署授权也均未完成 | L2 exact candidate + fresh L3 read-only | 高 |
+| 是否可以继续部署 | 尚不能；remediation 已完成 push/PR refresh 和 evidence-head review，但 merge、fresh S0、首次迁移 preflight 与部署授权仍未完成 | L2 exact candidate + fresh L3 read-only | 高 |
 | 当前生产是否可用 | 是；当前运行 `main@1376baef0d8d47f1e1ef60b2cec130451af5af4f`，核心容器、Nginx、front door、PostgreSQL 和检索后端健康 | fresh L3 read-only | 高 |
 | 所有知识库是否正常 | 否；核心医疗检索可用，但 25 个注册集合中只有 5 个有生产数据，真实问答/引用质量未做本轮 L4/provider 验收 | fresh L3 read-only + repository contract | 高 |
 | 100+ 智能体是否正常 | 否；304 是历史持久化行，只有 13 active、7 个 distinct template、7 个曾被调用的 agent key，并存在 3 个重复 identity group | fresh L3 read-only SQL | 高 |
-| 所有页面是否达到一致且专业 | runtime candidate `9d9b192...` 的 API-blocked 静态/失败态已通过 desktop/mobile/tablet 各 20/20、60 张截图、desktop/mobile 34 次可见技术文案扫描 0 项与人工关键页复核；生产仍是旧 SHA，真实数据/鉴权态仍未证明 | local L2 + fresh L3 production identity | 高 |
+| 所有页面是否达到一致且专业 | evidence head `1b3e44a...` 的 API-blocked 静态/失败态已通过 desktop/mobile/tablet 各 20/20、60 张截图、desktop/mobile 34 次可见技术文案扫描 0 项与人工关键页复核；生产仍是旧 SHA，真实数据/鉴权态仍未证明 | local L2 + fresh L3 production identity | 高 |
 
 这不是当前生产故障结论。`NO-GO` 针对的是“把 Draft PR #239 候选继续推进到生产”的决策。
 
 ## 2. 证据边界
 
-- Candidate：Batch A 从 base `846aa89187867339feb6d6c90c102ca1336e4105` 开始；C1/C2 已把 exact head `7a44c191501b19a24aae72c408f010054022d7d5` push 到 PR #239，并完成 Ready。Ready-context CodeRabbit 已 `SUCCESS`；其评论触发的 remediation 已形成本地 runtime commit `9d9b192...`，因此远端 head/status 仍不覆盖当前候选，未 merge、未 deploy。
+- Candidate：Batch A 从 base `846aa89187867339feb6d6c90c102ca1336e4105` 开始；C1/C2 已把 `7a44c191...` push 到 PR #239 并完成 Ready。Ready-context 评论触发的 remediation 冻结为 runtime commit `9d9b192...`；证据账本与 exact-head browser acceptance 推进到 `1b3e44a...`，已 push 并获得 fresh CodeRabbit `SUCCESS`。本次后续仅为 docs-only review closure；未 merge、未 deploy。
 - Production：marker `1376baef0d8d47f1e1ef60b2cec130451af5af4f`，仍为 legacy static topology，不是候选的 versioned-release topology。
 - Fresh L3 deployment-state audit：审计日志 `56,347 → 56,347`，fingerprint 不变，unique auditor events `0 → 0`，GET-only，`database_write=false`。
 - Fresh production SQL：`SERIALIZABLE READ ONLY DEFERRABLE`，`transaction_read_only=on`；未执行 SQL 写入。
@@ -92,7 +92,7 @@ source: repository+production-readonly+playwright
 
 - 历史同生产 SHA 的 L4 acceptance 覆盖 18 routes × desktop/mobile = 36/36；HTTP、导航、console、request、interaction 和 root horizontal overflow 均无 P0/P1。
 - 初始新鲜安全矩阵覆盖 20 routes × 3 viewports = 60/60；无 navigation error、non-200、root horizontal overflow、missing heading 或 page error。
-- 最新 exact candidate `7a44c191...` 完成 desktop 主门禁、mobile 第二门禁和 tablet 补充门禁各 `20/20`；60 张 PNG 路径唯一、55 个字节 hash，5 组重复均为预期 alias→target 同态截图；尺寸分别为 `1440×1100`、`390×900`、`1280×800`。
+- post-remediation evidence head `1b3e44a80f9cd5c89341b51f334c698b66de11e3` 完成 desktop 主门禁、mobile 第二门禁和 tablet 补充门禁各 `20/20`；60 张 PNG 位于 `output/playwright/loop59-c3-final-exact-sha-1b3e44a/screenshots/`，路径唯一，尺寸分别为 `1440×1100`、`390×900`、`1280×800`。本次 docs-only closure 不修改 `web/` runtime tree，不能把这些证据归属到 `7a44c191...` 或未验证的生产 SHA。
 - 最终矩阵的 `270` 条 console error 全部来自本地 `/api/**` 503 fixture；unexpected console error=`0`、page error=`0`，不能解释为生产 API 故障。
 
 初始定性问题（Batch A/B 前）：
@@ -167,9 +167,10 @@ Batch B closure：完成，证据等级为 `L2-fixture-or-dry-run`。Batch C1 �
 - [x] C2. 独立复审发现并验证一个 P2：20 MiB 文件 payload 与 Nginx 完整 multipart body 的同值上限冲突。已在 local candidate `ce639ae1959bfb0a59a4f0ebc4ddd2e50f374712` 将代理 envelope 调整为 `21m`、保留 UI/backend 20 MiB 业务上限；exact-SHA backend `854`、Web `364`、Ruff/Mypy 分层门禁、typecheck、lint、24-page build、87-file manifest validator 全绿，最终非递归 review 无新发现。
 - [x] C2-UI. 两轮主内容专业文案收敛后，local exact candidate 为 `7a44c191501b19a24aae72c408f010054022d7d5`；Web `38/364`、typecheck、lint、24-page static/release build、87-file manifest 全绿，desktop/mobile/tablet 各 `20/20`，34 次 desktop/mobile visible-copy scan=`0`，visual verdict=`93/pass`。
 - [x] C2-PROMOTE. 已 normal fast-forward push `a3407a4...→7a44c191...` 并刷新 Draft PR #239 的 exact head/L2 证据；新 head CodeRabbit=`SUCCESS`、mergeable=`MERGEABLE`、merge state=`CLEAN`。PR 保持 OPEN/Draft，未执行 Ready、merge、S0、preflight 或 deploy。
-- [x] C3-READY. 已将 exact-head PR #239 从 Draft 转为 Ready for review；PR 保持 OPEN、head=`7a44c191...`。Ready 后 CodeRabbit 重新运行；截至 2026-07-17 15:44 CST 的追加只读观察仍为 `PENDING`、`0 failing`，故 merge state 暂为 `UNSTABLE`；未执行 merge。
+- [x] C3-READY. 已将 PR #239 从 Draft 转为 Ready for review；Ready-context CodeRabbit 后续收敛为 `SUCCESS` 并触发 remediation；未执行 merge。
 - [x] C3-REMEDIATION-LOCAL. Ready-context CodeRabbit 后续收敛为 `SUCCESS`、PR=`MERGEABLE/CLEAN`，并提交 18 条可执行评论和 1 条测试建议。逐条核验后完成本地 fail-closed/权限/重复 identity/部署参数/UI 文案与状态修复；CodeRabbit 建议的不存在字段 `sourceCollection` 未照抄，改用真实 `id` 派生合同补测。独立 review 另发现 client/API role namespace 不一致并已修复，第二轮 review 无新发现。
-- [x] C3-REMEDIATION-COMMIT. remediation 已冻结为本地 runtime commit `9d9b192...`。第一次 exact-SHA desktop matrix 真实发现 history 浮层遮挡 4 个 route state，修复为桌面导航轨内固定定位并 amend；最终 Web `369/369`、Ruff、targeted Mypy、lint、typecheck、24-page/87-file release build、`git diff --check` 全绿，desktop/mobile/tablet 各 `20/20`，desktop+mobile 34 次可见文案扫描 `0`。本项尚未 push，不属于远端 PR head。
+- [x] C3-REMEDIATION-COMMIT. remediation 已冻结为 runtime commit `9d9b192...`。第一次 exact-SHA desktop matrix 真实发现 history 浮层遮挡 4 个 route state，修复为桌面导航轨内固定定位并 amend；最终 Web `369/369`、Ruff、targeted Mypy、lint、typecheck、24-page/87-file release build、`git diff --check` 全绿，desktop/mobile/tablet 各 `20/20`，desktop+mobile 34 次可见文案扫描 `0`。
+- [x] C3-REMEDIATION-PROMOTE. remediation 与证据账本已 normal fast-forward push 到 PR #239 evidence head `1b3e44a...`；PR 保持 OPEN/Ready/MERGEABLE/CLEAN，该 head CodeRabbit=`SUCCESS`。最新 ledger/evidence/privacy 评论已在 docs-only closure 中处理，且 `web/` runtime tree 未改变。
 - [ ] C3-MERGE. 取得后续独立 merge 授权后，重新核对 exact head、base、checks、review state 与 rollback boundary；不得由 Ready 自动跨越。
 
 ### Batch D — production preflight / S0（L3，独立只读授权）

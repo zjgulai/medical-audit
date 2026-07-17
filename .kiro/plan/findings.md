@@ -1962,14 +1962,14 @@ Plan output:
 - Evidence gate: public/browser and strict SSH/SQL observations may reach `L3-production-read-only`; they cannot prove the unmerged candidate is deployed. Any audit route that writes audit logs is L4 and remains excluded unless separately authorized.
 - Deployment decision is initially `blocked-pending-fresh-L3`: first establish current deployed SHA/topology, knowledge/index availability, actual agent catalog/inventory counts and page-level production visual findings.
 - `planning-with-files/references/planning-rules.md` is absent from the installed skill package. The audit follows the fully read `SKILL.md`, including plan restoration, two-action findings updates, phase logging, and fail-closed handling of failed commands.
-- Pre-edit planning-file backup: `/Users/pray/.Codex/file-history/medical-audit-loop59-final-sprint-20260716T234356+0800/`.
+- Pre-edit planning-file backup artifact: `medical-audit-loop59-final-sprint-20260716T234356+0800` (operator-local location intentionally omitted).
 - Production contract review confirms `run-production-frontend-acceptance.mjs` is not read-only: its complete flow can write audit-log records and requires explicit `--allow-audit-log-writes` plus production confirmation. It is excluded from the current L3 audit.
 - `audit-production-release-guard-snapshot.py capture` is the preferred fresh L3 path because it streams the current collector over strict SSH, uses `SERIALIZABLE READ ONLY DEFERRABLE`, fingerprints schema/business tables, and does not rely on the older production checkout containing the new script.
 - `audit-tencent-cloud-deployment-state.py` is only conditionally L3: it must prove global audit snapshot unchanged and unique auditor identity zero events. A failing/auth-denied path cannot be assumed read-only.
 - The release guard covers the knowledge database ledger and `audit_agent_invocations`, but its current fixed table list does not include `audit_agents`; a separate strict read-only SQL query is required to prove actual production agent inventory and whether “100+” means persisted agents, version-controlled market templates, or only UI catalog cards.
 - Public `/api/v1/knowledge-base/catalog` is documented as GET-only with `database_write=false` and provider not called, making it an appropriate direct knowledge-backend observation alongside SSH database evidence.
 - The existing latest artifacts show production-related runs against `main@1376bae` on 2026-07-16, but they are historical leads only. Fresh public and SSH observations are still required before any deployment recommendation.
-- SSH key metadata is usable and not exposed: `/Users/pray/Downloads/DDDD.pem` is mode `0600`, size `1678` bytes; key content was not read.
+- Operator credential readiness was verified locally; workstation path and file metadata are intentionally omitted, and credential content was not read.
 - Fresh public front-door observation: `/health`, `/knowledge-base`, and `/agent-market` all returned HTTP `200` over HTTPS. This proves route availability only, not backend knowledge retrieval or agent execution.
 - The first direct catalog GET without tenant context returned `401` with `X-Tenant-Id header is required`. Because an authentication-denied path may write an audit event, this attempt cannot be labeled proven zero-write; it is recorded as `database_write=unknown` pending strict SSH audit evidence. The same unauthenticated request will not be repeated.
 - Public `/release-manifest.json` did not parse as JSON. This is consistent with the current production generation predating the candidate's versioned release-manifest contract, but the exact HTTP status/topology still requires a static status check plus SSH release-guard capture.
@@ -2168,3 +2168,9 @@ Plan output:
 - The corrected contract is desktop-only: expanded rail `left=12/bottom=86/width=232`, collapsed rail `left=24/width=44`; mobile keeps the existing topbar control. The final matrix proves zero route-content intersections at desktop, mobile and tablet.
 - Runtime candidate `9d9b192...` passes Web `369/369`, 24-page/87-file release build, desktop/mobile/tablet `60/60`, visible-copy `34/0`, lint, typecheck and diff-check. The release manifest is bound to the candidate and hashes to `f1c8df9a6ceca62f92bb525eb691a69ef63a39b27bed1dc1523c4f1f19e3bbf0`.
 - Remote PR #239 still points to `7a44c191...`; no remote check covers `9d9b192...` until a separately authorized push/PR refresh occurs.
+
+## 2026-07-17 Loop 59 Final Review Closure Findings
+
+- The review correctly detected that completed local remediation and pending promotion had been collapsed into one unchecked item. Promotion has since completed, so the truthful final split is: local remediation checked, PR refresh checked, C3-MERGE unchecked.
+- The review correctly detected ambiguous screenshot attribution. The accepted post-remediation corpus was regenerated at evidence head `1b3e44a80f9cd5c89341b51f334c698b66de11e3`; the docs-only closure does not change the `web/` tree.
+- Workstation backup locations and credential file metadata are not release evidence. Loop 59 ledgers now retain non-sensitive artifact IDs only and omit credential path/mode/size details.
