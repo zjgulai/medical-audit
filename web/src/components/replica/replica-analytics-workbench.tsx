@@ -108,7 +108,7 @@ export function ReplicaAnalyticsWorkbench() {
           <h2 id="analytics-upload-title">上传表格</h2>
         </div>
         <p className="replica-analytics-boundary">
-          上传是受控写入；只有 analytics store ready 时才保留历史。当前分析不调用外部模型，
+          上传是受控写入；只有分析记录服务就绪时才保留历史。当前分析不调用外部模型，
           选择文件只记录待提交项，不代表已经上传。
         </p>
         <details className="replica-runtime-diagnostics">

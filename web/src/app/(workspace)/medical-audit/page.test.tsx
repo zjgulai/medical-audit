@@ -353,7 +353,8 @@ describe("MedicalAuditPage", () => {
 
     render(<MedicalAuditPage />);
 
-    expect(await screen.findByText("疑点接口读取异常")).toBeInTheDocument();
+    expect(await screen.findByText("疑点数据读取异常")).toBeInTheDocument();
+    expect(screen.queryByText("疑点接口读取异常")).not.toBeInTheDocument();
     expect(screen.getByText("请检查审计数据服务后重试；当前不会注入本地样例数据。")).toBeInTheDocument();
     expect(screen.getByText("疑点数据暂未同步")).toBeInTheDocument();
     expect(screen.queryByText("读取 /api/v1/audit-findings")).not.toBeInTheDocument();
@@ -375,7 +376,9 @@ describe("MedicalAuditPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "专题项目待恢复" })).toBeInTheDocument();
-    expect(screen.getByText("专题驾驶舱等待项目接口恢复")).toBeInTheDocument();
+    expect(screen.getByText("专题驾驶舱等待项目数据恢复")).toBeInTheDocument();
+    expect(screen.getByText("专题数据暂不可用")).toBeInTheDocument();
+    expect(screen.queryByText("专题驾驶舱等待项目接口恢复")).not.toBeInTheDocument();
     expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
   });
 

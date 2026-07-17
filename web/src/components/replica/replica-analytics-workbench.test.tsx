@@ -117,7 +117,8 @@ describe("ReplicaAnalyticsWorkbench", () => {
     expect(screen.getByText(`已选择：${file.name}（尚未上传）`)).toBeInTheDocument();
     expect(uploadMock).not.toHaveBeenCalled();
     expect(screen.getByText(/上传是受控写入/)).toBeInTheDocument();
-    expect(screen.getByText(/analytics store ready/)).toBeInTheDocument();
+    expect(screen.getByText(/只有分析记录服务就绪时才保留历史/)).toBeInTheDocument();
+    expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
     expect(screen.getByText(/当前分析不调用外部模型/)).toBeInTheDocument();
     expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /OCR/i })).not.toBeInTheDocument();

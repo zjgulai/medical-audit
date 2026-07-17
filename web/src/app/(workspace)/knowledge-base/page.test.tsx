@@ -147,6 +147,10 @@ describe("KnowledgeBasePage", () => {
     expect(screen.queryByText(INTERNAL_ACCESS_SENTINEL)).not.toBeInTheDocument();
     expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
     expect(screen.getAllByText("120").length).toBeGreaterThan(0);
+    expect(screen.getByText("来自当前知识目录")).toBeInTheDocument();
+    expect(screen.getByText("知识目录")).toBeInTheDocument();
+    expect(screen.getByText("当前可用于检索的知识片段数量")).toBeInTheDocument();
+    expect(screen.queryByText(/后端目录/)).not.toBeInTheDocument();
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
     expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
       "data-knowledge-release-scope",

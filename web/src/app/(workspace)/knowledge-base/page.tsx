@@ -293,16 +293,16 @@ export default function KnowledgeBasePage() {
         <article>
           <span>文档数</span>
           <strong>{formatDocumentCount(totalDocuments, false)}</strong>
-          <p>{knowledgeBaseData.source === "fixture" ? "本地静态目录" : "来自当前后端目录"}</p>
+          <p>{knowledgeBaseData.source === "fixture" ? "本地静态目录" : "来自当前知识目录"}</p>
         </article>
         <article>
           <span>知识片段</span>
           <strong>{formatChunkCount(totalChunks, false)}</strong>
-          <p>当前检索索引中的可用向量数量</p>
+          <p>当前可用于检索的知识片段数量</p>
         </article>
         <article>
           <span>数据来源</span>
-          <strong>{knowledgeBaseData.source === "fixture" ? "本地目录" : "后端目录"}</strong>
+          <strong>{knowledgeBaseData.source === "fixture" ? "本地目录" : "知识目录"}</strong>
           <p>页面仅展示，不执行生产写入</p>
         </article>
       </section>

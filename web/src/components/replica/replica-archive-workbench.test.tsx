@@ -176,6 +176,8 @@ describe("ReplicaArchiveWorkbench", () => {
     render(<ReplicaArchiveWorkbench />);
 
     expect(await screen.findByText("归档工作台暂不可用")).toBeInTheDocument();
+    expect(screen.getByText("归档数据读取失败，页面不会注入本地样例或旧数据。")).toBeInTheDocument();
+    expect(screen.queryByText(/归档 API/)).not.toBeInTheDocument();
     expect(screen.queryByText("archive-package-001")).not.toBeInTheDocument();
     expect(screen.queryByText("archive-package-fund-self-check")).not.toBeInTheDocument();
   });

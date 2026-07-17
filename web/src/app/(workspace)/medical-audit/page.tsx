@@ -525,7 +525,7 @@ export default function MedicalAuditPage() {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "审计专题项目接口读取异常";
           setProjectState({ status: "error", message });
-          setDashboardState({ status: "error", message: "专题驾驶舱等待项目接口恢复" });
+          setDashboardState({ status: "error", message: "专题驾驶舱等待项目数据恢复" });
         }
       });
     return () => {
@@ -1026,13 +1026,13 @@ function SmartAuditView({
       </div>
       {auditState.status === "loading" ? (
         <section className="replica-medical-evidence is-blue">
-          <strong>正在读取生产疑点</strong>
-          <p>正在从审计疑点接口加载规则命中记录。</p>
+          <strong>正在加载审计疑点</strong>
+          <p>正在加载审计规则命中记录。</p>
         </section>
       ) : null}
       {auditState.status === "error" ? (
         <section className="replica-medical-evidence is-danger">
-          <strong>疑点接口读取异常</strong>
+          <strong>疑点数据读取异常</strong>
           <p>请检查审计数据服务后重试；当前不会注入本地样例数据。</p>
           <details className="replica-runtime-diagnostics">
             <summary>查看技术诊断</summary>
@@ -1075,7 +1075,7 @@ function ProjectFlowPanel({
     projectState.status === "loading"
       ? "正在读取专题"
       : projectState.status === "error"
-        ? "专题接口暂不可用"
+        ? "专题数据暂不可用"
         : activeProject?.status ?? "未选择专题";
   const dashboardStatus =
     dashboardState.status === "loading"
@@ -1094,7 +1094,7 @@ function ProjectFlowPanel({
           <span>专题项目</span>
           <h2>{projectName}</h2>
           <p>
-            {activeProject?.organization_name ?? "项目接口恢复后显示机构范围"} ·{" "}
+            {activeProject?.organization_name ?? "项目数据恢复后显示机构范围"} ·{" "}
             {activeProject?.audit_topic ?? "医保审计"}
           </p>
         </div>

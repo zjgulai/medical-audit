@@ -117,7 +117,7 @@ export function ReplicaArchiveWorkbench() {
       {state.status === "loading" ? (
         <ReplicaEmptyState title="归档数据加载中" description="正在读取归档工作台的只读运行证据。" />
       ) : state.status === "error" ? (
-        <ReplicaEmptyState title="归档工作台暂不可用" description="归档 API 读取失败，页面不会注入本地样例或旧数据。" />
+        <ReplicaEmptyState title="归档工作台暂不可用" description="归档数据读取失败，页面不会注入本地样例或旧数据。" />
       ) : data ? (
         <>
           <ArchiveMetrics metrics={data.metrics} />
