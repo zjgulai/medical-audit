@@ -6,6 +6,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
+PRODUCTION_HOST = "audit.lute-tlz-dddd.top"
 DEFAULT_REPORT = "tmp/outputs/production-documents-readonly-latest.json"
 DEFAULT_USER_ID = "production-documents-readonly-probe"
 DEFAULT_TENANT_ID = "hospital-demo"
@@ -25,6 +27,7 @@ EXPECTED_DOCUMENTS_TEXT = (
 SKIPPED_AUDIT_LOG_WRITING_ENDPOINTS = (
     "/api/v1/documents/uploads",
     "/api/v1/documents/uploads/{upload_id}/download",
+    "/api/backend/index/search-backend",
 )
 GOVERNANCE_STATUS_REQUIRED_FIELDS = (
     "document_storage_provider",
@@ -61,6 +64,23 @@ class ReadOnlyProbeError(RuntimeError):
     pass
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
 @dataclass(frozen=True)
 class HttpResponse:
     status: int
@@ -81,7 +101,6 @@ def main() -> int:
         tenant_id=str(args.tenant_id),
         project_key=str(args.project_key),
         api_key_env=_optional_env_name(args.api_key_env),
-        min_matching_embeddings=int(args.min_matching_embeddings),
         expected_deploy_sha=_optional_env_name(args.expected_deploy_sha),
     )
     report_path.write_text(
@@ -96,7 +115,8 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run a production /documents read-only probe. The probe intentionally avoids "
-            "document upload list and download-metadata endpoints because they write audit logs."
+            "endpoints that write audit logs, including document upload list, download metadata, "
+            "and search backend status."
         )
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -112,12 +132,6 @@ def _parse_args() -> argparse.Namespace:
             "Optional environment variable containing the production API secret. "
             "The secret value is never written to the report."
         ),
-    )
-    parser.add_argument(
-        "--min-matching-embeddings",
-        type=int,
-        default=1,
-        help="Minimum acceptable active PostgreSQL embedding count.",
     )
     parser.add_argument(
         "--expected-deploy-sha",
@@ -140,12 +154,11 @@ def _run_probe(
     tenant_id: str,
     project_key: str,
     api_key_env: str | None = None,
-    min_matching_embeddings: int,
     expected_deploy_sha: str | None = None,
     http_get: Callable[[str, dict[str, str], float], HttpResponse] | None = None,
 ) -> dict[str, Any]:
     selected_http_get = http_get or _http_get
-    normalized_base_url = base_url.rstrip("/")
+    normalized_base_url = _normalize_production_base_url(base_url)
     api_key = _secret_from_env(api_key_env)
     auth_headers = _auth_headers(
         user_id=user_id,
@@ -242,20 +255,6 @@ def _run_probe(
     )
     if "error" not in health_details:
         summary["backend_health"] = health_details["status"]
-    search_details = _run_step(
-        steps,
-        "backend-search-backend",
-        lambda: _check_search_backend(
-            normalized_base_url,
-            timeout_seconds=timeout_seconds,
-            min_matching_embeddings=min_matching_embeddings,
-            auth_headers=auth_headers,
-            http_get=selected_http_get,
-        ),
-    )
-    if "error" not in search_details:
-        summary["search_backend_ready"] = search_details["ready"]
-        summary["matching_embedding_count"] = search_details["matching_embedding_count"]
 
     return {
         "status": "pass" if all(step["passed"] for step in steps) else "fail",
@@ -524,41 +523,6 @@ def _check_backend_health(
     return {"status": payload.get("status"), "version": payload.get("version")}
 
 
-def _check_search_backend(
-    base_url: str,
-    *,
-    timeout_seconds: float,
-    min_matching_embeddings: int,
-    auth_headers: dict[str, str],
-    http_get: Callable[[str, dict[str, str], float], HttpResponse],
-) -> dict[str, Any]:
-    payload = _request_json(
-        f"{base_url}/api/backend/index/search-backend",
-        {"Accept": "application/json", **auth_headers},
-        timeout_seconds,
-        http_get=http_get,
-    )
-    details = _dict(payload.get("details"), "search backend details")
-    matching_embedding_count = _int(
-        details.get("matching_embedding_count"),
-        "matching_embedding_count",
-    )
-    _require(payload.get("ready") is True, "search backend should be ready")
-    _require(
-        matching_embedding_count >= min_matching_embeddings,
-        (
-            "matching_embedding_count below minimum: "
-            f"{matching_embedding_count} < {min_matching_embeddings}"
-        ),
-    )
-    return {
-        "backend": payload.get("backend"),
-        "ready": payload.get("ready"),
-        "matching_embedding_count": matching_embedding_count,
-        "embedding_provider": details.get("embedding_provider"),
-    }
-
-
 def _request_json(
     url: str,
     headers: dict[str, str],
@@ -610,10 +574,34 @@ def _secret_from_env(env_name: str | None) -> str | None:
     return value
 
 
+def _normalize_production_base_url(base_url: str) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ReadOnlyProbeError(
+            f"--base-url must be the exact production origin {DEFAULT_BASE_URL}"
+        ) from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != PRODUCTION_HOST
+        or port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ReadOnlyProbeError(
+            f"--base-url must be the exact production origin {DEFAULT_BASE_URL}"
+        )
+    return DEFAULT_BASE_URL
+
+
 def _http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> HttpResponse:
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with _NO_REDIRECT_OPENER.open(request, timeout=timeout_seconds) as response:
             return HttpResponse(
                 status=response.status,
                 url=response.geturl(),
@@ -644,12 +632,6 @@ def _dict(value: object, label: str) -> dict[str, Any]:
 def _list(value: object, label: str) -> list[Any]:
     if not isinstance(value, list):
         raise ReadOnlyProbeError(f"{label} must be a list")
-    return value
-
-
-def _int(value: object, label: str) -> int:
-    if not isinstance(value, int):
-        raise ReadOnlyProbeError(f"{label} must be an integer")
     return value
 
 

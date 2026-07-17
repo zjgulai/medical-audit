@@ -6,6 +6,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top"
+PRODUCTION_HOST = "audit.lute-tlz-dddd.top"
 DEFAULT_REPORT = "tmp/outputs/production-chat-model-catalog-readonly-latest.json"
 DEFAULT_USER_ID = "production-chat-model-catalog-probe"
 DEFAULT_TENANT_ID = "hospital-demo"
@@ -26,6 +28,23 @@ ALLOWED_BOUNDARY_SECRET_FIELDS = frozenset({"secret_values_reported"})
 
 class ReadOnlyProbeError(RuntimeError):
     pass
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
 
 
 @dataclass(frozen=True)
@@ -111,7 +130,7 @@ def _run_probe(
     http_get: Callable[[str, dict[str, str], float], HttpResponse] | None = None,
 ) -> dict[str, Any]:
     selected_http_get = http_get or _http_get
-    normalized_base_url = base_url.rstrip("/")
+    normalized_base_url = _normalize_production_base_url(base_url)
     api_key = _secret_from_env(api_key_env)
     auth_headers = _auth_headers(
         user_id=user_id,
@@ -392,10 +411,34 @@ def _secret_from_env(env_name: str | None) -> str | None:
     return value
 
 
+def _normalize_production_base_url(base_url: str) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ReadOnlyProbeError(
+            f"--base-url must be the exact production origin {DEFAULT_BASE_URL}"
+        ) from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != PRODUCTION_HOST
+        or port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ReadOnlyProbeError(
+            f"--base-url must be the exact production origin {DEFAULT_BASE_URL}"
+        )
+    return DEFAULT_BASE_URL
+
+
 def _http_get(url: str, headers: dict[str, str], timeout_seconds: float) -> HttpResponse:
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with _NO_REDIRECT_OPENER.open(request, timeout=timeout_seconds) as response:
             return HttpResponse(
                 status=response.status,
                 url=response.geturl(),

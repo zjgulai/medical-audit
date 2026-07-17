@@ -3629,6 +3629,25 @@ def test_knowledge_base_catalog_controlled_success_writes_no_audit_event(
     assert persisted_events == []
 
 
+def test_search_backend_status_records_audit_event_even_when_reading(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    persisted_events: list[tuple[str, dict[str, object]]] = []
+
+    class AuditSpy:
+        def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+            persisted_events.append((action, payload))
+            return {"action": action, "payload": payload}
+
+    state.audit_log_store = AuditSpy()  # type: ignore[assignment]
+    client = TestClient(create_app(state))
+
+    response = client.get("/index/search-backend")
+
+    assert response.status_code == 200, response.text
+    assert state.operation_logs[-1]["action"] == "search-backend-status-view"
+    assert persisted_events[-1][0] == "search-backend-status-view"
+
+
 def test_knowledge_base_catalog_marks_registry_only_metrics_unready(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     state.settings = state.settings.model_copy(

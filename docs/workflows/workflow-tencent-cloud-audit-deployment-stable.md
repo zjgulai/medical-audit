@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-07-17
+updated: 2026-07-18
 owner: self
 source: human+ai
 ---
@@ -338,13 +338,12 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 - provider 激活后容器内 preflight 返回 `status=pass`：`virus-scan` provider 为 `clamav-sidecar`、stage 为 `local-sidecar`；`dlp-review` provider 为 `unconfigured`、stage 为 `inactive`；`external_provider_call_performed=false`、`production_write_performed=false`。
 - provider 激活后部署状态巡检 `tmp/outputs/tencent-cloud-deployment-state-after-clamav-provider-activation-20260618.json` 为 `status=pass`，`issues=[]`；`virus_scan_provider=clamav-sidecar`，`dlp_review_provider=unconfigured`。
 - `/documents` ClamAV sidecar 生产写入 E2E 已固化为 `scripts/run-production-documents-clamav-sidecar-write-e2e.py`；生产执行必须显式传入 `--confirm-production-write audit.lute-tlz-dddd.top`。
-- `/documents` 生产只读探测已固化为 `scripts/run-production-documents-readonly-probe.py`；用于 docs-only 合并后或日常生产只读核验，不调用 `/api/v1/documents/uploads`，不调用 `/api/v1/documents/uploads/{upload_id}/download`，因此不产生新的上传记录、下载元信息审计日志或 provider 调用。
+- `/documents` 生产只读探测已固化为 `scripts/run-production-documents-readonly-probe.py`；用于 docs-only 合并后或日常生产只读核验。它不调用 `/api/v1/documents/uploads`、`/api/v1/documents/uploads/{upload_id}/download` 或 `/api/backend/index/search-backend`；三者都会写入审计日志。search backend 健康度须通过带 audit-delta 归因的 deployment-state audit 单独验证，不得从本 probe 推断。该 probe 的 `--base-url` 只接受精确 origin `https://audit.lute-tlz-dddd.top`（可等价指定 HTTPS `:443`），且拒绝所有 HTTP redirect；不得使用 alias、路径、query、非 HTTPS 或转跳后的响应作为生产只读证据。
 - 推荐只读探测命令：
 
 ```bash
 uv run python scripts/run-production-documents-readonly-probe.py \
   --base-url https://audit.lute-tlz-dddd.top \
-  --min-matching-embeddings 48985 \
   --report tmp/outputs/production-documents-readonly-YYYYMMDD.json
 ```
 

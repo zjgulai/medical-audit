@@ -995,6 +995,115 @@ def test_run_production_chat_model_catalog_readonly_probe_can_require_ready_mode
     assert query_models_step["details"]["error"] == "no chat model alias is available"
 
 
+@pytest.mark.parametrize(
+    ("module_name", "script_path"),
+    (
+        (
+            "run_production_documents_readonly_probe_exact_origin",
+            Path("scripts/run-production-documents-readonly-probe.py"),
+        ),
+        (
+            "run_production_chat_model_catalog_readonly_probe_exact_origin",
+            Path("scripts/run-production-chat-model-catalog-readonly-probe.py"),
+        ),
+    ),
+)
+def test_production_readonly_probes_bind_the_exact_production_origin(
+    module_name: str,
+    script_path: Path,
+) -> None:
+    module = _load_script_module(module_name, script_path)
+
+    assert module._normalize_production_base_url(module.DEFAULT_BASE_URL) == (
+        module.DEFAULT_BASE_URL
+    )
+    assert module._normalize_production_base_url(f"{module.DEFAULT_BASE_URL}:443/") == (
+        module.DEFAULT_BASE_URL
+    )
+    for invalid_base_url in (
+        "http://audit.lute-tlz-dddd.top",
+        "https://audit.lute-tlz-dddd.top:444",
+        "https://audit.lute-tlz-dddd.top/probe",
+        "https://audit.lute-tlz-dddd.top?target=probe",
+        "https://probe@audit.lute-tlz-dddd.top",
+        "https://audit.example.test",
+    ):
+        with pytest.raises(module.ReadOnlyProbeError, match="exact production origin"):
+            module._normalize_production_base_url(invalid_base_url)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "script_path"),
+    (
+        (
+            "run_production_documents_readonly_probe_no_redirect",
+            Path("scripts/run-production-documents-readonly-probe.py"),
+        ),
+        (
+            "run_production_chat_model_catalog_readonly_probe_no_redirect",
+            Path("scripts/run-production-chat-model-catalog-readonly-probe.py"),
+        ),
+    ),
+)
+def test_production_readonly_probes_do_not_follow_redirects(
+    module_name: str,
+    script_path: Path,
+) -> None:
+    module = _load_script_module(module_name, script_path)
+    target_hits: list[dict[str, str]] = []
+
+    class TargetHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            target_hits.append(
+                {key.lower(): value for key, value in self.headers.items()}
+            )
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    target_server = ThreadingHTTPServer(("127.0.0.1", 0), TargetHandler)
+    target_thread = threading.Thread(target=target_server.serve_forever, daemon=True)
+    target_thread.start()
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{target_server.server_port}/target",
+            )
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirect_thread = threading.Thread(
+        target=redirect_server.serve_forever,
+        daemon=True,
+    )
+    redirect_thread.start()
+
+    try:
+        response = module._http_get(
+            f"http://127.0.0.1:{redirect_server.server_port}/redirect",
+            {"X-API-Key": "secret-api-key"},
+            1,
+        )
+    finally:
+        redirect_server.shutdown()
+        target_server.shutdown()
+        redirect_thread.join(timeout=2)
+        target_thread.join(timeout=2)
+        redirect_server.server_close()
+        target_server.server_close()
+
+    assert response.status == 302
+    assert target_hits == []
+
+
 def test_audit_auth_sso_contract_readiness_script_is_valid_and_sanitized() -> None:
     script_path = Path("scripts/audit-auth-sso-contract-readiness.py")
 
@@ -1572,6 +1681,7 @@ def test_prepare_document_governance_production_readonly_coverage_reports_gaps(
     )
     assert "/api/v1/documents/uploads" in blocked_paths
     assert "/api/v1/documents/uploads/{upload_id}/download" in blocked_paths
+    assert "/api/backend/index/search-backend" in blocked_paths
     assert "POST" in write_methods
     assert report["boundaries"]["production_side_effect"] == "none"
     assert report["boundaries"]["production_readonly_probe"] == "not_run"
@@ -1724,7 +1834,6 @@ def test_run_production_documents_readonly_probe_reports_permission_shape_failur
         tenant_id="hospital-demo",
         project_key="SELF-CHECK-FUND-20260607",
         api_key_env=None,
-        min_matching_embeddings=49000,
         http_get=fake_http_get,
     )
 
@@ -1775,9 +1884,9 @@ def test_run_production_documents_readonly_probe_uses_pr232_page_contract() -> N
     assert all(details["expected_utf8_text"].values())
 
 
-def test_run_production_documents_readonly_probe_reports_search_backend_failure() -> None:
+def test_run_production_documents_readonly_probe_skips_search_backend_audit_log_endpoint() -> None:
     module = _load_script_module(
-        "run_production_documents_readonly_probe_search_failure",
+        "run_production_documents_readonly_probe_skips_search_backend_audit_log_endpoint",
         Path("scripts/run-production-documents-readonly-probe.py"),
     )
 
@@ -1831,13 +1940,6 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
                 content=b'{"status":"ok","version":"0.1.0"}',
                 headers={"content-type": "application/json"},
             )
-        if url.endswith("/api/backend/index/search-backend"):
-            return module.HttpResponse(
-                status=200,
-                url=url,
-                content=b'{"backend":"postgres","ready":false,"details":{"matching_embedding_count":0,"embedding_provider":"openai"}}',
-                headers={"content-type": "application/json"},
-            )
         raise AssertionError(url)
 
     report = module._run_probe(
@@ -1848,19 +1950,17 @@ def test_run_production_documents_readonly_probe_reports_search_backend_failure(
         tenant_id="hospital-demo",
         project_key="SELF-CHECK-FUND-20260607",
         api_key_env=None,
-        min_matching_embeddings=49000,
         http_get=fake_http_get,
     )
 
-    assert report["status"] == "fail"
+    assert report["status"] == "pass"
     assert report["summary"]["deploy_sha_status"] == "set"
     assert report["summary"]["backend_health"] == "ok"
     assert "search_backend_ready" not in report["summary"]
-    search_step = next(
-        step for step in report["steps"] if step["name"] == "backend-search-backend"
-    )
-    assert search_step["passed"] is False
-    assert search_step["details"]["error"] == "search backend should be ready"
+    assert all(step["name"] != "backend-search-backend" for step in report["steps"])
+    assert "/api/backend/index/search-backend" in report["boundaries"][
+        "skipped_audit_log_writing_endpoints"
+    ]
 
 
 def test_run_production_documents_readonly_probe_auth_headers_include_context() -> None:
@@ -1994,7 +2094,7 @@ def test_run_controlled_api_readonly_permission_smoke_write_mode_builds_full_mat
         Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
     )
     config = module.SmokeConfig(
-        base_url="http://127.0.0.1:8021",
+        base_url=module.PRODUCTION_BASE_URL,
         api_prefix="",
         mode="enforce",
         protected_paths=("/projects",),
@@ -2032,7 +2132,7 @@ def test_run_controlled_api_readonly_permission_smoke_enforce_fails_mismatch() -
         Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
     )
     config = module.SmokeConfig(
-        base_url="http://127.0.0.1:8021",
+        base_url=module.PRODUCTION_BASE_URL,
         api_prefix="",
         mode="enforce",
         protected_paths=("/projects",),
@@ -2182,6 +2282,45 @@ def test_run_controlled_api_readonly_permission_smoke_rejects_unconfirmed_write(
         module.run_readonly_permission_smoke(config, requester=fake_requester)
 
     assert request_count == 0
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    (
+        "http://127.0.0.1:8021",
+        "http://audit.lute-tlz-dddd.top",
+        "https://audit.lute-tlz-dddd.top:444",
+        "https://audit.lute-tlz-dddd.top/probe",
+        "https://audit.lute-tlz-dddd.top?target=probe",
+        "https://probe@audit.lute-tlz-dddd.top",
+    ),
+)
+def test_run_controlled_api_readonly_permission_smoke_write_mode_requires_exact_origin(
+    base_url: str,
+) -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_write_mode_exact_origin",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url=base_url,
+        api_prefix="/api/v1",
+        mode="observe",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+        allow_audit_log_writes=True,
+        confirm_production_write=module.PRODUCTION_HOST,
+    )
+
+    with pytest.raises(module.PermissionSmokeConfigError, match="--base-url"):
+        module.run_readonly_permission_smoke(config)
 
 
 def test_run_controlled_api_readonly_permission_smoke_does_not_follow_redirects() -> None:
