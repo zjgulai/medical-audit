@@ -3160,6 +3160,13 @@ exit 0
             )
         except subprocess.TimeoutExpired as exc:
             poll_error = exc
+        detail = ""
+        if completed is not None:
+            detail = "\n".join(
+                part.strip()
+                for part in (completed.stdout, completed.stderr)
+                if part.strip()
+            )
         if completed is None or completed.returncode != 0:
             consecutive_indeterminate_polls += 1
             if (
@@ -3168,7 +3175,8 @@ exit 0
                 or time.monotonic() >= deadline
             ):
                 error = RemoteOutcomeUnknownError(
-                    f"{timeout_description} background poll outcome is unknown",
+                    f"{timeout_description} background poll outcome is unknown"
+                    + (f":\n{detail}" if detail else ""),
                 )
                 if poll_error is not None:
                     raise error from poll_error
@@ -3181,11 +3189,6 @@ exit 0
             )
             time.sleep(REMOTE_COMPLETION_POLL_SECONDS)
             continue
-        detail = "\n".join(
-            part.strip()
-            for part in (completed.stdout, completed.stderr)
-            if part.strip()
-        )
         status = _extract_remote_job_status(completed.stdout)
         if status == "complete":
             print(f"{timeout_description} completed remotely", flush=True)
