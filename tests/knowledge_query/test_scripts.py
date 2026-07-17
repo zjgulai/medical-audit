@@ -6629,6 +6629,8 @@ def test_nginx_audit_fragment_uses_versioned_current_roots_and_cache_contract() 
         encoding="utf-8",
     )
 
+    assert "client_max_body_size 21m;" in fragment
+    assert "client_max_body_size 20m;" not in fragment
     assert fragment.count("root /var/www/audit/current;") == 3
     assert "root /var/www/audit;" not in fragment
     assert 'Cache-Control "public, max-age=31536000, immutable"' in fragment
