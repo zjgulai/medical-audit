@@ -336,7 +336,7 @@ Execution TODO:
 - [x] Phase 3 — 已实施显式 non-regression exception：exact base/tool/command/diagnostic/source fingerprint gate 返回 `allowed-with-label`，六个候选 Python scripts targeted Mypy PASS；不得表述为 full PASS。
 - [x] Phase 4 — 已按 evidence/UI/planning 三个显式 manifest 创建本地原子 commit；前两项为 `0d34a94`、`85859a6`，本 planning ledger commit 形成最终 clean exact SHA，提交后的 SHA 由 Git 外部核验。
 - [x] Phase 5 — 已由 Loop 59 Batch B 在 candidate `a3407a4b44766733c294d394181df3e64bb5f9b6` 上完成 exact-SHA L2 全量门禁、release manifest 与 `17 independent + 3 aliases` 三 viewport 本地矩阵；Batch C2 复审修复后的 local candidate `ce639ae1959bfb0a59a4f0ebc4ddd2e50f374712` 又完成 backend `854`、Web `364`、Ruff、Mypy 分层门禁、typecheck、lint、24-page release build 与 87-file manifest validator。
-- [ ] Phase 6 — C1、C2 review/multipart 修复、C2-UI、C2-PROMOTE 与 C3-READY 已完成；Ready-context CodeRabbit 后续收敛为 `SUCCESS`，PR #239 为 `OPEN/Ready/MERGEABLE/CLEAN`、remote head=`7a44c191...`。18 条可执行评论与 1 条测试建议已完成逐条核验和本地 remediation，独立复审发现的 role namespace P1 也已修复，第二轮复审无新发现；本地 Pytest `857`、Web `369`、Ruff、targeted Mypy、typecheck、lint、24-page build、三 viewport `60/60` 与 visible-copy `34/0` 全绿。修复仍未 commit/push，故远端 SUCCESS 不覆盖当前 working tree；下一门是独立授权原子 commit，而不是 C3-MERGE。
+- [ ] Phase 6 — C1、C2 review/multipart 修复、C2-UI、C2-PROMOTE、C3-READY 与 C3 remediation local commit 已完成；Ready-context CodeRabbit 为 `SUCCESS`，PR #239 为 `OPEN/Ready/MERGEABLE/CLEAN`、remote head=`7a44c191...`。18 条可执行评论、1 条测试建议及独立复审发现的 role namespace P1 已修复；runtime candidate=`9d9b192...`。第一次 exact desktop matrix 发现并关闭 4 处 history 浮层遮挡；最终 Pytest `857`、Web `369`、Ruff、targeted Mypy、typecheck、lint、24-page/87-file release build、三 viewport `60/60` 与 visible-copy `34/0` 全绿。修复尚未 push，故远端 SUCCESS 不覆盖当前 candidate；下一门是独立 push/PR refresh，而不是 C3-MERGE。
 - [ ] Phase 7 — 在 clean `main == origin/main == approved SHA` 下，经 production read-only 授权捕获 S0/topology 并运行 default deploy preflight；`partial_or_unknown` hard stop。
 - [ ] Phase 8 — 经 exact-SHA deploy + rollback pre-authorization 执行备份、frozen build、app rebuild、versioned static/Nginx/marker；禁止 schema/provider/review/business writes。
 - [ ] Phase 9 — 捕获 S1，运行 conditional L3 deployment-state audit，并证明 S0→S1 schema/business/object zero delta；成功状态仅为 `deployed_l3_verified`。
@@ -345,13 +345,13 @@ Execution TODO:
 
 Current blockers:
 
-- Remote exact candidate `7a44c191...` 的 PR promotion 与 C3 Ready 已完成；当前 merge 门的事实阻断已变为“CodeRabbit remediation 仍未 commit/push，远端检查不覆盖当前 working tree”，且 merge 尚未取得独立授权。
+- Remote exact candidate `7a44c191...` 的 PR promotion 与 C3 Ready 已完成；local runtime candidate 已推进到 `9d9b192...`。当前 merge 门的事实阻断是“remediation 尚未 push/远端复审”，且 merge 尚未取得独立授权。
 - `mypy src scripts` 保留 `195` 个继承错误/`10` 个 untouched files；D1.1 exact-fingerprint non-regression gate 已通过，但 `mypy_full_pass=false`，历史债务仍未修复。
 - D0 SQL/SSH paths are fixture/static verified only because no matching local PostgreSQL container is running; no L3 production capture has executed.
 - Object-storage evidence currently covers only the `document_storage_objects` database ledger; COS object enumeration remains unobserved.
 - The guard proves only that its collector made no provider attempt. Whole-runtime provider telemetry remains `provider_call_status=not_observed` and must not be promoted to `provider_call=false`.
 - SSH provenance/envelope is an operator-workspace evidence contract, not an external signed attestation against a malicious local operator who can replace both code and report; that stronger threat model requires separate architecture/authorization.
-- Phase 3 采用显式 non-regression exception；只允许证明当前候选未新增 Mypy 错误，不得声称 `mypy src scripts` full PASS。C3 remediation 的 3 个 changed Python source files 已通过 targeted Mypy，但历史 full-Mypy 债务不因此消失。当前 working tree 尚未 commit/push；PR refresh、merge 和生产操作仍为独立门。
+- Phase 3 采用显式 non-regression exception；只允许证明当前候选未新增 Mypy 错误，不得声称 `mypy src scripts` full PASS。C3 remediation 的 3 个 changed Python source files 已通过 targeted Mypy，但历史 full-Mypy 债务不因此消失。runtime candidate 已本地 commit、尚未 push；PR refresh、merge 和生产操作仍为独立门。
 
 Detailed source of truth:
 
@@ -361,7 +361,7 @@ Evidence boundary:
 
 - D0 is local implementation evidence only: `L2-fixture-or-dry-run`, `local_only`, `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
 - Final independent read-only reviews for release guard and frontend acceptance both report `accepted P0/P1=0` with high confidence under the documented controlled-operator threat model.
-- Batch C1/C2 executed the authorized GitHub promotion through exact head `7a44c191...`, and C3 executed only the authorized Ready transition. The later CodeRabbit remediation remains local and uncommitted; no merge, production probe, production backup, production Docker/Nginx change, provider call or production write was executed.
+- Batch C1/C2 executed the authorized GitHub promotion through exact head `7a44c191...`, and C3 executed the authorized Ready transition plus local remediation commit `9d9b192...`. The remediation remains unpushed; no merge, production probe, production backup, production Docker/Nginx change, provider call or production write was executed.
 
 ## 2026-07-16 Loop 59 Production Readiness Audit And Final Sprint
 
@@ -379,7 +379,7 @@ Execution TODO:
 - [x] Phase 3 — 发布 `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md`，冻结 NO-GO、P1/P2 和 Batch A-H TODO。
 - [x] Phase 4 — Batch A local P1 closure：Python 3.10 release-guard、mobile clipping/navigation/archive/overlay、visual detector、technical copy、agent cleanup dry-run 和 knowledge scope freeze；最终 local structural matrix `60/60`。
 - [x] Phase 5 — Batch B exact-SHA L2 closure：最终 candidate `a3407a4b44766733c294d394181df3e64bb5f9b6` 在隔离 clean clone 完成 backend `854`、Web `364`、Ruff、targeted/精确非回归 Mypy、typecheck、lint、24-page release build、87-file manifest validator、60/60 all-screenshot matrix、16-route 可见技术文案扫描和人工 visual sign-off；accepted P0/P1=`0`，visual verdict=`92/100`。证据台账为 post-candidate 未提交记录，不改变候选 SHA。
-- [ ] Phase 6 — C1、C2 multipart 修复、C2-UI、C2-PROMOTE 与 C3-READY 已完成；PR #239 为 OPEN/Ready、remote head=`7a44c191...`。Ready-context CodeRabbit 已 `SUCCESS` 并形成评论；本地 remediation 与复审/全量/三 viewport 验证已完成，但尚未 commit/push。下一步是独立授权原子 commit并重新冻结 exact SHA；push、PR refresh 与 C3-MERGE 继续分门授权。
+- [ ] Phase 6 — C1、C2 multipart 修复、C2-UI、C2-PROMOTE、C3-READY 与 C3 remediation commit 已完成；PR #239 为 OPEN/Ready、remote head=`7a44c191...`，local runtime candidate=`9d9b192...`。exact-SHA 复审、全量和三 viewport 验证均已完成；下一步是独立授权 push/PR refresh，C3-MERGE 继续分门授权。
 - [ ] Phase 7 — 经 L3 read-only 授权在 legacy production 捕获 fresh S0 并运行 first-migration deploy preflight；只接受 `legacy_ready`。
 - [ ] Phase 8 — 经 exact-SHA deploy + rollback 明确授权执行 versioned deploy；成功 exit 只标记 `deployed_pending_l3`。
 - [ ] Phase 9 — 捕获 S1 并完成 conditional L3 identity/health/zero-business-delta 验证；通过后标记 `deployed_l3_verified`。
@@ -388,10 +388,10 @@ Execution TODO:
 
 Current verdict:
 
-- Deployment：`NO-GO`；当前现网的既有健康证据不代表新候选已部署。`7a44c191...` 已进入 Ready PR且 Ready-context check 已收敛，但评论修复仍未 commit/push；merge、legacy production fresh S0、first-migration preflight 和 deploy 授权也均未完成。
+- Deployment：`NO-GO`；当前现网的既有健康证据不代表新候选已部署。`7a44c191...` 已进入 Ready PR且 Ready-context check 已收敛，评论修复已本地 commit 为 `9d9b192...` 但未 push；merge、legacy production fresh S0、first-migration preflight 和 deploy 授权也均未完成。
 - Knowledge：core medical retrieval healthy；只有 `5/25` registered collections 有数据，端到端 query/citation/provider quality 未验收。
 - Agents：304 persisted historical rows 只有 13 active、7 distinct templates、7 invoked keys；3 个 active identity group 重复，6 excess rows。100+ normal claim rejected。
-- UI：已部署 production 仍是旧 SHA，不能继承本地修复结论；当前 remediation working tree 的 API-blocked desktop/mobile/tablet structural matrix 为 `60/60`，desktop/mobile 34 次 visible-copy scan=`0`，人工关键页复核为 pass。真实 populated/authenticated production 专业度仍未完成。
+- UI：已部署 production 仍是旧 SHA，不能继承本地修复结论；local runtime candidate `9d9b192...` 的 API-blocked desktop/mobile/tablet structural matrix 为 `60/60`，desktop/mobile 34 次 visible-copy scan=`0`，人工关键页复核为 pass。真实 populated/authenticated production 专业度仍未完成。
 
 Detailed source of truth:
 

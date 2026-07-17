@@ -2160,3 +2160,11 @@ Plan output:
 - The browser and test evidence applies to the uncommitted local working tree only. Remote PR head and CodeRabbit result remain bound to `7a44c191...`; no exact-SHA claim can be made for the remediation until an authorized atomic commit is created and rebuilt.
 - Production knowledge coverage and 100+ agent operational claims were not refreshed in this remediation lane. The last L3 findings remain the applicable observation, not a current-turn re-acceptance.
 - Boundary remains `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 C3 Exact-SHA Browser Regression Findings
+
+- A contact-sheet visual pass did not prove floating-control non-occlusion. The first committed exact-SHA matrix found four intersections that were absent from the earlier narrative verdict; automated geometry evidence correctly overruled the manual summary.
+- The root cause was anchoring the desktop history trigger to the route-content bottom-right at `right=26/bottom=26`. That location competes with route CTAs, cards and the medical AI control. Keeping the trigger fixed but inside the desktop navigation rail removes the shared ownership conflict.
+- The corrected contract is desktop-only: expanded rail `left=12/bottom=86/width=232`, collapsed rail `left=24/width=44`; mobile keeps the existing topbar control. The final matrix proves zero route-content intersections at desktop, mobile and tablet.
+- Runtime candidate `9d9b192...` passes Web `369/369`, 24-page/87-file release build, desktop/mobile/tablet `60/60`, visible-copy `34/0`, lint, typecheck and diff-check. The release manifest is bound to the candidate and hashes to `f1c8df9a6ceca62f92bb525eb691a69ef63a39b27bed1dc1523c4f1f19e3bbf0`.
+- Remote PR #239 still points to `7a44c191...`; no remote check covers `9d9b192...` until a separately authorized push/PR refresh occurs.
