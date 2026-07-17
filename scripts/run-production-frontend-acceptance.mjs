@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { createHash } from "node:crypto";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -17,10 +19,38 @@ const DEFAULT_OUTPUT = "tmp/outputs/production-frontend-acceptance-latest.json";
 const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-latest";
 const DEFAULT_TENANT_ID = "hospital-demo";
 const DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607";
-const DEFAULT_ADMIN_USER_ID = "frontend-acceptance-admin";
 const AUDIT_AUTH_STORAGE_KEY = "medical-audit-authenticated";
 const AUDIT_ROLE_STORAGE_KEY = "medical-audit-current-role";
+const FLOATING_LAYOUT_POSITIONS = Object.freeze(["fixed", "absolute", "sticky"]);
 const DEFAULT_AUDIT_ROLE = "admin";
+const RELEASE_MANIFEST_FORMAT = "medical-audit-web-release-manifest-v1";
+const RELEASE_GUARD_FORMAT = "medical-audit-production-release-guard-v1";
+const DEPLOYMENT_METADATA_PATH = "/api/v1/deployment/metadata";
+const PUBLIC_RELEASE_MANIFEST_PATH = "/release-manifest.json";
+const DEPLOY_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const ACCEPTANCE_RUN_ID_PATTERN = /^fa-[0-9]{8}t[0-9]{6}z-[0-9a-f]{8,32}$/;
+const RELEASE_GUARD_EXECUTION_BOUNDARY_FORMAT =
+  "medical-audit-release-guard-execution-boundary-v1";
+const RELEASE_GUARD_OBSERVATION_TARGET_FORMAT =
+  "medical-audit-release-guard-observation-target-v1";
+const RELEASE_GUARD_CAPTURE_PROVENANCE_FORMAT =
+  "medical-audit-release-guard-capture-provenance-v1";
+const RELEASE_GUARD_COLLECTOR_PROTOCOL =
+  "ssh-stdin-release-topology-postgresql-readonly-v2";
+const RELEASE_GUARD_PRODUCTION_SSH_HOST = "101.34.52.232";
+const RELEASE_GUARD_PRODUCTION_SSH_USER = "ubuntu";
+const RELEASE_GUARD_SCRIPT_PATH = path.join(
+  repoRoot,
+  "scripts/audit-production-release-guard-snapshot.py",
+);
+const RELEASE_GUARD_ALLOWED_OPERATIONS = [
+  "filesystem-read",
+  "docker-exec-psql-readonly",
+  "docker-inspect-readonly",
+  "docker-exec-app-deploy-sha-readonly",
+  "docker-exec-nginx-config-test",
+];
 
 const viewports = [
   { name: "desktop", width: 1440, height: 1100 },
@@ -76,57 +106,148 @@ const routeCheckProfiles = {
     { route: "/pages/audit-logs", requiredText: [/审计日志台/, /审计日志/] },
   ],
   hardened: [
-    { route: "/workspace", requiredText: [/AI，让审计更智能/] },
+    {
+      route: "/login",
+      expectedPath: "/login",
+      session: "anonymous",
+      requiredText: [/登录工作台/],
+      requiredControlText: [/(^|\s)登录($|\s)/],
+    },
+    {
+      route: "/medical-audit",
+      expectedPath: "/medical-audit",
+      session: "workspace",
+      requiredText: [/医保审计/, /智能审计/],
+    },
     {
       route: "/fund-compliance",
+      expectedPath: "/fund-compliance",
+      expectedChromeTitle: "医保基金使用合规",
+      session: "workspace",
       requiredText: [/医保基金使用合规/, /医保审计/],
       requiredTextAny: [[/复核表单/, /费用表单/, /归档包/]],
     },
     {
       route: "/fund-compliance/review",
+      expectedPath: "/fund-compliance/review",
+      expectedChromeTitle: "医保基金复核表单",
+      session: "workspace",
       requiredText: [/医保基金复核表单/, /费用汇总表/, /分类汇总表|医保费用分类汇总表/, /就诊明细表|就诊费用明细表/],
     },
-    { route: "/chat", requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/] },
+    {
+      route: "/chat",
+      expectedPath: "/chat",
+      session: "workspace",
+      requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/],
+    },
     {
       route: "/agents",
+      expectedPath: "/agents",
+      session: "workspace",
       requiredText: [/我的助手|我的智能体/, /智能体/],
       requiredControlText: [/查看详情|创建/],
     },
     {
       route: "/agent-market",
+      expectedPath: "/agent-market",
+      session: "workspace",
       requiredText: [/智能体广场/, /详情/],
       requiredTextAny: [[/全部/, /财务收支审计/, /采购招标审计/, /工程审计/]],
     },
     {
       route: "/analytics",
+      expectedPath: "/analytics",
+      session: "workspace",
       requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
     },
     {
       route: "/projects",
+      expectedPath: "/projects",
+      session: "workspace",
       requiredText: [/项目管理/, /项目协作工作台/, /可见项目/],
     },
-    { route: "/documents", requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/] },
-    { route: "/knowledge-base", requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/] },
-    { route: "/graph", requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/] },
-    { route: "/rules", requiredText: [/知识库|规则|法规/] },
-    { route: "/reports", requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/] },
+    {
+      route: "/documents",
+      expectedPath: "/documents",
+      session: "workspace",
+      requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/],
+    },
+    {
+      route: "/knowledge-base",
+      expectedPath: "/knowledge-base",
+      session: "workspace",
+      requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/],
+    },
+    {
+      route: "/graph",
+      expectedPath: "/graph",
+      session: "workspace",
+      requiredText: [/知识图谱/, /最小知识图谱方案|医疗审计知识工程|图谱/],
+    },
+    {
+      route: "/rules",
+      expectedPath: "/rules",
+      expectedChromeTitle: "规则运行工作台",
+      session: "workspace",
+      requiredText: [/知识库|规则|法规/],
+    },
+    {
+      route: "/reports",
+      expectedPath: "/reports",
+      session: "workspace",
+      requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/],
+    },
     {
       route: "/remediation",
-      postLoadWaitMs: 2_000,
-      requiredText: [/医保审计/],
-      requiredTextAny: [[/待处理/, /异常/, /疑点/, /规则/]],
+      expectedPath: "/remediation",
+      expectedChromeTitle: "整改工作台",
+      session: "workspace",
+      requiredText: [/整改/, /补证/, /关闭门禁/],
     },
-    { route: "/archive", requiredText: [/项目档案归档/, /归档包/, /签名链|归档策略|审计日志/] },
-    { route: "/guided-check", requiredText: [/引导式核查/, /核查步骤/, /AI 审证问题|材料准备状态/] },
     {
-      route: "/findings",
-      postLoadWaitMs: 2_000,
-      requiredText: [/医保审计/],
-      requiredTextAny: [[/待处理/, /异常/, /疑点/, /规则/]],
+      route: "/archive",
+      expectedPath: "/archive",
+      expectedChromeTitle: "归档工作台",
+      session: "workspace",
+      requiredText: [/项目档案归档/, /归档包/, /签名链|归档策略|审计日志/],
     },
-    { route: "/knowledge-query", requiredText: [/文档检索/, /对话文档|检索结果|搜索历史/] },
+    {
+      route: "/guided-check",
+      expectedPath: "/guided-check",
+      expectedChromeTitle: "引导式核查",
+      session: "workspace",
+      requiredText: [/引导式核查/, /核查步骤/, /AI 审证问题|材料准备状态/],
+    },
   ],
 };
+const aliasRouteChecks = [
+  {
+    route: "/workspace",
+    inputSearch: "",
+    expectedPath: "/chat",
+    expectedSearch: "",
+    session: "workspace",
+    requiredText: [/AI，让审计更智能/],
+  },
+  {
+    route: "/findings",
+    inputSearch: "",
+    expectedPath: "/medical-audit",
+    expectedSearch: "",
+    session: "workspace",
+    requiredText: [/医保审计/, /智能审计/],
+  },
+  {
+    route: "/knowledge-query",
+    inputSearch:
+      "?q=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&unknown=discard&source_collection=personal-materials",
+    expectedPath: "/documents",
+    expectedSearch:
+      "?query=%E5%8C%BB%E4%BF%9D%E6%94%AF%E4%BB%98&source_collection=medical-insurance-laws&source_collection=personal-materials",
+    session: "workspace",
+    requiredText: [/文档检索/, /对话文档|检索结果|搜索历史/],
+  },
+];
 const contractProfiles = Object.keys(routeCheckProfiles);
 
 const placeholderPatterns = [
@@ -151,6 +272,9 @@ function parseArgs(argv) {
     contractProfile: DEFAULT_CONTRACT_PROFILE,
     allowAuditLogWrites: false,
     confirmProductionWrite: null,
+    expectedDeploySha: null,
+    acceptanceRunId: null,
+    releaseGuardReport: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -185,6 +309,21 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--confirm-production-write=")) {
       options.confirmProductionWrite = arg.split("=", 2)[1];
+    } else if (arg === "--expected-deploy-sha" && next) {
+      options.expectedDeploySha = next;
+      index += 1;
+    } else if (arg.startsWith("--expected-deploy-sha=")) {
+      options.expectedDeploySha = arg.split("=", 2)[1];
+    } else if (arg === "--acceptance-run-id" && next) {
+      options.acceptanceRunId = next;
+      index += 1;
+    } else if (arg.startsWith("--acceptance-run-id=")) {
+      options.acceptanceRunId = arg.split("=", 2)[1];
+    } else if (arg === "--release-guard-report" && next) {
+      options.releaseGuardReport = next;
+      index += 1;
+    } else if (arg.startsWith("--release-guard-report=")) {
+      options.releaseGuardReport = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -219,16 +358,14 @@ Options:
   --confirm-production-write <host>
                             Required with --allow-audit-log-writes for every target;
                             must equal ${PRODUCTION_HOST}
+  --expected-deploy-sha <sha> Exact 40-character lowercase release commit SHA
+  --acceptance-run-id <id>   Unique run id: fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>
+  --release-guard-report <path>
+                            Passing S1 medical-audit-production-release-guard-v1 report
 `);
 }
 
 function validateSideEffectAuthorization(options) {
-  try {
-    new URL(options.baseUrl);
-  } catch {
-    throw new Error(`Invalid --base-url: ${options.baseUrl}`);
-  }
-
   if (!options.allowAuditLogWrites) {
     throw new Error(
       "Frontend acceptance fails closed by default: browser routes and API permission checks can write audit-log records. " +
@@ -241,6 +378,407 @@ function validateSideEffectAuthorization(options) {
       `Audit-log writes require --confirm-production-write ${PRODUCTION_HOST} for every target.`,
     );
   }
+  return normalizeProductionBaseUrl(options.baseUrl);
+}
+
+function normalizeProductionBaseUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Invalid --base-url: ${value}`);
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname !== PRODUCTION_HOST ||
+    (parsed.port !== "" && parsed.port !== "443") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
+    throw new Error(
+      `--base-url must be the exact production origin https://${PRODUCTION_HOST}`,
+    );
+  }
+  return DEFAULT_BASE_URL;
+}
+
+function validateAcceptanceEvidenceOptions(options) {
+  if (!DEPLOY_SHA_PATTERN.test(options.expectedDeploySha ?? "")) {
+    throw new Error("--expected-deploy-sha must be exactly 40 lowercase hexadecimal characters");
+  }
+  if (!ACCEPTANCE_RUN_ID_PATTERN.test(options.acceptanceRunId ?? "")) {
+    throw new Error(
+      "--acceptance-run-id must match fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>",
+    );
+  }
+  if (typeof options.releaseGuardReport !== "string" || options.releaseGuardReport.trim() === "") {
+    throw new Error("--release-guard-report is required");
+  }
+}
+
+function deriveAcceptanceUserId(acceptanceRunId) {
+  if (!ACCEPTANCE_RUN_ID_PATTERN.test(acceptanceRunId ?? "")) {
+    throw new Error(
+      "--acceptance-run-id must match fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>",
+    );
+  }
+  return `frontend-acceptance-${acceptanceRunId}`;
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(",")}}`;
+}
+
+const RELEASE_GUARD_SNAPSHOT_CORE_FIELDS = [
+  "phase",
+  "generated_at",
+  "observation_target",
+  "expected_deploy_sha",
+  "observed_deploy_sha",
+  "transaction_read_only",
+  "transaction_read_only_observed",
+  "transaction_isolation_observed",
+  "transaction_deferrable_observed",
+  "release_topology",
+  "release_topology_evidence",
+  "current_release_target",
+  "manifest_source_sha",
+  "manifest_sha256",
+  "schema_fingerprint",
+  "schema_tables",
+  "schema_fingerprint_scope",
+  "tables",
+  "object_storage",
+  "provider_call_status",
+  "provider_evidence_source",
+  "collector_provider_call_status",
+  "collector_provider_attempt_count",
+  "collector_execution_boundary",
+  "capture_consistency",
+  "audit_attribution",
+];
+
+function recomputeReleaseGuardSnapshotId(payload) {
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    RELEASE_GUARD_SNAPSHOT_CORE_FIELDS.some(
+      (field) => !Object.prototype.hasOwnProperty.call(payload, field),
+    )
+  ) {
+    return null;
+  }
+  const core = Object.fromEntries(
+    RELEASE_GUARD_SNAPSHOT_CORE_FIELDS.map((field) => [field, payload[field]]),
+  );
+  return sha256(canonicalJson(core));
+}
+
+function loadReleaseGuardEvidence(value, expectedDeploySha, acceptanceRunId) {
+  if (!DEPLOY_SHA_PATTERN.test(expectedDeploySha ?? "")) {
+    throw new Error("expected deploy SHA must be exactly 40 lowercase hexadecimal characters");
+  }
+  if (!ACCEPTANCE_RUN_ID_PATTERN.test(acceptanceRunId ?? "")) {
+    throw new Error("acceptance run id is invalid for release guard binding");
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("release guard report path is required");
+  }
+  const reportPath = resolveRepoPath(value);
+  let raw;
+  try {
+    raw = fs.readFileSync(reportPath);
+  } catch {
+    throw new Error(`release guard report is not readable: ${reportPath}`);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw.toString("utf8"));
+  } catch {
+    throw new Error(`release guard report is not valid JSON: ${reportPath}`);
+  }
+  const snapshotId = payload?.snapshot_id;
+  const recomputedSnapshotId = recomputeReleaseGuardSnapshotId(payload);
+  const collectorBoundary = payload?.collector_execution_boundary;
+  const observationTarget = payload?.observation_target;
+  const topology = payload?.release_topology_evidence;
+  const auditAttribution = payload?.audit_attribution;
+  const captureProvenance = payload?.capture_provenance;
+  let currentCollectorSourceSha256 = null;
+  try {
+    currentCollectorSourceSha256 = sha256(fs.readFileSync(RELEASE_GUARD_SCRIPT_PATH));
+  } catch {
+    throw new Error(`release guard collector source is not readable: ${RELEASE_GUARD_SCRIPT_PATH}`);
+  }
+  const recomputedEnvelopeId = sha256(
+    canonicalJson({
+      snapshot_id: snapshotId,
+      capture_provenance: captureProvenance,
+    }),
+  );
+  const valid =
+    payload !== null &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    payload.format === RELEASE_GUARD_FORMAT &&
+    payload.mode === "capture" &&
+    payload.phase === "S1" &&
+    payload.status === "pass" &&
+    payload.evidence_grade === "L3-production-read-only" &&
+    payload.source === "ssh-live-readonly" &&
+    /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(
+      payload.generated_at ?? "",
+    ) &&
+    observationTarget?.format === RELEASE_GUARD_OBSERVATION_TARGET_FORMAT &&
+    observationTarget?.kind === "production-ssh" &&
+    observationTarget?.ssh_host === RELEASE_GUARD_PRODUCTION_SSH_HOST &&
+    observationTarget?.remote_app_dir === "/opt/medical-audit/app" &&
+    observationTarget?.remote_web_dir === "/var/www/audit" &&
+    observationTarget?.postgres_container === "medical_audit_pg" &&
+    payload.expected_deploy_sha === expectedDeploySha &&
+    payload.observed_deploy_sha === expectedDeploySha &&
+    payload.provider_call_status === "not_observed" &&
+    payload.provider_evidence_source === "outside-release-guard-scope" &&
+    payload.collector_provider_call_status === "not_called" &&
+    payload.collector_provider_attempt_count === 0 &&
+    collectorBoundary?.format === RELEASE_GUARD_EXECUTION_BOUNDARY_FORMAT &&
+    collectorBoundary?.collector_protocol === RELEASE_GUARD_COLLECTOR_PROTOCOL &&
+    JSON.stringify(collectorBoundary?.allowed_operations) ===
+      JSON.stringify(RELEASE_GUARD_ALLOWED_OPERATIONS) &&
+    collectorBoundary?.executed_postgresql_readonly_commands === 2 &&
+    collectorBoundary?.executed_runtime_readonly_commands === 8 &&
+    collectorBoundary?.rejected_command_count === 0 &&
+    collectorBoundary?.collector_provider_endpoint_attempt_count === 0 &&
+    collectorBoundary?.provider_environment_read === false &&
+    collectorBoundary?.secret_values_reported === false &&
+    payload.database_write === false &&
+    payload.transaction_read_only === true &&
+    payload.transaction_read_only_observed === "on" &&
+    payload.transaction_isolation_observed === "serializable" &&
+    payload.transaction_deferrable_observed === "on" &&
+    payload.release_topology === "versioned_ready" &&
+    topology?.releases_root?.kind === "directory" &&
+    topology?.current?.kind === "symlink" &&
+    topology?.current?.target === `releases/${expectedDeploySha}` &&
+    topology?.deploy_marker?.kind === "regular_file" &&
+    topology?.deploy_marker?.sha === expectedDeploySha &&
+    topology?.release?.kind === "directory" &&
+    topology?.release?.sha === expectedDeploySha &&
+    topology?.release?.manifest_source_sha === expectedDeploySha &&
+    payload.current_release_target === `releases/${expectedDeploySha}` &&
+    payload.object_storage?.status === "observed" &&
+    payload.object_storage?.observation_scope === "database-ledger" &&
+    auditAttribution?.acceptance_run_id === acceptanceRunId &&
+    auditAttribution?.audit_user_identifier === `frontend-acceptance-${acceptanceRunId}` &&
+    auditAttribution?.attributable_event_count === 0 &&
+    auditAttribution?.event_id_fingerprint === sha256("") &&
+    Array.isArray(auditAttribution?.event_ids) &&
+    auditAttribution.event_ids.length === 0 &&
+    captureProvenance?.format === RELEASE_GUARD_CAPTURE_PROVENANCE_FORMAT &&
+    captureProvenance?.transport === "ssh-stdin" &&
+    captureProvenance?.ssh_host === RELEASE_GUARD_PRODUCTION_SSH_HOST &&
+    captureProvenance?.ssh_user === RELEASE_GUARD_PRODUCTION_SSH_USER &&
+    captureProvenance?.batch_mode === true &&
+    captureProvenance?.strict_host_key_checking === true &&
+    captureProvenance?.identities_only === true &&
+    captureProvenance?.ssh_exit_code === 0 &&
+    captureProvenance?.remote_app_dir === "/opt/medical-audit/app" &&
+    captureProvenance?.remote_web_dir === "/var/www/audit" &&
+    captureProvenance?.postgres_container === "medical_audit_pg" &&
+    captureProvenance?.collector_source_sha256 === currentCollectorSourceSha256 &&
+    payload.capture_envelope_id === recomputedEnvelopeId &&
+    Array.isArray(payload.blocking_reasons) &&
+    payload.blocking_reasons.length === 0 &&
+    payload.guard_execution_write === false &&
+    payload.capture_side_effect === "none" &&
+    typeof snapshotId === "string" &&
+    SHA256_PATTERN.test(snapshotId) &&
+    recomputedSnapshotId === snapshotId;
+  if (!valid) {
+    throw new Error(
+      "release guard report must be a complete L3 ssh-live-readonly S1 capture bound to the " +
+        "expected deploy SHA, current_release_target=releases/<expected SHA>, a validated " +
+        "collector-only execution boundary, database_write=false, and a serializable " +
+        "read-only deferrable transaction",
+    );
+  }
+  return {
+    report_path: reportPath,
+    report_sha256: sha256(raw),
+    evidence_source: "release-guard-report:S1",
+    snapshot_id: snapshotId,
+    format: payload.format,
+    mode: payload.mode,
+    phase: payload.phase,
+    status: payload.status,
+    evidence_grade: payload.evidence_grade,
+    source: payload.source,
+    generated_at: payload.generated_at,
+    observation_target: payload.observation_target,
+    capture_provenance: payload.capture_provenance,
+    capture_envelope_id: payload.capture_envelope_id,
+    expected_deploy_sha: payload.expected_deploy_sha,
+    observed_deploy_sha: payload.observed_deploy_sha,
+    provider_call_status: payload.provider_call_status,
+    provider_evidence_source: payload.provider_evidence_source,
+    collector_provider_call_status: payload.collector_provider_call_status,
+    collector_provider_attempt_count: payload.collector_provider_attempt_count,
+    collector_execution_boundary: payload.collector_execution_boundary,
+    database_write: payload.database_write,
+    transaction_read_only: payload.transaction_read_only,
+    transaction_read_only_observed: payload.transaction_read_only_observed,
+    transaction_isolation_observed: payload.transaction_isolation_observed,
+    transaction_deferrable_observed: payload.transaction_deferrable_observed,
+    release_topology: payload.release_topology,
+    release_topology_evidence: payload.release_topology_evidence,
+    current_release_target: payload.current_release_target,
+    object_storage: payload.object_storage,
+    audit_attribution: payload.audit_attribution,
+    blocking_reasons: payload.blocking_reasons,
+    guard_execution_write: payload.guard_execution_write,
+    capture_side_effect: payload.capture_side_effect,
+  };
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function crc32(content) {
+  let crc = 0xffffffff;
+  for (const byte of content) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function readPngEvidence(value) {
+  if (typeof value !== "string" || path.extname(value).toLowerCase() !== ".png") {
+    return null;
+  }
+  let content;
+  try {
+    content = fs.readFileSync(value);
+  } catch {
+    return null;
+  }
+  if (
+    content.length < 45 ||
+    !content.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+    content.readUInt32BE(8) !== 13 ||
+    content.subarray(12, 16).toString("ascii") !== "IHDR"
+  ) {
+    return null;
+  }
+  const width = content.readUInt32BE(16);
+  const height = content.readUInt32BE(20);
+  const bitDepth = content[24];
+  const colorType = content[25];
+  const compressionMethod = content[26];
+  const filterMethod = content[27];
+  const interlaceMethod = content[28];
+  const channels = { 2: 3, 6: 4 }[colorType];
+  if (
+    width <= 0 ||
+    height <= 0 ||
+    bitDepth !== 8 ||
+    channels === undefined ||
+    compressionMethod !== 0 ||
+    filterMethod !== 0 ||
+    interlaceMethod !== 0
+  ) {
+    return null;
+  }
+  let offset = PNG_SIGNATURE.length;
+  let sawIend = false;
+  const idatChunks = [];
+  while (offset + 12 <= content.length) {
+    const chunkLength = content.readUInt32BE(offset);
+    const chunkEnd = offset + 12 + chunkLength;
+    if (chunkEnd > content.length) {
+      return null;
+    }
+    const chunkType = content.subarray(offset + 4, offset + 8).toString("ascii");
+    const recordedCrc = content.readUInt32BE(offset + 8 + chunkLength);
+    const computedCrc = crc32(content.subarray(offset + 4, offset + 8 + chunkLength));
+    if (recordedCrc !== computedCrc) {
+      return null;
+    }
+    if (chunkType === "IEND") {
+      if (chunkLength !== 0 || chunkEnd !== content.length) {
+        return null;
+      }
+      sawIend = true;
+      break;
+    }
+    if (chunkType === "IDAT") {
+      idatChunks.push(content.subarray(offset + 8, offset + 8 + chunkLength));
+    }
+    offset = chunkEnd;
+  }
+  const rowBytes = width * channels;
+  const expectedInflatedSize = (rowBytes + 1) * height;
+  if (!sawIend || idatChunks.length === 0 || expectedInflatedSize > 20 * 1024 * 1024) {
+    return null;
+  }
+  let inflated;
+  try {
+    inflated = inflateSync(Buffer.concat(idatChunks), {
+      maxOutputLength: expectedInflatedSize,
+    });
+  } catch {
+    return null;
+  }
+  if (inflated.length !== expectedInflatedSize) {
+    return null;
+  }
+  for (let row = 0; row < height; row += 1) {
+    if (inflated[row * (rowBytes + 1)] > 4) {
+      return null;
+    }
+  }
+  return {
+    path: value,
+    sha256: sha256(content),
+    size_bytes: content.length,
+    width,
+    height,
+    format: "png",
+  };
+}
+
+function screenshotFileName({ acceptanceRunId, contractKind, viewport, route, inputSearch }) {
+  if (
+    !ACCEPTANCE_RUN_ID_PATTERN.test(acceptanceRunId ?? "") ||
+    typeof contractKind !== "string" ||
+    typeof viewport !== "string" ||
+    typeof route !== "string"
+  ) {
+    return null;
+  }
+  const safeRoute = route.replaceAll("/", "_").replace(/^_/, "") || "root";
+  const executionHash = sha256(
+    JSON.stringify({ contractKind, viewport, route, inputSearch: inputSearch ?? "" }),
+  ).slice(0, 12);
+  return `${acceptanceRunId}-${contractKind}-${viewport}-${safeRoute}-${executionHash}.png`;
 }
 
 function sanitizeUrl(value) {
@@ -250,6 +788,32 @@ function sanitizeUrl(value) {
   } catch {
     return "invalid-url";
   }
+}
+
+function finalPath(url) {
+  try {
+    return new URL(url).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return null;
+  }
+}
+
+function finalSearch(url) {
+  try {
+    return new URL(url).search;
+  } catch {
+    return null;
+  }
+}
+
+function buildBrowserContextOptions(viewport, session, acceptanceHeaders) {
+  const options = {
+    viewport: { width: viewport.width, height: viewport.height },
+  };
+  if (session !== "anonymous") {
+    options.extraHTTPHeaders = acceptanceHeaders;
+  }
+  return options;
 }
 
 function sanitizeFailedRequest(failed) {
@@ -268,6 +832,19 @@ function sanitizeOverflowOffenders(items) {
   return items.map((item) => ({
     tag: item.tag,
     rect: item.rect,
+  }));
+}
+
+function sanitizeFloatingControlOcclusions(items) {
+  return items.map((item) => ({
+    floating: {
+      tag: item.floating.tag,
+      rect: item.floating.rect,
+    },
+    covered: {
+      tag: item.covered.tag,
+      rect: item.covered.rect,
+    },
   }));
 }
 
@@ -327,10 +904,14 @@ function readBooleanEnv(name) {
   return ["1", "true", "yes"].includes((process.env[name] ?? "").trim().toLowerCase());
 }
 
+function isFloatingLayoutPosition(position) {
+  return FLOATING_LAYOUT_POSITIONS.includes(position);
+}
+
 async function snapshot(page) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await page.evaluate(() => {
+      return await page.evaluate((floatingLayoutPositions) => {
         const isVisible = (element) => {
           const style = window.getComputedStyle(element);
           const rect = element.getBoundingClientRect();
@@ -371,8 +952,10 @@ async function snapshot(page) {
           }
           return parts.join(" > ");
         };
-        const controlText = Array.from(document.querySelectorAll("input, textarea, select, button, a"))
-          .filter(isVisible)
+        const interactiveElements = Array.from(
+          document.querySelectorAll("input, textarea, select, button, a, [role='button'], [role='tab']"),
+        ).filter(isVisible);
+        const controlText = interactiveElements
           .map((element) =>
             [
               element.textContent,
@@ -387,6 +970,26 @@ async function snapshot(page) {
           .filter(Boolean);
         const root = document.documentElement;
         const clientWidth = root.clientWidth;
+        const layoutDescriptor = (element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tag: element.tagName.toLowerCase(),
+            id: element.getAttribute("id") ?? "",
+            className: elementClassName(element).slice(0, 160),
+            role: element.getAttribute("role") ?? "",
+            ariaLabel: element.getAttribute("aria-label") ?? "",
+            selector: selectorPath(element),
+            text: compact(element.textContent ?? "").slice(0, 160),
+            rect: {
+              left: Math.round(rect.left),
+              right: Math.round(rect.right),
+              top: Math.round(rect.top),
+              bottom: Math.round(rect.bottom),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          };
+        };
         const overflowOffenders = Array.from(document.querySelectorAll("body *"))
           .filter((element) => element !== document.body && element !== document.documentElement && isVisible(element))
           .map((element) => {
@@ -397,26 +1000,49 @@ async function snapshot(page) {
             if (!overflowsRight && !overflowsLeft && !widerThanViewport) {
               return null;
             }
-            return {
-              tag: element.tagName.toLowerCase(),
-              id: element.getAttribute("id") ?? "",
-              className: elementClassName(element).slice(0, 160),
-              role: element.getAttribute("role") ?? "",
-              ariaLabel: element.getAttribute("aria-label") ?? "",
-              selector: selectorPath(element),
-              text: compact(element.textContent ?? "").slice(0, 160),
-              rect: {
-                left: Math.round(rect.left),
-                right: Math.round(rect.right),
-                width: Math.round(rect.width),
-              },
-            };
+            return layoutDescriptor(element);
           })
           .filter(Boolean)
           .sort((left, right) => right.rect.right - left.rect.right || right.rect.width - left.rect.width)
           .slice(0, 10);
+        const interactiveOverflowOffenders = interactiveElements
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.right <= clientWidth + 2 && rect.left >= -2) {
+              return null;
+            }
+            return layoutDescriptor(element);
+          })
+          .filter(Boolean)
+          .sort((left, right) => right.rect.right - left.rect.right)
+          .slice(0, 10);
+        const intersects = (left, right) => (
+          Math.min(left.right, right.right) - Math.max(left.left, right.left) > 4
+          && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 4
+        );
+        const routeInteractiveElements = interactiveElements.filter((element) =>
+          element.closest(".replica-page-scroll") !== null
+        );
+        const floatingControlOcclusions = Array.from(
+          document.querySelectorAll("[data-layout-floating-control]"),
+        )
+          .filter(isVisible)
+          .filter((floating) => floatingLayoutPositions.includes(window.getComputedStyle(floating).position))
+          .flatMap((floating) => {
+            const floatingRect = floating.getBoundingClientRect();
+            return routeInteractiveElements
+              .filter((covered) => covered !== floating && !floating.contains(covered))
+              .filter((covered) => intersects(floatingRect, covered.getBoundingClientRect()))
+              .map((covered) => ({
+                floating: layoutDescriptor(floating),
+                covered: layoutDescriptor(covered),
+              }));
+          })
+          .slice(0, 10);
+        const chromeTitleElement = Array.from(document.querySelectorAll(".replica-topbar-title")).find(isVisible);
         return {
           title: document.title,
+          chromeTitle: chromeTitleElement ? compact(chromeTitleElement.textContent ?? "") : null,
           bodyText: document.body?.innerText ?? "",
           headings: Array.from(document.querySelectorAll("h1,h2,h3"))
             .filter(isVisible)
@@ -428,8 +1054,10 @@ async function snapshot(page) {
           clientWidth,
           horizontalOverflow: root.scrollWidth > clientWidth + 2,
           overflowOffenders,
+          interactiveOverflowOffenders,
+          floatingControlOcclusions,
         };
-      });
+      }, FLOATING_LAYOUT_POSITIONS);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("Execution context was destroyed") || attempt === 3) {
@@ -567,6 +1195,15 @@ async function seedWorkspaceSession(context) {
   );
 }
 
+function isLoginGateSnapshot(snapshot) {
+  const headings = Array.isArray(snapshot?.headings) ? snapshot.headings : [];
+  const submitControls = Array.isArray(snapshot?.submitControls) ? snapshot.submitControls : [];
+  return (
+    headings.some((value) => compactText(String(value)) === "登录工作台") &&
+    submitControls.some((value) => compactText(String(value)) === "登录")
+  );
+}
+
 async function ensureWorkspaceSession(page, timeoutMs) {
   await page
     .evaluate(
@@ -582,14 +1219,19 @@ async function ensureWorkspaceSession(page, timeoutMs) {
     )
     .catch(() => {});
 
-  const isLoginGate = await page
+  const loginGateSnapshot = await page
     .evaluate(() => {
-      const text = document.body?.innerText ?? "";
-      return text.includes("登录工作台") && text.includes("进入系统");
+      const textOf = (element) => element.textContent || element.getAttribute("value") || "";
+      return {
+        headings: Array.from(document.querySelectorAll("h1,h2,h3")).map(textOf),
+        submitControls: Array.from(
+          document.querySelectorAll('form button[type="submit"], form input[type="submit"]'),
+        ).map(textOf),
+      };
     })
-    .catch(() => false);
+    .catch(() => null);
 
-  if (isLoginGate) {
+  if (isLoginGateSnapshot(loginGateSnapshot)) {
     await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
   }
 }
@@ -600,6 +1242,43 @@ function issue(severity, type, message) {
 
 function classify(check, routeCheck, data) {
   const issues = [];
+  if (routeCheck.expectedPath) {
+    const observedPath = finalPath(check.finalUrl);
+    if (observedPath !== routeCheck.expectedPath) {
+      issues.push(
+        issue(
+          "P0",
+          "unexpected-final-path",
+          `expected ${routeCheck.expectedPath}; observed ${observedPath ?? "invalid-url"}`,
+        ),
+      );
+    }
+  }
+  if (typeof routeCheck.expectedSearch === "string") {
+    const observedSearch =
+      typeof check.finalSearch === "string" ? check.finalSearch : finalSearch(check.finalUrl);
+    if (observedSearch !== routeCheck.expectedSearch) {
+      issues.push(
+        issue(
+          "P0",
+          "unexpected-final-search",
+          `expected ${routeCheck.expectedSearch || "<empty>"}; observed ${observedSearch || "<empty>"}`,
+        ),
+      );
+    }
+  }
+  if (
+    typeof routeCheck.expectedChromeTitle === "string" &&
+    data.chromeTitle !== routeCheck.expectedChromeTitle
+  ) {
+    issues.push(
+      issue(
+        "P0",
+        "unexpected-chrome-title",
+        `expected ${routeCheck.expectedChromeTitle}; observed ${data.chromeTitle ?? "missing"}`,
+      ),
+    );
+  }
   if (!check.status || check.status >= 400) {
     issues.push(issue("P0", "http-status", `HTTP ${check.status ?? "unknown"}`));
   }
@@ -626,6 +1305,24 @@ function classify(check, routeCheck, data) {
         "P1",
         "horizontal-overflow",
         `scrollWidth ${data.scrollWidth} > clientWidth ${data.clientWidth}; offenders ${data.overflowOffenders.length}`,
+      ),
+    );
+  }
+  if ((data.interactiveOverflowOffenders?.length ?? 0) > 0) {
+    issues.push(
+      issue(
+        "P1",
+        "interactive-control-overflow",
+        `${data.interactiveOverflowOffenders.length} interactive control(s) outside the viewport`,
+      ),
+    );
+  }
+  if ((data.floatingControlOcclusions?.length ?? 0) > 0) {
+    issues.push(
+      issue(
+        "P1",
+        "floating-control-occlusion",
+        `${data.floatingControlOcclusions.length} route control(s) covered by a floating control`,
       ),
     );
   }
@@ -678,7 +1375,8 @@ async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
       redirect: "manual",
       signal: controller.signal,
     });
-    const bodyText = await response.text();
+    const bodyBytes = Buffer.from(await response.arrayBuffer());
+    const bodyText = bodyBytes.toString("utf8");
     let body = null;
     try {
       body = JSON.parse(bodyText);
@@ -689,6 +1387,7 @@ async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
       status: response.status,
       body,
       bodyText,
+      bodySha256: sha256(bodyBytes),
       contentType: response.headers.get("content-type") ?? "unknown",
       location: response.headers.get("location") ?? null,
     };
@@ -697,7 +1396,130 @@ async function fetchWithTimeout(url, { headers = {}, timeoutMs }) {
   }
 }
 
-async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, timeoutMs }) {
+async function observeReleaseIdentity({ baseUrl, acceptanceHeaders, timeoutMs }) {
+  const publicManifest = await fetchWithTimeout(`${baseUrl}${PUBLIC_RELEASE_MANIFEST_PATH}`, {
+    timeoutMs,
+    headers: { Accept: "application/json" },
+  });
+  const deploymentMetadata = await fetchWithTimeout(`${baseUrl}${DEPLOYMENT_METADATA_PATH}`, {
+    timeoutMs,
+    headers: {
+      Accept: "application/json",
+      ...acceptanceHeaders,
+    },
+  });
+  return {
+    public_manifest: {
+      path: PUBLIC_RELEASE_MANIFEST_PATH,
+      http_status: publicManifest.status,
+      content_type: publicManifest.contentType,
+      format: publicManifest.body?.format ?? null,
+      source_sha: publicManifest.body?.source_sha ?? null,
+      body_sha256: publicManifest.bodySha256,
+    },
+    deployment_metadata: {
+      path: DEPLOYMENT_METADATA_PATH,
+      http_status: deploymentMetadata.status,
+      content_type: deploymentMetadata.contentType,
+      status: deploymentMetadata.body?.status ?? null,
+      deploy_sha_status: deploymentMetadata.body?.deploy_sha_status ?? null,
+      observed_deploy_sha: deploymentMetadata.body?.deploy_sha ?? null,
+      deploy_sha_source: deploymentMetadata.body?.deploy_sha_source ?? null,
+      body_sha256: deploymentMetadata.bodySha256,
+    },
+  };
+}
+
+function validateReleaseIdentityObservation(observation, expectedDeploySha, label) {
+  const publicManifest = observation?.public_manifest ?? {};
+  const deploymentMetadata = observation?.deployment_metadata ?? {};
+  if (
+    publicManifest.http_status !== 200 ||
+    publicManifest.format !== RELEASE_MANIFEST_FORMAT ||
+    publicManifest.source_sha !== expectedDeploySha ||
+    !SHA256_PATTERN.test(publicManifest.body_sha256 ?? "")
+  ) {
+    throw new Error(
+      `${label} public release manifest is not a valid ${RELEASE_MANIFEST_FORMAT} artifact bound to ${expectedDeploySha}`,
+    );
+  }
+  if (
+    deploymentMetadata.http_status !== 200 ||
+    deploymentMetadata.status !== "deployment_metadata_available" ||
+    deploymentMetadata.deploy_sha_status !== "set" ||
+    deploymentMetadata.observed_deploy_sha !== expectedDeploySha ||
+    typeof deploymentMetadata.deploy_sha_source !== "string" ||
+    deploymentMetadata.deploy_sha_source.length === 0 ||
+    !SHA256_PATTERN.test(deploymentMetadata.body_sha256 ?? "")
+  ) {
+    throw new Error(
+      `${label} deployment metadata is not bound to expected deploy SHA ${expectedDeploySha}`,
+    );
+  }
+}
+
+function validateReleaseIdentityPair(
+  initial,
+  final,
+  expectedDeploySha,
+  currentReleaseTarget = null,
+) {
+  if (!DEPLOY_SHA_PATTERN.test(expectedDeploySha ?? "")) {
+    throw new Error("expected deploy SHA must be exactly 40 lowercase hexadecimal characters");
+  }
+  validateReleaseIdentityObservation(initial, expectedDeploySha, "initial");
+  validateReleaseIdentityObservation(final, expectedDeploySha, "final");
+  const initialManifest = initial.public_manifest;
+  const finalManifest = final.public_manifest;
+  const initialMetadata = initial.deployment_metadata;
+  const finalMetadata = final.deployment_metadata;
+  const stable =
+    initialManifest.body_sha256 === finalManifest.body_sha256 &&
+    initialManifest.source_sha === finalManifest.source_sha &&
+    initialMetadata.body_sha256 === finalMetadata.body_sha256 &&
+    initialMetadata.observed_deploy_sha === finalMetadata.observed_deploy_sha &&
+    initialMetadata.deploy_sha_source === finalMetadata.deploy_sha_source;
+  if (!stable) {
+    throw new Error("release identity changed during frontend acceptance");
+  }
+  if (currentReleaseTarget !== null && currentReleaseTarget !== `releases/${expectedDeploySha}`) {
+    throw new Error("current release target is not bound to the expected deploy SHA");
+  }
+  return {
+    stable: true,
+    expected_deploy_sha: expectedDeploySha,
+    current_release_target: currentReleaseTarget,
+    current_release_target_source:
+      currentReleaseTarget === null ? "not_observed" : "release-guard-report:S1",
+    public_manifest: {
+      path: PUBLIC_RELEASE_MANIFEST_PATH,
+      format: RELEASE_MANIFEST_FORMAT,
+      source_sha: initialManifest.source_sha,
+      body_sha256: initialManifest.body_sha256,
+      initial_body_sha256: initialManifest.body_sha256,
+      final_body_sha256: finalManifest.body_sha256,
+    },
+    deployment_metadata: {
+      path: DEPLOYMENT_METADATA_PATH,
+      status: "deployment_metadata_available",
+      deploy_sha_status: "set",
+      observed_deploy_sha: initialMetadata.observed_deploy_sha,
+      deploy_sha_source: initialMetadata.deploy_sha_source,
+      initial_body_sha256: initialMetadata.body_sha256,
+      final_body_sha256: finalMetadata.body_sha256,
+      current_release_target: null,
+      current_release_target_status: "not_exposed_by_endpoint",
+    },
+  };
+}
+
+async function checkAuditLogApiPermissions({
+  baseUrl,
+  adminRole,
+  adminApiKey,
+  adminUserId,
+  timeoutMs,
+}) {
   const checks = {};
   const executedProbes = [];
   const endpoints = [
@@ -705,33 +1527,26 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
     { path: "/audit/logs/export", requireItems: false },
   ];
 
+  const probeHeaders = buildAuditPermissionProbeHeaders({
+    adminRole,
+    adminApiKey,
+    adminUserId,
+  });
+
   for (const item of endpoints) {
     const anonymous = await fetchWithTimeout(`${baseUrl}${item.path}`, {
       timeoutMs,
-      headers: { Accept: "application/json" },
+      headers: probeHeaders.anonymous,
     });
     executedProbes.push(`${item.path}:anonymous`);
     const missingTenant = await fetchWithTimeout(`${baseUrl}${item.path}`, {
       timeoutMs,
-      headers: {
-        Accept: "application/json",
-        "X-User-Id": DEFAULT_ADMIN_USER_ID,
-        "X-Role": adminRole,
-        "X-Project-Key": DEFAULT_PROJECT_KEY,
-        ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
-      },
+      headers: probeHeaders.missingTenant,
     });
     executedProbes.push(`${item.path}:missing-tenant`);
     const allowed = await fetchWithTimeout(`${baseUrl}${item.path}`, {
       timeoutMs,
-      headers: {
-        Accept: "application/json",
-        "X-User-Id": DEFAULT_ADMIN_USER_ID,
-        "X-Role": adminRole,
-        "X-Project-Key": DEFAULT_PROJECT_KEY,
-        "X-Tenant-Id": DEFAULT_TENANT_ID,
-        ...(adminApiKey ? { "X-API-Key": adminApiKey } : {}),
-      },
+      headers: probeHeaders.allowed,
     });
     executedProbes.push(`${item.path}:allowed`);
 
@@ -744,6 +1559,7 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
       anonymous_check: "executed",
       missing_tenant_check: "executed",
       allowed_check: "executed",
+      anonymous_attribution_user_id: adminUserId,
       denied_status: anonymous.status,
       anonymous_status: anonymous.status,
       anonymous_content_type: anonymous.contentType,
@@ -770,27 +1586,73 @@ async function checkAuditLogApiPermissions({ baseUrl, adminRole, adminApiKey, ti
   return { checks, executedProbes };
 }
 
+function buildAuditPermissionProbeHeaders({ adminRole, adminApiKey, adminUserId }) {
+  const apiKeyHeader = adminApiKey ? { "X-API-Key": adminApiKey } : {};
+  return {
+    anonymous: {
+      Accept: "application/json",
+      "X-User-Id": adminUserId,
+    },
+    missingTenant: {
+      Accept: "application/json",
+      "X-User-Id": adminUserId,
+      "X-Role": adminRole,
+      "X-Project-Key": DEFAULT_PROJECT_KEY,
+      ...apiKeyHeader,
+    },
+    allowed: {
+      Accept: "application/json",
+      "X-User-Id": adminUserId,
+      "X-Role": adminRole,
+      "X-Project-Key": DEFAULT_PROJECT_KEY,
+      "X-Tenant-Id": DEFAULT_TENANT_ID,
+      ...apiKeyHeader,
+    },
+  };
+}
+
 async function run() {
   const options = parseArgs(process.argv.slice(2));
-  validateSideEffectAuthorization(options);
-  const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const baseUrl = validateSideEffectAuthorization(options);
   const baseOrigin = new URL(baseUrl).origin;
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
   const routeChecks = routeCheckProfiles[options.contractProfile];
+  const selectedAliasRouteChecks = options.contractProfile === DEFAULT_CONTRACT_PROFILE ? aliasRouteChecks : [];
   const adminApiKey = readOptionalEnv(options.adminApiKeyEnv);
   const adminRole = options.adminRole || "it-admin";
+  const captureScreenshots = readBooleanEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS");
+  const requestedScreenshotPolicy = readOptionalEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY");
+  if (requestedScreenshotPolicy !== null && !["all", "issues"].includes(requestedScreenshotPolicy)) {
+    throw new Error(
+      "MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY must be one of: all, issues",
+    );
+  }
+  validateAcceptanceEvidenceOptions(options);
+  const acceptanceUserId = deriveAcceptanceUserId(options.acceptanceRunId);
+  const releaseGuard = loadReleaseGuardEvidence(
+    options.releaseGuardReport,
+    options.expectedDeploySha,
+    options.acceptanceRunId,
+  );
   const acceptanceHeaders = {
-    "X-User-Id": DEFAULT_ADMIN_USER_ID,
+    "X-User-Id": acceptanceUserId,
     "X-Role": adminRole,
     "X-Project-Key": DEFAULT_PROJECT_KEY,
     "X-Tenant-Id": DEFAULT_TENANT_ID,
   };
-  const captureScreenshots = readBooleanEnv("MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS");
+  const screenshotPolicy = captureScreenshots ? (requestedScreenshotPolicy ?? "all") : "disabled";
   let apiCheckResult = null;
   let apiCheckError = null;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.mkdirSync(screenshotDir, { recursive: true });
+  if (captureScreenshots) {
+    fs.mkdirSync(screenshotDir, { recursive: true });
+  }
+  const initialReleaseIdentity = await observeReleaseIdentity({
+    baseUrl,
+    acceptanceHeaders,
+    timeoutMs: options.timeoutMs,
+  });
 
   const executablePath =
     readOptionalEnv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") ?? readOptionalEnv("CHROME_EXECUTABLE_PATH");
@@ -800,114 +1662,171 @@ async function run() {
     args: ["--no-proxy-server", "--proxy-server=direct://", "--proxy-bypass-list=*"],
   });
   const checks = [];
+  const aliasChecks = [];
   try {
     for (const viewport of viewports) {
-      for (const routeCheck of routeChecks) {
-        const context = await browser.newContext({
-          viewport: { width: viewport.width, height: viewport.height },
-          extraHTTPHeaders: acceptanceHeaders,
-        });
-        await context.route("**/*", async (route) => {
-          if (route.request().method() !== "GET") {
-            await route.abort("blockedbyclient");
-            return;
+      const checkGroups = [
+        { contractKind: "independent", routeChecks, target: checks },
+        { contractKind: "alias", routeChecks: selectedAliasRouteChecks, target: aliasChecks },
+      ];
+      for (const group of checkGroups) {
+        for (const routeCheck of group.routeChecks) {
+          const session = routeCheck.session ?? "workspace";
+          const context = await browser.newContext(
+            buildBrowserContextOptions(viewport, session, acceptanceHeaders),
+          );
+          await context.route("**/*", async (route) => {
+            if (route.request().method() !== "GET") {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            let requestOrigin;
+            try {
+              requestOrigin = new URL(route.request().url()).origin;
+            } catch {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            if (requestOrigin !== baseOrigin) {
+              await route.abort("blockedbyclient");
+              return;
+            }
+            await route.continue();
+          });
+          if (session !== "anonymous") {
+            await seedWorkspaceSession(context);
           }
-          let requestOrigin;
-          try {
-            requestOrigin = new URL(route.request().url()).origin;
-          } catch {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          if (requestOrigin !== baseOrigin) {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          await route.continue();
-        });
-        await seedWorkspaceSession(context);
-        const page = await context.newPage();
-        const consoleErrors = [];
-        const failedRequests = [];
-        const interactionErrors = [];
-        page.on("console", (message) => {
-          if (message.type() === "error") {
-            consoleErrors.push(message.text());
-          }
-        });
-        page.on("requestfailed", (request) => {
-          const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
-          if (!isIgnorableFailedRequest(failed, baseUrl)) {
-            failedRequests.push(failed);
-          }
-        });
-        page.on("response", (response) => {
-          const url = response.url();
-          if (response.status() >= 400 && url.startsWith(baseUrl)) {
-            failedRequests.push({ url, status: response.status() });
-          }
-        });
+          const page = await context.newPage();
+          const consoleErrors = [];
+          const failedRequests = [];
+          const interactionErrors = [];
+          page.on("console", (message) => {
+            if (message.type() === "error") {
+              consoleErrors.push(message.text());
+            }
+          });
+          page.on("requestfailed", (request) => {
+            const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
+            if (!isIgnorableFailedRequest(failed, baseUrl)) {
+              failedRequests.push(failed);
+            }
+          });
+          page.on("response", (response) => {
+            const url = response.url();
+            if (response.status() >= 400 && url.startsWith(baseUrl)) {
+              failedRequests.push({ url, status: response.status() });
+            }
+          });
 
-        let status = null;
-        let error = null;
-        const url = `${baseUrl}${routeCheck.route}`;
-        try {
-          const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
-          status = response?.status() ?? null;
-          await ensureWorkspaceSession(page, options.timeoutMs);
-          await waitForRouteReady(page, routeCheck);
-          await applyInteractions(page, routeCheck.interactions);
-        } catch (caught) {
-          const message = caught instanceof Error ? caught.message : String(caught);
-          if (status === null) {
-            error = message;
-          } else {
-            interactionErrors.push(message);
-          }
-        }
-        const data = await snapshot(page);
-        const check = {
-          route: routeCheck.route,
-          viewport: viewport.name,
-          url: sanitizeUrl(url),
-          finalUrl: sanitizeUrl(page.url()),
-          status,
-          navigationError: error !== null,
-          headingCount: data.headings.length,
-          bodyTextLength: compactText(data.bodyText).length,
-          fileInputCount: data.fileInputCount,
-          scrollWidth: data.scrollWidth,
-          clientWidth: data.clientWidth,
-          horizontalOverflow: data.horizontalOverflow,
-          overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
-          consoleErrorCount: consoleErrors.length,
-          failedRequestCount: failedRequests.length,
-          failedRequests: failedRequests.map(sanitizeFailedRequest),
-          interactionErrorCount: interactionErrors.length,
-          issues: classify({ status, error, consoleErrors, failedRequests, interactionErrors }, routeCheck, data),
-        };
-        const shouldCaptureScreenshot = captureScreenshots && (check.issues.length > 0 || check.horizontalOverflow);
-        if (shouldCaptureScreenshot) {
-          const safeRoute = routeCheck.route.replaceAll("/", "_").replace(/^_/, "") || "root";
-          const screenshotPath = path.join(screenshotDir, `${viewport.name}-${safeRoute}.png`);
+          let status = null;
+          let error = null;
+          const inputSearch = routeCheck.inputSearch ?? "";
+          const url = `${baseUrl}${routeCheck.route}${inputSearch}`;
           try {
-            await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
-            check.screenshot = screenshotPath;
+            const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
+            status = response?.status() ?? null;
+            if (session !== "anonymous") {
+              await ensureWorkspaceSession(page, options.timeoutMs);
+            }
+            await waitForRouteReady(page, routeCheck);
+            await applyInteractions(page, routeCheck.interactions);
           } catch (caught) {
-            check.screenshot_error = true;
+            const message = caught instanceof Error ? caught.message : String(caught);
+            if (status === null) {
+              error = message;
+            } else {
+              interactionErrors.push(message);
+            }
           }
-        }
-        checks.push(check);
-        console.error(
-          JSON.stringify({
+          const data = await snapshot(page);
+          const rawFinalUrl = page.url();
+          const observedFinalUrl = sanitizeUrl(rawFinalUrl);
+          const observedFinalSearch = finalSearch(rawFinalUrl);
+          const check = {
             route: routeCheck.route,
+            inputSearch,
+            expectedPath: routeCheck.expectedPath ?? null,
+            expectedSearch: routeCheck.expectedSearch ?? null,
+            expectedChromeTitle: routeCheck.expectedChromeTitle ?? null,
+            finalPath: finalPath(observedFinalUrl),
+            finalSearch: observedFinalSearch,
+            chromeTitle: data.chromeTitle,
+            contractKind: group.contractKind,
+            session,
             viewport: viewport.name,
+            url: sanitizeUrl(url),
+            finalUrl: observedFinalUrl,
             status,
-            issue_count: check.issues.length,
-          }),
-        );
-        await page.close();
-        await context.close();
+            navigationError: error !== null,
+            headingCount: data.headings.length,
+            bodyTextLength: compactText(data.bodyText).length,
+            fileInputCount: data.fileInputCount,
+            scrollWidth: data.scrollWidth,
+            clientWidth: data.clientWidth,
+            horizontalOverflow: data.horizontalOverflow,
+            overflowOffenders: sanitizeOverflowOffenders(data.overflowOffenders),
+            interactiveOverflowOffenders: sanitizeOverflowOffenders(
+              data.interactiveOverflowOffenders,
+            ),
+            floatingControlOcclusions: sanitizeFloatingControlOcclusions(
+              data.floatingControlOcclusions,
+            ),
+            consoleErrorCount: consoleErrors.length,
+            failedRequestCount: failedRequests.length,
+            failedRequests: failedRequests.map(sanitizeFailedRequest),
+            interactionErrorCount: interactionErrors.length,
+            issues: classify(
+              {
+                status,
+                error,
+                consoleErrors,
+                failedRequests,
+                interactionErrors,
+                finalUrl: observedFinalUrl,
+                finalSearch: observedFinalSearch,
+              },
+              routeCheck,
+              data,
+            ),
+          };
+          const shouldCaptureScreenshot =
+            captureScreenshots &&
+            (screenshotPolicy === "all" || check.issues.length > 0 || check.horizontalOverflow);
+          if (shouldCaptureScreenshot) {
+            const screenshotPath = path.join(
+              screenshotDir,
+              screenshotFileName({
+                acceptanceRunId: options.acceptanceRunId,
+                contractKind: group.contractKind,
+                viewport: viewport.name,
+                route: routeCheck.route,
+                inputSearch,
+              }),
+            );
+            try {
+              await page.screenshot({ path: screenshotPath, fullPage: false, timeout: 10_000 });
+              check.screenshot = screenshotPath;
+              check.screenshot_evidence = readPngEvidence(screenshotPath);
+              if (check.screenshot_evidence === null) {
+                check.screenshot_error = true;
+              }
+            } catch (caught) {
+              check.screenshot_error = true;
+            }
+          }
+          group.target.push(check);
+          console.error(
+            JSON.stringify({
+              route: routeCheck.route,
+              contract_kind: group.contractKind,
+              viewport: viewport.name,
+              status,
+              issue_count: check.issues.length,
+            }),
+          );
+          await page.close();
+          await context.close();
+        }
       }
     }
     try {
@@ -915,6 +1834,7 @@ async function run() {
         baseUrl,
         adminRole,
         adminApiKey,
+        adminUserId: acceptanceUserId,
         timeoutMs: options.timeoutMs,
       });
     } catch (error) {
@@ -924,10 +1844,11 @@ async function run() {
     await browser.close();
   }
 
-  const p0 = checks.flatMap((check) =>
+  const allChecks = [...checks, ...aliasChecks];
+  const p0 = allChecks.flatMap((check) =>
     check.issues.filter((item) => item.severity === "P0").map((item) => ({ route: check.route, viewport: check.viewport, ...item })),
   );
-  const p1 = checks.flatMap((check) =>
+  const p1 = allChecks.flatMap((check) =>
     check.issues.filter((item) => item.severity === "P1").map((item) => ({
       route: check.route,
       viewport: check.viewport,
@@ -942,6 +1863,17 @@ async function run() {
     })),
   );
   const status = p0.length === 0 && p1.length === 0 && !apiCheckError ? "pass" : "fail";
+  const finalReleaseIdentity = await observeReleaseIdentity({
+    baseUrl,
+    acceptanceHeaders,
+    timeoutMs: options.timeoutMs,
+  });
+  const releaseIdentity = validateReleaseIdentityPair(
+    initialReleaseIdentity,
+    finalReleaseIdentity,
+    options.expectedDeploySha,
+    releaseGuard.current_release_target,
+  );
 
   const report = {
     status,
@@ -952,11 +1884,22 @@ async function run() {
     production_side_effect: "audit-log-only",
     database_write: "audit-log-only",
     audit_log_write_expected: true,
-    provider_call_status: "not_called",
+    provider_call_status: "not_observed",
+    provider_evidence_source: "outside-frontend-acceptance-scope",
+    collector_provider_call_status: releaseGuard.collector_provider_call_status,
     http_methods: ["GET"],
+    expected_deploy_sha: options.expectedDeploySha,
+    acceptance_run_id: options.acceptanceRunId,
+    acceptance_user_id: acceptanceUserId,
+    release_guard: releaseGuard,
+    release_identity: releaseIdentity,
     summary: {
       route_count: routeChecks.length,
+      independent_page_count: routeChecks.length,
+      alias_check_count: selectedAliasRouteChecks.length,
       check_count: checks.length,
+      alias_execution_check_count: aliasChecks.length,
+      total_execution_check_count: allChecks.length,
       viewports: viewports.map((viewport) => viewport.name),
       api_checks: apiCheckResult?.checks || { error: apiCheckError !== null },
       executed_api_probes: apiCheckResult?.executedProbes || [],
@@ -966,11 +1909,12 @@ async function run() {
       skipped_routes: [],
       skipped_route_count: 0,
       screenshot_capture: captureScreenshots,
-      screenshot_policy: captureScreenshots ? "all_issues" : "disabled",
+      screenshot_policy: screenshotPolicy,
       p0,
       p1,
     },
     checks,
+    alias_checks: aliasChecks,
   };
   fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ status: report.status, output: outputPath, p0_count: p0.length, p1_count: p1.length }, null, 2));
@@ -989,10 +1933,24 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
 }
 
 export {
+  aliasRouteChecks,
+  buildAuditPermissionProbeHeaders,
+  buildBrowserContextOptions,
   classify,
+  deriveAcceptanceUserId,
+  finalPath,
+  finalSearch,
+  isFloatingLayoutPosition,
+  isLoginGateSnapshot,
+  loadReleaseGuardEvidence,
+  normalizeProductionBaseUrl,
+  readPngEvidence,
   routeCheckProfiles,
   sanitizeFailedRequest,
   sanitizeUrl,
+  screenshotFileName,
+  validateAcceptanceEvidenceOptions,
+  validateReleaseIdentityPair,
   validateSideEffectAuthorization,
   viewports,
 };

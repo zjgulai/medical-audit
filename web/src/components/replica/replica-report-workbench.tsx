@@ -25,6 +25,13 @@ import type { AuditClientRole } from "@/lib/audit-user";
 
 type LanePhase = "loading" | "ready" | "degraded" | "error";
 
+const lanePhaseLabels: Readonly<Record<LanePhase, string>> = {
+  loading: "读取中",
+  ready: "已连接",
+  degraded: "有限可用",
+  error: "读取异常"
+};
+
 type LaneState<T> = {
   readonly phase: LanePhase;
   readonly response: T | null;
@@ -198,12 +205,10 @@ function DraftPanel({
           </div>
           <ul>
             <li>
-              <span>formal_report_created={String(result.formal_report_created)}</span>
-              {result.formal_report_created === false ? <span>未生成正式报告</span> : null}
+              {result.formal_report_created === false ? "未生成正式报告" : "正式报告状态异常"}
             </li>
             <li>
-              <span>provider_call={String(result.provider_call)}</span>
-              {result.provider_call === false ? <span>未调用外部 provider</span> : null}
+              {result.provider_call === false ? "未调用外部服务" : "检测到外部服务调用"}
             </li>
             <li>
               审计记录：{result.audit.durability}
@@ -211,6 +216,13 @@ function DraftPanel({
               {result.audit.status === "local-only" ? "（本地）" : ""}
             </li>
           </ul>
+          <details className="replica-runtime-diagnostics">
+            <summary>查看响应边界</summary>
+            <ul>
+              <li><code>formal_report_created={String(result.formal_report_created)}</code></li>
+              <li><code>provider_call={String(result.provider_call)}</code></li>
+            </ul>
+          </details>
           {boundaryAnomaly ? (
             <p className="replica-report-error" role="alert">
               草稿响应违反无副作用边界，请勿将其视为安全草稿。
@@ -685,13 +697,13 @@ export function ReplicaReportWorkbench() {
         <div>
           <p>当前身份边界</p>
           <strong>{canCreate ? "可创建底稿草稿" : "当前角色无权新建底稿草稿"}</strong>
-          <span>后端仍会独立执行项目可见性与角色鉴权。</span>
+          <span>系统仍会独立校验项目可见范围与角色权限。</span>
           {submittingFromAnotherRole ? <span>上一身份的草稿请求仍在处理中</span> : null}
         </div>
         <div>
           <p>报告数据来源</p>
           <strong>{roleReportState.response?.store.backend ?? "尚未就绪"}</strong>
-          <span>{roleReportState.phase}</span>
+          <span>{lanePhaseLabels[roleReportState.phase]}</span>
         </div>
       </section>
 

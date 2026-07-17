@@ -621,7 +621,17 @@ export default function GraphPage() {
       </div>
 
       {currentResult && currentResult.issues.length > 0 ? (
-        <ReplicaNotice>{currentResult.issues.map((issue) => issue.message).join("；")}</ReplicaNotice>
+        <ReplicaNotice>
+          当前图谱数据未完全就绪，页面不会使用旧样例替代本次请求。
+          <details className="replica-runtime-diagnostics">
+            <summary>查看读取诊断</summary>
+            <ul>
+              {currentResult.issues.map((issue, index) => (
+                <li key={`${issue.code}-${index}`}><code>{issue.message}</code></li>
+              ))}
+            </ul>
+          </details>
+        </ReplicaNotice>
       ) : null}
 
       <section

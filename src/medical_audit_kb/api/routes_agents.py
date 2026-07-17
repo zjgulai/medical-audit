@@ -13,8 +13,10 @@ from medical_audit_kb.api.agent_store import (
     AGENT_FEEDBACK_RATINGS,
     AGENT_PROMPT_REVIEW_STATUSES,
     AgentStore,
+    DuplicateMarketAgentInstallError,
     InMemoryAgentStore,
     combined_agent_payloads,
+    market_agent_template_id,
     validate_agent_category,
     validate_agent_feedback_rating,
     validate_agent_prompt_review_status,
@@ -70,6 +72,19 @@ class AgentCreateRequest(BaseModel):
         if not normalized:
             raise ValueError("allowed_roles must contain at least one supported role")
         return normalized
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, value: dict[str, object]) -> dict[str, object]:
+        if value.get("source") != "agent-market":
+            return value
+        template_id = value.get("template_id")
+        if not isinstance(template_id, str) or not template_id.strip():
+            raise ValueError("agent-market metadata.template_id is required")
+        normalized_template_id = template_id.strip()
+        if len(normalized_template_id) > 128:
+            raise ValueError("agent-market metadata.template_id is too long")
+        return {**value, "template_id": normalized_template_id}
 
 
 class AgentPromptVersionCreateRequest(BaseModel):
@@ -151,7 +166,9 @@ def list_agents(
     x_project_name: Annotated[str | None, Header(alias="X-Project-Name")] = None,
 ) -> dict[str, object]:
     try:
-        custom_agents = _agent_store(state).list_agents()
+        agent_store = _agent_store(state)
+        custom_agents = agent_store.list_agents()
+        all_status_custom_agents = agent_store.list_agents(include_inactive=True)
     except SQLAlchemyError:
         fallback_items = _filter_agents_for_project(
             combined_agent_payloads([]),
@@ -161,10 +178,14 @@ def list_agents(
             "items": fallback_items,
             "categories": list(AGENT_CATEGORIES),
             "store": {"ready": False, "backend": "unavailable"},
+            "market_installations": [],
+            "market_installation_issues": [],
         }
 
     items = combined_agent_payloads(custom_agents)
     items = _filter_agents_for_project(items, x_project_name)
+    inventory_items = combined_agent_payloads(all_status_custom_agents)
+    inventory_items = _filter_agents_for_project(inventory_items, x_project_name)
     user = (
         resolve_authenticated_user(state, x_user_id=x_user_id, x_role=x_role)
         if x_user_id or x_role
@@ -172,6 +193,11 @@ def list_agents(
     )
     if user is not None:
         items = _filter_agents_for_role(items, user.role.value)
+        inventory_items = _filter_agents_for_role(inventory_items, user.role.value)
+    market_installations, market_installation_issues = _market_installation_inventory(
+        inventory_items,
+        user_identifier=user.user_identifier if user is not None else None,
+    )
     record_operation(
         state,
         "agents-list",
@@ -185,6 +211,8 @@ def list_agents(
         "items": items,
         "categories": list(AGENT_CATEGORIES),
         "store": {"ready": True, "backend": _agent_store(state).__class__.__name__},
+        "market_installations": market_installations,
+        "market_installation_issues": market_installation_issues,
     }
 
 
@@ -286,7 +314,18 @@ def create_agent(
     )
     values["created_by"] = user.user_identifier
     try:
-        agent = _agent_store(state).add_agent(values)
+        template_id = market_agent_template_id(values)
+        if template_id is None:
+            agent = _agent_store(state).add_agent(values)
+            created = True
+            reactivated = False
+        else:
+            install_result = _agent_store(state).install_market_agent(values)
+            agent = install_result.item
+            created = install_result.created
+            reactivated = install_result.reactivated
+    except DuplicateMarketAgentInstallError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=409,
@@ -295,17 +334,28 @@ def create_agent(
 
     record_operation(
         state,
-        "agent-create",
+        (
+            "agent-create"
+            if created
+            else "agent-install-reactivated"
+            if reactivated
+            else "agent-install-reused"
+        ),
         {
             "agent_id": agent["id"],
             "category": agent["category"],
             "created_by": user.user_identifier,
+            "created": created,
+            "market_template_id": template_id,
+            "reactivated": reactivated,
             "role": user.role.value,
             "role_label": user.role_label,
         },
     )
     return {
         "item": agent,
+        "created": created,
+        "reactivated": reactivated,
         "store": {"ready": True, "backend": _agent_store(state).__class__.__name__},
     }
 
@@ -813,6 +863,50 @@ def _filter_agents_for_role(
         if not isinstance(raw_roles, list) or role in {str(value) for value in raw_roles}:
             filtered.append(item)
     return filtered
+
+
+def _market_installation_inventory(
+    items: list[dict[str, object]],
+    *,
+    user_identifier: str | None,
+) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
+    if not user_identifier:
+        return [], []
+    installations: list[dict[str, str]] = []
+    issues: list[dict[str, object]] = []
+    agents_by_template: dict[str, list[tuple[str, str]]] = {}
+    for item in items:
+        if str(item.get("created_by") or "") != user_identifier:
+            continue
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict) or metadata.get("source") != "agent-market":
+            continue
+        template_id = metadata.get("template_id")
+        agent_id = item.get("id")
+        if (
+            not isinstance(template_id, str)
+            or not template_id.strip()
+            or not isinstance(agent_id, str)
+            or not agent_id
+        ):
+            continue
+        agents_by_template.setdefault(template_id, []).append(
+            (agent_id, str(item.get("status") or "active"))
+        )
+    for template_id, agent_records in agents_by_template.items():
+        if len(agent_records) == 1:
+            agent_id, status = agent_records[0]
+            if status == "active":
+                installations.append({"template_id": template_id, "agent_id": agent_id})
+            continue
+        issues.append(
+            {
+                "code": "ambiguous-market-installations",
+                "template_id": template_id,
+                "agent_ids": sorted(agent_id for agent_id, _status in agent_records),
+            }
+        )
+    return installations, issues
 
 
 def _filter_agents_for_project(

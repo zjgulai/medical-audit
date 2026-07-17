@@ -91,7 +91,28 @@ describe("ReplicaShell", () => {
     expect(within(screen.getByLabelText("打开页面")).getByText("医保审计专题")).toBeInTheDocument();
   });
 
-  it("marks the project route so floating history stays clear of row actions", () => {
+  it.each([
+    ["/fund-compliance", "医保基金使用合规"],
+    ["/fund-compliance/review", "医保基金复核表单"],
+    ["/rules", "规则运行工作台"],
+    ["/remediation", "整改工作台"],
+    ["/archive", "归档工作台"],
+    ["/guided-check", "引导式核查"]
+  ])("uses the independent route identity in page chrome for %s", (pathname, label) => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+    usePathnameMock.mockReturnValue(pathname);
+
+    render(
+      <ReplicaShell>
+        <main>独立工作台内容</main>
+      </ReplicaShell>
+    );
+
+    expect(within(screen.getByRole("banner")).getByText(label)).toBeInTheDocument();
+    expect(within(screen.getByLabelText("打开页面")).getByText(label)).toBeInTheDocument();
+  });
+
+  it("keeps the history trigger in the navigation rail and clear of route actions", () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
     usePathnameMock.mockReturnValue("/projects");
 
@@ -102,6 +123,25 @@ describe("ReplicaShell", () => {
     );
 
     expect(container.firstElementChild).toHaveClass("replica-project-shell");
+    const navigationRail = screen.getByRole("complementary", { name: /导航/ });
+    expect(within(navigationRail).getByRole("button", { name: "打开历史对话" })).toHaveAttribute(
+      "data-layout-floating-control",
+      "history"
+    );
+    expect(globalsCss).toMatch(
+      /\.replica-history-fab\s*\{[^}]*position:\s*fixed;[^}]*right:\s*auto;[^}]*bottom:\s*86px;[^}]*left:\s*12px;[^}]*width:\s*232px;/s
+    );
+    expect(globalsCss).toMatch(
+      /\.replica-sidebar-collapsed \.replica-history-fab\s*\{[^}]*left:\s*24px;[^}]*width:\s*44px;/s
+    );
+    expect(globalsCss).toMatch(
+      /\.replica-sidebar-collapsed \.replica-history-fab > span:last-child\s*\{[^}]*display:\s*none;/s
+    );
+    fireEvent.click(screen.getByRole("button", { name: "收起侧栏" }));
+    expect(container.firstElementChild).toHaveClass("replica-sidebar-collapsed");
+    expect(globalsCss).toMatch(
+      /\.replica-app-shell\.replica-sidebar-collapsed\s*\{[^}]*grid-template-columns:\s*92px minmax\(0, 1fr\);/s
+    );
   });
 
   it("keeps the fixed history drawer inside the viewport with internal scrolling", () => {

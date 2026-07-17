@@ -3,11 +3,14 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from hashlib import sha256
+from threading import Lock
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from medical_audit_kb.db.models import (
@@ -103,6 +106,17 @@ DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class AgentInstallResult:
+    item: dict[str, object]
+    created: bool
+    reactivated: bool = False
+
+
+class DuplicateMarketAgentInstallError(RuntimeError):
+    pass
+
+
 class AgentStore(Protocol):
     def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
         pass
@@ -114,6 +128,9 @@ class AgentStore(Protocol):
         pass
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
+        pass
+
+    def install_market_agent(self, values: dict[str, object]) -> AgentInstallResult:
         pass
 
     def add_prompt_version(
@@ -234,9 +251,58 @@ class SqlAlchemyAgentStore:
             return _agent_prompt_versions_payload(agent)
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
+        return self._insert_agent(values, agent_key=_new_agent_key())
+
+    def install_market_agent(self, values: dict[str, object]) -> AgentInstallResult:
+        agent_key = _market_agent_key(values)
+        with self._session_factory.begin() as session:
+            existing = _find_market_agent_install(session, values)
+            if existing is not None:
+                reactivated = existing.status != "active"
+                if reactivated:
+                    existing.status = "active"
+                    existing.updated_at = utc_now()
+                    metadata = _dict_value(existing.extra_metadata)
+                    metadata["lifecycle_reason"] = "market reinstall"
+                    metadata["lifecycle_updated_by"] = _optional_str(
+                        values.get("created_by")
+                    )
+                    metadata["lifecycle_updated_at"] = _datetime_to_iso(
+                        existing.updated_at
+                    )
+                    existing.extra_metadata = metadata
+                    session.flush()
+                return AgentInstallResult(
+                    item=_agent_to_payload(existing),
+                    created=False,
+                    reactivated=reactivated,
+                )
+
+        try:
+            return AgentInstallResult(
+                item=self._insert_agent(values, agent_key=agent_key),
+                created=True,
+            )
+        except IntegrityError:
+            with self._session_factory() as session:
+                existing = session.scalar(
+                    select(AuditAgent).where(AuditAgent.agent_key == agent_key)
+                )
+                if existing is None or not _agent_matches_market_install(existing, values):
+                    raise
+                return AgentInstallResult(item=_agent_to_payload(existing), created=False)
+
+    def _insert_agent(
+        self,
+        values: dict[str, object],
+        *,
+        agent_key: str,
+    ) -> dict[str, object]:
         now = utc_now()
-        agent_key = _new_agent_key()
         metadata = _governance_metadata(values, agent_key=agent_key, version=1)
+        project_name = str(values["project_name"])
+        if market_agent_template_id(values) is not None:
+            project_name = project_name.strip()
         agent = AuditAgent(
             agent_key=agent_key,
             name=str(values["name"]),
@@ -244,7 +310,7 @@ class SqlAlchemyAgentStore:
             topic=str(values["topic"]),
             prompt=str(values["prompt"]),
             knowledge_base=str(values["knowledge_base"]),
-            project_name=str(values["project_name"]),
+            project_name=project_name,
             status="active",
             created_by=_optional_str(values.get("created_by")),
             extra_metadata=metadata,
@@ -527,6 +593,7 @@ class InMemoryAgentStore:
     agents: list[dict[str, object]] = field(default_factory=list)
     invocations: list[dict[str, object]] = field(default_factory=list)
     feedback_entries: list[dict[str, object]] = field(default_factory=list)
+    _install_lock: Lock = field(default_factory=Lock, init=False, repr=False)
 
     def list_agents(self, *, include_inactive: bool = False) -> list[dict[str, object]]:
         return [
@@ -546,9 +613,56 @@ class InMemoryAgentStore:
         return _payload_prompt_versions(agent)
 
     def add_agent(self, values: dict[str, object]) -> dict[str, object]:
+        return self._add_agent_with_key(values, agent_key=_new_agent_key())
+
+    def install_market_agent(self, values: dict[str, object]) -> AgentInstallResult:
+        with self._install_lock:
+            matches = [
+                agent
+                for agent in self.agents
+                if _payload_matches_market_install(agent, values)
+            ]
+            if len(matches) > 1:
+                raise DuplicateMarketAgentInstallError(
+                    "multiple market agent installations already exist"
+                )
+            existing = matches[0] if matches else None
+            if existing is not None:
+                reactivated = str(existing.get("status") or "active") != "active"
+                if reactivated:
+                    existing["status"] = "active"
+                    existing["updated_at"] = _datetime_to_iso(utc_now())
+                    metadata = _dict_value(existing.get("metadata"))
+                    metadata["lifecycle_reason"] = "market reinstall"
+                    metadata["lifecycle_updated_by"] = _optional_str(
+                        values.get("created_by")
+                    )
+                    metadata["lifecycle_updated_at"] = existing["updated_at"]
+                    existing["metadata"] = metadata
+                return AgentInstallResult(
+                    item=_enrich_agent_payload(copy.deepcopy(existing)),
+                    created=False,
+                    reactivated=reactivated,
+                )
+            return AgentInstallResult(
+                item=self._add_agent_with_key(
+                    values,
+                    agent_key=_market_agent_key(values),
+                ),
+                created=True,
+            )
+
+    def _add_agent_with_key(
+        self,
+        values: dict[str, object],
+        *,
+        agent_key: str,
+    ) -> dict[str, object]:
         now = _datetime_to_iso(utc_now())
-        agent_key = _new_agent_key()
         metadata = _governance_metadata(values, agent_key=agent_key, version=1)
+        project_name = str(values["project_name"])
+        if market_agent_template_id(values) is not None:
+            project_name = project_name.strip()
         agent: dict[str, object] = {
             "id": agent_key,
             "name": str(values["name"]),
@@ -556,7 +670,7 @@ class InMemoryAgentStore:
             "topic": str(values["topic"]),
             "prompt": str(values["prompt"]),
             "knowledge_base": str(values["knowledge_base"]),
-            "project_name": str(values["project_name"]),
+            "project_name": project_name,
             "status": "active",
             "created_by": _optional_str(values.get("created_by")),
             "created_at": now,
@@ -1184,6 +1298,84 @@ def _latest_payload_prompt_version(agent: dict[str, object]) -> int:
 
 def _new_agent_key() -> str:
     return f"{AGENT_ID_PREFIX}{uuid4().hex[:12]}"
+
+
+def market_agent_template_id(values: dict[str, object]) -> str | None:
+    metadata = _dict_value(values.get("metadata"))
+    if _optional_str(metadata.get("source")) != "agent-market":
+        return None
+    template_id = _optional_str(metadata.get("template_id"))
+    if template_id is None or len(template_id) > 128:
+        raise ValueError("agent-market metadata.template_id must be 1..128 characters")
+    return template_id
+
+
+def _market_agent_key(values: dict[str, object]) -> str:
+    template_id = market_agent_template_id(values)
+    created_by = _optional_str(values.get("created_by"))
+    project_name = _optional_str(values.get("project_name"))
+    if template_id is None or created_by is None or project_name is None:
+        raise ValueError("agent-market install identity is incomplete")
+    digest = sha256(
+        "\0".join((created_by, project_name, template_id)).encode("utf-8")
+    ).hexdigest()[:32]
+    return f"{AGENT_ID_PREFIX}market-{digest}"
+
+
+def _find_market_agent_install(
+    session: Session,
+    values: dict[str, object],
+) -> AuditAgent | None:
+    created_by = _optional_str(values.get("created_by"))
+    project_name = _optional_str(values.get("project_name"))
+    if created_by is None or project_name is None:
+        raise ValueError("agent-market install identity is incomplete")
+    candidates = session.scalars(
+        select(AuditAgent)
+        .where(
+            AuditAgent.created_by == created_by,
+            func.trim(AuditAgent.project_name) == project_name,
+        )
+        .order_by(AuditAgent.updated_at.desc(), AuditAgent.created_at.desc())
+    ).all()
+    matches = [
+        agent for agent in candidates if _agent_matches_market_install(agent, values)
+    ]
+    if len(matches) > 1:
+        raise DuplicateMarketAgentInstallError(
+            "multiple market agent installations already exist"
+        )
+    return matches[0] if matches else None
+
+
+def _agent_matches_market_install(
+    agent: AuditAgent,
+    values: dict[str, object],
+) -> bool:
+    metadata = _dict_value(agent.extra_metadata)
+    return (
+        agent.created_by == _optional_str(values.get("created_by"))
+        and _optional_str(agent.project_name)
+        == _optional_str(values.get("project_name"))
+        and _optional_str(metadata.get("source")) == "agent-market"
+        and _optional_str(metadata.get("template_id"))
+        == market_agent_template_id(values)
+    )
+
+
+def _payload_matches_market_install(
+    agent: dict[str, object],
+    values: dict[str, object],
+) -> bool:
+    metadata = _dict_value(agent.get("metadata"))
+    return (
+        _optional_str(agent.get("created_by")) == _optional_str(values.get("created_by"))
+        and _optional_str(agent.get("project_name"))
+        == _optional_str(values.get("project_name"))
+        and _optional_str(metadata.get("source")) == "agent-market"
+        and _optional_str(metadata.get("template_id"))
+        == market_agent_template_id(values)
+    )
 
 
 def _datetime_to_iso(value: datetime) -> str:

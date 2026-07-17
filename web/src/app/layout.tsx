@@ -6,7 +6,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: AUDIT_PLATFORM_NAME,
-  description: AUDIT_PLATFORM_DESCRIPTION
+  description: AUDIT_PLATFORM_DESCRIPTION,
+  icons: {
+    icon: [{ url: "/brand/auditscope-logo.png", type: "image/png" }],
+    shortcut: "/brand/auditscope-logo.png",
+    apple: "/brand/auditscope-logo.png"
+  }
 };
 
 export default function RootLayout({

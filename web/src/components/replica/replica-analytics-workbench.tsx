@@ -98,7 +98,7 @@ export function ReplicaAnalyticsWorkbench() {
         <div>
           <p className="replica-kicker">AI 数据分析</p>
           <h1>表格分析工作台</h1>
-          <p>上传 CSV 或 XLSX 表格，读取后端字段画像、数据质量线索与审计建议。</p>
+          <p>上传 CSV 或 XLSX 表格，查看字段画像、数据质量线索与审计建议。</p>
         </div>
       </header>
 
@@ -108,9 +108,13 @@ export function ReplicaAnalyticsWorkbench() {
           <h2 id="analytics-upload-title">上传表格</h2>
         </div>
         <p className="replica-analytics-boundary">
-          上传是受控写入；只有 analytics store ready 时才保留历史。当前分析不调用外部模型，
-          <code>provider_call=false</code>。选择文件只记录待提交项，不代表已经上传。
+          上传是受控写入；只有分析记录服务就绪时才保留历史。当前分析不调用外部模型，
+          选择文件只记录待提交项，不代表已经上传。
         </p>
+        <details className="replica-runtime-diagnostics">
+          <summary>查看处理边界</summary>
+          <code>provider_call=false</code>
+        </details>
         <label className="replica-analytics-file-field">
           <span>选择分析表格</span>
           <input

@@ -111,14 +111,18 @@ describe("ReplicaAnalyticsWorkbench", () => {
   it("records an accepted file without uploading and explains the controlled-write boundary", async () => {
     render(<ReplicaAnalyticsWorkbench />);
 
+    expect(screen.getByText("上传 CSV 或 XLSX 表格，查看字段画像、数据质量线索与审计建议。")).toBeInTheDocument();
+    expect(screen.queryByText(/读取后端字段画像/)).not.toBeInTheDocument();
     const { input, file } = chooseFile();
 
     expect(input).toHaveAttribute("accept", ".xlsx,.csv");
     expect(screen.getByText(`已选择：${file.name}（尚未上传）`)).toBeInTheDocument();
     expect(uploadMock).not.toHaveBeenCalled();
     expect(screen.getByText(/上传是受控写入/)).toBeInTheDocument();
-    expect(screen.getByText(/analytics store ready/)).toBeInTheDocument();
-    expect(screen.getByText(/provider_call=false/)).toBeInTheDocument();
+    expect(screen.getByText(/只有分析记录服务就绪时才保留历史/)).toBeInTheDocument();
+    expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
+    expect(screen.getByText(/当前分析不调用外部模型/)).toBeInTheDocument();
+    expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
     expect(screen.queryByRole("button", { name: /OCR/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /OCR/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/OCR/i)).not.toBeInTheDocument();

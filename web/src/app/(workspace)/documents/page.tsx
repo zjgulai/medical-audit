@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { PersonalMaterialReadPanel } from "@/components/documents/personal-material-read-panel";
 import {
   buildReplicaLocalGateNotice,
   ReplicaNotice,
@@ -517,6 +518,8 @@ export default function DocumentsPage() {
           </span>
         ) : null}
       </section>
+
+      <PersonalMaterialReadPanel />
 
       <section className="replica-document-layout replica-doc-legacy-results" aria-label="检索命中明细">
         <aside className="replica-category-list" aria-label="文档分类">

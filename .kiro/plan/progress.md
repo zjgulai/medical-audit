@@ -1233,3 +1233,371 @@ Boundary:
 - `database_write=false`
 - `deploy_execution=false`
 - 未执行 PR Ready、merge、production preflight、生产业务写入或生产部署。
+
+## 2026-07-16 Loop 58 Next-Batch Deployment Planning
+
+Completed:
+
+- Restored the actual release candidate from `/Users/pray/project/medical_audit_release_reconciliation_20260714`, branch `codex/production-ui-reconciliation-20260716`, committed head `489ff70185c70b008d1d30b41ce239386e9debd9`, base `origin/main@1376baef0d8d47f1e1ef60b2cec130451af5af4f`.
+- Reconciled the active Task 11 checkpoint with the `29`-commit / `41`-file branch topology and the current uncommitted route/chrome/mobile/acceptance delta.
+- Reviewed the actual deploy, rollback, manifest, deployment-state, permission, documents and frontend acceptance tools without running them against production.
+- Completed two independent read-only reviews: one for deploy/rollback/migration identity and one for L3/L4 acceptance/side effects.
+- Replaced the stale “next Task 1” decision with the current `NO-GO` reason and added the full Loop 58 batch/authorization/TODO plan.
+- Backed up the four key planning files before edits under `/Users/pray/.Codex/file-history/medical-audit-loop58-next-batch-plan-20260716T150714+0800/`.
+
+Key decisions:
+
+- Recommended path is evidence-first gated promotion; direct deploy is rejected.
+- Next implementation batch is local release-evidence closure, not commit/deploy: migration readiness, S0/S1/S2 guard snapshots, broad schema/business delta, exact-SHA all-screenshot frontend acceptance and run-specific audit attribution.
+- `--skip-app-rebuild` is not allowed for this release because app deployment metadata is bound at container start and must match the new `.deploy-sha`/manifest identity.
+- First legacy-to-versioned migration remains an inference until fresh read-only topology proves `legacy_ready`; `partial_or_unknown` is a hard stop.
+- Successful deploy script exit yields `deployed_pending_l3`; L3 state audit yields `deployed_l3_verified`; only separately authorized L4 acceptance plus S2 comparison yields `release_accepted_l4`.
+- Business-write and provider UAT remains outside frontend acceptance and requires independent lane authorization.
+
+Tooling limitation:
+
+- The `planning-with-files` session-catchup helper referenced by the skill is absent at `/Users/pray/.agents/skills/planning-with-files/assets/scripts/session-catchup.py`. The failed command was logged once and not retried; direct file/Git reconciliation was used instead.
+
+Boundary:
+
+- Plan/docs only; no code implementation in Loop 58 Phase 0.
+- No staging, commit, push, PR update, Ready, merge, production preflight, SSH observation, backup, deploy, rollback, Docker/Nginx change, database/object write, provider call or live send.
+- `local_only`, `production unchanged`, `provider_call=false`, `database_write=false`, `live_send=false`, `deploy_execution=false`.
+
+## 2026-07-16 Loop 58 D0 Implementation Start
+
+- User authorized D0 local implementation only.
+- Restored Loop 58 task/progress/findings and assigned the phase `L2-fixture-or-dry-run` under `evidence-grade-gate`.
+- Preserved the current dirty candidate and created pre-edit backups at `/Users/pray/.Codex/file-history/medical-audit-loop58-d0-20260716T152243+0800/`.
+- Active work is limited to release guard/migration snapshot contracts and frontend acceptance identity/evidence hardening; no external or production action is authorized.
+- Started both local implementation lanes with disjoint file ownership; integration review, stable-workflow synchronization and broad local verification remain pending.
+- Reviewed the current activation/rollback topology contract and identified the exact stable deployment workflow section that must be synchronized after implementation.
+- Verified the database table key/timestamp contract and the existing read-only SSH/PostgreSQL collection pattern needed for release-guard integration review.
+- Flagged the migration-sentinel lineage semantics to the release-guard lane before implementation completion; the formal Loop 58 wording must be corrected during documentation sync.
+- Started cross-lane contract review for boolean read-only evidence, run-specific attribution, structurally valid screenshots and release-guard-derived current release target.
+- Redirected the live S0 design from a remote-script dependency to a streamed read-only collector so first deployment remains executable.
+- Frontend acceptance lane implementation completed and passed a fresh main-agent focused verification: `20` production-frontend-acceptance tests, both Node syntax checks, focused Ruff and lane `git diff --check`. Independent review remains pending before D0 closure.
+- The first broad related suite run exposed one docs-contract regression: a duplicated frontend command made the workflow test fail. Removed the duplicate, updated the canonical §7.6.1 command/test with all three D0 arguments, and reran the workflow test green.
+
+## 2026-07-16 Loop 58 D0 Local Closure
+
+Completed implementation:
+
+- Added `scripts/audit-production-release-guard-snapshot.py` with fail-closed fixture and streamed SSH capture contracts, S0/S1/S2 compare, exact expected-SHA binding, capture-contract/snapshot-ID revalidation, serializable read-only deferrable PostgreSQL evidence, WAL/double-capture ambiguity detection and strict collector record parsing.
+- Release topology now covers legacy/versioned/partial state, `.deploy-sha.next` and other residue, app container status/health/deploy SHA, Nginx config and read-only Web mount. First-migration rollback fixture coverage verifies restored filesystem shape rather than trusting an exit code.
+- Schema fingerprints cover columns, constraints, indexes, table ACL, RLS policies, triggers and trigger-function definitions. Each allowlisted table includes row count, ordered PK fingerprint, complete row-content fingerprint and relevant max timestamp; audit attribution uses exact event IDs/row hashes and a zero-baseline run user.
+- Hardened frontend acceptance now requires a fresh L3 S1 guard with recomputed canonical snapshot ID, exact deploy/current/public/app identity, run-specific audit attribution, same-origin GET-only requests and unique run-bound structurally decoded PNG evidence for all `34 + 6 = 40` executions.
+- Global provider status is intentionally `not_observed`; only the release-guard collector is proven `not_called` with zero attempts. Object evidence is intentionally limited to the database storage ledger and does not enumerate COS.
+
+Independent review remediation:
+
+- Frontend review identified three P1 gaps: manual/L2 guard acceptance, unattributed anonymous audit probes and reused screenshot files. The gate now requires L3 `ssh-live-readonly`, recomputes the snapshot hash, preserves run user attribution and binds a unique decoded PNG to every execution.
+- Release-guard review identified capture/hash revalidation, cumulative audit attribution, provider-scope overclaim, incomplete schema/row fingerprints, topology gaps and parser fail-open issues. All were converted into fail-closed contracts and regression tests before closure.
+- Follow-up review found six further P1s: S1 run baseline was not bound, L3 target/provenance was under-specified, object-ledger scope was optional, S0→S1 allowed a versioned→legacy transition, `releases/` root shape was absent, and report-only provenance could be overstated. The implementation now binds exact run/user/zero baseline, production host/user, strict outer-SSH receipt, current collector hash and envelope; requires `database-ledger`; enforces a deploy transition profile; validates `releases/` as absent/real directory only; and documents the controlled-operator trust boundary rather than claiming external signed attestation.
+- Final adversarial pass also fixed shadow app/Web/PostgreSQL scope overrides, hidden `capture-live --output`, unbound `generated_at`, versioned sentinel rotation and production-SSH/alternate-HTTP-origin splicing. Hidden capture now emits only stdout fixture evidence; exact production origin validation is shared by runner/gate and the final report URL is checked.
+- Final independent release-guard and frontend reviews both report `accepted P0/P1=0`, confidence high, under the documented controlled-operator threat model.
+
+Fresh verification:
+
+- `40` release-guard tests passed.
+- `22` focused production-frontend-acceptance tests passed; the stable-workflow contract is a separate `1` pass.
+- Combined related suite collected and passed `311` tests (`40` release guard + `270` script + `1` stable-workflow contract); only the existing Starlette/httpx deprecation warning appeared.
+- `uv run ruff check .`, targeted Mypy for `scripts/audit-production-release-guard-snapshot.py`, both Node syntax checks and `git diff --check` passed.
+- No matching local PostgreSQL container is running, so generated SQL and live collector behavior are static/fixture verified only; no local or production SQL capture was executed.
+- The provenance/envelope is not a cryptographic third-party attestation. It detects wrong target, direct hidden capture, stale collector and ordinary report drift within the controlled operator workspace; a malicious-local-operator threat model remains a separate design lane.
+
+Boundary and next gate:
+
+- Maximum evidence remains `L2-fixture-or-dry-run`; `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
+- No commit, push, PR state transition, merge, SSH production observation, browser production acceptance, audit-log write, deploy or rollback ran.
+- The next executable gate is Loop 58 Phase 3: owner selects the historical `mypy src scripts` policy. Any local commit remains a separate authorization.
+
+## 2026-07-16 Loop 58 Phase 3 Non-Regression Gate Start
+
+- Owner approved the recommended explicit non-regression exception and automatic execution of the next local gate. Authorization is interpreted as local code/test/docs and, after Phase 3 passes, local atomic commits only.
+- External side effects remain excluded: no push, PR state transition, merge, SSH production observation, deploy, production/database write, provider call or live send.
+- Maximum evidence grade remains `L2-fixture-or-dry-run`; the gate must not rename a repository-wide failing `mypy src scripts` run as a full PASS.
+- Pre-edit backup: `/Users/pray/.Codex/file-history/medical-audit-loop58-phase3-20260716T171017+0800/`.
+- One backup command construction failed before shell execution because JavaScript interpolated the shell variable name; the corrected command succeeded and the failed form was not retried.
+- RED evidence captured: `tests/knowledge_query/test_mypy_non_regression.py` has `11` expected failures because `scripts/check-mypy-non-regression.py` does not yet exist. Acceptance requires this same focused path to turn GREEN without weakening the assertions.
+- GREEN evidence: the same focused test path now reports `11 passed` after implementing the exact baseline gate.
+- Fresh real gate execution exits `0` with `status=pass`, `decision=allowed-with-label`, `mypy_full_pass=false`, `195` diagnostics, exact SHA-256 `fd5876c18cd71cd2e316a2c9c9206a59fc5dc1654143fcfb0242d8d5b566e97f`, six candidate-changed Python scripts passing targeted Mypy and no issues.
+- Local ignored report: `tmp/outputs/mypy-non-regression-loop58-phase3.json`.
+- First focused Ruff pass found only import ordering and one overlong condition in the two new files. Ruff fixed the imports mechanically; the condition was wrapped narrowly. Mypy, py_compile and diff-check were already green on that pass.
+- Post-fix focused verification is green: `11 passed`, focused Ruff PASS, targeted Mypy PASS, and the real non-regression gate again returns `status=pass` with no issues.
+- The first high-risk scan loop used zsh's special `path` variable and unintentionally replaced `PATH`, so its zero result was discarded. The corrected scan first identified one pre-existing candidate in the historical stable workflow, then a diff-additions plus untracked-content scan reported `secret_candidates=0` across private-key, GitHub, `sk-`, Tencent and Google key patterns; no value was printed.
+- Pre-staging evidence gate is green: the four-file Python evidence suite completed fully with no failures (only the existing Starlette/httpx deprecation warning), full Ruff PASS, both Node syntax checks PASS and diff-check PASS.
+- UI group gate is green: `38` Vitest files / `352` tests passed, `pnpm web:typecheck` PASS and `pnpm web:lint` PASS.
+- Atomic staging plan: `drafts/analysis/loop58-phase4-atomic-commit-plan-draft-20260716.md`.
+- Commit 1 complete: `0d34a94` (`feat: bind release acceptance evidence`), exact 10-file evidence manifest, cached check PASS, refined staged secret candidates `0`; index returned empty afterward.
+- Commit 2 complete: `85859a6` (`fix: preserve workspace route identity`), exact 8-file UI manifest, cached check PASS, refined staged secret candidates `0`; index returned empty afterward.
+- Evidence collect-only inventory is `11 + 40 + 270 + 1 = 322` tests; the executed combined run completed with no failures.
+- Commit 3 is the five-file planning manifest containing this ledger, the formal plan and the atomic staging plan. Its SHA/final clean status must be verified externally after commit and must not be guessed inside this commit.
+
+## 2026-07-16 Loop 59 Final Sprint Production Audit Start
+
+- Activated `planning-with-files`, `evidence-grade-gate`, and `playwright` for the production audit and final-sprint plan.
+- Restored Loop 58 plan/progress, verified candidate/upstream identity at `846aa89187867339feb6d6c90c102ca1336e4105`, and confirmed the separate primary worktree is unsuitable for scoped audit writes because it contains extensive user-owned changes.
+- Verified Playwright prerequisite `npx` at `/Users/pray/.nvm/versions/node/v22.22.0/bin/npx`.
+- Created the pre-edit planning-ledger backup artifact `medical-audit-loop59-final-sprint-20260716T234356+0800` (operator-local location intentionally omitted).
+- Current phase: inspect the candidate's production-safe audit contracts, then run fresh public/SSH L3 checks. No Ready, merge, deploy, production write, provider call, or live send is authorized in this audit phase.
+- Reviewed the three relevant production contracts. Full frontend acceptance is L4 `audit-log-only` and was excluded; the release-guard live capture and documented public knowledge catalog remain in the L3 allowlist.
+- Confirmed the production SSH key permissions without reading key contents and identified the need for a separate read-only `audit_agents` inventory query because the release guard does not count that table.
+- Public route probe completed: health, knowledge-base page and agent-market page returned `200`.
+- Logged two fail-closed observations: catalog without tenant returned `401` and may have produced an audit event; release-manifest body was non-JSON and the parsing command exited `5`. Both checks now switch to safer, assumption-specific paths rather than retrying unchanged.
+- Separated historical evidence from current evidence: prior `main@1376bae` reports are useful baselines but cannot close the current deployment, knowledge, agent, or visual questions.
+- Confirmed production still serves an HTML fallback at `/release-manifest.json`, so the versioned-static candidate has not been deployed and first-migration topology must be assessed by the release guard.
+- Attempted the fresh S0 release-guard capture once. It exited `2` because the streamed collector imports `datetime.UTC` on production Python 3.10. Logged as a P1 and switched approach; the same command will not be retried.
+- Ran the production-compatible conditional-L3 deployment-state audit. It proved zero audit-log delta and healthy runtime/knowledge backend at `1376bae`, but returned overall `fail` because production is still legacy rather than the candidate's required versioned-release topology.
+- Audited the agent catalog contract: `169` prompt-source rows are narrowed to `3` default agents plus `3` opt-in extension validations, not 100+ enabled production agents. Prepared a separate read-only database inventory check because API enumeration writes operation logs.
+- Completed strict read-only production agent inventory: 304 persisted rows, only 13 active; 1,707 invocations cover 7 agent keys. The “100+ normal agents” claim is not supported.
+- Confirmed 3 duplicate active agent identity groups (6 excess rows). Completed production knowledge coverage inventory: only 5 of 25 registered collections contain data; the core search backend is ready at 49,051 matching embeddings, but broad knowledge coverage is incomplete.
+- Reviewed the most recent same-SHA production browser report: 36/36 desktop/mobile checks had no mechanical issues, but no screenshots were retained because the policy captured issues only. A qualitative all-page judgment still needs a safe screenshot corpus or separately authorized L4 rerun.
+
+## 2026-07-16 Loop 59 Production Audit And Plan Closure
+
+Completed:
+
+- Ran an API-blocked real-browser matrix for 20 routes at `1440×1100`, `1280×800` and `390×900`: 60/60 navigations returned 200 with no root overflow, missing heading, short body or page error. All production API calls were locally intercepted, so this is static-structure evidence only.
+- Manually reviewed representative screenshots across every page family and found a coherent desktop design baseline plus release-significant mobile issues: global nav height, internal medical-audit tab clipping, archive compression, extreme long-page density, floating-history overlap and internal technical copy.
+- Confirmed root-overflow automation misses the mobile medical-audit defect because overflow is clipped/scrollable inside a nested tab container; the next test must assert component bounding boxes/internal scroll width.
+- Closed the Playwright `loop59ui` session after evidence capture.
+- Finalized the production verdict: current runtime is available, but candidate deployment is `NO-GO`; knowledge is partial (`5/25` populated), “100+ agents normal” is false, and all-page professional readiness is not yet proven.
+- Created the full Batch A-H final sprint plan at `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md` and synchronized task/findings/progress ledgers.
+
+Next executable item:
+
+- Batch A local P1 closure: fix Python 3.10 S0 compatibility first, then mobile layout/detector and read-only agent/knowledge preparation. This remains local code/test/docs only.
+
+Boundary:
+
+- No PR Ready, merge, deploy, production backup/change, database cleanup, provider call, knowledge query, ingestion or live send ran.
+- `production unchanged`, `deploy_execution=false`, qualified L3 collector `database_write=false`, one unauthenticated catalog denial `database_write=unknown`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch A Local P1 Closure Start
+
+- Owner approved the next executable item and automatic continuation around the final-sprint plan. Authorization is interpreted as Batch A local code/test/docs/dry-run work only.
+- Restored candidate `846aa89187867339feb6d6c90c102ca1336e4105`, existing Loop 59 plan ledgers and the uncommitted plan-only delta from the prior audit.
+- Activated `planning-with-files`, `evidence-grade-gate` and `playwright`; `npx` is available. The optional `planning-rules.md` reference remains absent, so the fully read skill contract is used directly.
+- Phase 4 is now in progress. First implementation pass will close Python 3.10 release-guard compatibility, then mobile layout/detector issues, then agent duplicate dry-run and knowledge coverage labeling.
+- Existing helper-generated untracked `.claude/`, `.playwright-cli/`, `AGENTS.md` and `CLAUDE.md` remain out of scope and will not be read, modified, staged or deleted.
+- Evidence ceiling remains `L2-fixture-or-dry-run`; no push, PR state transition, merge, SSH, deploy, production/database/object write, provider call or live send is authorized.
+- Created pre-edit backup artifact `medical-audit-loop59-batch-a-20260717T003135+0800` (operator-local location intentionally omitted).
+- Added a real Python 3.10 fixture-capture regression test. RED is reproduced on the same import boundary as production: `ImportError: cannot import name 'UTC' from 'datetime'`; focused test exit `1`.
+- First compatibility implementation made the Python 3.10 test GREEN, but focused Ruff failed with `UP017` because its generic upgrade rule prefers the Python 3.11-only `datetime.UTC`. The same form will not be retried; the fix will use a named Python 3.10-compatible timezone constant so both runtime and lint contracts remain true.
+- Ruff also flags the named constant assignment itself, confirming the rule is syntax-based rather than use-site-based. The next and final narrow approach is a documented line-level `UP017` exception on the compatibility constant; no global lint suppression or project Python-floor change is needed.
+- Python 3.10 closure is GREEN: the real interpreter fixture capture passes, focused Ruff passes with one documented compatibility-only `UP017` exception, and targeted Mypy reports no issues.
+- Added the acceptance-classification regression for nested interactive overflow and route-content occlusion. RED is confirmed: current `classify()` returns no issues for both defects even when root horizontal overflow is false.
+- Extended the production acceptance snapshot/classifier with `interactiveOverflowOffenders` and `floatingControlOcclusions`, bound the history control as an audited floating element, and turned the same regression GREEN. Node syntax is valid.
+- Replaced the phone-only two-column global navigation with three columns and replaced horizontally scrolling medical tabs with full-width responsive grids.
+- Added archive-specific mobile card layout and moved raw backend, evidence, side-effect, archive-root, signature and internal ID values into diagnostic disclosures. Archive now shows human-readable owner/status/retention labels by default; focused Vitest reports 5/5 passed.
+- One combined multi-file copy patch was rejected before writing because of an invalid hunk boundary. It was not retried in the same form; the work is split into smaller component patches. Analytics primary copy is now user-facing while the raw provider flag remains in diagnostics.
+- Analytics/report/archive focused Vitest is GREEN at 40/40. The first Web typecheck exposed one graph diagnostics key using nonexistent `issue.read`; the authoritative issue type provides `code`, so the key will be corrected without changing behavior.
+- Corrected the graph diagnostic key to `issue.code`; Web typecheck is GREEN and the 40 focused UI tests remain GREEN. Analytics, graph and report now lead with user-facing status while preserving raw boundary/error values under diagnostics.
+- Implemented the read-only agent-market inventory SQL generator and deterministic cleanup dry-run analyzer with six focused tests. First run reached 5/6: the failing assertion confused a documented identity field name with an exposed actor value; Ruff also found three formatting-only E501 items. Targeted Mypy already passes.
+- Agent duplicate dry-run closure is GREEN: 6/6 tests, focused Ruff and targeted Mypy pass. The tool emits only strict read-only SQL, hashes actor/project identity, preserves rows/invocation history in proposed actions, and requires a separate write authorization whenever ambiguity exists.
+- Froze the app release claim to `core-5` and added dynamic populated/registered coverage to the knowledge page. The UI distinguishes `core-ready`, `core-incomplete` and `unknown` without hardcoding production `5/25`; knowledge page Vitest is 6/6 and Web typecheck remains GREEN.
+- Completed the post-edit CSS cascade inspection: no later selector overrides the phone three-column navigation or responsive medical-tab grids. A fresh `git diff --check` is GREEN.
+- Batch A implementation is now feature-complete and has entered broad L2 regression, build and local three-viewport browser acceptance. External and production boundaries remain unchanged.
+- First broad backend/static pass: release-guard plus duplicate suite reached 47/47; targeted Mypy and Node syntax passed. Ruff found one `E501` in the new detector test, which was corrected by splitting the fixture string; the same full checks will be rerun.
+- Broad rerun is GREEN: 318 related Python tests, full Ruff, targeted Mypy, 11 non-regression tests, the exact historical Mypy non-regression gate, Node syntax, 38 Web files / 363 tests, Web typecheck, lint, 24-page build and diff-check all passed.
+- The first `390×900` browser inspection proved the global nav is now 150px, all 11 medical tab controls fit within x=`10..380`, root width is exactly `390`, and the history control overlaps no route control. It also exposed the separate fixed medical AI button covering the first tab row; a narrow responsive in-flow fix plus detector marker is now under focused revalidation.
+- The medical AI action is now in-flow at `<=900px` and retains fixed desktop behavior. The acceptance detector ignores `static`/`relative` markers and continues to audit positioned overlays; a focused exported-position contract test was added before repeating browser geometry.
+- First full local matrix completed 60 executions but is RED by design: desktop `14/20`, tablet `14/20`, mobile `18/20`. Eight true occlusion observations share the out-of-rail history FAB root cause; six remaining alias timing observations were sampled before client redirects completed. The shell ownership fix is applied and the matrix must rerun with a longer alias settle window.
+- Second full local matrix is GREEN at desktop `20/20`, tablet `20/20`, mobile `20/20` with no root/interactive/nested-tab overflow, positioned route-control occlusion, missing heading, thin page or alias path failure. Manual screenshot review then found the sidebar history/topic overlap outside the route detector scope; its 86px separation and collapsed icon-only contract are now under final focused/browser verification.
+- Desktop geometry proves history/topic separation (`history bottom=1014`, `topic top=1026`) with no overlap. The same check revealed the sidebar remained 256px after collapse due to a later cascade override; the 92px collapsed-grid rule and component/CSS regression are now applied.
+- The collapsed-grid override is desktop-only (`min-width:901px`) so a responsive resize cannot force the 92px desktop rail onto the mobile one-column shell.
+- Final collapsed-shell recheck is GREEN: sidebar `92px`, history `clientWidth=scrollWidth=65`, label hidden, history/topic overlap false. The final 60-execution route matrix is also GREEN at `20/20` per desktop/tablet/mobile viewport.
+- Batch A final gates are GREEN: related Python `41 + 6 + 272 = 319`, full Ruff, targeted Mypy, Node syntax, non-regression tests `11`, exact historical Mypy gate `allowed-with-label` with unchanged `195` diagnostics, Web `38 files / 363 tests`, typecheck, lint, 24-page build and `git diff --check`.
+- Phase 4 is complete at `L2-fixture-or-dry-run`; local accepted P0/P1=`0` within the frozen Batch A contract. Next is a clean local exact-SHA freeze before Batch B. No local commit, staging, push, PR state change, merge, SSH, deploy, production/database/object write, provider call or live send ran.
+- Boundary remains: `production unchanged`, `deploy_execution=false`, `database_write=false` for Batch A tools/tests, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+- Evidence/boundary audit complete: no staged files; tracked/untracked scoped secret candidates `0`; emitted agent inventory SQL contains no UPDATE/DELETE/INSERT/DDL and retains the strict read-only transaction contract. Helper-generated `.claude/`, `.playwright-cli/`, root `AGENTS.md` and `CLAUDE.md` remain untouched and out of scope.
+
+## 2026-07-17 Loop 59 Batch B Exact-SHA Freeze Start
+
+- Owner explicitly approved the next executable item. Authorization now covers local atomic commits and Batch B local tests/build/browser evidence, but still excludes push, PR state change, Ready, merge, SSH, production probe/write, deploy, provider call and live send.
+- Restored the ledger after context compaction and verified branch/upstream identity at `846aa89187867339feb6d6c90c102ca1336e4105`, an empty index, the expected 21 tracked Batch A changes plus three intended untracked files, and four isolated helper artifact classes.
+- Atomic group 1 committed as `02256fe` (`fix: harden release readiness evidence`) with exactly six audit-tool/test files. Staged secret candidates=`0`; the related 319-test path exited `0`, focused Ruff, targeted Mypy, Node syntax and cached diff checks passed.
+- Atomic group 2 committed as `1c2d0e4` (`fix: close responsive workspace layout gaps`) with exactly fourteen UI/test files. Staged secret candidates=`0`; Web `38 files / 363 tests`, typecheck, lint and cached diff checks passed.
+- Group 3 contains only `.kiro/plan/{task_plan,findings,progress}.md` and the Loop 59 formal plan. Its resulting SHA will be read after commit and used as the clean Batch B source identity; no self-referential SHA is asserted inside the commit.
+- Evidence ceiling remains `L2-fixture-or-dry-run`; `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch B Exact-SHA Closure
+
+Completed:
+
+- Committed the four-file planning group as `b1003ba` (`docs: freeze final sprint execution plan`). Initial exact-SHA review then drove two UI polish commits, `c77d356` and `1fb4d4d`, followed by final user-facing implementation-copy commit `a3407a4`.
+- Final candidate is `a3407a4b44766733c294d394181df3e64bb5f9b6`, six commits / 25 files ahead of the remote branch. All candidate commits were locally atomic and passed staged diff/secret checks; no push occurred.
+- Ran B1 from detached clean clone `tmp/loop59-batch-b-a3407a4b`: backend `854 passed` with one existing deprecation warning; Web `38 files / 364 tests`; typecheck, lint, full Ruff, Node syntax and diff-check all passed.
+- The Mypy exact non-regression gate is `status=pass`, `decision=allowed-with-label`; historical `195` diagnostics and fingerprint are unchanged, candidate-changed scripts pass targeted Mypy, and `mypy_full_pass=false` remains explicit.
+- Ran B2 24-page release build and actual deploy release validator. The 87-file manifest is bound to `a3407a4b...`, manifest SHA-256=`3cc15e4ed8a5eedbbf9c7a489b4658923e64b1a3a17df64c773242399798d265`, Node=`v22.22.0`, pnpm=`9.15.0`, four public variables null, favicon=`/brand/auditscope-logo.png`.
+- Ran B3 `17 independent + 3 aliases × 3 viewports`: desktop/tablet/mobile each `20/20`, failures=`[]`, unexpected console errors=`[]`, page errors=`[]`. All 270 console errors are expected local `/api/**` 503 fixture events.
+- Screenshot validation is exact: 60 files, 60 unique paths, 60 unique byte hashes; 20 each at `1440×1100`, `1280×800`, `390×900`. Contact sheets are under `tmp/loop59-batch-b-a3407a4b/output/playwright/loop59-batch-b-a3407a4b/`.
+- B4 manual visual review passed at `92/100`, accepted P0/P1=`0`. The final mobile medical tool labels are complete and non-duplicated; report/archive error states are user-facing; favicon 404 is absent.
+- A deep visible-text scan initially found `读取 /api/v1/audit-findings` below the first viewport. Replaced raw endpoint/backend implementation labels with user-facing sync states, kept full failure detail under the existing diagnostic disclosure, added assertions, committed `a3407a4`, then reran B1-B4 from the new exact SHA. Final 16-route scan has finding count `0`.
+- Logged and corrected one focused-test failure caused by the obsolete expectation that `SqlAlchemyAuditFindingStore` be visible. The corrected contract requires user-facing sync labels and forbids the implementation name in primary content; rerun is `6/6`.
+- Logged and corrected one Playwright harness syntax error: `run-code` needs an async `(page) =>` function. The documented file-based function form completed the final matrix. Previous tooling corrections also remain recorded: dynamic import registration in `sys.modules`, system Python/PIL for contact sheets, and `**/api/**` interception.
+- Closed Playwright session `loop59b3a340` and stopped the local static server cleanly.
+
+Decision:
+
+- Phase 5 / Batch B is complete at `L2-fixture-or-dry-run`. Local candidate static professionalism is sufficient for PR promotion, but this does not prove current production or populated/authenticated behavior.
+- Deployment remains `NO-GO`. The next gate is Batch C push/update Draft PR `#239`, which requires separate authorization; Ready and merge remain later separate gates. Batch D fresh L3 S0/preflight, Batch E deploy and Batch G L4 acceptance are not authorized.
+- This closeout ledger is intentionally post-candidate and uncommitted so exact test/build/screenshot identity remains `a3407a4b...`.
+
+Boundary:
+
+- `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch C1 Draft PR Promotion
+
+Completed:
+
+- Reconfirmed local exact candidate `a3407a4b44766733c294d394181df3e64bb5f9b6`, base `origin/main@1376baef0d8d47f1e1ef60b2cec130451af5af4f`, 39 commits / 74 files from base, and a fast-forward relation to the pre-push remote head.
+- Pushed `846aa89..a3407a4` to `codex/production-ui-reconciliation-20260716`; no force push was used.
+- Updated existing PR #239 body with exact candidate identity, fresh L2 validation, Mypy non-regression label, review focus, rollback path and authorization boundary.
+- Fresh read-only PR verification: state=`OPEN`, draft=`true`, head=`a3407a4b44766733c294d394181df3e64bb5f9b6`, base=`main`, mergeable=`MERGEABLE`, merge state=`CLEAN`, CodeRabbit=`SUCCESS`, review decision unset.
+- The repository has no `.github/workflows`; CodeRabbit is an external status context and is not renamed as full CI or independent business review.
+- Backed up the four planning ledgers before this update as artifact `medical-audit-loop59-batch-c1-20260717T133531+0800` (operator-local location intentionally omitted).
+
+Tooling correction:
+
+- The first temporary PR-body patch wrapper failed before file creation because Markdown backticks were embedded in a JavaScript template literal. It was replaced with an explicit string-array patch; the file was then verified before `gh pr edit` ran.
+
+Decision and boundary:
+
+- Batch C1 is complete. Batch C2 independent human review and Batch C3 Ready/merge remain open and separately gated.
+- This batch changed only the GitHub branch and Draft PR metadata. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch C2 Independent Review Start
+
+- Restored the active plan/release rule and reverified primary HEAD, remote branch and PR #239 head all equal `a3407a4b44766733c294d394181df3e64bb5f9b6`; PR remains OPEN/Draft, MERGEABLE/CLEAN, CodeRabbit SUCCESS, review decision unset.
+- Selected the detached clean clone `tmp/loop59-batch-b-a3407a4b` so the review covers `origin/main..a3407a4` without the four post-candidate ledger files or helper artifacts.
+- The first `codex review --base origin/main` became recursively self-invoking because the nested reviewer activated the same `codex-review` skill and launched another review; three nested process groups were terminated before they could recurse further. This run is invalid as a final review result.
+- Before recursion was stopped, the reviewer independently ran 53 focused release-guard/frontend-workflow/agent-install tests; all 53 passed with one existing Starlette/httpx deprecation warning. This is supporting test evidence only, not a clean review result.
+- Next attempt will isolate Codex home/skills and rerun against the same exact SHA. No candidate code, GitHub state, production state, database or provider state changed.
+- Backup artifact created: `medical-audit-loop59-batch-c2-20260717T134210+0800` (operator-local location intentionally omitted).
+- The isolated review completed and emitted one actionable P2: the UI/backend accept a 20 MiB file payload while Nginx `client_max_body_size 20m` leaves no multipart/form-data framing headroom, causing valid near-limit production uploads to be rejected at the proxy.
+- Verified the finding against `PersonalMaterialActions`, `routes_documents.py`, `uploadPersonalDocument` and the deployed Nginx fragment. Raised only the proxy envelope to `21m`, kept the application payload ceiling at 20 MiB, and added a regression assertion.
+- Focused Nginx fragment/secret-safe patch tests are `2/2`; Ruff and `git diff --check` pass.
+- Committed the two-file fix atomically as `ce639ae1959bfb0a59a4f0ebc4ddd2e50f374712` (`fix: allow multipart upload headroom`). The four post-candidate ledgers and helper files remain unstaged/uncommitted.
+- Fresh detached clone `tmp/loop59-c2-ce639ae` is clean at the new exact SHA. Web `38 files / 364 tests`, typecheck and lint pass; full Ruff and `mypy src` pass.
+- Exact Mypy non-regression remains `status=pass`, `decision=allowed-with-label`, `diagnostic_count=195`, fingerprint `fd5876...`, targeted changed scripts pass, and `mypy_full_pass=false` remains explicit.
+- New exact-SHA static build completed. The deploy validator accepts 87 files bound to `ce639ae...`; manifest SHA-256=`eba2f4b464f70aecaad6f4f413839cf4e7a88e971bbd173e77804142cb7fa1b7`.
+- Full Pytest completed with JUnit evidence: `854` tests, `0` failures, `0` errors, `0` skips, elapsed `150.920s`.
+- The final isolated non-recursive Codex review exited `0` and reported no discrete actionable correctness issue after inspecting the full `origin/main..ce639ae` diff. C2 local review/remediation is complete.
+- Local branch is one commit ahead of its remote. GitHub PR #239 remains OPEN/Draft at `a3407a4b44766733c294d394181df3e64bb5f9b6`, `MERGEABLE/CLEAN`, CodeRabbit `SUCCESS`; those remote checks do not yet cover `ce639ae...`.
+- Next independent gate: push `ce639ae...` and refresh Draft PR #239 evidence. Ready, merge, S0/preflight, deploy and production acceptance remain later gates.
+- Boundary remains `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch C2 Exact-SHA Visual Refresh Start
+
+- Continued the active final-sprint goal without crossing the external GitHub gate. This sub-batch closes the remaining local evidence mismatch between the old `a3407a4...` screenshots and current candidate `ce639ae...`.
+- Activated `planning-with-files`, `playwright` and `evidence-grade-gate`; `npx` is present. The planning skill's optional `references/planning-rules.md` file is absent, so the main skill contract is used directly.
+- Reverified the primary branch is one commit ahead of remote with only the four intended ledger files modified; the detached exact-SHA clone is clean at `ce639ae1959bfb0a59a4f0ebc4ddd2e50f374712`.
+- The previous 60 screenshots/contact sheets are present, but the temporary matrix harness/report is not. The next action is to reconstruct a local API-blocked CLI runner from the committed acceptance contract, then produce a new exact-SHA report and screenshots.
+- Backup artifact created: `medical-audit-loop59-c2-visual-20260717T142509+0800` (operator-local location intentionally omitted).
+- Inspected the committed acceptance contract and Playwright CLI capabilities. The production runner is not reused directly because it correctly requires L4 audit-log-write authorization and the exact production origin.
+- Chosen local design: a temporary Playwright CLI function file under the detached clone, deterministic `**/api/**` 503 interception, the committed hardened/alias route contracts plus classifier, and three explicit viewports. No `@playwright/test` spec or product code change is required.
+- Started an isolated static server on `127.0.0.1:4177` and Playwright CLI session `loop59c2ce`; both are local-only.
+- Single-page pilot passed: `/login` returned HTTP `200`, mobile geometry was exactly `390/390`, the heading was `登录工作台`, and the API route mock installed successfully. The full 60-execution runner can now be generated without changing candidate code.
+- The CLI VM does not provide a dynamic-import callback; a direct module import probe failed once with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`. The retry path is changed to serialized plain-data contracts plus a separate Node fingerprint check; no candidate file changed.
+- Added the temporary runner under the detached clone's `tmp/`; `node --check` passes and it contains exactly 20 route contracts.
+- The authoritative module independently reports `17 + 3 = 20` contracts with fingerprint `164b6aae2773e6bb2c5e24da8e07009a461cdc839d763c5a831f3502369e81c9`; route order matches the runner. CLI raw-result capture was also verified.
+- First 60-execution attempt completed but is rejected: `serve -s` mapped all clean URLs to root `index.html`, producing 57 false semantic failures and only 7 unique hashes. Curl SHA comparison and a sampled screenshot proved `/medical-audit` was actually rendering the login page.
+- The same server mode will not be retried. The artifacts will be retained under an `invalid-spa-fallback` label, then the server will restart in clean-URL mode and the matrix will rerun.
+- Archived the rejected report/screenshots under `output/playwright/loop59-c2-ce639ae/invalid-spa-fallback/`; no evidence was deleted.
+- Restarted `serve` without SPA mode. A first readiness-race curl occurred before the new listener was ready; the startup-aware retry then proved `/medical-audit` exactly serves `medical-audit.html`.
+- Corrected single-route browser pilot passed at mobile: HTTP `200`, expected path/heading/body/chrome, and no root overflow (`390/390`).
+- Corrected full run completed 60 real page executions. Initial classification was `18/20` per viewport solely because success-only report/archive text was absent in the deliberate API 503 error state; all root/interactive/nested-tab overflow, floating occlusion, unexpected console and page-error counts were zero.
+- Verified the two states against product source and tests. They are explicit fail-closed UI, not candidate regressions, and `a3407a4..ce639ae` has no `web/` diff.
+- Updated only the temporary local runner to accept tested success-or-explicit-error alternatives for `/reports` and `/archive`; the production L4 acceptance script remains unchanged. One expected duplicate hash is the tablet `/workspace` alias rendering the same state as `/chat`.
+- Temporary runner syntax is valid. A focused mobile browser probe confirmed both fixture-specific alternatives, expected paths/statuses and zero root overflow. The final full report can now be regenerated.
+- Final automated report regenerated at exact `ce639ae...`: desktop/tablet/mobile are each `20/20`; failure count, unexpected console, page error, root/interactive/nested-tab overflow and floating occlusion are all `0`.
+- User reset the visual priority to desktop web first and mobile second. Desktop manual review found visible internal implementation copy despite clean geometry, so the initial `92/pass` visual verdict was corrected to `87/revise`.
+- The next local implementation lane is narrow copy remediation on analytics, knowledge-base, medical-audit and archive, with raw diagnostics preserved under disclosure. Desktop must rerun first; mobile remains the secondary regression gate.
+- The desktop visible-text scan covered 17 independent routes and found 6 flagged strings across 4 routes: analytics `analytics store ready`; knowledge-base `来自当前后端目录` / `后端目录`; medical-audit `专题接口暂不可用` / `疑点接口读取异常`; archive `归档 API 读取失败...`. Geometry remained green, so these are P2 professional-copy findings.
+- Applied a narrow eight-file source/test remediation: primary content now uses `分析记录服务`, `知识目录`, `疑点数据`, `专题数据` and `归档数据`; medical-audit loading/project fallback copy also removes visible `接口` wording. Raw backend/provider failure detail remains in existing collapsed diagnostic disclosures.
+- Focused Web regression is green: 4 files / 25 tests. Backup artifact for the eight code/test files and four ledgers is `medical-audit-loop59-desktop-copy-20260717T145229+0800` (operator-local location intentionally omitted).
+- This copy batch is not yet a new exact candidate: full Web gates, local commit, rebuild, desktop-first matrix/text scan/manual sign-off and mobile secondary matrix remain pending. No push or production action ran.
+- First copy commit froze as local exact SHA `3840c12447cbfe43d6a3e906041cdfe687ee9af5` (`ui: polish desktop-facing runtime copy`) after Web `38/364`, typecheck, lint and 24-page build passed. The branch is now two commits ahead of remote; push remains unexecuted.
+- Exact-SHA desktop structural rerun is green at `20/20` after updating only the temporary archive error-state expectation from the removed `归档 API` wording to `归档数据`. Mobile secondary structural rerun is also `20/20`; both have zero geometry, console and page-error findings.
+- A stricter visible-copy scan across 17 independent routes at desktop and mobile found 14 viewport findings representing 7 unique primary strings on 6 routes: medical-audit, fund-compliance/review, analytics, rules, reports and remediation. The previous scan was therefore too narrow and the visual verdict stays `revise`.
+- Applied a second narrow twelve-file source/test remediation for the same root cause: primary text now uses `知识检索`, `当前运行数据只读展示`, `受控流程`, `查看字段画像`, `规则数据`, `整改数据` and user-facing permission wording. Focused regression is green at 6 files / 60 tests; full gates and a second exact-SHA browser rerun remain pending.
+- Second-batch backup artifact: `medical-audit-loop59-visible-copy-20260717T150834+0800` (operator-local location intentionally omitted).
+- Full second-batch Web gates passed: 38 files / 364 tests, typecheck, lint and 24-page static build. The twelve-file remediation was committed atomically as `7a44c191501b19a24aae72c408f010054022d7d5` (`ui: remove residual implementation copy`).
+- Fresh detached exact-SHA release export is green: 24 pages and an 87-file manifest bound to `7a44c191...`; manifest SHA-256=`18b90e172231ae6337dc56f47d109ad7efcf7f25e037379fa878be46b92ddd05`.
+- Final desktop-first structural report is `20/20`; mobile secondary is `20/20`; tablet supplemental is `20/20`. All failure, unexpected-console, page-error, root/interactive/nested-tab overflow and floating-occlusion counters are zero.
+- Final strict visible-copy scan covers 17 independent routes at desktop and mobile (`34` executions) with `finding_count=0`. Raw diagnostics remain available only inside collapsed disclosures.
+- Screenshot corpus is complete: 60 files, dimensions `20×1440×1100`, `20×390×900`, `20×1280×800`, and 55 unique hashes. Five duplicate groups are the expected workspace/chat and findings/medical-audit alias-target pairs.
+- Manual desktop contact-sheet, six-page copy-review sheet and mobile contact-sheet review passed. Strict visual verdict is `93/pass`; this remains L2 API-blocked static/error-state evidence, not populated/authenticated production acceptance.
+- Playwright session and static server were closed. Primary branch is three commits ahead of remote with only the four intended ledgers modified and helper artifacts untouched. Next external gate is C2-PROMOTE; no push, Ready, merge, SSH, production probe or deploy ran.
+- Final fresh GitHub read-only check: PR #239 is `OPEN`/Draft, remote head=`a3407a4b44766733c294d394181df3e64bb5f9b6`, base=`1376baef...`, mergeable=`MERGEABLE`, merge state=`CLEAN`, CodeRabbit=`SUCCESS`, review decision unset. These statuses do not cover local `7a44c191...`.
+
+## 2026-07-17 Loop 59 Batch C2-PROMOTE Start
+
+- Owner explicitly authorized the next named executable gate: C2-PROMOTE. Scope is limited to a normal fast-forward push of `a3407a4...→7a44c191...` and refreshing Draft PR #239 evidence; Ready, merge, SSH, S0/preflight, deploy and production/provider/database/live-send actions remain excluded.
+- Fresh pre-push identity: local head=`7a44c191501b19a24aae72c408f010054022d7d5`, upstream/PR head=`a3407a4b44766733c294d394181df3e64bb5f9b6`, base=`1376baef0d8d47f1e1ef60b2cec130451af5af4f`.
+- Promotion delta is exactly 3 commits / 18 files; full PR range becomes 42 commits / 74 files with 22,770 additions and 1,289 deletions. `git diff --check` passed and scoped secret-marker count is `0`.
+- Backed up the four plan/formal ledgers as artifact `medical-audit-loop59-c2-promote-20260717T152615+0800` before recording this live gate (operator-local location intentionally omitted).
+
+## 2026-07-17 Loop 59 Batch C2-PROMOTE Closure
+
+- Executed a normal fast-forward push: remote branch moved from `a3407a4b44766733c294d394181df3e64bb5f9b6` to `7a44c191501b19a24aae72c408f010054022d7d5`; no force push was used.
+- Updated Draft PR #239 body with exact head/base, 42-commit / 74-file range, multipart headroom fix, exact-head Web evidence, 87-file manifest SHA, desktop/mobile/tablet matrices, 34-execution visible-copy scan, `93/pass` verdict and L2/production boundaries.
+- Fresh GitHub verification: PR #239 is `OPEN`, `isDraft=true`, head=`7a44c191...`, base=`1376baef...`, mergeable=`MERGEABLE`, merge state=`CLEAN`, CodeRabbit started after this push and is `SUCCESS`, review decision unset.
+- Body verification confirms the exact head, manifest SHA and `production unchanged` boundary are present. Local branch now equals upstream; the four plan/formal ledgers remain uncommitted and helper artifacts remain untouched/untracked.
+- C2-PROMOTE is complete. Next independent gate is C3 Ready decision; merge, SSH, S0/preflight, deploy, production/database/object writes, provider calls and live sends remain unexecuted.
+- Boundary: GitHub branch push and Draft PR body update executed; `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 Batch C3 Ready Start
+
+- Continued the owner-approved next executable item as C3-READY only. This gate may change PR #239 from Draft to Ready for review; it does not authorize merge, branch deletion, SSH, S0/preflight, deploy, production/database/object writes, provider calls or live sends.
+- Fresh gate facts: local/upstream/PR head all equal `7a44c191501b19a24aae72c408f010054022d7d5`; PR is `OPEN`/Draft, base=`1376baef...`, mergeable=`MERGEABLE`, merge state=`CLEAN`, fresh-head CodeRabbit=`SUCCESS`, review decision unset.
+- Evidence decision: `allowed-with-label`. Supported claim after execution is only “PR is Ready for review at exact head”; forbidden claims remain “approved”, “merged”, “deployed” and “production accepted”.
+- Backup artifact: `medical-audit-loop59-c3-ready-20260717T153146+0800` (operator-local location intentionally omitted).
+- `gh pr ready 239` succeeded: PR #239 is no longer Draft and remains `OPEN` at exact head `7a44c191...`.
+- The Ready transition triggered a new CodeRabbit run. Immediate post-transition state is CodeRabbit=`PENDING`, mergeable=`MERGEABLE`, merge state=`UNSTABLE`, review decision unset, reviews=`[]`. `UNSTABLE` is currently attributable to the pending check and is not labeled as a code failure.
+
+## 2026-07-17 Loop 59 Batch C3 Ready Closure
+
+- C3-READY action completed successfully: PR #239 is `OPEN`, `isDraft=false`, exact head=`7a44c191501b19a24aae72c408f010054022d7d5`, base=`1376baef...`, and remains mergeable.
+- Observed the Ready-triggered CodeRabbit run from `2026-07-17T07:32:46Z` through `2026-07-17T07:40:30Z`; it remained `PENDING` with no failure output or review submission. Final observed merge state is `UNSTABLE`, review decision unset, reviews=`[]`.
+- C3-READY is complete because the authorized state transition and its exact-head verification succeeded. C3-MERGE is not ready for decision: it requires both fresh check convergence and separate merge authorization.
+- No branch deletion, merge, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 C3 Ready-Context Check Follow-up
+
+- Restored the Loop 59 Phase 6 TODO and reverified local HEAD, upstream and PR #239 head all equal `7a44c191501b19a24aae72c408f010054022d7d5`; PR remains `OPEN`/Ready and mergeable.
+- Fresh `gh pr view` still reports the Ready-triggered CodeRabbit run started at `2026-07-17T07:32:46Z` as `PENDING`, with merge state=`UNSTABLE`, review decision unset and reviews=`[]`.
+- Two additional bounded watch windows returned `0 cancelled, 0 failing, 0 successful, 0 skipped, 1 pending`; the watcher was stopped cleanly after recording the unchanged external state.
+- Phase 6 remains open with status `check_pending`. No merge, branch deletion, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 C3 CodeRabbit Remediation Closure
+
+- The Ready-context CodeRabbit run later converged to `SUCCESS`; fresh GitHub state became `OPEN/Ready/MERGEABLE/CLEAN` at remote head `7a44c191...`. The review contained 18 actionable inline comments plus one test suggestion, so success was not treated as merge readiness.
+- Verified every comment against source and tests. Implemented the valid fail-closed, role/permission, duplicate market identity, core-collection readiness, deploy execute, server redirect, responsive overlay and diagnostic-disclosure fixes. Rejected the literal `sourceCollection` test suggestion because that field does not exist; added coverage at the actual `id`-derived contract instead.
+- An isolated non-recursive review found one additional P1: client roles and API legacy roles were compared directly. Added an explicit role mapping and updated tests; the second isolated review exited clean with no discrete actionable correctness issue.
+- Fresh automated evidence is green: Pytest JUnit `857` tests / `0` failures / `0` errors / `0` skips; Web `38` files / `369` tests; Ruff, targeted Mypy on 3 changed Python source files, Web lint, typecheck, 24-page build and `git diff --check` pass.
+- Desktop-first local browser acceptance passed `20/20` at `1440x1100`; phone secondary passed `20/20` at `390x900`; tablet supplemental passed `20/20` at `1280x800`. The 17 independent routes × desktop/mobile visible-copy scan ran 34 executions with `finding_count=0`. Manual review of documents/rules/remediation/archive confirmed no clipping, overlap or raw API/backend copy in the tested fail-closed states.
+- Browser artifacts are under `output/playwright/loop59-c3-coderabbit-remediation/`. The matrix is L2 API-blocked/static/error-state evidence from working-tree fingerprint `bd0130867bdd8946e10eae633eb4aa94157cf768dd090dd0c9fbdf25d436d2ed`; it is not authenticated populated production acceptance.
+- The remediation remains uncommitted and unpushed. PR #239 and CodeRabbit SUCCESS still cover only `7a44c191...`, not the current working tree. The next bounded gate is explicit authorization for one local atomic commit; push/PR refresh, merge, S0/preflight and deploy remain separate gates.
+- No merge, branch deletion, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 C3 Remediation Atomic Commit And Exact-SHA Acceptance
+
+- Explicitly staged only the 32 intended tracked remediation/plan files; helper-owned `.claude/`, `.playwright-cli/`, root `AGENTS.md` and `CLAUDE.md` stayed untracked. Pre-commit secret-marker count was `0`, cached diff-check passed, and focused Python `286/286` plus Web `98/98` passed.
+- Created the local remediation commit, then the first exact-SHA desktop matrix exposed four real occlusions: the fixed history trigger overlapped the medical AI control, a fund-compliance action and a knowledge-base card. The earlier contact-sheet-only verdict was therefore insufficient.
+- Moved the desktop history trigger into the fixed navigation-rail zone (`left=12`, `bottom=86`, width `232`; collapsed width `44`) and updated unit/E2E contracts. Focused unit `14/14`, lint, typecheck and diff-check passed; the change was amended into the same unpushed remediation unit.
+- Final local runtime candidate is `9d9b19204868cc0fbd2e31f3cd138dacc8228021` (`fix: address production readiness review findings`), 33 files / 760 insertions / 129 deletions. It remains one commit ahead of remote runtime head before this planning closure ledger.
+- Exact candidate Web evidence: `38` files / `369` tests, lint, typecheck and 24-page static release export pass. The 87-file manifest is bound to `9d9b192...`, SHA-256=`f1c8df9a6ceca62f92bb525eb691a69ef63a39b27bed1dc1523c4f1f19e3bbf0`.
+- Exact candidate browser evidence is green after the fix: desktop primary `20/20`, phone secondary `20/20`, tablet supplemental `20/20`; all geometry/browser-error counters are zero. The 34-execution desktop/mobile visible-copy scan reports `finding_count=0`. Screenshots are under `output/playwright/loop59-c3-exact-sha-9d9b192/`.
+- Backend full Pytest `857/857` ran on the pre-amend commit `6f925b5...`; `scripts/`, `src/` and `tests/knowledge_query/` are byte-identical between `6f925b5...` and `9d9b192...`, so the CSS/test-only amend does not widen backend evidence. Ruff and targeted Mypy remain green for the unchanged backend tree.
+- The next external gate is push/PR refresh and fresh remote review at the new head. No push, merge, branch deletion, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-17 Loop 59 C3 Remediation Promotion And Final Review Closure
+
+- Normal fast-forward promotion moved local/upstream/PR head to `1b3e44a80f9cd5c89341b51f334c698b66de11e3`; PR #239 remained `OPEN`/Ready, `MERGEABLE/CLEAN`, and fresh-head CodeRabbit completed with `SUCCESS`.
+- The post-remediation exact-head browser corpus is explicitly bound to `1b3e44a...`: desktop `20/20`, phone `20/20`, tablet `20/20`, visible-copy `34/0`, with screenshots under `output/playwright/loop59-c3-final-exact-sha-1b3e44a/screenshots/`.
+- The latest review identified two ledger/evidence clarity findings plus one workstation privacy finding. The valid scope was closed docs-only by separating completed remediation/promotion from pending C3-MERGE, binding screenshots to the exact evidence head, replacing Loop 59 backup locations with artifact IDs, and removing credential path/mode/size metadata.
+- This closure does not modify `web/`, backend runtime, deployment scripts or tests. C3-MERGE remains unchecked and independently authorized; no merge, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.

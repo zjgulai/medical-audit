@@ -5,7 +5,7 @@ module: deployment
 topic: tencent-cloud-audit-lute-tlz-dddd
 status: stable
 created: 2026-06-03
-updated: 2026-07-15
+updated: 2026-07-16
 owner: self
 source: human+ai
 ---
@@ -32,6 +32,92 @@ source: human+ai
 - 不占用公网 `80/443` 端口；公网入口继续由现有 `ai_video_nginx` 统一接入。
 
 ## 2. 当前服务器事实
+
+### 2026-07-16 versioned Web release 与原子提交合同（本地实现，尚未部署）
+
+- 本地部署脚本已改为不可变版本目录：`/var/www/audit/releases/<approved-sha>`；共享 Nginx 的 audit 三个静态 location 统一读取 `/var/www/audit/current`，`current` 只允许精确指向 `releases/<40-char-lowercase-sha>`。
+- 每次静态发布先同步到独占的 `<approved-sha>.incoming`，在远端重新校验 `release-manifest.json`、完整文件集合、size、SHA-256 与 `source_sha` 后再原子晋升；已存在的不可变目录只有在完整复验一致时才允许复用，禁止覆盖。
+- 部署通过 owner token 持有 `$remote_app_dir.deploy.lock`。后台备份 worker 会把自己的 `BASHPID` 写入 `lock/worker.pid`，正常退出时仅按匹配 PID 清除；worker 仍存活时外层 unlock 必须失败并保留锁。
+- Nginx 变更只替换唯一 audit server 中的 `/_next/static/`、`/brand/`、`/` 三个 location；候选配置先在正式容器执行 `nginx -t`，通过后才原子切换 `current`，并以同 inode 覆盖宿主机 bind-mounted 配置，再执行正式 `nginx -t` 与 reload。
+- `.deploy-sha` 的原子 rename、目录 fsync 与内容读回是唯一权威 production commit point。部署前必须先通过 health、release manifest/public static hash、HTML no-cache、static immutable cache 和 GET-only smoke；app build 与 marker 都使用命令行显式批准的 `--approved-sha`，不在执行中重新读取本地 `git HEAD`。rollback transaction 的 `ready-to-commit` 只是 marker 前过程证据；只有它与 transaction `restore-sha`、当前 `.deploy-sha` 成对一致时才判定 `committed_by_marker`，不在 marker 后追加第二个 `committed` 权威写入。
+- 版本化回滚优先复用并复验 `releases/<restore-sha>`；缺失时只允许从对应 app backup 的 `web/out` 重建。只有交易记录明确为 `LEGACY_NONE` 时才允许回到旧 flat root，禁止以 whole-root `rsync --delete` 恢复 Web。回滚失败时 marker 不提交且生产锁保留，等待人工恢复。
+- execute 使用 `git archive <approved-sha>` 临时快照完成 frozen dependency check、Web build、manifest 复验、app/static rsync 与 GET-only smoke，禁止在 source gate 通过后继续同步可变 worktree。execute 参数门禁直接拒绝 `--skip-web-build`；该参数只保留给不写生产的 preflight。快照在整个同步事务退出后销毁。
+- execute/rollback 的 `--base-url` 只允许精确 HTTPS origin `https://audit.lute-tlz-dddd.top`（默认或显式 `:443`）；禁止 userinfo、其他端口、path、query 与 fragment。公网 verifier 和 mandatory production smoke 的 GET/POST requester 都拒绝跨 origin redirect，带鉴权 header 的请求不会转发到其他 origin；cache policy 按完整 Cache-Control directive 校验 `no-store`/`no-cache` 与 `immutable`，不接受子串伪装。
+- execute 禁止 `--skip-smoke` 和 `--skip-web-build`。rsync 同时设置 I/O timeout、SSH connect/keepalive 与总 subprocess timeout；SSH timeout、SSH 255、SSH 进程被 signal 终止、rsync timeout/30、background starter 任意非零、background poll 任意非零或不可解析状态，以及 activation restore 79/cleanup 85 都按远端结果未知处理。持锁阶段收到 `KeyboardInterrupt`、`SystemExit` 等非普通异常时不得自动 restore 或 unlock。任何 app rebuild 或 schema apply 已尝试后的 marker 前失败，以及 activation 已成功返回后的 marker 前失败，即使 UI/Nginx restore 成功，也必须保留生产锁；不能假设 `psql ON_ERROR_STOP` 会自动回滚此前已提交的 DDL。人工解锁前必须核对 marker/current、transaction SHA、实际 app 容器版本、schema 影响、Nginx/public gates，不能在 backend 新 SHA 与 UI/marker 旧 SHA 的混合态自动解锁或宣称回滚成功。
+- 首次从 legacy flat root 迁移必须显式传 `--allow-first-legacy-migration`，且仅在 `current` 和 migration sentinel 都不存在、flat `index.html` 与旧 `.deploy-sha` 均合法时放行。activation 在最终 marker 前原子创建 migration sentinel；marker 前失败恢复必须删除 sentinel。回滚到 legacy 时先删除 sentinel，若 marker 尚未尝试则失败恢复会重建 sentinel；`.deploy-sha` 始终是最后的状态提交点。
+- app/env/db/Nginx/Web 五类备份及 completion marker 必须是非 symlink regular file、非空且 mode `0600`。Nginx secret-bearing candidate 的 host/container cleanup trap 必须先于生成或 `docker cp` 安装；清理失败按 fail-closed 保留锁。正式 `nginx -t` 的 stdout/stderr 不进入部署日志，只返回通用失败信息。
+- 本节记录的是本地候选实现与执行合同，`production unchanged`；在 merge、精确 main SHA 授权和实际部署验收完成前，不得写成生产已切换到 versioned release。
+
+### 2026-07-16 Loop 58 D0 发布守卫与前端验收证据合同（本地实现，尚未生产运行）
+
+- 新增 `scripts/audit-production-release-guard-snapshot.py`，提供 `capture` 与 `compare` 两个 operator 模式。本地 fixture 只形成 `L2-fixture-or-dry-run`；带 `--ssh-key` 的 capture 会把当前本地脚本通过 strict SSH stdin 流式发送到远端，不依赖旧生产 checkout 已存在该脚本，且只有同时给出匹配的 `--confirm-production-readonly` 才允许执行。
+- live capture 的精确 allowlist 是 filesystem read、`medical_audit_pg` 内 PostgreSQL read-only、Docker inspect、app deploy-SHA read、Nginx config test 与 Web mount read；不读取 provider credential、不访问 provider endpoint、不打印 secret。数据库捕获使用 `SERIALIZABLE READ ONLY DEFERRABLE`，同时记录 `transaction_read_only`、隔离级别、deferrable 状态、前后 WAL LSN 和双快照一致性；任一并发歧义均失败关闭。L3 capture 必须绑定配置的生产 SSH target `101.34.52.232`、`ubuntu`、固定 app/Web/PostgreSQL scope、strict-host-key/batch/identity-only transport、SSH exit `0`、生成时间、当前 collector source SHA-256 和 snapshot+provenance envelope；不能用 shadow container/path 代替生产 scope。隐藏的 `capture-live` 只向 stdout 返回待外层重验的 fixture，不接受 `--output`、不产生 L3 报告，也不能单独伪装为外层 SSH 成功或在只读确认下写远端文件。
+- 拓扑只允许 `legacy_ready`、`versioned_ready`、`partial_or_unknown`。`legacy_ready` 要求 flat-root `index.html`、旧 marker、无 `current`/sentinel/residue，且 `releases/` 只能缺失或为真实目录；`versioned_ready` 要求 `releases/` 为真实目录、marker/current/release/manifest exact SHA 一致、sentinel 为合法的首次迁移谱系证据，且无 `.incoming`/`.next`/`.deploy-sha.next` residue。sentinel 不随后续 release SHA 轮换；collector 同时核验 app container status/health/deploy SHA、Nginx config 与只读 Web mount。固定 deploy comparison profile 只允许 `legacy_ready|versioned_ready → versioned_ready`；`versioned_ready → legacy_ready` 属于 rollback，不得借 S0→S1 deploy compare 放行。
+- schema fingerprint 固定覆盖列、约束、索引、table ACL、RLS flags/policies、triggers 与 trigger-function definitions。数据快照固定覆盖 `query_logs`、`review_tasks`、`review_actions`、`review_comments`、`audit_projects`、`audit_project_members`、`analytics_upload_records`、`document_upload_records`、`document_storage_objects`、`document_upload_governance_jobs`、`audit_agent_invocations`、`audit_log_events`；每表记录 row count、ordered primary-key fingerprint、完整 row-content fingerprint 与 relevant max timestamp，审计表另记录 exact event IDs/row hashes。对象证据当前仅来自 `document_storage_objects` 数据库 ledger 的完整 fingerprint，不枚举 COS 远端对象，不能外推为 COS 内容已核验。
+- `S0→S1` 只允许 deploy profile 规定的 release identity/topology 变化，schema、十二表与对象 ledger 必须零差异；`S1→S2` 要求两端均为同一 `versioned_ready` topology，只允许与唯一 `acceptance_run_id`/`frontend-acceptance-<run-id>` 精确归因的 `audit_log_events` exact-ID 增量，且旧审计行不得变化、该 run identity 的 S1 baseline 必须为零。compare 会重新构造并校验两个 capture 合同、生产 observation target、SSH provenance/envelope 及 snapshot hash；缺表、duplicate/unknown/malformed collector record、partial/illegal topology、snapshot race 或未知归因均返回 `status=blocked`。
+- release guard 只证明自身 collector 的执行边界：`collector_provider_call_status=not_called`、attempt count `0`。它不具备整个生产 runtime 的 provider telemetry，因此全局字段必须为 `provider_call_status=not_observed`、`provider_evidence_source=outside-release-guard-scope`；不得把 collector-only 证据扩写成全系统 `provider_call=false`。
+- frontend hardened gate 强制参数 `--expected-deploy-sha`、`--acceptance-run-id`、`--release-guard-report`。S1 guard 必须是 passing L3 `ssh-live-readonly` capture，且 exact production observation target/scope/SSH provenance/current collector hash、exact SHA/current target、database-ledger scope、collector-only boundary、`database_write=false`、serializable/read-only/deferrable transaction、与本次 run 完全相同且 event count 为零的 S1 attribution baseline，以及重新计算的 canonical snapshot/envelope hash 全部匹配。HTTP target 只允许精确生产 origin `https://audit.lute-tlz-dddd.top`（显式 `:443` 规范化后等价）；拒绝 HTTP、其他 host/port、userinfo、path、query 与 fragment，报告 `base_url` 也必须与该规范化 origin 完全一致。
+- frontend acceptance 在运行前后分别读取 public `release-manifest.json` 与 app deployment metadata，并在 gate 前再次复核 S1 guard 文件 hash/snapshot ID。覆盖保持 `17` 个 independent routes 与 `3` 个 aliases、desktop/mobile 共 `34 + 6` 次 execution；全部 `40` 次 execution 都必须具有 run/contract/viewport/route/query 绑定且不重复的 fresh PNG path，并通过 SHA-256、CRC、IDAT 解压、色彩格式、精确 width/height 和完整 scanline 校验。anonymous/missing-role 权限探针也必须保留本次 run-specific `X-User-Id`，避免产生无法归因的 audit event；browser/API 仍只允许 same-origin GET。
+
+生产只读阶段的命令模板（本 D0 未执行）：
+
+```bash
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S0 \
+  --expected-deploy-sha <CURRENT_PRODUCTION_SHA> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s0-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S1 \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s1-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py compare \
+  --before tmp/outputs/release-guard-s0-<STAMP>.json \
+  --after tmp/outputs/release-guard-s1-<STAMP>.json \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --output tmp/outputs/release-guard-s0-s1-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py capture \
+  --phase S2 \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --ssh-key <SSH_KEY_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output tmp/outputs/release-guard-s2-<STAMP>.json
+
+uv run python scripts/audit-production-release-guard-snapshot.py compare \
+  --before tmp/outputs/release-guard-s1-<STAMP>.json \
+  --after tmp/outputs/release-guard-s2-<STAMP>.json \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --output tmp/outputs/release-guard-s1-s2-<STAMP>.json
+```
+
+单独授权的 L4 frontend acceptance 继续只使用 §7.6.1 的唯一标准命令；不得在其他章节复制出第二套参数口径。
+
+本节仅同步本地 D0 合同与 fixture tests：`production unchanged`、`provider_attempt_made=false`、`provider_call_status=not_observed`、`collector_provider_call_status=not_called`、`database_write=local-test-only`、`deploy_execution=false`。SSH capture、生产浏览器、audit-log write、merge 与 deploy 仍需各自授权。
+
+### 2026-07-16 Loop 58 D1.1 Mypy non-regression exception（本地门禁）
+
+- `uv run mypy src scripts` 当前仍退出 `1`，包含精确 `195` 个继承诊断、`10` 个未被候选修改的历史债务文件；不得记录为 Mypy full PASS。
+- 已批准的窄范围策略由 `scripts/check-mypy-non-regression.py` 和 `configs/mypy-non-regression-baseline-v1.json` 实施。基线固定 exact base SHA、Mypy version、命令、退出码、全局/逐文件诊断 hash，以及 base/current source hash；同计数诊断交换、诊断减少、工具漂移、债务文件被触碰或 source hash 漂移均失败关闭。
+- 运行命令：
+
+```bash
+uv run python scripts/check-mypy-non-regression.py \
+  --output tmp/outputs/mypy-non-regression-loop58-phase3.json
+```
+
+- 合法成功标签只能是 `status=pass`、`decision=allowed-with-label`、`mypy_full_pass=false`。当前六个候选 changed Python scripts 必须同时 targeted Mypy PASS；测试、Ruff 或 baseline gate 任一失败都阻止候选冻结。
+- 本门禁仅为 `L2-fixture-or-dry-run` 本地发布证据，不授予 push、PR、Ready、merge、SSH、deploy、生产写入或 provider 调用权限。
+
+证据威胁模型：上述 provenance/envelope 用于阻断错误主机、直接 `capture-live`、旧 collector 和普通 artifact 漂移；它依赖受控 operator 工作区与当前代码，不是外部 CA/硬件签名的不可伪造 attestation。若将“恶意本地 operator 可任意改报告和代码”纳入威胁模型，必须另设签名/远端审计服务，当前 D0 不得声称具备该能力。
 
 ### 2026-07-15 main@2bba501 生产部署与状态审计边界修正
 
@@ -999,6 +1085,12 @@ python3 scripts/run-production-e2e-smoke.py \
 - 不打开 `medical-audit.env`，不枚举容器完整环境，也不输出或读取 secret 值；仅在运行中的 `medical_audit_app` 内 allowlist 读取 virus scanner、DLP reviewer、ClamAV host/port/timeout/chunk-size 六个非 secret runtime 配置，并检查备份文件路径、大小和修改时间。
 - 默认检查 `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx` 状态。
 - 默认检查 `ai_video_nginx` 的 `/var/www/audit` 只读 bind mount 和 `nginx -t`。
+- `current` 必须是字面值精确为 `releases/<40-char-lowercase-sha>` 的 symlink；目标 release 目录必须是非 symlink directory。缺少 `current`、绝对 symlink、越界 target 或 legacy flat root 均失败关闭。
+- 审计会读取 active release 的 `release-manifest.json`，按 manifest 重算完整 regular-file 集合、size 与 SHA-256；目录与文件遍历固定在已打开的 release directory fd 上，子目录/文件只允许通过 `openat` 语义的 `dir_fd + O_NOFOLLOW` 打开，并复核 inode/type/size/mtime/ctime，目录换成 symlink 的竞态必须失败关闭。missing、extra、hash/size mismatch、symlink、special file、manifest source SHA 与 release SHA 不一致均阻断。公网静态样本只能从该 manifest 选择，禁止扫描 legacy root。
+- 公网 GET 必须保持 same-origin；`release-manifest.json` body SHA-256 必须等于远端 manifest，`/documents` HTML 与选定 `_next/static/` 的 body SHA-256 必须分别等于 manifest 中 `documents.html` 和静态样本的 SHA-256。HTML Cache-Control 必须包含无值的 bare directive `no-store` 或 `no-cache`，static 必须同时包含无值的 bare `immutable` 和精确 `max-age=31536000`；`no-cache=disabled`、`immutable=disabled`、`not-immutable`、`no-cache-disabled` 等均不算通过。
+- `nginx -t`、mount、active release、public manifest/static、cache policy 共同构成 Nginx release route 硬门禁；任一失败进入 `issues`，不得降级为 warning。
+- JSON/Markdown 稳定输出至少包括 `remote_manifest_sha256`、`public_manifest_sha256`、`manifest_file_count`、`manifest_mismatch_count`、`html_cache_control`、`static_cache_control`、`current_release_target`、`deploy_sha`、`deploy_marker_valid`、`deploy_marker_observation_stable`，并保留原有报告字段。
+- `.deploy-sha` 是唯一发布 commit point。审计通过已打开的 app directory fd 和 `O_NOFOLLOW` 读取 marker，要求它是 non-symlink regular file，并从同一 fd 校验内容、device/inode/type/mode/size/mtime/ctime。公网 GET 前后各读取一次 marker 与完整 active release 状态；两次 marker snapshot/current/manifest 身份必须完全相同并输出 `deploy_marker_valid=true`、`deploy_marker_observation_stable=true`、`release_observation_stable=true`。只有此前后稳定证据、marker、`current` release SHA、manifest `source_sha` 与命令行 expected SHA 全部一致时，报告才标记 `release_commit_state=committed_by_marker`；transaction 的 `ready-to-commit` 或其他 status 不能单独证明提交。当前审计不枚举 transaction 目录，需人工判定时必须把 transaction SHA 与上述只读证据成对复核。
 - 默认通过本机 `/knowledge-base/catalog` 检查 PostgreSQL runtime ready 与 `matching_embedding_count >= 1`；只保留规范化状态，不保存 catalog 原始大响应。
 - catalog/frontdoor 请求前后分别读取 `audit_log_events` 的全表计数、最新 `created_at`、有序 event-id fingerprint，以及本次唯一 auditor identity 的事件计数。只有全表 delta `0`、最新时间/fingerprint 不变、该身份前后均无事件、快照事务为只读且 catalog 声明 `database_write=false`、`provider_call=false`、`query_history_write=false` 时才输出 L3。
 - delta、fingerprint、最新时间或本次身份事件任一发生变化，任一快照不可测，frontdoor 不健康，或 catalog side-effect boundaries 缺失时均失败关闭。只有本次 identity 从 `0` 增至正数且 catalog boundaries 安全时，才按 `audit-log-only` 报告；纯全局并发/retention 变化、缺失 boundaries 或无法归因的变化均报告为 `unknown`。鉴权失败仍可能先写一条 `authorization-denied`，所以不能把工具描述成 all-path read-only。
@@ -1022,6 +1114,9 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 通过条件：
 
 - 远端 `.deploy-sha` 等于期望 SHA。
+- `.deploy-sha` 是 non-symlink regular file，`deploy_marker_valid=true`；公网 GET 前后的 marker 完整 snapshot、`current`、manifest 与完整 release 状态一致，`deploy_marker_observation_stable=true`、`release_observation_stable=true`；同时 `current_release_target=releases/<期望 SHA>`、manifest `source_sha`、release 目录 SHA 与 `.deploy-sha` 全部一致，`release_commit_state=committed_by_marker`。
+- `manifest_mismatch_count=0` 且公网 manifest/static body hash 分别与远端 manifest/选定 static hash 一致。
+- HTML cache 包含无值的 bare `no-store` 或 `no-cache`；static cache 包含无值的 bare `immutable` 且 `max-age=31536000`。
 - `medical_audit_app` 和 `medical_audit_pg` 为 `healthy`。
 - `ai_video_nginx nginx -t` 通过。
 - `/var/www/audit` bind mount 存在且为只读。
@@ -1379,18 +1474,21 @@ uv run python scripts/deploy-tencent-cloud-production.py \
 
 - schema 变更部署：追加 `--apply-schema`。
 - 只同步静态前端或文档、不重建 app：追加 `--skip-app-rebuild`。
-- 已提前生成 `web/out/`：追加 `--skip-web-build`。
+- 只读 preflight 可追加 `--skip-web-build`；`--execute` 禁止该参数并始终执行 frozen Web build。
 - 默认部署 smoke 只执行 GET，不运行 query/provider 或复核写入。
 - 验证 query/provider 链路：追加 `--include-query-provider-smoke --confirm-production-write audit.lute-tlz-dddd.top`；这是单独的 L4 写入/provider 门，执行前必须确认数据库备份和授权。
 - 验证复核写入链路：在上述参数基础上再追加 `--include-review-write`。
 
 脚本执行的同步规则：
 
-1. 执行 `pnpm web:build:static`，确认 `web/out/` 已生成。
-2. 将当前工作树同步到 `/opt/medical-audit/app/`。
-3. 排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
-4. 将 `web/out/` 同步到宿主机 `/var/www/audit/`。`ai_video_nginx` 已将该目录以只读方式挂载到容器内，不再需要常规执行 `docker cp`。
-5. 抽查公网 HTML 中 `_next/static/chunks` 是否与本次构建一致；只有在 bind mount 异常或容器临时目录丢失时，才允许把 `docker cp /var/www/audit/. ai_video_nginx:/var/www/audit` 作为应急手段。
+1. 使用显式 `--approved-sha` 执行 frozen Web release build；`web/out/release-manifest.json` 必须通过本地完整文件集合、size、SHA-256、lockfile hash 与 source SHA 校验。execute 不接受 `--skip-web-build`，因此不能用自洽但未批准的既有 `web/out` 绕过 frozen build。
+2. 获取 `$remote_app_dir.deploy.lock` 后再开始远端写操作；任何阶段都必须核对 owner token。后台备份 worker 存活或 owner 不匹配时，不得释放或接管锁。
+3. 先生成 app/env/db/nginx/web 全套备份。Web 备份排除 `audit/releases` 与 `audit/current`，不可变 release 不做重复打包。
+4. 将当前工作树同步到 `/opt/medical-audit/app/`，排除 `.git`、`.git/`、`.venv/`、`tmp/`、`data/`、`archive/`、缓存、密钥和本地环境文件。
+5. 将 `web/out/` 同步到 `/var/www/audit/releases/<approved-sha>.incoming/`；远端 verifier 通过后原子晋升为不可变的 `releases/<approved-sha>`。禁止直接覆盖 release，禁止对 `/var/www/audit/` 做 whole-root `rsync --delete`。
+6. 先验证 Nginx 候选配置，再通过 `current.next -> releases/<approved-sha>` 原子切换静态入口；宿主机共享 Nginx 配置必须保持 inode 不变，以免破坏 bind mount。
+7. app 镜像只使用 `MEDICAL_AUDIT_DEPLOY_SHA=<approved-sha>` 构建并以 `up -d --no-deps app` 重启；PostgreSQL 与 ClamAV 容器 ID 必须保持不变。
+8. 远端 release、公网 manifest/static hash、cache policy、容器 health、正式 Nginx 配置、默认 GET-only smoke 全部通过后，最后以 `.deploy-sha.next` + fsync + `mv -T` 提交 marker。marker 提交成功后不再追加第二次 SSH completion check，也不追加 rollback `committed` 状态写；transaction 状态必须与 marker 成对审计。
 
 手工同步只作为脚本失败时的排障路径。需要同步 `data/医保审核前期资料` 或 `tmp/knowledge-query-indexes/real-data-kimi-20260531` 时，先确认是否属于索引数据更新任务，不并入普通应用部署。
 
@@ -1409,8 +1507,9 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 
 - `deploy-sha-mismatch`：先确认是否存在“代码已合并但未部署”的正常差异。
 - `medical_audit_app-not-healthy`：先查看 app 容器日志和 healthcheck，不直接重建数据库。
-- `nginx-config-test-failed`：先区分共享 Nginx 全局配置失败和本项目 audit 路由失败；若报告中 `public_frontdoor`、`audit_frontdoor_healthy`、`audit_mount_present`、app/pg 健康和 search backend 均正常，则按共享 Nginx 依赖 warning 处理，并排查对应外部 upstream；若 audit 路由不健康或 bind mount 缺失，再恢复最近的 Nginx 备份后 reload。
-- `shared-nginx-config-test-failed-audit-route-healthy`：共享 Nginx 的某个非本项目 upstream 解析失败，但 `https://audit.lute-tlz-dddd.top/api/v1/health` 与 `/documents` 已通过公网只读复核；不得写成生产部署失败，应同步处理外部 upstream 稳定性。
+- `nginx-config-test-failed`：属于硬阻断；即使 app、前门与 search backend 健康也不得降级为 warning。先在不输出配置正文或 secret 的前提下定位共享 Nginx 错误，修复并重新执行正式 `nginx -t` 后再重跑审计。
+- `remote-release-integrity-failed`、`current-release-target-mismatch` 或 `remote-manifest-source-sha-mismatch`：停止后续部署/回滚，核对 `.deploy-sha`、`current`、immutable release 与 manifest；legacy flat root 不能通过新合同。
+- `public-manifest-sha-mismatch`、`public-static-sha-mismatch`、`html-cache-control-invalid` 或 `static-cache-control-invalid`：视为 Nginx release route 未收敛，不以 HTTP `200` 替代 hash/cache 修复。
 - `audit-static-bind-mount-missing`：检查共享 Nginx Compose 中 `/var/www/audit:/var/www/audit:ro`。
 - `search-backend-not-ready`：检查 PostgreSQL 容器、env 和 active index，不先动前端静态文件。
 - `missing-required-backup-stamp:*`：先补齐或确认备份，不继续写入型 E2E。
@@ -1446,7 +1545,7 @@ uv run python scripts/audit-tencent-cloud-deployment-state.py \
 3. 执行 `nginx -t`。
 4. reload `ai_video_nginx`。
 5. 使用 certbot webroot 扩展 SAN，加入 `audit.lute-tlz-dddd.top`。
-6. 将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 中的 server block 合并到 nginx `http` 块。
+6. 常规应用部署由脚本精确更新唯一 audit server 的三个静态 location；禁止手工替换整个共享 Nginx 配置。只有首次接入或证书维护才将 `configs/deploy/tencent-cloud/nginx-audit-server.conf` 的 server block 人工合并到 `http` 块。
 7. 再次执行 `nginx -t`。
 8. reload `ai_video_nginx`。
 
@@ -1558,33 +1657,37 @@ uv run python scripts/run-production-e2e-smoke.py \
 
 ### 7.6.1 生产前端语义验收
 
-静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行只读前端语义验收：
+静态前端热修、导航改版、视觉系统变更或产品入口整合后，执行完整前端语义验收。该流程的鉴权拒绝探针会写入审计日志，因此生产副作用边界是 `audit-log-only`，并非只读：
 
 ```bash
+MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1 \
+MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all \
 pnpm production:frontend-acceptance -- \
   --base-url https://audit.lute-tlz-dddd.top \
-  --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
-  --admin-role it-admin
-```
-
-标准复用模板：
-
-```bash
-pnpm production:frontend-acceptance -- \
-  --base-url https://audit.lute-tlz-dddd.top \
-  --output tmp/outputs/production-frontend-acceptance-latest.json \
-  --screenshot-dir tmp/screenshots/production-frontend-acceptance-latest \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id fa-<YYYYMMDD>t<HHMMSS>z-<8..32-lowercase-hex> \
+  --release-guard-report tmp/outputs/release-guard-s1-<STAMP>.json \
+  --allow-audit-log-writes \
+  --confirm-production-write audit.lute-tlz-dddd.top \
+  --output tmp/outputs/production-frontend-acceptance-<STAMP>.json \
+  --screenshot-dir tmp/screenshots/production-frontend-acceptance-<STAMP> \
   --admin-role it-admin
 ```
 
 该脚本覆盖 Next 原生门户和后端深链页面的桌面/移动视口，检查状态码、控制台错误、失败请求、横向溢出、占位文案、关键业务信号、AI 数据分析上传入口、智能体提示词入口和项目成员管理入口。
 
+以上是唯一标准命令。`MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOTS=1` 与 `MEDICAL_AUDIT_FRONTEND_ACCEPTANCE_SCREENSHOT_POLICY=all` 必须同时设置；验收门禁要求全部 `34 + 6 = 40` 次规定 execution 都有唯一、run-bound、精确视口尺寸且可完整解码的 PNG 截图，不得复用文件，也不得用 `issues` 或关闭截图降级标准验收。
+
+`<APPROVED_SHA>` 必须是完整 40 位 lowercase merge/deploy SHA；`acceptance_run_id` 必须匹配 `fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>` 并为本次运行唯一值；`release-guard-s1-<STAMP>.json` 必须是刚刚捕获、`current_release_target=releases/<APPROVED_SHA>` 的 passing S1 guard。任一 identity、guard hash/snapshot ID、public manifest、app deployment metadata 或截图 fresh-file evidence 不一致时，gate 必须失败关闭。
+
+`--base-url` 必须是精确生产 origin `https://audit.lute-tlz-dddd.top`（允许等价的显式 `:443`）；HTTP、其他 host/port、userinfo、额外 path、query 或 fragment 均在浏览器/本地文件副作用发生前拒绝。最终报告的 `base_url` 必须为规范化后的 `https://audit.lute-tlz-dddd.top/`，避免把生产 SSH guard 与 staging HTTP 页面拼接。
+
 该脚本新增以下 API 鉴权闭环：
 
 - `/audit/logs` 和 `/audit/logs/export`：无授权/缺少租户上下文期望 `401/403`，`X-Role: it-admin`（或 `--admin-role` 指定值）期望 `200`。
 - 报告 `summary.api_checks` 必须包含 `/audit/logs` 与 `/audit/logs/export` 两个路径，且 `denied_status=401/403`、`allowed_status=200`。
-- 无需提交业务数据；脚本只读。
+- 无授权与缺少 role/tenant 的拒绝探针仍携带本次 `frontend-acceptance-<acceptance_run_id>` user identity，只删除正在验证的权限 header，保证允许产生的审计事件可精确归因。
+- 不执行 schema、provider/query、review、项目创建或对象存储写入；允许的唯一写入类型是上述鉴权探针产生的审计日志，并且必须同时传入 `--allow-audit-log-writes` 与精确生产主机确认参数。
 
 ### 7.7 增量更新 dry-run 演练
 
@@ -1790,7 +1893,7 @@ docker compose -f configs/deploy/tencent-cloud/docker-compose.prod.yaml \
 - 生产已写入受控 fixture 时，`/api/v1/audit-findings.generation_readiness.status` 必须返回 `generated`，`/findings` 必须显示 `finding-f044ebd309b659dc` 或当前受控 fixture 疑点。
 - 受控 fixture 疑点创建复核任务并更新状态后，`/api/v1/audit-findings` 与 `/findings` 必须显示同步后的复核状态，`review-task-0007` 任务 Markdown 和报告草稿导出不得返回 `500`。
 - 受控 fixture 复核任务签发和整改后，签发报告 JSON/Markdown、整改 JSON/Markdown、`close_gate.ready_to_close=true` 和“任务未结案”状态必须同时可验证。
-- 生产前端语义验收 `pnpm production:frontend-acceptance -- --base-url https://audit.lute-tlz-dddd.top --admin-role it-admin` 返回 `status=pass`，P0/P1 均为 `0`；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=401/403` 且 `allowed_status=200`。
+- 生产前端语义验收按 §7.6.1 的唯一标准命令执行并返回 `status=pass`，P0/P1 均为 `0`；`summary.screenshot_capture=true`、`summary.screenshot_policy=all`，每个独立页面与规定视口均有有效 PNG；`summary.api_checks` 必须显示 `"/audit/logs"` 与 `"/audit/logs/export"` 为 `denied_status=401/403` 且 `allowed_status=200`。
 - `/documents` 个人上传链路必须证明 DB 行、宿主机留存文件 `sha256`、本人可读、其他普通审计员不可读和管理员可读全部上传同时成立；个人上传未入索引时必须明确显示 `index_status=not-indexed`。
 - 索引管理写接口拒绝审计必须证明普通审计角色访问 `/api/v1/index/versions/activate` 返回 `403`，且持久化审计日志中可按 `action=index-admin-access-denied` 与 `user_identifier` 查到对应事件。
 - 固定 smoke question 返回至少 1 条引用。
@@ -1931,9 +2034,11 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --ssh-key ./ai_video.pem
 ```
 
-脚本会校验当前 `.deploy-sha`、app/web 备份和备份内旧 `.deploy-sha`，保留生产 env，恢复 app/web，仅重建 app，并要求 PostgreSQL/ClamAV 容器 ID 不变、`nginx -t` 和 health 通过；只有这些验证全部成功后才写回旧 marker。该模式不恢复数据库。
+脚本会校验当前 `.deploy-sha`、部署 transaction、app/web 备份和备份内旧 `.deploy-sha`，并保留生产 env。静态回滚优先复验现有不可变 `releases/<restore-sha>`；目标不存在时，从 app backup 的 `web/out` 重建到独占 incoming 后再原子晋升。只有 transaction 记录 `previous-current=LEGACY_NONE` 时才允许移除 `current` 回到未被版本化部署修改的 flat root；脚本绝不以 whole-root `rsync --delete` 恢复 Web。
 
-nginx 回滚：
+app 仅使用显式 `restore-sha` 构建并重启，PostgreSQL/ClamAV 容器 ID 必须不变。脚本在 Nginx backup 候选测试通过后原子切换 `current`，同 inode 恢复共享 Nginx，完成正式 `nginx -t`、reload、health、公网 release/hash/cache 校验，最后才以 `.deploy-sha.next` 原子写回旧 marker。该模式不恢复数据库；任一失败都会保留旧 marker 和生产锁，必须先完成手工恢复再清锁。
+
+仅在自动回滚失败并已保留生产锁时，按 transaction 证据执行手工 Nginx 恢复：
 
 1. 恢复部署前备份的 `/opt/ai-video/deploy/lighthouse/nginx.conf`。
 2. `docker exec ai_video_nginx nginx -t`

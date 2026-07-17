@@ -766,20 +766,41 @@ describe("replica backend read adapters", () => {
   });
 
   it("starts knowledge-base permissions and both catalog reads in the same load pass", async () => {
+    const humanLabel = "医院医保审计依据库";
+    const permissionsFallbackLabel = "权限目录回退标签-不得采用";
+    const sourceCatalogFallbackLabel = "来源目录回退标签-不得采用";
+    const internalSource = "medical-insurance-laws" as const;
+    const internalAccess = "explicit-read-all" as const;
     const fetchDocumentPermissions = vi.fn(async () => ({
       role: "admin",
       source_collections: [
         {
-          source_collection: "medical-insurance-laws" as const,
-          label: "医保法规库",
+          source_collection: internalSource,
+          label: permissionsFallbackLabel,
           scope: "系统",
-          access: "read" as const
+          access: internalAccess
         }
       ],
       upload_permissions: uploadPermissions
     }));
-    const fetchKnowledgeBaseCatalog = vi.fn(async () => knowledgeBaseCatalog);
-    const fetchDocumentSourceCollections = vi.fn(async () => sourceCollectionCatalog);
+    const fetchKnowledgeBaseCatalog = vi.fn(async (): Promise<KnowledgeBaseCatalogResponse> => ({
+      ...knowledgeBaseCatalog,
+      items: [{
+        ...catalogItem,
+        source_collection: internalSource,
+        label: humanLabel,
+        access: internalAccess
+      }]
+    }));
+    const fetchDocumentSourceCollections = vi.fn(async (): Promise<DocumentSourceCollectionCatalogResponse> => ({
+      ...sourceCollectionCatalog,
+      items: [{
+        ...sourceCollectionCatalogItem,
+        source_collection: internalSource,
+        label: sourceCatalogFallbackLabel,
+        access: internalAccess
+      }]
+    }));
 
     const result = await loadReplicaKnowledgeBaseData({
       fetchDocumentPermissions,
@@ -789,7 +810,18 @@ describe("replica backend read adapters", () => {
 
     expect(result.source).toBe("api");
     expect(result.outcome).toBe("ready");
-    expect(result.data.knowledgeBases[0]?.name).toBe("医保法规库");
+    expect(result.data.knowledgeBases[0]).toMatchObject({
+      id: `kb-${internalSource}`,
+      name: humanLabel
+    });
+    expect(result.data.knowledgeBases[0]).not.toHaveProperty("source_collection");
+    expect(result.data.knowledgeBases[0]).not.toHaveProperty("access");
+    expect(result.data.knowledgeBases[0]?.name).not.toBe(permissionsFallbackLabel);
+    expect(result.data.knowledgeBases[0]?.name).not.toBe(sourceCatalogFallbackLabel);
+    expect(result.data.sourceGroups[0]?.options[0]).toMatchObject({
+      value: internalSource,
+      label: humanLabel
+    });
     expect(result.data.knowledgeBases[0]?.documentCount).toBe(12);
     expect(result.data.knowledgeBases[0]?.chunkCount).toBe(120);
     expect(result.data.knowledgeBases[0]?.appCount).toBe(2);

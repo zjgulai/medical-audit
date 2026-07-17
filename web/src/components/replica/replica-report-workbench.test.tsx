@@ -272,6 +272,8 @@ describe("ReplicaReportWorkbench", () => {
 
     expect(await screen.findByRole("heading", { name: "六类模板目录", level: 2 })).toBeInTheDocument();
     expect(screen.getByText("请先选择项目后填写模板")).toBeInTheDocument();
+    expect(screen.getByText("系统仍会独立校验项目可见范围与角色权限。")).toBeInTheDocument();
+    expect(screen.queryByText(/后端仍会独立执行/)).not.toBeInTheDocument();
     const buttons = screen.getAllByRole("button", { name: /^填写模板：/ });
     expect(buttons).toHaveLength(3);
     for (const button of buttons) expect(button).toBeDisabled();
@@ -336,9 +338,9 @@ describe("ReplicaReportWorkbench", () => {
     const handoff = await screen.findByRole("link", { name: "转入项目管理" });
     expect(handoff).toHaveAttribute("href", "/projects?project=ALPHA");
     expect(screen.getByText("未生成正式报告")).toBeInTheDocument();
-    expect(screen.getByText("未调用外部 provider")).toBeInTheDocument();
-    expect(screen.getByText("formal_report_created=false")).toBeInTheDocument();
-    expect(screen.getByText("provider_call=false")).toBeInTheDocument();
+    expect(screen.getByText("未调用外部服务")).toBeInTheDocument();
+    expect(screen.getByText("formal_report_created=false").closest("details")).not.toBeNull();
+    expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
     expect(screen.getByText("审计记录：intent-only（降级）")).toBeInTheDocument();
     expect(screen.queryByText("正式报告已生成")).not.toBeInTheDocument();
   });
@@ -357,8 +359,10 @@ describe("ReplicaReportWorkbench", () => {
     });
     fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
 
-    expect(await screen.findByText("formal_report_created=true")).toBeInTheDocument();
-    expect(screen.getByText("provider_call=true")).toBeInTheDocument();
+    expect((await screen.findByText("formal_report_created=true")).closest("details")).not.toBeNull();
+    expect(screen.getByText("provider_call=true").closest("details")).not.toBeNull();
+    expect(screen.getByText("正式报告状态异常")).toBeInTheDocument();
+    expect(screen.getByText("检测到外部服务调用")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("草稿响应违反无副作用边界");
     expect(screen.queryByText("草稿已进入待复核队列")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "转入项目管理" })).not.toBeInTheDocument();
@@ -367,7 +371,7 @@ describe("ReplicaReportWorkbench", () => {
       "/projects?project=ALPHA"
     );
     expect(screen.queryByText("未生成正式报告")).not.toBeInTheDocument();
-    expect(screen.queryByText("未调用外部 provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("未调用外部服务")).not.toBeInTheDocument();
   });
 
   it("renders report metrics, evidence, gate status and only non-null controlled downloads", async () => {
@@ -630,11 +634,14 @@ describe("ReplicaReportWorkbench", () => {
     renderWorkbench();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("报表工作台读取失败");
+    expect(screen.getByText("读取异常")).toBeInTheDocument();
+    expect(screen.queryByText("error")).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Alpha 医保专项" })).toBeInTheDocument();
     expect(screen.queryByText("报告总数")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试工作台" }));
 
     expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(screen.getByText("已连接")).toBeInTheDocument();
     expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
     expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
   });

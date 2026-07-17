@@ -10,6 +10,14 @@ const runtimeMock = vi.hoisted(() => ({
   current: null as unknown as ReplicaRuntimeResult<ReplicaKnowledgeBaseData>
 }));
 
+const HUMAN_KNOWLEDGE_LABEL = "医院医保审计依据库";
+const INTERNAL_SOURCE_SENTINEL = "medical-insurance-laws";
+const INTERNAL_ACCESS_SENTINEL = "explicit-read-all";
+const INTERNAL_METADATA_SENTINELS = {
+  sourceCollection: INTERNAL_SOURCE_SENTINEL,
+  access: INTERNAL_ACCESS_SENTINEL
+} as const;
+
 vi.mock("@/components/replica/use-replica-runtime", () => ({
   useReplicaKnowledgeBaseData: () => runtimeMock.current
 }));
@@ -24,8 +32,9 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
     data: {
       knowledgeBases: [
         {
-          id: "kb-medical-insurance-laws",
-          name: "医保法规库",
+          ...INTERNAL_METADATA_SENTINELS,
+          id: `kb-${INTERNAL_SOURCE_SENTINEL}`,
+          name: HUMAN_KNOWLEDGE_LABEL,
           scope: "公开知识库",
           owner: "审计中心",
           documentCount: 12,
@@ -42,7 +51,7 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
           options: [
             {
               value: "medical-insurance-laws",
-              label: "医保法规库",
+              label: HUMAN_KNOWLEDGE_LABEL,
               description: "医保法规、政策解释和处罚依据。",
               scope: "系统",
               queryable: true
@@ -50,7 +59,7 @@ function makeMetricsReadyRuntime(): ReplicaRuntimeResult<ReplicaKnowledgeBaseDat
           ]
         }
       ],
-      readableSourceCollections: ["医保法规库"],
+      readableSourceCollections: [HUMAN_KNOWLEDGE_LABEL],
       canUploadPersonal: true,
       currentSearchEmbeddingCount: 49051,
       metricsSource: "knowledge-base-catalog",
@@ -113,29 +122,117 @@ describe("KnowledgeBasePage", () => {
   it("renders metrics-ready totals and preserves source-scoped links", () => {
     render(<KnowledgeBasePage />);
 
+    expect(screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 }).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "打开目录" })).toHaveAttribute(
       "href",
-      "/documents?source_collection=medical-insurance-laws"
+      `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
       "href",
-      "/chat?question=%E8%AF%B7%E5%9F%BA%E4%BA%8E%E3%80%8C%E5%8C%BB%E4%BF%9D%E6%B3%95%E8%A7%84%E5%BA%93%E3%80%8D%E5%9B%9E%E7%AD%94%E5%AE%A1%E8%AE%A1%E9%97%AE%E9%A2%98&source_collection=medical-insurance-laws"
+      `/chat?question=${encodeURIComponent(`请基于「${HUMAN_KNOWLEDGE_LABEL}」回答审计问题`)}&source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "查看图谱" })).toHaveAttribute(
       "href",
-      "/graph?source_collection=medical-insurance-laws"
+      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "检索全部目录" })).toHaveAttribute(
       "href",
-      "/documents?source_collection=medical-insurance-laws"
+      `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
     expect(screen.getByRole("link", { name: "查看全部图谱" })).toHaveAttribute(
       "href",
-      "/graph?source_collection=medical-insurance-laws"
+      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
+    expect(screen.queryByText(INTERNAL_SOURCE_SENTINEL)).not.toBeInTheDocument();
+    expect(screen.queryByText(INTERNAL_ACCESS_SENTINEL)).not.toBeInTheDocument();
     expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
     expect(screen.getAllByText("120").length).toBeGreaterThan(0);
+    expect(screen.getByText("来自当前知识目录")).toBeInTheDocument();
+    expect(screen.getByText("知识目录")).toBeInTheDocument();
+    expect(screen.getByText("当前可用于检索的知识片段数量")).toBeInTheDocument();
+    expect(screen.queryByText(/后端目录/)).not.toBeInTheDocument();
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-knowledge-release-scope",
+      "core-5"
+    );
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-coverage-status",
+      "core-incomplete"
+    );
+    expect(screen.getByText(/已装载 1 \/ 1 个注册集合/)).toBeInTheDocument();
+  });
+
+  it("labels five populated collections as core-ready without claiming full registry coverage", () => {
+    const ready = makeMetricsReadyRuntime();
+    const sourceIds = [
+      "medical-insurance-laws",
+      "supervision-rules-knowledge",
+      "medical-insurance-catalog",
+      "risk-negative-list",
+      "personal-materials"
+    ] as const;
+    runtimeMock.current = {
+      ...ready,
+      data: {
+        ...ready.data,
+        knowledgeBases: sourceIds.map((sourceId, index) => ({
+          ...ready.data.knowledgeBases[0]!,
+          id: `kb-${sourceId}`,
+          name: `核心知识集合 ${index + 1}`,
+          documentCount: index + 1,
+          chunkCount: (index + 1) * 10
+        })),
+        summary: {
+          ...ready.data.summary!,
+          sourceCollectionCount: 25,
+          queryableCollectionCount: 5
+        }
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    const coverage = screen.getByLabelText("知识库发布覆盖");
+    expect(coverage).toHaveAttribute("data-coverage-status", "core-ready");
+    expect(within(coverage).getByText(/已装载 5 \/ 25 个注册集合/)).toBeInTheDocument();
+    expect(within(coverage).getByText(/本次仅承诺核心范围/)).toBeInTheDocument();
+    expect(within(coverage).queryByText(/全量可用/)).not.toBeInTheDocument();
+  });
+
+  it("keeps coverage incomplete when five populated collections omit a required core source", () => {
+    const ready = makeMetricsReadyRuntime();
+    const sourceIds = [
+      "medical-insurance-laws",
+      "supervision-rules-knowledge",
+      "medical-insurance-catalog",
+      "risk-negative-list",
+      "other-agriculture-water"
+    ] as const;
+    runtimeMock.current = {
+      ...ready,
+      data: {
+        ...ready.data,
+        knowledgeBases: sourceIds.map((sourceId, index) => ({
+          ...ready.data.knowledgeBases[0]!,
+          id: `kb-${sourceId}`,
+          name: `知识集合 ${index + 1}`,
+          documentCount: index + 1,
+          chunkCount: (index + 1) * 10
+        })),
+        summary: {
+          ...ready.data.summary!,
+          sourceCollectionCount: 25,
+          queryableCollectionCount: 5
+        }
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    const coverage = screen.getByLabelText("知识库发布覆盖");
+    expect(coverage).toHaveAttribute("data-coverage-status", "core-incomplete");
+    expect(within(coverage).getByText(/尚未达到核心 5 个知识集合的发布门槛/)).toBeInTheDocument();
   });
 
   it("keeps registry cards while marking every unavailable metric as pending sync", () => {
@@ -178,13 +275,17 @@ describe("KnowledgeBasePage", () => {
     render(<KnowledgeBasePage />);
 
     expect(screen.getByRole("main")).toHaveAttribute("data-replica-status", "degraded");
-    const cardHeading = screen.getAllByRole("heading", { name: "医保法规库", level: 2 })[0];
+    const cardHeading = screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 })[0];
     const card = cardHeading.closest("article");
     expect(card).not.toBeNull();
     expect(within(card as HTMLElement).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
     expect(within(card as HTMLElement).queryByText(/^0$/)).not.toBeInTheDocument();
     expect(within(card as HTMLElement).queryByText("0 个片段")).not.toBeInTheDocument();
     expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
+      "data-coverage-status",
+      "unknown"
+    );
   });
 
   it("does not present a partial category sum when any item metric is unavailable", () => {

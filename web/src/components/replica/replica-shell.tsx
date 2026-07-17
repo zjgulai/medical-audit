@@ -14,6 +14,7 @@ import {
 import type { ProjectsResponse, QueryHistoryReviewTaskResponse } from "@/lib/api-types";
 import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
 import {
+  referenceIndependentPageNavigation,
   referenceTopicNavigation,
   type ReferenceHistoryItem,
   type ReferenceNavigationItem
@@ -50,9 +51,11 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
   const historyTaskSubmission = useRef(false);
   const shellData = useReplicaShellData();
   const isTopicActive = isActivePath(pathname, referenceTopicNavigation.href);
-  const activeItem = isTopicActive
-    ? referenceTopicNavigation
-    : shellData.data.navigation.find((item) => isActivePath(pathname, item.href));
+  const activeItem =
+    referenceIndependentPageNavigation.find((item) => isActivePath(pathname, item.href))
+    ?? (isTopicActive
+      ? referenceTopicNavigation
+      : shellData.data.navigation.find((item) => isActivePath(pathname, item.href)));
   const activeTagLabel = activeItem?.id === "chat" ? "新对话" : activeItem?.label ?? "新对话";
   const isActiveTagClosed = closedTagPath === pathname;
   const isChatRoute = isActivePath(pathname, "/chat");
@@ -205,6 +208,24 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
           {navIcon(referenceTopicNavigation.icon)}
           <strong>{referenceTopicNavigation.label}</strong>
         </Link>
+
+        <button
+          type="button"
+          className="replica-history-fab"
+          data-layout-floating-control="history"
+          aria-expanded={historyOpen}
+          aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
+          onClick={() => {
+            if (historyOpen) {
+              closeHistory();
+            } else {
+              setHistoryOpen(true);
+            }
+          }}
+        >
+          <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
+          <span>历史对话</span>
+        </button>
       </aside>
 
       <div className="replica-workspace">
@@ -247,22 +268,6 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
 
         <div className="replica-page-scroll">{children}</div>
       </div>
-      <button
-        type="button"
-        className="replica-history-fab"
-        aria-expanded={historyOpen}
-        aria-label={historyOpen ? "收起历史对话" : "打开历史对话"}
-        onClick={() => {
-          if (historyOpen) {
-            closeHistory();
-          } else {
-            setHistoryOpen(true);
-          }
-        }}
-      >
-        <span className="replica-history-fab-icon" aria-hidden="true">◷</span>
-        <span>历史对话</span>
-      </button>
       {historyOpen ? (
         <section className="replica-history-drawer" aria-labelledby="replica-history-title">
           <div className="replica-history-header">

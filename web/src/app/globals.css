@@ -1582,6 +1582,8 @@ select {
   --replica-line-soft: #e8eef5;
   --replica-text: #17233b;
   --replica-muted: #617087;
+
+  position: relative;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1795,10 +1797,11 @@ select {
 .replica-history-fab {
   position: fixed;
   z-index: 70;
-  right: 26px;
-  bottom: 26px;
+  right: auto;
+  bottom: 86px;
+  left: 12px;
   display: inline-flex;
-  width: auto;
+  width: 232px;
   height: 46px;
   align-items: center;
   justify-content: center;
@@ -1826,8 +1829,10 @@ select {
 
 @media (min-width: 901px) {
   .replica-project-shell .replica-history-fab {
-    top: 54px;
-    bottom: auto;
+    top: auto;
+    right: auto;
+    bottom: 86px;
+    left: 12px;
   }
 
   .replica-project-shell .replica-history-drawer {
@@ -4333,6 +4338,14 @@ select {
   transform: translateY(1px);
 }
 
+.replica-medical-tool-symbol {
+  line-height: 1;
+}
+
+.replica-medical-tool-label {
+  display: none;
+}
+
 .replica-medical-iconrail em {
   position: absolute;
   top: -5px;
@@ -4507,6 +4520,16 @@ select {
   font-size: 12px;
   line-height: 1.5;
   padding: 9px 12px;
+}
+
+.replica-medical-notice summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.replica-medical-notice p {
+  margin: 8px 0 0;
 }
 
 .replica-medical-project-panel {
@@ -5713,6 +5736,17 @@ select {
   display: none;
 }
 
+.replica-sidebar-collapsed .replica-history-fab {
+  left: 24px;
+  width: 44px;
+  justify-content: center;
+  padding: 0;
+}
+
+.replica-sidebar-collapsed .replica-history-fab > span:last-child {
+  display: none;
+}
+
 .replica-sidebar-collapsed .replica-topic-entry {
   left: 24px;
   right: 24px;
@@ -5781,6 +5815,24 @@ select {
   .replica-project-shell .replica-history-drawer {
     right: auto;
     left: 16px;
+  }
+
+  .replica-history-fab,
+  .replica-project-shell .replica-history-fab {
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    bottom: auto;
+    left: auto;
+    width: 38px;
+    height: 38px;
+    justify-content: center;
+    border-radius: 50%;
+    padding: 0;
+  }
+
+  .replica-history-fab > span:last-child {
+    display: none;
   }
 
   .replica-topic-entry,
@@ -5874,6 +5926,21 @@ select {
 
   .replica-medical-iconrail button {
     width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    padding: 0 4px;
+    text-align: center;
+  }
+
+  .replica-medical-tool-symbol {
+    display: none;
+  }
+
+  .replica-medical-tool-label {
+    display: block;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
   }
 
   .replica-medical-rules {
@@ -5960,14 +6027,14 @@ select {
 
 @media (max-width: 560px) {
   .replica-history-fab {
-    right: 16px;
-    bottom: 16px;
-    height: 42px;
-    padding: 0 14px;
+    right: 12px;
+    bottom: auto;
+    height: 38px;
+    padding: 0;
   }
 
   .replica-main-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .replica-nav-item {
@@ -6038,18 +6105,31 @@ select {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .replica-medical-tabs,
+  .replica-medical-rules {
+    max-height: 200px;
+  }
+
+  .replica-medical-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    padding: 0 10px;
+  }
+
   .replica-medical-rule-tabs {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
     padding: 0 10px;
   }
 
   .replica-medical-tabs button,
   .replica-medical-rule-tabs button {
-    flex: none;
-    min-width: 96px;
+    min-width: 0;
     min-height: 42px;
-    padding: 0 10px;
+    height: auto;
+    padding: 8px 6px;
+    white-space: normal;
   }
 
   .replica-medical-metrics,
@@ -10416,5 +10496,149 @@ button.replica-graph-node.is-selected {
   .replica-graph-context-status button,
   .replica-graph-state button {
     transition-duration: 0.01ms;
+  }
+}
+
+/* Loop 59 final-sprint polish: keep operational details available without making them primary UI. */
+@media (min-width: 901px) {
+  .replica-app-shell.replica-sidebar-collapsed {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+}
+
+.replica-runtime-diagnostics {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border-top: 1px solid #e5ebf3;
+  color: #65758a;
+  padding-top: 8px;
+  font-size: 12px;
+}
+
+.replica-runtime-diagnostics summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #315b8d;
+  font-weight: 720;
+}
+
+.replica-runtime-diagnostics dl,
+.replica-runtime-diagnostics ul {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.replica-runtime-diagnostics li {
+  overflow-wrap: anywhere;
+  list-style: none;
+}
+
+.replica-runtime-diagnostics code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.replica-kb-coverage-state {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.32fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-top: 18px;
+  border: 1px solid #d7e4f5;
+  border-radius: 14px;
+  background: #f7faff;
+  padding: 14px 18px;
+}
+
+.replica-kb-coverage-state div {
+  display: grid;
+  gap: 4px;
+}
+
+.replica-kb-coverage-state span {
+  color: #75849a;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.replica-kb-coverage-state strong {
+  color: #24466f;
+  font-size: 15px;
+}
+
+.replica-kb-coverage-state p {
+  margin: 0;
+  color: #53657c;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.replica-kb-coverage-state.is-core-ready {
+  border-color: #b9dfcf;
+  background: #f4fbf8;
+}
+
+.replica-kb-coverage-state.is-core-incomplete {
+  border-color: #edd8a5;
+  background: #fffbf1;
+}
+
+@media (max-width: 900px) {
+  .replica-medical-ai-fab,
+  .replica-medical-ai-fab.is-shifted {
+    position: static;
+    display: grid;
+    width: fit-content;
+    min-width: 132px;
+    height: 44px;
+    grid-template-columns: auto auto;
+    gap: 8px;
+    margin: 10px 12px 8px auto;
+    padding: 0 12px;
+    border-radius: 10px;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .replica-kb-coverage-state {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .replica-archive-workbench .replica-record-list article {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .replica-archive-workbench .replica-record-list h3 {
+    overflow: visible;
+    margin-top: 0;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .replica-archive-workbench .replica-record-list p,
+  .replica-archive-workbench .replica-record-list small,
+  .replica-archive-workbench .replica-record-list span,
+  .replica-archive-workbench .replica-record-list strong,
+  .replica-archive-workbench .replica-record-list a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .replica-archive-workbench .replica-record-list a {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d8e5f5;
+    border-radius: 8px;
+    padding: 0 10px;
   }
 }

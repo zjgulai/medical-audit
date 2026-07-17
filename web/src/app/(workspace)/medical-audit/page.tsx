@@ -525,7 +525,7 @@ export default function MedicalAuditPage() {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "审计专题项目接口读取异常";
           setProjectState({ status: "error", message });
-          setDashboardState({ status: "error", message: "专题驾驶舱等待项目接口恢复" });
+          setDashboardState({ status: "error", message: "专题驾驶舱等待项目数据恢复" });
         }
       });
     return () => {
@@ -730,6 +730,16 @@ export default function MedicalAuditPage() {
         className={`replica-medical-content ${selectedFinding && activeView === "audit" ? "has-drawer" : ""} ${isAiOpen ? "has-drawer" : ""}`}
       >
         <main className="replica-medical-main">
+          <button
+            aria-label={isAiOpen ? "关闭医保审计助手" : "打开医保审计助手"}
+            className={`replica-medical-ai-fab ${isAiOpen ? "is-open is-shifted" : selectedFinding ? "is-shifted" : ""}`}
+            data-layout-floating-control="medical-ai"
+            type="button"
+            onClick={() => setIsAiOpen((current) => !current)}
+          >
+            <span>AI</span>
+            <strong>审计助手</strong>
+          </button>
           <div className="replica-medical-tabs" role="tablist" aria-label="医保审计视图">
             {viewTabs.map((tab) => (
               <button
@@ -744,12 +754,16 @@ export default function MedicalAuditPage() {
               </button>
             ))}
           </div>
-          <div className="replica-medical-notice">
-            数据源：疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
-            <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
-            <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
-            <code>/api/v1/projects/:id/dashboard</code>。本批次只做生产流程入口和只读联通，写入类动作进入确认门禁。
-          </div>
+          <details className="replica-medical-notice">
+            <summary>查看数据与权限说明</summary>
+            <p>页面初始加载读取生产数据；复核、报告、任务和补充材料写入仍需经过独立确认门禁。</p>
+            <p>
+              疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
+              <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
+              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
+              <code>/api/v1/projects/:id/dashboard</code>。
+            </p>
+          </details>
           {activeView === "audit" ? (
             <SmartAuditView
               activeRule={activeRule}
@@ -799,14 +813,6 @@ export default function MedicalAuditPage() {
           />
         ) : null}
       </section>
-      <button
-        className={`replica-medical-ai-fab ${isAiOpen ? "is-open is-shifted" : selectedFinding ? "is-shifted" : ""}`}
-        type="button"
-        onClick={() => setIsAiOpen((current) => !current)}
-      >
-        <span>AI</span>
-        <strong>审计助手</strong>
-      </button>
       <WorkflowGateDialog
         actionState={workflowActionState}
         dialog={workflowDialog}
@@ -840,7 +846,8 @@ function MedicalStatusRail({
           type="button"
           onClick={() => onToolChange(module.id)}
         >
-          {module.symbol}
+          <span aria-hidden="true" className="replica-medical-tool-symbol">{module.symbol}</span>
+          <span className="replica-medical-tool-label">{module.label}</span>
           {badges[module.id] ? <em>{badges[module.id]}</em> : null}
         </button>
       ))}
@@ -1019,14 +1026,18 @@ function SmartAuditView({
       </div>
       {auditState.status === "loading" ? (
         <section className="replica-medical-evidence is-blue">
-          <strong>正在读取生产疑点</strong>
-          <p>正在从审计疑点接口加载规则命中记录。</p>
+          <strong>正在加载审计疑点</strong>
+          <p>正在加载审计规则命中记录。</p>
         </section>
       ) : null}
       {auditState.status === "error" ? (
         <section className="replica-medical-evidence is-danger">
-          <strong>疑点接口读取异常</strong>
-          <p>{auditState.message}</p>
+          <strong>疑点数据读取异常</strong>
+          <p>请检查审计数据服务后重试；当前不会注入本地样例数据。</p>
+          <details className="replica-runtime-diagnostics">
+            <summary>查看技术诊断</summary>
+            <code>{auditState.message}</code>
+          </details>
         </section>
       ) : null}
       {auditData && auditData.items.length === 0 ? (
@@ -1064,7 +1075,7 @@ function ProjectFlowPanel({
     projectState.status === "loading"
       ? "正在读取专题"
       : projectState.status === "error"
-        ? "专题接口暂不可用"
+        ? "专题数据暂不可用"
         : activeProject?.status ?? "未选择专题";
   const dashboardStatus =
     dashboardState.status === "loading"
@@ -1083,7 +1094,7 @@ function ProjectFlowPanel({
           <span>专题项目</span>
           <h2>{projectName}</h2>
           <p>
-            {activeProject?.organization_name ?? "项目接口恢复后显示机构范围"} ·{" "}
+            {activeProject?.organization_name ?? "项目数据恢复后显示机构范围"} ·{" "}
             {activeProject?.audit_topic ?? "医保审计"}
           </p>
         </div>
@@ -1173,9 +1184,14 @@ function MetricCards({
       label: "生产疑点总数",
       value: metricValueFromState(auditState, (data) => data.stats.total),
       tone: "blue",
-      change: readinessStatusLabels[readiness?.status ?? ""] ?? readiness?.status ?? "等待接口",
+      change: readinessStatusLabels[readiness?.status ?? ""] ?? readiness?.status ?? "等待同步",
       changeTone: readiness?.ready ? "down" : "up",
-      sub: auditData ? `后端：${auditData.store.backend}` : "读取 /api/v1/audit-findings"
+      sub:
+        auditState.status === "ready"
+          ? "疑点数据已同步"
+          : auditState.status === "loading"
+            ? "正在同步疑点数据"
+            : "疑点数据暂未同步"
     },
     {
       label: "待处理疑点",
@@ -1189,9 +1205,14 @@ function MetricCards({
       label: "一级知识库",
       value: metricValueFromState(sourceState, () => medicalSources.length),
       tone: "green",
-      change: sourceData?.search_backend.ready ? "检索后端可用" : "检索后端待确认",
+      change: sourceData?.search_backend.ready ? "知识检索可用" : "知识检索待确认",
       changeTone: sourceData?.search_backend.ready ? "down" : "up",
-      sub: sourceData ? `后端：${sourceData.search_backend.backend}` : "读取知识库分类"
+      sub:
+        sourceState.status === "ready"
+          ? "知识库分类已同步"
+          : sourceState.status === "loading"
+            ? "正在同步知识库分类"
+            : "知识库分类暂未同步"
     },
     {
       label: "报告工作台",
@@ -1199,7 +1220,12 @@ function MetricCards({
       tone: "green",
       change: reportState.status === "ready" ? `${reportState.data.metrics.included_finding_count} 条疑点已纳入` : "读取中",
       changeTone: "down",
-      sub: reportState.status === "ready" ? `后端：${reportState.data.store.backend}` : "读取报告模板与底稿"
+      sub:
+        reportState.status === "ready"
+          ? "底稿与报告数据已同步"
+          : reportState.status === "loading"
+            ? "正在同步底稿与报告"
+            : "底稿与报告暂未同步"
     }
   ];
   return (

@@ -327,13 +327,46 @@ describe("MedicalAuditPage", () => {
     expect(fetchProjectsMock).toHaveBeenCalled();
     expect(fetchProjectDashboardMock).toHaveBeenCalledWith("SELF-CHECK-FUND-20260607");
     expect(fetchReportWorkbenchMock).toHaveBeenCalled();
-    expect(screen.getByText(/SqlAlchemyAuditFindingStore/)).toBeInTheDocument();
+    expect(screen.getByText("疑点数据已同步")).toBeInTheDocument();
+    expect(screen.getByText("知识库分类已同步")).toBeInTheDocument();
+    expect(screen.getByText("底稿与报告数据已同步")).toBeInTheDocument();
+    expect(screen.getByText("知识检索可用")).toBeInTheDocument();
+    expect(screen.queryByText(/检索后端/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SqlAlchemyAuditFindingStore/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
     expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
     expect(screen.getByText("张主任")).toBeInTheDocument();
     expect(screen.getByText("医保法规库")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开医保审计助手" })).toHaveAttribute(
+      "data-layout-floating-control",
+      "medical-ai"
+    );
+    expect(screen.getByRole("button", { name: "DIP/DRG审计" })).toHaveTextContent("DIP/DRG审计");
+    expect(screen.getByText("查看数据与权限说明").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(/页面初始加载读取生产数据/)).toBeInTheDocument();
+    expect(screen.queryByText("当前页面只读取生产数据；写入类动作仍需经过独立确认门禁。")).not.toBeInTheDocument();
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
+  });
+
+  it("keeps backend failure detail behind a diagnostic disclosure", async () => {
+    mockApis();
+    fetchAuditFindingsMock.mockRejectedValueOnce(
+      new Error("Backend request failed: GET /api/v1/audit-findings returned 503")
+    );
+
+    render(<MedicalAuditPage />);
+
+    expect(await screen.findByText("疑点数据读取异常")).toBeInTheDocument();
+    expect(screen.queryByText("疑点接口读取异常")).not.toBeInTheDocument();
+    expect(screen.getByText("请检查审计数据服务后重试；当前不会注入本地样例数据。")).toBeInTheDocument();
+    expect(screen.getByText("疑点数据暂未同步")).toBeInTheDocument();
+    expect(screen.queryByText("读取 /api/v1/audit-findings")).not.toBeInTheDocument();
+    const diagnostics = screen.getByText("查看技术诊断").closest("details");
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics).toHaveTextContent(
+      "Backend request failed: GET /api/v1/audit-findings returned 503"
+    );
   });
 
   it("keeps audit findings visible when the project dashboard is unavailable", async () => {
@@ -347,7 +380,9 @@ describe("MedicalAuditPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "专题项目待恢复" })).toBeInTheDocument();
-    expect(screen.getByText("专题驾驶舱等待项目接口恢复")).toBeInTheDocument();
+    expect(screen.getByText("专题驾驶舱等待项目数据恢复")).toBeInTheDocument();
+    expect(screen.getByText("专题数据暂不可用")).toBeInTheDocument();
+    expect(screen.queryByText("专题驾驶舱等待项目接口恢复")).not.toBeInTheDocument();
     expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
   });
 

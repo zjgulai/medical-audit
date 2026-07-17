@@ -8,7 +8,13 @@ import { AUDIT_ROLE_STORAGE_KEY, writeAuditClientRole } from "@/lib/audit-user";
 import type { ReferenceAgentCard } from "@/lib/reference-replica-data";
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 
-import { ReplicaAgentDirectory } from "./replica-agent-directory";
+import {
+  getMarketAgentInstallBlockReason,
+  ReplicaAgentDirectory
+} from "./replica-agent-directory";
+
+const installedMarketAgentIds = new Map<string, string>();
+let marketInstallationsStatus: "loading" | "ready" | "degraded" | "error" = "ready";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -43,6 +49,11 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
 vi.mock("./use-replica-runtime", async () => {
   const { auditExtensionValidationCatalog: extensionCatalog } = await import("@/lib/audit-agent-catalog");
   return {
+    useReplicaMarketInstallations: () => ({
+      apiReadsEnabled: true,
+      installedAgentIds: installedMarketAgentIds,
+      status: marketInstallationsStatus
+    }),
     useReplicaAgentsData: () => ({
       apiReadsEnabled: false,
       source: "fixture",
@@ -130,6 +141,8 @@ describe("ReplicaAgentDirectory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    installedMarketAgentIds.clear();
+    marketInstallationsStatus = "ready";
   });
 
   it("shows exactly twelve agents on page one and the thirteenth on page two", () => {
@@ -301,6 +314,100 @@ describe("ReplicaAgentDirectory", () => {
     );
   });
 
+  it("renders completed market-template install actions as disabled", async () => {
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    const dialog = screen.getByRole("dialog", { name: "医保核验" });
+    const installButton = within(dialog).getByRole("button", { name: "加入我的智能体：医保核验" });
+
+    fireEvent.click(installButton);
+
+    await waitFor(() => {
+      expect(createAuditAgent).toHaveBeenCalledTimes(1);
+      expect(installButton).toBeDisabled();
+      expect(installButton).toHaveTextContent("已安装");
+    });
+    expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+  });
+
+  it("labels an archived market-template reinstall as restored", async () => {
+    vi.mocked(createAuditAgent).mockResolvedValueOnce({
+      ...installedAgentResponse("installed-template-medical-fund", "医保核验"),
+      created: false,
+      reactivated: true
+    });
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入我的智能体：医保核验" }));
+
+    expect(await screen.findByText(/已恢复「医保核验」/)).toBeInTheDocument();
+  });
+
+  it("restores a completed market-template install after remount", async () => {
+    installedMarketAgentIds.set("template-medical-fund", "installed-template-medical-fund");
+
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    const dialog = screen.getByRole("dialog", { name: "医保核验" });
+    expect(within(dialog).getByRole("button", { name: "已安装：医保核验" })).toBeDisabled();
+    expect(within(dialog).getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
+      "href",
+      "/chat?agent=installed-template-medical-fund"
+    );
+    expect(createAuditAgent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a completed market-template install before the handler can call the API again", () => {
+    expect(getMarketAgentInstallBlockReason({
+      canManageAgents: true,
+      installStateLoading: false,
+      isInstalled: true,
+      inFlightIdentityKey: null,
+      identityKey: "admin:next-admin"
+    })).toBe("already-installed");
+
+    expect(getMarketAgentInstallBlockReason({
+      canManageAgents: true,
+      installStateLoading: false,
+      isInstalled: false,
+      inFlightIdentityKey: null,
+      identityKey: "admin:next-admin"
+    })).toBeNull();
+  });
+
+  it("blocks install while the current identity installation state is loading", () => {
+    expect(getMarketAgentInstallBlockReason({
+      canManageAgents: true,
+      installStateLoading: true,
+      isInstalled: false,
+      inFlightIdentityKey: null,
+      identityKey: "admin:next-admin"
+    })).toBe("install-state-loading");
+
+    marketInstallationsStatus = "loading";
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    expect(screen.getByRole("button", { name: "安装状态读取中" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "医保核验" })).getByRole("button", {
+        name: "加入我的智能体：医保核验"
+      })
+    ).toHaveTextContent("安装状态读取中");
+    expect(createAuditAgent).not.toHaveBeenCalled();
+  });
+
+  it("surfaces installation-state read failures while keeping server-idempotent retry available", () => {
+    marketInstallationsStatus = "error";
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    expect(screen.getByText("已安装状态读取失败；再次安装仍由服务端幂等保护。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入我的智能体" })).toBeEnabled();
+  });
+
   it.each(auditExtensionValidationCatalog.map(({ id, name }) => ({ id, name })))(
     "labels, opens, installs and links extension template $name",
     async ({ id, name }) => {
@@ -432,6 +539,22 @@ describe("ReplicaAgentDirectory", () => {
     fireEvent.click(screen.getByRole("button", { name: "加入我的智能体：医保核验" }));
 
     expect(await screen.findByText("安装未完成：当前身份无权安装智能体。")).toBeInTheDocument();
+  });
+
+  it("presents a fail-closed message for ambiguous historical installs", async () => {
+    vi.mocked(createAuditAgent).mockRejectedValueOnce(new BackendRequestError({
+      path: "/agents",
+      status: 409,
+      detail: "multiple market agent installations already exist"
+    }));
+    render(<ReplicaAgentDirectory mode="market" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入我的智能体：医保核验" }));
+
+    expect(
+      await screen.findByText("安装未完成：检测到多个历史安装记录，请联系管理员处理。")
+    ).toBeInTheDocument();
   });
 
   it("clears installed links and notices when the active identity changes", async () => {

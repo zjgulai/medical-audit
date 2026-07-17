@@ -319,3 +319,94 @@ Acceptance contract:
 - 禁止 `git add .`；每个 commit 的 staged manifest、stat 和 `git diff --cached --check` 必须在提交前核验。
 - Draft PR 必须只包含 Loop 56 的三个产品闭环及其测试/合同/验收记录，不包含 `output/`、临时 SQLite、screenshots 或 secrets。
 - 当前生产保持 `production unchanged`、`provider_call=false`、`database_write=false`、`deploy_execution=false`。
+
+## 2026-07-16 Loop 58 Next-Batch Deployment Planning
+
+Goal:
+
+- 将 `codex/production-ui-reconciliation-20260716` 的 `29` 个已提交 commit、当前 UI/acceptance checkpoint 和缺失的部署证据合同收敛为 clean exact-SHA release candidate。
+- 在任何生产执行前补齐首次 versioned-release migration readiness、S0/S1/S2 schema/business snapshot、全截图 exact-SHA frontend acceptance 与 run-specific audit attribution。
+- 把 local candidate、Draft PR、Ready、merge、production preflight、deploy、L3 验证、L4 `audit-log-only` 验收和业务写入 UAT 保持为独立状态与授权门。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复 branch/worktree/Task 11 断点，审查部署、回滚和 L3/L4 工具，完成下一批方案与 TODO；本 Phase 仅计划文件写入。
+- [x] Phase 1 — 完成 release evidence contract：migration readiness、S0/S1/S2 guard snapshot/compare、schema/business delta、first-migration rollback acceptance；当前证据为 L2 fixture/dry-run。
+- [x] Phase 2 — 强化 production frontend gate：全部 `40` 次 execution 截图、expected deploy SHA/public manifest、canonical guard snapshot hash、unique run identity 和 collector/provider scope 分层；保持 L4 `audit-log-only`。
+- [x] Phase 3 — 已实施显式 non-regression exception：exact base/tool/command/diagnostic/source fingerprint gate 返回 `allowed-with-label`，六个候选 Python scripts targeted Mypy PASS；不得表述为 full PASS。
+- [x] Phase 4 — 已按 evidence/UI/planning 三个显式 manifest 创建本地原子 commit；前两项为 `0d34a94`、`85859a6`，本 planning ledger commit 形成最终 clean exact SHA，提交后的 SHA 由 Git 外部核验。
+- [x] Phase 5 — 已由 Loop 59 Batch B 在 candidate `a3407a4b44766733c294d394181df3e64bb5f9b6` 上完成 exact-SHA L2 全量门禁、release manifest 与 `17 independent + 3 aliases` 三 viewport 本地矩阵；Batch C2 复审修复后的 local candidate `ce639ae1959bfb0a59a4f0ebc4ddd2e50f374712` 又完成 backend `854`、Web `364`、Ruff、Mypy 分层门禁、typecheck、lint、24-page release build 与 87-file manifest validator。
+- [x] Phase 6A — C1、C2 review/multipart 修复、C2-UI、C2-PROMOTE、C3-READY 与 C3 remediation local closure 已完成。18 条可执行评论、1 条测试建议及独立复审发现的 role namespace P1 已核验/修复；runtime commit=`9d9b192...`。第一次 exact desktop matrix 发现并关闭 4 处 history 浮层遮挡；最终 Pytest `857`、Web `369`、Ruff、targeted Mypy、typecheck、lint、24-page/87-file release build、三 viewport `60/60` 与 visible-copy `34/0` 全绿。
+- [x] Phase 6B — remediation 已 normal fast-forward push，PR #239 已刷新到 evidence head `1b3e44a...` 并保持 `OPEN/Ready/MERGEABLE/CLEAN`；该 head 的 CodeRabbit=`SUCCESS`。最新 review 的两个 ledger/evidence 评论及一个 workstation privacy 评论已在本次 docs-only closure 中处理；Web/runtime tree 相对 `1b3e44a...` 不变。
+- [ ] Phase 6C — C3-MERGE 仍需独立授权，并须在执行前重新核对最终 exact head、base、checks、review state 与 rollback boundary；不得由 Ready 或 CodeRabbit `SUCCESS` 自动跨越。
+- [ ] Phase 7 — 在 clean `main == origin/main == approved SHA` 下，经 production read-only 授权捕获 S0/topology 并运行 default deploy preflight；`partial_or_unknown` hard stop。
+- [ ] Phase 8 — 经 exact-SHA deploy + rollback pre-authorization 执行备份、frozen build、app rebuild、versioned static/Nginx/marker；禁止 schema/provider/review/business writes。
+- [ ] Phase 9 — 捕获 S1，运行 conditional L3 deployment-state audit，并证明 S0→S1 schema/business/object zero delta；成功状态仅为 `deployed_l3_verified`。
+- [ ] Phase 10 — 分别授权 full permission matrix 和 full frontend acceptance 的 L4 `audit-log-only`；捕获 S2 并证明 S1→S2 只有 run-attributable audit delta，形成 `release_accepted_l4`。
+- [ ] Phase 11 — 每个 business-write/provider UAT lane 独立授权、备份、snapshot、fixture、delta、可选 cleanup 与报告。
+
+Current blockers:
+
+- Runtime remediation 已通过 `9d9b192...` 推进并由 evidence head `1b3e44a...` 完成 PR refresh/远端复审；当前 merge 门的事实阻断只剩最终 review/check 再确认与独立 merge 授权。
+- `mypy src scripts` 保留 `195` 个继承错误/`10` 个 untouched files；D1.1 exact-fingerprint non-regression gate 已通过，但 `mypy_full_pass=false`，历史债务仍未修复。
+- D0 SQL/SSH paths are fixture/static verified only because no matching local PostgreSQL container is running; no L3 production capture has executed.
+- Object-storage evidence currently covers only the `document_storage_objects` database ledger; COS object enumeration remains unobserved.
+- The guard proves only that its collector made no provider attempt. Whole-runtime provider telemetry remains `provider_call_status=not_observed` and must not be promoted to `provider_call=false`.
+- SSH provenance/envelope is an operator-workspace evidence contract, not an external signed attestation against a malicious local operator who can replace both code and report; that stronger threat model requires separate architecture/authorization.
+- Phase 3 采用显式 non-regression exception；只允许证明当前候选未新增 Mypy 错误，不得声称 `mypy src scripts` full PASS。C3 remediation 的 3 个 changed Python source files 已通过 targeted Mypy，但历史 full-Mypy 债务不因此消失。remediation PR refresh 已完成；merge 和生产操作仍为独立门。
+
+Detailed source of truth:
+
+- `docs/superpowers/plans/2026-07-16-production-ui-reconciliation-and-release-integrity.md`, section `2026-07-16 Next-Batch Deployment Plan (Loop 58)`.
+
+Evidence boundary:
+
+- D0 is local implementation evidence only: `L2-fixture-or-dry-run`, `local_only`, `production unchanged`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `collector_provider_call_status=not_called`, `database_write=local-test-only`, `live_send=false`, `deploy_execution=false`.
+- Final independent read-only reviews for release guard and frontend acceptance both report `accepted P0/P1=0` with high confidence under the documented controlled-operator threat model.
+- Batch C1/C2 executed the authorized GitHub promotion through `7a44c191...`; C3 executed the Ready transition, runtime remediation commit `9d9b192...`, and PR refresh through evidence head `1b3e44a...`. No merge, production deployment, backup, Docker/Nginx mutation, qualified-collector provider attempt or authorized production write was executed; whole-runtime provider activity remains `provider_call_status=not_observed`, and the unauthenticated denial write outcome remains `database_write=unknown`.
+
+## 2026-07-16 Loop 59 Production Readiness Audit And Final Sprint
+
+Goal:
+
+- 用 fresh L3 read-only 与全路由静态视觉证据回答当前能否继续部署、知识库覆盖、100+ 智能体运行状态及页面专业度问题。
+- 把现网健康、候选发布完整性、数据激活、L4 authenticated acceptance 和业务/provider UAT 分为独立证据与授权门。
+- 形成最后冲刺的 P1/P2、批次、停止条件、回滚和 Definition of Done，不用单一“部署成功”压平后续验收。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复 exact candidate、Draft PR、production SHA 和 L3/L4 边界；隔离 primary dirty worktree。
+- [x] Phase 1 — 完成 fresh public/SSH/strict-read-only SQL audit：运行健康、legacy topology、knowledge coverage、agent inventory/invocation/duplicate identity。
+- [x] Phase 2 — 复核历史 same-SHA L4 metrics，并完成 20 routes × 3 viewports 的 API-blocked static Playwright matrix 与代表性人工视觉审查。
+- [x] Phase 3 — 发布 `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md`，冻结 NO-GO、P1/P2 和 Batch A-H TODO。
+- [x] Phase 4 — Batch A local P1 closure：Python 3.10 release-guard、mobile clipping/navigation/archive/overlay、visual detector、technical copy、agent cleanup dry-run 和 knowledge scope freeze；最终 local structural matrix `60/60`。
+- [x] Phase 5 — Batch B exact-SHA L2 closure：最终 candidate `a3407a4b44766733c294d394181df3e64bb5f9b6` 在隔离 clean clone 完成 backend `854`、Web `364`、Ruff、targeted/精确非回归 Mypy、typecheck、lint、24-page release build、87-file manifest validator、60/60 all-screenshot matrix、16-route 可见技术文案扫描和人工 visual sign-off；accepted P0/P1=`0`，visual verdict=`92/100`。证据台账为 post-candidate 未提交记录，不改变候选 SHA。
+- [x] Phase 6A — C1、C2 multipart 修复、C2-UI、C2-PROMOTE、C3-READY 与 C3 remediation local closure 已完成；runtime commit=`9d9b192...`，exact-SHA 复审、全量和三 viewport 验证均已完成。
+- [x] Phase 6B — remediation push/PR refresh 已完成；PR #239 为 OPEN/Ready，evidence head=`1b3e44a...`，该 head CodeRabbit=`SUCCESS`、merge state=`CLEAN`。最新 ledger/evidence/privacy review comments 已在 docs-only closure 中处理。
+- [ ] Phase 6C — C3-MERGE 继续分门授权；执行前重新确认最终 exact head 与 fresh checks，不与 production preflight/deploy 合并。
+- [ ] Phase 7 — 经 L3 read-only 授权在 legacy production 捕获 fresh S0 并运行 first-migration deploy preflight；只接受 `legacy_ready`。
+- [ ] Phase 8 — 经 exact-SHA deploy + rollback 明确授权执行 versioned deploy；成功 exit 只标记 `deployed_pending_l3`。
+- [ ] Phase 9 — 捕获 S1 并完成 conditional L3 identity/health/zero-business-delta 验证；通过后标记 `deployed_l3_verified`。
+- [ ] Phase 10 — 经独立 L4 `audit-log-only` 授权运行 permission/frontend acceptance，捕获 S2 并证明 run-attributable audit delta；通过后标记 `release_accepted_l4`。
+- [ ] Phase 11 — knowledge query/provider、agent duplicate cleanup、agent execution UAT 和 20 个 missing collection activation 各自使用独立业务写入/外部调用授权。
+
+Current verdict:
+
+- Deployment：`NO-GO`；当前现网的既有健康证据不代表新候选已部署。runtime remediation 已经 PR refresh 并完成 evidence-head review，但 merge、legacy production fresh S0、first-migration preflight 和 deploy 授权均未完成。
+- Knowledge：core medical retrieval healthy；只有 `5/25` registered collections 有数据，端到端 query/citation/provider quality 未验收。
+- Agents：304 persisted historical rows 只有 13 active、7 distinct templates、7 invoked keys；3 个 active identity group 重复，6 excess rows。100+ normal claim rejected。
+- UI：已部署 production 仍是旧 SHA，不能继承候选修复结论；evidence head `1b3e44a...` 的 API-blocked desktop/mobile/tablet structural matrix 为 `60/60`，desktop/mobile 34 次 visible-copy scan=`0`，人工关键页复核为 pass。真实 populated/authenticated production 专业度仍未完成。
+
+Detailed source of truth:
+
+- `drafts/analysis/loop59-final-sprint-production-readiness-plan-draft-20260716.md`.
+
+Stop conditions:
+
+- Python 3.10 S0、migration topology、backup/rollback、exact SHA identity、zero business delta 或 mobile P1 任一不满足即停止推进。
+- PR Ready、merge、production deploy、audit-log writes、SQL cleanup、provider query 和 missing-collection ingestion 均不得由本 Loop 的调查/计划授权自动跨越。
+
+Evidence boundary:
+
+- Current fresh audit：qualified path 为 `L3-production-read-only`；static visual matrix 使用 production static shell + locally blocked APIs，不是 authenticated data acceptance。
+- `production unchanged`, `deploy_execution=false`, qualified collector `database_write=false`, one unauthenticated denial attempt `database_write=unknown`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.

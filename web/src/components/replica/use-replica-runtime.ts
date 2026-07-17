@@ -488,6 +488,87 @@ export function useReplicaAgentsData(mode: "mine" | "market"): ReplicaRuntimeRes
   );
 }
 
+export type ReplicaMarketInstallationsResult = {
+  readonly apiReadsEnabled: boolean;
+  readonly installedAgentIds: ReadonlyMap<string, string>;
+  readonly status: "loading" | "ready" | "degraded" | "error";
+};
+
+export function useReplicaMarketInstallations(
+  enabled = true
+): ReplicaMarketInstallationsResult {
+  const auditUser = useAuditUser();
+  const apiReadsEnabled = replicaApiReadsEnabled();
+  const identityKey = `${auditUser.role}:${auditClientUserId(auditUser.role)}`;
+  const runtimeKey = `${enabled ? "enabled" : "disabled"}:${apiReadsEnabled ? "api" : "offline"}:${identityKey}`;
+  const [state, setState] = useState<{
+    readonly key: string;
+    readonly installedAgentIds: ReadonlyMap<string, string>;
+    readonly status: ReplicaMarketInstallationsResult["status"];
+  }>(() => ({
+    key: runtimeKey,
+    installedAgentIds: new Map(),
+    status: enabled && apiReadsEnabled ? "loading" : "ready"
+  }));
+  const visibleState = state.key === runtimeKey
+    ? state
+    : {
+        key: runtimeKey,
+        installedAgentIds: new Map<string, string>(),
+        status: enabled && apiReadsEnabled ? "loading" as const : "ready" as const
+      };
+
+  useEffect(() => {
+    let mounted = true;
+    if (!enabled || !apiReadsEnabled) {
+      setState({ key: runtimeKey, installedAgentIds: new Map(), status: "ready" });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setState({ key: runtimeKey, installedAgentIds: new Map(), status: "loading" });
+    void fetchAgents()
+      .then((response) => {
+        if (!mounted) return;
+        const hasInstallationIssues = (response.market_installation_issues?.length ?? 0) > 0;
+        const installedAgentIds = new Map<string, string>();
+        if (!hasInstallationIssues) {
+          for (const installation of response.market_installations ?? []) {
+            if (installation.template_id && installation.agent_id) {
+              installedAgentIds.set(installation.template_id, installation.agent_id);
+            }
+          }
+        }
+        setState((currentState) => currentState.key === runtimeKey
+          ? {
+              key: runtimeKey,
+              installedAgentIds,
+              status: response.store.ready && !hasInstallationIssues
+                ? "ready"
+                : "degraded"
+            }
+          : currentState);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setState((currentState) => currentState.key === runtimeKey
+          ? { key: runtimeKey, installedAgentIds: new Map(), status: "error" }
+          : currentState);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [apiReadsEnabled, enabled, runtimeKey]);
+
+  return {
+    apiReadsEnabled,
+    installedAgentIds: visibleState.installedAgentIds,
+    status: visibleState.status
+  };
+}
+
 export function useReplicaKnowledgeBaseData(): ReplicaRuntimeResult<ReplicaKnowledgeBaseData> {
   return useReplicaLoader(
     knowledgeBaseFallback,

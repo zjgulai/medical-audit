@@ -6,7 +6,11 @@ import type { AgentsResponse } from "@/lib/api-types";
 import { writeAuditClientRole } from "@/lib/audit-user";
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 
-import { useReplicaAgentsData, useReplicaGraphData } from "./use-replica-runtime";
+import {
+  useReplicaAgentsData,
+  useReplicaGraphData,
+  useReplicaMarketInstallations
+} from "./use-replica-runtime";
 
 vi.mock("@/lib/api-client", () => ({
   fetchAgents: vi.fn(),
@@ -25,7 +29,8 @@ vi.mock("@/lib/api-client", () => ({
 function agentsResponse(
   storeReady = true,
   name = "运行时只读助手",
-  id = "agent-runtime-api"
+  id = "agent-runtime-api",
+  marketInstallations: AgentsResponse["market_installations"] = []
 ): AgentsResponse {
   return {
     items: [
@@ -50,6 +55,7 @@ function agentsResponse(
       }
     ],
     categories: ["业务类"],
+    market_installations: marketInstallations,
     store: { ready: storeReady, backend: "unit-test" }
   };
 }
@@ -117,8 +123,21 @@ function GraphRuntimeProbe() {
   );
 }
 
+function MarketInstallationsProbe() {
+  const result = useReplicaMarketInstallations();
+
+  return (
+    <div data-testid="market-installations" data-status={result.status}>
+      {Array.from(result.installedAgentIds).map(([templateId, agentId]) => (
+        <span key={templateId}>{`${templateId}:${agentId}`}</span>
+      ))}
+    </div>
+  );
+}
+
 describe("use-replica-runtime", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.mocked(fetchAgents).mockResolvedValue(agentsResponse());
   });
 
@@ -192,6 +211,87 @@ describe("use-replica-runtime", () => {
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
     expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
     expect(fetchAgents).not.toHaveBeenCalled();
+  });
+
+  it("restores the current identity market installations through a separate API read", async () => {
+    vi.mocked(fetchAgents).mockResolvedValueOnce(agentsResponse(
+      true,
+      "运行时只读助手",
+      "agent-runtime-api",
+      [{ template_id: "template-medical-fund", agent_id: "agent-installed-fund" }]
+    ));
+
+    render(<MarketInstallationsProbe />);
+
+    expect(screen.getByTestId("market-installations")).toHaveAttribute("data-status", "loading");
+    expect(await screen.findByText("template-medical-fund:agent-installed-fund")).toBeInTheDocument();
+    expect(screen.getByTestId("market-installations")).toHaveAttribute("data-status", "ready");
+    expect(fetchAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed on ambiguous market installations and exposes degraded state", async () => {
+    vi.mocked(fetchAgents).mockResolvedValueOnce({
+      ...agentsResponse(),
+      market_installations: [
+        { template_id: "template-medical-fund", agent_id: "agent-legacy-1" }
+      ],
+      market_installation_issues: [
+        {
+          code: "ambiguous-market-installations",
+          template_id: "template-medical-fund",
+          agent_ids: ["agent-legacy-1", "agent-legacy-2"]
+        }
+      ]
+    });
+
+    render(<MarketInstallationsProbe />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("market-installations")).toHaveAttribute(
+        "data-status",
+        "degraded"
+      );
+    });
+    expect(screen.queryByText(/template-medical-fund:/)).not.toBeInTheDocument();
+  });
+
+  it("does not expose a late installation response from the previous identity", async () => {
+    const adminRead = deferred<AgentsResponse>();
+    const memberRead = deferred<AgentsResponse>();
+    vi.mocked(fetchAgents)
+      .mockReturnValueOnce(adminRead.promise)
+      .mockReturnValueOnce(memberRead.promise);
+
+    render(
+      <AuditUserProvider>
+        <MarketInstallationsProbe />
+      </AuditUserProvider>
+    );
+    act(() => writeAuditClientRole("member"));
+
+    await act(async () => {
+      memberRead.resolve(agentsResponse(
+        true,
+        "成员可见智能体",
+        "member-agent",
+        [{ template_id: "member-template", agent_id: "member-install" }]
+      ));
+      await memberRead.promise;
+    });
+    expect(await screen.findByText("member-template:member-install")).toBeInTheDocument();
+
+    await act(async () => {
+      adminRead.resolve(agentsResponse(
+        true,
+        "管理员智能体",
+        "admin-agent",
+        [{ template_id: "admin-template", agent_id: "admin-install" }]
+      ));
+      await adminRead.promise;
+    });
+
+    expect(screen.queryByText("admin-template:admin-install")).not.toBeInTheDocument();
+    expect(screen.getByText("member-template:member-install")).toBeInTheDocument();
   });
 
   it("switches the opt-in extension pack on and off without leaking module-cached catalog state", () => {
