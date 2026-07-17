@@ -74,7 +74,7 @@ export function ReplicaRemediationWorkbench() {
       {state.status === "loading" ? (
         <ReplicaEmptyState title="整改数据加载中" description="正在读取整改工作台的只读运行证据。" />
       ) : state.status === "error" ? (
-        <ReplicaEmptyState title="整改工作台暂不可用" description="整改 API 读取失败，页面不会注入本地样例或旧数据。" />
+        <ReplicaEmptyState title="整改工作台暂不可用" description="整改数据读取失败，页面不会注入本地样例或旧数据。" />
       ) : data ? (
         <>
           <RemediationMetrics metrics={data.metrics} />

@@ -136,6 +136,8 @@ describe("ReplicaRulesWorkbench", () => {
     render(<ReplicaRulesWorkbench />);
 
     expect(await screen.findByText("规则工作台暂不可用")).toBeInTheDocument();
+    expect(screen.getByText("规则数据读取失败，页面不会注入本地样例或旧统计值。")).toBeInTheDocument();
+    expect(screen.queryByText(/规则 API/)).not.toBeInTheDocument();
     expect(screen.queryByText("runtime-rule-001")).not.toBeInTheDocument();
   });
 });

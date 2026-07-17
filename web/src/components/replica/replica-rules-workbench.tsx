@@ -237,7 +237,7 @@ export function ReplicaRulesWorkbench() {
       {state.status === "loading" ? (
         <ReplicaEmptyState title="规则数据加载中" description="正在读取规则工作台的只读运行证据。" />
       ) : state.status === "error" ? (
-        <ReplicaEmptyState title="规则工作台暂不可用" description="规则 API 读取失败，页面不会注入本地样例或旧统计值。" />
+        <ReplicaEmptyState title="规则工作台暂不可用" description="规则数据读取失败，页面不会注入本地样例或旧统计值。" />
       ) : data ? (
         <>
           <RulesMetrics metrics={data.metrics} />

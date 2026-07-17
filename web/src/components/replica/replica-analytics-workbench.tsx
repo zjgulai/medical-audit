@@ -98,7 +98,7 @@ export function ReplicaAnalyticsWorkbench() {
         <div>
           <p className="replica-kicker">AI 数据分析</p>
           <h1>表格分析工作台</h1>
-          <p>上传 CSV 或 XLSX 表格，读取后端字段画像、数据质量线索与审计建议。</p>
+          <p>上传 CSV 或 XLSX 表格，查看字段画像、数据质量线索与审计建议。</p>
         </div>
       </header>
 

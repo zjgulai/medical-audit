@@ -697,7 +697,7 @@ export function ReplicaReportWorkbench() {
         <div>
           <p>当前身份边界</p>
           <strong>{canCreate ? "可创建底稿草稿" : "当前角色无权新建底稿草稿"}</strong>
-          <span>后端仍会独立执行项目可见性与角色鉴权。</span>
+          <span>系统仍会独立校验项目可见范围与角色权限。</span>
           {submittingFromAnotherRole ? <span>上一身份的草稿请求仍在处理中</span> : null}
         </div>
         <div>

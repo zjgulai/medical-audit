@@ -272,6 +272,8 @@ describe("ReplicaReportWorkbench", () => {
 
     expect(await screen.findByRole("heading", { name: "六类模板目录", level: 2 })).toBeInTheDocument();
     expect(screen.getByText("请先选择项目后填写模板")).toBeInTheDocument();
+    expect(screen.getByText("系统仍会独立校验项目可见范围与角色权限。")).toBeInTheDocument();
+    expect(screen.queryByText(/后端仍会独立执行/)).not.toBeInTheDocument();
     const buttons = screen.getAllByRole("button", { name: /^填写模板：/ });
     expect(buttons).toHaveLength(3);
     for (const button of buttons) expect(button).toBeDisabled();

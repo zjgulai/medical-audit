@@ -136,6 +136,8 @@ describe("ReplicaRemediationWorkbench", () => {
     render(<ReplicaRemediationWorkbench />);
 
     expect(await screen.findByText("整改工作台暂不可用")).toBeInTheDocument();
+    expect(screen.getByText("整改数据读取失败，页面不会注入本地样例或旧数据。")).toBeInTheDocument();
+    expect(screen.queryByText(/整改 API/)).not.toBeInTheDocument();
     expect(screen.queryByText("remediation-case-001")).not.toBeInTheDocument();
     expect(screen.queryByText("重复收费退费与流程复核")).not.toBeInTheDocument();
   });

@@ -1205,7 +1205,7 @@ function MetricCards({
       label: "一级知识库",
       value: metricValueFromState(sourceState, () => medicalSources.length),
       tone: "green",
-      change: sourceData?.search_backend.ready ? "检索后端可用" : "检索后端待确认",
+      change: sourceData?.search_backend.ready ? "知识检索可用" : "知识检索待确认",
       changeTone: sourceData?.search_backend.ready ? "down" : "up",
       sub:
         sourceState.status === "ready"

@@ -610,7 +610,7 @@ export function FundComplianceReviewWorkbench() {
             <p className="replica-kicker">复核工作流</p>
             <h2>从单据审查到底稿输出</h2>
           </div>
-          <span>运行状态与数量来自只读 API</span>
+          <span>当前运行数据只读展示</span>
         </div>
         <div className="replica-kb-grid">
           {reviewStages.map((stage) => (
@@ -664,7 +664,7 @@ export function FundComplianceReviewWorkbench() {
         ))}
       </section>
 
-      <ReplicaNotice>复核表单页面只组织模板与入口，真实上传、解析和底稿生成仍走受控 API 与人工复核流程。</ReplicaNotice>
+      <ReplicaNotice>复核表单页面仅提供模板与入口；上传、解析和底稿生成需按受控流程提交并完成人工复核。</ReplicaNotice>
     </main>
   );
 }

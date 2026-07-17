@@ -228,6 +228,9 @@ describe("compatibility workbenches", () => {
     expect(await stages.findByText("费用汇总、分类汇总、就诊明细 · 0 个底稿模板")).toBeInTheDocument();
     expect(await stages.findByText("1 项阻断门禁 / 1 项控制门禁")).toBeInTheDocument();
     expect(await stages.findByText("1 项底稿 / 1 项阻断")).toBeInTheDocument();
+    expect(screen.getByText("当前运行数据只读展示")).toBeInTheDocument();
+    expect(screen.getByText("复核表单页面仅提供模板与入口；上传、解析和底稿生成需按受控流程提交并完成人工复核。")).toBeInTheDocument();
+    expect(screen.queryByText(/只读 API|受控 API/)).not.toBeInTheDocument();
     expect(stages.getByRole("link", { name: "打开单据审查" })).toHaveAttribute("href", "/medical-audit");
     expect(stages.getByRole("link", { name: "打开费用表单" })).toHaveAttribute("href", "/analytics");
     expect(stages.getByRole("link", { name: "打开规则复核" })).toHaveAttribute("href", "/rules");

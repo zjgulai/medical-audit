@@ -330,6 +330,8 @@ describe("MedicalAuditPage", () => {
     expect(screen.getByText("疑点数据已同步")).toBeInTheDocument();
     expect(screen.getByText("知识库分类已同步")).toBeInTheDocument();
     expect(screen.getByText("底稿与报告数据已同步")).toBeInTheDocument();
+    expect(screen.getByText("知识检索可用")).toBeInTheDocument();
+    expect(screen.queryByText(/检索后端/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SqlAlchemyAuditFindingStore/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
     expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();

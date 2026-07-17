@@ -111,6 +111,8 @@ describe("ReplicaAnalyticsWorkbench", () => {
   it("records an accepted file without uploading and explains the controlled-write boundary", async () => {
     render(<ReplicaAnalyticsWorkbench />);
 
+    expect(screen.getByText("上传 CSV 或 XLSX 表格，查看字段画像、数据质量线索与审计建议。")).toBeInTheDocument();
+    expect(screen.queryByText(/读取后端字段画像/)).not.toBeInTheDocument();
     const { input, file } = chooseFile();
 
     expect(input).toHaveAttribute("accept", ".xlsx,.csv");
