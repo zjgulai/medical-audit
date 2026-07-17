@@ -1044,6 +1044,8 @@ def test_live_database_sql_tracks_updated_rows_and_enforces_readonly_transaction
     assert "pg_current_wal_lsn()" in sql
     assert "pg_get_indexdef" in sql
     assert "pg_policy" in sql
+    assert "p.polcmd::text || ':'" in sql
+    assert "p.polpermissive::text || ':'" in sql
     assert "pg_get_triggerdef" in sql
     assert "pg_get_functiondef" in sql
     assert "to_jsonb(table_row)" in sql
