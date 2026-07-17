@@ -181,4 +181,17 @@ describe("ReplicaArchiveWorkbench", () => {
     expect(screen.queryByText("archive-package-001")).not.toBeInTheDocument();
     expect(screen.queryByText("archive-package-fund-self-check")).not.toBeInTheDocument();
   });
+
+  it("fails closed when the archive store is not ready", async () => {
+    fetchArchiveWorkbenchMock.mockResolvedValue({
+      ...archiveResponse,
+      store: { ready: false, backend: "unavailable" }
+    });
+
+    render(<ReplicaArchiveWorkbench />);
+
+    expect(await screen.findByText("归档数据受限")).toBeInTheDocument();
+    expect(screen.getByText("归档存储状态未就绪，已停止展示可能不完整的归档记录。")).toBeInTheDocument();
+    expect(screen.queryByText("archive-package-001")).not.toBeInTheDocument();
+  });
 });

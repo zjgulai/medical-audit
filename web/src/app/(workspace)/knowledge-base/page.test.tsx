@@ -200,6 +200,41 @@ describe("KnowledgeBasePage", () => {
     expect(within(coverage).queryByText(/全量可用/)).not.toBeInTheDocument();
   });
 
+  it("keeps coverage incomplete when five populated collections omit a required core source", () => {
+    const ready = makeMetricsReadyRuntime();
+    const sourceIds = [
+      "medical-insurance-laws",
+      "supervision-rules-knowledge",
+      "medical-insurance-catalog",
+      "risk-negative-list",
+      "other-agriculture-water"
+    ] as const;
+    runtimeMock.current = {
+      ...ready,
+      data: {
+        ...ready.data,
+        knowledgeBases: sourceIds.map((sourceId, index) => ({
+          ...ready.data.knowledgeBases[0]!,
+          id: `kb-${sourceId}`,
+          name: `知识集合 ${index + 1}`,
+          documentCount: index + 1,
+          chunkCount: (index + 1) * 10
+        })),
+        summary: {
+          ...ready.data.summary!,
+          sourceCollectionCount: 25,
+          queryableCollectionCount: 5
+        }
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    const coverage = screen.getByLabelText("知识库发布覆盖");
+    expect(coverage).toHaveAttribute("data-coverage-status", "core-incomplete");
+    expect(within(coverage).getByText(/尚未达到核心 5 个知识集合的发布门槛/)).toBeInTheDocument();
+  });
+
   it("keeps registry cards while marking every unavailable metric as pending sync", () => {
     const ready = makeMetricsReadyRuntime();
     runtimeMock.current = {

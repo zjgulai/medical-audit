@@ -343,6 +343,8 @@ describe("MedicalAuditPage", () => {
     );
     expect(screen.getByRole("button", { name: "DIP/DRG审计" })).toHaveTextContent("DIP/DRG审计");
     expect(screen.getByText("查看数据与权限说明").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(/页面初始加载读取生产数据/)).toBeInTheDocument();
+    expect(screen.queryByText("当前页面只读取生产数据；写入类动作仍需经过独立确认门禁。")).not.toBeInTheDocument();
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
   });

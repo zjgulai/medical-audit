@@ -242,7 +242,16 @@ export function ReplicaRulesWorkbench() {
         <>
           <RulesMetrics metrics={data.metrics} />
           <ReplicaNotice>
-            数据后端：<strong>{data.store.backend}</strong> · store.ready={String(data.store.ready)} · evidence_grade=<strong>{data.evidence_grade}</strong> · production_side_effect=<strong>{data.production_side_effect}</strong>
+            当前为只读规则数据，页面不会触发规则运行或生产写入。
+            <details className="replica-runtime-diagnostics">
+              <summary>查看运行诊断</summary>
+              <ul>
+                <li>数据后端：<code>{data.store.backend}</code></li>
+                <li>存储状态：<code>store.ready={String(data.store.ready)}</code></li>
+                <li>证据等级：<code>{data.evidence_grade}</code></li>
+                <li>生产副作用：<code>{data.production_side_effect}</code></li>
+              </ul>
+            </details>
           </ReplicaNotice>
           {state.status === "empty" ? (
             <ReplicaEmptyState title="暂无规则与运行记录" description="规则库和运行快照均为空；来源覆盖与控制门禁仍按后端返回结果展示。" />

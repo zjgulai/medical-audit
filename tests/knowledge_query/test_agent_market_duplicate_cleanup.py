@@ -99,6 +99,31 @@ def test_archived_duplicate_is_included_in_all_status_identity_ambiguity() -> No
     assert report["duplicate_groups"][0]["survivor"]["agent_key"] == "agent-market-1"
 
 
+def test_all_dormant_duplicate_group_preserves_survivor_status() -> None:
+    module = _load_module()
+    report = module._analyze_inventory(
+        _inventory(
+            [
+                _agent("1", status="archived", invocation_count=5),
+                _agent("2", status="inactive", invocation_count=10),
+            ]
+        )
+    )
+
+    group = report["duplicate_groups"][0]
+    assert group["survivor"]["agent_key"] == "agent-market-2"
+    survivor_action = next(
+        item
+        for item in group["proposed_actions"]
+        if item["agent_key"] == "agent-market-2"
+    )
+    assert survivor_action["action"] == "keep-market-identity"
+    assert all(
+        item["action"] != "reactivate-survivor-before-detach"
+        for item in group["proposed_actions"]
+    )
+
+
 def test_unique_market_inventory_requires_no_cleanup_authorization() -> None:
     module = _load_module()
     report = module._analyze_inventory(

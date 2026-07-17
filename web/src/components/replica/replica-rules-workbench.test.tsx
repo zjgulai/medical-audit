@@ -92,9 +92,12 @@ describe("ReplicaRulesWorkbench", () => {
 
     expect(await screen.findByText("runtime-rule-001")).toBeInTheDocument();
     expect(screen.getByText("字段可运行")).toBeInTheDocument();
-    expect(screen.getByText("SqlAlchemyRulesWorkbenchStore")).toBeInTheDocument();
-    expect(screen.getByText("production-readonly-api")).toBeInTheDocument();
-    expect(screen.getByText("none")).toBeInTheDocument();
+    expect(screen.getByText("当前为只读规则数据，页面不会触发规则运行或生产写入。")).toBeInTheDocument();
+    const diagnostics = screen.getByText("SqlAlchemyRulesWorkbenchStore").closest("details");
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics).not.toHaveAttribute("open");
+    expect(screen.getByText("production-readonly-api").closest("details")).toBe(diagnostics);
+    expect(screen.getByText("none").closest("details")).toBe(diagnostics);
     expect(screen.getByText("医保政策库", { selector: "h3" })).toBeInTheDocument();
     expect(screen.getByText("run-001")).toBeInTheDocument();
     expect(screen.queryByText("2,546")).not.toBeInTheDocument();

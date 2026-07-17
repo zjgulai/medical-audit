@@ -92,7 +92,8 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(await screen.findByText("整改台账")).toBeInTheDocument();
     expect(screen.getByText("补证请求")).toBeInTheDocument();
     expect(screen.getByText("关闭门禁")).toBeInTheDocument();
-    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore")).toBeInTheDocument();
+    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore").closest("details")).not.toBeNull();
+    expect(screen.getByText(/当前为只读整改数据，页面不会直接更新或关闭整改事项。/)).toBeInTheDocument();
   });
 
   it("does not expose zero metrics or retired fixtures while the initial read is pending", () => {
@@ -126,7 +127,7 @@ describe("ReplicaRemediationWorkbench", () => {
     render(<ReplicaRemediationWorkbench />);
 
     expect(await screen.findByText("暂无整改、补证、门禁或时间线记录")).toBeInTheDocument();
-    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore")).toBeInTheDocument();
+    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore").closest("details")).not.toBeNull();
     expect(screen.queryByText("重复收费退费与流程复核")).not.toBeInTheDocument();
   });
 
@@ -140,5 +141,18 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(screen.queryByText(/整改 API/)).not.toBeInTheDocument();
     expect(screen.queryByText("remediation-case-001")).not.toBeInTheDocument();
     expect(screen.queryByText("重复收费退费与流程复核")).not.toBeInTheDocument();
+  });
+
+  it("fails closed when the remediation store is not ready", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue({
+      ...remediationResponse,
+      store: { ready: false, backend: "unavailable" }
+    });
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByText("整改数据受限")).toBeInTheDocument();
+    expect(screen.getByText("整改存储状态未就绪，已停止展示可能不完整的整改记录。")).toBeInTheDocument();
+    expect(screen.queryByText("remediation-case-001")).not.toBeInTheDocument();
   });
 });

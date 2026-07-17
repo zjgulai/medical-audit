@@ -241,8 +241,8 @@ describe("compatibility workbenches", () => {
     {
       name: "reports fallback",
       options: { reportsError: new Error("reports unavailable") },
-      expectedStatus: "本地样例",
-      expectedSummary: "暂无底稿"
+      expectedStatus: "数据不可用",
+      expectedSummary: "底稿数据暂不可用"
     },
     {
       name: "ready with no reports",
@@ -345,6 +345,8 @@ describe("compatibility workbenches", () => {
     await waitFor(() => {
       expect(screen.getByText("本地样例")).toBeInTheDocument();
     });
+    expect(screen.getByText("疑点数据暂不可用 · 规则数据暂不可用 · 底稿数据暂不可用")).toBeInTheDocument();
+    expect(screen.queryByText("0 项待复核 · 0 项规则阻断 · 0 项底稿阻断")).not.toBeInTheDocument();
     expect(screen.getByText("目录限制 HIS 字段截图")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute("href", "/chat");
   });

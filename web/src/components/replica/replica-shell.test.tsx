@@ -129,7 +129,10 @@ describe("ReplicaShell", () => {
       "history"
     );
     expect(globalsCss).toMatch(
-      /\.replica-history-fab\s*\{[^}]*bottom:\s*86px;[^}]*\}/s
+      /\.replica-history-fab\s*\{[^}]*position:\s*fixed;[^}]*right:\s*auto;[^}]*bottom:\s*86px;[^}]*left:\s*12px;[^}]*width:\s*232px;/s
+    );
+    expect(globalsCss).toMatch(
+      /\.replica-sidebar-collapsed \.replica-history-fab\s*\{[^}]*left:\s*24px;[^}]*width:\s*44px;/s
     );
     expect(globalsCss).toMatch(
       /\.replica-sidebar-collapsed \.replica-history-fab > span:last-child\s*\{[^}]*display:\s*none;/s

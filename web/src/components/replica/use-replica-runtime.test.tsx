@@ -232,7 +232,9 @@ describe("use-replica-runtime", () => {
   it("fails closed on ambiguous market installations and exposes degraded state", async () => {
     vi.mocked(fetchAgents).mockResolvedValueOnce({
       ...agentsResponse(),
-      market_installations: [],
+      market_installations: [
+        { template_id: "template-medical-fund", agent_id: "agent-legacy-1" }
+      ],
       market_installation_issues: [
         {
           code: "ambiguous-market-installations",

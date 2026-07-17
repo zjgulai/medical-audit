@@ -35,6 +35,7 @@ export function PersonalMaterialActions({
   const [message, setMessage] = useState<{ readonly kind: "error" | "success"; readonly text: string } | null>(null);
   const mountedRef = useRef(false);
   const currentRoleRef = useRef(auditUser.role);
+  const previousRoleRef = useRef(auditUser.role);
   const actionGenerationRef = useRef(0);
   const pendingActionRef = useRef<PendingAction | null>(null);
   currentRoleRef.current = auditUser.role;
@@ -47,6 +48,19 @@ export function PersonalMaterialActions({
       pendingActionRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (previousRoleRef.current === auditUser.role) {
+      return;
+    }
+    previousRoleRef.current = auditUser.role;
+    actionGenerationRef.current += 1;
+    pendingActionRef.current = null;
+    setPendingAction(null);
+    setChooserOpen(false);
+    setSelectedFile(null);
+    setMessage(null);
+  }, [auditUser.role]);
 
   const canUpload = permissions.can_upload_personal;
   const canGovern = permissions.can_govern_personal_uploads;

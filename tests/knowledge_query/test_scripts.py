@@ -5318,6 +5318,38 @@ def test_deploy_tencent_cloud_execute_forbids_skip_web_build(
     assert module._config_from_args(module._parse_args()).skip_web_build is True
 
 
+def test_deploy_tencent_cloud_execute_forbids_skip_app_rebuild(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_skip_app_rebuild_denied",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--skip-app-rebuild",
+        ],
+    )
+
+    with pytest.raises(module.DeployError, match="forbids --skip-app-rebuild"):
+        module._config_from_args(module._parse_args())
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["deploy-tencent-cloud-production.py", "--skip-app-rebuild"],
+    )
+    assert module._config_from_args(module._parse_args()).skip_app_rebuild is True
+
+
 def test_deploy_tencent_cloud_readonly_preflight_does_not_require_manifest(
     monkeypatch: MonkeyPatch,
 ) -> None:

@@ -265,19 +265,36 @@ function buildReviewMetrics(runtime: CompatibilityRuntime): readonly DynamicMetr
 
 function runtimeStageStatus(status: RuntimeStatus, blockerCount: number): string {
   if (status === "loading") return "加载中";
-  if (status === "fallback") return "本地样例";
+  if (status === "fallback") return "数据不可用";
   return blockerCount > 0 ? "需处理" : "已就绪";
 }
 
 function reportStageStatus(status: RuntimeStatus, reportCount: number, blockedReportCount: number): string {
   if (status === "loading") return "加载中";
-  if (status === "fallback") return "本地样例";
+  if (status === "fallback") return "数据不可用";
   return reportCount === 0 || blockedReportCount > 0 ? "需处理" : "已就绪";
 }
 
-function reportStageSummary(reportCount: number, blockedReportCount: number): string {
-  if (reportCount === 0) return "暂无底稿";
-  return `${reportCount} 项底稿 / ${blockedReportCount} 项阻断`;
+function runtimeDataSummary(status: RuntimeStatus, label: string, readySummary: string): string {
+  if (status === "loading") return `${label}加载中`;
+  if (status === "fallback") return `${label}暂不可用`;
+  return readySummary;
+}
+
+function runtimeCountValue(status: RuntimeStatus, value: number): string {
+  return status === "ready" ? `${value}` : "待同步";
+}
+
+function reportStageSummary(
+  status: RuntimeStatus,
+  reportCount: number,
+  blockedReportCount: number
+): string {
+  return runtimeDataSummary(
+    status,
+    "底稿数据",
+    reportCount === 0 ? "暂无底稿" : `${reportCount} 项底稿 / ${blockedReportCount} 项阻断`
+  );
 }
 
 function buildReviewStages(runtime: CompatibilityRuntime): readonly ReviewStage[] {
@@ -294,28 +311,40 @@ function buildReviewStages(runtime: CompatibilityRuntime): readonly ReviewStage[
       label: "单据审查",
       href: "/medical-audit",
       status: runtimeStageStatus(runtime.statuses.findings, pendingFindingCount),
-      summary: `${pendingFindingCount} 项待复核疑点`
+      summary: runtimeDataSummary(
+        runtime.statuses.findings,
+        "疑点数据",
+        `${pendingFindingCount} 项待复核疑点`
+      )
     },
     {
       id: "forms",
       label: "费用表单",
       href: "/analytics",
       status: runtimeStageStatus(runtime.statuses.reports, Number(templateCount === 0)),
-      summary: `费用汇总、分类汇总、就诊明细 · ${templateCount} 个底稿模板`
+      summary: runtimeDataSummary(
+        runtime.statuses.reports,
+        "底稿模板",
+        `费用汇总、分类汇总、就诊明细 · ${templateCount} 个底稿模板`
+      )
     },
     {
       id: "rules",
       label: "规则复核",
       href: "/rules",
       status: runtimeStageStatus(runtime.statuses.rules, blockingGateCount),
-      summary: `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁`
+      summary: runtimeDataSummary(
+        runtime.statuses.rules,
+        "规则数据",
+        `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁`
+      )
     },
     {
       id: "workpaper",
       label: "底稿输出",
       href: "/reports",
       status: reportStageStatus(runtime.statuses.reports, reportCount, blockedReportCount),
-      summary: reportStageSummary(reportCount, blockedReportCount)
+      summary: reportStageSummary(runtime.statuses.reports, reportCount, blockedReportCount)
     }
   ];
 }
@@ -333,28 +362,42 @@ function buildComplianceReadinessCards(runtime: CompatibilityRuntime): readonly 
       id: "pending-findings",
       eyebrow: runtimeStageStatus(runtime.statuses.findings, pendingFindingCount),
       title: "当前待复核疑点",
-      detail: `${pendingFindingCount} 项待复核，当前返回 ${visibleFindingCount} 项。`,
-      value: `${pendingFindingCount}`,
+      detail: runtimeDataSummary(
+        runtime.statuses.findings,
+        "疑点数据",
+        `${pendingFindingCount} 项待复核，当前返回 ${visibleFindingCount} 项。`
+      ),
+      value: runtimeCountValue(runtime.statuses.findings, pendingFindingCount),
       href: "/findings"
     },
     {
       id: "blocking-control-gates",
       eyebrow: runtimeStageStatus(runtime.statuses.rules, blockingGateCount),
       title: "阻断控制门禁",
-      detail: `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁。`,
-      value: `${blockingGateCount}`,
+      detail: runtimeDataSummary(
+        runtime.statuses.rules,
+        "规则数据",
+        `${blockingGateCount} 项阻断门禁 / ${controlGateCount} 项控制门禁。`
+      ),
+      value: runtimeCountValue(runtime.statuses.rules, blockingGateCount),
       href: "/rules"
     },
     {
       id: "report-readiness",
       eyebrow: reportStageStatus(runtime.statuses.reports, reportCount, blockedReportCount),
       title: "底稿就绪状态",
-      detail: reportCount === 0
-        ? "当前没有可用底稿。"
-        : `${reportCount} 项底稿 / ${blockedReportCount} 项阻断。`,
-      value: reportCount === 0
-        ? "暂无底稿"
-        : `${Math.max(reportCount - blockedReportCount, 0)}/${reportCount}`,
+      detail: runtimeDataSummary(
+        runtime.statuses.reports,
+        "底稿数据",
+        reportCount === 0
+          ? "当前没有可用底稿。"
+          : `${reportCount} 项底稿 / ${blockedReportCount} 项阻断。`
+      ),
+      value: runtime.statuses.reports !== "ready"
+        ? "待同步"
+        : reportCount === 0
+          ? "暂无底稿"
+          : `${Math.max(reportCount - blockedReportCount, 0)}/${reportCount}`,
       href: "/reports"
     }
   ];
@@ -365,7 +408,11 @@ function buildGuidedRiskSummary(runtime: CompatibilityRuntime): string {
   const blockingGateCount = runtime.rules?.metrics.blocked_gate_count ?? 0;
   const blockedReportCount = runtime.reports?.metrics.blocked_report_count ?? 0;
 
-  return `${pendingFindingCount} 项待复核 · ${blockingGateCount} 项规则阻断 · ${blockedReportCount} 项底稿阻断`;
+  return [
+    runtimeDataSummary(runtime.statuses.findings, "疑点数据", `${pendingFindingCount} 项待复核`),
+    runtimeDataSummary(runtime.statuses.rules, "规则数据", `${blockingGateCount} 项规则阻断`),
+    runtimeDataSummary(runtime.statuses.reports, "底稿数据", `${blockedReportCount} 项底稿阻断`)
+  ].join(" · ");
 }
 
 function buildGuidedMetrics(runtime: CompatibilityRuntime): readonly DynamicMetric[] {

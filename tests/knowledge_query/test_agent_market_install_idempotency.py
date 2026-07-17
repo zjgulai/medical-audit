@@ -251,3 +251,53 @@ def test_agents_api_fails_closed_for_ambiguous_legacy_market_installs(
     assert response.json()["detail"] == (
         "multiple market agent installations already exist"
     )
+
+
+def test_agents_api_reports_all_archived_market_install_ambiguity(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'agents-market-archived-duplicates.db'}"
+    state = _agent_api_state(tmp_path)
+    store = SqlAlchemyAgentStore(database_url, create_schema=True)
+    state.agent_store = store
+    client = TestClient(create_app(state))
+    headers = {
+        "X-User-Id": "director-1",
+        "X-Role": "director",
+        "X-Project-Name": PROJECT_NAME_HEADER,
+    }
+    archived_values = {
+        **_market_payload(),
+        "created_by": "director-1",
+        "status": "archived",
+    }
+    first_legacy = store.add_agent(archived_values)
+    second_legacy = store.add_agent(archived_values)
+    store.update_agent_lifecycle(
+        str(first_legacy["id"]),
+        status="archived",
+        reason="legacy archived duplicate fixture",
+        updated_by="director-1",
+    )
+    store.update_agent_lifecycle(
+        str(second_legacy["id"]),
+        status="archived",
+        reason="legacy archived duplicate fixture",
+        updated_by="director-1",
+    )
+
+    response = client.get("/agents", headers=headers)
+
+    assert response.status_code == 200
+    assert all(
+        item["id"] not in {first_legacy["id"], second_legacy["id"]}
+        for item in response.json()["items"]
+    )
+    assert response.json()["market_installations"] == []
+    assert response.json()["market_installation_issues"] == [
+        {
+            "code": "ambiguous-market-installations",
+            "template_id": "template-medical-fund",
+            "agent_ids": sorted([first_legacy["id"], second_legacy["id"]]),
+        }
+    ]

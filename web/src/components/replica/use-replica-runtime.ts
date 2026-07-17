@@ -531,18 +531,20 @@ export function useReplicaMarketInstallations(
     void fetchAgents()
       .then((response) => {
         if (!mounted) return;
+        const hasInstallationIssues = (response.market_installation_issues?.length ?? 0) > 0;
         const installedAgentIds = new Map<string, string>();
-        for (const installation of response.market_installations ?? []) {
-          if (installation.template_id && installation.agent_id) {
-            installedAgentIds.set(installation.template_id, installation.agent_id);
+        if (!hasInstallationIssues) {
+          for (const installation of response.market_installations ?? []) {
+            if (installation.template_id && installation.agent_id) {
+              installedAgentIds.set(installation.template_id, installation.agent_id);
+            }
           }
         }
         setState((currentState) => currentState.key === runtimeKey
           ? {
               key: runtimeKey,
               installedAgentIds,
-              status: response.store.ready &&
-                (response.market_installation_issues?.length ?? 0) === 0
+              status: response.store.ready && !hasInstallationIssues
                 ? "ready"
                 : "degraded"
             }

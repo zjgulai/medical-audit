@@ -329,9 +329,46 @@ describe("PersonalMaterialActions", () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("lets a member index their own eligible upload while hiding governance", () => {
+  it("lets a member index their own eligible upload while hiding governance", async () => {
     auditUserState.role = "member";
+    const onChanged = vi.fn().mockResolvedValue(undefined);
+    indexPersonalDocumentMock.mockResolvedValue(uploadResponse);
     render(
+      <PersonalMaterialActions
+        permissions={deniedPermissions}
+        uploads={[{ ...readyUpload, created_by: "next-member" }]}
+        onChanged={onChanged}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "执行个人索引" }));
+
+    await waitFor(() => expect(indexPersonalDocumentMock).toHaveBeenCalledTimes(1));
+    expect(indexPersonalDocumentMock).toHaveBeenCalledWith("document-upload-001");
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "批准进入索引" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "阻断" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回复核" })).not.toBeInTheDocument();
+  });
+
+  it("clears identity-scoped pending and selected state when the role changes", async () => {
+    let resolveUpload: ((value: DocumentUploadResponse) => void) | undefined;
+    uploadPersonalDocumentMock.mockReturnValue(new Promise((resolve) => {
+      resolveUpload = resolve;
+    }));
+    const { rerender } = render(
+      <PersonalMaterialActions
+        permissions={governorPermissions}
+        uploads={[readyUpload]}
+        onChanged={vi.fn()}
+      />
+    );
+    chooseFile(new File(["audit"], "audit.pdf", { type: "application/pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交上传" }));
+    expect(screen.getByRole("button", { name: "提交上传" })).toBeDisabled();
+
+    auditUserState.role = "member";
+    rerender(
       <PersonalMaterialActions
         permissions={deniedPermissions}
         uploads={[{ ...readyUpload, created_by: "next-member" }]}
@@ -339,10 +376,9 @@ describe("PersonalMaterialActions", () => {
       />
     );
 
+    await waitFor(() => expect(screen.queryByText("audit.pdf")).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: "执行个人索引" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "批准进入索引" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "阻断" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "退回复核" })).not.toBeInTheDocument();
+    await act(async () => resolveUpload?.(uploadResponse));
   });
 
   it("reports a completed write separately when the one refresh fails", async () => {
@@ -378,7 +414,7 @@ describe("PersonalMaterialReadPanel action integration", () => {
 
   it("fetches uploads exactly once after a write and rejects an invalid refresh", async () => {
     fetchDocumentPermissionsMock.mockResolvedValue(
-      permissionsResponse("admin", uploadPermissions)
+      permissionsResponse("it-admin", uploadPermissions)
     );
     fetchDocumentUploadsMock
       .mockResolvedValueOnce(uploadsResponse(uploadPermissions, []))
@@ -402,8 +438,8 @@ describe("PersonalMaterialReadPanel action integration", () => {
 
   it("removes stale role controls immediately and reloads for the new role", async () => {
     fetchDocumentPermissionsMock
-      .mockResolvedValueOnce(permissionsResponse("admin", governorPermissions))
-      .mockResolvedValueOnce(permissionsResponse("member", deniedPermissions));
+      .mockResolvedValueOnce(permissionsResponse("it-admin", governorPermissions))
+      .mockResolvedValueOnce(permissionsResponse("auditor", deniedPermissions));
     fetchDocumentUploadsMock
       .mockResolvedValueOnce(uploadsResponse(governorPermissions))
       .mockResolvedValueOnce(uploadsResponse(deniedPermissions, [
@@ -417,7 +453,7 @@ describe("PersonalMaterialReadPanel action integration", () => {
 
     expect(screen.queryByRole("button", { name: "批准进入索引" })).not.toBeInTheDocument();
     expect(screen.getByText("个人材料加载中")).toBeInTheDocument();
-    expect(await screen.findByText("当前角色：member")).toBeInTheDocument();
+    expect(await screen.findByText("当前角色：auditor")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "执行个人索引" })).toBeEnabled();
     expect(fetchDocumentPermissionsMock).toHaveBeenCalledTimes(2);
     expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(2);
@@ -438,8 +474,8 @@ describe("PersonalMaterialReadPanel action integration", () => {
       name: "stale-admin.pdf"
     };
     fetchDocumentPermissionsMock
-      .mockResolvedValueOnce(permissionsResponse("admin", governorPermissions))
-      .mockResolvedValueOnce(permissionsResponse("member", deniedPermissions));
+      .mockResolvedValueOnce(permissionsResponse("it-admin", governorPermissions))
+      .mockResolvedValueOnce(permissionsResponse("auditor", deniedPermissions));
     fetchDocumentUploadsMock
       .mockResolvedValueOnce(uploadsResponse(governorPermissions))
       .mockReturnValueOnce(oldRoleRefresh.promise)
@@ -455,7 +491,7 @@ describe("PersonalMaterialReadPanel action integration", () => {
 
     auditUserState.role = "member";
     view.rerender(<PersonalMaterialReadPanel />);
-    expect(await screen.findByText("当前角色：member")).toBeInTheDocument();
+    expect(await screen.findByText("当前角色：auditor")).toBeInTheDocument();
     expect(screen.getByText("member-current.pdf")).toBeInTheDocument();
     expect(fetchDocumentPermissionsMock).toHaveBeenCalledTimes(2);
     expect(fetchDocumentUploadsMock).toHaveBeenCalledTimes(3);
@@ -464,7 +500,7 @@ describe("PersonalMaterialReadPanel action integration", () => {
       uploadsResponse(governorPermissions, [staleAdminUpload])
     ));
 
-    await waitFor(() => expect(screen.getByText("当前角色：member")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("当前角色：auditor")).toBeInTheDocument());
     expect(screen.getByText("member-current.pdf")).toBeInTheDocument();
     expect(screen.queryByText("stale-admin.pdf")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准进入索引" })).not.toBeInTheDocument();

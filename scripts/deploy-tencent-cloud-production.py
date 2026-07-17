@@ -1047,6 +1047,8 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         raise DeployError("production execute forbids --skip-smoke")
     if execute and bool(args.skip_web_build):
         raise DeployError("production execute forbids --skip-web-build")
+    if execute and bool(args.skip_app_rebuild):
+        raise DeployError("production execute forbids --skip-app-rebuild")
     allow_first_legacy_migration = bool(args.allow_first_legacy_migration)
     if allow_first_legacy_migration and not execute:
         raise DeployError("--allow-first-legacy-migration requires --execute")

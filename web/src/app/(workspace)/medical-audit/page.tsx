@@ -756,7 +756,7 @@ export default function MedicalAuditPage() {
           </div>
           <details className="replica-medical-notice">
             <summary>查看数据与权限说明</summary>
-            <p>当前页面只读取生产数据；写入类动作仍需经过独立确认门禁。</p>
+            <p>页面初始加载读取生产数据；复核、报告、任务和补充材料写入仍需经过独立确认门禁。</p>
             <p>
               疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
               <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}

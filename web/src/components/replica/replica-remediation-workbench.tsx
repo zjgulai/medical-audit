@@ -18,6 +18,7 @@ type RemediationState =
   | { readonly status: "loading"; readonly data: null }
   | { readonly status: "ready"; readonly data: RemediationWorkbenchResponse }
   | { readonly status: "empty"; readonly data: RemediationWorkbenchResponse }
+  | { readonly status: "degraded"; readonly data: null }
   | { readonly status: "error"; readonly data: null };
 
 function RemediationMetrics({ metrics }: { readonly metrics: RemediationWorkbenchResponse["metrics"] }) {
@@ -45,6 +46,10 @@ export function ReplicaRemediationWorkbench() {
     fetchRemediationWorkbench()
       .then((data) => {
         if (!active) return;
+        if (!data.store.ready) {
+          setState({ status: "degraded", data: null });
+          return;
+        }
         const empty = data.remediation_cases.length === 0
           && data.evidence_requests.length === 0
           && data.closure_gates.length === 0
@@ -73,13 +78,24 @@ export function ReplicaRemediationWorkbench() {
 
       {state.status === "loading" ? (
         <ReplicaEmptyState title="整改数据加载中" description="正在读取整改工作台的只读运行证据。" />
+      ) : state.status === "degraded" ? (
+        <ReplicaEmptyState title="整改数据受限" description="整改存储状态未就绪，已停止展示可能不完整的整改记录。" />
       ) : state.status === "error" ? (
         <ReplicaEmptyState title="整改工作台暂不可用" description="整改数据读取失败，页面不会注入本地样例或旧数据。" />
       ) : data ? (
         <>
           <RemediationMetrics metrics={data.metrics} />
           <ReplicaNotice>
-            {data.workbench_title} · 数据后端：<strong>{data.store.backend}</strong> · store.ready={String(data.store.ready)} · evidence_grade=<strong>{data.evidence_grade}</strong> · production_side_effect=<strong>{data.production_side_effect}</strong>
+            {data.workbench_title} · 当前为只读整改数据，页面不会直接更新或关闭整改事项。
+            <details className="replica-runtime-diagnostics">
+              <summary>查看运行诊断</summary>
+              <ul>
+                <li>数据后端：<code>{data.store.backend}</code></li>
+                <li>存储状态：<code>store.ready={String(data.store.ready)}</code></li>
+                <li>证据等级：<code>{data.evidence_grade}</code></li>
+                <li>生产副作用：<code>{data.production_side_effect}</code></li>
+              </ul>
+            </details>
           </ReplicaNotice>
 
           {state.status === "empty" ? (

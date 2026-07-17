@@ -18,6 +18,7 @@ type ArchiveState =
   | { readonly status: "loading"; readonly data: null }
   | { readonly status: "ready"; readonly data: ArchiveWorkbenchResponse }
   | { readonly status: "empty"; readonly data: ArchiveWorkbenchResponse }
+  | { readonly status: "degraded"; readonly data: null }
   | { readonly status: "error"; readonly data: null };
 
 const archiveStatusLabels: Readonly<Record<string, string>> = {
@@ -87,6 +88,10 @@ export function ReplicaArchiveWorkbench() {
     fetchArchiveWorkbench()
       .then((data) => {
         if (!active) return;
+        if (!data.store.ready) {
+          setState({ status: "degraded", data: null });
+          return;
+        }
         const empty = data.archive_packages.length === 0
           && data.audit_runs.length === 0
           && data.signature_items.length === 0
@@ -116,6 +121,8 @@ export function ReplicaArchiveWorkbench() {
 
       {state.status === "loading" ? (
         <ReplicaEmptyState title="归档数据加载中" description="正在读取归档工作台的只读运行证据。" />
+      ) : state.status === "degraded" ? (
+        <ReplicaEmptyState title="归档数据受限" description="归档存储状态未就绪，已停止展示可能不完整的归档记录。" />
       ) : state.status === "error" ? (
         <ReplicaEmptyState title="归档工作台暂不可用" description="归档数据读取失败，页面不会注入本地样例或旧数据。" />
       ) : data ? (

@@ -137,14 +137,11 @@ def _analyze_inventory(payload: Mapping[str, object]) -> dict[str, object]:
         actions = []
         for candidate in sorted(candidates, key=lambda item: str(item["agent_key"])):
             is_survivor = str(candidate["agent_id"]) == survivor_id
-            if is_survivor:
-                action = (
-                    "keep-market-identity"
-                    if candidate["status"] == "active"
-                    else "reactivate-survivor-before-detach"
-                )
-            else:
-                action = "detach-market-identity-and-archive"
+            action = (
+                "keep-market-identity"
+                if is_survivor
+                else "detach-market-identity-and-archive"
+            )
             actions.append(
                 {
                     "agent_id": candidate["agent_id"],

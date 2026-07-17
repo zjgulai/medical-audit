@@ -466,7 +466,7 @@ test("mobile history control stays inside the brand header across shell variants
   }
 });
 
-test("history control keeps its desktop floating layout above the mobile breakpoint", async ({ page }) => {
+test("history control stays inside the desktop navigation rail above the mobile breakpoint", async ({ page }) => {
   await page.setViewportSize({ width: 901, height: 900 });
   await page.goto("/remediation");
 
@@ -479,8 +479,9 @@ test("history control keeps its desktop floating layout above the mobile breakpo
   expect(position).toBe("fixed");
   await expect(historyLabel).toBeVisible();
   expect(historyBox!.width).toBeGreaterThan(42);
-  expect(901 - historyBox!.x - historyBox!.width).toBeCloseTo(26, 0);
-  expect(900 - historyBox!.y - historyBox!.height).toBeCloseTo(26, 0);
+  expect(historyBox!.x).toBeCloseTo(12, 0);
+  expect(historyBox!.x + historyBox!.width).toBeLessThanOrEqual(244);
+  expect(900 - historyBox!.y - historyBox!.height).toBeCloseTo(86, 0);
 });
 
 test("compatibility route CTAs keep the medical audit workflow reachable", async ({ page }) => {

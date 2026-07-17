@@ -50,7 +50,7 @@ source: chrome+repository+production-readonly
 
 ## 冻结后的执行顺序
 
-1. 先修正 acceptance：17 个独立页面要求最终路径精确，3 个 alias 要求最终路径等于冻结目标，并为全部目标保留 desktop/mobile 截图证据。
+1. 先修正 acceptance：17 个独立页面要求最终路径精确，3 个 alias 要求最终路径等于冻结目标，并为全部目标保留 desktop/tablet/mobile 截图证据。
 2. 第一实现批次只处理 `/rules`、`/remediation`、`/archive` 的只读 runtime 语义移植。
 3. 第二实现批次处理 `/fund-compliance`、`/fund-compliance/review`、`/guided-check`，保持所有业务动作关闭。
 4. 第三实现批次只给 `/documents` 增加 GET-only 个人材料面板；写控件保持授权锁定，真实写验收不与 UI 发布合并。

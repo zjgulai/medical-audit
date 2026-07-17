@@ -75,7 +75,13 @@ const allCategory = "all" as const;
 const releaseKnowledgeScope = {
   id: "core-5",
   label: "核心 5 个知识集合",
-  minimumPopulatedCollections: 5
+  requiredSourceCollections: [
+    "medical-insurance-laws",
+    "supervision-rules-knowledge",
+    "medical-insurance-catalog",
+    "risk-negative-list",
+    "personal-materials"
+  ] satisfies readonly SourceCollection[]
 } as const;
 const knowledgeBaseSourceCollectionMap: Record<string, readonly SourceCollection[]> = {
   "kb-personal": ["personal-materials"],
@@ -197,6 +203,15 @@ function populatedKnowledgeBaseCount(items: readonly ReplicaKnowledgeBaseItem[])
   )).length;
 }
 
+function hasPopulatedRequiredKnowledgeBases(items: readonly ReplicaKnowledgeBaseItem[]): boolean {
+  return releaseKnowledgeScope.requiredSourceCollections.every((requiredSource) => (
+    items.some((item) => (
+      sourceCollectionsFromKnowledgeBaseId(item.id).includes(requiredSource)
+      && ((documentCountForItem(item) ?? 0) > 0 || (chunkCountForItem(item) ?? 0) > 0)
+    ))
+  ));
+}
+
 export default function KnowledgeBasePage() {
   const [query, setQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<ProductKnowledgeCategoryId>(allCategory);
@@ -227,7 +242,7 @@ export default function KnowledgeBasePage() {
     : null;
   const releaseCoverageStatus = populatedCount === null || registeredKnowledgeBaseCount === null
     ? "unknown"
-    : populatedCount >= releaseKnowledgeScope.minimumPopulatedCollections
+    : hasPopulatedRequiredKnowledgeBases(knowledgeBases)
       ? "core-ready"
       : "core-incomplete";
   const selectedKnowledgeBase =

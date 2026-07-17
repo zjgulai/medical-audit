@@ -10,6 +10,7 @@ import type {
   DocumentUploadListResponse,
   DocumentUploadPermissions
 } from "@/lib/api-types";
+import type { AuditClientRole } from "@/lib/audit-user";
 
 import { PersonalMaterialActions } from "./personal-material-actions";
 
@@ -18,7 +19,7 @@ type PersonalMaterialReadState =
   | {
       readonly status: "ready" | "empty";
       readonly generation: number;
-      readonly loadedRole: string;
+      readonly loadedRole: AuditClientRole;
       readonly permissions: DocumentPermissionsResponse;
       readonly uploads: DocumentUploadListResponse;
     }
@@ -58,7 +59,7 @@ export function PersonalMaterialReadPanel() {
         )) {
           return;
         }
-        const invalidReason = documentUploadsInvalidReason(permissions, uploads);
+        const invalidReason = documentUploadsInvalidReason(permissions, uploads, loadedRole);
         if (invalidReason) {
           setState({ status: "degraded", reason: invalidReason });
           return;
@@ -153,7 +154,11 @@ export function PersonalMaterialReadPanel() {
                 state.loadedRole,
                 state.generation
               );
-              const invalidReason = documentUploadsInvalidReason(state.permissions, uploads);
+              const invalidReason = documentUploadsInvalidReason(
+                state.permissions,
+                uploads,
+                state.loadedRole
+              );
               if (invalidReason) {
                 throw new Error(invalidReason);
               }
@@ -176,7 +181,7 @@ function isCurrentIdentityLoad(
   mountedRef: React.RefObject<boolean>,
   currentRoleRef: React.RefObject<string>,
   generationRef: React.RefObject<number>,
-  loadedRole: string,
+  loadedRole: AuditClientRole,
   generation: number
 ): boolean {
   return mountedRef.current
@@ -188,7 +193,7 @@ function assertCurrentIdentityLoad(
   mountedRef: React.RefObject<boolean>,
   currentRoleRef: React.RefObject<string>,
   generationRef: React.RefObject<number>,
-  loadedRole: string,
+  loadedRole: AuditClientRole,
   generation: number
 ): void {
   if (!isCurrentIdentityLoad(
@@ -204,8 +209,12 @@ function assertCurrentIdentityLoad(
 
 function documentUploadsInvalidReason(
   permissions: DocumentPermissionsResponse,
-  uploads: DocumentUploadListResponse
+  uploads: DocumentUploadListResponse,
+  loadedRole: AuditClientRole
 ): string | null {
+  if (permissions.role !== documentPermissionRoleByAuditRole[loadedRole]) {
+    return "个人材料权限身份不一致，已停止展示上传明细。";
+  }
   if (!uploads.store.ready) {
     return "个人材料存储当前未就绪，已停止展示上传明细。";
   }
@@ -217,6 +226,13 @@ function documentUploadsInvalidReason(
   }
   return null;
 }
+
+const documentPermissionRoleByAuditRole: Readonly<Record<AuditClientRole, string>> = {
+  admin: "it-admin",
+  technician: "technician",
+  director: "department-head",
+  member: "auditor"
+};
 
 function PersonalMaterialHistoryItem({ item }: { readonly item: DocumentUploadItem }) {
   return (

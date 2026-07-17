@@ -37,7 +37,7 @@ const uploadPermissions: DocumentUploadPermissions = {
 };
 
 const permissionsResponse: DocumentPermissionsResponse = {
-  role: "admin",
+  role: "it-admin",
   source_collections: [],
   upload_permissions: uploadPermissions
 };
@@ -115,7 +115,7 @@ describe("PersonalMaterialReadPanel", () => {
 
     expect(await screen.findByText("document-upload-001.pdf")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "个人材料" })).toBeInTheDocument();
-    expect(screen.getByText("当前角色：admin")).toBeInTheDocument();
+    expect(screen.getByText("当前角色：it-admin")).toBeInTheDocument();
     expect(screen.getByText("上传个人材料：允许")).toBeInTheDocument();
     expect(screen.getByText("查看全部个人材料：不允许")).toBeInTheDocument();
     expect(screen.getByText("治理个人材料：允许")).toBeInTheDocument();
@@ -165,7 +165,7 @@ describe("PersonalMaterialReadPanel", () => {
       render(<PersonalMaterialReadPanel />);
 
       expect(await screen.findByText("个人材料读取失败")).toBeInTheDocument();
-      expect(screen.queryByText("当前角色：admin")).not.toBeInTheDocument();
+      expect(screen.queryByText("当前角色：it-admin")).not.toBeInTheDocument();
       expect(screen.queryByText("document-upload-001.pdf")).not.toBeInTheDocument();
       assertGetOnlyContract();
     }
@@ -196,6 +196,18 @@ describe("PersonalMaterialReadPanel", () => {
 
     expect(await screen.findByText("个人材料状态受限")).toBeInTheDocument();
     expect(screen.queryByText("document-upload-001.pdf")).not.toBeInTheDocument();
+    assertGetOnlyContract();
+  });
+
+  it("fails closed when the permission response belongs to another role", async () => {
+    fetchDocumentPermissionsMock.mockResolvedValue({ ...permissionsResponse, role: "auditor" });
+    fetchDocumentUploadsMock.mockResolvedValue(uploadListResponse);
+
+    render(<PersonalMaterialReadPanel />);
+
+    expect(await screen.findByText("个人材料状态受限")).toBeInTheDocument();
+    expect(screen.getByText("个人材料权限身份不一致，已停止展示上传明细。")).toBeInTheDocument();
+    assertUploadPayloadHidden();
     assertGetOnlyContract();
   });
 

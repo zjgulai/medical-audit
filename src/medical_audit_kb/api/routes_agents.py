@@ -166,7 +166,9 @@ def list_agents(
     x_project_name: Annotated[str | None, Header(alias="X-Project-Name")] = None,
 ) -> dict[str, object]:
     try:
-        custom_agents = _agent_store(state).list_agents()
+        agent_store = _agent_store(state)
+        custom_agents = agent_store.list_agents()
+        all_status_custom_agents = agent_store.list_agents(include_inactive=True)
     except SQLAlchemyError:
         fallback_items = _filter_agents_for_project(
             combined_agent_payloads([]),
@@ -182,6 +184,8 @@ def list_agents(
 
     items = combined_agent_payloads(custom_agents)
     items = _filter_agents_for_project(items, x_project_name)
+    inventory_items = combined_agent_payloads(all_status_custom_agents)
+    inventory_items = _filter_agents_for_project(inventory_items, x_project_name)
     user = (
         resolve_authenticated_user(state, x_user_id=x_user_id, x_role=x_role)
         if x_user_id or x_role
@@ -189,8 +193,9 @@ def list_agents(
     )
     if user is not None:
         items = _filter_agents_for_role(items, user.role.value)
+        inventory_items = _filter_agents_for_role(inventory_items, user.role.value)
     market_installations, market_installation_issues = _market_installation_inventory(
-        items,
+        inventory_items,
         user_identifier=user.user_identifier if user is not None else None,
     )
     record_operation(
@@ -869,7 +874,7 @@ def _market_installation_inventory(
         return [], []
     installations: list[dict[str, str]] = []
     issues: list[dict[str, object]] = []
-    agents_by_template: dict[str, list[str]] = {}
+    agents_by_template: dict[str, list[tuple[str, str]]] = {}
     for item in items:
         if str(item.get("created_by") or "") != user_identifier:
             continue
@@ -885,16 +890,20 @@ def _market_installation_inventory(
             or not agent_id
         ):
             continue
-        agents_by_template.setdefault(template_id, []).append(agent_id)
-    for template_id, agent_ids in agents_by_template.items():
-        if len(agent_ids) == 1:
-            installations.append({"template_id": template_id, "agent_id": agent_ids[0]})
+        agents_by_template.setdefault(template_id, []).append(
+            (agent_id, str(item.get("status") or "active"))
+        )
+    for template_id, agent_records in agents_by_template.items():
+        if len(agent_records) == 1:
+            agent_id, status = agent_records[0]
+            if status == "active":
+                installations.append({"template_id": template_id, "agent_id": agent_id})
             continue
         issues.append(
             {
                 "code": "ambiguous-market-installations",
                 "template_id": template_id,
-                "agent_ids": sorted(agent_ids),
+                "agent_ids": sorted(agent_id for agent_id, _status in agent_records),
             }
         )
     return installations, issues
