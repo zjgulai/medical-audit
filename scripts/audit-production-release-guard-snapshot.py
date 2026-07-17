@@ -1470,7 +1470,7 @@ FROM (
   WHERE n.nspname = 'public' AND c.relname IN ({quoted_tables})
   UNION ALL
   SELECT 'policy:' || n.nspname || '.' || c.relname || '.' || p.polname || ':' ||
-         p.polcmd || ':' || p.polpermissive::text || ':' ||
+         p.polcmd::text || ':' || p.polpermissive::text || ':' ||
          COALESCE((SELECT string_agg(
            CASE WHEN role_oid = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(role_oid) END,
            ',' ORDER BY role_oid

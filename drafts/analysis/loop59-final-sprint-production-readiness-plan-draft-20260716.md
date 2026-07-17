@@ -13,11 +13,11 @@ source: repository+production-readonly+playwright
 
 ## 1. 执行结论
 
-当前部署决策仍为 **NO-GO**。生产现网仍可用，Batch A/B/C 与 desktop-first/mobile-second remediation 已完成；PR #239 已于 `2026-07-17` 合并，`origin/main=79d6e422917d964f29a99b7f8d9ef96ebe59df93`。Phase 7 clean-main 本地门禁随后发现 default preflight 仍请求受控 `/knowledge-base/catalog`，鉴权失败路径可能先写 `authorization-denied`，不满足结构性生产只读合同。当前已形成 local-only 最小修正：preflight 仅保留目录、容器、Nginx 与公共 `/health` 检查，知识库、数据库与发布拓扑改由独立 S0/部署状态审计证明；该修正尚未 commit、push、PR、merge，因此不能进入生产 SSH。
+当前部署决策仍为 **NO-GO**。生产现网仍可用，PR #239 与 preflight 结构性只读修正 PR #240 均已合并，当前 clean `origin/main=9f317c3c9fa8f909fa37ba2b9ff5a13710235cb5`。在独立生产只读授权下首次运行 S0 时，collector 已 fail-closed：生产 PostgreSQL 对 `p.polcmd` 的内部 `"char"` 类型与 text 拼接解析为歧义，snapshot 未完成，preflight 未运行。这是 release-guard schema fingerprint SQL 的兼容性缺陷，不是 production topology 失败证据。当前转入 local-only `p.polcmd::text` 最小修复与真实 PostgreSQL 16 回归；修复重新 merge 并取得 fresh S0 retry 授权前，不再连接生产。
 
 | 问题 | 当前结论 | 证据层级 | 把握 |
 |---|---|---|---|
-| 是否可以继续部署 | 尚不能；PR #239 已合并，但 preflight 结构性只读修正仍处于 local-only 候选，fresh S0、修正后 preflight 与部署授权均未完成 | L2 local candidate + historical fresh L3 read-only | 高 |
+| 是否可以继续部署 | 尚不能；PR #239/#240 已合并，但首次 S0 因 collector SQL 类型歧义 fail-closed，fresh S0、preflight 与部署授权均未完成 | L2 remediation + failed L3 collector attempt + historical L3 | 高 |
 | 当前生产是否可用 | 是；当前运行 `main@1376baef0d8d47f1e1ef60b2cec130451af5af4f`，核心容器、Nginx、front door、PostgreSQL 和检索后端健康 | fresh L3 read-only | 高 |
 | 所有知识库是否正常 | 否；核心医疗检索可用，但 25 个注册集合中只有 5 个有生产数据，真实问答/引用质量未做本轮 L4/provider 验收 | fresh L3 read-only + repository contract | 高 |
 | 100+ 智能体是否正常 | 否；304 是历史持久化行，只有 13 active、7 个 distinct template、7 个曾被调用的 agent key，并存在 3 个重复 identity group | fresh L3 read-only SQL | 高 |
@@ -27,7 +27,8 @@ source: repository+production-readonly+playwright
 
 ## 2. 证据边界
 
-- Candidate：PR #239 exact head 最终为 `af4c2b9925e6a5c4254ef1bbae167dc0ed811700`，已通过 CodeRabbit `SUCCESS`、`21/21` review thread resolved 与 clean synthetic merge tree 门禁；merge commit 为 `79d6e422917d964f29a99b7f8d9ef96ebe59df93`。当前 preflight 只读修正基于该 clean main，仍为未提交 local-only 补丁；未 deploy。
+- Candidate：PR #239 merge commit=`79d6e422...`；preflight 结构性只读修正 PR #240 exact head=`a7f0aba5...`、CodeRabbit=`SUCCESS`、`1/1` thread resolved，merge commit=`9f317c3c...`。当前 release-guard policy-char cast 修复基于 clean `main@9f317c3c...`，仍为 local-only candidate；未 deploy。
+- Phase 7 S0 attempt：已使用明确生产只读授权打开一次 SSH 并执行强制 read-only collector；PostgreSQL 在 schema fingerprint 查询解析阶段返回 `operator is not unique: text || "char"`，未生成 S0 snapshot，preflight 未运行。该失败不能证明 topology、schema/business fingerprint 或 deploy readiness。
 - Production：marker `1376baef0d8d47f1e1ef60b2cec130451af5af4f`，仍为 legacy static topology，不是候选的 versioned-release topology。
 - Fresh L3 deployment-state audit：审计日志 `56,347 → 56,347`，fingerprint 不变，unique auditor events `0 → 0`，GET-only，`database_write=false`。
 - Fresh production SQL：`SERIALIZABLE READ ONLY DEFERRABLE`，`transaction_read_only=on`；未执行 SQL 写入。
@@ -173,10 +174,14 @@ Batch B closure：完成，证据等级为 `L2-fixture-or-dry-run`。Batch C1 �
 - [x] C3-REMEDIATION-PROMOTE. remediation 与证据账本已 normal fast-forward push 到 PR #239 evidence head `1b3e44a...`；PR 保持 OPEN/Ready/MERGEABLE/CLEAN，该 head CodeRabbit=`SUCCESS`。最新 ledger/evidence/privacy 评论已在 docs-only closure 中处理，且 `web/` runtime tree 未改变。
 - [x] C3-MERGE. 已在独立授权后核对 exact head `af4c2b9...`、base `1376bae...`、CodeRabbit `SUCCESS`、`21/21` review thread resolved、clean worktree 与 synthetic merge tree；PR #239 merge commit=`79d6e422...`，`origin/main` 已一致。该步骤未执行 SSH、preflight 或 deploy。
 - [x] C4-PREFLIGHT-READONLY-LOCAL. Phase 7 本地审查发现 default preflight 的受控 catalog GET 不能证明 all-path zero-write；已移除该请求并增加无鉴权 header/无 catalog 的合同断言，知识库与数据库证据继续由 S0/部署状态审计提供。release guard `41/41`、deploy-script related `102/102`、Ruff、targeted Mypy、`git diff --check` 全绿。
-- [ ] C4-PREFLIGHT-READONLY-PROMOTE. 冻结修正 commit，push 并创建独立 PR；完成 review/merge 后重新冻结 clean-main approved SHA。此项不授权生产 SSH 或 deploy。
+- [x] C4-PREFLIGHT-READONLY-PROMOTE. 修正冻结为 `8e470d4...`，review remediation 为 `a7f0aba5...`；PR #240 CodeRabbit=`SUCCESS`、`1/1` thread resolved，merge commit=`9f317c3c...`，`origin/main`、parents 与 reviewed merge tree 已核对。未执行 deploy。
+- [x] C5-S0-ATTEMPT-FAIL-CLOSED. 独立授权的 S0 SSH 已执行，但 PostgreSQL schema fingerprint SQL 因 `p.polcmd` 为内部 `"char"` 类型且未显式 cast 而失败；未生成 snapshot，未运行 preflight，未执行 database write/provider call。
+- [x] C5-POLICY-CHAR-CAST-LOCAL. policy fingerprint 已改为 `p.polcmd::text` 并补 exact SQL assertion；真实 PostgreSQL 16 已复现旧表达式 `operator is not unique: text || "char"`，新表达式通过。release-guard `41/41`（含 Python 3.10 execution contract）、Ruff、targeted Mypy 与 diff-check 全绿。
+- [ ] C5-POLICY-CHAR-CAST-PROMOTE. 独立 commit/push/PR/review/merge；不得由本地修复自动重试生产 S0。
 
 ### Batch D — production preflight / S0（L3，独立只读授权）
 
+- [x] D0. 首次授权尝试已 fail-closed 于 collector SQL parse；`s0_capture_completed=false`、`preflight_execution=false`，不得把 SSH exit 或历史 audit 替代 fresh S0。
 - [ ] D1. 在 current legacy production 运行修复后的 S0 collector；要求 SSH exit `0`、Python 3.10 compatible、`transaction_read_only=on`。
 - [ ] D2. topology 必须分类为 `legacy_ready`，并证明无 `.deploy-sha.next`、partial release、symlink/file 异常或未知 residue。
 - [ ] D3. 从修正后的 clean main 运行 default deploy preflight，禁止 `--execute`、`--allow-first-legacy-migration` 及所有 skip/write/provider flags；仅验证远端目录、容器、Nginx 与公共 `/health`。知识库、数据库、拓扑、备份和 rollback target 由 D1/D2 与后续 execute gate 独立证明。`--allow-first-legacy-migration` 仅在 fresh S0 精确为 `legacy_ready` 后，供再次明确授权的首次 `--execute` 使用。
@@ -238,6 +243,9 @@ deploy script exit `0` 只允许标记 `deployed_pending_l3`，不能标记生�
 ## 8. 当前边界标签
 
 - `production unchanged`
+- `production_readonly_attempt=true`
+- `s0_capture_completed=false`
+- `preflight_execution=false`
 - `deploy_execution=false`
 - fresh qualified L3 collector：`database_write=false`
 - one unauthenticated catalog denial attempt：`database_write=unknown`
