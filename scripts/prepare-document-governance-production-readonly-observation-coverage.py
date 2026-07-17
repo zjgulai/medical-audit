@@ -86,14 +86,6 @@ EXISTING_SAFE_GET_ENDPOINTS = [
         "covers_fields": [],
     },
     {
-        "name": "backend-search-backend",
-        "method": "GET",
-        "path": "/api/backend/index/search-backend",
-        "used_by_existing_probe": True,
-        "side_effect": "none_expected",
-        "covers_fields": [],
-    },
-    {
         "name": "documents-governance-status",
         "method": "GET",
         "path": GOVERNANCE_STATUS_ENDPOINT,
@@ -112,6 +104,13 @@ EXISTING_SAFE_GET_ENDPOINTS = [
 ]
 
 SIDE_EFFECT_BLOCKED_ENDPOINTS = [
+    {
+        "name": "backend-search-backend",
+        "method": "GET",
+        "path": "/api/backend/index/search-backend",
+        "blocked_reason": "route records search-backend-status-view audit operation",
+        "would_cover_fields": [],
+    },
     {
         "name": "document-upload-list",
         "method": "GET",

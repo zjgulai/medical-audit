@@ -19,6 +19,7 @@ DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 DEFAULT_ADMIN_ROLE = "admin"
 DEFAULT_ADMIN_USER_ID = "permission-smoke-admin"
 PRODUCTION_HOST = "audit.lute-tlz-dddd.top"
+PRODUCTION_BASE_URL = f"https://{PRODUCTION_HOST}"
 DEFAULT_PROTECTED_PATHS = (
     "/auth/session",
     "/projects",
@@ -346,6 +347,29 @@ def _validate_write_authorization(config: SmokeConfig) -> None:
             "audit-log writes require "
             f"--confirm-production-write {PRODUCTION_HOST}"
         )
+    if not _is_exact_production_origin(config.base_url):
+        raise PermissionSmokeConfigError(
+            "audit-log writes require "
+            f"--base-url {PRODUCTION_BASE_URL}"
+        )
+
+
+def _is_exact_production_origin(base_url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == PRODUCTION_HOST
+        and port in {None, 443}
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path in {"", "/"}
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 
 def _is_readonly_protected_path(path: str) -> bool:
@@ -447,7 +471,8 @@ def _parse_args() -> argparse.Namespace:
         metavar="HOST",
         help=(
             "Required with --allow-audit-log-writes for every target so aliases and "
-            f"redirects cannot bypass production confirmation; must equal {PRODUCTION_HOST}."
+            f"redirects cannot bypass production confirmation; must equal {PRODUCTION_HOST}. "
+            f"That mode also requires --base-url {PRODUCTION_BASE_URL}."
         ),
     )
     return parser.parse_args()
