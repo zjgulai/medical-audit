@@ -7775,6 +7775,62 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     assert not poll_results
 
 
+@pytest.mark.parametrize("failure_mode", ["timeout", "returncode"])
+def test_deploy_tencent_cloud_background_completion_retries_transient_poll_failure(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    failure_mode: str,
+) -> None:
+    module = _load_script_module(
+        f"deploy_tencent_cloud_background_transient_{failure_mode}",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    config = types.SimpleNamespace(
+        repo_root=tmp_path,
+        ssh_key=tmp_path / "deploy.pem",
+        ssh_target="ubuntu@example.test",
+    )
+    poll_calls = 0
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal poll_calls
+        if not bool(kwargs.get("capture_output")):
+            return subprocess.CompletedProcess(args=args, returncode=0)
+        poll_calls += 1
+        if poll_calls == 1:
+            if failure_mode == "timeout":
+                raise subprocess.TimeoutExpired(args, timeout=60)
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=255,
+                stdout="",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="MEDICAL_AUDIT_REMOTE_JOB_STATUS=complete\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module._ssh_background_with_completion(
+        config,
+        "printf 'complete\\n' > /tmp/marker",
+        "test -s /tmp/marker",
+        timeout_seconds=5,
+        timeout_description="remote backups",
+        job_name="deploy-backups-test",
+    )
+
+    assert poll_calls == 2
+
+
 @pytest.mark.parametrize("failure_phase", ["command", "completion-check"])
 def test_deploy_tencent_cloud_ssh_signal_termination_is_outcome_unknown(
     monkeypatch: MonkeyPatch,
@@ -7813,12 +7869,12 @@ def test_deploy_tencent_cloud_ssh_signal_termination_is_outcome_unknown(
 
 
 @pytest.mark.parametrize(
-    ("failure_case", "poll_returncode", "poll_stdout"),
+    ("failure_case", "poll_returncode", "poll_stdout", "poll_stderr"),
     [
-        ("starter-rc1", None, ""),
-        ("poll-rc1", 1, ""),
-        ("poll-signal", -9, ""),
-        ("poll-garbage", 0, "not-a-status\n"),
+        ("starter-rc1", None, "", ""),
+        ("poll-rc1", 1, "", "ssh poll failed"),
+        ("poll-signal", -9, "", "ssh process terminated"),
+        ("poll-garbage", 0, "not-a-status\n", ""),
     ],
 )
 def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unknown(
@@ -7827,6 +7883,7 @@ def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unkno
     failure_case: str,
     poll_returncode: int | None,
     poll_stdout: str,
+    poll_stderr: str,
 ) -> None:
     module = _load_script_module(
         f"deploy_tencent_cloud_background_{failure_case}",
@@ -7851,12 +7908,16 @@ def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unkno
             args=args,
             returncode=poll_returncode,
             stdout=poll_stdout,
-            stderr="",
+            stderr=poll_stderr,
         )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(module.RemoteOutcomeUnknownError, match="outcome is unknown"):
+    with pytest.raises(
+        module.RemoteOutcomeUnknownError,
+        match="outcome is unknown",
+    ) as exc_info:
         module._ssh_background_with_completion(
             config,
             "true",
@@ -7865,6 +7926,8 @@ def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unkno
             timeout_description="test remote job",
             job_name="deploy-test-job",
         )
+    if poll_stderr:
+        assert poll_stderr in str(exc_info.value)
 
 
 def test_deploy_tencent_cloud_background_completion_reports_failed_status(
