@@ -7919,6 +7919,7 @@ def test_deploy_tencent_cloud_background_completion_retries_transient_poll_failu
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
     failure_mode: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = _load_script_module(
         f"deploy_tencent_cloud_background_transient_{failure_mode}",
@@ -7939,9 +7940,14 @@ def test_deploy_tencent_cloud_background_completion_retries_transient_poll_failu
         if not bool(kwargs.get("capture_output")):
             return subprocess.CompletedProcess(args=args, returncode=0)
         poll_calls += 1
-        if poll_calls == 1:
+        if poll_calls <= 4:
             if failure_mode == "timeout":
-                raise subprocess.TimeoutExpired(args, timeout=60)
+                raise subprocess.TimeoutExpired(
+                    args,
+                    timeout=60,
+                    output="poll stdout",
+                    stderr="poll stderr",
+                )
             return subprocess.CompletedProcess(
                 args=args,
                 returncode=255,
@@ -7967,7 +7973,11 @@ def test_deploy_tencent_cloud_background_completion_retries_transient_poll_failu
         job_name="deploy-backups-test",
     )
 
-    assert poll_calls == 2
+    assert poll_calls == 5
+    if failure_mode == "timeout":
+        output = capsys.readouterr().out
+        assert "poll stdout" in output
+        assert "poll stderr" in output
 
 
 @pytest.mark.parametrize("failure_phase", ["command", "completion-check"])
@@ -8061,7 +8071,7 @@ def test_deploy_tencent_cloud_background_indeterminate_results_are_outcome_unkno
             config,
             "true",
             "test -f /tmp/complete",
-            timeout_seconds=5,
+            timeout_seconds=0,
             timeout_description="test remote job",
             job_name="deploy-test-job",
         )

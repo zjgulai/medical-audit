@@ -33,7 +33,6 @@ REMOTE_TRANSACTION_ROOT = "/opt/medical-audit/backups/transactions"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 45 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 REMOTE_COMPLETION_POLL_SECONDS = 5
-REMOTE_BACKGROUND_POLL_MAX_CONSECUTIVE_FAILURES = 3
 REMOTE_SSH_COMMAND_TIMEOUT_SECONDS = 30 * 60
 REMOTE_RSYNC_TOTAL_TIMEOUT_SECONDS = 30 * 60
 REMOTE_RSYNC_IO_TIMEOUT_SECONDS = 120
@@ -3145,7 +3144,6 @@ echo "remote job exited before completion marker"
 tail -n 80 "$job_log" || true
 exit 0
 """
-    consecutive_indeterminate_polls = 0
     while True:
         completed: subprocess.CompletedProcess[str] | None = None
         poll_error: subprocess.TimeoutExpired | None = None
@@ -3167,13 +3165,14 @@ exit 0
                 for part in (completed.stdout, completed.stderr)
                 if part.strip()
             )
+        elif poll_error is not None:
+            detail = "\n".join(
+                part.strip()
+                for part in (poll_error.stdout, poll_error.stderr)
+                if isinstance(part, str) and part.strip()
+            )
         if completed is None or completed.returncode != 0:
-            consecutive_indeterminate_polls += 1
-            if (
-                consecutive_indeterminate_polls
-                >= REMOTE_BACKGROUND_POLL_MAX_CONSECUTIVE_FAILURES
-                or time.monotonic() >= deadline
-            ):
+            if time.monotonic() >= deadline:
                 error = RemoteOutcomeUnknownError(
                     f"{timeout_description} background poll outcome is unknown"
                     + (f":\n{detail}" if detail else ""),
@@ -3183,8 +3182,8 @@ exit 0
                 raise error
             print(
                 f"WARNING {timeout_description} background poll was indeterminate; "
-                f"retrying ({consecutive_indeterminate_polls}/"
-                f"{REMOTE_BACKGROUND_POLL_MAX_CONSECUTIVE_FAILURES})",
+                f"retrying until deadline"
+                + (f":\n{detail}" if detail else ""),
                 flush=True,
             )
             time.sleep(REMOTE_COMPLETION_POLL_SECONDS)
@@ -3199,25 +3198,19 @@ exit 0
                 + (f":\n{detail}" if detail else ""),
             )
         if status != "running":
-            consecutive_indeterminate_polls += 1
-            if (
-                consecutive_indeterminate_polls
-                >= REMOTE_BACKGROUND_POLL_MAX_CONSECUTIVE_FAILURES
-                or time.monotonic() >= deadline
-            ):
+            if time.monotonic() >= deadline:
                 raise RemoteOutcomeUnknownError(
                     f"{timeout_description} background poll outcome is unknown"
                     + (f":\n{detail}" if detail else ""),
                 )
             print(
                 f"WARNING {timeout_description} background poll returned no valid "
-                f"status; retrying ({consecutive_indeterminate_polls}/"
-                f"{REMOTE_BACKGROUND_POLL_MAX_CONSECUTIVE_FAILURES})",
+                f"status; retrying until deadline"
+                + (f":\n{detail}" if detail else ""),
                 flush=True,
             )
             time.sleep(REMOTE_COMPLETION_POLL_SECONDS)
             continue
-        consecutive_indeterminate_polls = 0
         if time.monotonic() >= deadline:
             raise RemoteOutcomeUnknownError(
                 f"{timeout_description} timed out after {timeout_seconds} seconds",
