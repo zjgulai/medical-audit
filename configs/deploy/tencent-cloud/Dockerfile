@@ -6,6 +6,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_HTTP_TIMEOUT=120 \
     UV_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
 
 COPY pyproject.toml uv.lock README.md ./
