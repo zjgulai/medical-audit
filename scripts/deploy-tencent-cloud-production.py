@@ -1273,6 +1273,10 @@ test -d {shlex.quote(config.remote_web_dir)}
 docker inspect medical_audit_app >/dev/null
 docker inspect medical_audit_pg >/dev/null
 docker inspect ai_video_nginx >/dev/null
+if ! sudo -n -- true; then
+  echo "passwordless sudo is required for the root-owned nginx host config" >&2
+  exit 81
+fi
 if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
   echo "production nginx configuration test failed" >&2
   exit 80
@@ -2156,7 +2160,9 @@ activation_started=0
 overwrite_nginx_in_place() {{
   destination="$1"
   source_file="$2"
-  python3 - "$destination" "$source_file" "$deploy_script" <<'MEDICAL_AUDIT_NGINX_OVERWRITE'
+  sudo -n -- python3 - \\
+    "$destination" "$source_file" "$deploy_script" \\
+    <<'MEDICAL_AUDIT_NGINX_OVERWRITE'
 import runpy
 import sys
 from pathlib import Path
@@ -2403,7 +2409,9 @@ else
   migration_sha="$(cat "$migration_sentinel")"
   [[ "$migration_sha" =~ ^[0-9a-f]{{40}}$ ]]
 fi
-python3 - "$nginx_config" "$nginx_backup" "$deploy_script" <<'MEDICAL_AUDIT_NGINX_RESTORE'
+sudo -n -- python3 - \\
+  "$nginx_config" "$nginx_backup" "$deploy_script" \\
+  <<'MEDICAL_AUDIT_NGINX_RESTORE'
 import runpy
 import sys
 from pathlib import Path
@@ -2823,7 +2831,7 @@ sentinel_removed=0
 overwrite_nginx_in_place() {{
   destination="$1"
   source_file="$2"
-  python3 - "$destination" "$source_file" <<'MEDICAL_AUDIT_NGINX_OVERWRITE'
+  sudo -n -- python3 - "$destination" "$source_file" <<'MEDICAL_AUDIT_NGINX_OVERWRITE'
 import os
 import stat
 import sys
