@@ -5762,6 +5762,7 @@ def test_deploy_tencent_cloud_preflight_uses_app_proxy_topology(
     assert "curl -fsS http://127.0.0.1:18080/health" in script
     assert "docker exec ai_video_nginx nginx -t >/dev/null 2>&1" in script
     assert "production nginx configuration test failed" in script
+    assert "sudo -n -- true" in script
     assert "WARNING shared-nginx-test-failed" not in script
     assert "/knowledge-base/catalog" not in script
     assert "X-User-Id" not in script
@@ -7041,9 +7042,20 @@ server {{
     )
     assert 'rm -f "$container_candidate" >/dev/null 2>&1 || true' not in scripts[0]
     assert "mv -Tf" in scripts[0]
+    assert "sudo -n -- python3 - \\" in scripts[0]
+    assert '"$destination" "$source_file" "$deploy_script"' in scripts[0]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     (fake_bin / "python3").symlink_to(sys.executable)
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = "-n" ] && shift\n'
+        '[ "$1" = "--" ] && shift\n'
+        'exec "$@"\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
     fake_mv = fake_bin / "mv"
     fake_mv.write_text(
         "#!/bin/sh\n"
@@ -7261,9 +7273,20 @@ def test_deploy_tencent_cloud_post_activation_restore_uses_recorded_transaction(
         text=True,
     )
     assert syntax.returncode == 0, syntax.stderr
+    assert "sudo -n -- python3 - \\" in scripts[0]
+    assert '"$nginx_config" "$nginx_backup" "$deploy_script"' in scripts[0]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     (fake_bin / "python3").symlink_to(sys.executable)
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = "-n" ] && shift\n'
+        '[ "$1" = "--" ] && shift\n'
+        'exec "$@"\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
     fake_mv = fake_bin / "mv"
     fake_mv.write_text(
         "#!/bin/sh\n"
@@ -7742,6 +7765,7 @@ def test_deploy_tencent_cloud_rollback_is_executable_and_stamp_scoped(
     assert "--exclude '.deploy-sha'" in script
     assert "up -d --no-deps app" in script
     assert "docker exec ai_video_nginx nginx -t" in script
+    assert 'sudo -n -- python3 - "$destination" "$source_file"' in script
     assert 'next_marker="$remote_app_dir/.deploy-sha.next"' in script
     assert "marker_commit_started=0" in script
     assert 'if [ "$marker_commit_started" -eq 1 ]; then' in script
