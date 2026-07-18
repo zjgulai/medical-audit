@@ -220,7 +220,44 @@ def _nginx_brace_pairs(tokens: Sequence[_NginxToken]) -> dict[int, int]:
     return pairs
 
 
-def _audit_server_location_spans(content: bytes) -> dict[bytes, tuple[int, int]]:
+def _nginx_top_level_entries(
+    tokens: Sequence[_NginxToken],
+    brace_pairs: dict[int, int],
+    opening: int,
+    closing: int,
+) -> list[tuple[bytes, tuple[bytes, ...], int, int | None]]:
+    entries: list[tuple[bytes, tuple[bytes, ...], int, int | None]] = []
+    cursor = opening + 1
+    while cursor < closing:
+        end = cursor + 1
+        while end < closing and tokens[end].value not in {b";", b"{", b"}"}:
+            end += 1
+        if end >= closing or tokens[end].value == b"}":
+            raise DeployError("nginx block structure drift")
+        values = tuple(token.value for token in tokens[cursor + 1 : end])
+        if tokens[end].value == b";":
+            entries.append((tokens[cursor].value, values, cursor, None))
+            cursor = end + 1
+            continue
+        nested_close = brace_pairs.get(end)
+        if nested_close is None or nested_close > closing:
+            raise DeployError("nginx configuration braces are unbalanced")
+        entries.append((tokens[cursor].value, values, cursor, nested_close))
+        cursor = nested_close + 1
+    return entries
+
+
+def _is_https_listen(values: Sequence[bytes]) -> bool:
+    return b"ssl" in values and any(
+        value == b"443" or value.endswith(b":443") for value in values
+    )
+
+
+def _audit_server_location_spans(
+    content: bytes,
+    *,
+    allow_missing_asset_locations: bool = False,
+) -> dict[bytes, tuple[int, int]]:
     tokens = _tokenize_nginx(content)
     brace_pairs = _nginx_brace_pairs(tokens)
     domain = b"audit.lute-tlz-dddd.top"
@@ -232,33 +269,24 @@ def _audit_server_location_spans(content: bytes) -> dict[bytes, tuple[int, int]]
         closing = brace_pairs.get(opening)
         if closing is None:
             raise DeployError("nginx configuration braces are unbalanced")
-        cursor = opening + 1
-        matching_directives = 0
-        while cursor < closing:
-            current = tokens[cursor]
-            if current.value == b"{":
-                nested_close = brace_pairs.get(cursor)
-                if nested_close is None:
-                    raise DeployError("nginx configuration braces are unbalanced")
-                cursor = nested_close + 1
-                continue
-            if current.value != b"server_name":
-                cursor += 1
-                continue
-            end = cursor + 1
-            values: list[bytes] = []
-            while end < closing and tokens[end].value != b";":
-                if tokens[end].value in {b"{", b"}"}:
-                    raise DeployError("nginx server_name structure drift")
-                values.append(tokens[end].value)
-                end += 1
-            if end >= closing:
-                raise DeployError("nginx server_name structure drift")
-            if domain in values:
-                matching_directives += 1
-            cursor = end + 1
+        entries = _nginx_top_level_entries(tokens, brace_pairs, opening, closing)
+        matching_directives = sum(
+            name == b"server_name" and domain in values
+            for name, values, _start, _block_close in entries
+        )
         if matching_directives == 1:
-            server_candidates.append((opening, closing))
+            https_listens = [
+                values
+                for name, values, _start, _block_close in entries
+                if name == b"listen" and _is_https_listen(values)
+            ]
+            certificate_keys = [
+                values
+                for name, values, _start, _block_close in entries
+                if name == b"ssl_certificate_key"
+            ]
+            if https_listens and len(certificate_keys) == 1:
+                server_candidates.append((opening, closing))
         elif matching_directives > 1:
             raise DeployError("nginx audit server cardinality mismatch")
     if len(server_candidates) != 1:
@@ -267,45 +295,65 @@ def _audit_server_location_spans(content: bytes) -> dict[bytes, tuple[int, int]]
     opening, closing = server_candidates[0]
     wanted = {b"/_next/static/", b"/brand/", b"/"}
     found: dict[bytes, list[tuple[int, int]]] = {selector: [] for selector in wanted}
-    cursor = opening + 1
-    while cursor < closing:
-        current = tokens[cursor]
-        if current.value == b"{":
-            nested_close = brace_pairs.get(cursor)
-            if nested_close is None:
-                raise DeployError("nginx configuration braces are unbalanced")
-            cursor = nested_close + 1
+    for name, values, start, block_close in _nginx_top_level_entries(
+        tokens,
+        brace_pairs,
+        opening,
+        closing,
+    ):
+        if name != b"location" or block_close is None:
             continue
-        if current.value != b"location":
-            cursor += 1
-            continue
-        block_open = cursor + 1
-        selectors: list[bytes] = []
-        while block_open < closing and tokens[block_open].value != b"{":
-            if tokens[block_open].value in {b";", b"}"}:
-                raise DeployError("nginx audit location structure drift")
-            selectors.append(tokens[block_open].value)
-            block_open += 1
-        if block_open >= closing:
-            raise DeployError("nginx audit location structure drift")
-        block_close = brace_pairs.get(block_open)
-        if block_close is None:
-            raise DeployError("nginx configuration braces are unbalanced")
-        if len(selectors) == 1 and selectors[0] in wanted:
-            found[selectors[0]].append((current.start, tokens[block_close].end))
-        cursor = block_close + 1
-    if any(len(spans) != 1 for spans in found.values()):
+        if len(values) == 1 and values[0] in wanted:
+            found[values[0]].append((tokens[start].start, tokens[block_close].end))
+    if any(len(spans) > 1 for spans in found.values()):
         raise DeployError("nginx audit location cardinality mismatch")
-    return {selector: spans[0] for selector, spans in found.items()}
+    if len(found[b"/"]) != 1:
+        raise DeployError("nginx audit location cardinality mismatch")
+    if not allow_missing_asset_locations and any(
+        len(found[selector]) != 1 for selector in (b"/_next/static/", b"/brand/")
+    ):
+        raise DeployError("nginx audit location cardinality mismatch")
+    return {
+        selector: spans[0]
+        for selector, spans in found.items()
+        if spans
+    }
 
 
 def _patch_nginx_audit_locations(source: bytes, fragment: bytes) -> bytes:
-    source_spans = _audit_server_location_spans(source)
+    source_spans = _audit_server_location_spans(
+        source,
+        allow_missing_asset_locations=True,
+    )
     fragment_spans = _audit_server_location_spans(fragment)
     replacements: list[tuple[int, int, bytes]] = []
     for selector, (start, end) in source_spans.items():
         fragment_start, fragment_end = fragment_spans[selector]
         replacements.append((start, end, fragment[fragment_start:fragment_end]))
+    root_start, root_end = source_spans[b"/"]
+    missing = [
+        selector
+        for selector in (b"/_next/static/", b"/brand/")
+        if selector not in source_spans
+    ]
+    if missing:
+        line_start = source.rfind(b"\n", 0, root_start) + 1
+        indentation = source[line_start:root_start]
+        if any(byte not in b" \t" for byte in indentation):
+            raise DeployError("nginx audit location indentation drift")
+        root_fragment_start, root_fragment_end = fragment_spans[b"/"]
+        replacement_blocks = [
+            fragment[fragment_spans[selector][0] : fragment_spans[selector][1]]
+            for selector in missing
+        ]
+        replacement_blocks.append(fragment[root_fragment_start:root_fragment_end])
+        root_replacement = (b"\n\n" + indentation).join(replacement_blocks)
+        replacements = [
+            replacement
+            for replacement in replacements
+            if replacement[:2] != (root_start, root_end)
+        ]
+        replacements.append((root_start, root_end, root_replacement))
     result = source
     for start, end, replacement in sorted(replacements, reverse=True):
         result = result[:start] + replacement + result[end:]
