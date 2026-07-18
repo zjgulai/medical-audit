@@ -8296,6 +8296,7 @@ def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
 
     assert "COPY pyproject.toml uv.lock README.md ./" in dockerfile_text
     assert "uv sync --frozen --no-dev --no-editable" in dockerfile_text
+    assert "UV_HTTP_TIMEOUT=120" in dockerfile_text
     assert "uv pip install" not in dockerfile_text
     assert calls == [
         (
