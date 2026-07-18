@@ -6832,12 +6832,19 @@ def test_deploy_tencent_cloud_nginx_patch_is_secret_safe_exact_and_idempotent(
     location / { root /srv/other; }
 }
 """
-    audit_server = f"""server {{
+    http_audit_server = b"""server {
+    listen 80 default_server;
     server_name audit.lute-tlz-dddd.top;
+    location / { return 301 https://audit.lute-tlz-dddd.top$request_uri; }
+}
+"""
+    audit_server = f"""server {{
+    listen 443 ssl;
+    server_name audit.lute-tlz-dddd.top;
+    ssl_certificate /etc/nginx/audit.crt;
+    ssl_certificate_key /etc/nginx/audit.key;
     set $quoted "brace-{{-inside-string";
     # comment with }} brace
-    location /_next/static/ {{ root /var/www/audit; }}
-    location /brand/ {{ root /var/www/audit; }}
     location / {{ root /var/www/audit; }}
     location /api/ {{
         proxy_set_header X-API-Key "{secret}";
@@ -6845,13 +6852,20 @@ def test_deploy_tencent_cloud_nginx_patch_is_secret_safe_exact_and_idempotent(
     }}
 }}
 """.encode()
-    source = b"events {}\nhttp {\n" + other_server + audit_server + b"}\n"
+    source = (
+        b"events {}\nhttp {\n"
+        + other_server
+        + http_audit_server
+        + audit_server
+        + b"}\n"
+    )
     fragment = Path("configs/deploy/tencent-cloud/nginx-audit-server.conf").read_bytes()
 
     patched = patcher(source, fragment)
 
     assert secret.encode() in patched
     assert other_server in patched
+    assert http_audit_server in patched
     assert patched.count(b"root /var/www/audit/current;") == 3
     assert patcher(patched, fragment) == patched
     captured = capsys.readouterr()
@@ -6862,6 +6876,15 @@ def test_deploy_tencent_cloud_nginx_patch_is_secret_safe_exact_and_idempotent(
     with pytest.raises(module.DeployError, match="server cardinality") as exc_info:
         patcher(duplicate, fragment)
     assert secret not in str(exc_info.value)
+
+    duplicate_root = source.replace(
+        b"    location / { root /var/www/audit; }\n    location /api/ {",
+        b"    location / { root /var/www/audit; }\n"
+        b"    location / { root /var/www/audit-duplicate; }\n"
+        b"    location /api/ {",
+    )
+    with pytest.raises(module.DeployError, match="location cardinality"):
+        patcher(duplicate_root, fragment)
 
 
 def test_deploy_tencent_cloud_nginx_host_update_preserves_bind_mount_inode(
@@ -6966,7 +6989,10 @@ def test_deploy_tencent_cloud_activation_failure_restores_current_and_nginx_inod
     original_config = f"""events {{}}
 http {{
 server {{
+  listen 443 ssl;
   server_name audit.lute-tlz-dddd.top;
+  ssl_certificate /etc/nginx/audit.crt;
+  ssl_certificate_key /etc/nginx/audit.key;
   location /_next/static/ {{ root /var/www/audit; }}
   location /brand/ {{ root /var/www/audit; }}
   location / {{ root /var/www/audit; }}
