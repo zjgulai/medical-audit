@@ -84,7 +84,7 @@ APP_RSYNC_EXCLUDES = (
     "drafts/",
     "tmp/",
     "data/",
-    "archive/",
+    "/archive/",
     "opendesign/",
     "output/",
     "ref/",

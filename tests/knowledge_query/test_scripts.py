@@ -8308,6 +8308,8 @@ def test_deploy_tencent_cloud_package_carries_static_export() -> None:
     )
 
     assert "web/out/" not in module.APP_RSYNC_EXCLUDES
+    assert "/archive/" in module.APP_RSYNC_EXCLUDES
+    assert "archive/" not in module.APP_RSYNC_EXCLUDES
     assert "COPY web/out ./web/out" in dockerfile_text
     assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
 

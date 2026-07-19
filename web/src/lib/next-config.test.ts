@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import nextConfig from "../../next.config";
+import nextConfig, { resolveStaticExportBuildId } from "../../next.config";
 
 type RewriteRule = {
   readonly source: string;
@@ -41,5 +41,17 @@ describe("nextConfig backend rewrites", () => {
     expect(rules.find((rule) => rule.source === "/pages/:path*")).toMatchObject({
       destination: "http://127.0.0.1:8021/pages/:path*"
     });
+  });
+});
+
+describe("nextConfig static release build identity", () => {
+  it("uses the approved deploy SHA as the static export build ID", () => {
+    const sha = "a".repeat(40);
+
+    expect(resolveStaticExportBuildId(` ${sha} `)).toBe(sha);
+    expect(resolveStaticExportBuildId(undefined)).toBeUndefined();
+    expect(() => resolveStaticExportBuildId("not-a-commit")).toThrow(
+      "MEDICAL_AUDIT_DEPLOY_SHA must be a full lowercase commit SHA."
+    );
   });
 });
