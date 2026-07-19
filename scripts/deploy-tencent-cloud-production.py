@@ -3188,17 +3188,16 @@ job_pid={shlex.quote(remote_pid)}
 job_log={shlex.quote(remote_log)}
 if bash -lc {shlex.quote(completion_check_script)}; then
   echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=complete"
-  exit 0
+else
+  pid="$(cat "$job_pid" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=running"
+  else
+    echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=failed"
+    echo "remote job exited before completion marker"
+    tail -n 80 "$job_log" || true
+  fi
 fi
-pid="$(cat "$job_pid" 2>/dev/null || true)"
-if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-  echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=running"
-  exit 0
-fi
-echo "MEDICAL_AUDIT_REMOTE_JOB_STATUS=failed"
-echo "remote job exited before completion marker"
-tail -n 80 "$job_log" || true
-exit 0
 """
     while True:
         completed: subprocess.CompletedProcess[str] | None = None

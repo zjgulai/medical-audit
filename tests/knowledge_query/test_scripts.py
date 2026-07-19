@@ -7961,6 +7961,9 @@ def test_deploy_tencent_cloud_background_completion_polls_until_marker(
     assert calls[1]["check"] is False
     assert calls[2]["capture_output"] is True
     assert calls[2]["check"] is False
+    poll_script = calls[1]["args"][-1]
+    assert isinstance(poll_script, str)
+    assert "exit 0" not in poll_script
     assert not poll_results
 
 
