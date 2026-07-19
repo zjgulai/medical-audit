@@ -7105,6 +7105,33 @@ server {{
     )
 
 
+def test_deploy_tencent_cloud_activation_cleanup_only_exits_for_failure(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_activation_cleanup_exit",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    scripts: list[str] = []
+    monkeypatch.setattr(module, "_ssh", lambda _config, script: scripts.append(script))
+    config = types.SimpleNamespace(
+        stamp="activation-cleanup-exit",
+        remote_app_dir="/opt/medical-audit/app",
+        remote_web_dir="/var/www/audit",
+        approved_sha="a" * 40,
+        allow_first_legacy_migration=False,
+    )
+
+    module._activate_remote_release(config, "owner-token")
+
+    cleanup_handler = scripts[0].split(
+        "cleanup_sensitive_candidates_on_exit() {\n",
+        1,
+    )[1].split("\n}\ntrap cleanup_sensitive_candidates_on_exit EXIT", 1)[0]
+    assert 'if [ "$original_status" -ne 0 ]; then' in cleanup_handler
+    assert cleanup_handler.count('exit "$original_status"') == 1
+
+
 def test_deploy_tencent_cloud_activation_rc79_is_outcome_unknown(
     monkeypatch: MonkeyPatch,
 ) -> None:

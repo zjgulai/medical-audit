@@ -2110,7 +2110,9 @@ cleanup_sensitive_candidates_on_exit() {{
     echo "sensitive candidate cleanup failed" >&2
     exit 85
   fi
-  exit "$original_status"
+  if [ "$original_status" -ne 0 ]; then
+    exit "$original_status"
+  fi
 }}
 trap cleanup_sensitive_candidates_on_exit EXIT
 umask 077
