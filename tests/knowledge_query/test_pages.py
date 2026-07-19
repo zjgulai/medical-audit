@@ -172,7 +172,13 @@ def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) 
     assert body["production_side_effect"] == "none"
     assert body["store"] == {"ready": True, "backend": "ReadonlyRemediationWorkbenchSeed"}
     assert body["remediation_cases"][0]["sourceFinding"] == "FINDING-F044EBD309B659DC"
+    assert body["remediation_cases"][0]["href"] == "/reports"
     assert body["evidence_requests"][1]["status"] == "待上传"
+    assert body["evidence_requests"][0]["href"] == "/reports"
+    assert all(
+        item["href"] != "/pages/review-tasks"
+        for item in [*body["remediation_cases"], *body["evidence_requests"]]
+    )
     assert body["closure_gates"][0]["status"] == "阻断"
     assert state.operation_logs[-1]["action"] == "remediation-workbench-view"
 

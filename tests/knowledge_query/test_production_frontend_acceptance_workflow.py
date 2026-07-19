@@ -50,3 +50,14 @@ def test_frontend_acceptance_uses_current_archive_contract_and_scopes_aborted_as
     assert "/项目档案归档/" not in script_text
     assert "ABORTABLE_STATIC_ASSET_PATH_PATTERN" in script_text
     assert "parsed.origin !== new URL(baseUrl).origin" in script_text
+
+
+def test_frontend_acceptance_only_recovers_aborted_gets_with_same_url_success() -> None:
+    script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "successfulResponseUrls" in script_text
+    assert 'failed.error === "net::ERR_ABORTED"' in script_text
+    assert "successfulResponseUrls.has(failed.url)" in script_text
+    assert "recoveredAbortedRequestCount" in script_text

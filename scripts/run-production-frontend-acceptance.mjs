@@ -897,6 +897,14 @@ function isIgnorableFailedRequest({ url, error }, baseUrl) {
   }
 }
 
+function isRecoveredAbortedRequest(failed, successfulResponseUrls) {
+  return (
+    failed.method === "GET"
+    && failed.error === "net::ERR_ABORTED"
+    && successfulResponseUrls.has(failed.url)
+  );
+}
+
 function readOptionalEnv(name) {
   if (!name) {
     return null;
@@ -1708,6 +1716,8 @@ async function run() {
           const page = await context.newPage();
           const consoleErrors = [];
           const failedRequests = [];
+          const successfulResponseRequests = new WeakSet();
+          const successfulResponseUrls = new Set();
           const interactionErrors = [];
           page.on("console", (message) => {
             if (message.type() === "error") {
@@ -1715,15 +1725,32 @@ async function run() {
             }
           });
           page.on("requestfailed", (request) => {
-            const failed = { url: request.url(), error: request.failure()?.errorText ?? "requestfailed" };
+            const failed = {
+              url: request.url(),
+              method: request.method(),
+              error: request.failure()?.errorText ?? "requestfailed",
+            };
             if (!isIgnorableFailedRequest(failed, baseUrl)) {
               failedRequests.push(failed);
             }
           });
           page.on("response", (response) => {
             const url = response.url();
+            if (
+              response.request().method() === "GET"
+              && response.status() >= 200
+              && response.status() < 300
+              && new URL(url).origin === baseOrigin
+            ) {
+              successfulResponseRequests.add(response.request());
+            }
             if (response.status() >= 400 && url.startsWith(baseUrl)) {
               failedRequests.push({ url, status: response.status() });
+            }
+          });
+          page.on("requestfinished", (request) => {
+            if (successfulResponseRequests.has(request)) {
+              successfulResponseUrls.add(request.url());
             }
           });
 
@@ -1751,6 +1778,12 @@ async function run() {
           const rawFinalUrl = page.url();
           const observedFinalUrl = sanitizeUrl(rawFinalUrl);
           const observedFinalSearch = finalSearch(rawFinalUrl);
+          const recoveredAbortedRequests = failedRequests.filter((failed) =>
+            isRecoveredAbortedRequest(failed, successfulResponseUrls)
+          );
+          const actionableFailedRequests = failedRequests.filter((failed) =>
+            !isRecoveredAbortedRequest(failed, successfulResponseUrls)
+          );
           const check = {
             route: routeCheck.route,
             inputSearch,
@@ -1781,15 +1814,17 @@ async function run() {
               data.floatingControlOcclusions,
             ),
             consoleErrorCount: consoleErrors.length,
-            failedRequestCount: failedRequests.length,
-            failedRequests: failedRequests.map(sanitizeFailedRequest),
+            failedRequestCount: actionableFailedRequests.length,
+            failedRequests: actionableFailedRequests.map(sanitizeFailedRequest),
+            recoveredAbortedRequestCount: recoveredAbortedRequests.length,
+            recoveredAbortedRequests: recoveredAbortedRequests.map(sanitizeFailedRequest),
             interactionErrorCount: interactionErrors.length,
             issues: classify(
               {
                 status,
                 error,
                 consoleErrors,
-                failedRequests,
+                failedRequests: actionableFailedRequests,
                 interactionErrors,
                 finalUrl: observedFinalUrl,
                 finalSearch: observedFinalSearch,
