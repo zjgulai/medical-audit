@@ -586,7 +586,7 @@ ARCHIVE_PACKAGES: tuple[dict[str, object], ...] = (
         "signedAt": "2026-06-11",
         "retainedUntil": "2026-12-09",
         "href": "/reports",
-        "logHref": "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0001",
+        "logHref": "/archive#archive-runs-title",
     },
     {
         "id": "archive-package-kb-governance",
@@ -600,7 +600,7 @@ ARCHIVE_PACKAGES: tuple[dict[str, object], ...] = (
         "signedAt": "2026-06-10",
         "retainedUntil": "2026-12-07",
         "href": "/projects",
-        "logHref": "/pages/audit-logs?entity_type=project&entity_id=KB-GOVERNANCE-202606",
+        "logHref": "/archive#archive-runs-title",
     },
     {
         "id": "archive-package-dose-review",
@@ -614,7 +614,7 @@ ARCHIVE_PACKAGES: tuple[dict[str, object], ...] = (
         "signedAt": "未签发",
         "retainedUntil": "待签发后计算",
         "href": "/reports",
-        "logHref": "/pages/audit-logs?entity_type=review-task&entity_id=review-task-0007",
+        "logHref": "/archive#archive-runs-title",
     },
     {
         "id": "archive-package-catalog-limit",
@@ -628,7 +628,7 @@ ARCHIVE_PACKAGES: tuple[dict[str, object], ...] = (
         "signedAt": "未签发",
         "retainedUntil": "待补证后计算",
         "href": "/remediation",
-        "logHref": "/pages/audit-logs?entity_type=rule&entity_id=CATALOG-RULE-014",
+        "logHref": "/archive#archive-runs-title",
     },
 )
 

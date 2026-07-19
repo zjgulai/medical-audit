@@ -39,3 +39,14 @@ pnpm production:frontend-acceptance -- \\
         "hasValidPngScreenshot(check.screenshot, check.screenshot_evidence)"
         in gate_text
     )
+
+
+def test_frontend_acceptance_uses_current_archive_contract_and_scopes_aborted_assets() -> None:
+    script_text = Path("scripts/run-production-frontend-acceptance.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'requiredText: [/归档工作台/, /归档包/' in script_text
+    assert "/项目档案归档/" not in script_text
+    assert "ABORTABLE_STATIC_ASSET_PATH_PATTERN" in script_text
+    assert "parsed.origin !== new URL(baseUrl).origin" in script_text

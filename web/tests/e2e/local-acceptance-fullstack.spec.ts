@@ -115,6 +115,61 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await expect(page.getByLabel("医保费用汇总表")).toBeVisible();
   });
 
+  test("report download controls remain in the mobile viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.route("**/api/v1/reports/workbench", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.report_entries = [
+        {
+          id: "mobile-report-001",
+          title: "医保基金专项报告",
+          status: "已签发",
+          report_no: "RPT-MOBILE-001",
+          owner: "审计办",
+          source: "review-task",
+          included_finding_count: 2,
+          appendix_count: 1,
+          gate_summary: "报告门禁已通过",
+          updated_at: "2026-07-20T00:00:00Z",
+          href: "/projects",
+          download_links: {
+            page: "/projects",
+            task_docx: "/review-tasks/mobile-report-001/export?format=docx",
+            report_docx: "/review-tasks/mobile-report-001/signed-report?format=docx",
+            report_markdown: "/review-tasks/mobile-report-001/signed-report?format=markdown",
+            report_json: "/review-tasks/mobile-report-001/signed-report?format=json"
+          }
+        }
+      ];
+      body.metrics = {
+        report_count: 1,
+        signed_report_count: 1,
+        blocked_report_count: 0,
+        included_finding_count: 2,
+        docx_download_count: 1
+      };
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto("/reports");
+    await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
+
+    const downloadControls = page.locator(".replica-report-table-wrap button");
+    await expect(downloadControls.first()).toBeVisible();
+    const controlBounds = await downloadControls.evaluateAll((controls) =>
+      controls.map((control) => {
+        const rect = control.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, clientWidth: document.documentElement.clientWidth };
+      })
+    );
+
+    expect(controlBounds.length).toBeGreaterThan(0);
+    for (const bounds of controlBounds) {
+      expect(bounds.left).toBeGreaterThanOrEqual(-2);
+      expect(bounds.right).toBeLessThanOrEqual(bounds.clientWidth + 2);
+    }
+  });
+
   test("compatibility routes land on the restored replica shell", async ({ page }) => {
     const redirects = [
       { from: "/workspace", to: /\/chat$/ },

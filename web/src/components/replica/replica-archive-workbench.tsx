@@ -159,7 +159,7 @@ export function ReplicaArchiveWorkbench() {
                   <strong>{archiveStatusLabel(item.status)}</strong>
                   <div className="replica-record-actions">
                     <Link href={item.href}>查看只读归档</Link>
-                    <Link href={item.logHref}>查看审计日志</Link>
+                    <Link href={item.logHref}>查看归档检查</Link>
                   </div>
                   <details className="replica-runtime-diagnostics">
                     <summary>查看归档标识</summary>
