@@ -198,6 +198,9 @@ def test_archive_workbench_api_returns_readonly_archive_status(tmp_path: Path) -
     assert body["production_side_effect"] == "none"
     assert body["store"] == {"ready": True, "backend": "ReadonlyArchiveWorkbenchSeed"}
     assert body["archive_packages"][0]["archiveNo"] == "ARCHIVE-SELF-CHECK-FUND-202606"
+    assert {item["logHref"] for item in body["archive_packages"]} == {
+        "/archive#archive-runs-title"
+    }
     assert body["audit_runs"][0]["title"] == "archive root 巡检"
     assert body["signature_items"][0]["label"] == "retention-batch-0001.jsonl"
     assert body["policy_items"][1]["value"] == "180 days"

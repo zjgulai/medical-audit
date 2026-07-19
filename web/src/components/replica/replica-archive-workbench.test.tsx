@@ -31,7 +31,7 @@ const archiveResponse: ArchiveWorkbenchResponse = {
       signedAt: "2026-07-16T08:00:00Z",
       retainedUntil: "2036-07-16",
       href: "/archive/archive-package-001",
-      logHref: "/audit-logs"
+      logHref: "/archive#archive-runs-title"
     }
   ],
   audit_runs: [
@@ -102,6 +102,10 @@ describe("ReplicaArchiveWorkbench", () => {
     expect(screen.getByText("验签通过")).toBeInTheDocument();
     expect(screen.getByText("SqlAlchemyArchiveWorkbenchStore")).toBeInTheDocument();
     expect(screen.getByText("archive-package-001").closest("details")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "查看归档检查" })).toHaveAttribute(
+      "href",
+      "/archive#archive-runs-title"
+    );
   });
 
   it("keeps technical production values in diagnostics and presents readable labels", async () => {

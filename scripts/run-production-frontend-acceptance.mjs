@@ -29,6 +29,7 @@ const DEPLOYMENT_METADATA_PATH = "/api/v1/deployment/metadata";
 const PUBLIC_RELEASE_MANIFEST_PATH = "/release-manifest.json";
 const DEPLOY_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const ABORTABLE_STATIC_ASSET_PATH_PATTERN = /\.(?:avif|gif|ico|jpe?g|png|svg|webp)$/i;
 const ACCEPTANCE_RUN_ID_PATTERN = /^fa-[0-9]{8}t[0-9]{6}z-[0-9a-f]{8,32}$/;
 const RELEASE_GUARD_EXECUTION_BOUNDARY_FORMAT =
   "medical-audit-release-guard-execution-boundary-v1";
@@ -209,7 +210,7 @@ const routeCheckProfiles = {
       expectedPath: "/archive",
       expectedChromeTitle: "归档工作台",
       session: "workspace",
-      requiredText: [/项目档案归档/, /归档包/, /签名链|归档策略|审计日志/],
+      requiredText: [/归档工作台/, /归档包/, /签名链|归档策略|审计日志/],
     },
     {
       route: "/guided-check",
@@ -877,12 +878,20 @@ function matchText(pattern, rawText) {
 }
 
 function isIgnorableFailedRequest({ url, error }, baseUrl) {
-  if (error !== "net::ERR_ABORTED" || !url.startsWith(baseUrl)) {
+  if (error !== "net::ERR_ABORTED") {
     return false;
   }
   try {
     const parsed = new URL(url);
-    return parsed.pathname.startsWith("/_next/static/") || parsed.searchParams.has("_rsc") || parsed.pathname.endsWith(".txt");
+    if (parsed.origin !== new URL(baseUrl).origin) {
+      return false;
+    }
+    return (
+      parsed.pathname.startsWith("/_next/static/")
+      || parsed.searchParams.has("_rsc")
+      || parsed.pathname.endsWith(".txt")
+      || ABORTABLE_STATIC_ASSET_PATH_PATTERN.test(parsed.pathname)
+    );
   } catch {
     return false;
   }
@@ -1941,6 +1950,7 @@ export {
   finalPath,
   finalSearch,
   isFloatingLayoutPosition,
+  isIgnorableFailedRequest,
   isLoginGateSnapshot,
   loadReleaseGuardEvidence,
   normalizeProductionBaseUrl,

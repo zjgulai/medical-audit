@@ -1558,6 +1558,29 @@ select {
   .replica-report-workbench .replica-report-handoff > a {
     width: 100%;
   }
+
+  .replica-report-workbench .replica-report-table-wrap table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .replica-report-workbench .replica-report-table-wrap th:last-child,
+  .replica-report-workbench .replica-report-table-wrap td:last-child {
+    position: sticky;
+    right: 0;
+    width: 176px;
+    min-width: 176px;
+    border-left: 1px solid #dce5ee;
+  }
+
+  .replica-report-workbench .replica-report-table-wrap th:last-child {
+    z-index: 2;
+  }
+
+  .replica-report-workbench .replica-report-table-wrap td:last-child {
+    z-index: 1;
+    background: #fff;
+  }
 }
 
 @media (max-width: 640px) {
