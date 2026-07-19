@@ -414,7 +414,7 @@ REMEDIATION_CASES: tuple[dict[str, object], ...] = (
         "progress": 62,
         "evidenceStatus": "已提交",
         "nextAction": "核验退费凭证和流程复核记录。",
-        "href": "/pages/review-tasks",
+        "href": "/reports",
     },
     {
         "id": "remediation-catalog-limit",
@@ -442,7 +442,7 @@ REMEDIATION_CASES: tuple[dict[str, object], ...] = (
         "progress": 82,
         "evidenceStatus": "需退回",
         "nextAction": "重新上传带校验值的归档文件。",
-        "href": "/pages/review-tasks",
+        "href": "/reports",
     },
     {
         "id": "remediation-dose-review",
@@ -471,7 +471,7 @@ REMEDIATION_EVIDENCE_REQUESTS: tuple[dict[str, object], ...] = (
         "owner": "医保办",
         "dueDate": "2026-06-18",
         "detail": "退费流水、患者确认和财务复核记录已提交，等待审计验收。",
-        "href": "/pages/review-tasks",
+        "href": "/reports",
     },
     {
         "id": "evidence-catalog-field",
@@ -493,7 +493,7 @@ REMEDIATION_EVIDENCE_REQUESTS: tuple[dict[str, object], ...] = (
         "owner": "信息科",
         "dueDate": "2026-06-18",
         "detail": "附件名称已登记，但缺少文件 hash 和归档位置校验。",
-        "href": "/pages/review-tasks",
+        "href": "/reports",
     },
     {
         "id": "evidence-owner-confirm",
