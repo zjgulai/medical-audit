@@ -31,6 +31,7 @@ DEFAULT_PYTHON_INDEX = "https://pypi.org/simple"
 REMOTE_NGINX_CONFIG = "/opt/ai-video/deploy/lighthouse/nginx.conf"
 REMOTE_TRANSACTION_ROOT = "/opt/medical-audit/backups/transactions"
 REMOTE_BACKUP_TIMEOUT_SECONDS = 45 * 60
+REMOTE_APP_REBUILD_TIMEOUT_SECONDS = 60 * 60
 REMOTE_COMPLETION_CHECK_TIMEOUT_SECONDS = 60
 REMOTE_COMPLETION_POLL_SECONDS = 5
 REMOTE_SSH_COMMAND_TIMEOUT_SECONDS = 30 * 60
@@ -2512,11 +2513,37 @@ def _rebuild_application(config: DeployConfig, owner_token: str) -> None:
         print("skip app rebuild", flush=True)
         return
     sha = config.approved_sha
+    safe_stamp = _safe_remote_job_name(config.stamp)
+    rebuild_marker = f"/tmp/medical-audit-deploy-app-rebuild-{safe_stamp}.complete"
     container_id_format = "{{.Id}}"
     health_format = "{{.State.Health.Status}}"
+    stale_rebuild_cleanup_script = f"""
+set -euo pipefail
+{_remote_lock_guard_script(config, owner_token)}
+test ! -e "$lock_dir/worker.pid"
+rm -f {shlex.quote(rebuild_marker)}
+"""
     script = f"""
 set -euo pipefail
 {_remote_lock_guard_script(config, owner_token)}
+umask 077
+worker_pid="$lock_dir/worker.pid"
+worker_pid_next="$lock_dir/worker.pid.$BASHPID.next"
+test ! -e "$worker_pid"
+test ! -L "$worker_pid"
+test ! -e "$worker_pid_next"
+test ! -L "$worker_pid_next"
+printf '%s\\n' "$BASHPID" > "$worker_pid_next"
+mv -f -- "$worker_pid_next" "$worker_pid"
+clear_worker_pid() {{
+  if test "$(cat "$worker_pid" 2>/dev/null || true)" = "$BASHPID"; then
+    rm -f -- "$worker_pid"
+  fi
+  rm -f -- "$worker_pid_next"
+}}
+trap clear_worker_pid EXIT
+rebuild_marker={shlex.quote(rebuild_marker)}
+rm -f "$rebuild_marker"
 export MEDICAL_AUDIT_DEPLOY_SHA={shlex.quote(sha)}
 cd {shlex.quote(config.remote_app_dir)}
 postgres_id_before="$(docker inspect medical_audit_pg \
@@ -2544,8 +2571,28 @@ if [ "$clamav_service_present" -eq 1 ]; then
   test "$(docker inspect medical_audit_clamav \
     --format {shlex.quote(container_id_format)})" = "$clamav_id_before"
 fi
+printf 'complete\\n' > "$rebuild_marker"
 """
-    _ssh(config, script)
+    completion_check_script = f"""
+set -euo pipefail
+{_remote_lock_guard_script(config, owner_token)}
+test ! -e "$lock_dir/worker.pid"
+rebuild_marker={shlex.quote(rebuild_marker)}
+test -f "$rebuild_marker"
+test ! -L "$rebuild_marker"
+test "$(cat "$rebuild_marker")" = complete
+docker exec medical_audit_app sh -c \
+  'test "${{MEDICAL_AUDIT_DEPLOY_SHA:-}}" = "$1"' sh {shlex.quote(sha)}
+"""
+    _ssh(config, stale_rebuild_cleanup_script)
+    _ssh_background_with_completion(
+        config,
+        script,
+        completion_check_script,
+        timeout_seconds=REMOTE_APP_REBUILD_TIMEOUT_SECONDS,
+        timeout_description="remote app rebuild",
+        job_name=f"medical-audit-deploy-app-rebuild-{safe_stamp}",
+    )
 def _run_remote_post_checks(config: DeployConfig) -> None:
     health_format = "{{.State.Health.Status}}"
     script = f"""
