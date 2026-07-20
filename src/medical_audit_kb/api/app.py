@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import urllib.parse
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -51,6 +52,15 @@ from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
 from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
+
+_REQUEST_AUDIT_USER_IDENTIFIER: ContextVar[str | None] = ContextVar(
+    "request_audit_user_identifier",
+    default=None,
+)
+_REQUEST_AUDIT_ROLE: ContextVar[str | None] = ContextVar(
+    "request_audit_role",
+    default=None,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,6 +296,25 @@ def create_app(
     state = api_state or ApiState.from_settings(load_settings())
     app = FastAPI(title="Medical Audit Knowledge Query API", version=__version__)
     app.state.api_state = state
+
+    @app.middleware("http")
+    async def audit_operation_identity_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[StarletteResponse]],
+    ) -> StarletteResponse:
+        authenticated_user = getattr(request.state, "authenticated_user", None)
+        user_identifier = (request.headers.get("X-User-Id") or "").strip() or None
+        role = (request.headers.get("X-Role") or "").strip() or None
+        if authenticated_user is not None:
+            user_identifier = authenticated_user.user_identifier
+            role = authenticated_user.role.value
+        user_token = _REQUEST_AUDIT_USER_IDENTIFIER.set(user_identifier)
+        role_token = _REQUEST_AUDIT_ROLE.set(role)
+        try:
+            return await call_next(request)
+        finally:
+            _REQUEST_AUDIT_ROLE.reset(role_token)
+            _REQUEST_AUDIT_USER_IDENTIFIER.reset(user_token)
 
     if _controlled_api_auth_enabled(enforce_controlled_api_auth):
 
@@ -780,9 +809,16 @@ def record_operation(
     action: str,
     payload: dict[str, object],
 ) -> None:
-    state.operation_logs.append({"action": action, "payload": payload})
+    attributed_payload = dict(payload)
+    user_identifier = _REQUEST_AUDIT_USER_IDENTIFIER.get()
+    role = _REQUEST_AUDIT_ROLE.get()
+    if "user_identifier" not in attributed_payload and user_identifier is not None:
+        attributed_payload["user_identifier"] = user_identifier
+    if "role" not in attributed_payload and role is not None:
+        attributed_payload["role"] = role
+    state.operation_logs.append({"action": action, "payload": attributed_payload})
     if state.audit_log_store is not None:
-        state.audit_log_store.add_event(action, payload)
+        state.audit_log_store.add_event(action, attributed_payload)
 
 
 class PermissionHeaders(BaseModel):
