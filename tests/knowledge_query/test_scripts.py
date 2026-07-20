@@ -7875,23 +7875,46 @@ def test_deploy_tencent_cloud_rebuilds_only_app_without_dependencies(
         Path("scripts/deploy-tencent-cloud-production.py"),
     )
     captured_scripts: list[str] = []
+    background_calls: list[dict[str, object]] = []
 
     def fake_ssh(config: object, script: str) -> None:
         del config
         captured_scripts.append(script)
 
     monkeypatch.setattr(module, "_ssh", fake_ssh)
+    monkeypatch.setattr(
+        module,
+        "_ssh_background_with_completion",
+        lambda config, script, completion_check_script, **kwargs: background_calls.append(
+            {
+                "config": config,
+                "script": script,
+                "completion_check_script": completion_check_script,
+                **kwargs,
+            },
+        ),
+    )
     approved_sha = "d" * 40
     config = types.SimpleNamespace(
         skip_app_rebuild=False,
         remote_app_dir="/opt/medical-audit/app",
         approved_sha=approved_sha,
+        stamp="approved-stamp",
     )
 
     module._rebuild_application(config, "owner-token")
 
     assert len(captured_scripts) == 1
-    script = captured_scripts[0]
+    cleanup_script = captured_scripts[0]
+    assert "medical-audit-deploy-app-rebuild-approved-stamp.complete" in cleanup_script
+    assert len(background_calls) == 1
+    background_call = background_calls[0]
+    assert background_call["timeout_description"] == "remote app rebuild"
+    assert background_call["job_name"] == (
+        "medical-audit-deploy-app-rebuild-approved-stamp"
+    )
+    script = str(background_call["script"])
+    completion_check_script = str(background_call["completion_check_script"])
     assert "build app" in script
     assert "owner-token" in script
     assert f"export MEDICAL_AUDIT_DEPLOY_SHA={approved_sha}" in script
@@ -7903,14 +7926,24 @@ def test_deploy_tencent_cloud_rebuilds_only_app_without_dependencies(
     assert 'clamav_id_before="$(docker inspect medical_audit_clamav' in script
     assert 'test "$(docker inspect medical_audit_pg' in script
     assert 'test "$(docker inspect medical_audit_clamav' in script
-    syntax_check = subprocess.run(
-        ["bash", "-n"],
-        input=script,
-        check=False,
-        capture_output=True,
-        text=True,
+    assert 'worker_pid="$lock_dir/worker.pid"' in script
+    assert "trap clear_worker_pid EXIT" in script
+    assert "medical-audit-deploy-app-rebuild-approved-stamp.complete" in script
+    assert 'test ! -e "$lock_dir/worker.pid"' in completion_check_script
+    assert "medical-audit-deploy-app-rebuild-approved-stamp.complete" in (
+        completion_check_script
     )
-    assert syntax_check.returncode == 0, syntax_check.stderr
+    assert "MEDICAL_AUDIT_DEPLOY_SHA" in completion_check_script
+    assert approved_sha in completion_check_script
+    for candidate in (cleanup_script, script, completion_check_script):
+        syntax_check = subprocess.run(
+            ["bash", "-n"],
+            input=candidate,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert syntax_check.returncode == 0, syntax_check.stderr
 
 
 def test_deploy_tencent_cloud_background_completion_polls_until_marker(
