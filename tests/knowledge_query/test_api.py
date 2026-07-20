@@ -3632,6 +3632,7 @@ def test_knowledge_base_catalog_controlled_success_writes_no_audit_event(
 def test_search_backend_status_records_audit_event_even_when_reading(tmp_path: Path) -> None:
     state = _api_state(tmp_path)
     persisted_events: list[tuple[str, dict[str, object]]] = []
+    acceptance_user_id = "frontend-acceptance-fa-20260720t003332z-c030f1ad"
 
     class AuditSpy:
         def add_event(self, action: str, payload: dict[str, object]) -> dict[str, object]:
@@ -3639,13 +3640,22 @@ def test_search_backend_status_records_audit_event_even_when_reading(tmp_path: P
             return {"action": action, "payload": payload}
 
     state.audit_log_store = AuditSpy()  # type: ignore[assignment]
-    client = TestClient(create_app(state))
+    client = TestClient(create_app(state, enforce_controlled_api_auth=True))
 
-    response = client.get("/index/search-backend")
+    response = client.get(
+        "/api/v1/index/search-backend",
+        headers={
+            "X-User-Id": acceptance_user_id,
+            "X-Role": "it-admin",
+            "X-Tenant-Id": "hospital-demo",
+        },
+    )
 
     assert response.status_code == 200, response.text
     assert state.operation_logs[-1]["action"] == "search-backend-status-view"
     assert persisted_events[-1][0] == "search-backend-status-view"
+    assert persisted_events[-1][1]["user_identifier"] == acceptance_user_id
+    assert persisted_events[-1][1]["role"] == "admin"
 
 
 def test_knowledge_base_catalog_marks_registry_only_metrics_unready(tmp_path: Path) -> None:
