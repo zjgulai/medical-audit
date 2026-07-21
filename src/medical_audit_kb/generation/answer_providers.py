@@ -387,14 +387,26 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
 
 def _anthropic_answer_content(payload: object) -> str:
     if not isinstance(payload, dict):
-        raise AnswerProviderError("answer generation response root must be an object")
+        raise AnswerProviderError(
+            "answer generation response root must be an object",
+            code="provider_response_invalid",
+            reason="response_root_not_object",
+        )
     content_blocks = payload.get("content")
     if not isinstance(content_blocks, list) or not content_blocks:
-        raise AnswerProviderError("answer generation response missing content")
+        raise AnswerProviderError(
+            "answer generation response missing content",
+            code="provider_response_invalid",
+            reason="anthropic_content_missing",
+        )
     text_parts: list[str] = []
     for block in content_blocks:
         if not isinstance(block, dict):
-            raise AnswerProviderError("answer generation content block must be an object")
+            raise AnswerProviderError(
+                "answer generation content block must be an object",
+                code="provider_response_invalid",
+                reason="anthropic_content_block_not_object",
+            )
         if block.get("type") != "text":
             continue
         text = block.get("text")
@@ -402,5 +414,9 @@ def _anthropic_answer_content(payload: object) -> str:
             text_parts.append(text.strip())
     answer = "\n".join(text_parts).strip()
     if not answer:
-        raise AnswerProviderError("answer generation message content must be non-empty")
+        raise AnswerProviderError(
+            "answer generation message content must be non-empty",
+            code="provider_response_invalid",
+            reason="response_content_empty",
+        )
     return answer

@@ -341,6 +341,35 @@ def test_anthropic_answer_provider_does_not_expose_http_response_body() -> None:
     assert "private anthropic sentinel" not in str(error_info.value)
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected_reason"),
+    [
+        ({"content": []}, "anthropic_content_missing"),
+        ({"content": ["private malformed block"]}, "anthropic_content_block_not_object"),
+        ({"content": [{"type": "text", "text": ""}]}, "response_content_empty"),
+    ],
+)
+def test_anthropic_answer_provider_reports_safe_invalid_response_reason(
+    payload: object,
+    expected_reason: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    provider = AnthropicAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="claude-test",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AnswerProviderError) as error_info:
+        provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    assert error_info.value.code == "provider_response_invalid"
+    assert error_info.value.reason == expected_reason
+    assert "private malformed block" not in str(error_info.value)
+
+
 def test_answer_provider_preflight_requires_citation_marker_and_term() -> None:
     result = run_answer_provider_preflight(StaticPreflightProvider())
 
