@@ -702,6 +702,45 @@ def test_audit_answer_provider_gate_readiness_script_is_valid_and_sanitized() ->
     assert "fail-when-not-ready" in script_text
 
 
+def test_audit_answer_provider_gate_readiness_requires_known_host(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "audit_answer_provider_gate_readiness_strict_ssh",
+        Path("scripts/audit-answer-provider-gate-readiness.py"),
+    )
+    ssh_key = tmp_path / "deploy.pem"
+    ssh_key.write_text("test-key-placeholder", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"safe_values": {}, "key_status": {}}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._collect_remote_snapshot(
+        ssh_key=ssh_key,
+        ssh_user="ubuntu",
+        ssh_host="example.test",
+        container="medical_audit_app",
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "BatchMode=yes" in command
+    assert "StrictHostKeyChecking=yes" in command
+    assert "StrictHostKeyChecking=no" not in command
+    assert "IdentitiesOnly=yes" in command
+
+
 def test_audit_answer_provider_gate_readiness_never_reports_secret_values() -> None:
     module = _load_script_module(
         "audit_answer_provider_gate_readiness_secret_values",
