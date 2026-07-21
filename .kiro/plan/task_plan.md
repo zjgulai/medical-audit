@@ -410,3 +410,40 @@ Evidence boundary:
 
 - Current fresh audit：qualified path 为 `L3-production-read-only`；static visual matrix 使用 production static shell + locally blocked APIs，不是 authenticated data acceptance。
 - `production unchanged`, `deploy_execution=false`, qualified collector `database_write=false`, one unauthenticated denial attempt `database_write=unknown`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+
+## 2026-07-21 Loop 60 H1 DeepSeek Citation Marker Contract Remediation
+
+Goal:
+
+- 对已部署 `main@c5a81923ddcf5b549d6325a89cde6b5377370128` 的 H1 Knowledge live UAT 第 2 case 失败进行本地根因分析。
+- 用 RED→GREEN 回归固化 DeepSeek 回答正文 citation markers 与冗余 `citation_ids` 字段的权威边界，同时保留未知、越界、非法类型和无 marker 失败关闭。
+- 将候选修复验证到 L1/L2 local-only；commit/push/merge/deploy 和新 live UAT 均保持独立授权门。
+
+Execution TODO:
+
+- [x] Phase 0 — 恢复实际 clone、clean `main`、生产 SHA、live result、allowlist delta 和已消费授权边界。
+- [x] Phase 1 — 追踪 `deepseek_citation_markers_mismatch` 从 parser、provider payload 合同到 fallback 的完整数据流，对照已通过/已失败模式并写下单一根因假说。
+- [x] Phase 2 — 先新增最小回归测试并观测预期 RED；测试须复现“正文 marker 合法，但冗余 `citation_ids` 与正文不一致”的实际失败边界。
+- [x] Phase 3 — 实施单点最小修复；不放宽未知 marker、越界 citation、非法 `citation_ids` 类型或无 citation marker 的失败门。
+- [x] Phase 4 — 运行 targeted provider tests，然后执行全量 Pytest、Ruff、Mypy 和 `git diff --check`；任一门失败即停止状态升级。
+- [x] Phase 5 — 同步 TODO/findings/progress，审查精确 diff 与发布必要性，停在本地候选状态。
+- [ ] Phase 6 — 已获得 commit/push/PR/merge 明确授权；在 `codex/h1-citation-marker-contract-20260721` 上执行精确 staging、原子 commit、push、PR 与 merge，并以 fresh `origin/main` 核验完成。
+- [ ] Phase 7 — 只在 exact merged SHA 获得独立 deploy 授权后执行标准备份与生产部署；新 provider live UAT 再使用独立精确 L4 packet。
+
+Acceptance contract:
+
+- 回归测试必须先因当前 `deepseek_citation_markers_mismatch` 行为失败，实施后在同一路径转绿。
+- 正文中的受支持 `C<number>` marker 绑定必须可验证、不越界，且最终 citations 只能来自当次检索候选。
+- 冗余 provider 字段的兼容不得让答案绕过 marker 验证，不得改变 fallback 的 fail-closed 语义。
+- 本 Loop 证据上限为 L1/L2 local-only；不得声称生产已修复或 live UAT 已通过。
+
+Stop conditions:
+
+- 根因无法由现有脱敏证据与代码数据流稳定复现时，停在诊断而非猜测修复。
+- 同一问题第 3 次修复验证仍失败时，停止叠加 patch 并进行架构审查。
+- 任何 provider call、生产 SQL 写入、schema/env/runtime 变更、commit/push/merge/deploy 需求都必须停止并单独请求授权。
+
+Evidence boundary:
+
+- Current phase: local diagnosis and TDD only.
+- `production unchanged`, `provider_call=false`, `database_write=false`, `deploy_execution=false`, `live_send=false`.

@@ -13,6 +13,7 @@ from medical_audit_kb.generation.citations import (
     CitationGroup,
     EvidenceType,
     build_citations,
+    citation_labels_in_text,
     group_citations,
 )
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
@@ -286,24 +287,9 @@ def _fallback_answer(question: str, citation_groups: tuple[CitationGroup, ...]) 
     return "\n".join(lines)
 
 
-_CITATION_MARKER_RE = re.compile(
-    r"(?<![A-Za-z0-9])[\[【(（]?\s*(C\d+)\s*[\]】)）]?(?![A-Za-z0-9])",
-    re.IGNORECASE,
-)
-
-
 def _contains_citation_marker(answer: str, citations: tuple[Citation, ...]) -> bool:
-    present = _citation_labels_in_text(answer)
+    present = citation_labels_in_text(answer)
     return any(_marker_label(citation.marker) in present for citation in citations)
-
-
-def _citation_labels_in_text(text: str) -> set[str]:
-    """提取答案中出现的 C<编号> 引用标记，兼容 [C1] 【C1】 (C1) （C1） 及裸 C1 变体。
-
-    要求 C<编号> 不嵌入更大的字母数字串（避免把 VITC1 之类误判为引用）。
-    仅放宽标记的“格式”识别，不放宽“必须带引用”的语义。
-    """
-    return {match.group(1).upper() for match in _CITATION_MARKER_RE.finditer(text)}
 
 
 def _marker_label(marker: str) -> str:

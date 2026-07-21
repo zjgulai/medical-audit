@@ -11,6 +11,15 @@ from medical_audit_kb.domain.source_collection_registry import source_collection
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
 
 DEFAULT_SNIPPET_CHARS = 240
+_CITATION_MARKER_RE = re.compile(
+    r"(?<![A-Za-z0-9])[\[【(（]?\s*(C\d+)\s*[\]】)）]?(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def citation_labels_in_text(text: str) -> set[str]:
+    """Extract citation labels while rejecting labels embedded in alphanumeric text."""
+    return {match.group(1).upper() for match in _CITATION_MARKER_RE.finditer(text)}
 
 
 class EvidenceType(StrEnum):

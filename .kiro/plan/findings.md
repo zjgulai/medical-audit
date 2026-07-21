@@ -7,6 +7,48 @@ status: "active"
 
 # Findings
 
+## 2026-07-21 Loop 60 Initial Findings
+
+- 修复后 L4 失败码已从上一轮的 `deepseek_citation_ids_invalid` 前进到 `deepseek_citation_markers_mismatch`；这证明“`citation_ids` 缺失/空时从正文 marker 推导”的已部署修复命中了原始硬门，但没有解决 provider 同时返回正文 markers 与冗余 `citation_ids` 不一致的合同问题。
+- 失败发生在 `risk-negative-list` case；HTTP 为 `200`，citations/basis groups 存在且 collection 单一正确，但 generation 降级为 `retrieval_fallback`。因此当前调查点是 answer-provider response parser 合同，不是检索 collection 选择或 provider transport。
+- 生产 raw provider response 未写入报告，且不应为了调试而重试 live call。根因必须从现有脱敏 failure code、parser 分支和最小本地 payload 稳定复现。
+- 当前单一待验假说：DeepSeek 正文已包含可校验的严格 `[C<number>]` 引用，但 provider 额外返回的 `citation_ids` 是不完全同步的冗余元数据；parser 将二者集合必须完全相等作为硬门，导致本来可以仅依正文 marker 安全绑定的答案被降级。该假说尚未由代码与 RED 测试确认。
+
+Boundary: findings are local diagnosis hypotheses only; no provider call, production DB read/write, deploy, or external mutation is authorized in Loop 60.
+
+## 2026-07-21 Loop 60 Parser Trace Findings
+
+- `_deepseek_answer_content()` 的当前顺序为：校验 `answer` 和 `citation_ids` 类型 → 从正文提取严格 `[C<number>]` 得到 `visible_ids` → 从非空 `citation_ids` 得到 `claimed_ids`，否则用 `visible_ids` → 先拒绝不可用 ID → 强制 `visible_ids == claimed_ids`。
+- `deepseek_citation_markers_mismatch` 同时表示两种情况：`visible_ids` 为空，或 `visible_ids` 非空但与非空 `citation_ids` 不等。当前 L4 报告不包含 raw provider content，所以不能从现有证据区分这两类。
+- 上一轮修复只在 `citation_ids` 缺失/空时以 `visible_ids` 代替；如果 provider 仍未在正文输出严格 marker，新修复应继续失败关闭，不能为了 live pass 自动伪造引用。
+- 当前根因判断降级为两个竞争假说：H1a=正文 marker 合法但冗余 `citation_ids` 漂移；H1b=正文未包含严格 marker。必须先追踪下游实际使用和安全绑定，再选择可同时保留 H1b 失败门的最小修复。
+
+## 2026-07-21 Loop 60 Root Cause Decision
+
+- `citation_ids` 全仓仅出现在 DeepSeek prompt/parser 和对应 tests；它不参与 answer builder、citation serialization、basis groups 或 API 输出绑定。真正可见、可审计的绑定是 answer 正文 marker 与当次 `Citation` 列表。
+- `answer_builder` 已有明确回归，要求接受 `【C1】` 和 `(C1)` 等变体，并拒绝 `VITC1` 等嵌入式字母数字串。DeepSeek parser 单独使用 `\[(C\d+)\]` 严格 regex，导致同一有效 answer 在 provider 层被拒绝、在 builder 层却被设计为应接受。这是可稳定本地复现的确定根因。
+- H1a 的冗余元数据漂移同样是合同缺陷：既然 `citation_ids` 不被下游使用，它不应覆盖已通过可用 citation 校验的正文 markers。但如果该字段存在，非法类型和不可用 ID 仍应失败关闭。
+- 最小修复合同：抽取单一 marker-label parser 供 provider 和 builder 共用；要求 `visible_ids` 非空且是 `available_ids` 子集；`citation_ids` 仅作可选的格式/可用性校验，不再要求与 `visible_ids` 完全相等。
+- 该修复不能证明上一次 raw provider answer 究竟使用了哪种 marker；它修复的是两个已被代码和测试证明的合同冲突，而不将未保存的 raw 内容冒充为已知事实。
+
+## 2026-07-21 Loop 60 RED Evidence
+
+- RED 测试稳定复现了两个独立缺陷：provider 使用窄 regex 拒绝 builder 合同已支持的 marker 变体；冗余 metadata 集合被错误地赋予与正文 marker 相同的权威性。
+- 新增的正文越界测试证明，仅检查 `citation_ids` 子集不足以失败关闭：当 metadata 声称 `C1`、正文实际引用 `C2` 时，必须直接校验 `visible_ids` 对 `available_ids` 的子集关系。
+- 预期 GREEN 合同保持三道硬门：非空 visible marker、visible marker 全部可用、存在的 metadata 类型合法且其 ID 全部可用。
+
+## 2026-07-21 Loop 60 GREEN Contract
+
+- 共享 parser 保留既有 builder 安全边界：支持方括号、全角方括号、圆括号、全角圆括号及裸 `C<number>`，但拒绝嵌入更大字母数字 token 的伪 marker。
+- DeepSeek provider 的安全权威现在是正文中实际可见的 marker；可选 `citation_ids` 仅作为额外结构化声明接受独立类型/可用性校验。
+- `41/41` 定向测试通过只证明本地 parser/builder 合同修复，不证明上一轮 raw provider payload 内容，也不构成生产或 live UAT 证据。
+
+## 2026-07-21 Loop 60 Candidate Decision
+
+- 全量 `890/890`、Ruff、Mypy 和 diff-check 均通过，因此候选满足本地 L1/L2 promotion 前质量门。
+- 发布必要性成立：变更直接覆盖已在 L4 中触发的 parser failure family，同时保持无 marker 与越界引用失败关闭；不涉及 schema、env、runtime provider 配置或数据迁移。
+- 当前证据仍不能承诺新 live UAT 必然通过，因为上一轮 raw provider response 未保留；只有部署 exact merged SHA 后的新授权 L4 才能验证实际 provider 行为。
+
 ## 2026-06-30 Initial Inventory
 
 - Branch: `codex/frontend-2.0`.
