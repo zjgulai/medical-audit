@@ -269,6 +269,79 @@ def test_deepseek_answer_provider_uses_valid_visible_markers_when_citation_ids_m
     assert answer == "医疗机构应当保留医保基金审核依据 [C1]。"
 
 
+@pytest.mark.parametrize("marker", ["【C1】", "(C1)", "（C1）"])
+def test_deepseek_answer_provider_accepts_supported_citation_marker_variants(
+    marker: str,
+) -> None:
+    expected_answer = f"医疗机构应当保留医保基金审核依据 {marker}。"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"answer": expected_answer, "citation_ids": ["C1"]},
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    assert answer == expected_answer
+
+
+def test_deepseek_answer_provider_uses_visible_markers_when_metadata_has_extra_available_ids(
+) -> None:
+    expected_answer = "医疗机构应当保留医保基金审核依据 [C1]。"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer": expected_answer,
+                                    "citation_ids": ["C1", "C2"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = provider.generate_answer(
+        "问题", (_citation("C1", "依据一"), _citation("C2", "依据二"))
+    )
+
+    assert answer == expected_answer
+
+
 @pytest.mark.parametrize(
     ("content", "expected_reason"),
     [
@@ -279,6 +352,10 @@ def test_deepseek_answer_provider_uses_valid_visible_markers_when_citation_ids_m
         ),
         (
             json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C2"]}),
+            "deepseek_citation_ids_unavailable",
+        ),
+        (
+            json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C1"]}),
             "deepseek_citation_ids_unavailable",
         ),
         (

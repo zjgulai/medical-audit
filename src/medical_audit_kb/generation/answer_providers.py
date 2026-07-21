@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Sequence
 from typing import Literal
 
 import httpx
 
-from medical_audit_kb.generation.citations import Citation
+from medical_audit_kb.generation.citations import Citation, citation_labels_in_text
 
 
 class AnswerProviderError(RuntimeError):
@@ -364,24 +363,21 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
 
     normalized_answer = answer.strip()
     available_ids = {citation.citation_id.upper() for citation in citations}
-    visible_ids = {
-        match.group(1).upper()
-        for match in re.finditer(r"\[(C\d+)\]", normalized_answer, flags=re.IGNORECASE)
-    }
+    visible_ids = citation_labels_in_text(normalized_answer)
     claimed_ids = (
         {citation_id.upper() for citation_id in citation_ids}
         if isinstance(citation_ids, list) and citation_ids
-        else visible_ids
+        else set()
     )
-    if not claimed_ids.issubset(available_ids):
+    if not visible_ids.issubset(available_ids) or not claimed_ids.issubset(available_ids):
         raise AnswerProviderError(
             "deepseek answer generation json contains unavailable citation ids",
             code="provider_response_invalid",
             reason="deepseek_citation_ids_unavailable",
         )
-    if not visible_ids or visible_ids != claimed_ids:
+    if not visible_ids:
         raise AnswerProviderError(
-            "deepseek answer generation json citations must match answer markers",
+            "deepseek answer generation json answer must contain citation markers",
             code="provider_response_invalid",
             reason="deepseek_citation_markers_mismatch",
         )

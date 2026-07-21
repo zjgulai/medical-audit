@@ -7,6 +7,57 @@ status: "active"
 
 # Progress
 
+## 2026-07-21 Loop 60 H1 Citation Marker Remediation Start
+
+- 恢复实际发布 clone `/Users/pray/project/medical_audit_h1_fix_20260721`；`main` 与 `origin/main` 均为 `c5a81923ddcf5b549d6325a89cde6b5377370128`，启动时 worktree clean。
+- 核对 L4 run `fa-20260721t104308z-c5a81923`：第 1 case 通过，第 2 case 因 `deepseek_citation_markers_mismatch` 失败，provider calls `2`、retry `0`，case 3/4 未执行。
+- allowlist comparison 为 `uat-failed-boundary-pass`；仅 `query_logs +2` 和对应 query audit events `+2`，其他受保护表、schema、object storage 和 release topology 不变。
+- 用户开始后续完整方案设计与 TODO 执行；本 Loop 只执行本地诊断、TDD 修复和验证，不继承上次 live 授权。
+- Phase 0 complete; Phase 1 root-cause tracing in progress.
+
+Boundary: `production unchanged`, `provider_call=false`, `database_write=false`, `deploy_execution=false`, `live_send=false`.
+
+## 2026-07-21 Loop 60 Phase 1 Parser Trace
+
+- 完整读取 DeepSeek prompt/parser 和 provider unit tests，并对照已部署 commit `d7573d6`。
+- 确认当前 mismatch 理由无法区分“无 visible marker”与“visible marker/冗余 ID 不一致”，因此尚未修改 production code。
+- 下一步：追踪 `citation_ids` 是否被 parser 之外使用，并检查 fallback/日志层是否有安全的结构化区分信号。
+
+- 追踪已完成：`citation_ids` 没有 parser 之外的业务消费者；`answer_builder` 以正文 marker 为真实绑定，且已明确支持全角/括号 marker 变体。
+- Phase 1 complete. Phase 2 TDD RED starts with two behaviors: shared marker variants must be accepted by the DeepSeek parser, and valid visible markers must remain authoritative when redundant available `citation_ids` drift.
+
+## 2026-07-21 Loop 60 Phase 2 TDD RED
+
+- 新增 DeepSeek provider 回归：接受 `【C1】`、`(C1)`、`（C1）`；正文有效 `[C1]` 时不因冗余但可用的 `citation_ids=[C1,C2]` 被拒绝；正文 `[C2]` 不得被 `citation_ids=[C1]` 掩盖。
+- RED 命令：`uv run pytest tests/knowledge_query/test_answer_providers.py -q`。
+- RED 结果符合预期：5 failures；三个 marker 变体和一个冗余 metadata case 均触发 `deepseek_citation_markers_mismatch`，正文越界 case 错误地报告 mismatch 而非 unavailable。
+- Phase 2 complete. Phase 3 starts with one shared marker-label parser and no production/provider side effect.
+
+## 2026-07-21 Loop 60 Phase 3 Minimal Fix
+
+- 将 marker-label parser 从 `answer_builder.py` 收敛到 `citations.py`，供 builder 与 DeepSeek provider 共用；避免同一答案在两层使用不同格式合同。
+- provider 现在分别校验正文 `visible_ids` 和可选 metadata `claimed_ids` 是否属于 `available_ids`；正文 marker 仍必须非空。
+- 移除 `visible_ids == claimed_ids` 的冗余强等式；metadata 的非法类型与不可用 ID 硬门保持不变。
+- GREEN 命令：`uv run pytest tests/knowledge_query/test_answer_providers.py tests/knowledge_query/test_citations.py -q`；结果 `41 passed`。
+- Phase 3 complete. Phase 4 full local quality gates in progress.
+
+## 2026-07-21 Loop 60 Phase 4-5 Local Candidate Closure
+
+- 全量 Pytest：`890 passed`，仅 1 条既有 Starlette/httpx deprecation warning；无 failure/error。
+- Ruff：`All checks passed!`；Mypy：`Success: no issues found in 104 source files`；`git diff --check` pass。
+- 精确 tracked worktree 为 7 files：3 个 production source、1 个 provider test、3 个 Loop 60 plan ledgers；未 staging、未 commit、未 push。
+- 部署 TODO 已同步为 `local-candidate-validated-awaiting-promotion-authorization`；生产继续运行 `c5a81923...`，上次 live packet 仍为已消费。
+- Phase 4-5 complete. Next gate is separate authorization for commit/push/merge; deploy and a new live UAT remain later independent gates.
+
+Boundary: `production unchanged`, `provider_call=false`, `database_write=false`, `deploy_execution=false`, `live_send=false`.
+
+## 2026-07-21 Loop 60 Phase 6 Promotion Start
+
+- 用户明确授权继续上一道门：创建 `codex/` 分支，将当前 7-file tracked diff commit、push 并合并到 `main`。
+- Fresh fetch 后 `HEAD == main == origin/main == c5a81923ddcf5b549d6325a89cde6b5377370128`；候选分支名在 local/remote 均不存在。
+- 已创建 `codex/h1-citation-marker-contract-20260721`；下一步仅精确 staging 七个已审阅文件，不使用 broad add。
+- 本授权不包含 deploy、生产备份/重启、provider call、生产 DB/env/runtime 写入或 live UAT。
+
 ## 2026-06-30 Loop Start
 
 - Created persistent loop planning files under `.kiro/plan/`.
