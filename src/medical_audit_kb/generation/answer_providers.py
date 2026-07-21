@@ -352,24 +352,27 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
             code="provider_response_invalid",
             reason="deepseek_answer_empty",
         )
-    if (
+    if citation_ids not in (None, []) and (
         not isinstance(citation_ids, list)
-        or not citation_ids
         or not all(isinstance(citation_id, str) and citation_id for citation_id in citation_ids)
     ):
         raise AnswerProviderError(
-            "deepseek answer generation json citation_ids must be non-empty",
+            "deepseek answer generation json citation_ids must be strings",
             code="provider_response_invalid",
             reason="deepseek_citation_ids_invalid",
         )
 
     normalized_answer = answer.strip()
-    claimed_ids = {citation_id.upper() for citation_id in citation_ids}
     available_ids = {citation.citation_id.upper() for citation in citations}
     visible_ids = {
         match.group(1).upper()
         for match in re.finditer(r"\[(C\d+)\]", normalized_answer, flags=re.IGNORECASE)
     }
+    claimed_ids = (
+        {citation_id.upper() for citation_id in citation_ids}
+        if isinstance(citation_ids, list) and citation_ids
+        else visible_ids
+    )
     if not claimed_ids.issubset(available_ids):
         raise AnswerProviderError(
             "deepseek answer generation json contains unavailable citation ids",

@@ -229,9 +229,54 @@ def test_deepseek_answer_provider_requests_json_and_parses_cited_answer() -> Non
 
 
 @pytest.mark.parametrize(
+    "structured_content",
+    [
+        {"answer": "医疗机构应当保留医保基金审核依据 [C1]。"},
+        {
+            "answer": "医疗机构应当保留医保基金审核依据 [C1]。",
+            "citation_ids": [],
+        },
+    ],
+)
+def test_deepseek_answer_provider_uses_valid_visible_markers_when_citation_ids_missing_or_empty(
+    structured_content: dict[str, object],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(structured_content, ensure_ascii=False)
+                        }
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = provider.generate_answer(
+        "医疗机构需要保留什么？", (_citation("C1", "依据"),)
+    )
+
+    assert answer == "医疗机构应当保留医保基金审核依据 [C1]。"
+
+
+@pytest.mark.parametrize(
     ("content", "expected_reason"),
     [
         ("{not-json", "deepseek_content_invalid_json"),
+        (
+            json.dumps({"answer": "回答 [C1]。", "citation_ids": "C1"}),
+            "deepseek_citation_ids_invalid",
+        ),
         (
             json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C2"]}),
             "deepseek_citation_ids_unavailable",
