@@ -279,6 +279,7 @@ def query(
         **filter_payload,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_failure_reason": answer.generation_failure_reason,
         "generation_http_status": answer.generation_http_status,
     }
     retrieved_chunk_ids = [str(citation.chunk_id) for citation in answer.citations]
@@ -294,6 +295,7 @@ def query(
         "model_status": model_status,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_failure_reason": answer.generation_failure_reason,
         "generation_http_status": answer.generation_http_status,
         "filters": filter_payload,
         "retrieved_chunk_ids": retrieved_chunk_ids,
@@ -340,6 +342,7 @@ def query(
             "model_status": model_status,
             "generation_status": answer.generation_status.value,
             "generation_failure_code": answer.generation_failure_code,
+            "generation_failure_reason": answer.generation_failure_reason,
             "generation_http_status": answer.generation_http_status,
             "query_log_id": persisted_log.get("id") if persisted_log else None,
             "query_history_error": query_history_error,
@@ -356,6 +359,7 @@ def query(
         "fallback_used": answer.fallback_used,
         "generation_status": answer.generation_status.value,
         "generation_failure_code": answer.generation_failure_code,
+        "generation_failure_reason": answer.generation_failure_reason,
         "generation_http_status": answer.generation_http_status,
         "model_alias": model_alias,
         "model_status": model_status,
@@ -873,6 +877,7 @@ def _query_history_review_task_payload(
         "model",
         "generation_status",
         "generation_failure_code",
+        "generation_failure_reason",
         "generation_http_status",
     )
     retrieved_chunk_ids = _string_items(history.get("retrieved_chunk_ids"))
@@ -997,6 +1002,7 @@ def _query_history_item(item: dict[str, object]) -> dict[str, object]:
         **item,
         "generation_status": filters["generation_status"],
         "generation_failure_code": filters.get("generation_failure_code"),
+        "generation_failure_reason": filters.get("generation_failure_reason"),
         "generation_http_status": filters.get("generation_http_status"),
     }
 

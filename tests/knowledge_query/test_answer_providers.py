@@ -141,6 +141,25 @@ def test_openai_compatible_answer_provider_does_not_expose_http_response_body() 
     assert "private provider sentinel" not in str(error_info.value)
 
 
+def test_openai_compatible_answer_provider_reports_invalid_response_body_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="private non-json provider sentinel")
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        provider="deepseek",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AnswerProviderError) as error_info:
+        provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    assert error_info.value.code == "provider_response_invalid"
+    assert error_info.value.reason == "response_body_invalid_json"
+    assert "private non-json provider sentinel" not in str(error_info.value)
+
+
 def test_openai_compatible_answer_provider_requires_visible_citation_marker() -> None:
     requests: list[httpx.Request] = []
 
@@ -210,14 +229,23 @@ def test_deepseek_answer_provider_requests_json_and_parses_cited_answer() -> Non
 
 
 @pytest.mark.parametrize(
-    "content",
+    ("content", "expected_reason"),
     [
-        "{not-json",
-        json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C2"]}),
-        json.dumps({"answer": "正文没有引用标记。", "citation_ids": ["C1"]}),
+        ("{not-json", "deepseek_content_invalid_json"),
+        (
+            json.dumps({"answer": "越界引用 [C2]。", "citation_ids": ["C2"]}),
+            "deepseek_citation_ids_unavailable",
+        ),
+        (
+            json.dumps({"answer": "正文没有引用标记。", "citation_ids": ["C1"]}),
+            "deepseek_citation_markers_mismatch",
+        ),
     ],
 )
-def test_deepseek_answer_provider_rejects_invalid_citation_json(content: str) -> None:
+def test_deepseek_answer_provider_reports_safe_invalid_response_reason(
+    content: str,
+    expected_reason: str,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
@@ -232,6 +260,8 @@ def test_deepseek_answer_provider_rejects_invalid_citation_json(content: str) ->
         provider.generate_answer("问题", (_citation("C1", "依据"),))
 
     assert error_info.value.code == "provider_response_invalid"
+    assert error_info.value.reason == expected_reason
+    assert content not in str(error_info.value)
 
 
 def test_openai_compatible_answer_provider_rejects_empty_content() -> None:

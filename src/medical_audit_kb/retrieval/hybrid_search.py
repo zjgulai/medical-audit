@@ -108,12 +108,21 @@ class HybridSearchEngine:
         fetch_k: int = 50,
     ) -> tuple[HybridSearchResult, ...]:
         active_filters = filters or RetrievalFilters()
+        candidate_filters = _candidate_prefilter(active_filters)
         try:
             query_embedding = self._embedding_provider.embed_texts([query])[0]
-            vector_results = self._vector_index.search(query_embedding, top_k=fetch_k)
+            vector_results = self._vector_index.search(
+                query_embedding,
+                top_k=fetch_k,
+                filters=candidate_filters,
+            )
         except EmbeddingProviderError:
             vector_results = ()
-        bm25_results = self._bm25_index.search(query, top_k=fetch_k)
+        bm25_results = self._bm25_index.search(
+            query,
+            top_k=fetch_k,
+            filters=candidate_filters,
+        )
 
         candidates = _merge_candidates(vector_results, bm25_results)
         candidates = {
@@ -143,6 +152,12 @@ class HybridSearchEngine:
             scored = _apply_rerank(query, scored, self._rerank_provider)
 
         return tuple(sorted(scored, key=lambda result: result.score, reverse=True)[:top_k])
+
+
+def _candidate_prefilter(filters: RetrievalFilters) -> dict[str, object] | None:
+    if len(filters.source_collections) != 1:
+        return None
+    return {"source_collection": filters.source_collections[0].value}
 
 
 def _merge_candidates(

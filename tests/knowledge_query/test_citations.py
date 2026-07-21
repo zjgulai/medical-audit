@@ -58,6 +58,34 @@ class HttpStatusFailingProvider:
         )
 
 
+class InvalidResponseFailingProvider:
+    provider = "fake"
+    model_name = "invalid-response-answer"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        _ = question, citations
+        raise AnswerProviderError(
+            "deepseek answer generation content must be valid json",
+            code="provider_response_invalid",
+            reason="deepseek_content_invalid_json",
+        )
+
+
+class UnsafeReasonFailingProvider:
+    provider = "fake"
+    model_name = "unsafe-reason-answer"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[object]) -> str:
+        _ = question, citations
+        raise AnswerProviderError(
+            "invalid response",
+            code="provider_response_invalid",
+            reason="private provider payload",
+        )
+
+
 class UncitedProvider:
     provider = "fake"
     model_name = "uncited-answer"
@@ -224,6 +252,22 @@ def test_answer_preserves_safe_provider_http_status() -> None:
 
     assert answer.generation_failure_code == "provider_http_status"
     assert answer.generation_http_status == 429
+
+
+def test_answer_preserves_only_allowlisted_provider_failure_reason() -> None:
+    safe_answer = build_citation_backed_answer(
+        "超量开药依据是什么？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=InvalidResponseFailingProvider(),
+    )
+    unsafe_answer = build_citation_backed_answer(
+        "超量开药依据是什么？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=UnsafeReasonFailingProvider(),
+    )
+
+    assert safe_answer.generation_failure_reason == "deepseek_content_invalid_json"
+    assert unsafe_answer.generation_failure_reason is None
 
 
 def test_answer_fallback_keeps_question_focused_citations() -> None:

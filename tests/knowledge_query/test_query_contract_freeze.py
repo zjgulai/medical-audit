@@ -32,6 +32,7 @@ def test_query_contract_v2_json_matches_runtime_source_collection_registry() -> 
     assert [item["value"] for item in contract["excluded_collections"]] == ["other-unclassified"]
     assert "contract_version" in contract["query_response_required_fields"]
     assert "effective_source_collections" in contract["query_response_required_fields"]
+    assert "generation_failure_reason" in contract["query_response_required_fields"]
 
 
 def test_query_contract_v2_keeps_phase_counts_explicit() -> None:

@@ -37,6 +37,7 @@ The `/query` response must include:
 - `effective_source_collections`
 - `generation_status`: `not_requested`, `generated`, or `retrieval_fallback`
 - `generation_failure_code`: a sanitized reason code or `null`; never a provider response body
+- `generation_failure_reason`: an allowlisted malformed-response subtype or `null`; never raw provider content
 - `generation_http_status`: a sanitized upstream HTTP status (`400`-`599`) or `null`; never a provider response body
 
 These fields make effective backend filtering and generation fallback state visible to the frontend
