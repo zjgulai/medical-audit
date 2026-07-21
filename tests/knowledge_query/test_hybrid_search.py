@@ -1,14 +1,17 @@
+from collections.abc import Mapping
 from uuid import UUID, uuid4
 
 from medical_audit_kb.domain.constants import SourceCollection
-from medical_audit_kb.indexing.bm25_index import BM25Document, InMemoryBM25Index
+from medical_audit_kb.indexing.bm25_index import BM25Document, BM25SearchResult, InMemoryBM25Index
 from medical_audit_kb.indexing.embeddings import (
     DeterministicFakeEmbeddingProvider,
     EmbeddingProviderError,
 )
 from medical_audit_kb.indexing.vector_index import (
     ChunkEmbeddingInput,
+    ChunkEmbeddingRecord,
     InMemoryVectorIndex,
+    VectorSearchResult,
     build_chunk_embedding_records,
 )
 from medical_audit_kb.retrieval.filters import RetrievalFilters
@@ -61,6 +64,79 @@ def test_hybrid_search_filters_by_source_year_region_document_type_and_topic() -
     )
 
     assert [result.chunk.chunk_id for result in results] == [ids["law"]]
+
+
+def test_hybrid_search_pushes_single_source_collection_into_candidate_recall() -> None:
+    provider = DeterministicFakeEmbeddingProvider(dimension=32)
+    target_id = uuid4()
+    metadata = {
+        "source_collection": SourceCollection.RISK_NEGATIVE_LIST.value,
+        "locator": {"type": "pdf-page", "source_path": "风险负面清单/risk.pdf"},
+        "index_version_key": "index-v1",
+        "source_package_version_key": "package-v1",
+    }
+    vector_index = _FilterRequiredVectorIndex(target_id, metadata)
+    bm25_index = _FilterRequiredBM25Index(target_id, metadata)
+    engine = HybridSearchEngine(
+        embedding_provider=provider,
+        vector_index=vector_index,
+        bm25_index=bm25_index,
+        rerank_provider=None,
+    )
+
+    results = engine.search(
+        "超量开药",
+        filters=RetrievalFilters(source_collections=(SourceCollection.RISK_NEGATIVE_LIST,)),
+        top_k=1,
+        fetch_k=1,
+    )
+
+    expected_filter = {"source_collection": SourceCollection.RISK_NEGATIVE_LIST.value}
+    assert vector_index.received_filters == expected_filter
+    assert bm25_index.received_filters == expected_filter
+    assert [result.chunk.chunk_id for result in results] == [target_id]
+
+
+def test_hybrid_search_recalls_negative_list_term_before_global_candidate_truncation() -> None:
+    target_id = uuid4()
+    bm25_index = InMemoryBM25Index()
+    documents = [
+        BM25Document(
+            chunk_id=uuid4(),
+            text="超量开药 超量开药 超量开药",
+            metadata={"source_collection": SourceCollection.SUPERVISION_RULES_KNOWLEDGE.value},
+        )
+        for _ in range(3)
+    ]
+    documents.append(
+        BM25Document(
+            chunk_id=target_id,
+            text="超量开药是指超过规定剂量开具药品。",
+            metadata={
+                "source_collection": SourceCollection.RISK_NEGATIVE_LIST.value,
+                "locator": {"type": "pdf-page", "source_path": "风险负面清单/risk.pdf"},
+                "index_version_key": "index-v1",
+                "source_package_version_key": "package-v1",
+            },
+        )
+    )
+    bm25_index.upsert(documents)
+    engine = HybridSearchEngine(
+        embedding_provider=_FailingEmbeddingProvider(),
+        vector_index=InMemoryVectorIndex(dimension=32),
+        bm25_index=bm25_index,
+        rerank_provider=None,
+    )
+
+    results = engine.search(
+        "超量开药",
+        filters=RetrievalFilters(source_collections=(SourceCollection.RISK_NEGATIVE_LIST,)),
+        top_k=1,
+        fetch_k=1,
+    )
+
+    assert [result.chunk.chunk_id for result in results] == [target_id]
+    assert "超过规定剂量" in results[0].chunk.text
 
 
 def test_hybrid_search_title_only_matches_title_metadata_not_body_text() -> None:
@@ -303,6 +379,59 @@ class _FailingEmbeddingProvider:
 
     def embed_texts(self, texts: list[str]) -> tuple[tuple[float, ...], ...]:
         raise EmbeddingProviderError("embedding provider quota exhausted")
+
+
+class _FilterRequiredVectorIndex:
+    def __init__(self, chunk_id: UUID, metadata: dict[str, object]) -> None:
+        self.received_filters: dict[str, object] | None = None
+        self._result = VectorSearchResult(
+            record=ChunkEmbeddingRecord(
+                chunk_id=chunk_id,
+                text="超量开药是指超过规定剂量开具药品。",
+                embedding=tuple(0.0 for _ in range(32)),
+                provider="fake",
+                model_name="fake-embedding",
+                provider_version="v1",
+                dimension=32,
+                metadata=metadata,
+            ),
+            score=0.8,
+        )
+
+    def search(
+        self,
+        query_embedding: tuple[float, ...],
+        *,
+        top_k: int = 10,
+        filters: Mapping[str, object] | None = None,
+    ) -> tuple[VectorSearchResult, ...]:
+        _ = query_embedding, top_k
+        self.received_filters = dict(filters) if filters else None
+        return (self._result,) if self.received_filters else ()
+
+
+class _FilterRequiredBM25Index:
+    def __init__(self, chunk_id: UUID, metadata: dict[str, object]) -> None:
+        self.received_filters: dict[str, object] | None = None
+        self._result = BM25SearchResult(
+            document=BM25Document(
+                chunk_id=chunk_id,
+                text="超量开药是指超过规定剂量开具药品。",
+                metadata=metadata,
+            ),
+            score=1.0,
+        )
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 10,
+        filters: Mapping[str, object] | None = None,
+    ) -> tuple[BM25SearchResult, ...]:
+        _ = query, top_k
+        self.received_filters = dict(filters) if filters else None
+        return (self._result,) if self.received_filters else ()
 
 
 def _chunk_input(

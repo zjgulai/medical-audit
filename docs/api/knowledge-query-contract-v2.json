@@ -203,6 +203,7 @@
     "fallback_used",
     "generation_status",
     "generation_failure_code",
+    "generation_failure_reason",
     "generation_http_status",
     "basis_groups",
     "citations",

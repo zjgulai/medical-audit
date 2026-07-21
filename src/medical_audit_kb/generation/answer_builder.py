@@ -76,6 +76,40 @@ GENERATION_FAILURE_CODES = frozenset(
         "provider_exception",
     }
 )
+GenerationFailureReason = Literal[
+    "response_body_invalid_json",
+    "response_root_not_object",
+    "response_choices_missing",
+    "response_choice_not_object",
+    "response_message_missing",
+    "response_content_empty",
+    "anthropic_content_missing",
+    "anthropic_content_block_not_object",
+    "deepseek_content_invalid_json",
+    "deepseek_json_root_not_object",
+    "deepseek_answer_empty",
+    "deepseek_citation_ids_invalid",
+    "deepseek_citation_ids_unavailable",
+    "deepseek_citation_markers_mismatch",
+]
+GENERATION_FAILURE_REASONS = frozenset(
+    {
+        "response_body_invalid_json",
+        "response_root_not_object",
+        "response_choices_missing",
+        "response_choice_not_object",
+        "response_message_missing",
+        "response_content_empty",
+        "anthropic_content_missing",
+        "anthropic_content_block_not_object",
+        "deepseek_content_invalid_json",
+        "deepseek_json_root_not_object",
+        "deepseek_answer_empty",
+        "deepseek_citation_ids_invalid",
+        "deepseek_citation_ids_unavailable",
+        "deepseek_citation_markers_mismatch",
+    }
+)
 
 
 class AnswerGenerationError(Exception):
@@ -127,6 +161,7 @@ class CitationBackedAnswer:
     fallback_used: bool
     generation_status: GenerationStatus
     generation_failure_code: GenerationFailureCode | None = None
+    generation_failure_reason: GenerationFailureReason | None = None
     generation_http_status: int | None = None
     generation_error: str | None = None
 
@@ -152,6 +187,7 @@ def build_citation_backed_answer(
     fallback_answer = _fallback_answer(question, citation_groups)
     generation_error: str | None = None
     generation_failure_code: GenerationFailureCode | None = None
+    generation_failure_reason: GenerationFailureReason | None = None
     generation_http_status: int | None = None
     fallback_used = generation_provider is None
     generation_status = (
@@ -172,6 +208,7 @@ def build_citation_backed_answer(
         except Exception as exc:
             generation_error = str(exc)
             generation_failure_code = _generation_failure_code(exc)
+            generation_failure_reason = _generation_failure_reason(exc)
             generation_http_status = _generation_http_status(exc)
             answer = fallback_answer
             fallback_used = True
@@ -186,6 +223,7 @@ def build_citation_backed_answer(
         fallback_used=fallback_used,
         generation_status=generation_status,
         generation_failure_code=generation_failure_code,
+        generation_failure_reason=generation_failure_reason,
         generation_http_status=generation_http_status,
         generation_error=generation_error,
     )
@@ -203,6 +241,13 @@ def _generation_failure_code(exc: Exception) -> GenerationFailureCode:
 def _generation_http_status(exc: Exception) -> int | None:
     value = getattr(exc, "http_status", None)
     return value if isinstance(value, int) and 400 <= value <= 599 else None
+
+
+def _generation_failure_reason(exc: Exception) -> GenerationFailureReason | None:
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, str) and reason in GENERATION_FAILURE_REASONS:
+        return cast(GenerationFailureReason, reason)
+    return None
 
 
 def _basis_groups(citation_groups: tuple[CitationGroup, ...]) -> tuple[AnswerBasisGroup, ...]:

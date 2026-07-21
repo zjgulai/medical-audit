@@ -18,6 +18,7 @@ class AnswerProviderError(RuntimeError):
         *,
         code: str = "provider_exception",
         http_status: int | None = None,
+        reason: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -26,6 +27,7 @@ class AnswerProviderError(RuntimeError):
             if isinstance(http_status, int) and 400 <= http_status <= 599
             else None
         )
+        self.reason = reason if isinstance(reason, str) else None
 
 
 ThinkingMode = Literal["enabled", "disabled"]
@@ -137,7 +139,7 @@ class OpenAICompatibleAnswerGenerationProvider:
                 http_status=exc.response.status_code,
             ) from exc
 
-        response_payload = response.json()
+        response_payload = _response_json(response)
         if self.provider == "deepseek":
             return _deepseek_answer_content(response_payload, citations)
         return _answer_content(response_payload)
@@ -230,7 +232,7 @@ class AnthropicAnswerGenerationProvider:
                 http_status=exc.response.status_code,
             ) from exc
 
-        return _anthropic_answer_content(response.json())
+        return _anthropic_answer_content(_response_json(response))
 
 
 _SYSTEM_PROMPT = """你是医保审计知识库答案生成器。
@@ -281,32 +283,48 @@ def _answer_content(payload: object) -> str:
         raise AnswerProviderError(
             "answer generation response root must be an object",
             code="provider_response_invalid",
+            reason="response_root_not_object",
         )
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         raise AnswerProviderError(
             "answer generation response missing choices",
             code="provider_response_invalid",
+            reason="response_choices_missing",
         )
     first_choice = choices[0]
     if not isinstance(first_choice, dict):
         raise AnswerProviderError(
             "answer generation choice must be an object",
             code="provider_response_invalid",
+            reason="response_choice_not_object",
         )
     message = first_choice.get("message")
     if not isinstance(message, dict):
         raise AnswerProviderError(
             "answer generation choice missing message",
             code="provider_response_invalid",
+            reason="response_message_missing",
         )
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         raise AnswerProviderError(
             "answer generation message content must be non-empty",
             code="provider_response_invalid",
+            reason="response_content_empty",
         )
     return content.strip()
+
+
+def _response_json(response: httpx.Response) -> object:
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise AnswerProviderError(
+            "answer generation response body must be valid json",
+            code="provider_response_invalid",
+            reason="response_body_invalid_json",
+        ) from exc
 
 
 def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> str:
@@ -317,11 +335,13 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
         raise AnswerProviderError(
             "deepseek answer generation content must be valid json",
             code="provider_response_invalid",
+            reason="deepseek_content_invalid_json",
         ) from exc
     if not isinstance(structured, dict):
         raise AnswerProviderError(
             "deepseek answer generation json root must be an object",
             code="provider_response_invalid",
+            reason="deepseek_json_root_not_object",
         )
 
     answer = structured.get("answer")
@@ -330,6 +350,7 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
         raise AnswerProviderError(
             "deepseek answer generation json answer must be non-empty",
             code="provider_response_invalid",
+            reason="deepseek_answer_empty",
         )
     if (
         not isinstance(citation_ids, list)
@@ -339,6 +360,7 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
         raise AnswerProviderError(
             "deepseek answer generation json citation_ids must be non-empty",
             code="provider_response_invalid",
+            reason="deepseek_citation_ids_invalid",
         )
 
     normalized_answer = answer.strip()
@@ -352,25 +374,39 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
         raise AnswerProviderError(
             "deepseek answer generation json contains unavailable citation ids",
             code="provider_response_invalid",
+            reason="deepseek_citation_ids_unavailable",
         )
     if not visible_ids or visible_ids != claimed_ids:
         raise AnswerProviderError(
             "deepseek answer generation json citations must match answer markers",
             code="provider_response_invalid",
+            reason="deepseek_citation_markers_mismatch",
         )
     return normalized_answer
 
 
 def _anthropic_answer_content(payload: object) -> str:
     if not isinstance(payload, dict):
-        raise AnswerProviderError("answer generation response root must be an object")
+        raise AnswerProviderError(
+            "answer generation response root must be an object",
+            code="provider_response_invalid",
+            reason="response_root_not_object",
+        )
     content_blocks = payload.get("content")
     if not isinstance(content_blocks, list) or not content_blocks:
-        raise AnswerProviderError("answer generation response missing content")
+        raise AnswerProviderError(
+            "answer generation response missing content",
+            code="provider_response_invalid",
+            reason="anthropic_content_missing",
+        )
     text_parts: list[str] = []
     for block in content_blocks:
         if not isinstance(block, dict):
-            raise AnswerProviderError("answer generation content block must be an object")
+            raise AnswerProviderError(
+                "answer generation content block must be an object",
+                code="provider_response_invalid",
+                reason="anthropic_content_block_not_object",
+            )
         if block.get("type") != "text":
             continue
         text = block.get("text")
@@ -378,5 +414,9 @@ def _anthropic_answer_content(payload: object) -> str:
             text_parts.append(text.strip())
     answer = "\n".join(text_parts).strip()
     if not answer:
-        raise AnswerProviderError("answer generation message content must be non-empty")
+        raise AnswerProviderError(
+            "answer generation message content must be non-empty",
+            code="provider_response_invalid",
+            reason="response_content_empty",
+        )
     return answer
