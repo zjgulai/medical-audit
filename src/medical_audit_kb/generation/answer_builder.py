@@ -92,6 +92,8 @@ GenerationFailureReason = Literal[
     "deepseek_citation_ids_invalid",
     "deepseek_citation_ids_unavailable",
     "deepseek_citation_markers_mismatch",
+    "deepseek_citation_markers_missing_with_claimed_ids",
+    "deepseek_citation_markers_missing_without_claimed_ids",
 ]
 GENERATION_FAILURE_REASONS = frozenset(
     {
@@ -109,6 +111,8 @@ GENERATION_FAILURE_REASONS = frozenset(
         "deepseek_citation_ids_invalid",
         "deepseek_citation_ids_unavailable",
         "deepseek_citation_markers_mismatch",
+        "deepseek_citation_markers_missing_with_claimed_ids",
+        "deepseek_citation_markers_missing_without_claimed_ids",
     }
 )
 

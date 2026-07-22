@@ -360,7 +360,11 @@ def test_deepseek_answer_provider_uses_visible_markers_when_metadata_has_extra_a
         ),
         (
             json.dumps({"answer": "正文没有引用标记。", "citation_ids": ["C1"]}),
-            "deepseek_citation_markers_mismatch",
+            "deepseek_citation_markers_missing_with_claimed_ids",
+        ),
+        (
+            json.dumps({"answer": "正文没有引用标记。"}),
+            "deepseek_citation_markers_missing_without_claimed_ids",
         ),
     ],
 )

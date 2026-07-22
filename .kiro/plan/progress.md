@@ -1652,3 +1652,61 @@ Decision and boundary:
 - The post-remediation exact-head browser corpus is explicitly bound to `1b3e44a...`: desktop `20/20`, phone `20/20`, tablet `20/20`, visible-copy `34/0`, with screenshots under `output/playwright/loop59-c3-final-exact-sha-1b3e44a/screenshots/`.
 - The latest review identified two ledger/evidence clarity findings plus one workstation privacy finding. The valid scope was closed docs-only by separating completed remediation/promotion from pending C3-MERGE, binding screenshots to the exact evidence head, replacing Loop 59 backup locations with artifact IDs, and removing credential path/mode/size metadata.
 - This closure does not modify `web/`, backend runtime, deployment scripts or tests. C3-MERGE remains unchecked and independently authorized; no merge, SSH, S0/preflight, deploy, production/database/object write, provider call or live send executed. `production unchanged`, `deploy_execution=false`, `database_write=false`, `provider_attempt_made=false`, `provider_call_status=not_observed`, `live_send=false`.
+## 2026-07-22 H1 Knowledge live UAT authorization start
+
+- Received exact live authorization for production SHA `3b204a783e555687657ac42f960440002a27ec5e`, run ID `fa-20260722t015126z-3b204a7`, model `deepseek-v4-pro`.
+- Execution starts with read-only identity/readiness/catalog/health/baseline checks. Provider calls remain blocked until every preflight gate passes.
+- Authorized mutation ceiling is four query-log rows plus their corresponding query audit logs; all other production write surfaces remain frozen.
+- Restored the previous fail-closed runner/comparator and confirmed the current worktree differs from `main` only by the two local planning ledgers. No provider call has occurred in this run.
+- Found stale packet constants in the retained `tmp/` runner and comparator. They will be rebound to the exact authorized run ID/SHA before any preflight or live action.
+- Rebound the retained one-shot runner/comparator to run `fa-20260722t015126z-3b204a7` and SHA `3b204a783e555687657ac42f960440002a27ec5e`; no endpoint/model/case/limit semantics changed.
+- One local JSON metadata inspection failed before executing any production command because the `jq` object expression needed parentheses around `//`. No provider or production write was attempted; the corrected probe will use a simplified expression.
+- Corrected the local metadata probe and verified both rebound Python tools compile. The next action is the authorized read-only production preflight sequence.
+- Authorized read-only preflight started. Sanitized provider readiness, GET-only catalog, and deployment-state health commands completed before the baseline step; the combined command exited `2` when release-guard rejected the exact authorized run ID with `acceptance run id is invalid`.
+- Fail-closed boundary held: provider call count for this run remains `0`; no query/audit or other production write was attempted. The exact run ID will not be changed or bypassed. Next action is local validator diagnosis plus verification of already-produced preflight artifacts.
+- Diagnosed the blocker locally: authorized suffix `3b204a7` is 7 hex characters; the established guard requires 8 to 32. The corrected candidate ID `fa-20260722t015126z-3b204a78` passes the unchanged regex.
+- Verified produced preflight evidence: readiness=`ready_for_smoke`; catalog=`pass` with exact production SHA and `deepseek-v4-pro` available; deployment health=`pass`, app/PostgreSQL/ClamAV healthy, embedding count=`49051`, health-auditor delta=`0`. The baseline file was not created.
+- Stopped before provider execution. Awaiting an exact replacement authorization; no validator weakening, run-ID substitution, provider retry, DELETE, query/audit insertion, or other production mutation occurred.
+
+## 2026-07-22 H1 Knowledge replacement authorization start
+
+- Owner explicitly replaced the invalid run identity with `fa-20260722t015126z-3b204a78`; production SHA, model, four-call ceiling, `900`-token limit, zero-retry rule, allowlist and all prohibitions remain unchanged.
+- Rebound the ignored one-shot runner and comparator to the exact replacement identity. Provider execution remains blocked pending fresh read-only preflight and zero-attribution baseline.
+- Fresh preflight passed: sanitized readiness=`ready_for_smoke`; `deepseek-v4-pro` is configured with key state `SET`, model `deepseek-v4-pro`, output limit `900`, temperature `0`, thinking disabled; GET-only catalog matched exact production SHA; deployment health passed with app/PostgreSQL/ClamAV healthy and `49051` embeddings.
+- Fresh baseline snapshot `915f21b39e1f5e3493625ab6e8ac5272b7c62879453ffc0aed73ec716fcb80d5` passed with no concurrent activity and zero attributable events for the replacement identity. Pre-run counts: `query_logs=5560`, `audit_log_events=56968`, `audit_agent_invocations=1707`.
+- All pre-call gates are green. The next action is the single authorized zero-retry live runner; it will stop at the first failed case.
+- Live runner executed exactly once from `2026-07-22T02:04:09Z` to `02:04:21Z`. It made two provider calls with zero retry, then returned `failed-stopped` on case 2 as required.
+- Case 1 passed with `generation_status=generated`; case 2 returned HTTP `200` but failed closed with `generation_status=retrieval_fallback`, `provider_response_invalid / deepseek_citation_markers_mismatch`. Cases 3 and 4 were not executed.
+- Provider execution is permanently stopped for this packet. Remaining authorized work is read-only post snapshot, attribution/allowlist comparison and health verification only.
+- Post snapshot `061a4f103421dbc919f8405463ab59bd68b99dcda7a57d38015897a356053610` passed at the unchanged production SHA with no concurrent activity and exactly two attributable query audit events.
+- Allowlist comparison status is `uat-failed-boundary-pass`: `query_logs +2`, `audit_log_events +2`; both query IDs match response IDs and both audit rows match the query IDs. All other protected tables, schema, object ledger and release topology are unchanged.
+- Post-health passed with app/PostgreSQL/ClamAV healthy, embedding count `49051`, audit delta `0`, and unchanged production SHA. No DELETE was performed and query/audit history was retained.
+- This replacement packet is consumed. UAT did not pass; any new provider attempt requires separate exact authorization.
+
+## 2026-07-22 Loop 62 local diagnosis start
+
+- Owner approved the next step described in the prior handoff: local sanitized root-cause analysis and RED→GREEN remediation only.
+- Activated file-based planning, systematic debugging and TDD. No production/provider action is authorized or planned in this loop.
+- Current starting tree is `main == origin/main` at the deployed SHA plus the three local planning-ledger modifications produced by the completed UAT evidence work.
+- Created local branch `codex/h1-citation-marker-live2-20260722`; no commit or remote action occurred.
+- Read the complete prior remediation diff and current parser/tests. The live reason `deepseek_citation_markers_mismatch` is emitted only after the DeepSeek response body and nested JSON both parse, `answer` is non-empty text, `citation_ids` type validation passes, and neither visible nor claimed IDs are outside the available candidate set.
+- Verified retained snapshots/query persistence do not contain the rejected provider answer or sanitized marker shape. Local marker-shape probe documented accepted/rejected formats; focused provider/citation tests passed `41/41`.
+- Phase 1 currently reaches an evidence limit: actual provider output shape is unobserved. A parser-format RED would be speculative. The remaining non-speculative choice is architecture/observability review, not another blind parser relaxation.
+- Official DeepSeek docs were rechecked: JSON mode validates JSON syntax, not the custom answer/citation schema; strict schema is a separate Beta tool-call path.
+- Chosen narrow local lane: observability-only TDD. It will split the marker-missing reason by presence of already type/range-validated `citation_ids`, without accepting any previously rejected answer. Functional architecture remains undecided pending evidence.
+- RED observed exactly as predicted: four failures. The provider emitted the legacy collapsed reason for both fixtures, and the builder discarded both new safe reasons as non-allowlisted. No implementation code had changed before this RED.
+- Implemented the minimal diagnostic split only. Missing visible markers still raise `provider_response_invalid`; the reason now states whether already validated claimed IDs were present. Added both reasons to the builder's safe allowlist while retaining the legacy reason for historical compatibility.
+- Targeted GREEN passed `8/8`. No parser regex, prompt, response acceptance, citation rendering, retry or fallback behavior changed.
+- Related provider/citation/API test selection passed completely; changed-file Ruff passed; targeted Mypy passed for both changed source files; `git diff --check` passed. The only warning is the pre-existing Starlette/httpx deprecation.
+- Exact local diff is two source files, two test files and three planning ledgers. Full repository verification is next; no commit/push/provider/production action occurred.
+- One ledger-closeout patch initially failed because it targeted the historical Loop 61 `Current blocker` paragraph rather than the new Loop 62 section. No source/test state changed in that failed patch; the corrected update is scoped to Loop 62.
+- Full verification passed on the final source/test candidate: Pytest `893 passed` with one inherited Starlette/httpx deprecation warning; Ruff passed; Mypy passed `104` source files; `git diff --check` passed.
+- Exact diff review confirms the runtime change only selects one of two safe failure reasons when `visible_ids` is empty. It does not alter the parser, prompt, accepted answers, citation IDs, retry count or fallback path.
+- Loop 62 stops at a verified local observability candidate. It is not committed or pushed, production is unchanged, and the failed live packet remains consumed.
+
+## 2026-07-22 Loop 63 promotion/deploy authorization start
+
+- Owner explicitly authorized the next gate described in the handoff: exact seven-file commit, push, merge and observability deployment.
+- Authorized deployment scope is standard backups plus app/static release and app restart/L3 verification. Live provider UAT and schema/env/review/document/index/agent writes remain excluded.
+- Starting branch is `codex/h1-citation-marker-live2-20260722`; `main == origin/main == current production SHA` before promotion. Current tracked diff is the two source files, two tests and three planning ledgers from Loop 62.
+- Fresh promotion audit passed: exact seven tracked files, no untracked or pre-staged files, base/head both `3b204a783e555687657ac42f960440002a27ec5e`, scoped secret-marker count `0`, diff-check clean and GitHub authentication available.

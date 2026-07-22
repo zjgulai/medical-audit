@@ -270,6 +270,38 @@ def test_answer_preserves_only_allowlisted_provider_failure_reason() -> None:
     assert unsafe_answer.generation_failure_reason is None
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "deepseek_citation_markers_missing_with_claimed_ids",
+        "deepseek_citation_markers_missing_without_claimed_ids",
+    ],
+)
+def test_answer_preserves_safe_marker_observability_reason(reason: str) -> None:
+    class MarkerFailureProvider:
+        provider = "deepseek"
+        model_name = "deepseek-v4-pro"
+        provider_version = "v1"
+
+        def generate_answer(
+            self, question: str, citations: Sequence[object]
+        ) -> str:
+            _ = question, citations
+            raise AnswerProviderError(
+                "deepseek answer generation json answer must contain citation markers",
+                code="provider_response_invalid",
+                reason=reason,
+            )
+
+    answer = build_citation_backed_answer(
+        "超量开药依据是什么？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=MarkerFailureProvider(),
+    )
+
+    assert answer.generation_failure_reason == reason
+
+
 def test_answer_fallback_keeps_question_focused_citations() -> None:
     answer = build_citation_backed_answer(
         "头孢曲松的剂型是什么？",
