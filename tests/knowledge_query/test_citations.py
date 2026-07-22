@@ -1,6 +1,8 @@
+import json
 from collections.abc import Sequence
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from medical_audit_kb.domain.constants import SourceCollection
@@ -10,7 +12,10 @@ from medical_audit_kb.generation.answer_builder import (
     NoCitedEvidenceError,
     build_citation_backed_answer,
 )
-from medical_audit_kb.generation.answer_providers import AnswerProviderError
+from medical_audit_kb.generation.answer_providers import (
+    AnswerProviderError,
+    OpenAICompatibleAnswerGenerationProvider,
+)
 from medical_audit_kb.generation.citations import EvidenceType, build_citations, group_citations
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult, RetrievedChunk
 
@@ -275,9 +280,15 @@ def test_answer_preserves_only_allowlisted_provider_failure_reason() -> None:
     [
         "deepseek_citation_markers_missing_with_claimed_ids",
         "deepseek_citation_markers_missing_without_claimed_ids",
+        "deepseek_strict_tool_call_missing",
+        "deepseek_strict_arguments_invalid_json",
+        "deepseek_strict_claim_blocks_invalid",
+        "deepseek_strict_claim_text_has_markers",
+        "deepseek_strict_citation_ids_unavailable",
+        "deepseek_strict_insufficient_evidence",
     ],
 )
-def test_answer_preserves_safe_marker_observability_reason(reason: str) -> None:
+def test_answer_preserves_safe_deepseek_failure_reason(reason: str) -> None:
     class MarkerFailureProvider:
         provider = "deepseek"
         model_name = "deepseek-v4-pro"
@@ -300,6 +311,59 @@ def test_answer_preserves_safe_marker_observability_reason(reason: str) -> None:
     )
 
     assert answer.generation_failure_reason == reason
+
+
+def test_strict_insufficient_evidence_uses_retrieval_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_cited_answer",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "submit_cited_answer",
+                                        "arguments": json.dumps(
+                                            {
+                                                "status": "insufficient_evidence",
+                                                "claim_blocks": [],
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        base_url="https://api.deepseek.com/beta",
+        provider="deepseek",
+        deepseek_output_mode="strict_tool_call",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = build_citation_backed_answer(
+        "现有依据能否支持结论？",
+        (_result(SourceCollection.SUPERVISION_RULES_KNOWLEDGE, score=0.7),),
+        generation_provider=provider,
+    )
+
+    assert answer.fallback_used is True
+    assert answer.generation_status.value == "retrieval_fallback"
+    assert answer.generation_failure_code == "provider_abstention"
+    assert answer.generation_failure_reason == "deepseek_strict_insufficient_evidence"
+    assert "未生成无引用结论" in answer.answer
 
 
 def test_answer_fallback_keeps_question_focused_citations() -> None:

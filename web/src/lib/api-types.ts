@@ -740,6 +740,7 @@ export type QueryResponse = {
     | "provider_transport"
     | "provider_http_status"
     | "provider_response_invalid"
+    | "provider_abstention"
     | "citation_marker_missing"
     | "provider_exception"
     | null;
