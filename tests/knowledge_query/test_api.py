@@ -5412,6 +5412,67 @@ def test_query_endpoint_reports_and_persists_safe_provider_failure_reason(
     assert persisted["generation_failure_reason"] == "deepseek_content_invalid_json"
 
 
+def test_query_endpoint_propagates_and_persists_provider_abstention(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_query.answer_generation_provider_for_alias",
+        lambda _alias: AbstainingApiAnswerProvider(),
+        raising=False,
+    )
+    database_url = f"sqlite:///{tmp_path / 'query-provider-abstention-history.db'}"
+    state = _api_state(tmp_path)
+    state.query_history_store = SqlAlchemyQueryHistoryStore(database_url, create_schema=True)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={"question": "医保基金审核依据", "top_k": 2, "model": "deepseek-v4-pro"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fallback_used"] is True
+    assert body["generation_status"] == "retrieval_fallback"
+    assert body["generation_failure_code"] == "provider_abstention"
+    assert body["generation_failure_reason"] == "deepseek_strict_insufficient_evidence"
+    assert "private provider abstention sentinel" not in json.dumps(body, ensure_ascii=False)
+
+    query_log = state.query_logs[-1]
+    assert query_log["generation_failure_code"] == "provider_abstention"
+    assert query_log["generation_failure_reason"] == "deepseek_strict_insufficient_evidence"
+    assert "private provider abstention sentinel" not in json.dumps(
+        query_log,
+        ensure_ascii=False,
+    )
+    operation_payload = state.operation_logs[-1]["payload"]
+    assert operation_payload["generation_failure_code"] == "provider_abstention"
+    assert operation_payload["generation_failure_reason"] == (
+        "deepseek_strict_insufficient_evidence"
+    )
+    assert "private provider abstention sentinel" not in json.dumps(
+        operation_payload,
+        ensure_ascii=False,
+    )
+
+    second_state = _api_state(tmp_path / "second-provider-abstention-history")
+    second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
+    persisted = TestClient(create_app(second_state)).get(
+        "/query/logs",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+    ).json()["items"][0]
+    assert persisted["generation_failure_code"] == "provider_abstention"
+    assert persisted["generation_failure_reason"] == (
+        "deepseek_strict_insufficient_evidence"
+    )
+    assert "private provider abstention sentinel" not in json.dumps(
+        persisted,
+        ensure_ascii=False,
+    )
+
+
 def test_chat_attachment_analyzes_table_with_selected_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -6645,6 +6706,20 @@ class InvalidResponseApiAnswerProvider:
             "private provider sentinel",
             code="provider_response_invalid",
             reason="deepseek_content_invalid_json",
+        )
+
+
+class AbstainingApiAnswerProvider:
+    provider = "deepseek"
+    model_name = "deepseek-v4-pro"
+    provider_version = "v1"
+
+    def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        _ = question, citations
+        raise AnswerProviderError(
+            "private provider abstention sentinel",
+            code="provider_abstention",
+            reason="deepseek_strict_insufficient_evidence",
         )
 
 

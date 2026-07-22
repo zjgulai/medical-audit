@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from typing import Literal
 
@@ -30,11 +31,15 @@ class AnswerProviderError(RuntimeError):
 
 
 ThinkingMode = Literal["enabled", "disabled"]
+DeepSeekOutputMode = Literal["json", "strict_tool_call"]
 
 DEFAULT_THINKING_MODE_BY_PROVIDER: dict[str, ThinkingMode] = {
     "kimi": "enabled",
     "deepseek": "disabled",
 }
+
+_DEEPSEEK_STRICT_BASE_URL = "https://api.deepseek.com/beta"
+_DEEPSEEK_STRICT_TOOL_NAME = "submit_cited_answer"
 
 
 class OpenAICompatibleAnswerGenerationProvider:
@@ -50,6 +55,7 @@ class OpenAICompatibleAnswerGenerationProvider:
         max_output_tokens: int = 600,
         temperature: float = 0.0,
         thinking_mode: ThinkingMode | None = None,
+        deepseek_output_mode: DeepSeekOutputMode = "json",
         http_client: httpx.Client | None = None,
     ) -> None:
         if not api_key:
@@ -59,14 +65,25 @@ class OpenAICompatibleAnswerGenerationProvider:
             )
         if max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive")
+        if deepseek_output_mode not in {"json", "strict_tool_call"}:
+            raise ValueError("deepseek_output_mode must be json or strict_tool_call")
+        normalized_base_url = base_url.rstrip("/")
+        if deepseek_output_mode == "strict_tool_call" and (
+            provider != "deepseek" or normalized_base_url != _DEEPSEEK_STRICT_BASE_URL
+        ):
+            raise AnswerProviderError(
+                "strict tool-call output requires deepseek beta configuration",
+                code="provider_configuration",
+            )
         self.provider = provider
         self.model_name = model_name
         self.provider_version = provider_version
         self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        self._base_url = normalized_base_url
         self._max_output_tokens = max_output_tokens
         self._temperature = temperature
         self._thinking_mode = thinking_mode or DEFAULT_THINKING_MODE_BY_PROVIDER.get(provider)
+        self._deepseek_output_mode = deepseek_output_mode
         self._http_client = http_client or httpx.Client(timeout=timeout_seconds)
 
     @classmethod
@@ -76,9 +93,11 @@ class OpenAICompatibleAnswerGenerationProvider:
         api_key_env: str,
         model_name: str,
         base_url: str = "https://api.openai.com/v1",
+        provider: str = "openai",
         max_output_tokens: int = 600,
         temperature: float = 0.0,
         thinking_mode: ThinkingMode | None = None,
+        deepseek_output_mode: DeepSeekOutputMode = "json",
     ) -> OpenAICompatibleAnswerGenerationProvider:
         api_key = os.getenv(api_key_env)
         if not api_key:
@@ -90,21 +109,30 @@ class OpenAICompatibleAnswerGenerationProvider:
             api_key=api_key,
             model_name=model_name,
             base_url=base_url,
+            provider=provider,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
             thinking_mode=thinking_mode,
+            deepseek_output_mode=deepseek_output_mode,
         )
 
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+        strict_tool_call = (
+            self.provider == "deepseek"
+            and self._deepseek_output_mode == "strict_tool_call"
+        )
+        system_prompt = _DEEPSEEK_STRICT_SYSTEM_PROMPT if strict_tool_call else _SYSTEM_PROMPT
         user_prompt = (
-            _deepseek_user_prompt(question, citations)
+            _deepseek_strict_user_prompt(question, citations)
+            if strict_tool_call
+            else _deepseek_user_prompt(question, citations)
             if self.provider == "deepseek"
             else _user_prompt(question, citations)
         )
         payload: dict[str, object] = {
             "model": self.model_name,
             "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": self._temperature,
@@ -113,7 +141,13 @@ class OpenAICompatibleAnswerGenerationProvider:
         payload[token_field] = self._max_output_tokens
         if self._thinking_mode is not None:
             payload["thinking"] = {"type": self._thinking_mode}
-        if self.provider == "deepseek":
+        if strict_tool_call:
+            payload["tools"] = [_deepseek_strict_tool()]
+            payload["tool_choice"] = {
+                "type": "function",
+                "function": {"name": _DEEPSEEK_STRICT_TOOL_NAME},
+            }
+        elif self.provider == "deepseek":
             payload["response_format"] = {"type": "json_object"}
         try:
             response = self._http_client.post(
@@ -139,6 +173,8 @@ class OpenAICompatibleAnswerGenerationProvider:
             ) from exc
 
         response_payload = _response_json(response)
+        if strict_tool_call:
+            return _deepseek_strict_answer_content(response_payload, citations)
         if self.provider == "deepseek":
             return _deepseek_answer_content(response_payload, citations)
         return _answer_content(response_payload)
@@ -241,6 +277,14 @@ _SYSTEM_PROMPT = """你是医保审计知识库答案生成器。
 如果引用不足以回答问题，必须回答：依据不足，当前知识库未检索到足够可引用依据，拒绝生成结论。
 回答保持简洁，优先直接回答问题。"""
 
+_DEEPSEEK_STRICT_SYSTEM_PROMPT = """你是医保审计知识库答案生成器。
+只能依据用户提供的引用片段回答，不得引入外部知识或自行推断。
+必须调用 submit_cited_answer，并把每个事实性结论拆成独立 claim block。
+引用足够时，status 必须为 answered；每个 claim block 的 text 不得包含引用标记，
+citation_ids 必须非空且只能使用可用引用 ID。
+引用不足时，status 必须为 insufficient_evidence 且 claim_blocks 必须为空，不得生成或引用任何结论。
+回答保持简洁，优先直接回答问题。"""
+
 
 def _user_prompt(question: str, citations: Sequence[Citation]) -> str:
     lines = [
@@ -275,6 +319,70 @@ def _deepseek_user_prompt(question: str, citations: Sequence[Citation]) -> str:
             "citation_ids 必须完整列出 answer 正文中出现的引用 ID，且只能使用可用引用。",
         ]
     )
+
+
+def _deepseek_strict_user_prompt(question: str, citations: Sequence[Citation]) -> str:
+    lines = [
+        f"问题：{question}",
+        "",
+        "可用引用：",
+    ]
+    for citation in citations:
+        lines.append(f"{citation.marker} {citation.snippet}")
+    lines.extend(
+        [
+            "",
+            "输出要求：",
+            "- 只基于可用引用回答。",
+            "- 必须调用 submit_cited_answer。",
+            "- 引用足够时 status 必须为 answered，claim_blocks 必须非空。",
+            "- 引用不足时 status 必须为 insufficient_evidence，claim_blocks 必须为空。",
+            "- claim_blocks 中每个 text 只表达一个结论且不得包含引用标记。",
+            "- 每个 citation_ids 必须非空，并且只能列出直接支持该 claim block 的可用引用 ID。",
+            "- 不要输出未被引用支持的判断。",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _deepseek_strict_tool() -> dict[str, object]:
+    return {
+        "type": "function",
+        "function": {
+            "name": _DEEPSEEK_STRICT_TOOL_NAME,
+            "description": "Submit an answered or insufficient-evidence result.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["answered", "insufficient_evidence"],
+                    },
+                    "claim_blocks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "citation_ids": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "pattern": "^C[1-9][0-9]*$",
+                                    },
+                                },
+                            },
+                            "required": ["text", "citation_ids"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["status", "claim_blocks"],
+                "additionalProperties": False,
+            },
+        },
+    }
 
 
 def _answer_content(payload: object) -> str:
@@ -387,6 +495,152 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
             reason=reason,
         )
     return normalized_answer
+
+
+def _deepseek_strict_answer_content(
+    payload: object,
+    citations: Sequence[Citation],
+) -> str:
+    if not isinstance(payload, dict):
+        raise AnswerProviderError(
+            "deepseek strict response root must be an object",
+            code="provider_response_invalid",
+            reason="deepseek_strict_tool_call_missing",
+        )
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1:
+        raise AnswerProviderError(
+            "deepseek strict response must contain one choice",
+            code="provider_response_invalid",
+            reason="deepseek_strict_tool_call_missing",
+        )
+    choice = choices[0]
+    if not isinstance(choice, dict) or choice.get("finish_reason") != "tool_calls":
+        raise AnswerProviderError(
+            "deepseek strict response must finish with a tool call",
+            code="provider_response_invalid",
+            reason="deepseek_strict_tool_call_missing",
+        )
+    message = choice.get("message")
+    tool_calls = message.get("tool_calls") if isinstance(message, dict) else None
+    if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+        raise AnswerProviderError(
+            "deepseek strict response must contain one tool call",
+            code="provider_response_invalid",
+            reason="deepseek_strict_tool_call_missing",
+        )
+    tool_call = tool_calls[0]
+    function = tool_call.get("function") if isinstance(tool_call, dict) else None
+    if (
+        not isinstance(tool_call, dict)
+        or tool_call.get("type") != "function"
+        or not isinstance(function, dict)
+        or function.get("name") != _DEEPSEEK_STRICT_TOOL_NAME
+    ):
+        raise AnswerProviderError(
+            "deepseek strict response called an unexpected tool",
+            code="provider_response_invalid",
+            reason="deepseek_strict_tool_call_missing",
+        )
+    arguments = function.get("arguments")
+    if not isinstance(arguments, str) or not arguments.strip():
+        raise AnswerProviderError(
+            "deepseek strict tool arguments must be json text",
+            code="provider_response_invalid",
+            reason="deepseek_strict_arguments_invalid_json",
+        )
+    try:
+        structured = json.loads(arguments)
+    except json.JSONDecodeError as exc:
+        raise AnswerProviderError(
+            "deepseek strict tool arguments must be valid json",
+            code="provider_response_invalid",
+            reason="deepseek_strict_arguments_invalid_json",
+        ) from exc
+    if not isinstance(structured, dict) or set(structured) != {
+        "status",
+        "claim_blocks",
+    }:
+        raise AnswerProviderError(
+            "deepseek strict claim blocks must match the contract",
+            code="provider_response_invalid",
+            reason="deepseek_strict_claim_blocks_invalid",
+        )
+    status = structured["status"]
+    claim_blocks = structured["claim_blocks"]
+    if (
+        not isinstance(status, str)
+        or status not in {"answered", "insufficient_evidence"}
+        or not isinstance(claim_blocks, list)
+    ):
+        raise AnswerProviderError(
+            "deepseek strict status and claim blocks must match the contract",
+            code="provider_response_invalid",
+            reason="deepseek_strict_claim_blocks_invalid",
+        )
+    if status == "insufficient_evidence":
+        if claim_blocks:
+            raise AnswerProviderError(
+                "deepseek strict insufficient evidence must not contain claim blocks",
+                code="provider_response_invalid",
+                reason="deepseek_strict_claim_blocks_invalid",
+            )
+        raise AnswerProviderError(
+            "deepseek strict provider reported insufficient evidence",
+            code="provider_abstention",
+            reason="deepseek_strict_insufficient_evidence",
+        )
+    if not claim_blocks:
+        raise AnswerProviderError(
+            "deepseek strict claim blocks must be non-empty",
+            code="provider_response_invalid",
+            reason="deepseek_strict_claim_blocks_invalid",
+        )
+
+    available_ids = {citation.citation_id.upper() for citation in citations}
+    rendered_blocks: list[str] = []
+    for block in claim_blocks:
+        if not isinstance(block, dict) or set(block) != {"text", "citation_ids"}:
+            raise AnswerProviderError(
+                "deepseek strict claim block must match the contract",
+                code="provider_response_invalid",
+                reason="deepseek_strict_claim_blocks_invalid",
+            )
+        text = block["text"]
+        citation_ids = block["citation_ids"]
+        if (
+            not isinstance(text, str)
+            or not text.strip()
+            or not isinstance(citation_ids, list)
+            or not citation_ids
+            or not all(
+                isinstance(citation_id, str)
+                and re.fullmatch(r"C[1-9][0-9]*", citation_id) is not None
+                for citation_id in citation_ids
+            )
+            or len(set(citation_ids)) != len(citation_ids)
+        ):
+            raise AnswerProviderError(
+                "deepseek strict claim block values must be non-empty",
+                code="provider_response_invalid",
+                reason="deepseek_strict_claim_blocks_invalid",
+            )
+        normalized_text = text.strip()
+        if citation_labels_in_text(normalized_text):
+            raise AnswerProviderError(
+                "deepseek strict claim text must not contain citation markers",
+                code="provider_response_invalid",
+                reason="deepseek_strict_claim_text_has_markers",
+            )
+        if not set(citation_ids).issubset(available_ids):
+            raise AnswerProviderError(
+                "deepseek strict claim contains unavailable citation ids",
+                code="provider_response_invalid",
+                reason="deepseek_strict_citation_ids_unavailable",
+            )
+        rendered_markers = " ".join(f"[{citation_id}]" for citation_id in citation_ids)
+        rendered_blocks.append(f"{normalized_text} {rendered_markers}")
+    return "\n".join(rendered_blocks)
 
 
 def _anthropic_answer_content(payload: object) -> str:

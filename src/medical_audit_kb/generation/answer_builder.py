@@ -64,6 +64,7 @@ GenerationFailureCode = Literal[
     "provider_transport",
     "provider_http_status",
     "provider_response_invalid",
+    "provider_abstention",
     "citation_marker_missing",
     "provider_exception",
 ]
@@ -73,6 +74,7 @@ GENERATION_FAILURE_CODES = frozenset(
         "provider_transport",
         "provider_http_status",
         "provider_response_invalid",
+        "provider_abstention",
         "citation_marker_missing",
         "provider_exception",
     }
@@ -94,6 +96,12 @@ GenerationFailureReason = Literal[
     "deepseek_citation_markers_mismatch",
     "deepseek_citation_markers_missing_with_claimed_ids",
     "deepseek_citation_markers_missing_without_claimed_ids",
+    "deepseek_strict_tool_call_missing",
+    "deepseek_strict_arguments_invalid_json",
+    "deepseek_strict_claim_blocks_invalid",
+    "deepseek_strict_claim_text_has_markers",
+    "deepseek_strict_citation_ids_unavailable",
+    "deepseek_strict_insufficient_evidence",
 ]
 GENERATION_FAILURE_REASONS = frozenset(
     {
@@ -113,6 +121,12 @@ GENERATION_FAILURE_REASONS = frozenset(
         "deepseek_citation_markers_mismatch",
         "deepseek_citation_markers_missing_with_claimed_ids",
         "deepseek_citation_markers_missing_without_claimed_ids",
+        "deepseek_strict_tool_call_missing",
+        "deepseek_strict_arguments_invalid_json",
+        "deepseek_strict_claim_blocks_invalid",
+        "deepseek_strict_claim_text_has_markers",
+        "deepseek_strict_citation_ids_unavailable",
+        "deepseek_strict_insufficient_evidence",
     }
 )
 

@@ -228,6 +228,283 @@ def test_deepseek_answer_provider_requests_json_and_parses_cited_answer() -> Non
     assert "json" in prompt.lower()
 
 
+def test_deepseek_strict_tool_call_requests_claim_schema_and_renders_blocks() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_cited_answer",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "submit_cited_answer",
+                                        "arguments": json.dumps(
+                                            {
+                                                "status": "answered",
+                                                "claim_blocks": [
+                                                    {
+                                                        "text": (
+                                                            "医疗机构应当保留医保基金审核依据。"
+                                                        ),
+                                                        "citation_ids": ["C1"],
+                                                    },
+                                                    {
+                                                        "text": "审核记录应当可追溯。",
+                                                        "citation_ids": ["C2", "C1"],
+                                                    },
+                                                ]
+                                            },
+                                            ensure_ascii=False,
+                                        ),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        base_url="https://api.deepseek.com/beta",
+        provider="deepseek",
+        deepseek_output_mode="strict_tool_call",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    answer = provider.generate_answer(
+        "医疗机构需要保留什么？",
+        (
+            _citation("C1", "医保基金审核依据。"),
+            _citation("C2", "审核记录应当可追溯。"),
+        ),
+    )
+
+    payload = json.loads(requests[0].read())
+    prompt = "\n".join(message["content"] for message in payload["messages"])
+    function = payload["tools"][0]["function"]
+    parameters = function["parameters"]
+    block_schema = parameters["properties"]["claim_blocks"]["items"]
+    assert requests[0].url == "https://api.deepseek.com/beta/chat/completions"
+    assert "response_format" not in payload
+    assert payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "submit_cited_answer"},
+    }
+    assert function["name"] == "submit_cited_answer"
+    assert function["strict"] is True
+    assert parameters["required"] == ["status", "claim_blocks"]
+    assert parameters["additionalProperties"] is False
+    assert parameters["properties"]["status"] == {
+        "type": "string",
+        "enum": ["answered", "insufficient_evidence"],
+    }
+    assert block_schema["required"] == ["text", "citation_ids"]
+    assert block_schema["additionalProperties"] is False
+    assert "最终答案至少包含一个来自可用引用列表的原样标记" not in prompt
+    assert "insufficient_evidence" in prompt
+    assert "claim_blocks 中每个 text 只表达一个结论且不得包含引用标记" in prompt
+    assert answer == (
+        "医疗机构应当保留医保基金审核依据。 [C1]\n"
+        "审核记录应当可追溯。 [C2] [C1]"
+    )
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_reason"),
+    [
+        ("{not-json", "deepseek_strict_arguments_invalid_json"),
+        (
+            json.dumps({"claim_blocks": []}),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps({"status": "unknown", "claim_blocks": []}),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps({"status": [], "claim_blocks": []}),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps({"status": "answered", "claim_blocks": []}),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "insufficient_evidence",
+                    "claim_blocks": [{"text": "结论", "citation_ids": ["C1"]}],
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "answered",
+                    "claim_blocks": [{"text": "结论", "citation_ids": []}],
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {"status": "answered", "claim_blocks": [{"text": "结论"}]},
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "answered",
+                    "claim_blocks": [
+                        {"text": "结论", "citation_ids": ["C1", "C1"]}
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "answered",
+                    "claim_blocks": [
+                        {
+                            "text": "结论",
+                            "citation_ids": ["C1"],
+                            "extra": "rejected",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_blocks_invalid",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "answered",
+                    "claim_blocks": [{"text": "结论", "citation_ids": ["C2"]}],
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_citation_ids_unavailable",
+        ),
+        (
+            json.dumps(
+                {
+                    "status": "answered",
+                    "claim_blocks": [
+                        {"text": "结论 [C1]", "citation_ids": ["C1"]}
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            "deepseek_strict_claim_text_has_markers",
+        ),
+    ],
+)
+def test_deepseek_strict_tool_call_rejects_invalid_claim_arguments(
+    arguments: str,
+    expected_reason: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_cited_answer",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "submit_cited_answer",
+                                        "arguments": arguments,
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+        )
+
+    provider = OpenAICompatibleAnswerGenerationProvider(
+        api_key="test-key",
+        model_name="deepseek-v4-pro",
+        base_url="https://api.deepseek.com/beta",
+        provider="deepseek",
+        deepseek_output_mode="strict_tool_call",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AnswerProviderError) as error_info:
+        provider.generate_answer("问题", (_citation("C1", "依据"),))
+
+    assert error_info.value.code == "provider_response_invalid"
+    assert error_info.value.reason == expected_reason
+    assert arguments not in str(error_info.value)
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "base_url"),
+    [
+        ("openai", "https://api.deepseek.com/beta"),
+        ("deepseek", "https://api.deepseek.com"),
+    ],
+)
+def test_strict_tool_call_rejects_incompatible_provider_configuration(
+    provider_name: str,
+    base_url: str,
+) -> None:
+    with pytest.raises(AnswerProviderError) as error_info:
+        OpenAICompatibleAnswerGenerationProvider(
+            api_key="test-key",
+            model_name="deepseek-v4-pro",
+            base_url=base_url,
+            provider=provider_name,
+            deepseek_output_mode="strict_tool_call",
+        )
+
+    assert error_info.value.code == "provider_configuration"
+
+
+def test_deepseek_strict_tool_call_from_env_forwards_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEST_DEEPSEEK_STRICT_KEY", "test-key")
+
+    provider = OpenAICompatibleAnswerGenerationProvider.from_env(
+        api_key_env="TEST_DEEPSEEK_STRICT_KEY",
+        model_name="deepseek-v4-pro",
+        base_url="https://api.deepseek.com/beta",
+        provider="deepseek",
+        deepseek_output_mode="strict_tool_call",
+    )
+
+    assert provider.provider == "deepseek"
+
+
 @pytest.mark.parametrize(
     "structured_content",
     [
