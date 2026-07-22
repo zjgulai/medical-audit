@@ -447,3 +447,75 @@ Evidence boundary:
 
 - Current phase: local diagnosis and TDD only.
 - `production unchanged`, `provider_call=false`, `database_write=false`, `deploy_execution=false`, `live_send=false`.
+
+## 2026-07-22 Loop 61 H1 Knowledge live UAT preflight
+
+Goal:
+
+- Execute the owner-authorized H1 Knowledge live UAT only after exact production SHA, model/key configuration, health, and zero-attribution baseline pass.
+
+Execution TODO:
+
+- [x] Restore the one-shot runner/comparator and bind them to the exact authorized SHA/run identity without changing model, cases, limits, or stop semantics.
+- [x] Run sanitized readiness, GET-only catalog, and deployment-state health preflight; all three passed at production SHA `3b204a783e555687657ac42f960440002a27ec5e`.
+- [x] Fail closed before provider execution because authorized run ID `fa-20260722t015126z-3b204a7` violates the existing 8..32 lowercase-hex suffix contract.
+- [x] Obtain explicit replacement authorization for valid run ID `fa-20260722t015126z-3b204a78`.
+- [x] Recapture fresh readiness/catalog/health and zero-attribution baseline `915f21b3...`; all gates passed at the exact production SHA.
+- [x] Execute the authorized live runner once: case 1 passed; case 2 reproduced `deepseek_citation_markers_mismatch`; stopped after two calls with zero retry and did not execute cases 3/4.
+- [x] Capture S2/post-health and prove allowlist boundary: `query_logs +2`, `audit_log_events +2`, all other protected state unchanged, no DELETE, history retained.
+
+Current blocker:
+
+- Live UAT outcome is `failed-stopped`; boundary outcome is `pass`. The exact packet is consumed and cannot authorize another provider call. Any new diagnosis/fix may proceed locally, but any new live UAT requires a separate exact authorization.
+
+## 2026-07-22 Loop 62 H1 citation mismatch second root-cause investigation
+
+Goal:
+
+- Explain why case 2 still produces `deepseek_citation_markers_mismatch` after the deployed shared-marker remediation, using only retained sanitized evidence and local deterministic tests.
+- Produce at most one minimal RED→GREEN implementation fix if and only if a source-level root cause is established.
+
+Execution TODO:
+
+- [x] Phase 0 — isolated work on `codex/h1-citation-marker-live2-20260722`; inventoried exact prior diff/tests and preserved the three planning-ledger changes.
+- [x] Phase 1 — traced provider parsing through fallback and inspected retained evidence/persistence. Evidence proves no supported `C<number>` marker but cannot identify the provider's actual unsupported shape.
+- [x] Phase 2 — added two deterministic diagnostic cases and observed expected RED: `4 failed`, proving both provider-side collapse and builder allowlist loss.
+- [x] Phase 3 — implemented the smallest diagnostic split; targeted `8/8` GREEN with identical fail-closed acceptance behavior and no citation synthesis.
+- [x] Phase 4 — related tests and full Pytest `893 passed`; full Ruff passed; Mypy `104` source files passed; diff-check and exact four-file source/test review passed.
+
+Stop conditions:
+
+- No provider call, production SQL, SSH production mutation, env/runtime/schema/deploy write, DELETE, commit, push or merge.
+- If the retained evidence cannot distinguish the actual provider response shape, do not guess; add only local observability/test evidence or stop with the unresolved ambiguity.
+- This is the third live-visible failure cycle. If a third implementation hypothesis fails, stop patching and perform architecture review before any further fix.
+
+Acceptance contract:
+
+- Because retained evidence cannot identify a safely acceptable rejected marker shape, no speculative parser RED is allowed. The RED test instead proves that current diagnostics cannot distinguish whether validated citation metadata was present.
+- The GREEN diagnostic fix must continue rejecting answers without supported visible markers and must not accept unknown markers, out-of-range markers, non-string IDs or citations outside the current retrieval candidates.
+- Evidence ceiling is local L1/L2. Production remains unchanged and live UAT remains failed until a separately authorized future run proves otherwise.
+
+Current result:
+
+- Loop 62 is a verified local observability candidate, not a functional citation PASS. Commit/push/merge/deploy and any new provider UAT remain separate authorization gates.
+
+## 2026-07-22 Loop 63 observability candidate promotion and deployment
+
+Goal:
+
+- Promote the verified seven-file observability candidate through an exact atomic commit, normal push, PR merge and standard production app/static deployment.
+- Preserve production data/runtime boundaries: no schema/env/provider/review/document/index/agent write and no live UAT.
+
+Execution TODO:
+
+- [x] Phase 0 — exact seven-file inventory confirmed; `HEAD == origin/main == 3b204a7...`, ancestry valid, cached diff empty, untracked set empty, scoped secret-marker count `0`, diff-check and GitHub auth passed.
+- [ ] Phase 1 — create one atomic commit, normal-push the branch, create/verify PR, merge to `main`, and prove fresh `main == origin/main == approved SHA`.
+- [ ] Phase 2 — capture production S0 and run exact-SHA deploy preflight; fail closed on SHA/topology/health/backup/lock drift.
+- [ ] Phase 3 — execute standard app/env/DB/Nginx/Web backups, frozen app/static deployment, app rebuild/restart, versioned release/Nginx/marker and GET-only smoke without optional provider/schema/write flags.
+- [ ] Phase 4 — capture S1/stability and run L3 deployment-state/post-health verification; report any restart-attributable bootstrap audit separately from prohibited state.
+
+Stop conditions:
+
+- No force push, broad staging, branch deletion, schema migration, env content change, provider/query smoke, review/document/index/agent write or DELETE.
+- Any production SHA mismatch, deploy lock, incomplete backup set, unhealthy app/PostgreSQL/ClamAV, manifest mismatch or non-allowlisted state delta stops the release.
+- New live UAT remains an independent exact authorization after deployment.

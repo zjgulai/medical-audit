@@ -376,10 +376,15 @@ def _deepseek_answer_content(payload: object, citations: Sequence[Citation]) -> 
             reason="deepseek_citation_ids_unavailable",
         )
     if not visible_ids:
+        reason = (
+            "deepseek_citation_markers_missing_with_claimed_ids"
+            if claimed_ids
+            else "deepseek_citation_markers_missing_without_claimed_ids"
+        )
         raise AnswerProviderError(
             "deepseek answer generation json answer must contain citation markers",
             code="provider_response_invalid",
-            reason="deepseek_citation_markers_mismatch",
+            reason=reason,
         )
     return normalized_answer
 
