@@ -23,8 +23,10 @@ def test_index_incremental_plan_command_writes_outputs(
     def fake_build_from_database(**kwargs: object) -> object:
         source_root_arg = kwargs["source_root"]
         package_version_key_arg = kwargs["package_version_key"]
+        active_source_package_version_key_arg = kwargs["active_source_package_version_key"]
         assert isinstance(source_root_arg, (str, Path))
         assert isinstance(package_version_key_arg, str)
+        assert active_source_package_version_key_arg == "source-package-active"
         return build_incremental_plan(
             source_root_arg,
             active_documents=(
@@ -54,6 +56,8 @@ def test_index_incremental_plan_command_writes_outputs(
             str(source_root),
             "--package-version-key",
             "source-package-next",
+            "--active-source-package-version-key",
+            "source-package-active",
             "--database-url-env",
             "TEST_DATABASE_URL",
             "--output",

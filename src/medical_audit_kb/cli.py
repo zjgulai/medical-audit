@@ -257,6 +257,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     incremental_plan.add_argument("--source-root", required=True, type=Path)
     incremental_plan.add_argument("--package-version-key")
+    incremental_plan.add_argument("--active-source-package-version-key")
     incremental_plan.add_argument("--output", required=True, type=Path)
     incremental_plan.add_argument("--json-output", type=Path)
     incremental_plan.add_argument("--database-url-env", default=DATABASE_URL_ENV)
@@ -667,6 +668,7 @@ def _index_incremental_plan(args: argparse.Namespace) -> int:
         source_root=args.source_root,
         database_url=_database_url_from_env(args.database_url_env),
         package_version_key=args.package_version_key,
+        active_source_package_version_key=args.active_source_package_version_key,
     )
     _write_text(args.output, render_incremental_plan_markdown(plan))
     if args.json_output is not None:

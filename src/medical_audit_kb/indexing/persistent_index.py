@@ -4,7 +4,7 @@ import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TextIO, cast
 from uuid import UUID, uuid5
 
 from medical_audit_kb.domain.constants import SourceCollection
@@ -54,6 +54,15 @@ class PersistentEmbeddingWriteResult:
     embedding_count: int
     reused_count: int
     created_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingEmbeddingState:
+    current_chunk_ids: frozenset[UUID]
+    has_stale_rows: bool
+    has_incompatible_rows: bool
+    invalid_line_count: int
+    reusable_vectors: dict[str, EmbeddingVector]
 
 
 def build_persistent_index(
@@ -283,43 +292,91 @@ def _write_embedding_records(
     provider: EmbeddingProvider,
     resume: bool,
 ) -> PersistentEmbeddingWriteResult:
-    reusable_vectors = _read_reusable_embedding_vectors(path, provider=provider) if resume else {}
-    path.write_text("", encoding="utf-8")
+    if resume and path.exists():
+        return _resume_embedding_records(path, chunks, provider=provider)
+    return _rewrite_embedding_records(path, chunks, provider=provider, reusable_vectors={})
 
-    missing_chunks: list[ChunkEmbeddingInput] = []
-    reused_count = 0
+
+def _resume_embedding_records(
+    path: Path,
+    chunks: Sequence[ChunkEmbeddingInput],
+    *,
+    provider: EmbeddingProvider,
+) -> PersistentEmbeddingWriteResult:
+    current_chunk_ids = frozenset(chunk.chunk_id for chunk in chunks)
+    existing_state = _read_existing_embedding_state(
+        path,
+        provider=provider,
+        current_chunk_ids=current_chunk_ids,
+        reusable_texts=frozenset(),
+    )
+    should_rewrite = (
+        existing_state.invalid_line_count > 0
+        or existing_state.has_stale_rows
+        or existing_state.has_incompatible_rows
+    )
+    if should_rewrite:
+        reusable_texts = frozenset(chunk.text for chunk in chunks)
+        rewrite_state = _read_existing_embedding_state(
+            path,
+            provider=provider,
+            current_chunk_ids=current_chunk_ids,
+            reusable_texts=reusable_texts,
+        )
+        return _rewrite_embedding_records(
+            path,
+            chunks,
+            provider=provider,
+            reusable_vectors=rewrite_state.reusable_vectors,
+        )
+
+    missing_chunks = [
+        chunk for chunk in chunks if chunk.chunk_id not in existing_state.current_chunk_ids
+    ]
+    if not missing_chunks:
+        return PersistentEmbeddingWriteResult(
+            embedding_count=len(existing_state.current_chunk_ids),
+            reused_count=len(existing_state.current_chunk_ids),
+            created_count=0,
+        )
+
+    reusable_texts = frozenset(chunk.text for chunk in missing_chunks)
+    reusable_state = _read_existing_embedding_state(
+        path,
+        provider=provider,
+        current_chunk_ids=current_chunk_ids,
+        reusable_texts=reusable_texts,
+    )
+    appended_reused_count = 0
     created_count = 0
+    chunks_to_embed: list[ChunkEmbeddingInput] = []
     with path.open("a", encoding="utf-8") as file:
-        for chunk in chunks:
-            reusable_vector = reusable_vectors.get(chunk.text)
+        for chunk in missing_chunks:
+            reusable_vector = reusable_state.reusable_vectors.get(chunk.text)
             if reusable_vector is None:
-                missing_chunks.append(chunk)
+                chunks_to_embed.append(chunk)
                 continue
-            file.write(
-                json.dumps(
-                    _embedding_record_payload(
-                        ChunkEmbeddingRecord(
-                            chunk_id=chunk.chunk_id,
-                            text=chunk.text,
-                            embedding=reusable_vector,
-                            provider=provider.provider,
-                            model_name=provider.model_name,
-                            provider_version=provider.provider_version,
-                            dimension=provider.dimension,
-                            metadata=chunk.metadata,
-                        )
-                    ),
-                    ensure_ascii=False,
-                )
-                + "\n"
+            _write_embedding_record_line(
+                file,
+                ChunkEmbeddingRecord(
+                    chunk_id=chunk.chunk_id,
+                    text=chunk.text,
+                    embedding=reusable_vector,
+                    provider=provider.provider,
+                    model_name=provider.model_name,
+                    provider_version=provider.provider_version,
+                    dimension=provider.dimension,
+                    metadata=chunk.metadata,
+                ),
             )
-            reused_count += 1
-        for batch in _chunk_batches(missing_chunks, _provider_batch_size_hint(provider)):
+            appended_reused_count += 1
+        for batch in _chunk_batches(chunks_to_embed, _provider_batch_size_hint(provider)):
             records = _embedding_records_for_chunks(batch, provider=provider)
             for record in records:
-                file.write(json.dumps(_embedding_record_payload(record), ensure_ascii=False) + "\n")
+                _write_embedding_record_line(file, record)
             created_count += len(records)
 
+    reused_count = len(existing_state.current_chunk_ids) + appended_reused_count
     return PersistentEmbeddingWriteResult(
         embedding_count=reused_count + created_count,
         reused_count=reused_count,
@@ -327,24 +384,118 @@ def _write_embedding_records(
     )
 
 
-def _read_reusable_embedding_vectors(
+def _rewrite_embedding_records(
+    path: Path,
+    chunks: Sequence[ChunkEmbeddingInput],
+    *,
+    provider: EmbeddingProvider,
+    reusable_vectors: dict[str, EmbeddingVector],
+) -> PersistentEmbeddingWriteResult:
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    missing_chunks: list[ChunkEmbeddingInput] = []
+    reused_count = 0
+    created_count = 0
+    with tmp_path.open("w", encoding="utf-8") as file:
+        for chunk in chunks:
+            reusable_vector = reusable_vectors.get(chunk.text)
+            if reusable_vector is None:
+                missing_chunks.append(chunk)
+                continue
+            _write_embedding_record_line(
+                file,
+                ChunkEmbeddingRecord(
+                    chunk_id=chunk.chunk_id,
+                    text=chunk.text,
+                    embedding=reusable_vector,
+                    provider=provider.provider,
+                    model_name=provider.model_name,
+                    provider_version=provider.provider_version,
+                    dimension=provider.dimension,
+                    metadata=chunk.metadata,
+                ),
+            )
+            reused_count += 1
+        for batch in _chunk_batches(missing_chunks, _provider_batch_size_hint(provider)):
+            records = _embedding_records_for_chunks(batch, provider=provider)
+            for record in records:
+                _write_embedding_record_line(file, record)
+            created_count += len(records)
+    tmp_path.replace(path)
+    return PersistentEmbeddingWriteResult(
+        embedding_count=reused_count + created_count,
+        reused_count=reused_count,
+        created_count=created_count,
+    )
+
+
+def _write_embedding_record_line(file: TextIO, record: ChunkEmbeddingRecord) -> None:
+    file.write(json.dumps(_embedding_record_payload(record), ensure_ascii=False) + "\n")
+
+
+def _read_existing_embedding_state(
     path: Path,
     *,
     provider: EmbeddingProvider,
-) -> dict[str, EmbeddingVector]:
+    current_chunk_ids: frozenset[UUID],
+    reusable_texts: frozenset[str],
+) -> ExistingEmbeddingState:
     if not path.exists():
-        return {}
+        return ExistingEmbeddingState(
+            current_chunk_ids=frozenset(),
+            has_stale_rows=False,
+            has_incompatible_rows=False,
+            invalid_line_count=0,
+            reusable_vectors={},
+        )
 
+    existing_current_chunk_ids: set[UUID] = set()
     reusable_vectors: dict[str, EmbeddingVector] = {}
-    for row in _read_jsonl(path):
-        if not _embedding_row_matches_provider(row, provider):
-            continue
-        text = row.get("text")
-        embedding = row.get("embedding")
-        if not isinstance(text, str) or not isinstance(embedding, list):
-            continue
-        reusable_vectors.setdefault(text, tuple(float(value) for value in embedding))
-    return reusable_vectors
+    has_stale_rows = False
+    has_incompatible_rows = False
+    invalid_line_count = 0
+    with path.open(encoding="utf-8") as file:
+        for line in file:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                invalid_line_count += 1
+                continue
+            if not isinstance(row, dict):
+                invalid_line_count += 1
+                continue
+            if not _embedding_row_matches_provider(row, provider):
+                has_incompatible_rows = True
+                continue
+            chunk_id = row.get("chunk_id")
+            if not isinstance(chunk_id, str):
+                invalid_line_count += 1
+                continue
+            try:
+                parsed_chunk_id = UUID(chunk_id)
+            except ValueError:
+                invalid_line_count += 1
+                continue
+            if parsed_chunk_id in current_chunk_ids:
+                existing_current_chunk_ids.add(parsed_chunk_id)
+            else:
+                has_stale_rows = True
+            text = row.get("text")
+            embedding = row.get("embedding")
+            if (
+                isinstance(text, str)
+                and text in reusable_texts
+                and isinstance(embedding, list)
+            ):
+                reusable_vectors.setdefault(text, tuple(float(value) for value in embedding))
+    return ExistingEmbeddingState(
+        current_chunk_ids=frozenset(existing_current_chunk_ids),
+        has_stale_rows=has_stale_rows,
+        has_incompatible_rows=has_incompatible_rows,
+        invalid_line_count=invalid_line_count,
+        reusable_vectors=reusable_vectors,
+    )
 
 
 def _embedding_row_matches_provider(
