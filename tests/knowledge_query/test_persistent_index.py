@@ -110,6 +110,109 @@ def test_build_persistent_index_resume_reuses_existing_embeddings(tmp_path: Path
     assert second_provider.embedded_text_count == 1
 
 
+def test_build_persistent_index_resume_repairs_invalid_trailing_embedding_line(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
+    _write_text(source_root / "全量法律" / "医保政策B.md", "第二条 医保审核流程。")
+    index_root = tmp_path / "index"
+    first_provider = CountingEmbeddingProvider()
+    second_provider = CountingEmbeddingProvider()
+
+    build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=first_provider,
+        max_chunks=1,
+    )
+    with (index_root / EMBEDDINGS_FILE).open("a", encoding="utf-8") as file:
+        file.write('{"chunk_id": "partial"')
+
+    second_result = build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=second_provider,
+        max_chunks=2,
+        resume=True,
+    )
+    embedding_rows = _read_jsonl_objects(index_root / EMBEDDINGS_FILE)
+
+    assert second_result.embedding_count == 2
+    assert second_result.summary["embedding_reused_count"] == 1
+    assert second_result.summary["embedding_created_count"] == 1
+    assert second_provider.embedded_text_count == 1
+    assert len(embedding_rows) == 2
+
+
+def test_build_persistent_index_resume_removes_stale_rows_when_current_rows_remain(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
+    _write_text(source_root / "全量法律" / "医保政策B.md", "第二条 医保审核流程。")
+    index_root = tmp_path / "index"
+    first_provider = CountingEmbeddingProvider()
+    second_provider = CountingEmbeddingProvider()
+
+    build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=first_provider,
+        max_chunks=2,
+    )
+    second_result = build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=second_provider,
+        max_chunks=1,
+        resume=True,
+    )
+    embedding_rows = _read_jsonl_objects(index_root / EMBEDDINGS_FILE)
+
+    assert second_result.embedding_count == 1
+    assert second_result.summary["embedding_reused_count"] == 1
+    assert second_result.summary["embedding_created_count"] == 0
+    assert second_provider.embedded_text_count == 0
+    assert len(embedding_rows) == 1
+
+
+def test_build_persistent_index_resume_rewrites_rows_for_provider_change(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
+    index_root = tmp_path / "index"
+    first_provider = CountingEmbeddingProvider()
+    second_provider = AlternateCountingEmbeddingProvider()
+
+    build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=first_provider,
+    )
+    second_result = build_persistent_index(
+        source_root,
+        index_root,
+        package_version_key="package-test",
+        embedding_provider=second_provider,
+        resume=True,
+    )
+    embedding_rows = _read_jsonl_objects(index_root / EMBEDDINGS_FILE)
+
+    assert second_result.embedding_count == 1
+    assert second_result.summary["embedding_reused_count"] == 0
+    assert second_result.summary["embedding_created_count"] == 1
+    assert second_provider.embedded_text_count == 1
+    assert len(embedding_rows) == 1
+    assert embedding_rows[0]["provider_version"] == "v2"
+
+
 def test_build_persistent_index_uses_package_aware_chunk_ids(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(source_root / "全量法律" / "医保政策A.md", "第一条 医保审核依据。")
@@ -189,6 +292,10 @@ class CountingEmbeddingProvider:
         return tuple((float(index + 1), 0.0) for index, _text in enumerate(texts))
 
 
+class AlternateCountingEmbeddingProvider(CountingEmbeddingProvider):
+    provider_version = "v2"
+
+
 def _write_text(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -202,3 +309,13 @@ def _read_first_jsonl(path: Path) -> dict[str, object]:
             assert isinstance(payload, dict)
             return cast(dict[str, object], payload)
     raise AssertionError(f"empty jsonl file: {path}")
+
+
+def _read_jsonl_objects(path: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            payload = json.loads(line)
+            assert isinstance(payload, dict)
+            rows.append(cast(dict[str, object], payload))
+    return rows

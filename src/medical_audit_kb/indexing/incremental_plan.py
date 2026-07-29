@@ -211,8 +211,12 @@ def build_incremental_plan_from_database(
     source_root: Path | str,
     database_url: str,
     package_version_key: str | None = None,
+    active_source_package_version_key: str | None = None,
 ) -> IncrementalPlan:
-    active = load_active_source_documents(database_url)
+    active = load_active_source_documents(
+        database_url,
+        source_package_version_key=active_source_package_version_key,
+    )
     return build_incremental_plan(
         source_root,
         active_documents=active.documents,
@@ -294,19 +298,34 @@ class _ActiveIndexDocuments:
     documents: tuple[ActiveSourceDocument, ...]
 
 
-def load_active_source_documents(database_url: str) -> _ActiveIndexDocuments:
+def load_active_source_documents(
+    database_url: str,
+    *,
+    source_package_version_key: str | None = None,
+) -> _ActiveIndexDocuments:
     import psycopg
 
     with (
         psycopg.connect(_normalize_psycopg_database_url(database_url)) as connection,
         connection.cursor() as cursor,
     ):
-        cursor.execute(ACTIVE_INDEX_QUERY)
+        if source_package_version_key:
+            cursor.execute(ACTIVE_INDEX_BY_PACKAGE_QUERY, (source_package_version_key,))
+        else:
+            cursor.execute(ACTIVE_INDEX_QUERY)
         active_rows = cursor.fetchall()
         if not active_rows:
+            if source_package_version_key:
+                raise IncrementalPlanError(
+                    "no active index version found in database for source package "
+                    f"{source_package_version_key}"
+                )
             raise IncrementalPlanError("no active index version found in database")
         if len(active_rows) > 1:
-            raise IncrementalPlanError(f"multiple active index versions found: {len(active_rows)}")
+            raise IncrementalPlanError(
+                f"multiple active index versions found: {len(active_rows)}; "
+                "pass --active-source-package-version-key to select one source package"
+            )
         index_version_key, source_package_version_key, source_package_id = active_rows[0]
         cursor.execute(ACTIVE_DOCUMENTS_QUERY, (source_package_id,))
         documents = tuple(_active_document(row) for row in cursor.fetchall())
@@ -431,6 +450,15 @@ SELECT iv.version_key, spv.version_key, spv.id
 FROM index_versions iv
 JOIN source_package_versions spv ON spv.id = iv.source_package_version_id
 WHERE iv.status = 'active'
+ORDER BY iv.activated_at DESC NULLS LAST, iv.created_at DESC
+"""
+
+ACTIVE_INDEX_BY_PACKAGE_QUERY = """
+SELECT iv.version_key, spv.version_key, spv.id
+FROM index_versions iv
+JOIN source_package_versions spv ON spv.id = iv.source_package_version_id
+WHERE iv.status = 'active'
+  AND spv.version_key = %s
 ORDER BY iv.activated_at DESC NULLS LAST, iv.created_at DESC
 """
 
