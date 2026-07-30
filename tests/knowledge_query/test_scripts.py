@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+import yaml
 from pytest import MonkeyPatch
 
 
@@ -8414,6 +8415,24 @@ def test_deploy_tencent_cloud_package_carries_static_export() -> None:
     assert "archive/" not in module.APP_RSYNC_EXCLUDES
     assert "COPY web/out ./web/out" in dockerfile_text
     assert "MEDICAL_AUDIT_WEB_STATIC_ROOT: /app/web/out" in compose_text
+
+
+def test_deploy_tencent_cloud_ocr_gpu_reservation_is_compose_227_compatible() -> None:
+    compose = yaml.safe_load(
+        Path("configs/deploy/tencent-cloud/docker-compose.prod.yaml").read_text(
+            encoding="utf-8",
+        ),
+    )
+    ocr_service = compose["services"]["unlimited-ocr"]
+
+    assert "gpus" not in ocr_service
+    assert ocr_service["deploy"]["resources"]["reservations"]["devices"] == [
+        {
+            "driver": "nvidia",
+            "count": "all",
+            "capabilities": ["gpu"],
+        },
+    ]
 
 
 def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
