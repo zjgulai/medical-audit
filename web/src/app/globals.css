@@ -2159,6 +2159,8 @@ select {
 }
 
 .replica-chat-box {
+  display: grid;
+  gap: 14px;
   margin-top: 26px;
   min-height: 168px;
   border: 1px solid #e9edf4;
@@ -2173,7 +2175,7 @@ select {
   display: block;
   width: 100%;
   min-height: 76px;
-  resize: vertical;
+  resize: none;
   border: 0;
   outline: 0;
   color: #303133;
@@ -2190,6 +2192,7 @@ select {
   min-width: 0;
   align-items: center;
   gap: 10px;
+  padding-top: 2px;
 }
 
 .replica-tool-button,
@@ -6682,10 +6685,13 @@ select {
   border-radius: 24px;
   box-shadow: 0 28px 58px rgb(29 54 85 / 0.12);
   padding: 25px 26px 20px;
+  gap: 16px;
 }
 
 .replica-chat-box textarea {
   min-height: 68px;
+  max-height: 220px;
+  resize: none;
   color: #1d2a3f;
   font-size: 16px;
 }
@@ -9040,6 +9046,99 @@ button.replica-graph-node.is-selected {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
 }
 
+.replica-agent-create-heading {
+  margin-top: 18px;
+}
+
+.replica-agent-create-heading h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 24px;
+  font-weight: 820;
+}
+
+.replica-agent-create-heading p {
+  margin: 8px 0 0;
+  color: #607086;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.replica-agent-create-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(180px, 0.6fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.replica-agent-create-fields label {
+  display: grid;
+  gap: 8px;
+  color: #34445b;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.replica-agent-create-fields label.is-full {
+  grid-column: 1 / -1;
+}
+
+.replica-agent-create-fields input,
+.replica-agent-create-fields select,
+.replica-agent-create-fields textarea {
+  width: 100%;
+  border: 1px solid #cfdded;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #172033;
+  padding: 11px 12px;
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+}
+
+.replica-agent-create-fields textarea {
+  min-height: 148px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.replica-agent-create-fields input:focus,
+.replica-agent-create-fields select:focus,
+.replica-agent-create-fields textarea:focus {
+  border-color: var(--replica-primary);
+  box-shadow: 0 0 0 3px rgb(11 99 206 / 0.12);
+}
+
+.replica-agent-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.replica-agent-create-actions button {
+  min-height: 42px;
+  border: 1px solid #cfdded;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #34445b;
+  cursor: pointer;
+  padding: 0 18px;
+  font-weight: 760;
+}
+
+.replica-agent-create-actions button[type="submit"] {
+  border-color: var(--replica-primary);
+  background: var(--replica-primary);
+  color: #ffffff;
+}
+
+.replica-agent-create-actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .replica-digital-avatar {
   position: relative;
   display: inline-grid;
@@ -9657,6 +9756,62 @@ button.replica-graph-node.is-selected {
   margin-top: 18px;
 }
 
+.replica-project-workbench .replica-project-files {
+  margin-top: 16px;
+}
+
+.replica-project-workbench .replica-project-files-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.replica-project-workbench .replica-project-files-head p {
+  margin: 6px 0 0;
+  color: #63738a;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-file-upload {
+  position: relative;
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  border: 1px solid #b9d3f3;
+  border-radius: 8px;
+  background: #eef5fd;
+  color: #0b63ce;
+  cursor: pointer;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-file-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-file-table {
+  min-width: 820px;
+}
+
+.replica-project-workbench .replica-project-file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.replica-project-workbench .replica-project-file-actions button {
+  padding: 5px 9px;
+}
+
 .replica-project-workbench .replica-project-member-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9807,6 +9962,15 @@ button.replica-graph-node.is-selected {
   .replica-project-workbench .replica-project-detail-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .replica-project-workbench .replica-project-files-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .replica-project-workbench .replica-project-file-upload {
+    justify-content: center;
   }
 
   .replica-project-workbench .replica-project-visibility,

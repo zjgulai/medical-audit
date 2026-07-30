@@ -604,10 +604,13 @@ export type DocumentSearchItem = {
   readonly index_version_key: string;
   readonly source_package_version_key: string;
   readonly preview_url: string;
+  readonly download_url?: string;
+  readonly match_count?: number;
+  readonly matched_snippets?: readonly string[];
 };
 
 export type DocumentSearchResponse = {
-  readonly contract_version: "document-search-v1";
+  readonly contract_version: "document-search-v1" | "document-search-v2";
   readonly query: string;
   readonly effective_source_collections: readonly SourceCollection[];
   readonly items: readonly DocumentSearchItem[];
@@ -773,6 +776,9 @@ export type ChatAttachmentAnalysisResponse = {
     readonly object_storage_write: false;
     readonly index_write: false;
     readonly provider_call: boolean;
+    readonly answer_provider_call?: boolean;
+    readonly ocr_call?: boolean;
+    readonly ocr_engine?: string;
   };
 };
 
@@ -1328,6 +1334,43 @@ export type ProjectsResponse = {
     readonly backend: string;
     readonly persistent_writes_ready?: boolean;
     readonly history_review_task_writes_ready?: boolean;
+  };
+};
+
+export type ProjectFileApiItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly extension: string;
+  readonly size_bytes: number;
+  readonly sha256: string;
+  readonly created_by: string | null;
+  readonly created_at: string;
+  readonly security_scan_status: string;
+  readonly dlp_status: string;
+  readonly preview_url: string;
+  readonly download_url: string;
+};
+
+export type ProjectFilesResponse = {
+  readonly contract_version: "project-files-v1";
+  readonly project_key: string;
+  readonly items: readonly ProjectFileApiItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly permissions: {
+    readonly can_upload: boolean;
+  };
+};
+
+export type ProjectFileUploadResponse = {
+  readonly contract_version: "project-files-v1";
+  readonly project_key: string;
+  readonly item: ProjectFileApiItem;
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
   };
 };
 

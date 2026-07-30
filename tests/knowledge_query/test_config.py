@@ -39,6 +39,14 @@ from medical_audit_kb.core.config import (
     DOCUMENT_UPLOAD_VIRUS_TEST_MODE_ENV,
     MODEL_PROVIDER_ENV,
     REQUIRED_COLLECTIONS,
+    UNLIMITED_OCR_API_KEY_NAME_ENV,
+    UNLIMITED_OCR_BASE_URL_ENV,
+    UNLIMITED_OCR_ENABLED_ENV,
+    UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV,
+    UNLIMITED_OCR_MAX_PAGES_ENV,
+    UNLIMITED_OCR_MODEL_ENV,
+    UNLIMITED_OCR_PDF_DPI_ENV,
+    UNLIMITED_OCR_TIMEOUT_SECONDS_ENV,
     KnowledgeQuerySettings,
     load_settings,
 )
@@ -75,6 +83,17 @@ def test_default_config_loads() -> None:
     assert settings.document_storage.record_storage_objects is False
     assert settings.document_upload_indexing.enabled is False
     assert settings.document_upload_indexing.index_version_status == "candidate"
+    assert settings.unlimited_ocr.enabled is False
+    assert settings.unlimited_ocr.model == "baidu/Unlimited-OCR"
+    default_a4_page_pixels = round(8.27 * settings.unlimited_ocr.pdf_dpi) * round(
+        11.69 * settings.unlimited_ocr.pdf_dpi
+    )
+    assert settings.unlimited_ocr.max_total_pixels >= (
+        settings.unlimited_ocr.max_pages * default_a4_page_pixels
+    )
+    assert settings.unlimited_ocr.source_commit == (
+        "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
+    )
     assert REQUIRED_COLLECTIONS.issubset(settings.source_collection_weights)
 
 
@@ -242,6 +261,30 @@ def test_environment_overrides_document_upload_indexing(
     )
     assert settings.document_upload_indexing.index_version_key == "personal-index-test"
     assert settings.document_upload_indexing.index_version_status == "candidate"
+
+
+def test_environment_overrides_unlimited_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(UNLIMITED_OCR_ENABLED_ENV, "true")
+    monkeypatch.setenv(UNLIMITED_OCR_BASE_URL_ENV, "http://ocr.internal:8000/v1")
+    monkeypatch.setenv(UNLIMITED_OCR_MODEL_ENV, "baidu/Unlimited-OCR")
+    monkeypatch.setenv(UNLIMITED_OCR_API_KEY_NAME_ENV, "UNLIMITED_OCR_TOKEN")
+    monkeypatch.setenv(UNLIMITED_OCR_TIMEOUT_SECONDS_ENV, "600")
+    monkeypatch.setenv(UNLIMITED_OCR_MAX_PAGES_ENV, "25")
+    monkeypatch.setenv(UNLIMITED_OCR_PDF_DPI_ENV, "240")
+    monkeypatch.setenv(UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV, "16384")
+
+    settings = load_settings()
+
+    assert settings.unlimited_ocr.enabled is True
+    assert settings.unlimited_ocr.base_url == "http://ocr.internal:8000/v1"
+    assert settings.unlimited_ocr.model == "baidu/Unlimited-OCR"
+    assert settings.unlimited_ocr.api_key_env == "UNLIMITED_OCR_TOKEN"
+    assert settings.unlimited_ocr.timeout_seconds == 600
+    assert settings.unlimited_ocr.max_pages == 25
+    assert settings.unlimited_ocr.pdf_dpi == 240
+    assert settings.unlimited_ocr.max_output_tokens == 16384
 
 
 def test_environment_rejects_invalid_document_storage_boolean(

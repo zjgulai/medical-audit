@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchProjectDashboard,
+  fetchProjectFiles,
   fetchProjectMembers,
   fetchProjects
 } from "@/lib/api-client";
@@ -28,6 +29,7 @@ vi.mock("@/components/shell/workspace-auth-gate", () => ({
 vi.mock("@/lib/api-client", () => ({
   createProjectMember: vi.fn(),
   fetchProjectDashboard: vi.fn(),
+  fetchProjectFiles: vi.fn(),
   fetchProjectMembers: vi.fn(),
   fetchProjects: vi.fn()
 }));
@@ -35,6 +37,7 @@ vi.mock("@/lib/api-client", () => ({
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchProjectMembersMock = vi.mocked(fetchProjectMembers);
 const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
+const fetchProjectFilesMock = vi.mocked(fetchProjectFiles);
 
 const project = {
   id: "ROLE-PROJECT",
@@ -95,6 +98,13 @@ beforeEach(() => {
   fetchProjectsMock.mockResolvedValue(projectsResponse);
   fetchProjectMembersMock.mockResolvedValue(membersResponse);
   fetchProjectDashboardMock.mockResolvedValue(dashboardResponse);
+  fetchProjectFilesMock.mockResolvedValue({
+    contract_version: "project-files-v1",
+    project_key: project.id,
+    items: [],
+    store: { ready: true, backend: "InMemoryDocumentUploadStore" },
+    permissions: { can_upload: false }
+  });
 });
 
 describe("WorkspaceLayout role integration", () => {

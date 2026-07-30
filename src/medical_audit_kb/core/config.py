@@ -87,6 +87,16 @@ DOCUMENT_UPLOAD_INDEXING_SOURCE_PACKAGE_KEY_ENV: Final = (
 DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY"
 )
+UNLIMITED_OCR_ENABLED_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_ENABLED"
+UNLIMITED_OCR_BASE_URL_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_BASE_URL"
+UNLIMITED_OCR_MODEL_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_MODEL"
+UNLIMITED_OCR_API_KEY_NAME_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_API_KEY_ENV"
+UNLIMITED_OCR_TIMEOUT_SECONDS_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_TIMEOUT_SECONDS"
+UNLIMITED_OCR_MAX_PAGES_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_MAX_PAGES"
+UNLIMITED_OCR_PDF_DPI_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_PDF_DPI"
+UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV: Final = (
+    "MEDICAL_AUDIT_UNLIMITED_OCR_MAX_OUTPUT_TOKENS"
+)
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
 REQUIRED_COLLECTIONS: Final = frozenset(
@@ -171,6 +181,21 @@ class DocumentUploadIndexingSettings(BaseModel):
     index_version_status: Literal["candidate"] = "candidate"
 
 
+class UnlimitedOcrSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = Field(default="http://127.0.0.1:8000/v1", min_length=1)
+    model: str = Field(default="baidu/Unlimited-OCR", min_length=1)
+    api_key_env: str | None = None
+    timeout_seconds: float = Field(default=1200.0, gt=0)
+    max_pages: int = Field(default=40, ge=1, le=200)
+    pdf_dpi: int = Field(default=300, ge=72, le=600)
+    max_total_pixels: int = Field(default=400_000_000, ge=1)
+    max_output_tokens: int = Field(default=32_768, ge=256, le=65_536)
+    source_commit: str = "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
+
+
 class KnowledgeQuerySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -187,6 +212,7 @@ class KnowledgeQuerySettings(BaseModel):
     document_upload_indexing: DocumentUploadIndexingSettings = Field(
         default_factory=DocumentUploadIndexingSettings
     )
+    unlimited_ocr: UnlimitedOcrSettings = Field(default_factory=UnlimitedOcrSettings)
     source_collection_weights: dict[str, float]
 
     @field_validator("source_collection_weights")
@@ -264,6 +290,8 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         merged["document_storage"] = document_storage
     if document_upload_indexing := _document_upload_indexing_env_overrides(merged):
         merged["document_upload_indexing"] = document_upload_indexing
+    if unlimited_ocr := _unlimited_ocr_env_overrides(merged):
+        merged["unlimited_ocr"] = unlimited_ocr
 
     return merged
 
@@ -416,6 +444,38 @@ def _document_upload_indexing_env_overrides(data: dict[str, Any]) -> dict[str, A
     if not changed:
         return None
     return indexing
+
+
+def _unlimited_ocr_env_overrides(data: dict[str, Any]) -> dict[str, Any] | None:
+    settings = dict(cast(dict[str, Any], data.get("unlimited_ocr", {})))
+    changed = False
+    if enabled := os.getenv(UNLIMITED_OCR_ENABLED_ENV):
+        settings["enabled"] = _parse_bool_env(enabled, UNLIMITED_OCR_ENABLED_ENV)
+        changed = True
+    if base_url := os.getenv(UNLIMITED_OCR_BASE_URL_ENV):
+        settings["base_url"] = base_url
+        changed = True
+    if model := os.getenv(UNLIMITED_OCR_MODEL_ENV):
+        settings["model"] = model
+        changed = True
+    if api_key_env := os.getenv(UNLIMITED_OCR_API_KEY_NAME_ENV):
+        settings["api_key_env"] = api_key_env
+        changed = True
+    if timeout_seconds := os.getenv(UNLIMITED_OCR_TIMEOUT_SECONDS_ENV):
+        settings["timeout_seconds"] = float(timeout_seconds)
+        changed = True
+    if max_pages := os.getenv(UNLIMITED_OCR_MAX_PAGES_ENV):
+        settings["max_pages"] = int(max_pages)
+        changed = True
+    if pdf_dpi := os.getenv(UNLIMITED_OCR_PDF_DPI_ENV):
+        settings["pdf_dpi"] = int(pdf_dpi)
+        changed = True
+    if max_output_tokens := os.getenv(UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV):
+        settings["max_output_tokens"] = int(max_output_tokens)
+        changed = True
+    if not changed:
+        return None
+    return settings
 
 
 def _parse_bool_env(value: str, env_name: str) -> bool:

@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 
 import { BrandLogo } from "@/components/shell/brand-logo";
 import { writeAuditClientSession } from "@/lib/audit-user";
-import { AUDIT_PLATFORM_DESCRIPTION, AUDIT_PLATFORM_NAME } from "@/lib/brand";
+import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
 
 type LoginSurfaceProps = {
   readonly redirectTo?: string;
@@ -62,7 +62,6 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
           <div className="audit-login-heading-block">
             <p className="audit-kicker">欢迎登录</p>
             <h1>登录工作台</h1>
-            <p>{AUDIT_PLATFORM_DESCRIPTION}</p>
           </div>
 
           <div className="mt-7 space-y-5">

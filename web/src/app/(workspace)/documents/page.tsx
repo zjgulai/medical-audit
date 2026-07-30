@@ -10,7 +10,7 @@ import {
   ReplicaRuntimeBadge
 } from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
-import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
+import { fetchDocumentFileBlob, runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
 import type { DocumentSearchResponse, QueryResponse, SourceCollection } from "@/lib/api-types";
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
 import { FALLBACK_SOURCE_COLLECTION_GROUPS, isSourceCollectionValue } from "@/lib/source-collection-catalog";
@@ -28,6 +28,8 @@ const DEFAULT_DOCUMENT_QUERY = "医保基金监管";
 type DocumentPreview = ReferenceDocumentResult & {
   readonly previewType: "对话文档" | "检索命中" | "知识库目录";
   readonly previewUrl?: string;
+  readonly downloadUrl?: string;
+  readonly matchCount?: number;
   readonly sourceCollection?: string;
 };
 
@@ -261,6 +263,8 @@ export default function DocumentsPage() {
         source: item.source,
         updatedAt: item.updatedAt,
         previewUrl: (item as DocumentPreview).previewUrl,
+        downloadUrl: (item as DocumentPreview).downloadUrl,
+        matchCount: (item as DocumentPreview).matchCount,
         sourceCollection: (item as DocumentPreview).sourceCollection,
         previewType: "检索命中" as const
       })).slice(0, 10) as readonly DocumentPreview[])
@@ -270,11 +274,31 @@ export default function DocumentsPage() {
     shownFeaturedDocuments.find((item) => item.id === selectedDocumentId) ??
     shownFeaturedDocuments[0];
 
-  function recordDocumentAction(item: DocumentPreview, action: string) {
+  async function recordDocumentAction(item: DocumentPreview, action: string) {
     setSelectedDocumentId(item.id);
     setDetailOpen(true);
-    if (action === "打开文档" && item.previewUrl) {
+    if (action === "预览原文" && item.previewUrl) {
       window.location.assign(item.previewUrl);
+      return;
+    }
+    if (action === "下载原文" && item.downloadUrl) {
+      try {
+        const blob = await fetchDocumentFileBlob(item.downloadUrl);
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = item.title;
+        document.body.appendChild(anchor);
+        try {
+          anchor.click();
+        } finally {
+          anchor.remove();
+        }
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+        setActionNotice(`已开始下载「${item.title}」。`);
+      } catch {
+        setActionNotice(`下载「${item.title}」失败，请稍后重试。`);
+      }
       return;
     }
     setActionNotice(buildReplicaLocalGateNotice({
@@ -459,7 +483,7 @@ export default function DocumentsPage() {
           <div className="replica-doc-two-column-list">
             {shownFeaturedDocuments.map((item) => (
               <article key={item.id} className={`replica-doc-row ${selectedDocument?.id === item.id ? "is-selected" : ""}`}>
-                <button type="button" onClick={() => recordDocumentAction(item, "查看文档")}>
+                <button type="button" onClick={() => void recordDocumentAction(item, "查看文档")}>
                   <span>
                     <strong>{item.title}</strong>
                     <em>{item.source}</em>
@@ -491,13 +515,27 @@ export default function DocumentsPage() {
                   <dt>更新时间</dt>
                   <dd>{selectedDocument.updatedAt}</dd>
                 </div>
+                {selectedDocument.matchCount ? (
+                  <div>
+                    <dt>命中段落</dt>
+                    <dd>{selectedDocument.matchCount} 处</dd>
+                  </div>
+                ) : null}
               </dl>
               <div className="replica-doc-detail-actions">
                 {selectedDocument.previewUrl ? (
-                  <Link href={selectedDocument.previewUrl}>打开文档</Link>
+                  <Link href={selectedDocument.previewUrl}>预览原文</Link>
                 ) : (
-                  <button type="button" onClick={() => recordDocumentAction(selectedDocument, "打开文档")}>打开文档</button>
+                  <button type="button" onClick={() => void recordDocumentAction(selectedDocument, "预览原文")}>预览原文</button>
                 )}
+                {selectedDocument.downloadUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => void recordDocumentAction(selectedDocument, "下载原文")}
+                  >
+                    下载原文
+                  </button>
+                ) : null}
                 <Link href={documentChatHref(selectedDocument, displayedQuery)}>加入对话</Link>
               </div>
             </aside>
@@ -698,22 +736,42 @@ function documentSearchResponseToDocumentResults(
     updatedAt: item.index_version_key || "检索命中",
     previewType: "检索命中",
     previewUrl: item.preview_url,
+    downloadUrl: item.download_url,
+    matchCount: item.match_count,
     sourceCollection: item.source_collection
   }));
 }
 
 function queryResponseToDocumentResults(response: QueryResponse): readonly DocumentPreview[] {
-  const citations = response.citations.map((citation, index) => ({
-    id: citation.citation_id || `query-citation-${index + 1}`,
-    title: locatorText(citation.locator, ["title", "document_title", "file_name", "source_title", "name"]) ?? `引用文档 ${index + 1}`,
-    category: citation.evidence_type || citation.source_collection,
-    excerpt: compactDocumentText(citation.snippet, 96),
-    source: citation.source_collection,
-    updatedAt: locatorText(citation.locator, ["date", "published_at", "issued_at", "year"]) ?? "检索命中",
-    previewType: "检索命中" as const,
-    previewUrl: `/api/v1/preview/${citation.chunk_id}`,
-    sourceCollection: citation.source_collection
-  }));
+  const citationsByDocument = new Map<string, DocumentPreview>();
+  response.citations.forEach((citation, index) => {
+    const title = locatorText(
+      citation.locator,
+      ["title", "document_title", "file_name", "source_title", "name"]
+    ) ?? `引用文档 ${index + 1}`;
+    const sourcePath = locatorText(
+      citation.locator,
+      ["upload_key", "upload_id", "source_path", "path", "relative_path"]
+    );
+    const identity = `${citation.source_collection}:${sourcePath ?? title}`;
+    if (citationsByDocument.has(identity)) return;
+    const uploadId = locatorText(citation.locator, ["upload_key", "upload_id"]);
+    citationsByDocument.set(identity, {
+      id: `query-document-${identity}`,
+      title,
+      category: citation.evidence_type || citation.source_collection,
+      excerpt: compactDocumentText(citation.snippet, 96),
+      source: citation.source_collection,
+      updatedAt: locatorText(citation.locator, ["date", "published_at", "issued_at", "year"]) ?? "检索命中",
+      previewType: "检索命中" as const,
+      previewUrl: `/api/v1/preview/${citation.chunk_id}`,
+      downloadUrl: uploadId
+        ? `/api/v1/documents/uploads/${encodeURIComponent(uploadId)}/download`
+        : `/api/v1/documents/source/${citation.chunk_id}/download`,
+      sourceCollection: citation.source_collection
+    });
+  });
+  const citations = Array.from(citationsByDocument.values());
   const uploads = response.personal_upload_matches.map((match, index) => ({
     id: match.id || `personal-match-${index + 1}`,
     title: match.name,
@@ -722,6 +780,7 @@ function queryResponseToDocumentResults(response: QueryResponse): readonly Docum
     source: match.created_by || "个人上传",
     updatedAt: match.indexed_at?.slice(0, 10) || "未索引",
     previewType: "检索命中" as const,
+    downloadUrl: `/api/v1/documents/uploads/${encodeURIComponent(match.upload_id)}/download`,
     sourceCollection: "personal-materials"
   }));
   return [...citations, ...uploads];

@@ -47,6 +47,44 @@ services:
           - clamav
     logging: *default-logging
 
+  unlimited-ocr:
+    image: vllm/vllm-openai:unlimited-ocr
+    container_name: medical_audit_unlimited_ocr
+    profiles:
+      - ocr-gpu
+    restart: unless-stopped
+    ipc: host
+    gpus: all
+    command:
+      - baidu/Unlimited-OCR
+      - --revision
+      - d49ff64afffc1f47ab563dc1c589bc2f78808fa4
+      - --served-model-name
+      - baidu/Unlimited-OCR
+      - --trust-remote-code
+      - --logits_processors
+      - vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor
+      - --no-enable-prefix-caching
+      - --mm-processor-cache-gb
+      - "0"
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    networks:
+      medical_audit_internal:
+        aliases:
+          - unlimited-ocr
+    logging: *default-logging
+
   app:
     build:
       context: ../../..

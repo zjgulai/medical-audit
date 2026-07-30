@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Annotated, cast
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -41,6 +42,8 @@ REVIEW_STATUS_LABELS: dict[str, str] = {
     "not-violation": "排除违规",
     "closed": "已关闭",
 }
+MAX_PROJECT_FILE_BYTES = 20 * 1024 * 1024
+SUPPORTED_PROJECT_FILE_EXTENSIONS = {"csv", "md", "pdf", "xlsm", "xlsx", "txt"}
 
 
 class ProjectMemberCreateRequest(BaseModel):
@@ -324,6 +327,163 @@ def list_projects(
             ),
         },
     }
+
+
+@router.get("/projects/{project_key}/files")
+def list_project_files(
+    project_key: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user, _store, _visible_keys, _visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if state.document_upload_store is None:
+        return {
+            "contract_version": "project-files-v1",
+            "project_key": project_key,
+            "items": [],
+            "store": {"ready": False, "backend": "none"},
+            "permissions": {"can_upload": user.role is HospitalRole.ADMIN},
+        }
+    items = [
+        _project_file_payload(item, project_key=project_key)
+        for item in state.document_upload_store.list_uploads(
+            created_by=None,
+            include_all=True,
+            scope="project",
+            project_key=project_key,
+            limit=100,
+        )
+    ]
+    record_operation(
+        state,
+        "project-files-list",
+        {
+            "project_key": project_key,
+            "count": len(items),
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+        },
+    )
+    return {
+        "contract_version": "project-files-v1",
+        "project_key": project_key,
+        "items": items,
+        "store": {
+            "ready": True,
+            "backend": state.document_upload_store.__class__.__name__,
+        },
+        "permissions": {"can_upload": user.role is HospitalRole.ADMIN},
+    }
+
+
+@router.post("/projects/{project_key}/files", status_code=201)
+async def upload_project_file(
+    project_key: str,
+    file: Annotated[UploadFile, File()],
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = require_permission(
+        state,
+        permission=Permission.CREATE_PROJECT,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="project-file-upload",
+        project_key=project_key,
+    )
+    _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    file_name = file.filename or "project-file"
+    extension = _project_file_extension(file_name)
+    if extension not in SUPPORTED_PROJECT_FILE_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="unsupported project file extension")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="project file is empty")
+    if len(content) > MAX_PROJECT_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="project file is too large")
+    stored = state.document_upload_store.add_upload(
+        file_name=file_name,
+        extension=extension,
+        content=content,
+        created_by=user.user_identifier,
+        metadata={
+            "scope": "project",
+            "project_key": project_key,
+            "project_name": project_key,
+        },
+    )
+    item = _project_file_payload(stored, project_key=project_key)
+    record_operation(
+        state,
+        "project-file-upload",
+        {
+            "project_key": project_key,
+            "upload_id": item["id"],
+            "extension": extension,
+            "size_bytes": len(content),
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+        },
+    )
+    return {
+        "contract_version": "project-files-v1",
+        "project_key": project_key,
+        "item": item,
+        "store": {
+            "ready": True,
+            "backend": state.document_upload_store.__class__.__name__,
+        },
+    }
+
+
+@router.get("/projects/{project_key}/files/{upload_id}/preview")
+def preview_project_file(
+    project_key: str,
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> Response:
+    return _project_file_response(
+        project_key=project_key,
+        upload_id=upload_id,
+        state=state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        disposition="inline",
+    )
+
+
+@router.get("/projects/{project_key}/files/{upload_id}/download")
+def download_project_file(
+    project_key: str,
+    upload_id: str,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> Response:
+    return _project_file_response(
+        project_key=project_key,
+        upload_id=upload_id,
+        state=state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        disposition="attachment",
+    )
 
 
 @router.get("/projects/{project_key}")
@@ -667,6 +827,96 @@ def _required_project_member_store(state: ApiState) -> ProjectMemberStore:
         )
     assert state.project_member_store is not None
     return state.project_member_store
+
+
+def _project_file_payload(
+    item: dict[str, object],
+    *,
+    project_key: str,
+) -> dict[str, object]:
+    upload_id = str(item["id"])
+    return {
+        "id": upload_id,
+        "name": str(item["name"]),
+        "extension": str(item["extension"]),
+        "size_bytes": int(item["size_bytes"]),
+        "sha256": str(item["sha256"]),
+        "created_by": item.get("created_by"),
+        "created_at": str(item["created_at"]),
+        "security_scan_status": str(item["security_scan_status"]),
+        "dlp_status": str(item["dlp_status"]),
+        "preview_url": (
+            f"/api/v1/projects/{project_key}/files/{upload_id}/preview"
+        ),
+        "download_url": (
+            f"/api/v1/projects/{project_key}/files/{upload_id}/download"
+        ),
+    }
+
+
+def _project_file_response(
+    *,
+    project_key: str,
+    upload_id: str,
+    state: ApiState,
+    x_user_id: str | None,
+    x_role: str | None,
+    disposition: str,
+) -> Response:
+    user, _store, _visible_keys, _visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    retained = state.document_upload_store.read_upload_content(upload_id=upload_id)
+    if retained is None:
+        raise HTTPException(status_code=404, detail="project file not found")
+    item, content = retained
+    if item.get("scope") != "project" or item.get("project_key") != project_key:
+        raise HTTPException(status_code=404, detail="project file not found")
+    file_name = str(item["name"]).replace("/", "_").replace("\\", "_")
+    extension = str(item["extension"])
+    record_operation(
+        state,
+        f"project-file-{disposition}",
+        {
+            "project_key": project_key,
+            "upload_id": upload_id,
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+        },
+    )
+    return Response(
+        content=content,
+        media_type=_project_file_media_type(extension),
+        headers={
+            "Content-Disposition": (
+                f"{disposition}; filename*=UTF-8''{quote(file_name)}"
+            ),
+            "X-Project-Key": project_key,
+            "X-Document-Upload-Id": upload_id,
+        },
+    )
+
+
+def _project_file_extension(file_name: str) -> str:
+    if "." not in file_name:
+        return ""
+    return file_name.rsplit(".", maxsplit=1)[-1].lower()
+
+
+def _project_file_media_type(extension: str) -> str:
+    return {
+        "csv": "text/csv; charset=utf-8",
+        "md": "text/markdown; charset=utf-8",
+        "pdf": "application/pdf",
+        "txt": "text/plain; charset=utf-8",
+        "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }.get(extension, "application/octet-stream")
 
 
 def _dashboard_findings(

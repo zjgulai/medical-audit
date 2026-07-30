@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
+from pypdf import PdfWriter
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -85,6 +86,7 @@ from medical_audit_kb.indexing.vector_index import (
     InMemoryVectorIndex,
     build_chunk_embedding_records,
 )
+from medical_audit_kb.ocr.unlimited_ocr import UnlimitedOcrResult
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
 from medical_audit_kb.retrieval.rerank import FakeRerankProvider
 
@@ -4099,13 +4101,64 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["contract_version"] == "document-search-v1"
+    assert body["contract_version"] == "document-search-v2"
     assert body["query"] == "医保基金审核依据"
     assert body["effective_source_collections"] == [SourceCollection.MEDICAL_INSURANCE_LAWS.value]
     assert body["boundaries"]["query_history_write"] is False
     assert body["items"][0]["source_collection"] == SourceCollection.MEDICAL_INSURANCE_LAWS.value
     assert body["items"][0]["preview_url"].startswith("/api/v1/preview/")
+    assert body["items"][0]["download_url"].startswith("/api/v1/documents/source/")
+    assert body["items"][0]["match_count"] == 1
+    assert body["items"][0]["matched_snippets"]
+    download_response = client.get(
+        body["items"][0]["download_url"],
+        headers={"X-Role": "it-admin", "X-User-Id": "auditor-1"},
+    )
+    assert download_response.status_code == 200
+    assert download_response.headers["content-disposition"].startswith("attachment;")
+    assert "医疗机构应当保留医保基金审核依据" in download_response.text
     assert state.query_history_store.list_queries() == []
+
+
+def test_personal_document_source_download_is_owner_scoped(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    personal_source_path = "personal-materials/document-upload-private/note.txt"
+    _write_text(
+        state.source_root / personal_source_path,
+        "院内个人材料提示：医保基金审核依据需要结合内部台账。",  # noqa: RUF001
+    )
+    state.search_engine = _search_engine_with_personal_materials(
+        system_chunk_id=uuid4(),
+        personal_chunk_id=uuid4(),
+        source_path=personal_source_path,
+    )
+    client = TestClient(create_app(state))
+
+    search_response = client.get(
+        "/documents/search",
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        params={
+            "q": "院内个人材料提示",
+            "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
+            "limit": 3,
+        },
+    )
+
+    assert search_response.status_code == 200, search_response.text
+    chunk_id = search_response.json()["items"][0]["chunk_id"]
+    download_url = f"/api/v1/documents/source/{chunk_id}/download"
+    assert client.get(
+        download_url,
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+    ).status_code == 200
+    assert client.get(
+        download_url,
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-2"},
+    ).status_code == 404
+    assert client.get(
+        download_url,
+        headers={"X-Role": "it-admin", "X-User-Id": "admin-1"},
+    ).status_code == 200
 
 
 def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:
@@ -5566,6 +5619,124 @@ def test_chat_attachment_analyzes_text_document_with_selected_model(
     assert body["model_alias"] == "deepseek-v4-pro"
     assert "字符数" in body["summary_items"][2]
     assert "医保基金审计会议纪要" in body["extracted_preview"]
+
+
+def test_chat_attachment_rejects_webp_before_ocr(tmp_path: Path) -> None:
+    class TrackingUnlimitedOcrClient:
+        calls = 0
+
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            self.calls += 1
+            return UnlimitedOcrResult(
+                text="不应调用 OCR",
+                page_count=1,
+                model="baidu/Unlimited-OCR",
+                source_commit="d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+            )
+
+    ocr_client = TrackingUnlimitedOcrClient()
+    state = _api_state(tmp_path)
+    state.ocr_client = ocr_client
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"mode": "auto"},
+        files={"file": ("unsupported.webp", b"not-a-webp", "image/webp")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported chat attachment extension"
+    assert ocr_client.calls == 0
+
+
+def test_chat_attachment_rejects_image_only_pdf_with_actionable_ocr_message(
+    tmp_path: Path,
+) -> None:
+    pdf_bytes = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(pdf_bytes)
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"model": "deepseek-v4-pro", "mode": "auto"},
+        files={
+            "file": (
+                "scanned-audit-material.pdf",
+                pdf_bytes.getvalue(),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。"
+        "请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+    )
+
+
+def test_chat_attachment_uses_unlimited_ocr_for_image_only_pdf(
+    tmp_path: Path,
+) -> None:
+    class StaticUnlimitedOcrClient:
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            assert file_name == "scanned-audit-material.pdf"
+            assert extension == "pdf"
+            assert content.startswith(b"%PDF")
+            return UnlimitedOcrResult(
+                text="扫描件识别结果：医保基金审计应复核高频收费项目。",
+                page_count=1,
+                model="baidu/Unlimited-OCR",
+                source_commit="d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+            )
+
+    pdf_bytes = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(pdf_bytes)
+    state = _api_state(tmp_path)
+    state.ocr_client = StaticUnlimitedOcrClient()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"mode": "auto"},
+        files={
+            "file": (
+                "scanned-audit-material.pdf",
+                pdf_bytes.getvalue(),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["mode"] == "document-summary"
+    assert body["boundaries"]["ocr_call"] is True
+    assert body["boundaries"]["ocr_engine"] == "baidu/Unlimited-OCR"
+    assert body["boundaries"]["answer_provider_call"] is False
+    assert body["boundaries"]["provider_call"] is True
+    assert body["summary_items"][0] == "OCR 页数：1"
+    assert "扫描件识别结果" in body["extracted_preview"]
+    assert state.operation_logs[-1]["payload"]["ocr_source_commit"] == (
+        "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
+    )
 
 
 def test_query_endpoint_blocks_unknown_role(tmp_path: Path) -> None:

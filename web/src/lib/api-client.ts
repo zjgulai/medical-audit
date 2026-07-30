@@ -42,6 +42,8 @@ import type {
   ProjectMemberCreateRequest,
   ProjectMemberCreateResponse,
   ProjectDashboardResponse,
+  ProjectFilesResponse,
+  ProjectFileUploadResponse,
   ProjectMembersResponse,
   ProjectsResponse,
   QueryHistoryResponse,
@@ -186,7 +188,10 @@ async function postJson<T>(
 async function postForm<T>(
   path: string,
   formData: FormData,
-  options: { readonly exposeValidationDetail?: boolean } = {}
+  options: {
+    readonly exposeValidationDetail?: boolean;
+    readonly headers?: Record<string, string>;
+  } = {}
 ): Promise<T> {
   assertBackendProxyClientRuntime();
 
@@ -194,7 +199,7 @@ async function postForm<T>(
     method: "POST",
     headers: {
       Accept: "application/json",
-      ...auditClientHeaders()
+      ...(options.headers ?? auditClientHeaders())
     },
     body: formData,
     cache: "no-store"
@@ -278,7 +283,9 @@ export function analyzeChatAttachment(
     formData.append("model", options.model);
   }
   formData.append("mode", options.mode ?? "auto");
-  return postForm<ChatAttachmentAnalysisResponse>("/api/v1/chat/attachments/analyze", formData);
+  return postForm<ChatAttachmentAnalysisResponse>("/api/v1/chat/attachments/analyze", formData, {
+    exposeValidationDetail: true
+  });
 }
 
 export function fetchAuditFindings(reviewStatus?: string): Promise<AuditFindingsResponse> {
@@ -507,6 +514,23 @@ export function searchDocuments(options: {
   );
 }
 
+export async function fetchDocumentFileBlob(path: string): Promise<Blob> {
+  assertBackendProxyClientRuntime();
+  const response = await fetch(path, {
+    headers: auditClientHeaders(),
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new BackendRequestError({
+      method: "GET",
+      path,
+      status: response.status,
+      detail: null
+    });
+  }
+  return response.blob();
+}
+
 export function fetchDocumentUploads(): Promise<DocumentUploadListResponse> {
   return getJsonWithAuditHeaders<DocumentUploadListResponse>("/api/v1/documents/uploads");
 }
@@ -658,6 +682,49 @@ export function fetchProjectDashboard(projectId: string): Promise<ProjectDashboa
     `/api/v1/projects/${encodeURIComponent(projectId)}/dashboard`,
     auditProjectClientHeaders(projectId)
   );
+}
+
+export function fetchProjectFiles(projectId: string): Promise<ProjectFilesResponse> {
+  return getJsonWithAuditHeaders<ProjectFilesResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/files`,
+    auditProjectClientHeaders(projectId)
+  );
+}
+
+export function uploadProjectFile(
+  projectId: string,
+  file: File
+): Promise<ProjectFileUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return postForm<ProjectFileUploadResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/files`,
+    formData,
+    {
+      exposeValidationDetail: true,
+      headers: auditProjectClientHeaders(projectId)
+    }
+  );
+}
+
+export async function fetchProjectFileBlob(
+  projectId: string,
+  path: string
+): Promise<Blob> {
+  assertBackendProxyClientRuntime();
+  const response = await fetch(path, {
+    headers: auditProjectClientHeaders(projectId),
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new BackendRequestError({
+      method: "GET",
+      path,
+      status: response.status,
+      detail: null
+    });
+  }
+  return response.blob();
 }
 
 export function createProjectMember(

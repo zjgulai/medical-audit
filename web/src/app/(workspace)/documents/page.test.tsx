@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReplicaRuntimeResult } from "@/components/replica/use-replica-runtime";
-import { runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
+import { fetchDocumentFileBlob, runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
 import type { ReplicaDocumentsData } from "@/lib/replica-adapters";
 
 import DocumentsPage from "./page";
@@ -55,12 +55,14 @@ function makeApiRuntime(): ReplicaRuntimeResult<ReplicaDocumentsData> {
 }
 
 vi.mock("@/lib/api-client", () => ({
+  fetchDocumentFileBlob: vi.fn(),
   runKnowledgeQuery: vi.fn(),
   searchDocuments: vi.fn()
 }));
 
 const runKnowledgeQueryMock = vi.mocked(runKnowledgeQuery);
 const searchDocumentsMock = vi.mocked(searchDocuments);
+const fetchDocumentFileBlobMock = vi.mocked(fetchDocumentFileBlob);
 
 function makeAiResponse(
   overrides: Partial<Awaited<ReturnType<typeof runKnowledgeQuery>>> = {}
@@ -94,6 +96,8 @@ describe("DocumentsPage", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     window.history.pushState({}, "", "/documents");
   });
 
@@ -123,7 +127,7 @@ describe("DocumentsPage", () => {
 
   it("uses the medical-audit default when either search mode receives a blank draft", async () => {
     searchDocumentsMock.mockResolvedValue({
-      contract_version: "document-search-v1",
+      contract_version: "document-search-v2",
       query: "医保基金监管",
       effective_source_collections: [],
       items: [],
@@ -292,6 +296,17 @@ describe("DocumentsPage", () => {
   });
 
   it("runs read-only document search after an explicit search action", async () => {
+    const createObjectURL = vi.fn(() => "blob:document-download");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    fetchDocumentFileBlobMock.mockResolvedValue(
+      new Blob(["document body"], { type: "application/pdf" })
+    );
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function clickDownloadAnchor(this: HTMLAnchorElement) {
+        expect(document.body.contains(this)).toBe(true);
+      });
     searchDocumentsMock.mockResolvedValue({
       contract_version: "document-search-v1",
       query: "医保基金监管",
@@ -309,7 +324,10 @@ describe("DocumentsPage", () => {
           matched_by: ["bm25"],
           index_version_key: "index-v1",
           source_package_version_key: "package-v1",
-          preview_url: "/api/v1/preview/chunk-1"
+          preview_url: "/api/v1/preview/chunk-1",
+          download_url: "/api/v1/documents/source/chunk-1/download",
+          match_count: 2,
+          matched_snippets: ["医保支付政策引用片段。"]
         }
       ],
       store: { ready: true, backend: "unit-test" },
@@ -336,12 +354,23 @@ describe("DocumentsPage", () => {
     });
     expect((await screen.findAllByText("医保支付政策")).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("医保支付政策引用片段。").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "打开文档" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "预览原文" })).toHaveAttribute(
       "href",
       "/api/v1/preview/chunk-1"
     );
+    expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
+    expect(screen.getByText("2 处")).toBeInTheDocument();
     expect(screen.getByText("文档检索 provider_call：否")).toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载原文" }));
+    expect(await screen.findByText("已开始下载「医保支付政策」。")).toBeInTheDocument();
+    expect(fetchDocumentFileBlobMock).toHaveBeenCalledWith(
+      "/api/v1/documents/source/chunk-1/download"
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('a[download="医保支付政策"]')).toBeNull();
   });
 
   it("links the selected live document result into chat with query and source context", async () => {
