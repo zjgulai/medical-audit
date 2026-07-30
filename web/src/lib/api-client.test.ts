@@ -395,6 +395,27 @@ describe("api-client", () => {
     expect(result.boundaries.provider_call).toBe(false);
   });
 
+  it("surfaces actionable validation detail for an image-only PDF attachment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          detail:
+            "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+        })
+      }))
+    );
+    const file = new File(["%PDF-1.4"], "scanned.pdf", { type: "application/pdf" });
+
+    await expect(
+      analyzeChatAttachment(file, { model: "deepseek-v4-pro", mode: "auto" })
+    ).rejects.toThrow(
+      "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+    );
+  });
+
   it("fetches auth session through the versioned API proxy with current audit headers", async () => {
     vi.stubGlobal(
       "fetch",

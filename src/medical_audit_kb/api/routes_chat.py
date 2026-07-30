@@ -28,13 +28,30 @@ from medical_audit_kb.api.routes_analytics import (
     _read_csv_rows,
     _read_workbook_rows,
 )
-from medical_audit_kb.domain.constants import SourceCollection
+from medical_audit_kb.domain.constants import FileErrorType, SourceCollection
 from medical_audit_kb.generation.citations import Citation, EvidenceType
 from medical_audit_kb.ingestion.extractors import ExtractionStatus, extract_file
+from medical_audit_kb.ocr.unlimited_ocr import (
+    UnlimitedOcrClientProtocol,
+    UnlimitedOcrError,
+    UnlimitedOcrResult,
+)
 
 router = APIRouter(prefix="/chat")
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {
+    "bmp",
+    "jpeg",
+    "jpg",
+    "md",
+    "pdf",
+    "png",
+    "tif",
+    "tiff",
+    "txt",
+    "webp",
+}
+OCR_IMAGE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.difference({"md", "pdf", "txt"})
 MAX_CONTEXT_CHARS = 6_000
 MAX_SNIPPET_CHARS = 1_200
 
@@ -67,10 +84,25 @@ async def analyze_chat_attachment(
     resolved_mode = _resolve_mode(extension, mode)
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=422, detail="uploaded file is empty")
+        raise HTTPException(status_code=422, detail="附件内容为空，请重新选择文件。")
     if len(content) > MAX_TABLE_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="uploaded file is too large")
+        raise HTTPException(status_code=413, detail="附件超过大小限制，请压缩或拆分后重试。")
 
+    if resolved_mode == "table-analysis":
+        context, summary_items = _table_context(
+            file_name=file_name,
+            extension=extension,
+            content=content,
+        )
+    else:
+        context, summary_items, ocr_result = await _document_context(
+            file_name=file_name,
+            extension=extension,
+            content=content,
+            ocr_client=state.ocr_client,
+        )
+    if resolved_mode == "table-analysis":
+        ocr_result = None
     provider = None
     if model is not None:
         try:
@@ -84,19 +116,6 @@ async def analyze_chat_attachment(
                     "reason": exc.reason,
                 },
             ) from exc
-
-    if resolved_mode == "table-analysis":
-        context, summary_items = _table_context(
-            file_name=file_name,
-            extension=extension,
-            content=content,
-        )
-    else:
-        context, summary_items = _document_context(
-            file_name=file_name,
-            extension=extension,
-            content=content,
-        )
     citation = _attachment_citation(
         file_name=file_name,
         extension=extension,
@@ -133,7 +152,13 @@ async def analyze_chat_attachment(
             "model_status": model_status,
             "created_by": x_user_id,
             "size_bytes": len(content),
-            "provider_call": provider is not None,
+            "provider_call": provider is not None or ocr_result is not None,
+            "answer_provider_call": provider is not None,
+            "ocr_call": ocr_result is not None,
+            "ocr_model": ocr_result.model if ocr_result is not None else None,
+            "ocr_source_commit": (
+                ocr_result.source_commit if ocr_result is not None else None
+            ),
         },
     )
     return ChatAttachmentAnalysisResponse(
@@ -149,7 +174,10 @@ async def analyze_chat_attachment(
             "database_write": False,
             "object_storage_write": False,
             "index_write": False,
-            "provider_call": provider is not None,
+            "provider_call": provider is not None or ocr_result is not None,
+            "answer_provider_call": provider is not None,
+            "ocr_call": ocr_result is not None,
+            "ocr_engine": ocr_result.model if ocr_result is not None else "not-used",
         },
     )
 
@@ -224,27 +252,89 @@ def _table_context(*, file_name: str, extension: str, content: bytes) -> tuple[s
     return _truncate(context, MAX_CONTEXT_CHARS), summary_items
 
 
-def _document_context(*, file_name: str, extension: str, content: bytes) -> tuple[str, list[str]]:
-    with tempfile.TemporaryDirectory(prefix="medical-audit-chat-upload-") as tmp_dir:
-        path = Path(tmp_dir) / f"upload.{extension}"
-        path.write_bytes(content)
-        result = extract_file(path)
-    if result.status != ExtractionStatus.EXTRACTED:
+async def _document_context(
+    *,
+    file_name: str,
+    extension: str,
+    content: bytes,
+    ocr_client: UnlimitedOcrClientProtocol | None,
+) -> tuple[str, list[str], UnlimitedOcrResult | None]:
+    result = None
+    if extension not in OCR_IMAGE_EXTENSIONS:
+        with tempfile.TemporaryDirectory(prefix="medical-audit-chat-upload-") as tmp_dir:
+            path = Path(tmp_dir) / f"upload.{extension}"
+            path.write_bytes(content)
+            result = extract_file(path)
+    ocr_result: UnlimitedOcrResult | None = None
+    should_ocr = extension in OCR_IMAGE_EXTENSIONS or (
+        result is not None
+        and (
+            result.status != ExtractionStatus.EXTRACTED
+            or not result.text.strip()
+        )
+    )
+    if should_ocr:
+        if ocr_client is None:
+            raise HTTPException(
+                status_code=422,
+                detail=_document_extraction_error_detail(
+                    extension=extension,
+                    error_type=result.error_type if result is not None else None,
+                ),
+            )
+        try:
+            ocr_result = await ocr_client.extract_text(
+                file_name=file_name,
+                extension=extension,
+                content=content,
+            )
+        except UnlimitedOcrError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="OCR 识别服务未完成处理，请检查服务状态后重试。",
+            ) from exc
+        text = ocr_result.text.strip()
+    else:
+        assert result is not None
+        text = result.text.strip()
+    if not text:
         raise HTTPException(
             status_code=422,
-            detail=result.error_summary or "document has no extractable text",
+            detail="文档未检测到可读取文字，请确认内容后重新上传。",
         )
-    text = result.text.strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="document has no extractable text")
     lines = text.splitlines()
     summary_items = [
-        f"文本段落：{len(result.text_segments)}",
+        (
+            f"OCR 页数：{ocr_result.page_count}"
+            if ocr_result is not None
+            else f"文本段落：{len(result.text_segments) if result is not None else 0}"
+        ),
         f"可读行数：{len(lines)}",
         f"字符数：{len(text)}",
     ]
+    if ocr_result is not None:
+        summary_items.append(f"OCR 引擎：{ocr_result.model}")
     context = "\n".join([f"文件：{file_name}", *summary_items, "正文摘录：", text])
-    return _truncate(context, MAX_CONTEXT_CHARS), summary_items
+    return _truncate(context, MAX_CONTEXT_CHARS), summary_items, ocr_result
+
+
+def _document_extraction_error_detail(
+    *,
+    extension: str,
+    error_type: FileErrorType | None,
+) -> str:
+    if error_type == FileErrorType.LOW_QUALITY_TEXT:
+        if extension == "pdf":
+            return (
+                "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。"
+                "请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+            )
+        return "文档未检测到可读取文字，请确认内容后重新上传。"
+    if extension in OCR_IMAGE_EXTENSIONS:
+        return "图片 OCR 服务尚未启用，请联系管理员完成 Unlimited-OCR 服务配置。"
+    if extension == "pdf":
+        return "PDF 解析失败，文件可能损坏、加密或格式不完整。请重新导出后再上传。"
+    return "文档解析失败，请确认文件完整且格式正确后重试。"
 
 
 def _attachment_prompt(

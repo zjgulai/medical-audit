@@ -9,12 +9,16 @@ import {
   createProject,
   createProjectMember,
   fetchProjectDashboard,
+  fetchProjectFileBlob,
+  fetchProjectFiles,
   fetchProjectMembers,
-  fetchProjects
+  fetchProjects,
+  uploadProjectFile
 } from "@/lib/api-client";
 import type {
   ApiProjectStatus,
   ProjectDashboardResponse,
+  ProjectFilesResponse,
   ProjectMemberApiItem,
   ProjectMembersResponse,
   ProjectsResponse,
@@ -36,15 +40,21 @@ vi.mock("@/lib/api-client", () => ({
   createProject: vi.fn(),
   createProjectMember: vi.fn(),
   fetchProjectDashboard: vi.fn(),
+  fetchProjectFileBlob: vi.fn(),
+  fetchProjectFiles: vi.fn(),
   fetchProjectMembers: vi.fn(),
-  fetchProjects: vi.fn()
+  fetchProjects: vi.fn(),
+  uploadProjectFile: vi.fn()
 }));
 
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchProjectMembersMock = vi.mocked(fetchProjectMembers);
 const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
+const fetchProjectFilesMock = vi.mocked(fetchProjectFiles);
+const fetchProjectFileBlobMock = vi.mocked(fetchProjectFileBlob);
 const createProjectMock = vi.mocked(createProject);
 const createProjectMemberMock = vi.mocked(createProjectMember);
+const uploadProjectFileMock = vi.mocked(uploadProjectFile);
 const globalsCss = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf-8");
 
 const projectStatuses: readonly ApiProjectStatus[] = ["待开始", "进行中", "已完成", "已归档"];
@@ -120,6 +130,16 @@ function membersResponse(
     roles: ["项目负责人", "审计员", "业务专家", "信息科", "只读观察员"],
     statuses: ["在项目中", "待确认"],
     store: { ready, backend: ready ? "SqlAlchemyProjectMemberStore" : "unavailable" }
+  };
+}
+
+function filesResponse(projectKey: string): ProjectFilesResponse {
+  return {
+    contract_version: "project-files-v1",
+    project_key: projectKey,
+    items: [],
+    store: { ready: true, backend: "InMemoryDocumentUploadStore" },
+    permissions: { can_upload: true }
   };
 }
 
@@ -204,8 +224,11 @@ beforeEach(() => {
   fetchProjectsMock.mockResolvedValue(projectsResponse([alpha]));
   fetchProjectMembersMock.mockResolvedValue(membersResponse(alpha.id, [member("ALPHA-M1", alpha.id, "张审计")]));
   fetchProjectDashboardMock.mockResolvedValue(dashboardResponse(alpha));
+  fetchProjectFilesMock.mockResolvedValue(filesResponse(alpha.id));
+  fetchProjectFileBlobMock.mockResolvedValue(new Blob(["file"]));
   createProjectMock.mockRejectedValue(new Error("not configured"));
   createProjectMemberMock.mockRejectedValue(new Error("not configured"));
+  uploadProjectFileMock.mockRejectedValue(new Error("not configured"));
 });
 
 describe("ReplicaProjectWorkbench", () => {
@@ -285,6 +308,7 @@ describe("ReplicaProjectWorkbench", () => {
     await waitFor(() => {
       expect(fetchProjectMembersMock).toHaveBeenCalledWith("ALPHA");
       expect(fetchProjectDashboardMock).toHaveBeenCalledWith("ALPHA");
+      expect(fetchProjectFilesMock).toHaveBeenCalledWith("ALPHA");
     });
     expect(await screen.findByRole("heading", { name: "项目详情：Alpha项目" })).toBeInTheDocument();
     expect(screen.getByText("ALPHA-M1-account")).toBeInTheDocument();
@@ -293,6 +317,46 @@ describe("ReplicaProjectWorkbench", () => {
     expect(screen.getByText("Alpha项目同步完成")).toBeInTheDocument();
     expect(screen.getByText("live-db-connected")).toBeInTheDocument();
     expect(screen.getByText("SqlAlchemyProjectMemberStore / SqlAlchemyAuditFindingStore")).toBeInTheDocument();
+  });
+
+  it("lets an admin upload a file into the selected project", async () => {
+    uploadProjectFileMock.mockResolvedValue({
+      contract_version: "project-files-v1",
+      project_key: "ALPHA",
+      item: {
+        id: "document-upload-project-file",
+        name: "audit-evidence.pdf",
+        extension: "pdf",
+        size_bytes: 2048,
+        sha256: "a".repeat(64),
+        created_by: "next-admin",
+        created_at: "2026-07-29T12:00:00Z",
+        security_scan_status: "local-policy-passed",
+        dlp_status: "clear",
+        preview_url: "/api/v1/projects/ALPHA/files/document-upload-project-file/preview",
+        download_url: "/api/v1/projects/ALPHA/files/document-upload-project-file/download"
+      },
+      store: { ready: true, backend: "InMemoryDocumentUploadStore" }
+    });
+    const { container } = render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    await screen.findByText("当前项目还没有文件");
+
+    const fileInput = container.querySelector(
+      '.replica-project-file-upload input[type="file"]'
+    ) as HTMLInputElement;
+    const file = new File(["%PDF"], "audit-evidence.pdf", {
+      type: "application/pdf"
+    });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(uploadProjectFileMock).toHaveBeenCalledWith("ALPHA", file);
+    });
+    expect(await screen.findByText("audit-evidence.pdf")).toBeInTheDocument();
+    expect(screen.getByText("项目文件已上传：audit-evidence.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载" })).toBeInTheDocument();
   });
 
   it("creates a project exactly once from the admin-only form", async () => {

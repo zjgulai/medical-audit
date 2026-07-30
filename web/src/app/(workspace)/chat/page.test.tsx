@@ -278,30 +278,33 @@ describe("ChatPortalPage", () => {
       expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
         expect.objectContaining({
           question: "请分析收费明细",
-          model: "kimi-2.7",
+          model: "deepseek-v4-pro",
           agent: "agent-data-helper"
         })
       );
     });
   });
 
-  it("does not submit on an Enter key event and submits an assigned multiline value only after clicking send", async () => {
+  it("submits with Enter and keeps Shift+Enter for multiline input", async () => {
     render(<ChatPortalPage />);
 
-    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
+    await screen.findByRole("option", { name: "DeepSeek V4 Pro" });
     const textbox = screen.getByRole("textbox", { name: "输入相关问题以对话" });
 
-    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter" });
     fireEvent.change(textbox, { target: { value: "第一行\n第二行" } });
+    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter", shiftKey: true });
 
     expect(textbox).toHaveValue("第一行\n第二行");
     expect(apiMocks.runKnowledgeQuery).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter" });
 
     await waitFor(() => {
       expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith(
-        expect.objectContaining({ question: "第一行\n第二行" })
+        expect.objectContaining({
+          question: "第一行\n第二行",
+          model: "deepseek-v4-pro"
+        })
       );
     });
   });
@@ -327,7 +330,7 @@ describe("ChatPortalPage", () => {
       expect(apiMocks.runKnowledgeQuery).toHaveBeenCalledWith({
         question: "医保基金审核依据",
         top_k: 5,
-        model: "kimi-2.7",
+        model: "deepseek-v4-pro",
         source_collections: ["medical-insurance-laws"],
         agent: "agent-fund-helper"
       });
@@ -510,9 +513,32 @@ describe("ChatPortalPage", () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(apiMocks.analyzeChatAttachment).toHaveBeenCalledWith(file, { model: "kimi-2.7" });
+      expect(apiMocks.analyzeChatAttachment).toHaveBeenCalledWith(file, {
+        model: "deepseek-v4-pro"
+      });
     });
     expect(await screen.findByText(/表格存在高频收费线索/)).toBeInTheDocument();
+  });
+
+  it("shows an actionable message when an uploaded PDF needs OCR", async () => {
+    apiMocks.analyzeChatAttachment.mockRejectedValueOnce(
+      new Error(
+        "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+      )
+    );
+    const { container } = render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
+    fireEvent.click(screen.getByRole("button", { name: "上传附件" }));
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["%PDF-1.4"], "scanned.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(
+      await screen.findByText(
+        "PDF 未检测到可读取文字，可能是扫描件或图片型 PDF。请先进行 OCR 识别，或上传可搜索文字版 PDF。"
+      )
+    ).toBeInTheDocument();
   });
 
   it("uploads an attachment through the default parser when model aliases are unavailable", async () => {

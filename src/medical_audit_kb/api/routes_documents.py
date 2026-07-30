@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Annotated, Literal, cast
 from urllib.parse import quote
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -185,6 +187,9 @@ class DocumentSearchItem(BaseModel):
     index_version_key: str
     source_package_version_key: str
     preview_url: str
+    download_url: str
+    match_count: int
+    matched_snippets: list[str]
 
 
 class DocumentSearchBoundaries(BaseModel):
@@ -200,7 +205,7 @@ class DocumentSearchBoundaries(BaseModel):
 class DocumentSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    contract_version: Literal["document-search-v1"]
+    contract_version: Literal["document-search-v2"]
     query: str
     effective_source_collections: list[SourceCollection]
     items: list[DocumentSearchItem]
@@ -238,6 +243,9 @@ class DocumentUploadItem(BaseModel):
     personal_indexed_by: str | None
     personal_index_chunk_count: int
     personal_index_error: str
+    scope: Literal["personal", "project"] = "personal"
+    project_key: str | None = None
+    project_name: str | None = None
     download_url: str
 
 
@@ -452,7 +460,7 @@ def document_search(
     )
     if not effective_source_collections:
         return DocumentSearchResponse(
-            contract_version="document-search-v1",
+            contract_version="document-search-v2",
             query=q,
             effective_source_collections=[],
             items=[],
@@ -482,10 +490,14 @@ def document_search(
             and can_read_all_personal_uploads(role)
         ),
     )
-    results = state.search_engine.search(q, filters=filters, top_k=limit)
-    items = [_document_search_item(state, result) for result in results]
+    results = state.search_engine.search(
+        q,
+        filters=filters,
+        top_k=min(100, max(20, limit * 8)),
+    )
+    items = _document_search_items(state, results, limit=limit)
     return DocumentSearchResponse(
-        contract_version="document-search-v1",
+        contract_version="document-search-v2",
         query=q,
         effective_source_collections=list(effective_source_collections),
         items=items,
@@ -500,6 +512,64 @@ def document_search(
             object_storage_write=False,
             query_history_write=False,
         ),
+    )
+
+
+@router.get("/source/{chunk_id}/download")
+def download_document_source(
+    chunk_id: UUID,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> Response:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    reference = state.preview_references.get(chunk_id)
+    if reference is None:
+        raise HTTPException(status_code=404, detail="document source not found")
+    collection_value = reference.locator.get("source_collection")
+    allowed_collections = {
+        permission.source_collection.value
+        for permission in document_permissions_for_role(user.legacy_api_role)
+    }
+    if not isinstance(collection_value, str) or collection_value not in allowed_collections:
+        raise HTTPException(status_code=404, detail="document source not found")
+    source_path = _source_path_from_locator(reference.locator)
+    if source_path is None:
+        raise HTTPException(status_code=404, detail="document source not found")
+    source_root = state.source_root.resolve()
+    candidate = (source_root / source_path).resolve()
+    if (
+        not candidate.is_relative_to(source_root)
+        or not candidate.is_file()
+        or candidate.suffix.lower().lstrip(".") not in SUPPORTED_DOCUMENT_EXTENSIONS
+    ):
+        raise HTTPException(status_code=404, detail="document source not found")
+    content = candidate.read_bytes()
+    record_operation(
+        state,
+        "document-source-download",
+        {
+            "chunk_id": str(chunk_id),
+            "source_collection": reference.locator.get("source_collection"),
+            "size_bytes": len(content),
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+        },
+    )
+    return Response(
+        content=content,
+        media_type=_download_media_type(candidate.suffix.lower().lstrip(".")),
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(_safe_download_filename(candidate.name))}"
+            ),
+            "X-Document-Chunk-Id": str(chunk_id),
+        },
     )
 
 
@@ -1298,19 +1368,44 @@ def _effective_document_search_collections(
     return tuple(sorted(allowed, key=lambda item: item.value))
 
 
+def _document_search_items(
+    state: ApiState,
+    results: list[HybridSearchResult],
+    *,
+    limit: int,
+) -> list[DocumentSearchItem]:
+    groups: dict[str, list[HybridSearchResult]] = {}
+    for result in results:
+        identity = _document_identity(result)
+        groups.setdefault(identity, []).append(result)
+    return [
+        _document_search_item(state, identity=identity, results=group)
+        for identity, group in list(groups.items())[:limit]
+    ]
+
+
 def _document_search_item(
     state: ApiState,
-    result: HybridSearchResult,
+    *,
+    identity: str,
+    results: list[HybridSearchResult],
 ) -> DocumentSearchItem:
+    result = results[0]
     collection = _source_collection_from_result(result)
     title = _document_result_title(result)
     snippet = _document_result_snippet(result.chunk.text)
     state.preview_references[result.chunk.chunk_id] = PreviewReference(
-        locator=result.chunk.locator,
+        locator={
+            **result.chunk.locator,
+            "source_collection": collection.value,
+        },
         citation_text=snippet,
     )
+    matched_snippets = list(
+        dict.fromkeys(_document_result_snippet(item.chunk.text) for item in results)
+    )[:3]
     return DocumentSearchItem(
-        id=str(result.chunk.chunk_id),
+        id=f"document-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}",
         chunk_id=str(result.chunk.chunk_id),
         title=title,
         source_collection=collection,
@@ -1322,7 +1417,39 @@ def _document_search_item(
         index_version_key=result.chunk.index_version_key,
         source_package_version_key=result.chunk.source_package_version_key,
         preview_url=f"/api/v1/preview/{result.chunk.chunk_id}",
+        download_url=_document_download_url(result),
+        match_count=len(results),
+        matched_snippets=matched_snippets,
     )
+
+
+def _document_identity(result: HybridSearchResult) -> str:
+    collection = _source_collection_from_result(result).value
+    locator = result.chunk.locator
+    for key in ("upload_key", "upload_id"):
+        value = locator.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"{collection}:upload:{value.strip()}"
+    source_path = _source_path_from_locator(locator)
+    if source_path is not None:
+        return f"{collection}:path:{source_path}"
+    return f"{collection}:title:{_document_result_title(result)}"
+
+
+def _document_download_url(result: HybridSearchResult) -> str:
+    for key in ("upload_key", "upload_id"):
+        value = result.chunk.locator.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"/api/v1/documents/uploads/{quote(value.strip())}/download"
+    return f"/api/v1/documents/source/{result.chunk.chunk_id}/download"
+
+
+def _source_path_from_locator(locator: dict[str, object]) -> str | None:
+    for key in ("source_path", "path", "relative_path"):
+        value = locator.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _source_collection_from_result(result: HybridSearchResult) -> SourceCollection:
@@ -1352,7 +1479,10 @@ def _document_result_title(result: HybridSearchResult) -> str:
         for value in reversed(title_path):
             if isinstance(value, str) and value.strip():
                 return value.strip()
-    source_path = result.chunk.metadata.get("source_path")
+    source_path = (
+        result.chunk.locator.get("source_path")
+        or result.chunk.metadata.get("source_path")
+    )
     if isinstance(source_path, str) and source_path.strip():
         return source_path.rsplit("/", 1)[-1]
     return "未命名文档"

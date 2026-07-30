@@ -238,6 +238,44 @@ describe("ReplicaAgentDirectory", () => {
     }
   });
 
+  it("creates a personal agent through the real create API flow", async () => {
+    render(<ReplicaAgentDirectory mode="mine" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ 创建智能体" }));
+    expect(screen.getByRole("dialog", { name: "创建我的智能体" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("智能体名称"), {
+      target: { value: "医保结算复核助手" }
+    });
+    fireEvent.change(screen.getByLabelText("分类"), {
+      target: { value: "业务类" }
+    });
+    fireEvent.change(screen.getByLabelText("审计主题"), {
+      target: { value: "医保基金使用合规" }
+    });
+    fireEvent.change(screen.getByLabelText("提示词"), {
+      target: {
+        value: "依据项目材料核验结算风险，输出风险判断、依据和待补材料。"
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建并加入我的智能体" }));
+
+    await waitFor(() => {
+      expect(createAuditAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "医保结算复核助手",
+          category: "业务类",
+          topic: "医保基金使用合规",
+          visibility_scope: "project",
+          metadata: expect.objectContaining({ source: "my-agents-create-form" })
+        })
+      );
+    });
+    expect(await screen.findAllByText("医保结算复核助手")).toHaveLength(2);
+    expect(screen.getByText(/已创建「医保结算复核助手」/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "创建我的智能体" })).not.toBeInTheDocument();
+  });
+
   it("links the personal agent detail primary action directly to chat", () => {
     render(<ReplicaAgentDirectory mode="mine" />);
 

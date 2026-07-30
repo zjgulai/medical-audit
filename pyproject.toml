@@ -20,6 +20,7 @@ dependencies = [
     "PyYAML>=6.0.2",
     "SQLAlchemy>=2.0.32",
     "uvicorn[standard]>=0.30.0",
+    "pymupdf==1.27.2.2",
 ]
 
 [project.optional-dependencies]

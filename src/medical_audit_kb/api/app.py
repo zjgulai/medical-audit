@@ -50,6 +50,10 @@ from medical_audit_kb.generation.answer_providers import (
 )
 from medical_audit_kb.indexing.index_jobs import ManifestIndexSnapshot
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline, PipelineRunResult
+from medical_audit_kb.ocr.unlimited_ocr import (
+    UnlimitedOcrClientProtocol,
+    unlimited_ocr_client_from_settings,
+)
 from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
 
@@ -97,6 +101,7 @@ class ApiState:
     query_history_store: QueryHistoryStore | None = None
     auth_user_store: AuthUserStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
+    ocr_client: UnlimitedOcrClientProtocol | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
@@ -142,6 +147,7 @@ class ApiState:
             query_history_store=SqlAlchemyQueryHistoryStore(settings.database_url),
             auth_user_store=SqlAlchemyAuthUserStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
+            ocr_client=unlimited_ocr_client_from_settings(settings.unlimited_ocr),
         )
 
     @property

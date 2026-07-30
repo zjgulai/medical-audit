@@ -7,15 +7,20 @@ import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
   createProject,
   createProjectMember,
+  fetchProjectFileBlob,
   fetchProjectDashboard,
+  fetchProjectFiles,
   fetchProjectMembers,
-  fetchProjects
+  fetchProjects,
+  uploadProjectFile
 } from "@/lib/api-client";
 import type {
   ApiProjectMemberRole,
   ApiProjectMemberStatus,
   ApiProjectStatus,
   ProjectDashboardResponse,
+  ProjectFileApiItem,
+  ProjectFilesResponse,
   ProjectMembersResponse,
   ProjectsResponse,
   ProjectSummaryApiItem
@@ -42,10 +47,15 @@ type DashboardState = {
   readonly phase: DashboardPhase;
   readonly response: ProjectDashboardResponse | null;
 };
+type FilesState = {
+  readonly phase: DetailPhase;
+  readonly response: ProjectFilesResponse | null;
+};
 
 const initialProjectsState: ProjectsState = { phase: "loading", response: null, role: null };
 const initialMembersState: MembersState = { phase: "idle", response: null };
 const initialDashboardState: DashboardState = { phase: "idle", response: null };
+const initialFilesState: FilesState = { phase: "idle", response: null };
 const emptyProjects: readonly ProjectSummaryApiItem[] = [];
 
 export function ReplicaProjectWorkbench() {
@@ -57,6 +67,10 @@ export function ReplicaProjectWorkbench() {
   const [statusFilter, setStatusFilter] = useState<ApiProjectStatus | "全部">("全部");
   const [membersState, setMembersState] = useState<MembersState>(initialMembersState);
   const [dashboardState, setDashboardState] = useState<DashboardState>(initialDashboardState);
+  const [filesState, setFilesState] = useState<FilesState>(initialFilesState);
+  const [fileSaving, setFileSaving] = useState(false);
+  const [fileMessage, setFileMessage] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [userIdentifier, setUserIdentifier] = useState("");
   const [memberName, setMemberName] = useState("");
   const [memberRole, setMemberRole] = useState<ApiProjectMemberRole>("审计员");
@@ -82,6 +96,8 @@ export function ReplicaProjectWorkbench() {
   const projectsRequestRef = useRef(0);
   const membersRequestRef = useRef(0);
   const dashboardRequestRef = useRef(0);
+  const filesRequestRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectionGenerationRef = useRef(0);
   const appliedProjectRequestRef = useRef<string | null>(null);
 
@@ -89,9 +105,14 @@ export function ReplicaProjectWorkbench() {
     ++selectionGenerationRef.current;
     ++membersRequestRef.current;
     ++dashboardRequestRef.current;
+    ++filesRequestRef.current;
     setSelectedProjectId(null);
     setMembersState(initialMembersState);
     setDashboardState(initialDashboardState);
+    setFilesState(initialFilesState);
+    setFileSaving(false);
+    setFileMessage(null);
+    setFileError(null);
     memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
@@ -174,6 +195,28 @@ export function ReplicaProjectWorkbench() {
       .catch(() => {
         if (requestId === dashboardRequestRef.current) {
           setDashboardState({ phase: "error", response: null });
+        }
+      });
+  }, []);
+
+  const loadFiles = useCallback((projectId: string) => {
+    const requestId = ++filesRequestRef.current;
+    setFilesState({ phase: "loading", response: null });
+    fetchProjectFiles(projectId)
+      .then((response) => {
+        if (requestId !== filesRequestRef.current) return;
+        if (!response.store.ready) {
+          setFilesState({ phase: "degraded", response });
+          return;
+        }
+        setFilesState({
+          phase: response.items.length === 0 ? "empty" : "ready",
+          response
+        });
+      })
+      .catch(() => {
+        if (requestId === filesRequestRef.current) {
+          setFilesState({ phase: "error", response: null });
         }
       });
   }, []);
@@ -270,9 +313,13 @@ export function ReplicaProjectWorkbench() {
     memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
+    setFileSaving(false);
+    setFileMessage(null);
+    setFileError(null);
     loadMembers(project.id);
     loadDashboard(project.id);
-  }, [loadDashboard, loadMembers]);
+    loadFiles(project.id);
+  }, [loadDashboard, loadFiles, loadMembers]);
 
   useEffect(() => {
     const response = roleScopedProjectsState.response;
@@ -363,6 +410,69 @@ export function ReplicaProjectWorkbench() {
         memberSavingRef.current = false;
         setMemberSaving(false);
       }
+    }
+  }
+
+  async function submitProjectFile(file: File | null) {
+    if (!file || !selectedProject || !canCreateProjects || fileSaving) return;
+    const generation = selectionGenerationRef.current;
+    setFileSaving(true);
+    setFileMessage(null);
+    setFileError(null);
+    try {
+      const response = await uploadProjectFile(selectedProject.id, file);
+      if (generation !== selectionGenerationRef.current) return;
+      setFilesState((current) => ({
+        phase: "ready",
+        response: {
+          contract_version: "project-files-v1",
+          project_key: selectedProject.id,
+          items: [
+            response.item,
+            ...(current.response?.items ?? []).filter(
+              (item) => item.id !== response.item.id
+            )
+          ],
+          store: response.store,
+          permissions: { can_upload: true }
+        }
+      }));
+      setFileMessage(`项目文件已上传：${response.item.name}`);
+    } catch (error) {
+      if (generation === selectionGenerationRef.current) {
+        setFileError(error instanceof Error ? error.message : "项目文件上传失败，请稍后重试。");
+      }
+    } finally {
+      if (generation === selectionGenerationRef.current) {
+        setFileSaving(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      }
+    }
+  }
+
+  async function openProjectFile(
+    item: ProjectFileApiItem,
+    mode: "preview" | "download"
+  ) {
+    if (!selectedProject) return;
+    setFileError(null);
+    try {
+      const path = mode === "preview" ? item.preview_url : item.download_url;
+      const blob = await fetchProjectFileBlob(selectedProject.id, path);
+      const objectUrl = URL.createObjectURL(blob);
+      if (mode === "preview") {
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+      } else {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = item.name;
+        anchor.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+    } catch {
+      setFileError(mode === "preview" ? "文件预览失败，请稍后重试。" : "文件下载失败，请稍后重试。");
     }
   }
 
@@ -515,6 +625,17 @@ export function ReplicaProjectWorkbench() {
               onRetry={() => loadDashboard(selectedProject.id)}
             />
           </div>
+          <FilesPanel
+            canUpload={canCreateProjects}
+            error={fileError}
+            fileInputRef={fileInputRef}
+            filesState={filesState}
+            message={fileMessage}
+            onOpen={(item, mode) => void openProjectFile(item, mode)}
+            onRetry={() => loadFiles(selectedProject.id)}
+            onUpload={(file) => void submitProjectFile(file)}
+            saving={fileSaving}
+          />
         </section>
       ) : (
         roleScopedProjectsState.response && projects.length > 0
@@ -522,6 +643,89 @@ export function ReplicaProjectWorkbench() {
           : null
       )}
     </main>
+  );
+}
+
+function FilesPanel({
+  canUpload,
+  error,
+  fileInputRef,
+  filesState,
+  message,
+  onOpen,
+  onRetry,
+  onUpload,
+  saving
+}: {
+  readonly canUpload: boolean;
+  readonly error: string | null;
+  readonly fileInputRef: React.RefObject<HTMLInputElement | null>;
+  readonly filesState: FilesState;
+  readonly message: string | null;
+  readonly onOpen: (item: ProjectFileApiItem, mode: "preview" | "download") => void;
+  readonly onRetry: () => void;
+  readonly onUpload: (file: File | null) => void;
+  readonly saving: boolean;
+}) {
+  const files = filesState.response?.items ?? [];
+  return (
+    <section className="replica-project-panel replica-project-files" aria-labelledby="project-files-title">
+      <div className="replica-project-files-head">
+        <div>
+          <h3 id="project-files-title">项目文件</h3>
+          <p>项目成员可预览和下载原始文件；仅管理员可以上传。</p>
+        </div>
+        {canUpload ? (
+          <label className="replica-project-file-upload">
+            <span>{saving ? "上传中…" : "上传项目文件"}</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.md,.txt,.csv,.xlsx,.xlsm"
+              disabled={saving}
+              onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : null}
+      </div>
+      {filesState.phase === "loading" ? <ProjectMessage tone="status">项目文件读取中</ProjectMessage> : null}
+      {filesState.phase === "error" ? (
+        <ProjectMessage tone="error">
+          项目文件读取失败
+          <button type="button" onClick={onRetry}>重试项目文件</button>
+        </ProjectMessage>
+      ) : null}
+      {filesState.phase === "degraded" ? <ProjectMessage tone="status">项目文件存储未就绪</ProjectMessage> : null}
+      {filesState.phase === "empty" ? <ProjectMessage tone="status">当前项目还没有文件</ProjectMessage> : null}
+      {message ? <ProjectMessage tone="status">{message}</ProjectMessage> : null}
+      {error ? <ProjectMessage tone="error">{error}</ProjectMessage> : null}
+      {files.length > 0 ? (
+        <div className="replica-project-table-shell">
+          <table className="replica-project-table replica-project-file-table">
+            <thead>
+              <tr><th>文件名</th><th>格式</th><th>大小</th><th>上传人</th><th>上传时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              {files.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.name}</td>
+                  <td>{item.extension.toUpperCase()}</td>
+                  <td>{formatFileSize(item.size_bytes)}</td>
+                  <td>{item.created_by ?? "未记录"}</td>
+                  <td>{formatDate(item.created_at)}</td>
+                  <td>
+                    <div className="replica-project-file-actions">
+                      <button type="button" onClick={() => onOpen(item, "preview")}>预览</button>
+                      <button type="button" onClick={() => onOpen(item, "download")}>下载</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -812,4 +1016,10 @@ function sourceAvailabilityLabel(ready: boolean): string {
 
 function formatDate(value: string): string {
   return value.slice(0, 10);
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

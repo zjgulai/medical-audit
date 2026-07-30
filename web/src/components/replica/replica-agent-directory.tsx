@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { useAuditUser } from "@/components/shell/audit-user-context";
@@ -32,9 +32,21 @@ type AgentActionPanel = {
   readonly description: string;
   readonly items: readonly string[];
 };
+type AgentCreateDraft = {
+  readonly name: string;
+  readonly category: ApiAgentCategory;
+  readonly topic: string;
+  readonly prompt: string;
+};
 
 const allAgentsFilter = "全部";
 const AGENT_PAGE_SIZE = 12;
+const EMPTY_AGENT_DRAFT: AgentCreateDraft = {
+  name: "",
+  category: "业务类",
+  topic: "",
+  prompt: ""
+};
 const marketCategoryOrder = [
   "财务收支审计",
   "采购招标审计",
@@ -262,10 +274,22 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
   );
   const [favoriteAgentIds, setFavoriteAgentIds] = useState<Set<string>>(() => new Set());
   const [currentPage, setCurrentPage] = useState(1);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createDraft, setCreateDraft] = useState<AgentCreateDraft>(EMPTY_AGENT_DRAFT);
+  const [createdAgents, setCreatedAgents] = useState<readonly ReferenceAgentCard[]>([]);
   const agentData = useReplicaAgentsData(mode);
   const marketInstallations = useReplicaMarketInstallations(mode === "market");
   const restoredInstalledAgentIds = marketInstallations.installedAgentIds;
-  const sourceAgents = agentData.data.agents;
+  const sourceAgents = useMemo(
+    () => [
+      ...createdAgents,
+      ...agentData.data.agents.filter(
+        (agent) => !createdAgents.some((created) => created.id === agent.id)
+      )
+    ],
+    [agentData.data.agents, createdAgents]
+  );
   const agentFilters = useMemo(
     () => getAgentCategoryOptions(sourceAgents, agentData.data.categories),
     [agentData.data.categories, sourceAgents]
@@ -317,6 +341,10 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     setInstalledAgentIds(new Map());
     setFavoriteAgentIds(new Set());
     setNotice("");
+    setCreateOpen(false);
+    setCreating(false);
+    setCreateDraft(EMPTY_AGENT_DRAFT);
+    setCreatedAgents([]);
   }, [identityKey]);
 
   useEffect(() => {
@@ -436,6 +464,69 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     }
   }
 
+  async function createPersonalAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManageAgents || creating) {
+      return;
+    }
+    const name = createDraft.name.trim();
+    const topic = createDraft.topic.trim();
+    const prompt = createDraft.prompt.trim();
+    if (!name || !topic || !prompt) {
+      setNotice("请完整填写智能体名称、审计主题和提示词。");
+      return;
+    }
+    setCreating(true);
+    setNotice("");
+    try {
+      const response = await createAuditAgent({
+        name,
+        category: createDraft.category,
+        topic,
+        prompt,
+        knowledge_base: "医保基金合规知识库",
+        project_name: DEFAULT_AUDIT_PROJECT_NAME,
+        visibility_scope: "project",
+        allowed_roles: ["admin", "technician", "director", "member"],
+        metadata: {
+          source: "my-agents-create-form",
+          summary: `${name}用于${topic}，回答需给出依据、风险判断和待补材料。`
+        }
+      });
+      const created: ReferenceAgentCard = {
+        id: response.item.id,
+        name: response.item.name,
+        category: response.item.category,
+        summary:
+          typeof response.item.metadata.summary === "string"
+            ? response.item.metadata.summary
+            : response.item.prompt.slice(0, 82),
+        project: response.item.project_name || DEFAULT_AUDIT_PROJECT_NAME,
+        topic: response.item.topic,
+        initial: Array.from(response.item.name.trim()).slice(0, 2).join("") || "AI",
+        tone: "blue"
+      };
+      setCreatedAgents((current) => [created, ...current]);
+      setSelectedAgentId(created.id);
+      setActiveFilter("全部");
+      setCurrentPage(1);
+      setDetailOpen(true);
+      setActiveAction("查看详情");
+      setCreateOpen(false);
+      setCreateDraft(EMPTY_AGENT_DRAFT);
+      setNotice(`已创建「${created.name}」，现在可以直接进入 AI 对话使用。`);
+    } catch (error) {
+      const backendError = isBackendRequestError(error) ? error : null;
+      setNotice(
+        backendError?.status === 403
+          ? "创建未完成：当前身份无智能体管理权限。"
+          : "创建未完成：智能体创建接口暂不可用，请稍后重试。"
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const activeScopeLabel = activeFilter === "全部" ? "全部分类" : activeFilter;
   const pageRangeLabel = filteredAgents.length === 0 ? "0 / 0" : `${pageStartIndex + 1}-${pageEndIndex} / ${filteredAgents.length}`;
   const pageDescription = isMine
@@ -457,17 +548,24 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           <button
             type="button"
             className="replica-primary-button"
-            disabled={!isMine && (
-              !canManageAgents ||
-              installStateLoading ||
-              installingAgentId.length > 0 ||
-              installedAgentId.length > 0
-            )}
+            disabled={
+              isMine
+                ? !canManageAgents || creating
+                : !canManageAgents ||
+                  installStateLoading ||
+                  installingAgentId.length > 0 ||
+                  installedAgentId.length > 0
+            }
             onClick={() => {
-              if (isMine || !selectedAgent) {
+              if (isMine) {
+                setCreateOpen(true);
+                setNotice("");
+                return;
+              }
+              if (!selectedAgent) {
                 setNotice(buildReplicaLocalGateNotice({
-                  action: isMine ? "创建智能体" : "加入我的智能体",
-                  nextStep: isMine ? "智能体创建 API" : "智能体市场安装 API"
+                  action: "加入我的智能体",
+                  nextStep: "智能体市场安装 API"
                 }));
                 return;
               }
@@ -765,6 +863,105 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
               </button>
             </div>
           </aside>
+        </div>
+      ) : null}
+
+      {isMine && createOpen ? (
+        <div
+          className="replica-agent-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !creating) {
+              setCreateOpen(false);
+            }
+          }}
+        >
+          <form
+            className="replica-agent-dialog replica-agent-create-form"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="replica-agent-create-title"
+            onSubmit={(event) => void createPersonalAgent(event)}
+          >
+            <div className="replica-detail-head">
+              <span>创建智能体</span>
+              <button
+                type="button"
+                aria-label="关闭创建智能体"
+                disabled={creating}
+                onClick={() => setCreateOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="replica-agent-create-heading">
+              <h2 id="replica-agent-create-title">创建我的智能体</h2>
+              <p>填写最小可用配置，创建后即可在 AI 对话中通过 @ 或 / 调用。</p>
+            </div>
+            <div className="replica-agent-create-fields">
+              <label>
+                <span>智能体名称</span>
+                <input
+                  value={createDraft.name}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    name: event.target.value
+                  }))}
+                  placeholder="例如：医保结算复核助手"
+                  maxLength={80}
+                  required
+                />
+              </label>
+              <label>
+                <span>分类</span>
+                <select
+                  value={createDraft.category}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    category: event.target.value as ApiAgentCategory
+                  }))}
+                >
+                  <option value="业务类">业务类</option>
+                  <option value="效率类">效率类</option>
+                  <option value="研究类">研究类</option>
+                </select>
+              </label>
+              <label className="is-full">
+                <span>审计主题</span>
+                <input
+                  value={createDraft.topic}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    topic: event.target.value
+                  }))}
+                  placeholder="例如：医保基金使用合规"
+                  maxLength={120}
+                  required
+                />
+              </label>
+              <label className="is-full">
+                <span>提示词</span>
+                <textarea
+                  value={createDraft.prompt}
+                  onChange={(event) => setCreateDraft((current) => ({
+                    ...current,
+                    prompt: event.target.value
+                  }))}
+                  placeholder="说明角色、输入材料、依据边界和输出格式。证据不足时应列出待补材料。"
+                  rows={7}
+                  required
+                />
+              </label>
+            </div>
+            <div className="replica-agent-create-actions">
+              <button type="button" disabled={creating} onClick={() => setCreateOpen(false)}>
+                取消
+              </button>
+              <button type="submit" disabled={creating}>
+                {creating ? "创建中…" : "创建并加入我的智能体"}
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
     </main>

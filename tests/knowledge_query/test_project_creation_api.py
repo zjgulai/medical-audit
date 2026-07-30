@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
+from medical_audit_kb.api.document_upload_store import InMemoryDocumentUploadStore
 from medical_audit_kb.api.project_member_store import (
     InMemoryProjectMemberStore,
     ProjectIdentityConflictError,
@@ -138,6 +139,51 @@ def test_create_project_requires_permission_and_rejects_conflicts(tmp_path: Path
         and event["payload"]["permission"] == "create_project"
         for event in state.operation_logs
     )
+
+
+def test_admin_uploads_and_project_members_read_project_files(tmp_path: Path) -> None:
+    state, _ = _project_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "project-files"
+    )
+    client = TestClient(create_app(state))
+    assert client.post("/projects", headers=ADMIN_HEADERS, json=PROJECT_PAYLOAD).status_code == 201
+
+    upload_response = client.post(
+        "/projects/FUND-CHECK-202607/files",
+        headers=ADMIN_HEADERS,
+        files={"file": ("audit-note.md", b"# audit evidence", "text/markdown")},
+    )
+
+    assert upload_response.status_code == 201, upload_response.text
+    uploaded = upload_response.json()["item"]
+    assert uploaded["name"] == "audit-note.md"
+    assert uploaded["preview_url"].endswith(f"/{uploaded['id']}/preview")
+    assert uploaded["download_url"].endswith(f"/{uploaded['id']}/download")
+
+    member_headers = {"X-User-Id": "project-admin", "X-Role": "member"}
+    list_response = client.get(
+        "/projects/FUND-CHECK-202607/files",
+        headers=member_headers,
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == [uploaded]
+    assert list_response.json()["permissions"] == {"can_upload": False}
+
+    preview_response = client.get(uploaded["preview_url"], headers=member_headers)
+    download_response = client.get(uploaded["download_url"], headers=member_headers)
+    assert preview_response.status_code == 200
+    assert preview_response.content == b"# audit evidence"
+    assert preview_response.headers["content-disposition"].startswith("inline;")
+    assert download_response.status_code == 200
+    assert download_response.headers["content-disposition"].startswith("attachment;")
+
+    denied_upload = client.post(
+        "/projects/FUND-CHECK-202607/files",
+        headers=member_headers,
+        files={"file": ("denied.md", b"no", "text/markdown")},
+    )
+    assert denied_upload.status_code == 403
 
 
 def test_create_project_rolls_back_when_creator_member_insert_fails(

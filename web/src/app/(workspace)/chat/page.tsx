@@ -41,7 +41,7 @@ const DEFAULT_MODEL_OPTIONS: readonly ChatModelCatalogItem[] = [
     label: "Kimi K2.6（兼容别名）",
     provider: null,
     available: false,
-    default: true,
+    default: false,
     unavailable_reason: "模型目录读取中"
   },
   {
@@ -49,12 +49,12 @@ const DEFAULT_MODEL_OPTIONS: readonly ChatModelCatalogItem[] = [
     label: "DeepSeek V4 Pro",
     provider: null,
     available: false,
-    default: false,
+    default: true,
     unavailable_reason: "模型目录读取中"
   }
 ];
 
-const DEFAULT_MODEL: ChatModelAlias = "kimi-2.7";
+const DEFAULT_MODEL: ChatModelAlias = "deepseek-v4-pro";
 const MODEL_STORAGE_KEY = "medical-audit-chat-model";
 
 const chatShortcuts = [
@@ -374,6 +374,19 @@ function ChatPortalContent() {
           <textarea
             value={question}
             onChange={(event) => updateQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter"
+                && !event.shiftKey
+                && !event.ctrlKey
+                && !event.metaKey
+                && !event.altKey
+                && !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
             placeholder={'输入 "@" 或 "/" 调用智能体，或描述你的审计问题...'}
             aria-label="输入相关问题以对话"
             rows={3}
@@ -393,7 +406,7 @@ function ChatPortalContent() {
                 ref={fileInputRef}
                 className="replica-hidden-file"
                 type="file"
-                accept=".csv,.xlsx,.xlsm,.pdf,.md,.txt"
+                accept=".csv,.xlsx,.xlsm,.pdf,.md,.txt,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
                 onChange={(event) => void handleAttachment(event.target.files?.[0] ?? null)}
               />
               <div className="replica-chat-menu-wrap">
@@ -546,8 +559,9 @@ function attachmentMessage(response: ChatAttachmentAnalysisResponse): LocalMessa
       response.mode === "table-analysis" ? "数据分析" : "文档总结",
       `模型：${response.model_alias ?? "默认附件解析"}`,
       response.boundaries.provider_call ? "模型调用已执行" : "未调用外部模型",
+      response.boundaries.ocr_call ? "OCR 已识别" : null,
       ...response.summary_items.slice(0, 2)
-    ].join(" · ")
+    ].filter(Boolean).join(" · ")
   };
 }
 

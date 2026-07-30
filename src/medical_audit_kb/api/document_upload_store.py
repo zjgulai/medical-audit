@@ -256,6 +256,7 @@ class DocumentUploadStore(Protocol):
         content: bytes,
         created_by: str | None,
         index_readiness: dict[str, object] | None = None,
+        metadata: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         pass
 
@@ -353,6 +354,7 @@ class SqlAlchemyDocumentUploadStore:
         content: bytes,
         created_by: str | None,
         index_readiness: dict[str, object] | None = None,
+        metadata: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
@@ -383,6 +385,7 @@ class SqlAlchemyDocumentUploadStore:
                 **DEFAULT_DOCUMENT_UPLOAD_METADATA,
                 "index_readiness": readiness,
                 **_local_security_metadata(extension=extension, content=content),
+                **_document_scope_metadata(metadata),
             },
             created_at=now,
         )
@@ -597,6 +600,7 @@ class InMemoryDocumentUploadStore:
         content: bytes,
         created_by: str | None,
         index_readiness: dict[str, object] | None = None,
+        metadata: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
@@ -629,6 +633,7 @@ class InMemoryDocumentUploadStore:
             **DEFAULT_DOCUMENT_UPLOAD_METADATA,
             "index_readiness": readiness,
             **_local_security_metadata(extension=extension, content=content),
+            **_document_scope_metadata(metadata),
             "download_url": _download_url(upload_key),
         }
         self.records.insert(0, copy.deepcopy(record))
@@ -883,8 +888,38 @@ def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
         ),
         "personal_index_chunk_count": _int_value(metadata.get("personal_index_chunk_count")),
         "personal_index_error": str(metadata.get("personal_index_error") or ""),
+        "scope": str(metadata.get("scope") or "personal"),
+        "project_key": (
+            str(metadata["project_key"])
+            if isinstance(metadata.get("project_key"), str)
+            else None
+        ),
+        "project_name": (
+            str(metadata["project_name"])
+            if isinstance(metadata.get("project_name"), str)
+            else None
+        ),
         "download_url": _download_url(record.upload_key),
     }
+
+
+def _document_scope_metadata(
+    metadata: Mapping[str, object] | None,
+) -> dict[str, object]:
+    if metadata is None:
+        return {"scope": "personal", "project_key": None, "project_name": None}
+    scope = metadata.get("scope")
+    project_key = metadata.get("project_key")
+    project_name = metadata.get("project_name")
+    if scope == "project" and isinstance(project_key, str) and project_key.strip():
+        return {
+            "scope": "project",
+            "project_key": project_key.strip(),
+            "project_name": project_name.strip()
+            if isinstance(project_name, str) and project_name.strip()
+            else None,
+        }
+    return {"scope": "personal", "project_key": None, "project_name": None}
 
 
 def _storage_object_to_payload(record: DocumentStorageObject) -> dict[str, object]:

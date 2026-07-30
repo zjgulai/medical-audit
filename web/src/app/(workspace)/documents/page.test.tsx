@@ -55,6 +55,7 @@ function makeApiRuntime(): ReplicaRuntimeResult<ReplicaDocumentsData> {
 }
 
 vi.mock("@/lib/api-client", () => ({
+  fetchDocumentFileBlob: vi.fn(),
   runKnowledgeQuery: vi.fn(),
   searchDocuments: vi.fn()
 }));
@@ -123,7 +124,7 @@ describe("DocumentsPage", () => {
 
   it("uses the medical-audit default when either search mode receives a blank draft", async () => {
     searchDocumentsMock.mockResolvedValue({
-      contract_version: "document-search-v1",
+      contract_version: "document-search-v2",
       query: "医保基金监管",
       effective_source_collections: [],
       items: [],
@@ -309,7 +310,10 @@ describe("DocumentsPage", () => {
           matched_by: ["bm25"],
           index_version_key: "index-v1",
           source_package_version_key: "package-v1",
-          preview_url: "/api/v1/preview/chunk-1"
+          preview_url: "/api/v1/preview/chunk-1",
+          download_url: "/api/v1/documents/source/chunk-1/download",
+          match_count: 2,
+          matched_snippets: ["医保支付政策引用片段。"]
         }
       ],
       store: { ready: true, backend: "unit-test" },
@@ -336,10 +340,12 @@ describe("DocumentsPage", () => {
     });
     expect((await screen.findAllByText("医保支付政策")).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("医保支付政策引用片段。").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "打开文档" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "预览原文" })).toHaveAttribute(
       "href",
       "/api/v1/preview/chunk-1"
     );
+    expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
+    expect(screen.getByText("2 处")).toBeInTheDocument();
     expect(screen.getByText("文档检索 provider_call：否")).toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
   });
