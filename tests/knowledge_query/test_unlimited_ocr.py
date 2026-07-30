@@ -7,8 +7,13 @@ from typing import Any
 import pytest
 from pypdf import PdfWriter
 
+from medical_audit_kb.api.routes_chat import OCR_IMAGE_EXTENSIONS
 from medical_audit_kb.core.config import UnlimitedOcrSettings
-from medical_audit_kb.ocr.unlimited_ocr import UnlimitedOcrClient
+from medical_audit_kb.ocr.unlimited_ocr import (
+    UnlimitedOcrClient,
+    UnlimitedOcrError,
+    _render_images,
+)
 
 
 def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
@@ -95,3 +100,17 @@ def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
     content = messages[0]["content"]
     assert content[0] == {"type": "text", "text": "<image>\nMulti page parsing."}
     assert str(content[1]["image_url"]["url"]).startswith("data:image/png;base64,")
+
+
+def test_unlimited_ocr_does_not_advertise_or_render_webp() -> None:
+    assert "webp" not in OCR_IMAGE_EXTENSIONS
+
+    with pytest.raises(
+        UnlimitedOcrError,
+        match="file type is not supported by Unlimited-OCR",
+    ):
+        _render_images(
+            extension="webp",
+            content=b"not-a-supported-image",
+            settings=UnlimitedOcrSettings(),
+        )

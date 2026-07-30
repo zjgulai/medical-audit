@@ -538,6 +538,14 @@ def download_document_source(
     }
     if not isinstance(collection_value, str) or collection_value not in allowed_collections:
         raise HTTPException(status_code=404, detail="document source not found")
+    if collection_value == SourceCollection.PERSONAL_MATERIALS.value:
+        permissions = _upload_permissions(user.legacy_api_role)
+        if not _can_read_personal_material(
+            created_by=reference.locator.get("created_by"),
+            user_identifier=user.user_identifier,
+            can_read_all=permissions.can_read_all_personal_uploads,
+        ):
+            raise HTTPException(status_code=404, detail="document source not found")
     source_path = _source_path_from_locator(reference.locator)
     if source_path is None:
         raise HTTPException(status_code=404, detail="document source not found")
@@ -1394,11 +1402,14 @@ def _document_search_item(
     collection = _source_collection_from_result(result)
     title = _document_result_title(result)
     snippet = _document_result_snippet(result.chunk.text)
+    reference_locator = {
+        **result.chunk.locator,
+        "source_collection": collection.value,
+    }
+    if collection is SourceCollection.PERSONAL_MATERIALS:
+        reference_locator["created_by"] = result.chunk.metadata.get("created_by")
     state.preview_references[result.chunk.chunk_id] = PreviewReference(
-        locator={
-            **result.chunk.locator,
-            "source_collection": collection.value,
-        },
+        locator=reference_locator,
         citation_text=snippet,
     )
     matched_snippets = list(
@@ -1686,7 +1697,24 @@ def _can_download_upload(
     user_identifier: str,
     permissions: DocumentUploadPermissions,
 ) -> bool:
-    return item.created_by == user_identifier or permissions.can_read_all_personal_uploads
+    return _can_read_personal_material(
+        created_by=item.created_by,
+        user_identifier=user_identifier,
+        can_read_all=permissions.can_read_all_personal_uploads,
+    )
+
+
+def _can_read_personal_material(
+    *,
+    created_by: object,
+    user_identifier: str,
+    can_read_all: bool,
+) -> bool:
+    return can_read_all or (
+        isinstance(created_by, str)
+        and bool(created_by)
+        and created_by == user_identifier
+    )
 
 
 def _can_index_upload(

@@ -639,4 +639,37 @@ describe("ReplicaAgentDirectory", () => {
     expect(screen.queryByRole("link", { name: "进入 AI 对话" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "加入我的智能体" })).toBeDisabled();
   });
+
+  it("ignores a personal-agent create response from the previous identity", async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof createAuditAgent>>>();
+    vi.mocked(createAuditAgent).mockReturnValueOnce(pendingCreate.promise);
+    render(
+      <AuditUserProvider>
+        <ReplicaAgentDirectory mode="mine" />
+      </AuditUserProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "+ 创建智能体" }));
+    fireEvent.change(screen.getByLabelText("智能体名称"), {
+      target: { value: "旧身份智能体" }
+    });
+    fireEvent.change(screen.getByLabelText("审计主题"), {
+      target: { value: "医保基金使用合规" }
+    });
+    fireEvent.change(screen.getByLabelText("提示词"), {
+      target: { value: "仅允许写入发起请求的身份视图。" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建并加入我的智能体" }));
+
+    act(() => writeAuditClientRole("member"));
+    await act(async () => {
+      pendingCreate.resolve(installedAgentResponse("stale-personal-agent", "旧身份智能体"));
+      await pendingCreate.promise;
+    });
+
+    expect(screen.queryByText(/已创建「旧身份智能体」/)).not.toBeInTheDocument();
+    expect(screen.queryByText("旧身份智能体")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "创建我的智能体" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ 创建智能体" })).toBeDisabled();
+  });
 });

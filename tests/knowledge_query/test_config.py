@@ -85,6 +85,12 @@ def test_default_config_loads() -> None:
     assert settings.document_upload_indexing.index_version_status == "candidate"
     assert settings.unlimited_ocr.enabled is False
     assert settings.unlimited_ocr.model == "baidu/Unlimited-OCR"
+    default_a4_page_pixels = round(8.27 * settings.unlimited_ocr.pdf_dpi) * round(
+        11.69 * settings.unlimited_ocr.pdf_dpi
+    )
+    assert settings.unlimited_ocr.max_total_pixels >= (
+        settings.unlimited_ocr.max_pages * default_a4_page_pixels
+    )
     assert settings.unlimited_ocr.source_commit == (
         "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
     )

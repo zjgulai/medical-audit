@@ -288,7 +288,12 @@ export default function DocumentsPage() {
         const anchor = document.createElement("a");
         anchor.href = objectUrl;
         anchor.download = item.title;
-        anchor.click();
+        document.body.appendChild(anchor);
+        try {
+          anchor.click();
+        } finally {
+          anchor.remove();
+        }
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
         setActionNotice(`已开始下载「${item.title}」。`);
       } catch {

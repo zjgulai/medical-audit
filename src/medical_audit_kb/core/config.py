@@ -191,7 +191,7 @@ class UnlimitedOcrSettings(BaseModel):
     timeout_seconds: float = Field(default=1200.0, gt=0)
     max_pages: int = Field(default=40, ge=1, le=200)
     pdf_dpi: int = Field(default=300, ge=72, le=600)
-    max_total_pixels: int = Field(default=200_000_000, ge=1)
+    max_total_pixels: int = Field(default=400_000_000, ge=1)
     max_output_tokens: int = Field(default=32_768, ge=256, le=65_536)
     source_commit: str = "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
 

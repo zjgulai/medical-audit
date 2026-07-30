@@ -265,6 +265,8 @@ class DocumentUploadStore(Protocol):
         *,
         created_by: str | None,
         include_all: bool = False,
+        scope: str | None = None,
+        project_key: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, object]]:
         pass
@@ -473,6 +475,8 @@ class SqlAlchemyDocumentUploadStore:
         *,
         created_by: str | None,
         include_all: bool = False,
+        scope: str | None = None,
+        project_key: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, object]]:
         with self._session_factory() as session:
@@ -481,6 +485,14 @@ class SqlAlchemyDocumentUploadStore:
             )
             if not include_all:
                 statement = statement.where(DocumentUploadRecord.created_by == created_by)
+            if scope is not None:
+                statement = statement.where(
+                    DocumentUploadRecord.extra_metadata["scope"].as_string() == scope
+                )
+            if project_key is not None:
+                statement = statement.where(
+                    DocumentUploadRecord.extra_metadata["project_key"].as_string() == project_key
+                )
             statement = statement.limit(limit)
             return [_record_to_payload(record) for record in session.scalars(statement).all()]
 
@@ -644,12 +656,20 @@ class InMemoryDocumentUploadStore:
         *,
         created_by: str | None,
         include_all: bool = False,
+        scope: str | None = None,
+        project_key: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, object]]:
-        if include_all:
-            return [copy.deepcopy(record) for record in self.records[:limit]]
-        owned = [record for record in self.records if record.get("created_by") == created_by]
-        return [copy.deepcopy(record) for record in owned[:limit]]
+        records = self.records
+        if not include_all:
+            records = [record for record in records if record.get("created_by") == created_by]
+        if scope is not None:
+            records = [record for record in records if record.get("scope") == scope]
+        if project_key is not None:
+            records = [
+                record for record in records if record.get("project_key") == project_key
+            ]
+        return [copy.deepcopy(record) for record in records[:limit]]
 
     def get_upload(self, *, upload_id: str) -> dict[str, object] | None:
         for record in self.records:

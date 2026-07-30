@@ -11,7 +11,7 @@ import pymupdf
 
 from medical_audit_kb.core.config import UnlimitedOcrSettings
 
-_IMAGE_EXTENSIONS = {"bmp", "jpeg", "jpg", "png", "tif", "tiff", "webp"}
+_IMAGE_EXTENSIONS = {"bmp", "jpeg", "jpg", "png", "tif", "tiff"}
 _REFERENCE_TAG_PATTERN = re.compile(r"<\|/?ref\|>")
 _DETECTION_PATTERN = re.compile(r"<\|det\|>.*?<\|/det\|>", flags=re.DOTALL)
 

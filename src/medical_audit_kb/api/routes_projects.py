@@ -355,10 +355,10 @@ def list_project_files(
         for item in state.document_upload_store.list_uploads(
             created_by=None,
             include_all=True,
+            scope="project",
+            project_key=project_key,
             limit=100,
         )
-        if item.get("scope") == "project"
-        and item.get("project_key") == project_key
     ]
     record_operation(
         state,
@@ -396,6 +396,7 @@ async def upload_project_file(
         x_user_id=x_user_id,
         x_role=x_role,
         attempted_action="project-file-upload",
+        project_key=project_key,
     )
     _visible_project_user(
         project_key,

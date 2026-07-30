@@ -476,6 +476,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       setNotice("请完整填写智能体名称、审计主题和提示词。");
       return;
     }
+    const requestGeneration = identityGenerationRef.current.generation;
     setCreating(true);
     setNotice("");
     try {
@@ -493,6 +494,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           summary: `${name}用于${topic}，回答需给出依据、风险判断和待补材料。`
         }
       });
+      if (requestGeneration !== identityGenerationRef.current.generation) return;
       const created: ReferenceAgentCard = {
         id: response.item.id,
         name: response.item.name,
@@ -516,6 +518,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
       setCreateDraft(EMPTY_AGENT_DRAFT);
       setNotice(`已创建「${created.name}」，现在可以直接进入 AI 对话使用。`);
     } catch (error) {
+      if (requestGeneration !== identityGenerationRef.current.generation) return;
       const backendError = isBackendRequestError(error) ? error : null;
       setNotice(
         backendError?.status === 403
@@ -523,7 +526,9 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           : "创建未完成：智能体创建接口暂不可用，请稍后重试。"
       );
     } finally {
-      setCreating(false);
+      if (requestGeneration === identityGenerationRef.current.generation) {
+        setCreating(false);
+      }
     }
   }
 

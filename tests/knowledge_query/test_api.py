@@ -4120,6 +4120,47 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
     assert state.query_history_store.list_queries() == []
 
 
+def test_personal_document_source_download_is_owner_scoped(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    personal_source_path = "personal-materials/document-upload-private/note.txt"
+    _write_text(
+        state.source_root / personal_source_path,
+        "院内个人材料提示：医保基金审核依据需要结合内部台账。",
+    )
+    state.search_engine = _search_engine_with_personal_materials(
+        system_chunk_id=uuid4(),
+        personal_chunk_id=uuid4(),
+        source_path=personal_source_path,
+    )
+    client = TestClient(create_app(state))
+
+    search_response = client.get(
+        "/documents/search",
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        params={
+            "q": "院内个人材料提示",
+            "source_collection": SourceCollection.PERSONAL_MATERIALS.value,
+            "limit": 3,
+        },
+    )
+
+    assert search_response.status_code == 200, search_response.text
+    chunk_id = search_response.json()["items"][0]["chunk_id"]
+    download_url = f"/api/v1/documents/source/{chunk_id}/download"
+    assert client.get(
+        download_url,
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+    ).status_code == 200
+    assert client.get(
+        download_url,
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-2"},
+    ).status_code == 404
+    assert client.get(
+        download_url,
+        headers={"X-Role": "it-admin", "X-User-Id": "admin-1"},
+    ).status_code == 200
+
+
 def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'document-uploads.db'}"
     upload_root = tmp_path / "document-uploads"

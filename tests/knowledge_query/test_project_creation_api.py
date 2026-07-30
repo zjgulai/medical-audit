@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_log_store import SqlAlchemyAuditLogStore
-from medical_audit_kb.api.document_upload_store import InMemoryDocumentUploadStore
+from medical_audit_kb.api.auth_user_store import SqlAlchemyAuthUserStore
+from medical_audit_kb.api.document_upload_store import (
+    InMemoryDocumentUploadStore,
+    SqlAlchemyDocumentUploadStore,
+)
 from medical_audit_kb.api.project_member_store import (
     InMemoryProjectMemberStore,
     ProjectIdentityConflictError,
@@ -184,6 +188,112 @@ def test_admin_uploads_and_project_members_read_project_files(tmp_path: Path) ->
         files={"file": ("denied.md", b"no", "text/markdown")},
     )
     assert denied_upload.status_code == 403
+
+
+def test_project_file_listing_filters_scope_before_limit(tmp_path: Path) -> None:
+    state, _ = _project_state(tmp_path)
+    store = InMemoryDocumentUploadStore(upload_root=tmp_path / "project-files")
+    state.document_upload_store = store
+    client = TestClient(create_app(state))
+    assert client.post("/projects", headers=ADMIN_HEADERS, json=PROJECT_PAYLOAD).status_code == 201
+    expected = store.add_upload(
+        file_name="target.md",
+        extension="md",
+        content=b"target project evidence",
+        created_by="project-admin",
+        metadata={"scope": "project", "project_key": "FUND-CHECK-202607"},
+    )
+    for index in range(100):
+        store.add_upload(
+            file_name=f"other-{index}.md",
+            extension="md",
+            content=b"other project evidence",
+            created_by="project-admin",
+            metadata={"scope": "project", "project_key": f"OTHER-{index}"},
+        )
+
+    response = client.get(
+        "/projects/FUND-CHECK-202607/files",
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [expected["id"]]
+
+
+def test_sql_upload_listing_filters_scope_before_limit(tmp_path: Path) -> None:
+    store = SqlAlchemyDocumentUploadStore(
+        database_url=f"sqlite:///{tmp_path / 'project-files.db'}",
+        upload_root=tmp_path / "project-files",
+        create_schema=True,
+    )
+    expected = store.add_upload(
+        file_name="target.md",
+        extension="md",
+        content=b"target project evidence",
+        created_by="project-admin",
+        metadata={"scope": "project", "project_key": "FUND-CHECK-202607"},
+    )
+    for index in range(100):
+        store.add_upload(
+            file_name=f"other-{index}.md",
+            extension="md",
+            content=b"other project evidence",
+            created_by="project-admin",
+            metadata={"scope": "project", "project_key": f"OTHER-{index}"},
+        )
+
+    items = store.list_uploads(
+        created_by=None,
+        include_all=True,
+        scope="project",
+        project_key="FUND-CHECK-202607",
+        limit=1,
+    )
+
+    assert [item["id"] for item in items] == [expected["id"]]
+
+
+def test_project_scoped_admin_can_upload_project_file(tmp_path: Path) -> None:
+    state, _ = _project_state(tmp_path)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "project-files"
+    )
+    state.auth_user_store = SqlAlchemyAuthUserStore(
+        f"sqlite:///{tmp_path / 'auth-users.db'}",
+        create_schema=True,
+    )
+    client = TestClient(create_app(state))
+    assert client.post("/projects", headers=ADMIN_HEADERS, json=PROJECT_PAYLOAD).status_code == 201
+    assert client.post(
+        "/auth/users",
+        headers=ADMIN_HEADERS,
+        json={
+            "user_key": "scoped-project-admin",
+            "display_name": "项目级管理员",
+            "department_key": "audit-office",
+        },
+    ).status_code == 200
+    assert client.post(
+        "/auth/users/scoped-project-admin/role-assignments",
+        headers=ADMIN_HEADERS,
+        json={
+            "role": "admin",
+            "scope_type": "project",
+            "scope_key": "FUND-CHECK-202607",
+        },
+    ).status_code == 200
+
+    response = client.post(
+        "/projects/FUND-CHECK-202607/files",
+        headers={"X-User-Id": "scoped-project-admin", "X-Role": "member"},
+        files={"file": ("scoped.md", b"project-scoped evidence", "text/markdown")},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["item"]["name"] == "scoped.md"
+    assert state.operation_logs[-1]["payload"]["user_identifier"] == "scoped-project-admin"
+    assert state.operation_logs[-1]["payload"]["role"] == "admin"
 
 
 def test_create_project_rolls_back_when_creator_member_insert_fails(
