@@ -4125,7 +4125,7 @@ def test_personal_document_source_download_is_owner_scoped(tmp_path: Path) -> No
     personal_source_path = "personal-materials/document-upload-private/note.txt"
     _write_text(
         state.source_root / personal_source_path,
-        "院内个人材料提示：医保基金审核依据需要结合内部台账。",
+        "院内个人材料提示：医保基金审核依据需要结合内部台账。",  # noqa: RUF001
     )
     state.search_engine = _search_engine_with_personal_materials(
         system_chunk_id=uuid4(),
@@ -5619,6 +5619,41 @@ def test_chat_attachment_analyzes_text_document_with_selected_model(
     assert body["model_alias"] == "deepseek-v4-pro"
     assert "字符数" in body["summary_items"][2]
     assert "医保基金审计会议纪要" in body["extracted_preview"]
+
+
+def test_chat_attachment_rejects_webp_before_ocr(tmp_path: Path) -> None:
+    class TrackingUnlimitedOcrClient:
+        calls = 0
+
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            self.calls += 1
+            return UnlimitedOcrResult(
+                text="不应调用 OCR",
+                page_count=1,
+                model="baidu/Unlimited-OCR",
+                source_commit="d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+            )
+
+    ocr_client = TrackingUnlimitedOcrClient()
+    state = _api_state(tmp_path)
+    state.ocr_client = ocr_client
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/chat/attachments/analyze",
+        data={"mode": "auto"},
+        files={"file": ("unsupported.webp", b"not-a-webp", "image/webp")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported chat attachment extension"
+    assert ocr_client.calls == 0
 
 
 def test_chat_attachment_rejects_image_only_pdf_with_actionable_ocr_message(

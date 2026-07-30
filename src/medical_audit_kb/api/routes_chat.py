@@ -49,9 +49,8 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     "tif",
     "tiff",
     "txt",
-    "webp",
 }
-OCR_IMAGE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.difference({"md", "pdf", "txt", "webp"})
+OCR_IMAGE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.difference({"md", "pdf", "txt"})
 MAX_CONTEXT_CHARS = 6_000
 MAX_SNIPPET_CHARS = 1_200
 
