@@ -7,9 +7,13 @@ from typing import Any
 import pytest
 from pypdf import PdfWriter
 
-from medical_audit_kb.api.routes_chat import OCR_IMAGE_EXTENSIONS
+from medical_audit_kb.api.routes_chat import (
+    OCR_IMAGE_EXTENSIONS,
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+)
 from medical_audit_kb.core.config import UnlimitedOcrSettings
 from medical_audit_kb.ocr.unlimited_ocr import (
+    SUPPORTED_IMAGE_EXTENSIONS,
     UnlimitedOcrClient,
     UnlimitedOcrError,
     _render_images,
@@ -103,6 +107,10 @@ def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
 
 
 def test_unlimited_ocr_does_not_advertise_or_render_webp() -> None:
+    assert (
+        SUPPORTED_DOCUMENT_EXTENSIONS.intersection(SUPPORTED_IMAGE_EXTENSIONS)
+        == OCR_IMAGE_EXTENSIONS
+    )
     assert "webp" not in OCR_IMAGE_EXTENSIONS
 
     with pytest.raises(

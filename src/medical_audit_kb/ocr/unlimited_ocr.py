@@ -11,7 +11,9 @@ import pymupdf
 
 from medical_audit_kb.core.config import UnlimitedOcrSettings
 
-_IMAGE_EXTENSIONS = {"bmp", "jpeg", "jpg", "png", "tif", "tiff"}
+SUPPORTED_IMAGE_EXTENSIONS: frozenset[str] = frozenset(
+    {"bmp", "jpeg", "jpg", "png", "tif", "tiff"}
+)
 _REFERENCE_TAG_PATTERN = re.compile(r"<\|/?ref\|>")
 _DETECTION_PATTERN = re.compile(r"<\|det\|>.*?<\|/det\|>", flags=re.DOTALL)
 
@@ -146,7 +148,7 @@ def _render_images(
             return images
         finally:
             document.close()
-    if normalized_extension not in _IMAGE_EXTENSIONS:
+    if normalized_extension not in SUPPORTED_IMAGE_EXTENSIONS:
         raise UnlimitedOcrError("file type is not supported by Unlimited-OCR")
     try:
         with pymupdf.open(stream=content, filetype=normalized_extension) as image_document:

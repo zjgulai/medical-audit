@@ -32,6 +32,7 @@ from medical_audit_kb.domain.constants import FileErrorType, SourceCollection
 from medical_audit_kb.generation.citations import Citation, EvidenceType
 from medical_audit_kb.ingestion.extractors import ExtractionStatus, extract_file
 from medical_audit_kb.ocr.unlimited_ocr import (
+    SUPPORTED_IMAGE_EXTENSIONS,
     UnlimitedOcrClientProtocol,
     UnlimitedOcrError,
     UnlimitedOcrResult,
@@ -50,7 +51,9 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     "tiff",
     "txt",
 }
-OCR_IMAGE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.difference({"md", "pdf", "txt"})
+OCR_IMAGE_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS.intersection(
+    SUPPORTED_IMAGE_EXTENSIONS
+)
 MAX_CONTEXT_CHARS = 6_000
 MAX_SNIPPET_CHARS = 1_200
 
