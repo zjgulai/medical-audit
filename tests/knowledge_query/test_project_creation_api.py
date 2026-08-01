@@ -145,25 +145,59 @@ def test_create_project_requires_permission_and_rejects_conflicts(tmp_path: Path
     )
 
 
-def test_admin_uploads_and_project_members_read_project_files(tmp_path: Path) -> None:
+def test_project_file_upload_visibility_review_and_withdrawal(tmp_path: Path) -> None:
     state, _ = _project_state(tmp_path)
     state.document_upload_store = InMemoryDocumentUploadStore(
         upload_root=tmp_path / "project-files"
     )
     client = TestClient(create_app(state))
     assert client.post("/projects", headers=ADMIN_HEADERS, json=PROJECT_PAYLOAD).status_code == 201
+    add_member_response = client.post(
+        "/projects/FUND-CHECK-202607/members",
+        headers=ADMIN_HEADERS,
+        json={
+            "user_identifier": "other-project-member",
+            "name": "其他项目成员",
+            "role": "审计员",
+            "department": "医保科",
+            "status": "在项目中",
+        },
+    )
+    assert add_member_response.status_code == 200, add_member_response.text
 
     upload_response = client.post(
         "/projects/FUND-CHECK-202607/files",
         headers=ADMIN_HEADERS,
+        data={
+            "department": "财务科",
+            "document_type": "财务资料",
+            "description": "2026 年审计明细",
+        },
         files={"file": ("audit-note.md", b"# audit evidence", "text/markdown")},
     )
 
     assert upload_response.status_code == 201, upload_response.text
     uploaded = upload_response.json()["item"]
     assert uploaded["name"] == "audit-note.md"
+    assert uploaded["project_name"] == "医保基金专项检查"
+    assert uploaded["department"] == "财务科"
+    assert uploaded["document_type"] == "财务资料"
+    assert uploaded["description"] == "2026 年审计明细"
+    assert uploaded["review_status"] == "pending-review"
+    assert uploaded["review_history"] == []
     assert uploaded["preview_url"].endswith(f"/{uploaded['id']}/preview")
     assert uploaded["download_url"].endswith(f"/{uploaded['id']}/download")
+
+    other_member_headers = {"X-User-Id": "other-project-member", "X-Role": "member"}
+    assert client.get(
+        "/projects/FUND-CHECK-202607/files", headers=other_member_headers
+    ).json()["items"] == []
+    hidden_review = client.post(
+        f"/projects/FUND-CHECK-202607/files/{uploaded['id']}/review",
+        headers=other_member_headers,
+        json={"status": "withdrawn", "note": "不应看到其他成员资料"},
+    )
+    assert hidden_review.status_code == 404
 
     member_headers = {"X-User-Id": "project-admin", "X-Role": "member"}
     list_response = client.get(
@@ -172,7 +206,12 @@ def test_admin_uploads_and_project_members_read_project_files(tmp_path: Path) ->
     )
     assert list_response.status_code == 200
     assert list_response.json()["items"] == [uploaded]
-    assert list_response.json()["permissions"] == {"can_upload": False}
+    assert list_response.json()["permissions"] == {
+        "can_upload": True,
+        "can_review": False,
+        "can_withdraw_own": True,
+        "visibility_scope": "own",
+    }
 
     preview_response = client.get(uploaded["preview_url"], headers=member_headers)
     download_response = client.get(uploaded["download_url"], headers=member_headers)
@@ -182,12 +221,66 @@ def test_admin_uploads_and_project_members_read_project_files(tmp_path: Path) ->
     assert download_response.status_code == 200
     assert download_response.headers["content-disposition"].startswith("attachment;")
 
-    denied_upload = client.post(
+    member_upload = client.post(
         "/projects/FUND-CHECK-202607/files",
         headers=member_headers,
-        files={"file": ("denied.md", b"no", "text/markdown")},
+        data={"document_type": "审计资料", "description": "成员补充资料"},
+        files={"file": ("member-note.md", b"member evidence", "text/markdown")},
     )
-    assert denied_upload.status_code == 403
+    assert member_upload.status_code == 201, member_upload.text
+    member_file = member_upload.json()["item"]
+    assert member_file["department"] == "内审部"
+
+    denied_review = client.post(
+        f"/projects/FUND-CHECK-202607/files/{member_file['id']}/review",
+        headers=member_headers,
+        json={"status": "approved", "note": ""},
+    )
+    assert denied_review.status_code == 403
+
+    review_response = client.post(
+        f"/projects/FUND-CHECK-202607/files/{uploaded['id']}/review",
+        headers=ADMIN_HEADERS,
+        json={"status": "changes-requested", "note": "请补充签章页"},
+    )
+    assert review_response.status_code == 200, review_response.text
+    reviewed = review_response.json()["item"]
+    assert reviewed["review_status"] == "changes-requested"
+    assert reviewed["review_note"] == "请补充签章页"
+    assert reviewed["reviewed_by"] == "project-admin"
+    assert reviewed["review_history"][-1]["status"] == "changes-requested"
+    assert state.document_upload_store.update_project_file_review(
+        upload_id=str(uploaded["id"]),
+        review_status="approved",
+        reviewed_by="project-admin",
+        review_note="并发重复审核",
+    ) is None
+    persisted_review = state.document_upload_store.get_upload(upload_id=str(uploaded["id"]))
+    assert persisted_review is not None
+    assert persisted_review["project_review_status"] == "changes-requested"
+    assert len(persisted_review["project_review_history"]) == 1
+
+    replacement_response = client.post(
+        "/projects/FUND-CHECK-202607/files",
+        headers=member_headers,
+        data={
+            "document_type": "财务资料",
+            "description": "已补充签章页",
+            "replaces_upload_id": uploaded["id"],
+        },
+        files={"file": ("audit-note-revised.md", b"# signed evidence", "text/markdown")},
+    )
+    assert replacement_response.status_code == 201, replacement_response.text
+    assert replacement_response.json()["item"]["replaces_upload_id"] == uploaded["id"]
+    assert replacement_response.json()["item"]["review_status"] == "pending-review"
+
+    withdraw_response = client.post(
+        f"/projects/FUND-CHECK-202607/files/{member_file['id']}/review",
+        headers=member_headers,
+        json={"status": "withdrawn", "note": "上传版本有误"},
+    )
+    assert withdraw_response.status_code == 200, withdraw_response.text
+    assert withdraw_response.json()["item"]["review_status"] == "withdrawn"
 
 
 def test_project_file_listing_filters_scope_before_limit(tmp_path: Path) -> None:
@@ -252,6 +345,35 @@ def test_sql_upload_listing_filters_scope_before_limit(tmp_path: Path) -> None:
     )
 
     assert [item["id"] for item in items] == [expected["id"]]
+    reviewed = store.update_project_file_review(
+        upload_id=str(expected["id"]),
+        review_status="approved",
+        reviewed_by="project-admin",
+        review_note="合同完整",
+    )
+    assert reviewed is not None
+    assert reviewed["project_review_status"] == "approved"
+    assert reviewed["project_review_history"] == [
+        {
+            "status": "approved",
+            "note": "合同完整",
+            "reviewed_by": "project-admin",
+            "reviewed_at": reviewed["project_reviewed_at"],
+        }
+    ]
+    persisted = store.get_upload(upload_id=str(expected["id"]))
+    assert persisted is not None
+    assert persisted["project_review_history"] == reviewed["project_review_history"]
+    assert store.update_project_file_review(
+        upload_id=str(expected["id"]),
+        review_status="changes-requested",
+        reviewed_by="project-admin",
+        review_note="并发重复审核",
+    ) is None
+    persisted_after_duplicate = store.get_upload(upload_id=str(expected["id"]))
+    assert persisted_after_duplicate is not None
+    assert persisted_after_duplicate["project_review_status"] == "approved"
+    assert len(persisted_after_duplicate["project_review_history"]) == 1
 
 
 def test_project_scoped_admin_can_upload_project_file(tmp_path: Path) -> None:

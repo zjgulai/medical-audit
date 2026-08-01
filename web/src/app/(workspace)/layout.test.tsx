@@ -99,11 +99,16 @@ beforeEach(() => {
   fetchProjectMembersMock.mockResolvedValue(membersResponse);
   fetchProjectDashboardMock.mockResolvedValue(dashboardResponse);
   fetchProjectFilesMock.mockResolvedValue({
-    contract_version: "project-files-v1",
+    contract_version: "project-files-v2",
     project_key: project.id,
     items: [],
     store: { ready: true, backend: "InMemoryDocumentUploadStore" },
-    permissions: { can_upload: false }
+    permissions: {
+      can_upload: true,
+      can_review: false,
+      can_withdraw_own: true,
+      visibility_scope: "own"
+    }
   });
 });
 

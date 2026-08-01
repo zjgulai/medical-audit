@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Annotated, cast
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
@@ -14,6 +14,7 @@ from medical_audit_kb.api.auth import (
     Permission,
     require_permission,
     resolve_authenticated_user,
+    user_has_permission,
 )
 from medical_audit_kb.api.project_member_store import (
     PROJECT_MEMBER_ROLES,
@@ -44,6 +45,15 @@ REVIEW_STATUS_LABELS: dict[str, str] = {
 }
 MAX_PROJECT_FILE_BYTES = 20 * 1024 * 1024
 SUPPORTED_PROJECT_FILE_EXTENSIONS = {"csv", "md", "pdf", "xlsm", "xlsx", "txt"}
+PROJECT_DOCUMENT_TYPES = (
+    "审计资料",
+    "财务资料",
+    "业务资料",
+    "制度文件",
+    "整改材料",
+    "其他",
+)
+PROJECT_FILE_REVIEW_STATUSES = ("approved", "changes-requested", "withdrawn")
 
 
 class ProjectMemberCreateRequest(BaseModel):
@@ -117,6 +127,31 @@ class ProjectCreateRequest(BaseModel):
         if not normalized:
             raise ValueError("value must not be blank")
         return normalized
+
+
+class ProjectFileReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    note: str = Field(default="", max_length=1000)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        if value not in PROJECT_FILE_REVIEW_STATUSES:
+            raise ValueError("unsupported project file review status")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_note_for_non_approval(self) -> ProjectFileReviewRequest:
+        if self.status in {"changes-requested", "withdrawn"} and not self.note:
+            raise ValueError("note is required for changes-requested or withdrawn")
+        return self
 
 
 @router.post("/projects", status_code=201)
@@ -344,17 +379,18 @@ def list_project_files(
     )
     if state.document_upload_store is None:
         return {
-            "contract_version": "project-files-v1",
+            "contract_version": "project-files-v2",
             "project_key": project_key,
             "items": [],
             "store": {"ready": False, "backend": "none"},
-            "permissions": {"can_upload": user.role is HospitalRole.ADMIN},
+            "permissions": _project_file_permissions(user),
         }
+    can_review = user_has_permission(user, Permission.REVIEW_PROJECT_FILE)
     items = [
         _project_file_payload(item, project_key=project_key)
         for item in state.document_upload_store.list_uploads(
-            created_by=None,
-            include_all=True,
+            created_by=None if can_review else user.user_identifier,
+            include_all=can_review,
             scope="project",
             project_key=project_key,
             limit=100,
@@ -371,14 +407,14 @@ def list_project_files(
         },
     )
     return {
-        "contract_version": "project-files-v1",
+        "contract_version": "project-files-v2",
         "project_key": project_key,
         "items": items,
         "store": {
             "ready": True,
             "backend": state.document_upload_store.__class__.__name__,
         },
-        "permissions": {"can_upload": user.role is HospitalRole.ADMIN},
+        "permissions": _project_file_permissions(user),
     }
 
 
@@ -387,18 +423,22 @@ async def upload_project_file(
     project_key: str,
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
+    department: Annotated[str, Form(max_length=128)] = "",
+    document_type: Annotated[str, Form(max_length=64)] = "其他",
+    description: Annotated[str, Form(max_length=1000)] = "",
+    replaces_upload_id: Annotated[str, Form(max_length=128)] = "",
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
     user = require_permission(
         state,
-        permission=Permission.CREATE_PROJECT,
+        permission=Permission.UPLOAD_PROJECT_FILE,
         x_user_id=x_user_id,
         x_role=x_role,
         attempted_action="project-file-upload",
         project_key=project_key,
     )
-    _visible_project_user(
+    _visible_user, store, _visible_keys, _visibility_ready = _visible_project_user(
         project_key,
         state,
         x_user_id=x_user_id,
@@ -406,6 +446,30 @@ async def upload_project_file(
     )
     if state.document_upload_store is None:
         raise HTTPException(status_code=409, detail="document upload store is not configured")
+    project = _project_payload(project_key, store)
+    if project.get("status") == "已归档":
+        raise HTTPException(status_code=409, detail="archived project does not accept files")
+    normalized_document_type = document_type.strip() or "其他"
+    if normalized_document_type not in PROJECT_DOCUMENT_TYPES:
+        raise HTTPException(status_code=422, detail="unsupported project document type")
+    normalized_department = department.strip() or _project_member_department(
+        project_key=project_key,
+        user_identifier=user.user_identifier,
+        store=store,
+    )
+    normalized_replaces_upload_id = replaces_upload_id.strip()
+    if normalized_replaces_upload_id:
+        replaced = state.document_upload_store.get_upload(
+            upload_id=normalized_replaces_upload_id
+        )
+        if (
+            replaced is None
+            or replaced.get("scope") != "project"
+            or replaced.get("project_key") != project_key
+            or replaced.get("created_by") != user.user_identifier
+            or replaced.get("project_review_status") != "changes-requested"
+        ):
+            raise HTTPException(status_code=409, detail="replacement source is not eligible")
     file_name = file.filename or "project-file"
     extension = _project_file_extension(file_name)
     if extension not in SUPPORTED_PROJECT_FILE_EXTENSIONS:
@@ -423,7 +487,11 @@ async def upload_project_file(
         metadata={
             "scope": "project",
             "project_key": project_key,
-            "project_name": project_key,
+            "project_name": str(project["name"]),
+            "department": normalized_department,
+            "document_type": normalized_document_type,
+            "description": description.strip(),
+            "replaces_upload_id": normalized_replaces_upload_id or None,
         },
     )
     item = _project_file_payload(stored, project_key=project_key)
@@ -437,16 +505,95 @@ async def upload_project_file(
             "size_bytes": len(content),
             "user_identifier": user.user_identifier,
             "role": user.role.value,
+            "department": normalized_department,
+            "document_type": normalized_document_type,
+            "replaces_upload_id": normalized_replaces_upload_id or None,
         },
     )
     return {
-        "contract_version": "project-files-v1",
+        "contract_version": "project-files-v2",
         "project_key": project_key,
         "item": item,
         "store": {
             "ready": True,
             "backend": state.document_upload_store.__class__.__name__,
         },
+    }
+
+
+@router.post("/projects/{project_key}/files/{upload_id}/review")
+def review_project_file(
+    project_key: str,
+    upload_id: str,
+    payload: ProjectFileReviewRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user, _store, _visible_keys, _visibility_ready = _visible_project_user(
+        project_key,
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+    )
+    if state.document_upload_store is None:
+        raise HTTPException(status_code=409, detail="document upload store is not configured")
+    item = state.document_upload_store.get_upload(upload_id=upload_id)
+    if (
+        item is None
+        or item.get("scope") != "project"
+        or item.get("project_key") != project_key
+    ):
+        raise HTTPException(status_code=404, detail="project file not found")
+    if not _project_file_visible_to_user(item=item, user=user):
+        raise HTTPException(status_code=404, detail="project file not found")
+    if item.get("project_review_status") != "pending-review":
+        raise HTTPException(status_code=409, detail="project file review is already closed")
+
+    if payload.status == "withdrawn":
+        if item.get("created_by") != user.user_identifier:
+            raise HTTPException(status_code=403, detail="only the uploader can withdraw this file")
+    else:
+        user = require_permission(
+            state,
+            permission=Permission.REVIEW_PROJECT_FILE,
+            x_user_id=x_user_id,
+            x_role=x_role,
+            attempted_action="project-file-review",
+            project_key=project_key,
+        )
+
+    updated = state.document_upload_store.update_project_file_review(
+        upload_id=upload_id,
+        review_status=payload.status,
+        reviewed_by=user.user_identifier,
+        review_note=payload.note,
+    )
+    if updated is None:
+        current = state.document_upload_store.get_upload(upload_id=upload_id)
+        if (
+            current is not None
+            and current.get("scope") == "project"
+            and current.get("project_key") == project_key
+        ):
+            raise HTTPException(status_code=409, detail="project file review is already closed")
+        raise HTTPException(status_code=404, detail="project file not found")
+    result = _project_file_payload(updated, project_key=project_key)
+    record_operation(
+        state,
+        "project-file-review",
+        {
+            "project_key": project_key,
+            "upload_id": upload_id,
+            "review_status": payload.status,
+            "user_identifier": user.user_identifier,
+            "role": user.role.value,
+        },
+    )
+    return {
+        "contract_version": "project-files-v2",
+        "project_key": project_key,
+        "item": result,
     }
 
 
@@ -843,6 +990,16 @@ def _project_file_payload(
         "sha256": str(item["sha256"]),
         "created_by": item.get("created_by"),
         "created_at": str(item["created_at"]),
+        "project_name": str(item.get("project_name") or project_key),
+        "department": str(item.get("department") or ""),
+        "document_type": str(item.get("document_type") or "其他"),
+        "description": str(item.get("description") or ""),
+        "replaces_upload_id": item.get("replaces_upload_id"),
+        "review_status": str(item.get("project_review_status") or "pending-review"),
+        "review_note": str(item.get("project_review_note") or ""),
+        "reviewed_by": item.get("project_reviewed_by"),
+        "reviewed_at": item.get("project_reviewed_at"),
+        "review_history": item.get("project_review_history") or [],
         "security_scan_status": str(item["security_scan_status"]),
         "dlp_status": str(item["dlp_status"]),
         "preview_url": (
@@ -877,6 +1034,8 @@ def _project_file_response(
     item, content = retained
     if item.get("scope") != "project" or item.get("project_key") != project_key:
         raise HTTPException(status_code=404, detail="project file not found")
+    if not _project_file_visible_to_user(item=item, user=user):
+        raise HTTPException(status_code=404, detail="project file not found")
     file_name = str(item["name"]).replace("/", "_").replace("\\", "_")
     extension = str(item["extension"])
     record_operation(
@@ -906,6 +1065,62 @@ def _project_file_extension(file_name: str) -> str:
     if "." not in file_name:
         return ""
     return file_name.rsplit(".", maxsplit=1)[-1].lower()
+
+
+def _project_file_permissions(user: AuthenticatedUser) -> dict[str, object]:
+    return {
+        "can_upload": user_has_permission(user, Permission.UPLOAD_PROJECT_FILE),
+        "can_review": user_has_permission(user, Permission.REVIEW_PROJECT_FILE),
+        "can_withdraw_own": user_has_permission(user, Permission.UPLOAD_PROJECT_FILE),
+        "visibility_scope": (
+            "project" if user_has_permission(user, Permission.REVIEW_PROJECT_FILE) else "own"
+        ),
+    }
+
+
+def _project_file_visible_to_user(
+    *,
+    item: dict[str, object],
+    user: AuthenticatedUser,
+) -> bool:
+    return user_has_permission(user, Permission.REVIEW_PROJECT_FILE) or (
+        item.get("created_by") == user.user_identifier
+    )
+
+
+def _project_payload(
+    project_key: str,
+    store: ProjectMemberStore,
+) -> dict[str, object]:
+    try:
+        return next(
+            item
+            for item in project_payloads_with_member_counts(store.member_counts(), store)
+            if item["id"] == project_key
+        )
+    except StopIteration as exc:
+        raise HTTPException(status_code=404, detail="project not found") from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="project store is not available") from exc
+
+
+def _project_member_department(
+    *,
+    project_key: str,
+    user_identifier: str,
+    store: ProjectMemberStore,
+) -> str:
+    try:
+        members = combined_project_members(project_key, store.list_members(project_key))
+    except SQLAlchemyError:
+        return ""
+    for member in members:
+        if (
+            member.get("user_identifier") == user_identifier
+            and member.get("status") == "在项目中"
+        ):
+            return str(member.get("department") or "")
+    return ""
 
 
 def _project_file_media_type(extension: str) -> str:

@@ -12,6 +12,7 @@ import {
   fetchProjectFiles,
   fetchProjectMembers,
   fetchProjects,
+  reviewProjectFile,
   uploadProjectFile
 } from "@/lib/api-client";
 import type {
@@ -19,13 +20,16 @@ import type {
   ApiProjectMemberStatus,
   ApiProjectStatus,
   ProjectDashboardResponse,
+  ProjectDocumentType,
   ProjectFileApiItem,
+  ProjectFileReviewStatus,
   ProjectFilesResponse,
   ProjectMembersResponse,
   ProjectsResponse,
   ProjectSummaryApiItem
 } from "@/lib/api-types";
-import type { AuditClientRole } from "@/lib/audit-user";
+import { auditClientRoleLabel, auditClientUserId, type AuditClientRole } from "@/lib/audit-user";
+import { formatReplicaDateTime } from "@/lib/replica-adapters";
 
 type ListPhase = "loading" | "ready" | "empty" | "degraded" | "error";
 type DetailPhase = "idle" | "loading" | "ready" | "empty" | "degraded" | "error";
@@ -51,12 +55,22 @@ type FilesState = {
   readonly phase: DetailPhase;
   readonly response: ProjectFilesResponse | null;
 };
+type ProjectWorkspaceTab = "overview" | "upload" | "files" | "review" | "members" | "identity";
 
 const initialProjectsState: ProjectsState = { phase: "loading", response: null, role: null };
 const initialMembersState: MembersState = { phase: "idle", response: null };
 const initialDashboardState: DashboardState = { phase: "idle", response: null };
 const initialFilesState: FilesState = { phase: "idle", response: null };
 const emptyProjects: readonly ProjectSummaryApiItem[] = [];
+const MAX_PROJECT_FILE_BYTES = 20 * 1024 * 1024;
+const projectDocumentTypes: readonly ProjectDocumentType[] = [
+  "审计资料",
+  "财务资料",
+  "业务资料",
+  "制度文件",
+  "整改材料",
+  "其他"
+];
 
 export function ReplicaProjectWorkbench() {
   const auditUser = useAuditUser();
@@ -68,7 +82,14 @@ export function ReplicaProjectWorkbench() {
   const [membersState, setMembersState] = useState<MembersState>(initialMembersState);
   const [dashboardState, setDashboardState] = useState<DashboardState>(initialDashboardState);
   const [filesState, setFilesState] = useState<FilesState>(initialFilesState);
+  const [activeTab, setActiveTab] = useState<ProjectWorkspaceTab>("overview");
+  const [queuedFiles, setQueuedFiles] = useState<readonly File[]>([]);
+  const [fileDepartment, setFileDepartment] = useState("");
+  const [fileDocumentType, setFileDocumentType] = useState<ProjectDocumentType>("审计资料");
+  const [fileDescription, setFileDescription] = useState("");
+  const [replacementFor, setReplacementFor] = useState<ProjectFileApiItem | null>(null);
   const [fileSaving, setFileSaving] = useState(false);
+  const [reviewSavingId, setReviewSavingId] = useState<string | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [userIdentifier, setUserIdentifier] = useState("");
@@ -110,7 +131,14 @@ export function ReplicaProjectWorkbench() {
     setMembersState(initialMembersState);
     setDashboardState(initialDashboardState);
     setFilesState(initialFilesState);
+    setActiveTab("overview");
+    setQueuedFiles([]);
+    setFileDepartment("");
+    setFileDocumentType("审计资料");
+    setFileDescription("");
+    setReplacementFor(null);
     setFileSaving(false);
+    setReviewSavingId(null);
     setFileMessage(null);
     setFileError(null);
     memberSavingRef.current = false;
@@ -230,11 +258,20 @@ export function ReplicaProjectWorkbench() {
     () => projects.filter((item) => statusFilter === "全部" || item.status === statusFilter),
     [projects, statusFilter]
   );
+  const portfolioMetrics = useMemo(() => [
+    { label: "可见项目", value: projects.length },
+    { label: "进行中", value: projects.filter((item) => item.status === "进行中").length },
+    { label: "已完成", value: projects.filter((item) => item.status === "已完成").length },
+    { label: "待开始", value: projects.filter((item) => item.status === "待开始").length }
+  ], [projects]);
   const projectStatuses = roleScopedProjectsState.response?.project_statuses ?? [];
   const canManageMembers = auditUser.can("manage_project_members");
   const canCreateProjects = auditUser.can("create_project");
   const projectWritesReady = roleScopedProjectsState.response?.store.ready === true
     && roleScopedProjectsState.response.store.persistent_writes_ready === true;
+  const currentUserIdentifier = auditClientUserId(auditUser.role);
+  const canUploadProjectFiles = filesState.response?.permissions.can_upload === true
+    && selectedProject?.status !== "已归档";
 
   async function submitProject() {
     if (!canCreateProjects || !projectWritesReady || projectSavingRef.current) return;
@@ -309,11 +346,17 @@ export function ReplicaProjectWorkbench() {
   const selectProject = useCallback((project: ProjectSummaryApiItem) => {
     ++selectionGenerationRef.current;
     setSelectedProjectId(project.id);
+    setActiveTab("overview");
+    setQueuedFiles([]);
+    setFileDepartment("");
+    setFileDescription("");
+    setReplacementFor(null);
     setProjectLinkError(null);
     memberSavingRef.current = false;
     setMemberSaving(false);
     setMemberCreateError(null);
     setFileSaving(false);
+    setReviewSavingId(null);
     setFileMessage(null);
     setFileError(null);
     loadMembers(project.id);
@@ -413,34 +456,59 @@ export function ReplicaProjectWorkbench() {
     }
   }
 
-  async function submitProjectFile(file: File | null) {
-    if (!file || !selectedProject || !canCreateProjects || fileSaving) return;
+  async function submitProjectFiles() {
+    if (!selectedProject || !canUploadProjectFiles || fileSaving || queuedFiles.length === 0) return;
     const generation = selectionGenerationRef.current;
     setFileSaving(true);
     setFileMessage(null);
     setFileError(null);
+    let completed = 0;
+    const uploadedFiles: File[] = [];
     try {
-      const response = await uploadProjectFile(selectedProject.id, file);
-      if (generation !== selectionGenerationRef.current) return;
-      setFilesState((current) => ({
-        phase: "ready",
-        response: {
-          contract_version: "project-files-v1",
-          project_key: selectedProject.id,
-          items: [
-            response.item,
-            ...(current.response?.items ?? []).filter(
-              (item) => item.id !== response.item.id
-            )
-          ],
-          store: response.store,
-          permissions: { can_upload: true }
-        }
-      }));
-      setFileMessage(`项目文件已上传：${response.item.name}`);
+      for (const file of queuedFiles) {
+        const response = await uploadProjectFile(selectedProject.id, {
+          file,
+          department: fileDepartment.trim(),
+          document_type: fileDocumentType,
+          description: fileDescription.trim(),
+          replaces_upload_id: replacementFor?.id
+        });
+        if (generation !== selectionGenerationRef.current) return;
+        completed += 1;
+        uploadedFiles.push(file);
+        setFilesState((current) => ({
+          phase: "ready",
+          response: {
+            contract_version: "project-files-v2",
+            project_key: selectedProject.id,
+            items: [
+              response.item,
+              ...(current.response?.items ?? []).filter(
+                (item) => item.id !== response.item.id
+              )
+            ],
+            store: response.store,
+            permissions: current.response?.permissions ?? {
+              can_upload: true,
+              can_review: false,
+              can_withdraw_own: true,
+              visibility_scope: "own"
+            }
+          }
+        }));
+      }
+      setFileMessage(`已提交 ${completed} 份项目资料，等待审核。`);
+      setQueuedFiles([]);
+      setFileDescription("");
+      setReplacementFor(null);
     } catch (error) {
       if (generation === selectionGenerationRef.current) {
-        setFileError(error instanceof Error ? error.message : "项目文件上传失败，请稍后重试。");
+        setQueuedFiles((current) => current.filter((file) => !uploadedFiles.includes(file)));
+        setFileError(
+          completed > 0
+            ? `已提交 ${completed} 份，后续文件上传失败；列表已保留成功记录。`
+            : error instanceof Error ? error.message : "项目文件上传失败，请稍后重试。"
+        );
       }
     } finally {
       if (generation === selectionGenerationRef.current) {
@@ -448,6 +516,40 @@ export function ReplicaProjectWorkbench() {
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
+      }
+    }
+  }
+
+  async function submitProjectFileReview(
+    item: ProjectFileApiItem,
+    status: Exclude<ProjectFileReviewStatus, "pending-review">,
+    note: string
+  ) {
+    if (!selectedProject || reviewSavingId !== null) return;
+    const generation = selectionGenerationRef.current;
+    setReviewSavingId(item.id);
+    setFileMessage(null);
+    setFileError(null);
+    try {
+      const response = await reviewProjectFile(selectedProject.id, item.id, { status, note });
+      if (generation !== selectionGenerationRef.current) return;
+      setFilesState((current) => current.response ? {
+        phase: "ready",
+        response: {
+          ...current.response,
+          items: current.response.items.map((currentItem) =>
+            currentItem.id === response.item.id ? response.item : currentItem
+          )
+        }
+      } : current);
+      setFileMessage(status === "approved" ? "资料已审核通过。" : status === "withdrawn" ? "资料已撤回并保留审计记录。" : "资料已退回补正。" );
+    } catch (error) {
+      if (generation === selectionGenerationRef.current) {
+        setFileError(error instanceof Error ? error.message : "资料状态更新失败，请稍后重试。");
+      }
+    } finally {
+      if (generation === selectionGenerationRef.current) {
+        setReviewSavingId(null);
       }
     }
   }
@@ -475,6 +577,50 @@ export function ReplicaProjectWorkbench() {
       setFileError(mode === "preview" ? "文件预览失败，请稍后重试。" : "文件下载失败，请稍后重试。");
     }
   }
+
+  function queueProjectFiles(files: readonly File[]) {
+    const oversizedFiles = files.filter((file) => file.size > MAX_PROJECT_FILE_BYTES);
+    const acceptedFiles = files.filter((file) => file.size <= MAX_PROJECT_FILE_BYTES);
+    setFileError(
+      oversizedFiles.length > 0
+        ? `以下文件超过 20 MB，未加入队列：${oversizedFiles.map((file) => file.name).join("、")}`
+        : null
+    );
+    setQueuedFiles((current) => {
+      if (replacementFor) return acceptedFiles.slice(0, 1);
+      const queuedIdentities = new Set(current.map((file) => `${file.name}\u0000${file.size}`));
+      const uniqueFiles = acceptedFiles.filter((file) => {
+        const identity = `${file.name}\u0000${file.size}`;
+        if (queuedIdentities.has(identity)) return false;
+        queuedIdentities.add(identity);
+        return true;
+      });
+      return [...current, ...uniqueFiles];
+    });
+  }
+
+  const membersPanel = selectedProject ? (
+    <MembersPanel
+      canManage={canManageMembers}
+      createError={memberCreateError}
+      department={memberDepartment}
+      membersState={membersState}
+      name={memberName}
+      onDepartmentChange={setMemberDepartment}
+      onNameChange={setMemberName}
+      onRetry={() => loadMembers(selectedProject.id)}
+      onRoleChange={setMemberRole}
+      onStatusChange={setMemberStatus}
+      onSubmit={submitMember}
+      onUserIdentifierChange={setUserIdentifier}
+      projectResponse={roleScopedProjectsState.response}
+      persistentWritesReady={projectWritesReady}
+      role={memberRole}
+      saving={memberSaving}
+      status={memberStatus}
+      userIdentifier={userIdentifier}
+    />
+  ) : null;
 
   return (
     <main className="replica-page replica-page-standard replica-project-workbench">
@@ -509,6 +655,17 @@ export function ReplicaProjectWorkbench() {
             </select>
           </label>
         </div>
+
+        {roleScopedProjectsState.response ? (
+          <div className="replica-project-portfolio-metrics" aria-label="项目组合概览">
+            {portfolioMetrics.map((metric) => (
+              <article key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </article>
+            ))}
+          </div>
+        ) : null}
 
         {canCreateProjects ? (
           <form
@@ -599,43 +756,123 @@ export function ReplicaProjectWorkbench() {
             <p>{selectedProject.audit_topic} · {selectedProject.status}</p>
           </div>
 
-          <div className="replica-project-detail-grid">
-            <MembersPanel
-              canManage={canManageMembers}
-              createError={memberCreateError}
-              department={memberDepartment}
-              membersState={membersState}
-              name={memberName}
-              onDepartmentChange={setMemberDepartment}
-              onNameChange={setMemberName}
-              onRetry={() => loadMembers(selectedProject.id)}
-              onRoleChange={setMemberRole}
-              onStatusChange={setMemberStatus}
-              onSubmit={submitMember}
-              onUserIdentifierChange={setUserIdentifier}
-              projectResponse={roleScopedProjectsState.response}
-              persistentWritesReady={projectWritesReady}
-              role={memberRole}
-              saving={memberSaving}
-              status={memberStatus}
-              userIdentifier={userIdentifier}
-            />
-            <DashboardPanel
-              dashboardState={dashboardState}
-              onRetry={() => loadDashboard(selectedProject.id)}
-            />
-          </div>
-          <FilesPanel
-            canUpload={canCreateProjects}
-            error={fileError}
-            fileInputRef={fileInputRef}
-            filesState={filesState}
-            message={fileMessage}
-            onOpen={(item, mode) => void openProjectFile(item, mode)}
-            onRetry={() => loadFiles(selectedProject.id)}
-            onUpload={(file) => void submitProjectFile(file)}
-            saving={fileSaving}
+          <ProjectWorkspaceTabs
+            activeTab={activeTab}
+            fileCount={filesState.response?.items.length ?? 0}
+            onChange={setActiveTab}
+            pendingReviewCount={filesState.response?.items.filter(
+              (item) => item.review_status === "pending-review"
+            ).length ?? 0}
           />
+
+          <div
+            id="project-tabpanel-overview"
+            role="tabpanel"
+            aria-labelledby="project-tab-overview"
+            hidden={activeTab !== "overview"}
+            tabIndex={0}
+          >
+            {activeTab === "overview" ? (
+              <div className="replica-project-detail-grid">
+                {membersPanel}
+                <DashboardPanel
+                  dashboardState={dashboardState}
+                  onRetry={() => loadDashboard(selectedProject.id)}
+                />
+              </div>
+            ) : null}
+          </div>
+          <div
+            id="project-tabpanel-upload"
+            role="tabpanel"
+            aria-labelledby="project-tab-upload"
+            hidden={activeTab !== "upload"}
+            tabIndex={0}
+          >
+            {activeTab === "upload" ? <UploadPanel
+              canUpload={canUploadProjectFiles}
+              department={fileDepartment}
+              description={fileDescription}
+              documentType={fileDocumentType}
+              error={fileError}
+              fileInputRef={fileInputRef}
+              message={fileMessage}
+              onDepartmentChange={setFileDepartment}
+              onDescriptionChange={setFileDescription}
+              onDocumentTypeChange={setFileDocumentType}
+              onCancelReplacement={() => {
+                setReplacementFor(null);
+                setQueuedFiles([]);
+              }}
+              onFilesChange={queueProjectFiles}
+              onRemove={(file) => setQueuedFiles((current) => current.filter((item) => item !== file))}
+              onSubmit={() => void submitProjectFiles()}
+              project={selectedProject}
+              queuedFiles={queuedFiles}
+              replacementFor={replacementFor}
+              saving={fileSaving}
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-files"
+            role="tabpanel"
+            aria-labelledby="project-tab-files"
+            hidden={activeTab !== "files"}
+            tabIndex={0}
+          >
+            {activeTab === "files" ? <FilesPanel
+              error={fileError}
+              filesState={filesState}
+              message={fileMessage}
+              onOpen={(item, mode) => void openProjectFile(item, mode)}
+              onRetry={() => loadFiles(selectedProject.id)}
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-review"
+            role="tabpanel"
+            aria-labelledby="project-tab-review"
+            hidden={activeTab !== "review"}
+            tabIndex={0}
+          >
+            {activeTab === "review" ? <ReviewPanel
+              currentUserIdentifier={currentUserIdentifier}
+              error={fileError}
+              filesState={filesState}
+              message={fileMessage}
+              onOpen={(item, mode) => void openProjectFile(item, mode)}
+              onReupload={(item) => {
+                setReplacementFor(item);
+                setQueuedFiles([]);
+                setFileDescription(`补正：${item.name}${item.review_note ? `；审核意见：${item.review_note}` : ""}`);
+                setActiveTab("upload");
+              }}
+              onReview={(item, status, note) => void submitProjectFileReview(item, status, note)}
+              reviewSavingId={reviewSavingId}
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-members"
+            role="tabpanel"
+            aria-labelledby="project-tab-members"
+            hidden={activeTab !== "members"}
+            tabIndex={0}
+          >
+            {activeTab === "members" ? membersPanel : null}
+          </div>
+          <div
+            id="project-tabpanel-identity"
+            role="tabpanel"
+            aria-labelledby="project-tab-identity"
+            hidden={activeTab !== "identity"}
+            tabIndex={0}
+          >
+            {activeTab === "identity" ? <IdentityPanel
+              project={selectedProject}
+              role={auditUser.role}
+              visibilityScope={filesState.response?.permissions.visibility_scope ?? "own"}
+            /> : null}
+          </div>
         </section>
       ) : (
         roleScopedProjectsState.response && projects.length > 0
@@ -646,47 +883,230 @@ export function ReplicaProjectWorkbench() {
   );
 }
 
-function FilesPanel({
+function ProjectWorkspaceTabs({
+  activeTab,
+  fileCount,
+  onChange,
+  pendingReviewCount
+}: {
+  readonly activeTab: ProjectWorkspaceTab;
+  readonly fileCount: number;
+  readonly onChange: (tab: ProjectWorkspaceTab) => void;
+  readonly pendingReviewCount: number;
+}) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const tabs: readonly { readonly id: ProjectWorkspaceTab; readonly label: string }[] = [
+    { id: "overview", label: "项目概览" },
+    { id: "upload", label: "资料上传" },
+    { id: "files", label: `项目文件 ${fileCount}` },
+    { id: "review", label: `审核状态 ${pendingReviewCount}` },
+    { id: "members", label: "成员与权限" },
+    { id: "identity", label: "账号与身份" }
+  ];
+  return (
+    <div className="replica-project-tabs" role="tablist" aria-label="项目协作功能">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          id={`project-tab-${tab.id}`}
+          ref={(node) => {
+            tabRefs.current[tabs.findIndex((item) => item.id === tab.id)] = node;
+          }}
+          type="button"
+          role="tab"
+          aria-controls={`project-tabpanel-${tab.id}`}
+          aria-selected={activeTab === tab.id}
+          tabIndex={activeTab === tab.id ? 0 : -1}
+          className={activeTab === tab.id ? "is-active" : undefined}
+          onClick={() => onChange(tab.id)}
+          onKeyDown={(event) => {
+            const currentIndex = tabs.findIndex((item) => item.id === tab.id);
+            let nextIndex: number | null = null;
+            if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+            if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            if (event.key === "Home") nextIndex = 0;
+            if (event.key === "End") nextIndex = tabs.length - 1;
+            if (nextIndex === null) return;
+            event.preventDefault();
+            onChange(tabs[nextIndex].id);
+            tabRefs.current[nextIndex]?.focus();
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function UploadPanel({
   canUpload,
+  department,
+  description,
+  documentType,
   error,
   fileInputRef,
-  filesState,
   message,
-  onOpen,
-  onRetry,
-  onUpload,
+  onCancelReplacement,
+  onDepartmentChange,
+  onDescriptionChange,
+  onDocumentTypeChange,
+  onFilesChange,
+  onRemove,
+  onSubmit,
+  project,
+  queuedFiles,
+  replacementFor,
   saving
 }: {
   readonly canUpload: boolean;
+  readonly department: string;
+  readonly description: string;
+  readonly documentType: ProjectDocumentType;
   readonly error: string | null;
   readonly fileInputRef: React.RefObject<HTMLInputElement | null>;
+  readonly message: string | null;
+  readonly onCancelReplacement: () => void;
+  readonly onDepartmentChange: (value: string) => void;
+  readonly onDescriptionChange: (value: string) => void;
+  readonly onDocumentTypeChange: (value: ProjectDocumentType) => void;
+  readonly onFilesChange: (files: readonly File[]) => void;
+  readonly onRemove: (file: File) => void;
+  readonly onSubmit: () => void;
+  readonly project: ProjectSummaryApiItem;
+  readonly queuedFiles: readonly File[];
+  readonly replacementFor: ProjectFileApiItem | null;
+  readonly saving: boolean;
+}) {
+  return (
+    <section className="replica-project-panel replica-project-upload-panel" aria-labelledby="project-upload-title">
+      <div className="replica-project-files-head">
+        <div>
+          <h3 id="project-upload-title">上传项目资料</h3>
+          <p>资料将绑定当前项目并进入审核队列；原始文件保留，不提供硬删除。</p>
+        </div>
+        <span className="replica-project-status-pill">{project.status}</span>
+      </div>
+      {!canUpload ? (
+        <ProjectMessage tone="status">
+          {project.status === "已归档" ? "归档项目不再接收新资料" : "当前账号暂不可上传项目资料"}
+        </ProjectMessage>
+      ) : (
+        <form
+          className="replica-project-upload-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          {replacementFor ? (
+            <div className="replica-project-replacement-banner">
+              <span>正在补正：<strong>{replacementFor.name}</strong></span>
+              <button type="button" disabled={saving} onClick={onCancelReplacement}>取消补正</button>
+            </div>
+          ) : null}
+          <div className="replica-project-upload-grid">
+            <label>
+              当前项目
+              <input value={project.name} readOnly />
+            </label>
+            <label>
+              资料类型
+              <select
+                aria-label="资料类型"
+                value={documentType}
+                onChange={(event) => onDocumentTypeChange(event.target.value as ProjectDocumentType)}
+              >
+                {projectDocumentTypes.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              所属部门
+              <input
+                aria-label="所属部门"
+                placeholder="留空则按项目成员身份识别"
+                value={department}
+                onChange={(event) => onDepartmentChange(event.target.value)}
+              />
+            </label>
+            <label className="replica-project-upload-description">
+              资料说明
+              <textarea
+                aria-label="资料说明"
+                maxLength={1000}
+                placeholder="说明资料期间、口径或需要审核人关注的事项"
+                value={description}
+                onChange={(event) => onDescriptionChange(event.target.value)}
+              />
+            </label>
+          </div>
+          <label className="replica-project-file-picker">
+            <span>选择文件</span>
+            <small>支持 PDF、Excel、CSV、Markdown、TXT；单文件不超过 20 MB。</small>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple={!replacementFor}
+              accept=".pdf,.md,.txt,.csv,.xlsx,.xlsm"
+              disabled={saving}
+              onChange={(event) => onFilesChange(Array.from(event.target.files ?? []))}
+            />
+          </label>
+          {queuedFiles.length > 0 ? (
+            <ul className="replica-project-upload-queue" aria-label="待上传文件">
+              {queuedFiles.map((file, index) => (
+                <li key={`${file.name}-${file.size}-${index}`}>
+                  <span><strong>{file.name}</strong><small>{formatFileSize(file.size)}</small></span>
+                  <button type="button" disabled={saving} onClick={() => onRemove(file)}>移出队列</button>
+                </li>
+              ))}
+            </ul>
+          ) : <ProjectMessage>请选择一份或多份项目资料</ProjectMessage>}
+          <button type="submit" disabled={saving || queuedFiles.length === 0}>
+            {saving ? "提交中" : `提交 ${queuedFiles.length} 份资料`}
+          </button>
+        </form>
+      )}
+      {message ? <ProjectMessage tone="status">{message}</ProjectMessage> : null}
+      {error ? <ProjectMessage tone="error">{error}</ProjectMessage> : null}
+    </section>
+  );
+}
+
+function FilesPanel({
+  error,
+  filesState,
+  message,
+  onOpen,
+  onRetry
+}: {
+  readonly error: string | null;
   readonly filesState: FilesState;
   readonly message: string | null;
   readonly onOpen: (item: ProjectFileApiItem, mode: "preview" | "download") => void;
   readonly onRetry: () => void;
-  readonly onUpload: (file: File | null) => void;
-  readonly saving: boolean;
 }) {
   const files = filesState.response?.items ?? [];
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ProjectDocumentType | "全部">("全部");
+  const [reviewFilter, setReviewFilter] = useState<ProjectFileReviewStatus | "全部">("全部");
+  const filteredFiles = files.filter((item) => (
+    (!query.trim() || `${item.name} ${item.description} ${item.department}`.toLowerCase().includes(query.trim().toLowerCase()))
+    && (typeFilter === "全部" || item.document_type === typeFilter)
+    && (reviewFilter === "全部" || item.review_status === reviewFilter)
+  ));
   return (
     <section className="replica-project-panel replica-project-files" aria-labelledby="project-files-title">
       <div className="replica-project-files-head">
         <div>
           <h3 id="project-files-title">项目文件</h3>
-          <p>项目成员可预览和下载原始文件；仅管理员可以上传。</p>
+          <p>{filesState.response?.permissions.visibility_scope === "project" ? "当前显示本项目全部资料。" : "按最小权限仅显示本人上传资料。"}</p>
         </div>
-        {canUpload ? (
-          <label className="replica-project-file-upload">
-            <span>{saving ? "上传中…" : "上传项目文件"}</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.md,.txt,.csv,.xlsx,.xlsm"
-              disabled={saving}
-              onChange={(event) => onUpload(event.target.files?.[0] ?? null)}
-            />
-          </label>
-        ) : null}
+      </div>
+      <div className="replica-project-file-filters">
+        <label>检索<input aria-label="检索项目文件" placeholder="文件名、说明或部门" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <label>资料类型<select aria-label="文件资料类型" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as ProjectDocumentType | "全部")}><option>全部</option>{projectDocumentTypes.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>审核状态<select aria-label="文件审核状态" value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value as ProjectFileReviewStatus | "全部")}><option>全部</option><option value="pending-review">待审核</option><option value="approved">已通过</option><option value="changes-requested">需补正</option><option value="withdrawn">已撤回</option></select></label>
       </div>
       {filesState.phase === "loading" ? <ProjectMessage tone="status">项目文件读取中</ProjectMessage> : null}
       {filesState.phase === "error" ? (
@@ -699,20 +1119,21 @@ function FilesPanel({
       {filesState.phase === "empty" ? <ProjectMessage tone="status">当前项目还没有文件</ProjectMessage> : null}
       {message ? <ProjectMessage tone="status">{message}</ProjectMessage> : null}
       {error ? <ProjectMessage tone="error">{error}</ProjectMessage> : null}
-      {files.length > 0 ? (
+      {files.length > 0 && filteredFiles.length === 0 ? <ProjectMessage>当前筛选条件下没有项目资料</ProjectMessage> : null}
+      {filteredFiles.length > 0 ? (
         <div className="replica-project-table-shell">
           <table className="replica-project-table replica-project-file-table">
             <thead>
-              <tr><th>文件名</th><th>格式</th><th>大小</th><th>上传人</th><th>上传时间</th><th>操作</th></tr>
+              <tr><th>文件名</th><th>类型 / 部门</th><th>大小</th><th>上传人</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
-              {files.map((item) => (
+              {filteredFiles.map((item) => (
                 <tr key={item.id}>
                   <td>{item.name}</td>
-                  <td>{item.extension.toUpperCase()}</td>
+                  <td>{item.document_type}<small>{item.department || "未标注部门"}</small></td>
                   <td>{formatFileSize(item.size_bytes)}</td>
                   <td>{item.created_by ?? "未记录"}</td>
-                  <td>{formatDate(item.created_at)}</td>
+                  <td><span className={`replica-project-review-status is-${item.review_status}`}>{projectFileReviewLabel(item.review_status)}</span></td>
                   <td>
                     <div className="replica-project-file-actions">
                       <button type="button" onClick={() => onOpen(item, "preview")}>预览</button>
@@ -725,6 +1146,106 @@ function FilesPanel({
           </table>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function ReviewPanel({
+  currentUserIdentifier,
+  error,
+  filesState,
+  message,
+  onOpen,
+  onReupload,
+  onReview,
+  reviewSavingId
+}: {
+  readonly currentUserIdentifier: string;
+  readonly error: string | null;
+  readonly filesState: FilesState;
+  readonly message: string | null;
+  readonly onOpen: (item: ProjectFileApiItem, mode: "preview" | "download") => void;
+  readonly onReupload: (item: ProjectFileApiItem) => void;
+  readonly onReview: (item: ProjectFileApiItem, status: Exclude<ProjectFileReviewStatus, "pending-review">, note: string) => void;
+  readonly reviewSavingId: string | null;
+}) {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const files = filesState.response?.items ?? [];
+  const permissions = filesState.response?.permissions;
+  return (
+    <section className="replica-project-panel replica-project-review-panel" aria-labelledby="project-review-title">
+      <div className="replica-project-files-head">
+        <div>
+          <h3 id="project-review-title">资料审核状态</h3>
+          <p>{permissions?.can_review ? "审核人可通过或退回资料；所有决定保留时间和意见。" : "查看本人资料的审核进度、退回原因并按需补正。"}</p>
+        </div>
+      </div>
+      {files.length === 0 ? <ProjectMessage tone="status">当前没有可跟踪的项目资料</ProjectMessage> : null}
+      <div className="replica-project-review-list">
+        {files.map((item) => {
+          const note = notes[item.id] ?? "";
+          const pending = item.review_status === "pending-review";
+          const canWithdraw = pending && permissions?.can_withdraw_own && item.created_by === currentUserIdentifier;
+          const canReupload = item.review_status === "changes-requested" && item.created_by === currentUserIdentifier;
+          return (
+            <article key={item.id}>
+              <div className="replica-project-review-summary">
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.document_type} · {item.department || "未标注部门"} · {formatDate(item.created_at)}</span>
+                </div>
+                <span className={`replica-project-review-status is-${item.review_status}`}>{projectFileReviewLabel(item.review_status)}</span>
+              </div>
+              {item.description ? <p>{item.description}</p> : null}
+              {item.review_note ? <p className="replica-project-review-note">审核意见：{item.review_note}</p> : null}
+              {item.reviewed_by && item.reviewed_at ? <small>处理人：{item.reviewed_by} · {formatReplicaDateTime(item.reviewed_at)}</small> : null}
+              <div className="replica-project-file-actions">
+                <button type="button" onClick={() => onOpen(item, "preview")}>预览原件</button>
+                <button type="button" onClick={() => onOpen(item, "download")}>下载原件</button>
+                {canReupload ? <button type="button" onClick={() => onReupload(item)}>上传补正版</button> : null}
+              </div>
+              {pending && (permissions?.can_review || canWithdraw) ? (
+                <div className="replica-project-review-actions">
+                  <label>
+                    审核或撤回说明
+                    <textarea aria-label={`处理说明：${item.name}`} value={note} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} />
+                  </label>
+                  <div>
+                    {permissions?.can_review ? <button type="button" disabled={reviewSavingId !== null} onClick={() => onReview(item, "approved", note)}>审核通过</button> : null}
+                    {permissions?.can_review ? <button type="button" disabled={reviewSavingId !== null || !note.trim()} onClick={() => onReview(item, "changes-requested", note.trim())}>退回补正</button> : null}
+                    {canWithdraw ? <button type="button" disabled={reviewSavingId !== null || !note.trim()} onClick={() => onReview(item, "withdrawn", note.trim())}>撤回资料</button> : null}
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+      {message ? <ProjectMessage tone="status">{message}</ProjectMessage> : null}
+      {error ? <ProjectMessage tone="error">{error}</ProjectMessage> : null}
+    </section>
+  );
+}
+
+function IdentityPanel({
+  project,
+  role,
+  visibilityScope
+}: {
+  readonly project: ProjectSummaryApiItem;
+  readonly role: AuditClientRole;
+  readonly visibilityScope: "project" | "own";
+}) {
+  return (
+    <section className="replica-project-panel replica-project-identity" aria-labelledby="project-identity-title">
+      <h3 id="project-identity-title">账号与项目身份</h3>
+      <dl>
+        <div><dt>当前账号</dt><dd>{auditClientUserId(role)}</dd></div>
+        <div><dt>医院角色</dt><dd>{auditClientRoleLabel(role)}</dd></div>
+        <div><dt>当前项目</dt><dd>{project.name}</dd></div>
+        <div><dt>文件可见范围</dt><dd>{visibilityScope === "project" ? "本项目全部资料" : "本人上传资料"}</dd></div>
+      </dl>
+      <ProjectMessage tone="status">账号、密码和单点登录由统一身份系统管理；项目页不另设一套密码修改入口。</ProjectMessage>
     </section>
   );
 }
@@ -1016,6 +1537,15 @@ function sourceAvailabilityLabel(ready: boolean): string {
 
 function formatDate(value: string): string {
   return value.slice(0, 10);
+}
+
+function projectFileReviewLabel(status: ProjectFileReviewStatus): string {
+  return {
+    "pending-review": "待审核",
+    approved: "已通过",
+    "changes-requested": "需补正",
+    withdrawn: "已撤回"
+  }[status];
 }
 
 function formatFileSize(bytes: number): string {

@@ -307,6 +307,16 @@ class DocumentUploadStore(Protocol):
     ) -> dict[str, object] | None:
         pass
 
+    def update_project_file_review(
+        self,
+        *,
+        upload_id: str,
+        review_status: str,
+        reviewed_by: str,
+        review_note: str,
+    ) -> dict[str, object] | None:
+        pass
+
     def index_upload(
         self,
         *,
@@ -593,6 +603,42 @@ class SqlAlchemyDocumentUploadStore:
             session.flush()
             return _record_to_payload(record)
 
+    def update_project_file_review(
+        self,
+        *,
+        upload_id: str,
+        review_status: str,
+        reviewed_by: str,
+        review_note: str,
+    ) -> dict[str, object] | None:
+        with self._session_factory.begin() as session:
+            record = session.scalar(
+                select(DocumentUploadRecord)
+                .where(DocumentUploadRecord.upload_key == upload_id)
+                .with_for_update()
+            )
+            if record is None:
+                return None
+            metadata = dict(record.extra_metadata or {})
+            if (
+                metadata.get("scope") != "project"
+                or metadata.get("project_review_status") != "pending-review"
+            ):
+                return None
+            record.extra_metadata = {
+                **DEFAULT_DOCUMENT_UPLOAD_METADATA,
+                **metadata,
+                **_project_review_metadata(
+                    metadata=metadata,
+                    review_status=review_status,
+                    reviewed_by=reviewed_by,
+                    review_note=review_note,
+                ),
+            }
+            session.add(record)
+            session.flush()
+            return _record_to_payload(record)
+
 
 @dataclass(slots=True)
 class InMemoryDocumentUploadStore:
@@ -752,6 +798,33 @@ class InMemoryDocumentUploadStore:
             return copy.deepcopy(updated)
         return None
 
+    def update_project_file_review(
+        self,
+        *,
+        upload_id: str,
+        review_status: str,
+        reviewed_by: str,
+        review_note: str,
+    ) -> dict[str, object] | None:
+        for index, record in enumerate(self.records):
+            if record.get("id") != upload_id or record.get("scope") != "project":
+                continue
+            if record.get("project_review_status") != "pending-review":
+                return None
+            updated = {
+                **DEFAULT_DOCUMENT_UPLOAD_METADATA,
+                **record,
+                **_project_review_metadata(
+                    metadata=record,
+                    review_status=review_status,
+                    reviewed_by=reviewed_by,
+                    review_note=review_note,
+                ),
+            }
+            self.records[index] = copy.deepcopy(updated)
+            return copy.deepcopy(updated)
+        return None
+
     def index_upload(
         self,
         *,
@@ -876,7 +949,7 @@ def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
     security_findings = metadata.get("security_findings")
     personal_indexed_at = metadata.get("personal_indexed_at")
     personal_indexed_by = metadata.get("personal_indexed_by")
-    return {
+    payload: dict[str, object] = {
         "id": record.upload_key,
         "name": record.file_name,
         "extension": record.extension,
@@ -921,6 +994,37 @@ def _record_to_payload(record: DocumentUploadRecord) -> dict[str, object]:
         ),
         "download_url": _download_url(record.upload_key),
     }
+    if metadata.get("scope") == "project":
+        payload.update(
+            {
+                "department": str(metadata.get("department") or ""),
+                "document_type": str(metadata.get("document_type") or "其他"),
+                "description": str(metadata.get("description") or ""),
+                "replaces_upload_id": (
+                    str(metadata["replaces_upload_id"])
+                    if isinstance(metadata.get("replaces_upload_id"), str)
+                    else None
+                ),
+                "project_review_status": str(
+                    metadata.get("project_review_status") or "pending-review"
+                ),
+                "project_review_note": str(metadata.get("project_review_note") or ""),
+                "project_reviewed_by": (
+                    str(metadata["project_reviewed_by"])
+                    if isinstance(metadata.get("project_reviewed_by"), str)
+                    else None
+                ),
+                "project_reviewed_at": (
+                    str(metadata["project_reviewed_at"])
+                    if isinstance(metadata.get("project_reviewed_at"), str)
+                    else None
+                ),
+                "project_review_history": _project_review_history(
+                    metadata.get("project_review_history")
+                ),
+            }
+        )
+    return payload
 
 
 def _document_scope_metadata(
@@ -938,8 +1042,82 @@ def _document_scope_metadata(
             "project_name": project_name.strip()
             if isinstance(project_name, str) and project_name.strip()
             else None,
+            "department": _bounded_metadata_text(metadata.get("department"), limit=128),
+            "document_type": _bounded_metadata_text(
+                metadata.get("document_type"), limit=64, fallback="其他"
+            ),
+            "description": _bounded_metadata_text(metadata.get("description"), limit=1000),
+            "replaces_upload_id": _bounded_metadata_text(
+                metadata.get("replaces_upload_id"), limit=128
+            ) or None,
+            "project_review_status": "pending-review",
+            "project_review_note": "",
+            "project_reviewed_by": None,
+            "project_reviewed_at": None,
+            "project_review_history": [],
         }
     return {"scope": "personal", "project_key": None, "project_name": None}
+
+
+def _bounded_metadata_text(
+    value: object,
+    *,
+    limit: int,
+    fallback: str = "",
+) -> str:
+    if not isinstance(value, str):
+        return fallback
+    normalized = value.strip()
+    return normalized[:limit] if normalized else fallback
+
+
+def _project_review_history(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    history: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        reviewer = item.get("reviewed_by")
+        reviewed_at = item.get("reviewed_at")
+        if not all(isinstance(field, str) and field for field in (status, reviewer, reviewed_at)):
+            continue
+        history.append(
+            {
+                "status": status,
+                "note": str(item.get("note") or ""),
+                "reviewed_by": reviewer,
+                "reviewed_at": reviewed_at,
+            }
+        )
+    return history
+
+
+def _project_review_metadata(
+    *,
+    metadata: Mapping[str, object],
+    review_status: str,
+    reviewed_by: str,
+    review_note: str,
+) -> dict[str, object]:
+    reviewed_at = _datetime_to_iso(utc_now())
+    history = _project_review_history(metadata.get("project_review_history"))
+    history.append(
+        {
+            "status": review_status,
+            "note": review_note,
+            "reviewed_by": reviewed_by,
+            "reviewed_at": reviewed_at,
+        }
+    )
+    return {
+        "project_review_status": review_status,
+        "project_review_note": review_note,
+        "project_reviewed_by": reviewed_by,
+        "project_reviewed_at": reviewed_at,
+        "project_review_history": history,
+    }
 
 
 def _storage_object_to_payload(record: DocumentStorageObject) -> dict[str, object]:
