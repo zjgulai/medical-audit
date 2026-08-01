@@ -43,6 +43,9 @@ import type {
   ProjectMemberCreateResponse,
   ProjectDashboardResponse,
   ProjectFilesResponse,
+  ProjectFileReviewRequest,
+  ProjectFileReviewResponse,
+  ProjectFileUploadRequest,
   ProjectFileUploadResponse,
   ProjectMembersResponse,
   ProjectsResponse,
@@ -693,10 +696,16 @@ export function fetchProjectFiles(projectId: string): Promise<ProjectFilesRespon
 
 export function uploadProjectFile(
   projectId: string,
-  file: File
+  payload: ProjectFileUploadRequest
 ): Promise<ProjectFileUploadResponse> {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", payload.file);
+  formData.append("department", payload.department);
+  formData.append("document_type", payload.document_type);
+  formData.append("description", payload.description);
+  if (payload.replaces_upload_id) {
+    formData.append("replaces_upload_id", payload.replaces_upload_id);
+  }
   return postForm<ProjectFileUploadResponse>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/files`,
     formData,
@@ -704,6 +713,18 @@ export function uploadProjectFile(
       exposeValidationDetail: true,
       headers: auditProjectClientHeaders(projectId)
     }
+  );
+}
+
+export function reviewProjectFile(
+  projectId: string,
+  uploadId: string,
+  payload: ProjectFileReviewRequest
+): Promise<ProjectFileReviewResponse> {
+  return postJson<ProjectFileReviewResponse>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(uploadId)}/review`,
+    payload,
+    auditProjectClientHeaders(projectId)
   );
 }
 

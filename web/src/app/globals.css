@@ -9615,6 +9615,32 @@ button.replica-graph-node.is-selected {
   font-weight: 650;
 }
 
+.replica-project-workbench .replica-project-portfolio-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.replica-project-workbench .replica-project-portfolio-metrics article {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e5ebf3;
+  border-radius: 10px;
+  background: #f9fbfe;
+  padding: 12px;
+}
+
+.replica-project-workbench .replica-project-portfolio-metrics span {
+  color: #69788d;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-portfolio-metrics strong {
+  color: #153a66;
+  font-size: 22px;
+}
+
 .replica-project-workbench select,
 .replica-project-workbench input,
 .replica-project-workbench textarea {
@@ -9740,6 +9766,7 @@ button.replica-graph-node.is-selected {
 }
 
 .replica-project-workbench .replica-project-detail {
+  order: initial;
   margin-top: 0;
 }
 
@@ -9747,6 +9774,29 @@ button.replica-graph-node.is-selected {
   margin: 0;
   color: #63738a;
   font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 16px;
+  overflow-x: auto;
+  border-bottom: 1px solid #e5ebf3;
+  padding-bottom: 10px;
+}
+
+.replica-project-workbench .replica-project-tabs button {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+  color: #5f6f84;
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-tabs button.is-active {
+  border-color: #87b4e8;
+  background: #eef5fd;
+  color: #0b63ce;
 }
 
 .replica-project-workbench .replica-project-detail-grid {
@@ -9771,6 +9821,226 @@ button.replica-graph-node.is-selected {
   margin: 6px 0 0;
   color: #63738a;
   font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-status-pill,
+.replica-project-workbench .replica-project-review-status {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  border-radius: 999px;
+  background: #eef5fd;
+  padding: 4px 9px;
+  color: #315b8d;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.replica-project-workbench .replica-project-review-status.is-approved {
+  background: #eaf7ef;
+  color: #207245;
+}
+
+.replica-project-workbench .replica-project-review-status.is-changes-requested {
+  background: #fff4e5;
+  color: #9a5700;
+}
+
+.replica-project-workbench .replica-project-review-status.is-withdrawn {
+  background: #f0f2f5;
+  color: #687487;
+}
+
+.replica-project-workbench .replica-project-upload-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.replica-project-workbench .replica-project-replacement-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-left: 3px solid #e4a84d;
+  background: #fff9ef;
+  padding: 10px 12px;
+  color: #704813;
+  font-size: 13px;
+}
+
+.replica-project-workbench .replica-project-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.replica-project-workbench .replica-project-upload-form label,
+.replica-project-workbench .replica-project-file-filters label,
+.replica-project-workbench .replica-project-review-actions label {
+  display: grid;
+  gap: 6px;
+  color: #5f6f84;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.replica-project-workbench .replica-project-upload-description {
+  grid-column: 1 / -1;
+}
+
+.replica-project-workbench .replica-project-upload-description textarea,
+.replica-project-workbench .replica-project-review-actions textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.replica-project-workbench .replica-project-file-picker {
+  border: 1px dashed #9eb7d3;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+.replica-project-workbench .replica-project-file-picker span {
+  color: #21466f;
+  font-size: 14px;
+}
+
+.replica-project-workbench .replica-project-file-picker small {
+  color: #718095;
+  font-weight: 500;
+}
+
+.replica-project-workbench .replica-project-file-picker input {
+  width: 100%;
+  background: #fff;
+}
+
+.replica-project-workbench .replica-project-upload-queue,
+.replica-project-workbench .replica-project-review-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replica-project-workbench .replica-project-upload-queue li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #e5ebf3;
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.replica-project-workbench .replica-project-upload-queue span,
+.replica-project-workbench .replica-project-file-table td:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.replica-project-workbench .replica-project-upload-queue small,
+.replica-project-workbench .replica-project-file-table td:nth-child(2) small {
+  color: #77869a;
+  font-size: 11px;
+}
+
+.replica-project-workbench .replica-project-file-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.replica-project-workbench .replica-project-review-list article {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e5ebf3;
+  border-radius: 11px;
+  padding: 14px;
+}
+
+.replica-project-workbench .replica-project-review-list article > p,
+.replica-project-workbench .replica-project-review-list article > small {
+  margin: 0;
+  color: #627287;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-review-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.replica-project-workbench .replica-project-review-summary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.replica-project-workbench .replica-project-review-summary strong {
+  color: #243a55;
+}
+
+.replica-project-workbench .replica-project-review-summary span:not(.replica-project-review-status) {
+  color: #718095;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-review-note {
+  border-left: 3px solid #e4a84d;
+  background: #fff9ef;
+  padding: 8px 10px;
+  color: #704813 !important;
+}
+
+.replica-project-workbench .replica-project-review-actions {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #edf1f7;
+  padding-top: 12px;
+}
+
+.replica-project-workbench .replica-project-review-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.replica-project-workbench .replica-project-identity dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.replica-project-workbench .replica-project-identity dl div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e5ebf3;
+  border-radius: 9px;
+  background: #f9fbfe;
+  padding: 12px;
+}
+
+.replica-project-workbench .replica-project-identity dt,
+.replica-project-workbench .replica-project-identity dd {
+  margin: 0;
+}
+
+.replica-project-workbench .replica-project-identity dt {
+  color: #758397;
+  font-size: 12px;
+}
+
+.replica-project-workbench .replica-project-identity dd {
+  color: #28405c;
+  font-weight: 650;
 }
 
 .replica-project-workbench .replica-project-file-upload {
@@ -9971,6 +10241,20 @@ button.replica-graph-node.is-selected {
 
   .replica-project-workbench .replica-project-file-upload {
     justify-content: center;
+  }
+
+  .replica-project-workbench .replica-project-upload-grid,
+  .replica-project-workbench .replica-project-file-filters,
+  .replica-project-workbench .replica-project-portfolio-metrics,
+  .replica-project-workbench .replica-project-identity dl {
+    grid-template-columns: 1fr;
+  }
+
+  .replica-project-workbench .replica-project-review-summary,
+  .replica-project-workbench .replica-project-replacement-banner,
+  .replica-project-workbench .replica-project-upload-queue li {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .replica-project-workbench .replica-project-visibility,

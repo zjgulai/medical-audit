@@ -505,6 +505,7 @@ export type DocumentSourceCollectionCatalogItem = {
   readonly domain: string;
   readonly evidence_group: string;
   readonly description: string;
+  readonly replaces_upload_id?: string;
   readonly audit_hint: string;
   readonly access: DocumentSourcePermissionItem["access"];
   readonly product_queryable: boolean;
@@ -1345,14 +1346,45 @@ export type ProjectFileApiItem = {
   readonly sha256: string;
   readonly created_by: string | null;
   readonly created_at: string;
+  readonly project_name: string;
+  readonly department: string;
+  readonly document_type: ProjectDocumentType;
+  readonly description: string;
+  readonly replaces_upload_id: string | null;
+  readonly review_status: ProjectFileReviewStatus;
+  readonly review_note: string;
+  readonly reviewed_by: string | null;
+  readonly reviewed_at: string | null;
+  readonly review_history: readonly ProjectFileReviewHistoryItem[];
   readonly security_scan_status: string;
   readonly dlp_status: string;
   readonly preview_url: string;
   readonly download_url: string;
 };
 
+export type ProjectDocumentType =
+  | "审计资料"
+  | "财务资料"
+  | "业务资料"
+  | "制度文件"
+  | "整改材料"
+  | "其他";
+
+export type ProjectFileReviewStatus =
+  | "pending-review"
+  | "approved"
+  | "changes-requested"
+  | "withdrawn";
+
+export type ProjectFileReviewHistoryItem = {
+  readonly status: ProjectFileReviewStatus;
+  readonly note: string;
+  readonly reviewed_by: string;
+  readonly reviewed_at: string;
+};
+
 export type ProjectFilesResponse = {
-  readonly contract_version: "project-files-v1";
+  readonly contract_version: "project-files-v2";
   readonly project_key: string;
   readonly items: readonly ProjectFileApiItem[];
   readonly store: {
@@ -1361,17 +1393,39 @@ export type ProjectFilesResponse = {
   };
   readonly permissions: {
     readonly can_upload: boolean;
+    readonly can_review: boolean;
+    readonly can_withdraw_own: boolean;
+    readonly visibility_scope: "project" | "own";
   };
 };
 
 export type ProjectFileUploadResponse = {
-  readonly contract_version: "project-files-v1";
+  readonly contract_version: "project-files-v2";
   readonly project_key: string;
   readonly item: ProjectFileApiItem;
   readonly store: {
     readonly ready: boolean;
     readonly backend: string;
   };
+};
+
+export type ProjectFileUploadRequest = {
+  readonly file: File;
+  readonly department: string;
+  readonly document_type: ProjectDocumentType;
+  readonly description: string;
+  readonly replaces_upload_id?: string;
+};
+
+export type ProjectFileReviewRequest = {
+  readonly status: Exclude<ProjectFileReviewStatus, "pending-review">;
+  readonly note: string;
+};
+
+export type ProjectFileReviewResponse = {
+  readonly contract_version: "project-files-v2";
+  readonly project_key: string;
+  readonly item: ProjectFileApiItem;
 };
 
 export type ProjectDashboardMetricApiItem = {

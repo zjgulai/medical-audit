@@ -33,6 +33,8 @@ class Permission(StrEnum):
     CREATE_REPORT_DRAFT = "create_report_draft"
     CREATE_REVIEW_TASK = "create_review_task"
     CREATE_PROJECT = "create_project"
+    UPLOAD_PROJECT_FILE = "upload_project_file"
+    REVIEW_PROJECT_FILE = "review_project_file"
 
 
 ROLE_LABELS: dict[HospitalRole, str] = {
@@ -86,6 +88,8 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.CREATE_REPORT_DRAFT,
             Permission.CREATE_REVIEW_TASK,
             Permission.CREATE_PROJECT,
+            Permission.UPLOAD_PROJECT_FILE,
+            Permission.REVIEW_PROJECT_FILE,
         }
     ),
     HospitalRole.TECHNICIAN: frozenset(
@@ -95,6 +99,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.ANALYZE_DATA,
             Permission.MANAGE_AGENTS,
             Permission.MANAGE_INDEX,
+            Permission.UPLOAD_PROJECT_FILE,
         }
     ),
     HospitalRole.DIRECTOR: frozenset(
@@ -108,6 +113,8 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.SIGN_REPORTS,
             Permission.CREATE_REPORT_DRAFT,
             Permission.CREATE_REVIEW_TASK,
+            Permission.UPLOAD_PROJECT_FILE,
+            Permission.REVIEW_PROJECT_FILE,
         }
     ),
     HospitalRole.MEMBER: frozenset(
@@ -117,6 +124,7 @@ ROLE_PERMISSIONS: dict[HospitalRole, frozenset[Permission]] = {
             Permission.ANALYZE_DATA,
             Permission.CREATE_REPORT_DRAFT,
             Permission.CREATE_REVIEW_TASK,
+            Permission.UPLOAD_PROJECT_FILE,
         }
     ),
 }
