@@ -1,5 +1,7 @@
 import type {
   AgentsResponse,
+  AgentMarketCatalogResponse,
+  AgentMarketCatalogItem,
   AuditAgentApiItem,
   AuthSessionResponse,
   DocumentPermissionsResponse,
@@ -224,6 +226,7 @@ export type ReplicaShellClient = {
 
 export type ReplicaAgentClient = {
   readonly fetchAgents?: () => Promise<AgentsResponse>;
+  readonly fetchAgentMarketCatalog?: () => Promise<AgentMarketCatalogResponse>;
 };
 
 export type ReplicaKnowledgeBaseClient = {
@@ -422,7 +425,25 @@ function mapAgent(item: AuditAgentApiItem, index: number, projectFallback: strin
     project,
     topic: normalizeText(item.topic, item.knowledge_base || "其他"),
     initial: makeInitial(item.name),
-    tone: agentTones[index % agentTones.length]
+    tone: agentTones[index % agentTones.length],
+    featured: item.metadata.featured === true,
+    featuredRank: typeof item.metadata.featured_rank === "number" ? item.metadata.featured_rank : null
+  };
+}
+
+function mapMarketAgent(item: AgentMarketCatalogItem, index: number): ReferenceAgentCard {
+  return {
+    id: item.id,
+    name: item.name,
+    category: toReferenceAgentCategory(item.category),
+    summary: item.summary,
+    project: item.project,
+    topic: item.topic,
+    initial: makeInitial(item.name),
+    tone: agentTones[index % agentTones.length],
+    templateKey: item.template_key,
+    featured: item.featured,
+    featuredRank: item.featured_rank
   };
 }
 
@@ -846,22 +867,38 @@ export async function loadReplicaAgentsData(
 }
 
 export async function loadReplicaAgentMarketData(
-  _client: ReplicaAgentClient = {}
+  client: ReplicaAgentClient = {}
 ): Promise<ReplicaAdapterResult<ReplicaAgentsData>> {
-  void _client;
-  const marketAgents = getAuditAgentMarketCatalog();
-
-  const issues: ReplicaAdapterIssue[] = [
-    issue(
-      "agent-market",
-      "mutation-gated",
-      "Publish, rating, and lifecycle actions remain gated; install uses the agent create API."
-    )
-  ];
+  const issues: ReplicaAdapterIssue[] = [];
+  const catalogRead = await readOptionalApi(
+    "agent-market",
+    "agents",
+    issues,
+    client.fetchAgentMarketCatalog
+  );
+  if (catalogRead.kind === "disabled") {
+    const marketAgents = getAuditAgentMarketCatalog();
+    return {
+      source: "catalog",
+      outcome: "ready",
+      data: { agents: marketAgents, categories: uniqueAgentCategories(marketAgents) },
+      issues
+    };
+  }
+  if (catalogRead.kind === "failure") {
+    return { source: "api", outcome: "error", data: { agents: [], categories: [] }, issues };
+  }
+  const marketAgents = catalogRead.value.items
+    .map(mapMarketAgent)
+    .sort((left, right) =>
+      Number(Boolean(right.featured)) - Number(Boolean(left.featured)) ||
+      (left.featuredRank ?? 9999) - (right.featuredRank ?? 9999) ||
+      left.name.localeCompare(right.name, "zh-CN")
+    );
 
   return {
-    source: "catalog",
-    outcome: "ready",
+    source: "api",
+    outcome: marketAgents.length > 0 ? "ready" : "empty",
     data: {
       agents: marketAgents,
       categories: uniqueAgentCategories(marketAgents)

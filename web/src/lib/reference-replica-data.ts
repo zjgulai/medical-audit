@@ -39,6 +39,8 @@ export type ReferenceAgentCard = {
   readonly avatarSeed?: string;
   readonly templateKey?: string;
   readonly catalogScope?: "medical-default" | "extension-validation";
+  readonly featured?: boolean;
+  readonly featuredRank?: number | null;
 };
 
 export type ReferenceKnowledgeBase = {

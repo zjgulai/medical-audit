@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   analyzeChatAttachment,
+  createContractAuditJob,
   createAuditAgent,
   createAuditAgentPromptVersion,
   createProject,
@@ -18,6 +19,7 @@ import {
   fetchAuditAgentFeedback,
   fetchAuditAgentInvocations,
   fetchAgents,
+  fetchAgentMarketCatalog,
   fetchAuditAgentPromptVersions,
   fetchBackendHealth,
   fetchDocumentPermissions,
@@ -34,6 +36,7 @@ import {
   fetchReportWorkbench,
   fetchRulesWorkbench,
   fetchSearchBackendStatus,
+  installAuditAgentMarketTemplate,
   rollbackAuditAgentPromptVersion,
   indexPersonalDocument,
   recordAuditAgentInvocation,
@@ -393,6 +396,37 @@ describe("api-client", () => {
     expect(formData.get("mode")).toBe("auto");
     expect(result.model_alias).toBeNull();
     expect(result.boundaries.provider_call).toBe(false);
+  });
+
+  it("creates a persistent contract audit job with the selected model", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "contract-audit-job-v2",
+          job_id: "contract-audit-0123456789abcdef0123456789abcdef",
+          status: "completed",
+          downloads: { json: "/j", markdown: "/m", docx: "/d" }
+        })
+      }))
+    );
+    const file = new File(["%PDF-1.4"], "采购合同.pdf", { type: "application/pdf" });
+
+    const result = await createContractAuditJob(file, {
+      projectName: "采购合同专项",
+      model: "deepseek-v4-pro"
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/v1/contract-audits", expect.objectContaining({
+      method: "POST",
+      body: expect.any(FormData)
+    }));
+    const formData = vi.mocked(fetch).mock.calls[0]?.[1]?.body as FormData;
+    expect(formData.get("file")).toBe(file);
+    expect(formData.get("project_name")).toBe("采购合同专项");
+    expect(formData.get("model")).toBe("deepseek-v4-pro");
+    expect(result.status).toBe("completed");
   });
 
   it("surfaces actionable validation detail for an image-only PDF attachment", async () => {
@@ -1888,6 +1922,58 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(result.item.id).toBe("agent-custom-001");
+  });
+
+  it("reads and installs server-side agent market templates without exposing prompts", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          contract_version: "agent-market-catalog-v2",
+          count: 133,
+          featured_count: 1,
+          prompt_materialization: "server-only",
+          items: [{
+            id: "agent-contract-audit-v2",
+            name: "合同审计智能体",
+            category: "工具智能体",
+            summary: "合同审计",
+            topic: "合同审计",
+            project: "全院审计项目",
+            featured: true,
+            featured_rank: 1,
+            prompt_sha256: "a".repeat(64),
+            source: "contract-audit-v2",
+            template_key: "agent-contract-audit-v2"
+          }]
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          item: { id: "agent-custom-installed", name: "合同审计智能体" },
+          created: true,
+          store: { ready: true, backend: "SqlAlchemyAgentStore" }
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const catalog = await fetchAgentMarketCatalog();
+    const installed = await installAuditAgentMarketTemplate("agent-contract-audit-v2", {
+      project_name: "医保基金使用合规专项自查"
+    });
+
+    expect(catalog.count).toBe(133);
+    expect(catalog.items[0]).not.toHaveProperty("prompt");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/agent-market/templates/agent-contract-audit-v2/install",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ project_name: "医保基金使用合规专项自查" })
+      })
+    );
+    expect(installed.item.id).toBe("agent-custom-installed");
   });
 
   it("updates audit agent prompt versions through the versioned API proxy", async () => {

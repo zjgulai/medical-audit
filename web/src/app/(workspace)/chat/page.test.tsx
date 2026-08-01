@@ -11,6 +11,7 @@ const { useSearchParamsMock } = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   analyzeChatAttachment: vi.fn(),
+  createContractAuditJob: vi.fn(),
   fetchAgents: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
   fetchQueryHistory: vi.fn(),
@@ -104,6 +105,32 @@ describe("ChatPortalPage", () => {
     vi.clearAllMocks();
     useSearchParamsMock.mockReturnValue(new URLSearchParams());
     apiMocks.fetchAgents.mockResolvedValue(chatAgentsResponse());
+    apiMocks.createContractAuditJob.mockResolvedValue({
+      contract_version: "contract-audit-job-v2",
+      job_id: "contract-audit-0123456789abcdef0123456789abcdef",
+      status: "completed",
+      created_at: "2026-08-01T00:00:00Z",
+      project_name: "全院审计项目",
+      source: {
+        file_name: "采购合同.pdf",
+        extension: "pdf",
+        sha256: "a".repeat(64),
+        size_bytes: 10
+      },
+      result: {
+        contract_version: "contract-audit-output-v2",
+        status: "completed",
+        conclusion: {
+          analysis_markdown: "发现付款条款需复核 [C1]。",
+          human_review_required: true
+        }
+      },
+      downloads: {
+        json: "/api/v1/contract-audits/job/report?format=json",
+        markdown: "/api/v1/contract-audits/job/report?format=markdown",
+        docx: "/api/v1/contract-audits/job/report?format=docx"
+      }
+    });
     apiMocks.fetchQueryHistory.mockResolvedValue(emptyQueryHistory);
     apiMocks.fetchQueryModels.mockResolvedValue({
       contract_version: "chat-model-catalog-v1",
@@ -518,6 +545,37 @@ describe("ChatPortalPage", () => {
       });
     });
     expect(await screen.findByText(/表格存在高频收费线索/)).toBeInTheDocument();
+  });
+
+  it("routes an uploaded contract and audit intent through the persistent contract workflow", async () => {
+    const { container } = render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "Kimi K2.6（兼容别名）" });
+    fireEvent.click(screen.getByRole("button", { name: "上传附件" }));
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["%PDF-1.4"], "采购合同.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(await screen.findByText(/合同已进入待审计队列/)).toBeInTheDocument();
+    expect(apiMocks.analyzeChatAttachment).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("输入相关问题以对话"), {
+      target: { value: "请进行合同审计" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送问题" }));
+
+    await waitFor(() => {
+      expect(apiMocks.createContractAuditJob).toHaveBeenCalledWith(file, {
+        model: "deepseek-v4-pro",
+        projectName: "全院审计项目"
+      });
+    });
+    expect(await screen.findByText(/发现付款条款需复核/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下载 Word 报告" })).toHaveAttribute(
+      "href",
+      "/api/v1/contract-audits/job/report?format=docx"
+    );
+    expect(apiMocks.runKnowledgeQuery).not.toHaveBeenCalled();
   });
 
   it("shows an actionable message when an uploaded PDF needs OCR", async () => {

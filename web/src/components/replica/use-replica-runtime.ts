@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useAuditUser } from "@/components/shell/audit-user-context";
 import {
   fetchAgents,
+  fetchAgentMarketCatalog,
   fetchAnalysisUploadHistory,
   fetchAuthSession,
   fetchDocumentPermissions,
@@ -79,6 +80,7 @@ function replicaReadClient(): ReplicaClient {
   }
 
   return {
+    fetchAgentMarketCatalog,
     fetchAgents,
     fetchAnalysisUploadHistory,
     fetchAuthSession,
@@ -185,6 +187,12 @@ const extensionMarketAgentsFallback = makeMarketAgentsCatalogResult([
   ...medicalAuditAgentCatalog,
   ...auditExtensionValidationCatalog
 ]);
+const marketAgentsEmpty: ReplicaAdapterResult<ReplicaAgentsData> = {
+  source: "api",
+  outcome: "empty",
+  data: { agents: [], categories: [] },
+  issues: []
+};
 
 const knowledgeBaseFallback: ReplicaAdapterResult<ReplicaKnowledgeBaseData> = {
   source: "fixture",
@@ -477,14 +485,13 @@ export function useReplicaAgentsData(mode: "mine" | "market"): ReplicaRuntimeRes
     ? extensionMarketAgentsFallback
     : medicalMarketAgentsFallback;
   const fallback = mode === "mine" ? mineAgentsFallback : marketAgentsFallback;
-  const emptyResult = mode === "mine" ? mineAgentsEmpty : marketAgentsFallback;
+  const emptyResult = mode === "mine" ? mineAgentsEmpty : marketAgentsEmpty;
   const loader = mode === "mine" ? loadReplicaAgentsData : loadReplicaAgentMarketData;
   return useReplicaLoader(
     fallback,
     emptyResult,
     loader,
-    mode === "mine" ? "agents" : "agent-market",
-    mode === "market" ? marketAgentsFallback : undefined
+    mode === "mine" ? "agents" : "agent-market"
   );
 }
 
