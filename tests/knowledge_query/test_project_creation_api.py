@@ -152,6 +152,18 @@ def test_project_file_upload_visibility_review_and_withdrawal(tmp_path: Path) ->
     )
     client = TestClient(create_app(state))
     assert client.post("/projects", headers=ADMIN_HEADERS, json=PROJECT_PAYLOAD).status_code == 201
+    add_member_response = client.post(
+        "/projects/FUND-CHECK-202607/members",
+        headers=ADMIN_HEADERS,
+        json={
+            "user_identifier": "other-project-member",
+            "name": "其他项目成员",
+            "role": "审计员",
+            "department": "医保科",
+            "status": "在项目中",
+        },
+    )
+    assert add_member_response.status_code == 200, add_member_response.text
 
     upload_response = client.post(
         "/projects/FUND-CHECK-202607/files",
@@ -175,6 +187,17 @@ def test_project_file_upload_visibility_review_and_withdrawal(tmp_path: Path) ->
     assert uploaded["review_history"] == []
     assert uploaded["preview_url"].endswith(f"/{uploaded['id']}/preview")
     assert uploaded["download_url"].endswith(f"/{uploaded['id']}/download")
+
+    other_member_headers = {"X-User-Id": "other-project-member", "X-Role": "member"}
+    assert client.get(
+        "/projects/FUND-CHECK-202607/files", headers=other_member_headers
+    ).json()["items"] == []
+    hidden_review = client.post(
+        f"/projects/FUND-CHECK-202607/files/{uploaded['id']}/review",
+        headers=other_member_headers,
+        json={"status": "withdrawn", "note": "不应看到其他成员资料"},
+    )
+    assert hidden_review.status_code == 404
 
     member_headers = {"X-User-Id": "project-admin", "X-Role": "member"}
     list_response = client.get(
@@ -226,6 +249,16 @@ def test_project_file_upload_visibility_review_and_withdrawal(tmp_path: Path) ->
     assert reviewed["review_note"] == "请补充签章页"
     assert reviewed["reviewed_by"] == "project-admin"
     assert reviewed["review_history"][-1]["status"] == "changes-requested"
+    assert state.document_upload_store.update_project_file_review(
+        upload_id=str(uploaded["id"]),
+        review_status="approved",
+        reviewed_by="project-admin",
+        review_note="并发重复审核",
+    ) is None
+    persisted_review = state.document_upload_store.get_upload(upload_id=str(uploaded["id"]))
+    assert persisted_review is not None
+    assert persisted_review["project_review_status"] == "changes-requested"
+    assert len(persisted_review["project_review_history"]) == 1
 
     replacement_response = client.post(
         "/projects/FUND-CHECK-202607/files",
@@ -331,6 +364,16 @@ def test_sql_upload_listing_filters_scope_before_limit(tmp_path: Path) -> None:
     persisted = store.get_upload(upload_id=str(expected["id"]))
     assert persisted is not None
     assert persisted["project_review_history"] == reviewed["project_review_history"]
+    assert store.update_project_file_review(
+        upload_id=str(expected["id"]),
+        review_status="changes-requested",
+        reviewed_by="project-admin",
+        review_note="并发重复审核",
+    ) is None
+    persisted_after_duplicate = store.get_upload(upload_id=str(expected["id"]))
+    assert persisted_after_duplicate is not None
+    assert persisted_after_duplicate["project_review_status"] == "approved"
+    assert len(persisted_after_duplicate["project_review_history"]) == 1
 
 
 def test_project_scoped_admin_can_upload_project_file(tmp_path: Path) -> None:

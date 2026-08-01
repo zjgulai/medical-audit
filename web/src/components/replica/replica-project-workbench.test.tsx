@@ -402,6 +402,66 @@ describe("ReplicaProjectWorkbench", () => {
     expect(screen.getByRole("button", { name: "下载" })).toBeInTheDocument();
   });
 
+  it("deduplicates selected files and rejects oversized files before upload", async () => {
+    const { container } = render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "资料上传" }));
+    const fileInput = container.querySelector(
+      '.replica-project-file-picker input[type="file"]'
+    ) as HTMLInputElement;
+    const first = new File(["first"], "evidence.pdf", { type: "application/pdf" });
+    const duplicate = new File(["other"], "evidence.pdf", { type: "application/pdf" });
+    Object.defineProperty(duplicate, "size", { value: first.size });
+    const oversized = new File(["large"], "oversized.pdf", { type: "application/pdf" });
+    Object.defineProperty(oversized, "size", { value: 20 * 1024 * 1024 + 1 });
+
+    fireEvent.change(fileInput, { target: { files: [first, duplicate, oversized] } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "以下文件超过 20 MB，未加入队列：oversized.pdf"
+    );
+    expect(screen.getAllByText("evidence.pdf")).toHaveLength(1);
+    expect(screen.queryByText("oversized.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提交 1 份资料" })).toBeEnabled();
+  });
+
+  it("keeps only unprocessed files queued after a partial upload failure", async () => {
+    uploadProjectFileMock
+      .mockResolvedValueOnce({
+        contract_version: "project-files-v2",
+        project_key: "ALPHA",
+        item: projectFile({ id: "first-upload", name: "first.pdf" }),
+        store: { ready: true, backend: "InMemoryDocumentUploadStore" }
+      })
+      .mockRejectedValueOnce(new Error("second failed"))
+      .mockResolvedValueOnce({
+        contract_version: "project-files-v2",
+        project_key: "ALPHA",
+        item: projectFile({ id: "second-upload", name: "second.pdf" }),
+        store: { ready: true, backend: "InMemoryDocumentUploadStore" }
+      });
+    const { container } = render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "资料上传" }));
+    const fileInput = container.querySelector(
+      '.replica-project-file-picker input[type="file"]'
+    ) as HTMLInputElement;
+    const first = new File(["first"], "first.pdf", { type: "application/pdf" });
+    const second = new File(["second"], "second.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [first, second] } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 2 份资料" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "已提交 1 份，后续文件上传失败"
+    );
+    expect(screen.queryByText("first.pdf")).not.toBeInTheDocument();
+    expect(screen.getByText("second.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "提交 1 份资料" }));
+
+    await waitFor(() => expect(uploadProjectFileMock).toHaveBeenCalledTimes(3));
+    expect(uploadProjectFileMock.mock.calls[2]?.[1].file).toBe(second);
+  });
+
   it("records a review decision and routes a returned file into replacement upload", async () => {
     const pendingFile = projectFile();
     fetchProjectFilesMock.mockResolvedValue({
@@ -424,8 +484,18 @@ describe("ReplicaProjectWorkbench", () => {
         }]
       })
     });
+    uploadProjectFileMock.mockResolvedValue({
+      contract_version: "project-files-v2",
+      project_key: "ALPHA",
+      item: projectFile({
+        id: "replacement-upload",
+        name: "audit-evidence-revised.pdf",
+        replaces_upload_id: pendingFile.id
+      }),
+      store: { ready: true, backend: "InMemoryDocumentUploadStore" }
+    });
 
-    render(<ReplicaProjectWorkbench />);
+    const { container } = render(<ReplicaProjectWorkbench />);
     fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
     fireEvent.click(await screen.findByRole("tab", { name: "审核状态 1" }));
     fireEvent.change(screen.getByRole("textbox", { name: "处理说明：audit-evidence.pdf" }), {
@@ -441,12 +511,84 @@ describe("ReplicaProjectWorkbench", () => {
       );
     });
     expect(await screen.findByText("审核意见：请补充签章页")).toBeInTheDocument();
+    expect(screen.getByText("处理人：next-admin · 2026-08-01 14:00")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "上传补正版" }));
     expect(screen.getByRole("heading", { name: "上传项目资料" })).toBeInTheDocument();
     expect(screen.getByText("正在补正：")).toHaveTextContent("audit-evidence.pdf");
     expect(screen.getByRole("textbox", { name: "资料说明" })).toHaveValue(
       "补正：audit-evidence.pdf；审核意见：请补充签章页"
     );
+    const replacementInput = container.querySelector(
+      '.replica-project-file-picker input[type="file"]'
+    ) as HTMLInputElement;
+    const replacementFile = new File(["%PDF revised"], "audit-evidence-revised.pdf", {
+      type: "application/pdf"
+    });
+    fireEvent.change(replacementInput, { target: { files: [replacementFile] } });
+    fireEvent.click(screen.getByRole("button", { name: "提交 1 份资料" }));
+    await waitFor(() => {
+      expect(uploadProjectFileMock).toHaveBeenCalledWith("ALPHA", {
+        file: replacementFile,
+        department: "",
+        document_type: "审计资料",
+        description: "补正：audit-evidence.pdf；审核意见：请补充签章页",
+        replaces_upload_id: pendingFile.id
+      });
+    });
+  });
+
+  it("keeps review responses scoped to the project that initiated them", async () => {
+    const alpha = project("ALPHA", "Alpha项目");
+    const beta = project("BETA", "Beta项目");
+    const pendingReview = deferred<Awaited<ReturnType<typeof reviewProjectFile>>>();
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alpha, beta]));
+    fetchProjectMembersMock.mockImplementation((projectId) => Promise.resolve(
+      membersResponse(projectId, [member(`${projectId}-M1`, projectId, `${projectId}成员`)])
+    ));
+    fetchProjectDashboardMock.mockImplementation((projectId) => Promise.resolve(
+      dashboardResponse(projectId === alpha.id ? alpha : beta)
+    ));
+    fetchProjectFilesMock.mockImplementation((projectId) => Promise.resolve({
+      ...filesResponse(projectId),
+      items: projectId === alpha.id ? [projectFile()] : []
+    }));
+    reviewProjectFileMock.mockReturnValue(pendingReview.promise);
+
+    render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "审核状态 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "审核通过" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看：Beta项目" }));
+    expect(await screen.findByRole("heading", { name: "项目详情：Beta项目" })).toBeInTheDocument();
+
+    await act(async () => {
+      pendingReview.resolve({
+        contract_version: "project-files-v2",
+        project_key: "ALPHA",
+        item: projectFile({ review_status: "approved" })
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("资料已审核通过。")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "审核状态 0" }));
+    expect(screen.getByText("当前没有可跟踪的项目资料")).toBeInTheDocument();
+  });
+
+  it("connects tabs to panels and supports keyboard navigation", async () => {
+    render(<ReplicaProjectWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
+    const overviewTab = screen.getByRole("tab", { name: "项目概览" });
+    expect(overviewTab).toHaveAttribute("aria-controls", "project-tabpanel-overview");
+    expect(overviewTab).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "project-tab-overview");
+
+    fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
+
+    const uploadTab = screen.getByRole("tab", { name: "资料上传" });
+    expect(uploadTab).toHaveFocus();
+    expect(uploadTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "project-tab-upload");
   });
 
   it("creates a project exactly once from the admin-only form", async () => {

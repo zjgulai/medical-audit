@@ -545,6 +545,8 @@ def review_project_file(
         or item.get("project_key") != project_key
     ):
         raise HTTPException(status_code=404, detail="project file not found")
+    if not _project_file_visible_to_user(item=item, user=user):
+        raise HTTPException(status_code=404, detail="project file not found")
     if item.get("project_review_status") != "pending-review":
         raise HTTPException(status_code=409, detail="project file review is already closed")
 
@@ -568,6 +570,13 @@ def review_project_file(
         review_note=payload.note,
     )
     if updated is None:
+        current = state.document_upload_store.get_upload(upload_id=upload_id)
+        if (
+            current is not None
+            and current.get("scope") == "project"
+            and current.get("project_key") == project_key
+        ):
+            raise HTTPException(status_code=409, detail="project file review is already closed")
         raise HTTPException(status_code=404, detail="project file not found")
     result = _project_file_payload(updated, project_key=project_key)
     record_operation(

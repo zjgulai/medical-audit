@@ -9992,11 +9992,11 @@ button.replica-graph-node.is-selected {
   font-size: 12px;
 }
 
-.replica-project-workbench .replica-project-review-note {
+.replica-project-workbench .replica-project-review-list article > p.replica-project-review-note {
   border-left: 3px solid #e4a84d;
   background: #fff9ef;
   padding: 8px 10px;
-  color: #704813 !important;
+  color: #704813;
 }
 
 .replica-project-workbench .replica-project-review-actions {

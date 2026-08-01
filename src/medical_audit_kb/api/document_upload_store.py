@@ -613,12 +613,17 @@ class SqlAlchemyDocumentUploadStore:
     ) -> dict[str, object] | None:
         with self._session_factory.begin() as session:
             record = session.scalar(
-                select(DocumentUploadRecord).where(DocumentUploadRecord.upload_key == upload_id)
+                select(DocumentUploadRecord)
+                .where(DocumentUploadRecord.upload_key == upload_id)
+                .with_for_update()
             )
             if record is None:
                 return None
             metadata = dict(record.extra_metadata or {})
-            if metadata.get("scope") != "project":
+            if (
+                metadata.get("scope") != "project"
+                or metadata.get("project_review_status") != "pending-review"
+            ):
                 return None
             record.extra_metadata = {
                 **DEFAULT_DOCUMENT_UPLOAD_METADATA,
@@ -804,6 +809,8 @@ class InMemoryDocumentUploadStore:
         for index, record in enumerate(self.records):
             if record.get("id") != upload_id or record.get("scope") != "project":
                 continue
+            if record.get("project_review_status") != "pending-review":
+                return None
             updated = {
                 **DEFAULT_DOCUMENT_UPLOAD_METADATA,
                 **record,

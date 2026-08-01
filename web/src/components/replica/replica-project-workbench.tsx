@@ -29,6 +29,7 @@ import type {
   ProjectSummaryApiItem
 } from "@/lib/api-types";
 import { auditClientRoleLabel, auditClientUserId, type AuditClientRole } from "@/lib/audit-user";
+import { formatReplicaDateTime } from "@/lib/replica-adapters";
 
 type ListPhase = "loading" | "ready" | "empty" | "degraded" | "error";
 type DetailPhase = "idle" | "loading" | "ready" | "empty" | "degraded" | "error";
@@ -61,6 +62,7 @@ const initialMembersState: MembersState = { phase: "idle", response: null };
 const initialDashboardState: DashboardState = { phase: "idle", response: null };
 const initialFilesState: FilesState = { phase: "idle", response: null };
 const emptyProjects: readonly ProjectSummaryApiItem[] = [];
+const MAX_PROJECT_FILE_BYTES = 20 * 1024 * 1024;
 const projectDocumentTypes: readonly ProjectDocumentType[] = [
   "审计资料",
   "财务资料",
@@ -354,6 +356,7 @@ export function ReplicaProjectWorkbench() {
     setMemberSaving(false);
     setMemberCreateError(null);
     setFileSaving(false);
+    setReviewSavingId(null);
     setFileMessage(null);
     setFileError(null);
     loadMembers(project.id);
@@ -460,6 +463,7 @@ export function ReplicaProjectWorkbench() {
     setFileMessage(null);
     setFileError(null);
     let completed = 0;
+    const uploadedFiles: File[] = [];
     try {
       for (const file of queuedFiles) {
         const response = await uploadProjectFile(selectedProject.id, {
@@ -471,6 +475,7 @@ export function ReplicaProjectWorkbench() {
         });
         if (generation !== selectionGenerationRef.current) return;
         completed += 1;
+        uploadedFiles.push(file);
         setFilesState((current) => ({
           phase: "ready",
           response: {
@@ -498,6 +503,7 @@ export function ReplicaProjectWorkbench() {
       setReplacementFor(null);
     } catch (error) {
       if (generation === selectionGenerationRef.current) {
+        setQueuedFiles((current) => current.filter((file) => !uploadedFiles.includes(file)));
         setFileError(
           completed > 0
             ? `已提交 ${completed} 份，后续文件上传失败；列表已保留成功记录。`
@@ -520,11 +526,13 @@ export function ReplicaProjectWorkbench() {
     note: string
   ) {
     if (!selectedProject || reviewSavingId !== null) return;
+    const generation = selectionGenerationRef.current;
     setReviewSavingId(item.id);
     setFileMessage(null);
     setFileError(null);
     try {
       const response = await reviewProjectFile(selectedProject.id, item.id, { status, note });
+      if (generation !== selectionGenerationRef.current) return;
       setFilesState((current) => current.response ? {
         phase: "ready",
         response: {
@@ -536,9 +544,13 @@ export function ReplicaProjectWorkbench() {
       } : current);
       setFileMessage(status === "approved" ? "资料已审核通过。" : status === "withdrawn" ? "资料已撤回并保留审计记录。" : "资料已退回补正。" );
     } catch (error) {
-      setFileError(error instanceof Error ? error.message : "资料状态更新失败，请稍后重试。");
+      if (generation === selectionGenerationRef.current) {
+        setFileError(error instanceof Error ? error.message : "资料状态更新失败，请稍后重试。");
+      }
     } finally {
-      setReviewSavingId(null);
+      if (generation === selectionGenerationRef.current) {
+        setReviewSavingId(null);
+      }
     }
   }
 
@@ -565,6 +577,50 @@ export function ReplicaProjectWorkbench() {
       setFileError(mode === "preview" ? "文件预览失败，请稍后重试。" : "文件下载失败，请稍后重试。");
     }
   }
+
+  function queueProjectFiles(files: readonly File[]) {
+    const oversizedFiles = files.filter((file) => file.size > MAX_PROJECT_FILE_BYTES);
+    const acceptedFiles = files.filter((file) => file.size <= MAX_PROJECT_FILE_BYTES);
+    setFileError(
+      oversizedFiles.length > 0
+        ? `以下文件超过 20 MB，未加入队列：${oversizedFiles.map((file) => file.name).join("、")}`
+        : null
+    );
+    setQueuedFiles((current) => {
+      if (replacementFor) return acceptedFiles.slice(0, 1);
+      const queuedIdentities = new Set(current.map((file) => `${file.name}\u0000${file.size}`));
+      const uniqueFiles = acceptedFiles.filter((file) => {
+        const identity = `${file.name}\u0000${file.size}`;
+        if (queuedIdentities.has(identity)) return false;
+        queuedIdentities.add(identity);
+        return true;
+      });
+      return [...current, ...uniqueFiles];
+    });
+  }
+
+  const membersPanel = selectedProject ? (
+    <MembersPanel
+      canManage={canManageMembers}
+      createError={memberCreateError}
+      department={memberDepartment}
+      membersState={membersState}
+      name={memberName}
+      onDepartmentChange={setMemberDepartment}
+      onNameChange={setMemberName}
+      onRetry={() => loadMembers(selectedProject.id)}
+      onRoleChange={setMemberRole}
+      onStatusChange={setMemberStatus}
+      onSubmit={submitMember}
+      onUserIdentifierChange={setUserIdentifier}
+      projectResponse={roleScopedProjectsState.response}
+      persistentWritesReady={projectWritesReady}
+      role={memberRole}
+      saving={memberSaving}
+      status={memberStatus}
+      userIdentifier={userIdentifier}
+    />
+  ) : null;
 
   return (
     <main className="replica-page replica-page-standard replica-project-workbench">
@@ -709,36 +765,31 @@ export function ReplicaProjectWorkbench() {
             ).length ?? 0}
           />
 
-          {activeTab === "overview" ? (
-            <div className="replica-project-detail-grid">
-              <MembersPanel
-                canManage={canManageMembers}
-                createError={memberCreateError}
-                department={memberDepartment}
-                membersState={membersState}
-                name={memberName}
-                onDepartmentChange={setMemberDepartment}
-                onNameChange={setMemberName}
-                onRetry={() => loadMembers(selectedProject.id)}
-                onRoleChange={setMemberRole}
-                onStatusChange={setMemberStatus}
-                onSubmit={submitMember}
-                onUserIdentifierChange={setUserIdentifier}
-                projectResponse={roleScopedProjectsState.response}
-                persistentWritesReady={projectWritesReady}
-                role={memberRole}
-                saving={memberSaving}
-                status={memberStatus}
-                userIdentifier={userIdentifier}
-              />
-              <DashboardPanel
-                dashboardState={dashboardState}
-                onRetry={() => loadDashboard(selectedProject.id)}
-              />
-            </div>
-          ) : null}
-          {activeTab === "upload" ? (
-            <UploadPanel
+          <div
+            id="project-tabpanel-overview"
+            role="tabpanel"
+            aria-labelledby="project-tab-overview"
+            hidden={activeTab !== "overview"}
+            tabIndex={0}
+          >
+            {activeTab === "overview" ? (
+              <div className="replica-project-detail-grid">
+                {membersPanel}
+                <DashboardPanel
+                  dashboardState={dashboardState}
+                  onRetry={() => loadDashboard(selectedProject.id)}
+                />
+              </div>
+            ) : null}
+          </div>
+          <div
+            id="project-tabpanel-upload"
+            role="tabpanel"
+            aria-labelledby="project-tab-upload"
+            hidden={activeTab !== "upload"}
+            tabIndex={0}
+          >
+            {activeTab === "upload" ? <UploadPanel
               canUpload={canUploadProjectFiles}
               department={fileDepartment}
               description={fileDescription}
@@ -753,28 +804,38 @@ export function ReplicaProjectWorkbench() {
                 setReplacementFor(null);
                 setQueuedFiles([]);
               }}
-              onFilesChange={(files) => setQueuedFiles((current) => (
-                replacementFor ? files.slice(0, 1) : [...current, ...files]
-              ))}
+              onFilesChange={queueProjectFiles}
               onRemove={(file) => setQueuedFiles((current) => current.filter((item) => item !== file))}
               onSubmit={() => void submitProjectFiles()}
               project={selectedProject}
               queuedFiles={queuedFiles}
               replacementFor={replacementFor}
               saving={fileSaving}
-            />
-          ) : null}
-          {activeTab === "files" ? (
-            <FilesPanel
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-files"
+            role="tabpanel"
+            aria-labelledby="project-tab-files"
+            hidden={activeTab !== "files"}
+            tabIndex={0}
+          >
+            {activeTab === "files" ? <FilesPanel
               error={fileError}
               filesState={filesState}
               message={fileMessage}
               onOpen={(item, mode) => void openProjectFile(item, mode)}
               onRetry={() => loadFiles(selectedProject.id)}
-            />
-          ) : null}
-          {activeTab === "review" ? (
-            <ReviewPanel
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-review"
+            role="tabpanel"
+            aria-labelledby="project-tab-review"
+            hidden={activeTab !== "review"}
+            tabIndex={0}
+          >
+            {activeTab === "review" ? <ReviewPanel
               currentUserIdentifier={currentUserIdentifier}
               error={fileError}
               filesState={filesState}
@@ -788,37 +849,30 @@ export function ReplicaProjectWorkbench() {
               }}
               onReview={(item, status, note) => void submitProjectFileReview(item, status, note)}
               reviewSavingId={reviewSavingId}
-            />
-          ) : null}
-          {activeTab === "members" ? (
-            <MembersPanel
-              canManage={canManageMembers}
-              createError={memberCreateError}
-              department={memberDepartment}
-              membersState={membersState}
-              name={memberName}
-              onDepartmentChange={setMemberDepartment}
-              onNameChange={setMemberName}
-              onRetry={() => loadMembers(selectedProject.id)}
-              onRoleChange={setMemberRole}
-              onStatusChange={setMemberStatus}
-              onSubmit={submitMember}
-              onUserIdentifierChange={setUserIdentifier}
-              projectResponse={roleScopedProjectsState.response}
-              persistentWritesReady={projectWritesReady}
-              role={memberRole}
-              saving={memberSaving}
-              status={memberStatus}
-              userIdentifier={userIdentifier}
-            />
-          ) : null}
-          {activeTab === "identity" ? (
-            <IdentityPanel
+            /> : null}
+          </div>
+          <div
+            id="project-tabpanel-members"
+            role="tabpanel"
+            aria-labelledby="project-tab-members"
+            hidden={activeTab !== "members"}
+            tabIndex={0}
+          >
+            {activeTab === "members" ? membersPanel : null}
+          </div>
+          <div
+            id="project-tabpanel-identity"
+            role="tabpanel"
+            aria-labelledby="project-tab-identity"
+            hidden={activeTab !== "identity"}
+            tabIndex={0}
+          >
+            {activeTab === "identity" ? <IdentityPanel
               project={selectedProject}
               role={auditUser.role}
               visibilityScope={filesState.response?.permissions.visibility_scope ?? "own"}
-            />
-          ) : null}
+            /> : null}
+          </div>
         </section>
       ) : (
         roleScopedProjectsState.response && projects.length > 0
@@ -840,6 +894,7 @@ function ProjectWorkspaceTabs({
   readonly onChange: (tab: ProjectWorkspaceTab) => void;
   readonly pendingReviewCount: number;
 }) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs: readonly { readonly id: ProjectWorkspaceTab; readonly label: string }[] = [
     { id: "overview", label: "项目概览" },
     { id: "upload", label: "资料上传" },
@@ -853,11 +908,29 @@ function ProjectWorkspaceTabs({
       {tabs.map((tab) => (
         <button
           key={tab.id}
+          id={`project-tab-${tab.id}`}
+          ref={(node) => {
+            tabRefs.current[tabs.findIndex((item) => item.id === tab.id)] = node;
+          }}
           type="button"
           role="tab"
+          aria-controls={`project-tabpanel-${tab.id}`}
           aria-selected={activeTab === tab.id}
+          tabIndex={activeTab === tab.id ? 0 : -1}
           className={activeTab === tab.id ? "is-active" : undefined}
           onClick={() => onChange(tab.id)}
+          onKeyDown={(event) => {
+            const currentIndex = tabs.findIndex((item) => item.id === tab.id);
+            let nextIndex: number | null = null;
+            if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+            if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            if (event.key === "Home") nextIndex = 0;
+            if (event.key === "End") nextIndex = tabs.length - 1;
+            if (nextIndex === null) return;
+            event.preventDefault();
+            onChange(tabs[nextIndex].id);
+            tabRefs.current[nextIndex]?.focus();
+          }}
         >
           {tab.label}
         </button>
@@ -1125,7 +1198,7 @@ function ReviewPanel({
               </div>
               {item.description ? <p>{item.description}</p> : null}
               {item.review_note ? <p className="replica-project-review-note">审核意见：{item.review_note}</p> : null}
-              {item.reviewed_by && item.reviewed_at ? <small>处理人：{item.reviewed_by} · {formatDateTime(item.reviewed_at)}</small> : null}
+              {item.reviewed_by && item.reviewed_at ? <small>处理人：{item.reviewed_by} · {formatReplicaDateTime(item.reviewed_at)}</small> : null}
               <div className="replica-project-file-actions">
                 <button type="button" onClick={() => onOpen(item, "preview")}>预览原件</button>
                 <button type="button" onClick={() => onOpen(item, "download")}>下载原件</button>
@@ -1464,10 +1537,6 @@ function sourceAvailabilityLabel(ready: boolean): string {
 
 function formatDate(value: string): string {
   return value.slice(0, 10);
-}
-
-function formatDateTime(value: string): string {
-  return value.replace("T", " ").slice(0, 16);
 }
 
 function projectFileReviewLabel(status: ProjectFileReviewStatus): string {

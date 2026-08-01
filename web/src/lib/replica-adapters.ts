@@ -345,12 +345,30 @@ function formatDate(value: string | null | undefined, fallback = "未记录"): s
   return datePrefix ?? value;
 }
 
-function formatDateTime(value: string | null | undefined, fallback = "未记录"): string {
+export function formatReplicaDateTime(
+  value: string | null | undefined,
+  fallback = "未记录"
+): string {
   if (!value) {
     return fallback;
   }
-  const withoutTimezone = value.replace("T", " ").replace(/Z$/, "");
-  return withoutTimezone.slice(0, 16);
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value.replace("T", " ").replace(/Z$/, "").slice(0, 16);
+  }
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date(timestamp));
+  const part = (type: Intl.DateTimeFormatPartTypes) => (
+    parts.find((item) => item.type === type)?.value ?? ""
+  );
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
 }
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
@@ -640,7 +658,7 @@ function mapReportWorkbench(response: ReportWorkbenchResponse): readonly Referen
     title: entry.title,
     project: normalizeText(entry.source, entry.owner),
     status: entry.status,
-    generatedAt: formatDateTime(entry.updated_at),
+    generatedAt: formatReplicaDateTime(entry.updated_at),
     sourceCount: entry.included_finding_count + entry.appendix_count
   }));
 }

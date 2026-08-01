@@ -11,6 +11,7 @@ import type {
   TableAnalysisUploadHistoryResponse
 } from "./api-types";
 import {
+  formatReplicaDateTime,
   loadReplicaAgentMarketData,
   loadReplicaAnalyticsData,
   loadReplicaChatData,
@@ -75,6 +76,14 @@ const emptyQueryHistory: QueryHistoryResponse = {
   items: [],
   store: { ready: true, backend: "SqlAlchemyQueryHistoryStore" }
 };
+
+describe("formatReplicaDateTime", () => {
+  it("converts UTC review timestamps to the audit display timezone", () => {
+    expect(formatReplicaDateTime("2026-08-01T06:00:00Z")).toBe("2026-08-01 14:00");
+    expect(formatReplicaDateTime(null)).toBe("未记录");
+    expect(formatReplicaDateTime("not-a-date")).toBe("not-a-date");
+  });
+});
 
 const catalogItem: KnowledgeBaseCatalogItem = {
   source_collection: "medical-insurance-laws",
