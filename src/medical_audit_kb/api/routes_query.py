@@ -198,8 +198,9 @@ def query(
         requested_source_collections=requested_source_collections,
     )
     agent_key = _normalize_agent_key(payload.agent)
+    selected_agent: dict[str, object] | None = None
     if agent_key is not None:
-        _validate_agent_selection(
+        selected_agent = _validate_agent_selection(
             state,
             agent_key,
             request_project_name=x_project_name,
@@ -254,6 +255,10 @@ def query(
             payload.question,
             results,
             generation_provider=generation_provider,
+            agent_prompt=str(selected_agent.get("prompt") or "") if selected_agent else None,
+            agent_prompt_version_key=(
+                str(selected_agent.get("prompt_version_key") or "") if selected_agent else None
+            ),
         )
     except NoCitedEvidenceError as exc:
         raise HTTPException(status_code=404, detail="no cited evidence found") from exc

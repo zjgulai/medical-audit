@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medical-audit.local/schemas/contract-audit-output-v2.json",
+  "title": "Contract Audit Output v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "job_id",
+    "status",
+    "contract_summary",
+    "extraction_quality",
+    "findings",
+    "pending_verifications",
+    "coverage_matrix",
+    "conclusion",
+    "provenance"
+  ],
+  "properties": {
+    "contract_version": {"const": "contract-audit-output-v2"},
+    "job_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["completed", "extraction_review_required", "insufficient_evidence", "failed"]},
+    "contract_summary": {"type": "object"},
+    "extraction_quality": {
+      "type": "object",
+      "required": ["page_count", "covered_pages", "mapping_status"],
+      "properties": {
+        "page_count": {"type": "integer", "minimum": 1},
+        "covered_pages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "mapping_status": {"enum": ["resolved", "partial", "unresolved"]},
+        "issues": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "risk", "dimension", "clause_locator", "quote", "evidence_ids", "factual_status", "impact", "recommendation", "confidence", "review_required"],
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "risk": {"enum": ["high", "medium", "low"]},
+          "dimension": {"enum": ["legal_compliance", "commercial", "finance_tax", "performance"]},
+          "clause_locator": {"type": "object"},
+          "quote": {"type": "string"},
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "legal_basis": {"type": "array", "items": {"type": "object"}},
+          "factual_status": {"enum": ["contract_fact", "externally_verified_fact", "inference", "uncertainty"]},
+          "impact": {"type": "string"},
+          "recommendation": {"type": "string"},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "review_required": {"type": "boolean"}
+        }
+      }
+    },
+    "pending_verifications": {"type": "array", "items": {"type": "object"}},
+    "coverage_matrix": {"type": "object"},
+    "conclusion": {"type": "object"},
+    "provenance": {"type": "object"}
+  }
+}

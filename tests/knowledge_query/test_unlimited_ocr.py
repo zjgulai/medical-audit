@@ -102,7 +102,15 @@ def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
     messages = payload["messages"]
     assert isinstance(messages, list)
     content = messages[0]["content"]
-    assert content[0] == {"type": "text", "text": "<image>\nMulti page parsing."}
+    assert content[0] == {
+        "type": "text",
+        "text": (
+            "<image>\nMulti page parsing. Return each page exactly once as "
+            '<page number="N">recognized text</page> in source order.'
+        ),
+    }
+    assert result.pages[0].mapping_status == "resolved"
+    assert len(result.pages[0].image_sha256) == 64
     assert str(content[1]["image_url"]["url"]).startswith("data:image/png;base64,")
 
 

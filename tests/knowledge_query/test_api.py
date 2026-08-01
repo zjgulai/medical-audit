@@ -14,7 +14,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from medical_audit_kb.api.agent_store import AGENT_ID_PREFIX, SqlAlchemyAgentStore
+from medical_audit_kb.api.agent_store import (
+    AGENT_ID_PREFIX,
+    InMemoryAgentStore,
+    SqlAlchemyAgentStore,
+)
 from medical_audit_kb.api.analytics_upload_store import (
     ANALYTICS_UPLOAD_ID_PREFIX,
     InMemoryAnalyticsUploadStore,
@@ -308,9 +312,7 @@ def test_auth_api_lists_roles_and_manages_users(tmp_path: Path) -> None:
     ]
     assert roles_body["compatibility"]["it-admin"] == "admin"
     assert roles_body["compatibility"]["system-admin"] == "admin"
-    permissions_by_role = {
-        item["role"]: set(item["permissions"]) for item in roles_body["items"]
-    }
+    permissions_by_role = {item["role"]: set(item["permissions"]) for item in roles_body["items"]}
     assert "create_report_draft" in permissions_by_role["admin"]
     assert "create_report_draft" in permissions_by_role["director"]
     assert "create_report_draft" in permissions_by_role["member"]
@@ -806,7 +808,8 @@ def test_agents_api_lists_defaults_and_persists_created_agent(tmp_path: Path) ->
     list_body = list_response.json()
     assert list_body["store"]["backend"] == "SqlAlchemyAgentStore"
     assert list_body["categories"] == ["业务类", "效率类", "研究类"]
-    assert [item["id"] for item in list_body["items"][:3]] == [
+    assert [item["id"] for item in list_body["items"][:4]] == [
+        "agent-contract-audit-v2",
         "agent-citation-check",
         "agent-duplicate-charge",
         "agent-report-draft",
@@ -933,9 +936,9 @@ def test_agents_api_fallback_defaults_include_prompt_version_metadata(tmp_path: 
     assert response.status_code == 200
     body = response.json()
     assert body["store"] == {"ready": False, "backend": "unavailable"}
-    assert body["items"][0]["id"] == "agent-citation-check"
-    assert body["items"][0]["prompt_versions"][0]["version"] == 1
-    assert body["items"][0]["prompt_versions"][0]["is_active"] is True
+    citation_agent = next(item for item in body["items"] if item["id"] == "agent-citation-check")
+    assert citation_agent["prompt_versions"][0]["version"] == 1
+    assert citation_agent["prompt_versions"][0]["is_active"] is True
 
 
 def test_agents_api_tracks_prompt_versions_lifecycle_and_history(
@@ -1381,22 +1384,19 @@ def test_projects_api_filters_visibility_and_publishes_canonical_statuses(
     assert len(projects_body["items"]) == 4
     assert projects_body["items"][0]["id"] == "SELF-CHECK-FUND-20260607"
     assert projects_body["items"][0]["member_count"] == 3
-    assert {
-        item["id"]: item["creator_user_identifier"] for item in projects_body["items"]
-    } == {
+    assert {item["id"]: item["creator_user_identifier"] for item in projects_body["items"]} == {
         "SELF-CHECK-FUND-20260607": "next-director",
         "CATALOG-LIMIT-202606": "expert-catalog",
         "OUTPATIENT-DOSE-202606": "auditor-outpatient-dose",
         "KB-GOVERNANCE-202606": "it-kb-governance",
     }
-    assert next(
-        item
-        for item in projects_body["items"]
-        if item["id"] == "OUTPATIENT-DOSE-202606"
-    )["status"] == "进行中"
-    assert [item["id"] for item in creator_response.json()["items"]] == [
-        "CATALOG-LIMIT-202606"
-    ]
+    assert (
+        next(item for item in projects_body["items"] if item["id"] == "OUTPATIENT-DOSE-202606")[
+            "status"
+        ]
+        == "进行中"
+    )
+    assert [item["id"] for item in creator_response.json()["items"]] == ["CATALOG-LIMIT-202606"]
     assert [item["id"] for item in self_creator_response.json()["items"]] == [
         "SELF-CHECK-FUND-20260607"
     ]
@@ -1414,13 +1414,11 @@ def test_default_project_creators_are_active_members() -> None:
         project_key = str(project["id"])
         creator_user_identifier = project["creator_user_identifier"]
         member_identifiers = [
-            member["user_identifier"]
-            for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
+            member["user_identifier"] for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
         ]
         assert len(member_identifiers) == len(set(member_identifiers))
         assert any(
-            member["user_identifier"] == creator_user_identifier
-            and member["status"] == "在项目中"
+            member["user_identifier"] == creator_user_identifier and member["status"] == "在项目中"
             for member in DEFAULT_PROJECT_MEMBERS_BY_PROJECT[project_key]
         )
 
@@ -1492,24 +1490,30 @@ def test_projects_api_uses_project_scoped_auth_for_detail(tmp_path: Path) -> Non
     state.project_member_store = InMemoryProjectMemberStore()
     client = TestClient(create_app(state))
     admin_headers = {"X-User-Id": "admin-1", "X-Role": "admin"}
-    assert client.post(
-        "/auth/users",
-        headers=admin_headers,
-        json={
-            "user_key": "scoped-project-admin",
-            "display_name": "项目级管理员",
-            "department_key": "audit-office",
-        },
-    ).status_code == 200
-    assert client.post(
-        "/auth/users/scoped-project-admin/role-assignments",
-        headers=admin_headers,
-        json={
-            "role": "admin",
-            "scope_type": "project",
-            "scope_key": "SELF-CHECK-FUND-20260607",
-        },
-    ).status_code == 200
+    assert (
+        client.post(
+            "/auth/users",
+            headers=admin_headers,
+            json={
+                "user_key": "scoped-project-admin",
+                "display_name": "项目级管理员",
+                "department_key": "audit-office",
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/auth/users/scoped-project-admin/role-assignments",
+            headers=admin_headers,
+            json={
+                "role": "admin",
+                "scope_type": "project",
+                "scope_key": "SELF-CHECK-FUND-20260607",
+            },
+        ).status_code
+        == 200
+    )
 
     headers = {"X-User-Id": "scoped-project-admin", "X-Role": "member"}
     list_response = client.get("/projects", headers=headers)
@@ -1668,25 +1672,28 @@ def test_projects_api_keeps_pending_custom_member_invisible_with_persistent_stor
     assert active_response.status_code == 200
     assert active_response.json()["item"]["user_identifier"] == "custom-dose-active"
     assert active_response.json()["item"]["metadata"]["ticket"] == "DOSE-1"
-    assert (
-        active_response.json()["item"]["metadata"]["user_identifier"]
-        == "custom-dose-active"
-    )
+    assert active_response.json()["item"]["metadata"]["user_identifier"] == "custom-dose-active"
     assert pending_response.status_code == 200
     active_headers = {"X-User-Id": "custom-dose-active", "X-Role": "member"}
     pending_headers = {"X-User-Id": "custom-dose-pending", "X-Role": "member"}
     assert [
         item["id"] for item in client.get("/projects", headers=active_headers).json()["items"]
     ] == ["OUTPATIENT-DOSE-202606"]
-    assert client.get(
-        "/projects/OUTPATIENT-DOSE-202606",
-        headers=active_headers,
-    ).status_code == 200
+    assert (
+        client.get(
+            "/projects/OUTPATIENT-DOSE-202606",
+            headers=active_headers,
+        ).status_code
+        == 200
+    )
     assert client.get("/projects", headers=pending_headers).json()["items"] == []
-    assert client.get(
-        "/projects/OUTPATIENT-DOSE-202606",
-        headers=pending_headers,
-    ).status_code == 404
+    assert (
+        client.get(
+            "/projects/OUTPATIENT-DOSE-202606",
+            headers=pending_headers,
+        ).status_code
+        == 404
+    )
 
 
 def test_projects_api_rejects_duplicate_project_member_identities(
@@ -1774,10 +1781,7 @@ def test_projects_api_rejects_duplicate_project_member_identities(
     assert default_conflict.status_code == 409
     assert default_conflict.json()["detail"] == "project member identity already exists"
     assert pending_default_conflict.status_code == 409
-    assert (
-        pending_default_conflict.json()["detail"]
-        == "project member identity already exists"
-    )
+    assert pending_default_conflict.json()["detail"] == "project member identity already exists"
     assert active_create.status_code == 200
     assert active_create.json()["item"]["user_identifier"] == "duplicate-active-first"
     assert active_create.json()["item"]["metadata"] == {
@@ -1794,12 +1798,8 @@ def test_projects_api_rejects_duplicate_project_member_identities(
         "/projects/CATALOG-LIMIT-202606/members",
         headers=admin_headers,
     ).json()["items"]
-    assert sum(
-        item["user_identifier"] == "duplicate-active-first" for item in members
-    ) == 1
-    assert sum(
-        item["user_identifier"] == "duplicate-pending-first" for item in members
-    ) == 1
+    assert sum(item["user_identifier"] == "duplicate-active-first" for item in members) == 1
+    assert sum(item["user_identifier"] == "duplicate-pending-first" for item in members) == 1
 
 
 @pytest.mark.parametrize("store_kind", ("memory", "sql"))
@@ -1878,9 +1878,7 @@ def test_project_member_reads_dedupe_legacy_identities_consistently(
     assert "custom-active-old" not in member_ids
     assert {"legacy-identityless-one", "legacy-identityless-two"} <= member_ids
     catalog_project = next(
-        item
-        for item in projects_response.json()["items"]
-        if item["id"] == project_key
+        item for item in projects_response.json()["items"] if item["id"] == project_key
     )
     assert catalog_project["member_count"] == 8
     assert store.member_counts()[project_key] == 4
@@ -1929,9 +1927,7 @@ def test_projects_api_store_failure_preserves_only_default_visibility(tmp_path: 
         headers={"X-User-Id": "expert-catalog", "X-Role": "member"},
     )
 
-    assert [item["id"] for item in creator_response.json()["items"]] == [
-        "CATALOG-LIMIT-202606"
-    ]
+    assert [item["id"] for item in creator_response.json()["items"]] == ["CATALOG-LIMIT-202606"]
     assert creator_response.json()["store"] == {
         "ready": False,
         "backend": "unavailable",
@@ -2040,18 +2036,10 @@ def test_project_dashboard_scopes_findings_and_publishes_full_readiness(
         "finding-catalog-001",
         "finding-catalog-002",
     ]
-    assert {item["key"]: item["value"] for item in self_body["metrics"]}[
-        "open_findings"
-    ] == "1"
-    assert {item["key"]: item["value"] for item in catalog_body["metrics"]}[
-        "open_findings"
-    ] == "2"
-    assert "CATALOG负责人" not in {
-        item["name"] for item in self_body["member_workloads"]
-    }
-    assert "SELF负责人" not in {
-        item["name"] for item in catalog_body["member_workloads"]
-    }
+    assert {item["key"]: item["value"] for item in self_body["metrics"]}["open_findings"] == "1"
+    assert {item["key"]: item["value"] for item in catalog_body["metrics"]}["open_findings"] == "2"
+    assert "CATALOG负责人" not in {item["name"] for item in self_body["member_workloads"]}
+    assert "SELF负责人" not in {item["name"] for item in catalog_body["member_workloads"]}
     assert self_body["evidence_grade"] == "live-db-connected"
     assert self_body["store"] == {
         "ready": True,
@@ -2131,13 +2119,9 @@ def test_audit_finding_store_filters_findings_by_project_in_sql(tmp_path: Path) 
     )
     no_visible_items = store.list_findings(project_keys=frozenset(), limit=10)
     missing_items = store.list_findings(project_key="UNKNOWN-PROJECT", limit=10)
-    self_count = store.count_findings(
-        project_keys=frozenset({"SELF-CHECK-FUND-20260607"})
-    )
+    self_count = store.count_findings(project_keys=frozenset({"SELF-CHECK-FUND-20260607"}))
     both_count = store.count_findings(
-        project_keys=frozenset(
-            {"SELF-CHECK-FUND-20260607", "CATALOG-LIMIT-202606"}
-        )
+        project_keys=frozenset({"SELF-CHECK-FUND-20260607", "CATALOG-LIMIT-202606"})
     )
     empty_count = store.count_findings(project_keys=frozenset())
 
@@ -2167,9 +2151,7 @@ def test_audit_finding_store_project_contract_is_stable_across_reads(
             select(ReviewTask).where(ReviewTask.external_task_id == "review-self-sql")
         )
         catalog_finding = session.scalar(
-            select(AuditFinding).where(
-                AuditFinding.finding_key == "finding-catalog-sql"
-            )
+            select(AuditFinding).where(AuditFinding.finding_key == "finding-catalog-sql")
         )
         assert self_task is not None
         assert catalog_finding is not None
@@ -2240,22 +2222,16 @@ def test_graph_workbench_rejects_invalid_view_project_pairs_before_data_reads(
 
     missing = client.get("/graph/workbench?view=project")
     blank = client.get("/graph/workbench?view=project&project_key=%20%20")
-    forbidden = client.get(
-        "/graph/workbench?view=knowledge&project_key=SELF-CHECK-FUND-20260607"
-    )
+    forbidden = client.get("/graph/workbench?view=knowledge&project_key=SELF-CHECK-FUND-20260607")
     invalid_view = client.get("/graph/workbench?view=workflow")
-    too_long = client.get(
-        f"/graph/workbench?view=project&project_key={'P' * 129}"
-    )
+    too_long = client.get(f"/graph/workbench?view=project&project_key={'P' * 129}")
 
     assert missing.status_code == 422
     assert missing.json()["detail"] == "project_key is required for project graph view"
     assert blank.status_code == 422
     assert blank.json()["detail"] == "project_key is required for project graph view"
     assert forbidden.status_code == 422
-    assert forbidden.json()["detail"] == (
-        "project_key is not allowed for knowledge graph view"
-    )
+    assert forbidden.json()["detail"] == ("project_key is not allowed for knowledge graph view")
     assert invalid_view.status_code == 422
     assert too_long.status_code == 422
     assert member_store.list_reads == 0
@@ -2346,15 +2322,11 @@ def test_project_graph_authorizes_exact_project_scope_and_hides_unrelated_projec
         "SELF-CHECK-FUND-20260607",
     ]
     assert review_store.list_calls == 2
-    denial_logs = [
-        log for log in state.operation_logs if log["action"] == "authorization-denied"
-    ]
+    denial_logs = [log for log in state.operation_logs if log["action"] == "authorization-denied"]
     assert len(denial_logs) == 3
     assert all("finding" not in json.dumps(log).lower() for log in denial_logs)
     assert all("task" not in json.dumps(log).lower() for log in denial_logs)
-    success_logs = [
-        log for log in state.operation_logs if log["action"] == "graph-workbench-view"
-    ]
+    success_logs = [log for log in state.operation_logs if log["action"] == "graph-workbench-view"]
     assert [log["payload"]["project_key"] for log in success_logs] == [
         "SELF-CHECK-FUND-20260607",
         "SELF-CHECK-FUND-20260607",
@@ -2445,9 +2417,7 @@ def test_project_graph_fails_closed_when_required_stores_are_unavailable(
     assert missing_review_finding.requested_project_keys == []
     assert finding_error.status_code == 503
     assert review_error.status_code == 503
-    assert failing_review_finding.requested_project_keys == [
-        "SELF-CHECK-FUND-20260607"
-    ]
+    assert failing_review_finding.requested_project_keys == ["SELF-CHECK-FUND-20260607"]
     assert failing_review_store.list_calls == 1
 
 
@@ -2712,9 +2682,7 @@ def test_project_graph_normalizes_business_statuses_and_requires_canonical_signe
     assert nodes["remediation:rectification-status-submitted"]["status"] == "跟踪中"
     assert nodes["remediation:rectification-status-returned"]["status"] == "跟踪中"
     assert nodes["remediation:rectification-status-accepted"]["status"] == "已归集"
-    assert "accepted" in nodes[
-        "remediation:rectification-status-accepted"
-    ]["description"]
+    assert "accepted" in nodes["remediation:rectification-status-accepted"]["description"]
     serialized = json.dumps(body, ensure_ascii=False)
     assert "SENSITIVE-INCOMPLETE-SIGNED-CONTENT" not in serialized
     assert "SENSITIVE-CANONICAL-SIGNED-CONTENT" not in serialized
@@ -2800,9 +2768,7 @@ def test_project_graph_rejects_duplicate_review_task_ids_without_data_leakage(
     assert "B-REPORT-MARKER" not in serialized
     assert "B-RECTIFICATION-MARKER" not in serialized
     assert "B-CONTENT-MARKER" not in serialized
-    assert not any(
-        log["action"] == "graph-workbench-view" for log in state.operation_logs
-    )
+    assert not any(log["action"] == "graph-workbench-view" for log in state.operation_logs)
     assert finding_store.requested_project_keys == [project_key]
     assert review_store.list_calls == 1
 
@@ -2934,8 +2900,7 @@ def test_project_graph_ignores_blank_review_task_ids_and_fails_fast_on_malformed
         )
     assert malformed_store.list_calls == 1
     assert not any(
-        log["action"] == "graph-workbench-view"
-        for log in malformed_state.operation_logs
+        log["action"] == "graph-workbench-view" for log in malformed_state.operation_logs
     )
 
 
@@ -2957,9 +2922,7 @@ def test_project_graph_empty_chain_is_distinct_from_unavailable_store(
     body = response.json()
     assert body["evidence_chain_status"] == "empty"
     assert body["relations"] == []
-    assert [node["id"] for node in body["nodes"]] == [
-        "project:SELF-CHECK-FUND-20260607"
-    ]
+    assert [node["id"] for node in body["nodes"]] == ["project:SELF-CHECK-FUND-20260607"]
     assert body["nodes"][0]["metric"] == "0 条项目证据"
     assert "0 条项目证据" in body["nodes"][0]["description"]
     assert body["store"]["ready"] is True
@@ -3036,10 +2999,7 @@ def test_projects_api_marks_split_visibility_store_failure_degraded(tmp_path: Pa
         )
         assert members_response.status_code == 200
         assert len(members_response.json()["items"]) == 3
-        assert all(
-            item["source"] == "system-default"
-            for item in members_response.json()["items"]
-        )
+        assert all(item["source"] == "system-default" for item in members_response.json()["items"])
         assert members_response.json()["store"] == {
             "ready": False,
             "backend": "unavailable",
@@ -3844,8 +3804,7 @@ def test_document_source_and_knowledge_base_catalog_scrub_protocol_relative_urls
             "#password=dummy-fragment-password-sentinel"
         ),
         "empty_host_url": (
-            "https://?token=dummy-empty-token-sentinel"
-            "#password=dummy-empty-password-sentinel"
+            "https://?token=dummy-empty-token-sentinel#password=dummy-empty-password-sentinel"
         ),
         "missing_protocol_relative_host_url": "//",
         "plain_diagnostic": "plain diagnostic dummy-safe-sentinel",
@@ -4147,18 +4106,27 @@ def test_personal_document_source_download_is_owner_scoped(tmp_path: Path) -> No
     assert search_response.status_code == 200, search_response.text
     chunk_id = search_response.json()["items"][0]["chunk_id"]
     download_url = f"/api/v1/documents/source/{chunk_id}/download"
-    assert client.get(
-        download_url,
-        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
-    ).status_code == 200
-    assert client.get(
-        download_url,
-        headers={"X-Role": "auditor", "X-User-Id": "auditor-2"},
-    ).status_code == 404
-    assert client.get(
-        download_url,
-        headers={"X-Role": "it-admin", "X-User-Id": "admin-1"},
-    ).status_code == 200
+    assert (
+        client.get(
+            download_url,
+            headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            download_url,
+            headers={"X-Role": "auditor", "X-User-Id": "auditor-2"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            download_url,
+            headers={"X-Role": "it-admin", "X-User-Id": "admin-1"},
+        ).status_code
+        == 200
+    )
 
 
 def test_documents_permissions_and_uploads_are_role_scoped(tmp_path: Path) -> None:
@@ -5077,10 +5045,14 @@ def test_query_endpoint_persists_generation_fallback_after_restart(
     assert response.status_code == 200
     second_state = _api_state(tmp_path / "second-generation-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get(
-        "/query/logs",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
+    persisted = (
+        TestClient(create_app(second_state))
+        .get(
+            "/query/logs",
+            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        )
+        .json()["items"][0]
+    )
     assert persisted["generation_status"] == "retrieval_fallback"
     assert persisted["generation_failure_code"] == "provider_exception"
 
@@ -5418,10 +5390,14 @@ def test_query_endpoint_reports_and_persists_safe_provider_http_status(
 
     second_state = _api_state(tmp_path / "second-http-status-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get(
-        "/query/logs",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
+    persisted = (
+        TestClient(create_app(second_state))
+        .get(
+            "/query/logs",
+            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        )
+        .json()["items"][0]
+    )
     assert persisted["generation_http_status"] == 429
 
 
@@ -5458,10 +5434,14 @@ def test_query_endpoint_reports_and_persists_safe_provider_failure_reason(
 
     second_state = _api_state(tmp_path / "second-failure-reason-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get(
-        "/query/logs",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
+    persisted = (
+        TestClient(create_app(second_state))
+        .get(
+            "/query/logs",
+            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        )
+        .json()["items"][0]
+    )
     assert persisted["generation_failure_reason"] == "deepseek_content_invalid_json"
 
 
@@ -5512,14 +5492,16 @@ def test_query_endpoint_propagates_and_persists_provider_abstention(
 
     second_state = _api_state(tmp_path / "second-provider-abstention-history")
     second_state.query_history_store = SqlAlchemyQueryHistoryStore(database_url)
-    persisted = TestClient(create_app(second_state)).get(
-        "/query/logs",
-        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-    ).json()["items"][0]
-    assert persisted["generation_failure_code"] == "provider_abstention"
-    assert persisted["generation_failure_reason"] == (
-        "deepseek_strict_insufficient_evidence"
+    persisted = (
+        TestClient(create_app(second_state))
+        .get(
+            "/query/logs",
+            headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        )
+        .json()["items"][0]
     )
+    assert persisted["generation_failure_code"] == "provider_abstention"
+    assert persisted["generation_failure_reason"] == ("deepseek_strict_insufficient_evidence")
     assert "private provider abstention sentinel" not in json.dumps(
         persisted,
         ensure_ascii=False,
@@ -6558,9 +6540,7 @@ def _seed_project_findings(database_url: str) -> None:
                             "status": "draft",
                             "template_id": f"workpaper-{suffix}",
                             "project_key": project_key,
-                            "field_values": {
-                                "sensitive": "SENSITIVE-GRAPH-BODY field value"
-                            },
+                            "field_values": {"sensitive": "SENSITIVE-GRAPH-BODY field value"},
                         }
                     },
                 )
@@ -6627,9 +6607,7 @@ def _seed_project_findings(database_url: str) -> None:
         session.add(
             ReviewTask(
                 external_task_id="legacy-project-string-sql",
-                question=(
-                    "SELF-CHECK-FUND-20260607 and CATALOG-LIMIT-202606 are text only"
-                ),
+                question=("SELF-CHECK-FUND-20260607 and CATALOG-LIMIT-202606 are text only"),
                 status="confirmed-violation",
                 status_label="确认违规",
                 citation_count=0,
@@ -6651,6 +6629,170 @@ def _seed_project_findings(database_url: str) -> None:
             )
         )
         session.commit()
+
+
+def test_agent_market_catalog_exposes_132_plus_featured_contract_agent(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.get("/api/v1/agent-market/catalog")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "agent-market-catalog-v2"
+    assert body["count"] == 133
+    assert body["featured_count"] == 1
+    assert body["items"][0]["id"] == "agent-contract-audit-v2"
+    assert body["items"][0]["featured"] is True
+    assert all("prompt" not in item for item in body["items"])
+
+
+def test_agent_market_install_materializes_server_prompt_only(tmp_path: Path) -> None:
+    state = _api_state(tmp_path)
+    state.agent_store = InMemoryAgentStore()
+    client = TestClient(create_app(state))
+    headers = {
+        "X-User-Id": "admin-1",
+        "X-Role": "admin",
+        "X-Project-Name": urllib.parse.quote("医保基金使用合规专项自查"),
+    }
+
+    response = client.post(
+        "/api/v1/agent-market/templates/agent-contract-audit-v2/install",
+        headers=headers,
+        json={"project_name": "医保基金使用合规专项自查"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] is True
+    assert body["item"]["metadata"]["template_id"] == "agent-contract-audit-v2"
+    assert "页面证据" in body["item"]["prompt"]
+
+
+def test_selected_agent_prompt_is_bound_to_generation_call(tmp_path: Path) -> None:
+    class AgentAwareProvider:
+        provider = "fake"
+        model_name = "fake-agent-aware"
+        provider_version = "v1"
+
+        def __init__(self) -> None:
+            self.prompt = ""
+            self.prompt_version_key = ""
+
+        def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+            raise AssertionError("agent-aware path must be used")
+
+        def generate_answer_with_agent(
+            self,
+            question: str,
+            citations: Sequence[Citation],
+            *,
+            agent_prompt: str,
+            prompt_version_key: str,
+        ) -> str:
+            self.prompt = agent_prompt
+            self.prompt_version_key = prompt_version_key
+            return f"已按合同审计智能体执行 {citations[0].marker}"
+
+    provider = AgentAwareProvider()
+    state = _api_state(tmp_path)
+    state.agent_store = InMemoryAgentStore()
+    state.answer_generation_provider = provider
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/query",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        json={
+            "question": "请复核合同依据",
+            "top_k": 2,
+            "agent": "agent-contract-audit-v2",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "合同审计智能体" in provider.prompt
+    assert provider.prompt_version_key == "contract-audit-v2@2.0.0"
+
+
+def test_contract_audit_job_persists_and_downloads_without_provider(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.answer_generation_provider = None
+    client = TestClient(create_app(state))
+    headers = {"X-User-Id": "auditor-1", "X-Role": "auditor"}
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers=headers,
+        data={"project_name": "采购合同专项", "audit_stage": "签约前"},
+        files={
+            "file": ("采购合同.txt", "甲方向乙方采购设备，合同价款100万元。".encode(), "text/plain")
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "insufficient_evidence"
+    assert body["pages"][0]["mapping_status"] == "resolved"
+    job_id = body["job_id"]
+    assert (tmp_path / "index" / "contract-audit-jobs" / f"{job_id}.json").is_file()
+
+    persisted = client.get(f"/api/v1/contract-audits/{job_id}", headers=headers)
+    markdown = client.get(
+        f"/api/v1/contract-audits/{job_id}/report?format=markdown",
+        headers=headers,
+    )
+    docx = client.get(
+        f"/api/v1/contract-audits/{job_id}/report?format=docx",
+        headers=headers,
+    )
+    assert persisted.status_code == 200
+    assert markdown.status_code == 200
+    assert "合同审计报告" in markdown.text
+    assert docx.status_code == 200
+    assert docx.content.startswith(b"PK")
+
+
+def test_contract_audit_job_calls_versioned_agent_and_completes(tmp_path: Path) -> None:
+    class ContractProvider:
+        provider = "fake"
+        model_name = "fake-contract-model"
+        provider_version = "v1"
+
+        def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+            raise AssertionError("contract audit must bind its agent prompt")
+
+        def generate_answer_with_agent(
+            self,
+            question: str,
+            citations: Sequence[Citation],
+            *,
+            agent_prompt: str,
+            prompt_version_key: str,
+        ) -> str:
+            assert "合同审计智能体" in agent_prompt
+            assert prompt_version_key == "contract-audit-v2@2.0.0"
+            return f"# 审计发现\n付款安排需人工复核 {citations[0].marker}"
+
+    state = _api_state(tmp_path)
+    state.answer_generation_provider = ContractProvider()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("采购合同.txt", "合同价款100万元，验收后付款。".encode(), "text/plain")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["agent"]["prompt_version_key"] == "contract-audit-v2@2.0.0"
+    assert body["result"]["conclusion"]["analysis_markdown"].endswith("[C1]")
 
 
 def _api_state(tmp_path: Path) -> ApiState:

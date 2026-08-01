@@ -42,6 +42,7 @@ from medical_audit_kb.api.project_member_store import (
 )
 from medical_audit_kb.api.query_history_store import QueryHistoryStore, SqlAlchemyQueryHistoryStore
 from medical_audit_kb.api.review_task_store import ReviewTaskStore, SqlAlchemyReviewTaskStore
+from medical_audit_kb.contract_audit.store import ContractAuditJobStore, FileContractAuditJobStore
 from medical_audit_kb.core.config import KnowledgeQuerySettings, load_settings
 from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
 from medical_audit_kb.generation.answer_providers import (
@@ -102,15 +103,14 @@ class ApiState:
     auth_user_store: AuthUserStore | None = None
     answer_generation_provider: AnswerGenerationProvider | None = None
     ocr_client: UnlimitedOcrClientProtocol | None = None
+    contract_audit_job_store: ContractAuditJobStore | None = None
 
     @classmethod
     def from_settings(cls, settings: KnowledgeQuerySettings) -> ApiState:
         document_upload_root = settings.document_upload_root or (
             settings.index_root / "document-uploads"
         )
-        tencent_cos_client = tencent_cos_put_object_client_from_settings(
-            settings.document_storage
-        )
+        tencent_cos_client = tencent_cos_put_object_client_from_settings(settings.document_storage)
         document_object_storage = document_object_storage_from_settings(
             settings.document_storage,
             upload_root=document_upload_root,
@@ -134,9 +134,7 @@ class ApiState:
                 settings.database_url,
                 upload_root=document_upload_root,
                 object_storage=document_object_storage,
-                record_storage_objects=document_storage_objects_schema_ready(
-                    settings.database_url
-                ),
+                record_storage_objects=document_storage_objects_schema_ready(settings.database_url),
             ),
             document_upload_indexer=document_upload_indexer_from_settings(
                 database_url=settings.database_url,
@@ -148,6 +146,9 @@ class ApiState:
             auth_user_store=SqlAlchemyAuthUserStore(settings.database_url),
             answer_generation_provider=answer_generation_provider_from_settings(settings),
             ocr_client=unlimited_ocr_client_from_settings(settings.unlimited_ocr),
+            contract_audit_job_store=FileContractAuditJobStore(
+                settings.index_root / "contract-audit-jobs"
+            ),
         )
 
     @property
@@ -223,7 +224,9 @@ CONTROLLED_API_PROTECTED_EXACT_PATHS = frozenset(
 )
 CONTROLLED_API_PROTECTED_PREFIXES = (
     "/agents",
+    "/agent-market",
     "/analytics",
+    "/contract-audits",
     "/archive/",
     "/audit/",
     "/audit-findings",
@@ -249,6 +252,8 @@ STATIC_FALLBACK_RESERVED_PREFIXES = (
     "agents/",
     "analytics",
     "analytics/",
+    "contract-audits",
+    "contract-audits/",
     "archive/",
     "audit/",
     "audit-findings",
@@ -343,8 +348,7 @@ def create_app(
                             "permission": "access_controlled_api",
                             "path": request.url.path,
                             "method": request.method,
-                            "user_identifier": request.headers.get("X-User-Id")
-                            or "anonymous",
+                            "user_identifier": request.headers.get("X-User-Id") or "anonymous",
                             "role": request.headers.get("X-Role") or "anonymous",
                             "tenant_id": None,
                             "status_code": 401,
@@ -372,8 +376,7 @@ def create_app(
                             "permission": "access_controlled_api",
                             "path": request.url.path,
                             "method": request.method,
-                            "user_identifier": request.headers.get("X-User-Id")
-                            or "anonymous",
+                            "user_identifier": request.headers.get("X-User-Id") or "anonymous",
                             "role": request.headers.get("X-Role") or "anonymous",
                             "tenant_id": tenant_id,
                             "status_code": exc.status_code,
@@ -440,6 +443,7 @@ def create_app(
     from medical_audit_kb.api.routes_analytics import router as analytics_router
     from medical_audit_kb.api.routes_auth import router as auth_router
     from medical_audit_kb.api.routes_chat import router as chat_router
+    from medical_audit_kb.api.routes_contract_audits import router as contract_audits_router
     from medical_audit_kb.api.routes_documents import router as documents_router
     from medical_audit_kb.api.routes_index import router as index_router
     from medical_audit_kb.api.routes_knowledge_base import router as knowledge_base_router
@@ -458,6 +462,7 @@ def create_app(
         pages_router,
         query_router,
         chat_router,
+        contract_audits_router,
         workbench_router,
         auth_router,
         agents_router,

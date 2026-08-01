@@ -30,10 +30,102 @@ from medical_audit_kb.api.auth import (
     require_permission,
     resolve_authenticated_user,
 )
+from medical_audit_kb.catalog.agent_catalog import (
+    CATALOG_CONTRACT_VERSION,
+    get_agent_template,
+    list_public_agent_templates,
+)
 
 router = APIRouter()
 
 AGENT_PROMPT_ACTIVATION_ROLES: frozenset[str] = frozenset({"admin", "director"})
+
+
+class AgentMarketInstallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_name: str = Field(default="医保基金使用合规专项自查", min_length=1, max_length=256)
+
+
+@router.get("/agent-market/catalog")
+def list_agent_market_catalog(
+    state: Annotated[ApiState, Depends(get_api_state)],
+) -> dict[str, object]:
+    items = list_public_agent_templates()
+    record_operation(state, "agent-market-catalog-list", {"item_count": len(items)})
+    return {
+        "contract_version": CATALOG_CONTRACT_VERSION,
+        "items": items,
+        "count": len(items),
+        "featured_count": sum(1 for item in items if item["featured"]),
+        "prompt_materialization": "server-only",
+    }
+
+
+@router.post("/agent-market/templates/{template_id}/install")
+def install_agent_market_template(
+    template_id: str,
+    payload: AgentMarketInstallRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    x_project_name: Annotated[str | None, Header(alias="X-Project-Name")] = None,
+) -> dict[str, object]:
+    user = require_permission(
+        state,
+        permission=Permission.MANAGE_AGENTS,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="agent-market-install",
+    )
+    template = get_agent_template(template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="agent market template not found")
+    request_project = _normalize_project_name(x_project_name)
+    project_name = payload.project_name.strip()
+    if request_project and request_project != project_name:
+        raise HTTPException(
+            status_code=403, detail="agent project scope does not match current project"
+        )
+    values = {
+        "name": template["name"],
+        "category": template["agent_category"],
+        "topic": template["topic"],
+        "prompt": template["prompt"],
+        "knowledge_base": template["knowledge_base"],
+        "project_name": project_name,
+        "visibility_scope": "project",
+        "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        "created_by": user.user_identifier,
+        "metadata": {
+            "source": "agent-market",
+            "template_id": template_id,
+            "template_summary": template["summary"],
+            "template_category": template["category"],
+            "template_prompt_sha256": template["prompt_sha256"],
+            "featured": template["featured"],
+            "featured_rank": template["featured_rank"],
+        },
+    }
+    try:
+        result = _agent_store(state).install_market_agent(values)
+    except DuplicateMarketAgentInstallError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=409, detail="persistent agent store is not available"
+        ) from exc
+    record_operation(
+        state,
+        "agent-market-install",
+        {"template_id": template_id, "agent_id": result.item["id"], "created": result.created},
+    )
+    return {
+        "item": result.item,
+        "created": result.created,
+        "reactivated": result.reactivated,
+        "store": {"ready": True, "backend": _agent_store(state).__class__.__name__},
+    }
 
 
 class AgentCreateRequest(BaseModel):
@@ -916,9 +1008,7 @@ def _filter_agents_for_project(
     normalized_project = _normalize_project_name(project_name)
     if not normalized_project:
         return [
-            item
-            for item in items
-            if str(item.get("visibility_scope") or "project") != "project"
+            item for item in items if str(item.get("visibility_scope") or "project") != "project"
         ]
     return [
         item

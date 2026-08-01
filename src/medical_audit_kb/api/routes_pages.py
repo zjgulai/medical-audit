@@ -1663,6 +1663,10 @@ def _run_page_query(
             question,
             results,
             generation_provider=state.answer_generation_provider,
+            agent_prompt=str(selected_agent.get("prompt") or "") if selected_agent else None,
+            agent_prompt_version_key=(
+                str(selected_agent.get("prompt_version_key") or "") if selected_agent else None
+            ),
         )
     except NoCitedEvidenceError:
         return None, "没有找到可引用依据。"
