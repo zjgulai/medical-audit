@@ -5884,7 +5884,7 @@
   "run_id": "20260801T060905Z",
   "source": {
     "identity_count": 132,
-    "path": "/Users/pray/project/medical_audit_deploy_38af4780_20260729/web/src/data/audit-agent-prompts.json",
+    "path": "web/src/data/audit-agent-prompts.json",
     "raw_row_count": 169,
     "repo_sha": "b0da37dcee3c92ff55cb589fa1e3d6ab18463a00",
     "sha256": "a4565909b84cb2cf9b904c8b40cfc17b62fc1b9b6faa98850b6ebc6c5f6896de"

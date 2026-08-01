@@ -426,7 +426,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           : backendError?.status === 409 &&
             backendError.detail === "multiple market agent installations already exist"
           ? "安装未完成：检测到多个历史安装记录，请联系管理员处理。"
-          : "安装未完成：智能体创建接口暂不可用，请稍后重试。"
+          : "安装未完成：智能体安装接口暂不可用，请稍后重试。"
       );
     } finally {
       if (requestGeneration === identityGenerationRef.current.generation) {

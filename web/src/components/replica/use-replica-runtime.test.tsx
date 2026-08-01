@@ -30,7 +30,7 @@ vi.mock("@/lib/api-client", () => ({
 function marketCatalogResponse(): AgentMarketCatalogResponse {
   return {
     contract_version: "agent-market-catalog-v2",
-    count: 133,
+    count: 1,
     featured_count: 1,
     prompt_materialization: "server-only",
     items: [

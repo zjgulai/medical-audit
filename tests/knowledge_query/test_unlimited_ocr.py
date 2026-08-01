@@ -16,6 +16,8 @@ from medical_audit_kb.ocr.unlimited_ocr import (
     SUPPORTED_IMAGE_EXTENSIONS,
     UnlimitedOcrClient,
     UnlimitedOcrError,
+    _clean_ocr_text,
+    _page_results,
     _render_images,
 )
 
@@ -130,3 +132,22 @@ def test_unlimited_ocr_does_not_advertise_or_render_webp() -> None:
             content=b"not-a-supported-image",
             settings=UnlimitedOcrSettings(),
         )
+
+
+def test_unlimited_ocr_preserves_page_boundaries_when_cleaning_tags() -> None:
+    assert _clean_ocr_text('<page number="1">第一页</page><page number="2">第二页</page>') == (
+        "第一页\n第二页"
+    )
+
+
+def test_unlimited_ocr_duplicate_page_tags_fail_mapping_closed() -> None:
+    encoded_images = ["YQ==", "Yg=="]
+
+    pages = _page_results(
+        '<page number="1">第一页</page><page number="1">重复页</page>'
+        '<page number="2">第二页</page>',
+        encoded_images,
+    )
+
+    assert [page.page_number for page in pages] == [1, 2]
+    assert all(page.mapping_status == "unresolved" for page in pages)

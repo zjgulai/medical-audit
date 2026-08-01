@@ -1122,6 +1122,8 @@ def _validate_agent_selection(
         raise HTTPException(status_code=404, detail="agent not found")
     if str(agent.get("status") or "active") != "active":
         raise HTTPException(status_code=409, detail=f"agent is not active: {agent_key}")
+    if not str(agent.get("prompt") or "").strip():
+        raise HTTPException(status_code=409, detail="agent prompt is unavailable")
     _enforce_agent_project_scope(
         state,
         agent,

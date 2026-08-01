@@ -252,6 +252,8 @@ STATIC_FALLBACK_RESERVED_PREFIXES = (
     "agents/",
     "analytics",
     "analytics/",
+    "agent-market",
+    "agent-market/",
     "contract-audits",
     "contract-audits/",
     "archive/",

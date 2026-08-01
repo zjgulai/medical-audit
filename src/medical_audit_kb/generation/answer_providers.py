@@ -360,6 +360,11 @@ def _system_prompt_with_agent(
             "approved agent prompt is empty or too long",
             code="provider_configuration",
         )
+    if re.search(r"</\s*approved_agent_instructions\b", normalized, flags=re.IGNORECASE):
+        raise AnswerProviderError(
+            "approved agent prompt contains a reserved delimiter",
+            code="provider_configuration",
+        )
     safe_version = re.sub(r"[^A-Za-z0-9_.@:-]", "_", prompt_version_key)[:128]
     return (
         f"{base_prompt}\n\n"

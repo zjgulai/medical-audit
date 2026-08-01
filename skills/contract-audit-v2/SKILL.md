@@ -47,12 +47,13 @@ metadata:
 |---|---|---|
 | A. 主体与效力 | 主体资格、授权、合同效力瑕疵、格式条款 | `references/audit-methodology.md` |
 | B. 商务条款 | 标的、质量验收、价款支付、违约责任、争议解决等通用条款 | `references/audit-methodology.md` |
-| C. 财务税务 | 发票税务、价格异常、付款安排、财务一致性 | `references/procurement-sales-finance.md` |
+| C. 财务税务 | 发票税务、价格异常、付款安排、财务一致性 | `references/procurement-sales-finance.md` 的财务税务部分 |
 | D. 履约与专项 | 履约风险信号 + 合同类型专项要点 | 按类型加载 |
 
 专项 reference 加载规则：
 
-- 采购/销售/买卖合同 → `references/procurement-sales-finance.md`
+- 所有含价款、付款或发票条款的合同 → 加载 `references/procurement-sales-finance.md` 的第二至第五部分
+- 采购/销售/买卖合同 → 另加载 `references/procurement-sales-finance.md` 的第一部分专项条款
 - 建设工程合同 → `references/construction-labor.md`（建工部分）
 - 劳动/人事协议 → `references/construction-labor.md`（劳动部分）
 - 其他通用商业合同（服务/租赁/借款等）→ 仅 `references/audit-methodology.md`
@@ -70,7 +71,7 @@ metadata:
 
 ### Step 3 — 风险分级
 
-按 `references/audit-methodology.md` 中的分级标准，将每条发现定为高/中/低风险。分级要保守：涉及合同效力、资金安全、重大违约责任的一律定高。
+按 `references/audit-methodology.md` 中的分级标准，将每条发现定为高/中/低风险。合同效力、资金安全或重大违约责任只是分级输入，必须结合发生可能性、影响金额、责任层级、可补正性和证据置信度逐项判断；只有满足分级表中的高风险条件时才定高。
 
 ### Step 4 — 反证复核
 
@@ -84,13 +85,15 @@ metadata:
 使用 `assets/audit-report-template.md` 的模板输出报告，包含：
 
 1. 合同概况（Step 1 的要素表）
-2. 审计发现汇总表（编号、条款位置、问题、维度、等级）
-3. 高风险发现的详细分析（问题→依据→影响→修改建议）
-4. 中低风险发现简述
-5. 总体结论与签约建议（可签 / 修改后签 / 不建议签）
-6. 免责声明：本报告为 AI 辅助审计参考意见，不构成正式法律意见
+2. 审计范围、方法、已收资料与缺失资料
+3. 审计发现汇总表（编号、条款位置、问题、维度、等级、法律/商业依据、建议）
+4. 高风险发现的详细分析（问题→依据→影响→修改建议）
+5. 中低风险发现简述与待核实事项
+6. 总体结论与签约建议（可签 / 修改后签 / 不建议签）
+7. 整改跟踪（责任人、期限、复核结论）
+8. 免责声明：本报告为 AI 辅助审计参考意见，不构成正式法律意见
 
-先生成符合 Schema 的 canonical JSON，再由 JSON 渲染 Markdown、DOCX 和 PDF。不得让不同格式分别生成事实。报告抬头“审计日期”填写当前实际日期，不沿用合同日期。下载产物必须包含来源文件哈希、Skill 版本、OCR 溯源、模型标识、生成时间和人工复核状态。
+先生成符合 Schema 的 canonical JSON，再由 JSON 渲染 Markdown 和 DOCX。不得让不同格式分别生成事实。报告抬头“审计日期”填写当前实际日期，不沿用合同日期。下载产物必须包含来源文件哈希、Skill 版本、OCR 溯源、模型标识、生成时间和人工复核状态。
 
 ## 质量标准
 
@@ -107,7 +110,7 @@ metadata:
 | 文件 | 用途 | 何时加载 |
 |---|---|---|
 | `references/audit-methodology.md` | 审计流程、风险分级标准、通用条款审查清单、舞弊信号库 | 每次审计必读 |
-| `references/procurement-sales-finance.md` | 采购销售专项 + 财税审查清单 | 采购/销售/买卖类合同，或任何含价款发票条款的合同 |
+| `references/procurement-sales-finance.md` | 采购销售专项 + 财税审查清单 | 所有含价款、付款或发票条款的合同加载财税部分；采购/销售/买卖类合同再加载专项部分 |
 | `references/construction-labor.md` | 建设工程专项 + 劳动人事专项清单 | 建工类、劳动人事类合同 |
 | `assets/audit-report-template.md` | 审计报告模板 | 输出报告时复制使用 |
 | `assets/contract-audit-output.schema.json` | canonical JSON Schema | 每次输出前后校验 |

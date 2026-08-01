@@ -377,6 +377,7 @@ function ChatPortalContent() {
       }
       return;
     }
+    setPendingContractFile(null);
     try {
       const response = await analyzeChatAttachment(file, { model: attachmentModel });
       setMessages((current) => [...current, attachmentMessage(response)]);
@@ -633,6 +634,9 @@ function contractAuditStatusMessage(status: string): string {
   }
   if (status === "insufficient_evidence") {
     return "合同文本已保存并建立页面证据，但当前模型通道不可用，未生成风险定性。";
+  }
+  if (status === "failed") {
+    return "合同审计生成失败，系统已保留安全错误信息和审计记录；请由管理员检查模型通道后重新发起。";
   }
   return "合同审计已完成，请下载报告并由授权审计人员复核。";
 }

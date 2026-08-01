@@ -19,10 +19,11 @@ from medical_audit_kb.api.chat_models import (
     answer_generation_provider_for_alias,
 )
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
-from medical_audit_kb.contract_audit.service import create_contract_audit_job
+from medical_audit_kb.contract_audit.service import MAX_CONTRACT_BYTES, create_contract_audit_job
 from medical_audit_kb.contract_audit.store import ContractAuditJobStore, FileContractAuditJobStore
 
 router = APIRouter()
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
 
 @router.post("/contract-audits")
@@ -56,7 +57,7 @@ async def create_contract_audit(
         job = await create_contract_audit_job(
             store=_job_store(state),
             file_name=file.filename or "contract.bin",
-            content=await file.read(),
+            content=await _read_upload_bounded(file),
             created_by=user.user_identifier,
             project_name=project_name.strip(),
             audit_stage=audit_stage.strip() or "签约前",
@@ -100,7 +101,9 @@ def get_contract_audit(
 def download_contract_audit_report(
     job_id: str,
     state: Annotated[ApiState, Depends(get_api_state)],
-    format: Annotated[Literal["json", "markdown", "docx"], Query()] = "docx",
+    report_format: Annotated[
+        Literal["json", "markdown", "docx"], Query(alias="format")
+    ] = "docx",
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> Response:
@@ -112,11 +115,11 @@ def download_contract_audit_report(
     )
     job = _owned_job(state, job_id, user_identifier=user.user_identifier, role=user.role)
     markdown = str(job.get("report_markdown") or "")
-    if format == "json":
+    if report_format == "json":
         content = json.dumps(job["result"], ensure_ascii=False, indent=2).encode("utf-8")
         media_type = "application/json"
         suffix = "json"
-    elif format == "markdown":
+    elif report_format == "markdown":
         content = markdown.encode("utf-8")
         media_type = "text/markdown; charset=utf-8"
         suffix = "md"
@@ -127,7 +130,7 @@ def download_contract_audit_report(
     record_operation(
         state,
         "contract-audit-report-download",
-        {"job_id": job_id, "format": format, "created_by": user.user_identifier},
+        {"job_id": job_id, "format": report_format, "created_by": user.user_identifier},
     )
     return Response(
         content=content,
@@ -168,7 +171,25 @@ def _owned_job(
 
 
 def _job_response(job: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in job.items() if key not in {"report_markdown"}}
+    return {
+        key: value
+        for key, value in job.items()
+        if key not in {"pages", "report_markdown"}
+    }
+
+
+async def _read_upload_bounded(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    size_bytes = 0
+    while True:
+        chunk = await file.read(UPLOAD_READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        size_bytes += len(chunk)
+        if size_bytes > MAX_CONTRACT_BYTES:
+            raise ValueError("contract file exceeds 40 MiB")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _source_sha(job: dict[str, object]) -> str | None:

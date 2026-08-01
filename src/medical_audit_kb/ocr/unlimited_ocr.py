@@ -192,7 +192,8 @@ def _render_images(
 def _clean_ocr_text(value: str) -> str:
     without_detections = _DETECTION_PATTERN.sub("", value)
     without_tags = _REFERENCE_TAG_PATTERN.sub("", without_detections)
-    without_tags = _PAGE_TAG_PATTERN.sub("", without_tags)
+    without_tags = _PAGE_TAG_PATTERN.sub("\n", without_tags)
+    without_tags = re.sub(r"\n(?:[ \t]*\n)+", "\n", without_tags)
     return "\n".join(line.rstrip() for line in without_tags.splitlines()).strip()
 
 
@@ -212,12 +213,13 @@ def _page_results(raw_text: str, images: list[str]) -> tuple[UnlimitedOcrPage, .
             ),
         )
 
-    blocks = {
-        int(page_number): _clean_ocr_text(text)
+    block_items = [
+        (int(page_number), _clean_ocr_text(text))
         for page_number, text in _PAGE_BLOCK_PATTERN.findall(raw_text)
         if 1 <= int(page_number) <= len(images)
-    }
-    mapping_resolved = len(blocks) == len(images) and all(
+    ]
+    blocks = dict(block_items)
+    mapping_resolved = len(block_items) == len(blocks) == len(images) and all(
         blocks.get(index) for index in range(1, len(images) + 1)
     )
     return tuple(

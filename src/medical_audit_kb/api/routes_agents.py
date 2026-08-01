@@ -81,12 +81,14 @@ def install_agent_market_template(
     template = get_agent_template(template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="agent market template not found")
-    request_project = _normalize_project_name(x_project_name)
     project_name = payload.project_name.strip()
-    if request_project and request_project != project_name:
-        raise HTTPException(
-            status_code=403, detail="agent project scope does not match current project"
-        )
+    _enforce_create_project_scope(
+        state,
+        visibility_scope="project",
+        project_name=project_name,
+        request_project_name=x_project_name,
+        attempted_action="agent-market-install",
+    )
     values = {
         "name": template["name"],
         "category": template["agent_category"],

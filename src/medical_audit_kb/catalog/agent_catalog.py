@@ -25,18 +25,22 @@ def _catalog_by_id() -> dict[str, dict[str, object]]:
     )
     entries = payload.get("entries")
     if not isinstance(entries, list) or len(entries) != REVIEWED_ENTRY_COUNT:
-        raise RuntimeError("reviewed agent catalog must contain exactly 132 entries")
+        raise RuntimeError(
+            f"reviewed agent catalog must contain exactly {REVIEWED_ENTRY_COUNT} entries"
+        )
     catalog: dict[str, dict[str, object]] = {}
-    for entry in entries:
+    for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
-            raise RuntimeError("reviewed agent catalog entry is invalid")
+            raise RuntimeError(f"reviewed agent catalog entry {index} is invalid")
         metadata = entry.get("metadata")
         if not isinstance(metadata, dict):
-            raise RuntimeError("reviewed agent catalog metadata is invalid")
+            raise RuntimeError(f"reviewed agent catalog entry {index} metadata is invalid")
         template_id = str(entry.get("agent_key") or "").strip()
         prompt = str(entry.get("prompt") or "").strip()
         if not template_id or not prompt or template_id in catalog:
-            raise RuntimeError("reviewed agent catalog identity is invalid")
+            raise RuntimeError(
+                f"reviewed agent catalog entry {index} identity is invalid: {template_id!r}"
+            )
         catalog[template_id] = {
             "id": template_id,
             "name": str(entry.get("name") or "未命名智能体"),

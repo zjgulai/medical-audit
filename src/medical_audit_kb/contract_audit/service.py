@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import io
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zipfile import BadZipFile, ZipFile
 
+import anyio
 import pymupdf
 
 from medical_audit_kb.contract_audit.prompt import (
@@ -26,6 +29,9 @@ from medical_audit_kb.generation.citations import Citation, EvidenceType, citati
 from medical_audit_kb.ocr.unlimited_ocr import UnlimitedOcrClientProtocol, UnlimitedOcrError
 
 MAX_CONTRACT_BYTES = 40 * 1024 * 1024
+MAX_DOCX_XML_BYTES = 64 * 1024 * 1024
+MAX_PROVIDER_EVIDENCE_PAGES = 80
+MAX_PROVIDER_SNIPPET_CHARS = 6000
 SUPPORTED_EXTENSIONS = frozenset(
     {"pdf", "txt", "md", "docx", "png", "jpg", "jpeg", "tif", "tiff", "bmp"}
 )
@@ -69,7 +75,7 @@ async def create_contract_audit_job(
     provider = None
     generation_error: dict[str, object] | None = None
     if mapping_status == "resolved" and generation_provider is not None:
-        citations = _page_citations(pages)
+        citations = _page_citations(pages, extraction=extraction)
         if citations:
             question = _audit_question(
                 file_name=file_name,
@@ -80,12 +86,14 @@ async def create_contract_audit_job(
             model = generation_provider.model_name
             provider = generation_provider.provider
             try:
-                analysis_markdown = generate_agent_answer(
-                    generation_provider,
-                    question,
-                    citations,
-                    agent_prompt=CONTRACT_AUDIT_AGENT_PROMPT,
-                    prompt_version_key=CONTRACT_AUDIT_PROMPT_VERSION_KEY,
+                analysis_markdown = await anyio.to_thread.run_sync(
+                    lambda: generate_agent_answer(
+                        generation_provider,
+                        question,
+                        citations,
+                        agent_prompt=CONTRACT_AUDIT_AGENT_PROMPT,
+                        prompt_version_key=CONTRACT_AUDIT_PROMPT_VERSION_KEY,
+                    )
                 )
                 cited_labels = citation_labels_in_text(analysis_markdown)
                 available_labels = {citation.citation_id for citation in citations}
@@ -164,7 +172,10 @@ async def _extract_pages(
         if native_pages and sum(len(str(page["text"]).strip()) for page in native_pages) >= 20:
             return native_pages, _extraction_metadata(native_pages, method="native-pdf")
     elif extension in {"txt", "md"}:
-        text = content.decode("utf-8")
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("contract text file must be UTF-8 encoded") from exc
         pages = [_page_payload(1, text, image_sha256=None, mapping_status="resolved")]
         return pages, _extraction_metadata(pages, method="native-text")
     elif extension == "docx":
@@ -230,14 +241,22 @@ def _pdf_text_pages(content: bytes) -> list[dict[str, object]]:
 def _docx_text(content: bytes) -> str:
     try:
         with ZipFile(io.BytesIO(content)) as archive:
-            document_xml = archive.read("word/document.xml").decode("utf-8")
+            document_info = archive.getinfo("word/document.xml")
+            if document_info.file_size > MAX_DOCX_XML_BYTES:
+                raise ValueError("contract DOCX document.xml exceeds extraction limit")
+            with archive.open(document_info) as document_file:
+                document_bytes = document_file.read(MAX_DOCX_XML_BYTES + 1)
+            if len(document_bytes) > MAX_DOCX_XML_BYTES:
+                raise ValueError("contract DOCX document.xml exceeds extraction limit")
+            document_xml = document_bytes.decode("utf-8")
+    except ValueError:
+        raise
     except (BadZipFile, KeyError, UnicodeDecodeError) as exc:
         raise ValueError("contract DOCX could not be parsed") from exc
-    import re
 
     text = re.sub(r"</w:p>", "\n", document_xml)
     text = re.sub(r"<[^>]+>", "", text)
-    return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
+    return html.unescape(text).strip()
 
 
 def _page_payload(
@@ -280,23 +299,53 @@ def _extraction_metadata(
     }
 
 
-def _page_citations(pages: list[dict[str, object]]) -> tuple[Citation, ...]:
-    return tuple(
+def _page_citations(
+    pages: list[dict[str, object]], *, extraction: dict[str, object]
+) -> tuple[Citation, ...]:
+    candidate_pages = [page for page in pages if str(page.get("text") or "").strip()]
+    selected_pages = candidate_pages[:MAX_PROVIDER_EVIDENCE_PAGES]
+    if len(candidate_pages) > len(selected_pages):
+        _append_extraction_issue(
+            extraction,
+            f"Provider evidence omitted {len(candidate_pages) - len(selected_pages)} pages "
+            f"after the {MAX_PROVIDER_EVIDENCE_PAGES}-page limit.",
+        )
+    citations = tuple(
         Citation(
             citation_id=f"C{index}",
             evidence_type=EvidenceType.PERSONAL_MATERIAL_BASIS,
             source_collection=SourceCollection.PERSONAL_MATERIALS,
             chunk_id=uuid5(NAMESPACE_URL, f"contract:{page['text_sha256']}"),
-            snippet=str(page["text"]),
+            snippet=str(page["text"])[:MAX_PROVIDER_SNIPPET_CHARS],
             locator={"page_number": page["page_number"], "text_sha256": page["text_sha256"]},
             index_version_key="contract-audit-direct-v2",
             source_package_version_key="uploaded-contract",
             score=1.0,
             metadata={"page_number": page["page_number"], "direct_contract_evidence": True},
         )
-        for index, page in enumerate(pages, start=1)
-        if str(page.get("text") or "").strip()
+        for index, page in enumerate(selected_pages, start=1)
     )
+    truncated_page_numbers = [
+        page["page_number"]
+        for page in selected_pages
+        if len(str(page["text"])) > MAX_PROVIDER_SNIPPET_CHARS
+    ]
+    if truncated_page_numbers:
+        _append_extraction_issue(
+            extraction,
+            "Provider evidence snippets were truncated to "
+            f"{MAX_PROVIDER_SNIPPET_CHARS} characters for pages: "
+            + ", ".join(str(item) for item in truncated_page_numbers),
+        )
+    return citations
+
+
+def _append_extraction_issue(extraction: dict[str, object], issue: str) -> None:
+    issues = extraction.get("issues")
+    if not isinstance(issues, list):
+        issues = []
+        extraction["issues"] = issues
+    issues.append(issue)
 
 
 def _audit_question(
@@ -308,25 +357,36 @@ def _audit_question(
     )
 
 
-def _canonical_result(**values: object) -> dict[str, object]:
-    pages = values["pages"]
-    extraction = values["extraction"]
-    assert isinstance(pages, list) and isinstance(extraction, dict)
-    analysis = str(values["analysis_markdown"])
+def _canonical_result(
+    *,
+    job_id: str,
+    status: str,
+    pages: list[dict[str, object]],
+    extraction: dict[str, object],
+    analysis_markdown: str,
+    source_sha: str,
+    file_name: str,
+    audit_stage: str,
+    perspective: str,
+    provider: str | None,
+    model: str | None,
+    generated_at: str,
+) -> dict[str, object]:
+    analysis = analysis_markdown
     return {
         "contract_version": "contract-audit-output-v2",
-        "job_id": values["job_id"],
-        "status": values["status"],
+        "job_id": job_id,
+        "status": status,
         "contract_summary": {
-            "file_name": values["file_name"],
-            "audit_stage": values["audit_stage"],
-            "perspective": values["perspective"],
+            "file_name": Path(file_name).name,
+            "audit_stage": audit_stage,
+            "perspective": perspective,
         },
         "extraction_quality": extraction,
         "findings": [],
         "pending_verifications": (
             []
-            if values["status"] == "completed"
+            if status == "completed"
             else [{"reason": "extraction_or_provider_evidence_incomplete"}]
         ),
         "coverage_matrix": {
@@ -339,12 +399,12 @@ def _canonical_result(**values: object) -> dict[str, object]:
             "disclaimer": "本报告为 AI 辅助审计参考意见，不构成正式法律意见。",
         },
         "provenance": {
-            "source_sha256": values["source_sha"],
+            "source_sha256": source_sha,
             "skill_version": "2.0.0",
             "prompt_version_key": CONTRACT_AUDIT_PROMPT_VERSION_KEY,
-            "provider": values["provider"],
-            "model": values["model"],
-            "generated_at": values["generated_at"],
+            "provider": provider,
+            "model": model,
+            "generated_at": generated_at,
         },
     }
 
