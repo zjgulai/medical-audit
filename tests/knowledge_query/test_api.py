@@ -6749,7 +6749,11 @@ def test_contract_audit_job_persists_and_downloads_without_provider(
         headers=headers,
         data={"project_name": "采购合同专项", "audit_stage": "签约前"},
         files={
-            "file": ("采购合同.txt", "甲方向乙方采购设备，合同价款100万元。".encode(), "text/plain")
+            "file": (
+                "采购合同.txt",
+                "甲方向乙方采购设备，合同价款100万元。".encode(),  # noqa: RUF001
+                "text/plain",
+            )
         },
     )
 
@@ -6806,7 +6810,13 @@ def test_contract_audit_job_calls_versioned_agent_and_completes(tmp_path: Path) 
     response = client.post(
         "/api/v1/contract-audits",
         headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
-        files={"file": ("采购合同.txt", "合同价款100万元，验收后付款。".encode(), "text/plain")},
+        files={
+            "file": (
+                "采购合同.txt",
+                "合同价款100万元，验收后付款。".encode(),  # noqa: RUF001
+                "text/plain",
+            )
+        },
     )
 
     assert response.status_code == 200
