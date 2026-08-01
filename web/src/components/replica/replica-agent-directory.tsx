@@ -8,7 +8,11 @@ import {
   useReplicaAgentsData,
   useReplicaMarketInstallations
 } from "./use-replica-runtime";
-import { createAuditAgent, isBackendRequestError } from "@/lib/api-client";
+import {
+  createAuditAgent,
+  installAuditAgentMarketTemplate,
+  isBackendRequestError
+} from "@/lib/api-client";
 import type { ApiAgentCategory } from "@/lib/api-types";
 import { auditClientUserId, DEFAULT_AUDIT_PROJECT_NAME } from "@/lib/audit-user";
 import type { ReferenceAgentCard, ReferenceAgentCategory } from "@/lib/reference-replica-data";
@@ -187,16 +191,6 @@ function getCategoryCounts(agents: readonly ReferenceAgentCard[]): ReadonlyMap<s
     counts.set(agent.category, (counts.get(agent.category) ?? 0) + 1);
   }
   return counts;
-}
-
-function toApiAgentCategory(category: ReferenceAgentCategory): ApiAgentCategory {
-  if (category === "工具智能体") {
-    return "效率类";
-  }
-  if (category === "审计科研") {
-    return "研究类";
-  }
-  return "业务类";
 }
 
 type MarketAgentInstallBlockReason =
@@ -416,35 +410,13 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
     });
     setNotice("");
 
-    const isExtensionValidation = agent.catalogScope === "extension-validation";
-
     try {
-      const response = await createAuditAgent({
-        name: agent.name,
-        category: toApiAgentCategory(agent.category),
-        topic: agent.topic,
-        prompt: buildMarketAgentPrompt(agent),
-        knowledge_base: isExtensionValidation ? "未绑定知识库" : "医保基金合规知识库",
-        project_name: DEFAULT_AUDIT_PROJECT_NAME,
-        visibility_scope: "project",
-        allowed_roles: ["admin", "technician", "director", "member"],
-        metadata: {
-          source: "agent-market",
-          template_id: agent.id,
-          template_original_category: agent.category,
-          template_summary: agent.summary,
-          template_project: agent.project,
-          template_scope: agent.catalogScope,
-          avatar_initial: agent.initial,
-          avatar_tone: agent.tone,
-          avatar_kind: "digital-human",
-          template_key: agent.templateKey,
-          template_source_file: agent.sourceFile
-        }
+      const response = await installAuditAgentMarketTemplate(agent.id, {
+        project_name: DEFAULT_AUDIT_PROJECT_NAME
       });
       if (requestGeneration !== identityGenerationRef.current.generation) return;
       setInstalledAgentIds((previous) => new Map(previous).set(agent.id, response.item.id));
-      setNotice(`${response.reactivated ? "已恢复" : "已安装"}「${response.item.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
+      setNotice(`${response.reactivated ? "已恢复" : "已安装"}「${agent.name}」到我的智能体，可在 AI 对话中通过 @ 或 /chat?agent=${response.item.id} 调用。`);
     } catch (error) {
       if (requestGeneration !== identityGenerationRef.current.generation) return;
       const backendError = isBackendRequestError(error) ? error : null;
@@ -454,7 +426,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
           : backendError?.status === 409 &&
             backendError.detail === "multiple market agent installations already exist"
           ? "安装未完成：检测到多个历史安装记录，请联系管理员处理。"
-          : "安装未完成：智能体创建接口暂不可用，请稍后重试。"
+          : "安装未完成：智能体安装接口暂不可用，请稍后重试。"
       );
     } finally {
       if (requestGeneration === identityGenerationRef.current.generation) {
@@ -655,6 +627,7 @@ export function ReplicaAgentDirectory({ mode }: ReplicaAgentDirectoryProps) {
                     <div className="replica-directory-title">
                       <h2>{agent.name}</h2>
                       <span>{agent.category}</span>
+                      {agent.featured ? <span aria-label={`星标智能体：${agent.name}`}>★ 星标</span> : null}
                       {!isMine && agent.catalogScope === "extension-validation" ? (
                         <span aria-label={`扩展验证包：${agent.name}`}>扩展验证包</span>
                       ) : null}

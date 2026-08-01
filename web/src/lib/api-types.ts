@@ -783,6 +783,33 @@ export type ChatAttachmentAnalysisResponse = {
   };
 };
 
+export type ContractAuditJobResponse = {
+  readonly contract_version: "contract-audit-job-v2";
+  readonly job_id: string;
+  readonly status: "completed" | "extraction_review_required" | "insufficient_evidence" | "failed";
+  readonly created_at: string;
+  readonly project_name: string;
+  readonly source: {
+    readonly file_name: string;
+    readonly extension: string;
+    readonly sha256: string;
+    readonly size_bytes: number;
+  };
+  readonly result: {
+    readonly contract_version: "contract-audit-output-v2";
+    readonly status: string;
+    readonly conclusion: {
+      readonly analysis_markdown?: string;
+      readonly human_review_required: boolean;
+    };
+  };
+  readonly downloads: {
+    readonly json: string;
+    readonly markdown: string;
+    readonly docx: string;
+  };
+};
+
 export type QueryHistoryItem = {
   readonly id: string;
   readonly user_identifier: string | null;
@@ -1152,6 +1179,32 @@ export type AgentsResponse = {
     readonly ready: boolean;
     readonly backend: string;
   };
+};
+
+export type AgentMarketCatalogItem = {
+  readonly id: string;
+  readonly name: string;
+  readonly category: string;
+  readonly summary: string;
+  readonly topic: string;
+  readonly project: string;
+  readonly featured: boolean;
+  readonly featured_rank: number | null;
+  readonly prompt_sha256: string;
+  readonly source: string;
+  readonly template_key: string;
+};
+
+export type AgentMarketCatalogResponse = {
+  readonly contract_version: "agent-market-catalog-v2";
+  readonly items: readonly AgentMarketCatalogItem[];
+  readonly count: number;
+  readonly featured_count: number;
+  readonly prompt_materialization: "server-only";
+};
+
+export type AgentMarketInstallRequest = {
+  readonly project_name: string;
 };
 
 export type AgentCreateRequest = {

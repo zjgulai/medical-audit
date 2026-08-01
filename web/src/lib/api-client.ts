@@ -1,6 +1,8 @@
 import type {
   AgentCreateRequest,
   AgentCreateResponse,
+  AgentMarketCatalogResponse,
+  AgentMarketInstallRequest,
   AgentDetailResponse,
   AgentFeedbackCreateRequest,
   AgentFeedbackListResponse,
@@ -23,6 +25,7 @@ import type {
   ChatAttachmentAnalyzeMode,
   ChatModelAlias,
   ChatModelCatalogResponse,
+  ContractAuditJobResponse,
   DocumentSourceCollectionCatalogResponse,
   DocumentSearchResponse,
   DocumentUploadGovernanceRequest,
@@ -287,6 +290,28 @@ export function analyzeChatAttachment(
   }
   formData.append("mode", options.mode ?? "auto");
   return postForm<ChatAttachmentAnalysisResponse>("/api/v1/chat/attachments/analyze", formData, {
+    exposeValidationDetail: true
+  });
+}
+
+export function createContractAuditJob(
+  file: File,
+  options: {
+    readonly projectName?: string;
+    readonly auditStage?: string;
+    readonly perspective?: string;
+    readonly model?: ChatModelAlias | null;
+  } = {}
+): Promise<ContractAuditJobResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("project_name", options.projectName ?? "全院审计项目");
+  formData.append("audit_stage", options.auditStage ?? "签约前");
+  formData.append("perspective", options.perspective ?? "采购方/医院");
+  if (options.model) {
+    formData.append("model", options.model);
+  }
+  return postForm<ContractAuditJobResponse>("/api/v1/contract-audits", formData, {
     exposeValidationDetail: true
   });
 }
@@ -563,6 +588,24 @@ export function indexPersonalDocument(uploadId: string): Promise<DocumentUploadR
 
 export function fetchAgents(): Promise<AgentsResponse> {
   return getJsonWithAuditHeaders<AgentsResponse>("/api/v1/agents", auditAgentClientHeaders());
+}
+
+export function fetchAgentMarketCatalog(): Promise<AgentMarketCatalogResponse> {
+  return getJsonWithAuditHeaders<AgentMarketCatalogResponse>(
+    "/api/v1/agent-market/catalog",
+    auditAgentClientHeaders()
+  );
+}
+
+export function installAuditAgentMarketTemplate(
+  templateId: string,
+  payload: AgentMarketInstallRequest
+): Promise<AgentCreateResponse> {
+  return postJson<AgentCreateResponse>(
+    `/api/v1/agent-market/templates/${encodeURIComponent(templateId)}/install`,
+    payload,
+    auditAgentClientHeaders()
+  );
 }
 
 export function fetchAuditAgent(agentId: string): Promise<AgentDetailResponse> {

@@ -16,6 +16,8 @@ from medical_audit_kb.ocr.unlimited_ocr import (
     SUPPORTED_IMAGE_EXTENSIONS,
     UnlimitedOcrClient,
     UnlimitedOcrError,
+    _clean_ocr_text,
+    _page_results,
     _render_images,
 )
 
@@ -102,7 +104,15 @@ def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
     messages = payload["messages"]
     assert isinstance(messages, list)
     content = messages[0]["content"]
-    assert content[0] == {"type": "text", "text": "<image>\nMulti page parsing."}
+    assert content[0] == {
+        "type": "text",
+        "text": (
+            "<image>\nMulti page parsing. Return each page exactly once as "
+            '<page number="N">recognized text</page> in source order.'
+        ),
+    }
+    assert result.pages[0].mapping_status == "resolved"
+    assert len(result.pages[0].image_sha256) == 64
     assert str(content[1]["image_url"]["url"]).startswith("data:image/png;base64,")
 
 
@@ -122,3 +132,37 @@ def test_unlimited_ocr_does_not_advertise_or_render_webp() -> None:
             content=b"not-a-supported-image",
             settings=UnlimitedOcrSettings(),
         )
+
+
+def test_unlimited_ocr_preserves_page_boundaries_when_cleaning_tags() -> None:
+    assert _clean_ocr_text('<page number="1">第一页</page><page number="2">第二页</page>') == (
+        "第一页\n第二页"
+    )
+
+
+def test_unlimited_ocr_duplicate_page_tags_fail_mapping_closed() -> None:
+    encoded_images = ["YQ==", "Yg=="]
+
+    pages = _page_results(
+        '<page number="1">第一页</page><page number="1">重复页</page>'
+        '<page number="2">第二页</page>',
+        encoded_images,
+    )
+
+    assert [page.page_number for page in pages] == [1, 2]
+    assert all(page.mapping_status == "unresolved" for page in pages)
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        '<page number="2">第二页</page><page number="1">第一页</page>',
+        '<page number="1">第一页</page><page number="2">第二页</page>'
+        '<page number="0">越界页</page>',
+    ],
+)
+def test_unlimited_ocr_invalid_page_sequence_fails_mapping_closed(raw_text: str) -> None:
+    pages = _page_results(raw_text, ["YQ==", "Yg=="])
+
+    assert [page.page_number for page in pages] == [1, 2]
+    assert all(page.mapping_status == "unresolved" for page in pages)

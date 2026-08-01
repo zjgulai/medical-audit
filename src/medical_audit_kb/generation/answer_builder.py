@@ -152,6 +152,35 @@ class AnswerGenerationProvider(Protocol):
     def generate_answer(self, question: str, citations: Sequence[Citation]) -> str: ...
 
 
+def generate_agent_answer(
+    generation_provider: AnswerGenerationProvider,
+    question: str,
+    citations: Sequence[Citation],
+    *,
+    agent_prompt: str,
+    prompt_version_key: str,
+) -> str:
+    """Bind an approved agent prompt; real providers place it in system context."""
+    agent_method = getattr(generation_provider, "generate_answer_with_agent", None)
+    if callable(agent_method):
+        return cast(
+            str,
+            agent_method(
+                question,
+                citations,
+                agent_prompt=agent_prompt,
+                prompt_version_key=prompt_version_key,
+            ),
+        )
+    bounded_prompt = agent_prompt.strip()[:8000]
+    return generation_provider.generate_answer(
+        f"[APPROVED_AGENT_INSTRUCTIONS {prompt_version_key}]\n{bounded_prompt}\n"
+        "[END_APPROVED_AGENT_INSTRUCTIONS]\n\n"
+        f"{question}",
+        citations,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class AnswerBasisItem:
     citation_id: str
@@ -190,6 +219,8 @@ def build_citation_backed_answer(
     results: tuple[HybridSearchResult, ...],
     *,
     generation_provider: AnswerGenerationProvider | None = None,
+    agent_prompt: str | None = None,
+    agent_prompt_version_key: str | None = None,
 ) -> CitationBackedAnswer:
     focus_terms = _question_focus_terms(question)
     focused_results = _select_focused_results(results, focus_terms)
@@ -218,7 +249,17 @@ def build_citation_backed_answer(
     answer = fallback_answer
     if generation_provider is not None:
         try:
-            candidate_answer = generation_provider.generate_answer(question, citations)
+            candidate_answer = (
+                generate_agent_answer(
+                    generation_provider,
+                    question,
+                    citations,
+                    agent_prompt=agent_prompt,
+                    prompt_version_key=agent_prompt_version_key or "agent-prompt@unversioned",
+                )
+                if agent_prompt
+                else generation_provider.generate_answer(question, citations)
+            )
             if not _contains_citation_marker(candidate_answer, citations):
                 raise AnswerGenerationError("generated answer does not contain citation markers")
             answer = candidate_answer

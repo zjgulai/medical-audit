@@ -1,8 +1,8 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
-import type { AgentsResponse } from "@/lib/api-types";
+import { fetchAgentMarketCatalog, fetchAgents, fetchGraphWorkbench } from "@/lib/api-client";
+import type { AgentMarketCatalogResponse, AgentsResponse } from "@/lib/api-types";
 import { writeAuditClientRole } from "@/lib/audit-user";
 import { AuditUserProvider } from "@/components/shell/audit-user-context";
 
@@ -13,6 +13,7 @@ import {
 } from "./use-replica-runtime";
 
 vi.mock("@/lib/api-client", () => ({
+  fetchAgentMarketCatalog: vi.fn(),
   fetchAgents: vi.fn(),
   fetchAnalysisUploadHistory: vi.fn(),
   fetchAuthSession: vi.fn(),
@@ -25,6 +26,30 @@ vi.mock("@/lib/api-client", () => ({
   fetchReportWorkbench: vi.fn(),
   runKnowledgeQuery: vi.fn()
 }));
+
+function marketCatalogResponse(): AgentMarketCatalogResponse {
+  return {
+    contract_version: "agent-market-catalog-v2",
+    count: 1,
+    featured_count: 1,
+    prompt_materialization: "server-only",
+    items: [
+      {
+        id: "agent-contract-audit-v2",
+        name: "合同审计智能体",
+        category: "工具智能体",
+        summary: "页面证据约束的合同审计",
+        topic: "合同审计与风险复核",
+        project: "全院审计项目",
+        featured: true,
+        featured_rank: 1,
+        prompt_sha256: "a".repeat(64),
+        source: "contract-audit-v2",
+        template_key: "agent-contract-audit-v2"
+      }
+    ]
+  };
+}
 
 function agentsResponse(
   storeReady = true,
@@ -139,6 +164,7 @@ describe("use-replica-runtime", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.mocked(fetchAgents).mockResolvedValue(agentsResponse());
+    vi.mocked(fetchAgentMarketCatalog).mockResolvedValue(marketCatalogResponse());
   });
 
   afterEach(() => {
@@ -204,13 +230,12 @@ describe("use-replica-runtime", () => {
     expect(screen.getByText("运行时只读助手")).toBeInTheDocument();
   });
 
-  it("keeps the medical agent marketplace on the version-controlled catalog", () => {
-    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
+  it("loads the reviewed marketplace from the server catalog", async () => {
     render(<AgentsRuntimeProbe mode="market" />);
 
-    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
-    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
-    expect(fetchAgents).not.toHaveBeenCalled();
+    expect(await screen.findByText("合同审计智能体")).toBeInTheDocument();
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "api");
+    expect(fetchAgentMarketCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("restores the current identity market installations through a separate API read", async () => {
@@ -294,26 +319,13 @@ describe("use-replica-runtime", () => {
     expect(screen.getByText("member-template:member-install")).toBeInTheDocument();
   });
 
-  it("switches the opt-in extension pack on and off without leaking module-cached catalog state", () => {
-    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
-    const { rerender } = render(<AgentsRuntimeProbe mode="market" />);
-
-    expect(screen.getByText("引用依据核验助手")).toBeInTheDocument();
-    expect(screen.queryByText("超标准举办会议")).not.toBeInTheDocument();
-
+  it("does not let the legacy extension flag replace the server catalog", async () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "1");
-    rerender(<AgentsRuntimeProbe mode="market" />);
+    render(<AgentsRuntimeProbe mode="market" />);
 
-    expect(screen.getByText("超标准举办会议")).toBeInTheDocument();
-    expect(screen.getByText("违法订立与招投标文件不符的合同或协议")).toBeInTheDocument();
-    expect(screen.getByText("未经批准，擅自改变工程建设项目招标方式")).toBeInTheDocument();
-    expect(fetchAgents).not.toHaveBeenCalled();
-
-    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK", "0");
-    rerender(<AgentsRuntimeProbe mode="market" />);
-
+    expect(await screen.findByText("合同审计智能体")).toBeInTheDocument();
     expect(screen.queryByText("超标准举办会议")).not.toBeInTheDocument();
-    expect(screen.getByText("引用依据核验助手")).toBeInTheDocument();
+    expect(fetchAgentMarketCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("switches from disabled fixtures to enabled loading data on the first mounted rerender", () => {
@@ -369,11 +381,12 @@ describe("use-replica-runtime", () => {
     rerender(<AgentsRuntimeProbe mode="market" onRender={recordSnapshot} />);
 
     expect(snapshots[firstMarketRender]).toEqual(expect.objectContaining({
-      source: "catalog",
-      status: "ready"
+      source: "api",
+      status: "loading"
     }));
     expect(snapshots[firstMarketRender]?.agentNames).not.toContain("运行时只读助手");
-    expect(snapshots[firstMarketRender]?.agentNames.length).toBeGreaterThan(0);
+    expect(snapshots[firstMarketRender]?.agentNames).toHaveLength(0);
+    expect(await screen.findByText("合同审计智能体")).toBeInTheDocument();
   });
 
   it("switches market to mine loading data on the first mounted rerender", () => {
@@ -400,8 +413,9 @@ describe("use-replica-runtime", () => {
     expect(screen.getByTestId("mine-agents-runtime")).toHaveAttribute("data-status", "loading");
 
     rerender(<AgentsRuntimeProbe mode="market" />);
-    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
-    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "ready");
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "api");
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-status", "loading");
+    expect(await screen.findByText("合同审计智能体")).toBeInTheDocument();
 
     await act(async () => {
       oldMineRead.resolve(agentsResponse());
@@ -409,7 +423,7 @@ describe("use-replica-runtime", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "catalog");
+    expect(screen.getByTestId("market-agents-runtime")).toHaveAttribute("data-source", "api");
     expect(screen.queryByText("运行时只读助手")).not.toBeInTheDocument();
   });
 

@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BackendRequestError, createAuditAgent } from "@/lib/api-client";
+import {
+  BackendRequestError,
+  createAuditAgent,
+  installAuditAgentMarketTemplate
+} from "@/lib/api-client";
 import type { AgentCreateRequest } from "@/lib/api-types";
 import { auditExtensionValidationCatalog } from "@/lib/audit-agent-catalog";
 import { AUDIT_ROLE_STORAGE_KEY, writeAuditClientRole } from "@/lib/audit-user";
@@ -40,6 +44,31 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
         updated_at: "2026-07-06T00:00:00Z",
         source: "custom",
         metadata: payload.metadata
+      },
+      store: { ready: true, backend: "SqlAlchemyAgentStore" }
+    };
+  }),
+  installAuditAgentMarketTemplate: vi.fn(async (templateId: string) => {
+    const installedId = `installed-${templateId}`;
+    return {
+      item: {
+        id: installedId,
+        name: templateId,
+        category: "业务类" as const,
+        topic: "审计辅助",
+        prompt: "server-side prompt",
+        knowledge_base: "项目默认知识库",
+        project_name: "医保基金使用合规专项自查",
+        status: "active",
+        prompt_version: 1,
+        prompt_version_key: `${installedId}@v1`,
+        visibility_scope: "project" as const,
+        allowed_roles: ["admin", "technician", "director", "member"],
+        prompt_versions: [],
+        created_by: "next-admin",
+        updated_at: "2026-08-01T00:00:00Z",
+        source: "custom",
+        metadata: { source: "agent-market", template_id: templateId }
       },
       store: { ready: true, backend: "SqlAlchemyAgentStore" }
     };
@@ -324,22 +353,9 @@ describe("ReplicaAgentDirectory", () => {
     fireEvent.click(screen.getByRole("button", { name: "加入我的智能体：医保核验" }));
 
     await waitFor(() => {
-      expect(createAuditAgent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: "医保核验",
-          category: "业务类",
-          topic: "医保基金使用合规",
-          knowledge_base: "医保基金合规知识库",
-          project_name: "医保基金使用合规专项自查",
-          visibility_scope: "project",
-          metadata: expect.objectContaining({
-            source: "agent-market",
-            template_id: "template-medical-fund",
-            template_original_category: "财务收支审计",
-            template_project: "智能体广场",
-            avatar_initial: "医"
-          })
-        })
+      expect(installAuditAgentMarketTemplate).toHaveBeenCalledWith(
+        "template-medical-fund",
+        { project_name: "医保基金使用合规专项自查" }
       );
     });
     expect(await screen.findByText(/已安装「医保核验」/)).toBeInTheDocument();
@@ -362,7 +378,7 @@ describe("ReplicaAgentDirectory", () => {
     fireEvent.click(installButton);
 
     await waitFor(() => {
-      expect(createAuditAgent).toHaveBeenCalledTimes(1);
+      expect(installAuditAgentMarketTemplate).toHaveBeenCalledTimes(1);
       expect(installButton).toBeDisabled();
       expect(installButton).toHaveTextContent("已安装");
     });
@@ -370,7 +386,7 @@ describe("ReplicaAgentDirectory", () => {
   });
 
   it("labels an archived market-template reinstall as restored", async () => {
-    vi.mocked(createAuditAgent).mockResolvedValueOnce({
+    vi.mocked(installAuditAgentMarketTemplate).mockResolvedValueOnce({
       ...installedAgentResponse("installed-template-medical-fund", "医保核验"),
       created: false,
       reactivated: true
@@ -395,7 +411,7 @@ describe("ReplicaAgentDirectory", () => {
       "href",
       "/chat?agent=installed-template-medical-fund"
     );
-    expect(createAuditAgent).not.toHaveBeenCalled();
+    expect(installAuditAgentMarketTemplate).not.toHaveBeenCalled();
   });
 
   it("rejects a completed market-template install before the handler can call the API again", () => {
@@ -435,7 +451,7 @@ describe("ReplicaAgentDirectory", () => {
         name: "加入我的智能体：医保核验"
       })
     ).toHaveTextContent("安装状态读取中");
-    expect(createAuditAgent).not.toHaveBeenCalled();
+    expect(installAuditAgentMarketTemplate).not.toHaveBeenCalled();
   });
 
   it("surfaces installation-state read failures while keeping server-idempotent retry available", () => {
@@ -462,17 +478,9 @@ describe("ReplicaAgentDirectory", () => {
       fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${name}` }));
 
       await waitFor(() => {
-        expect(createAuditAgent).toHaveBeenLastCalledWith(
-          expect.objectContaining({
-            name,
-            knowledge_base: "未绑定知识库",
-            project_name: "医保基金使用合规专项自查",
-            visibility_scope: "project",
-            metadata: expect.objectContaining({
-              template_id: id,
-              template_scope: "extension-validation"
-            })
-          })
+        expect(installAuditAgentMarketTemplate).toHaveBeenLastCalledWith(
+          id,
+          { project_name: "医保基金使用合规专项自查" }
         );
       });
       expect(within(dialog).getByRole("link", { name: "进入 AI 对话" })).toHaveAttribute(
@@ -523,8 +531,8 @@ describe("ReplicaAgentDirectory", () => {
 
   it("blocks a second template install while another install is pending", () => {
     const [firstAgent, secondAgent] = auditExtensionValidationCatalog;
-    vi.mocked(createAuditAgent).mockReturnValueOnce(
-      new Promise<Awaited<ReturnType<typeof createAuditAgent>>>(() => undefined)
+    vi.mocked(installAuditAgentMarketTemplate).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof installAuditAgentMarketTemplate>>>(() => undefined)
     );
     render(<ReplicaAgentDirectory mode="market" />);
 
@@ -534,7 +542,7 @@ describe("ReplicaAgentDirectory", () => {
     fireEvent.click(screen.getByRole("button", { name: `详情：${firstAgent.name}` }));
     let dialog = screen.getByRole("dialog", { name: firstAgent.name });
     fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${firstAgent.name}` }));
-    expect(createAuditAgent).toHaveBeenCalledTimes(1);
+    expect(installAuditAgentMarketTemplate).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "关闭智能体详情" }));
     fireEvent.change(screen.getByPlaceholderText("搜索 AI 智能体"), {
@@ -545,7 +553,7 @@ describe("ReplicaAgentDirectory", () => {
 
     expect(within(dialog).getByRole("button", { name: `加入我的智能体：${secondAgent.name}` })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("button", { name: `加入我的智能体：${secondAgent.name}` }));
-    expect(createAuditAgent).toHaveBeenCalledTimes(1);
+    expect(installAuditAgentMarketTemplate).toHaveBeenCalledTimes(1);
   });
 
   it("disables market installation when the current role lacks manage_agents", async () => {
@@ -562,11 +570,11 @@ describe("ReplicaAgentDirectory", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "详情：医保核验" }));
     expect(screen.getByRole("button", { name: "加入我的智能体：医保核验" })).toBeDisabled();
-    expect(createAuditAgent).not.toHaveBeenCalled();
+    expect(installAuditAgentMarketTemplate).not.toHaveBeenCalled();
   });
 
   it("presents a permission-specific message when installation returns 403", async () => {
-    vi.mocked(createAuditAgent).mockRejectedValueOnce(new BackendRequestError({
+    vi.mocked(installAuditAgentMarketTemplate).mockRejectedValueOnce(new BackendRequestError({
       path: "/agents",
       status: 403,
       detail: "manage_agents is not allowed"
@@ -580,7 +588,7 @@ describe("ReplicaAgentDirectory", () => {
   });
 
   it("presents a fail-closed message for ambiguous historical installs", async () => {
-    vi.mocked(createAuditAgent).mockRejectedValueOnce(new BackendRequestError({
+    vi.mocked(installAuditAgentMarketTemplate).mockRejectedValueOnce(new BackendRequestError({
       path: "/agents",
       status: 409,
       detail: "multiple market agent installations already exist"
@@ -617,8 +625,8 @@ describe("ReplicaAgentDirectory", () => {
   });
 
   it("ignores an install response from the previous identity", async () => {
-    const pendingInstall = deferred<Awaited<ReturnType<typeof createAuditAgent>>>();
-    vi.mocked(createAuditAgent).mockReturnValueOnce(pendingInstall.promise);
+    const pendingInstall = deferred<Awaited<ReturnType<typeof installAuditAgentMarketTemplate>>>();
+    vi.mocked(installAuditAgentMarketTemplate).mockReturnValueOnce(pendingInstall.promise);
     render(
       <AuditUserProvider>
         <ReplicaAgentDirectory mode="market" />

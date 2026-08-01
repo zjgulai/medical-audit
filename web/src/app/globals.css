@@ -2377,6 +2377,23 @@ select {
   color: #155fa8;
 }
 
+.replica-message-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.replica-message-downloads a {
+  border: 1px solid #bdd7f1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #155fa8;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .replica-assistant-section {
   margin-top: 32px;
 }

@@ -13,6 +13,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from medical_audit_kb.contract_audit.prompt import (
+    CONTRACT_AUDIT_AGENT_ID,
+    CONTRACT_AUDIT_AGENT_PROMPT,
+    CONTRACT_AUDIT_PROMPT_VERSION_KEY,
+)
 from medical_audit_kb.db.models import (
     AuditAgent,
     AuditAgentFeedback,
@@ -31,6 +36,33 @@ AGENT_FEEDBACK_RATINGS = ("effective", "needs_review", "unsafe")
 AGENT_PROMPT_REVIEW_STATUSES = ("pending-review", "approved", "changes-requested")
 
 DEFAULT_AGENT_PAYLOADS: tuple[dict[str, object], ...] = (
+    {
+        "id": CONTRACT_AUDIT_AGENT_ID,
+        "name": "合同审计智能体",
+        "category": "业务类",
+        "topic": "合同审计与风险复核",
+        "prompt": CONTRACT_AUDIT_AGENT_PROMPT,
+        "knowledge_base": "合同审计知识与项目材料",
+        "project_name": "全院审计项目",
+        "status": "active",
+        "created_by": "system",
+        "updated_at": "2026-08-01",
+        "source": "system-default",
+        "prompt_version": 2,
+        "prompt_version_key": CONTRACT_AUDIT_PROMPT_VERSION_KEY,
+        "visibility_scope": "system",
+        "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        "metadata": {
+            "summary": "上传合同后执行页面证据约束审计并生成可下载报告。",
+            "featured": True,
+            "featured_rank": 1,
+            "workflow": "contract-audit-v2",
+            "prompt_version": 2,
+            "prompt_version_key": CONTRACT_AUDIT_PROMPT_VERSION_KEY,
+            "visibility_scope": "system",
+            "allowed_roles": list(AGENT_ALLOWED_ROLES),
+        },
+    },
     {
         "id": "agent-citation-check",
         "name": "引用依据核验助手",

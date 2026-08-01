@@ -1643,7 +1643,7 @@ def _run_page_query(
         return None, "检索引擎尚未初始化。"
     normalized_agent_key = _normalize_agent_key(agent_key)
     selected_agent: dict[str, object] | None = None
-    if record_agent_invocation and normalized_agent_key is not None:
+    if normalized_agent_key is not None:
         selected_agent, agent_error = _validate_page_agent_selection(
             state,
             normalized_agent_key,
@@ -1663,6 +1663,10 @@ def _run_page_query(
             question,
             results,
             generation_provider=state.answer_generation_provider,
+            agent_prompt=str(selected_agent.get("prompt") or "") if selected_agent else None,
+            agent_prompt_version_key=(
+                str(selected_agent.get("prompt_version_key") or "") if selected_agent else None
+            ),
         )
     except NoCitedEvidenceError:
         return None, "没有找到可引用依据。"
@@ -1805,6 +1809,8 @@ def _validate_page_agent_selection(
         return None, "选择的智能体不存在。"
     if str(agent.get("status") or "active") != "active":
         return None, "选择的智能体已下架，不能用于新的对话。"
+    if not str(agent.get("prompt") or "").strip():
+        return None, "选择的智能体提示词不可用。"
     scope_error = _agent_project_scope_error(
         state,
         agent,
