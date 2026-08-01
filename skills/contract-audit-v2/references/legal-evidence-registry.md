@@ -13,9 +13,9 @@
 | `civil-code-2020` | 《中华人民共和国民法典》 | 2020-05-28 / 2021-01-01 | 现行有效 | https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&type= | 2026-08-01 | 合同通则与典型合同基础法；适用前核验特别法 |
 | `contract-general-interpretation-2023` | 民法典合同编通则司法解释（法释〔2023〕13号） | 2023-12-04 / 2023-12-05 | 现行有效 | https://gongbao.court.gov.cn/Details/f2f4926057aa3ec1307a879a63dd1e.html | 2026-08-01 | 合同成立、效力、履行和解除等 |
 | `construction-interpretation-i-2020` | 建设工程施工合同司法解释（一）（法释〔2020〕25号） | 2020-12-29 / 2021-01-01 | 现行有效 | https://www.court.gov.cn/zixun/xiangqing/282111.html | 2026-08-01 | 建设工程施工合同；结合解释（二）核验 |
-| `construction-interpretation-ii-2026` | 建设工程施工合同司法解释（二）（法释〔2026〕12号） | 2026-06-29 / 2026-06-30 | 现行有效 | https://www.court.gov.cn/zixun/xiangqing/504221.html | 2026-08-01 | 适用前核验行为时间、资金性质和项目属性 |
+| `construction-interpretation-ii-2026` | 建设工程施工合同司法解释（二）（法释〔2026〕12号） | 2026-06-29 / 2026-06-30 | 现行有效 | https://www.court.gov.cn/zixun/xiangqing/504221.html | 2026-08-01 | 第1条适用前核验合同订立时与起诉时的项目招标属性 |
 | `migrant-wage-regulation-2019` | 《保障农民工工资支付条例》（国务院令第724号） | 2019-12-30 / 2020-05-01 | 现行有效 | https://www.beijing.gov.cn/zhengce/gwywj/202001/t20200108_1566187.html | 2026-08-01 | 第23条规定政府投资项目不得由施工单位垫资 |
-| `sme-payment-regulation-2025` | 《保障中小企业款项支付条例》（国务院令第802号） | 2025-03-24 / 2025-06-01 | 现行有效 | https://www.miit.gov.cn/jgsj/zfs/xzfg/art/2025/art_d9b6cd05f3734869aa34caff247089ff.html | 2026-08-01 | 第9条付款期限；第11条商业汇票等非现金支付限制 |
+| `sme-payment-regulation-2025` | 《保障中小企业款项支付条例》（国务院令第802号） | 2025-03-17 / 2025-06-01 | 现行有效 | https://www.miit.gov.cn/jgsj/zfs/xzfg/art/2025/art_d9b6cd05f3734869aa34caff247089ff.html | 2026-08-01 | 第9条付款期限；第11条商业汇票等非现金支付限制 |
 | `arbitration-act-2025` | 《中华人民共和国仲裁法》（2025修订） | 2025-09-12 / 2026-03-01 | 现行有效 | https://www.npc.gov.cn/npc/c2/c30834/202509/t20250912_447762.html | 2026-08-01 | 仲裁协议和程序；核验涉外特别规则 |
 | `vat-act-2024` | 《中华人民共和国增值税法》 | 2024-12-25 / 2026-01-01 | 现行有效 | https://www.npc.gov.cn/npc/c2/c30834/202412/t20241225_442015.html | 2026-08-01 | 税率、纳税义务发生时间和进项抵扣 |
 

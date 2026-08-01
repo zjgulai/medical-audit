@@ -151,3 +151,18 @@ def test_unlimited_ocr_duplicate_page_tags_fail_mapping_closed() -> None:
 
     assert [page.page_number for page in pages] == [1, 2]
     assert all(page.mapping_status == "unresolved" for page in pages)
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        '<page number="2">第二页</page><page number="1">第一页</page>',
+        '<page number="1">第一页</page><page number="2">第二页</page>'
+        '<page number="0">越界页</page>',
+    ],
+)
+def test_unlimited_ocr_invalid_page_sequence_fails_mapping_closed(raw_text: str) -> None:
+    pages = _page_results(raw_text, ["YQ==", "Yg=="])
+
+    assert [page.page_number for page in pages] == [1, 2]
+    assert all(page.mapping_status == "unresolved" for page in pages)

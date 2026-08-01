@@ -216,11 +216,12 @@ def _page_results(raw_text: str, images: list[str]) -> tuple[UnlimitedOcrPage, .
     block_items = [
         (int(page_number), _clean_ocr_text(text))
         for page_number, text in _PAGE_BLOCK_PATTERN.findall(raw_text)
-        if 1 <= int(page_number) <= len(images)
     ]
     blocks = dict(block_items)
-    mapping_resolved = len(block_items) == len(blocks) == len(images) and all(
-        blocks.get(index) for index in range(1, len(images) + 1)
+    expected_page_numbers = list(range(1, len(images) + 1))
+    actual_page_numbers = [page_number for page_number, _ in block_items]
+    mapping_resolved = actual_page_numbers == expected_page_numbers and all(
+        blocks.get(index) for index in expected_page_numbers
     )
     return tuple(
         UnlimitedOcrPage(
