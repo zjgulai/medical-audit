@@ -654,7 +654,9 @@ def test_run_production_e2e_smoke_uses_explicit_direct_transport(
 
     class FakeResponse:
         status = 200
-        headers: dict[str, str] = {}
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
 
         def __enter__(self) -> "FakeResponse":
             return self
@@ -685,6 +687,7 @@ def test_run_production_e2e_smoke_uses_explicit_direct_transport(
     )
 
     assert response.status == 200
+    assert response.url == "https://audit.example.test/health"
     assert len(captured_handlers) == 2
     proxy_handler = captured_handlers[0]
     assert isinstance(proxy_handler, module.urllib.request.ProxyHandler)
