@@ -40,6 +40,8 @@ import type {
   MedicalAuditReviewTaskRequest,
   MedicalAuditSupplementRequest,
   MedicalAuditWorkflowActionResponse,
+  OcrCapabilityResponse,
+  OcrExtractionResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
   ProjectMemberCreateRequest,
@@ -212,18 +214,25 @@ async function postForm<T>(
   });
 
   if (!response.ok) {
-    if (options.exposeValidationDetail && (response.status === 413 || response.status === 422)) {
+    if (
+      options.exposeValidationDetail &&
+      [409, 413, 422, 502, 503].includes(response.status)
+    ) {
       let detail: string | null = null;
       try {
         const payload = await response.json() as unknown;
-        if (
-          typeof payload === "object" &&
-          payload !== null &&
-          "detail" in payload &&
-          typeof payload.detail === "string" &&
-          payload.detail.trim().length > 0
-        ) {
-          detail = payload.detail.trim();
+        if (typeof payload === "object" && payload !== null && "detail" in payload) {
+          if (typeof payload.detail === "string" && payload.detail.trim().length > 0) {
+            detail = payload.detail.trim();
+          } else if (
+            typeof payload.detail === "object" &&
+            payload.detail !== null &&
+            "message" in payload.detail &&
+            typeof payload.detail.message === "string" &&
+            payload.detail.message.trim().length > 0
+          ) {
+            detail = payload.detail.message.trim();
+          }
         }
       } catch {
         // The generic error below preserves method, path, and status when the body is not JSON.
@@ -312,6 +321,18 @@ export function createContractAuditJob(
     formData.append("model", options.model);
   }
   return postForm<ContractAuditJobResponse>("/api/v1/contract-audits", formData, {
+    exposeValidationDetail: true
+  });
+}
+
+export function fetchOcrCapabilities(): Promise<OcrCapabilityResponse> {
+  return getJsonWithAuditHeaders<OcrCapabilityResponse>("/api/v1/ocr/capabilities");
+}
+
+export function extractOcrText(file: File): Promise<OcrExtractionResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return postForm<OcrExtractionResponse>("/api/v1/ocr/extract", formData, {
     exposeValidationDetail: true
   });
 }

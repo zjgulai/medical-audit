@@ -60,7 +60,7 @@ describe("ReplicaShell", () => {
     expect(screen.getByText("复刻页面内容")).toBeInTheDocument();
   });
 
-  it("renders nine main modules and one separate medical topic entry", () => {
+  it("renders ten main modules and one separate medical topic entry", () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
 
     render(
@@ -70,7 +70,8 @@ describe("ReplicaShell", () => {
     );
 
     const mainNav = screen.getByRole("navigation", { name: "主导航" });
-    expect(within(mainNav).getAllByRole("link")).toHaveLength(9);
+    expect(within(mainNav).getAllByRole("link")).toHaveLength(10);
+    expect(within(mainNav).getByRole("link", { name: /文本 OCR/ })).toHaveAttribute("href", "/ocr");
     expect(within(mainNav).queryByText("医保审计专题")).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "打开医保审计专题" })).toHaveLength(1);
     expect(screen.queryByText("医保基金合规审计")).not.toBeInTheDocument();

@@ -132,6 +132,7 @@ export const referenceNavigation: readonly ReferenceNavigationItem[] = [
   { id: "agent-market", label: "智能体广场", href: "/agent-market", icon: "grid" },
   { id: "knowledge", label: "知识库", href: "/knowledge-base", icon: "book" },
   { id: "documents", label: "文档检索", href: "/documents", icon: "scan" },
+  { id: "ocr", label: "文本 OCR", href: "/ocr", icon: "scan" },
   { id: "analysis", label: "AI数据分析", href: "/analytics", icon: "ai" },
   { id: "graph", label: "知识图谱", href: "/graph", icon: "graph" },
   { id: "workpaper", label: "审计底稿/报告", href: "/reports", icon: "paper" },

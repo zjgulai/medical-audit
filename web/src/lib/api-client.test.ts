@@ -27,6 +27,7 @@ import {
   fetchDocumentUploads,
   fetchGraphWorkbench,
   fetchKnowledgeBaseCatalog,
+  fetchOcrCapabilities,
   fetchProjectDashboard,
   fetchProjectMembers,
   fetchProjects,
@@ -37,6 +38,7 @@ import {
   fetchRulesWorkbench,
   fetchSearchBackendStatus,
   installAuditAgentMarketTemplate,
+  extractOcrText,
   rollbackAuditAgentPromptVersion,
   indexPersonalDocument,
   recordAuditAgentInvocation,
@@ -427,6 +429,100 @@ describe("api-client", () => {
     expect(formData.get("project_name")).toBe("采购合同专项");
     expect(formData.get("model")).toBe("deepseek-v4-pro");
     expect(result.status).toBe("completed");
+  });
+
+  it("reads OCR capability without a write and extracts a page-mapped file", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          contract_version: "unlimited-ocr-capability-v1",
+          enabled: true,
+          engine: "baidu/Unlimited-OCR",
+          source_commit: "d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+          supported_extensions: ["pdf", "png"],
+          max_upload_bytes: 40 * 1024 * 1024,
+          max_pages: 40,
+          pdf_dpi: 300,
+          boundaries: {
+            database_write: false,
+            audit_log_write: false,
+            source_storage_write: false,
+            provider_call: false
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          contract_version: "unlimited-ocr-extraction-v1",
+          file_name: "扫描合同.png",
+          extension: "png",
+          source_sha256: "a".repeat(64),
+          size_bytes: 11,
+          text: "付款条款待复核。",
+          page_count: 1,
+          engine: "baidu/Unlimited-OCR",
+          source_commit: "d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+          mapping_status: "resolved",
+          pages: [{
+            page_number: 1,
+            text: "付款条款待复核。",
+            image_sha256: "b".repeat(64),
+            text_sha256: "c".repeat(64),
+            mapping_status: "resolved"
+          }],
+          boundaries: {
+            database_write: false,
+            audit_log_write: true,
+            source_storage_write: false,
+            index_write: false,
+            provider_call: true,
+            ocr_call: true,
+            answer_provider_call: false
+          }
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["image-bytes"], "扫描合同.png", { type: "image/png" });
+
+    const capability = await fetchOcrCapabilities();
+    const result = await extractOcrText(file);
+
+    expect(capability.enabled).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/ocr/capabilities",
+      expect.objectContaining({ cache: "no-store" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/ocr/extract",
+      expect.objectContaining({ method: "POST", body: expect.any(FormData) })
+    );
+    const formData = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    expect(formData.get("file")).toBe(file);
+    expect(result.pages[0]?.mapping_status).toBe("resolved");
+  });
+
+  it("surfaces the OCR runtime gate message from a structured 409 detail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          detail: {
+            code: "unlimited_ocr_unavailable",
+            message: "Unlimited-OCR 服务尚未启用，请联系管理员完成运行时门禁。"
+          }
+        })
+      }))
+    );
+
+    await expect(
+      extractOcrText(new File(["image"], "scan.png", { type: "image/png" }))
+    ).rejects.toThrow("Unlimited-OCR 服务尚未启用，请联系管理员完成运行时门禁。");
   });
 
   it("surfaces actionable validation detail for an image-only PDF attachment", async () => {

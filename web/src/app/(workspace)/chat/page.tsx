@@ -62,7 +62,7 @@ const MODEL_STORAGE_KEY = "medical-audit-chat-model";
 const chatShortcuts = [
   { label: "智能体广场", href: "/agent-market", icon: "◎" },
   { label: "我的智能体", href: "/agents", icon: "▣" },
-  { label: "OCR 识别", href: "/documents", icon: "⌗" },
+  { label: "OCR 识别", href: "/ocr", icon: "⌗" },
   { label: "数据分析", href: "/analytics", icon: "▥" },
   { label: "项目管理", href: "/projects", icon: "▤" }
 ] as const;

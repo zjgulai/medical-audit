@@ -4,7 +4,7 @@ doc_type: "api-integration"
 module: "ocr"
 status: "candidate"
 created: "2026-07-29"
-updated: "2026-07-29"
+updated: "2026-08-02"
 owner: "self"
 source: "official-docs+local-engineering"
 ---
@@ -35,7 +35,8 @@ source: "official-docs+local-engineering"
 - 普通文本解析成功时不调用 OCR。
 - 扫描 PDF 或图片只有在 OCR 服务显式启用后才会调用。
 - OCR 不连接数据库，不写知识库索引，不访问生产 DSN。
-- 单次上传受现有 20 MiB 限制，并额外受页数、像素、超时和输出 token 限制。
+- 聊天附件继续受既有 20 MiB 限制；独立 OCR 工作台受 40 MiB 流式读取上限，
+  并额外受页数、像素、超时和输出 token 限制。
 - API key 配置只允许保存环境变量名；不得在日志、响应或审计记录中保存 secret。
 - OCR 调用和问答模型调用分别记录为 `ocr_call` 与 `answer_provider_call`。
 
@@ -61,8 +62,34 @@ source: "official-docs+local-engineering"
 | `MEDICAL_AUDIT_UNLIMITED_OCR_PDF_DPI` | `300` | PDF 渲染分辨率 |
 | `MEDICAL_AUDIT_UNLIMITED_OCR_MAX_OUTPUT_TOKENS` | `32768` | OCR 输出上限 |
 
+## 产品接口
+
+### `GET /api/v1/ocr/capabilities`
+
+用于页面加载时读取运行能力，不调用 OCR provider，不写数据库、审计日志、原件存储
+或知识索引。响应公开以下非密能力元数据：是否启用、引擎、固定 source commit、支持
+扩展名、40 MiB 上传上限、最大页数和 PDF DPI。
+
+### `POST /api/v1/ocr/extract`
+
+- 需要 `UPLOAD_PERSONAL_DOCUMENT` 权限；运行时未启用时在读取上传内容前返回 `409`。
+- 仅接受 PDF 和受支持图片类型，使用 1 MiB 分块读取并在超过 40 MiB 时返回 `413`。
+- 成功响应返回完整文本、文件哈希、逐页文本、图片哈希、文本哈希与页面映射状态。
+- 不持久化源文件或识别全文，不写知识索引，不调用问答模型。
+- 成功调用后仅记录一次操作审计事件，内容限定为用户标识、扩展名、文件/模型哈希、
+  大小、页数和映射状态；不记录文件名、原文、识别全文或凭据。
+
+## OCR 工作台
+
+静态导出路由为 `/ocr`，入口同时出现在主导航和 AI 对话快捷区。页面先调用零写入
+capability 接口：运行时未启用时上传控件和执行按钮保持禁用，并明确显示基础设施
+门禁；运行时就绪后才能提交单文件识别。结果支持完整文本预览、浏览器端复制/下载
+TXT 和逐页证据核对，不自动写入项目、文档库或知识库。
+
 ## 当前证据边界
 
-本地代码、渲染依赖、请求合同、失败关闭逻辑和测试可以在无 GPU 环境验证。模型
-权重、GPU 镜像启动、生产 env 与 runtime 尚未执行；它们必须通过单独的生产授权
-和 GPU readiness 门禁。
+本地代码、渲染依赖、请求合同、失败关闭逻辑和测试可以在无 GPU 环境验证。当前
+腾讯云生产主机的只读证据显示没有 NVIDIA 设备、NVIDIA Docker runtime、固定 OCR
+镜像或 OCR env，因此官方 GPU profile 是 `NO-GO`。模型权重、GPU 镜像启动、生产
+env 与 runtime 尚未执行；它们必须通过兼容 GPU 节点或经审核外部端点方案、单独的
+生产授权和 readiness 门禁。

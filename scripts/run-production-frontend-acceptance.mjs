@@ -91,6 +91,7 @@ const routeCheckProfiles = {
       requiredControlText: [/创建新项目/, /成员管理/, /修改项目/],
     },
     { route: "/documents", requiredText: [/文档检索/, /AI检索AI\\+|检索结果/] },
+    { route: "/ocr", requiredText: [/扫描材料识别工作台/, /Unlimited-OCR/, /上传待识别文件/] },
     { route: "/knowledge-base", requiredText: [/知识库/, /知识库概览|法律法规库|审计员个人知识库/] },
     { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
     { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
@@ -172,6 +173,13 @@ const routeCheckProfiles = {
       expectedPath: "/documents",
       session: "workspace",
       requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/],
+    },
+    {
+      route: "/ocr",
+      expectedPath: "/ocr",
+      session: "workspace",
+      requiredText: [/扫描材料识别工作台/, /Unlimited-OCR/, /上传待识别文件/],
+      requiredControlText: [/开始文本识别/],
     },
     {
       route: "/knowledge-base",

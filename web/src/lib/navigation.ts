@@ -84,6 +84,15 @@ export const primaryNavigation: readonly NavigationItem[] = [
     target: "workspace"
   },
   {
+    id: "text-ocr",
+    label: "文本 OCR",
+    href: "/ocr",
+    symbol: "识",
+    description: "识别扫描 PDF 和图片，核验逐页文本与证据哈希。",
+    emphasis: "standard",
+    target: "workspace"
+  },
+  {
     id: "analytics",
     label: "AI数据分析",
     href: "/analytics",
@@ -202,6 +211,7 @@ export const visiblePrimaryNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("fund-compliance"),
   requireNavigationItemById("ai-chat"),
   requireNavigationItemById("documents"),
+  requireNavigationItemById("text-ocr"),
   requireNavigationItemById("archive")
 ];
 
@@ -230,6 +240,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
     items: [
       requireNavigationItemById("agent-market"),
       requireNavigationItemById("my-agents"),
+      requireNavigationItemById("text-ocr"),
       requireNavigationItemById("analytics"),
       requireNavigationItemById("reports"),
       requireNavigationItemById("projects"),

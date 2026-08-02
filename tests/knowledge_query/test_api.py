@@ -1,3 +1,4 @@
+import hashlib
 import json
 import urllib.parse
 from collections.abc import Sequence
@@ -94,7 +95,7 @@ from medical_audit_kb.indexing.vector_index import (
     InMemoryVectorIndex,
     build_chunk_embedding_records,
 )
-from medical_audit_kb.ocr.unlimited_ocr import UnlimitedOcrResult
+from medical_audit_kb.ocr.unlimited_ocr import UnlimitedOcrPage, UnlimitedOcrResult
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchEngine
 from medical_audit_kb.retrieval.rerank import FakeRerankProvider
 
@@ -5723,6 +5724,146 @@ def test_chat_attachment_uses_unlimited_ocr_for_image_only_pdf(
     assert state.operation_logs[-1]["payload"]["ocr_source_commit"] == (
         "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
     )
+
+
+def test_ocr_capability_endpoint_is_zero_write_and_reports_disabled_runtime(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.get("/api/v1/ocr/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "contract_version": "unlimited-ocr-capability-v1",
+        "enabled": False,
+        "engine": "baidu/Unlimited-OCR",
+        "source_commit": "d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+        "supported_extensions": ["bmp", "jpeg", "jpg", "pdf", "png", "tif", "tiff"],
+        "max_upload_bytes": 40 * 1024 * 1024,
+        "max_pages": 40,
+        "pdf_dpi": 300,
+        "boundaries": {
+            "database_write": False,
+            "audit_log_write": False,
+            "source_storage_write": False,
+            "provider_call": False,
+        },
+    }
+    assert state.operation_logs == []
+
+
+def test_ocr_extract_returns_complete_page_evidence_without_persisting_text(
+    tmp_path: Path,
+) -> None:
+    class StaticUnlimitedOcrClient:
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            assert file_name == "扫描合同.png"
+            assert extension == "png"
+            assert content == b"image-bytes"
+            return UnlimitedOcrResult(
+                text="第一页：付款条款待复核。",
+                page_count=1,
+                model="baidu/Unlimited-OCR",
+                source_commit="d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+                pages=(
+                    UnlimitedOcrPage(
+                        page_number=1,
+                        text="第一页：付款条款待复核。",
+                        image_sha256="a" * 64,
+                        text_sha256="b" * 64,
+                        mapping_status="resolved",
+                    ),
+                ),
+            )
+
+    state = _api_state(tmp_path)
+    state.ocr_client = StaticUnlimitedOcrClient()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/ocr/extract",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        files={"file": ("扫描合同.png", b"image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contract_version"] == "unlimited-ocr-extraction-v1"
+    assert body["text"] == "第一页：付款条款待复核。"
+    assert body["page_count"] == 1
+    assert body["mapping_status"] == "resolved"
+    assert body["pages"][0]["text_sha256"] == "b" * 64
+    assert body["boundaries"] == {
+        "database_write": False,
+        "audit_log_write": True,
+        "source_storage_write": False,
+        "index_write": False,
+        "provider_call": True,
+        "ocr_call": True,
+        "answer_provider_call": False,
+    }
+    operation = state.operation_logs[-1]
+    assert operation["action"] == "unlimited-ocr-extract"
+    assert operation["payload"]["source_sha256"] == hashlib.sha256(b"image-bytes").hexdigest()
+    assert "text" not in operation["payload"]
+    assert "file_name" not in operation["payload"]
+
+
+def test_ocr_extract_fails_closed_before_upload_when_runtime_is_disabled(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/api/v1/ocr/extract",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        files={"file": ("扫描合同.png", b"image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "unlimited_ocr_unavailable"
+
+
+def test_ocr_extract_rejects_oversized_upload_before_provider_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class TrackingUnlimitedOcrClient:
+        calls = 0
+
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            self.calls += 1
+            raise AssertionError("oversized OCR upload must not call provider")
+
+    monkeypatch.setattr("medical_audit_kb.api.routes_ocr.MAX_OCR_UPLOAD_BYTES", 4)
+    state = _api_state(tmp_path)
+    ocr_client = TrackingUnlimitedOcrClient()
+    state.ocr_client = ocr_client
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/ocr/extract",
+        headers={"X-User-Id": "admin-1", "X-Role": "admin"},
+        files={"file": ("扫描合同.png", b"12345", "image/png")},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "OCR 文件超过 40 MiB 限制。"
+    assert ocr_client.calls == 0
 
 
 def test_query_endpoint_blocks_unknown_role(tmp_path: Path) -> None:

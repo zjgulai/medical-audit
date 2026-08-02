@@ -986,7 +986,7 @@ def _project_file_payload(
         "id": upload_id,
         "name": str(item["name"]),
         "extension": str(item["extension"]),
-        "size_bytes": int(item["size_bytes"]),
+        "size_bytes": int(str(item["size_bytes"])),
         "sha256": str(item["sha256"]),
         "created_by": item.get("created_by"),
         "created_at": str(item["created_at"]),

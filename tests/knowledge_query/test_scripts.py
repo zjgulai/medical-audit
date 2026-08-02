@@ -2972,6 +2972,7 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "/analytics",
         "/projects",
         "/documents",
+        "/ocr",
         "/knowledge-base",
         "/graph",
         "/rules",

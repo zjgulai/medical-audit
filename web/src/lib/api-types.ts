@@ -810,6 +810,54 @@ export type ContractAuditJobResponse = {
   };
 };
 
+export type OcrCapabilityResponse = {
+  readonly contract_version: "unlimited-ocr-capability-v1";
+  readonly enabled: boolean;
+  readonly engine: string;
+  readonly source_commit: string;
+  readonly supported_extensions: readonly string[];
+  readonly max_upload_bytes: number;
+  readonly max_pages: number;
+  readonly pdf_dpi: number;
+  readonly boundaries: {
+    readonly database_write: false;
+    readonly audit_log_write: false;
+    readonly source_storage_write: false;
+    readonly provider_call: false;
+  };
+};
+
+export type OcrExtractionPage = {
+  readonly page_number: number;
+  readonly text: string;
+  readonly image_sha256: string;
+  readonly text_sha256: string;
+  readonly mapping_status: string;
+};
+
+export type OcrExtractionResponse = {
+  readonly contract_version: "unlimited-ocr-extraction-v1";
+  readonly file_name: string;
+  readonly extension: string;
+  readonly source_sha256: string;
+  readonly size_bytes: number;
+  readonly text: string;
+  readonly page_count: number;
+  readonly engine: string;
+  readonly source_commit: string;
+  readonly mapping_status: string;
+  readonly pages: readonly OcrExtractionPage[];
+  readonly boundaries: {
+    readonly database_write: false;
+    readonly audit_log_write: true;
+    readonly source_storage_write: false;
+    readonly index_write: false;
+    readonly provider_call: true;
+    readonly ocr_call: true;
+    readonly answer_provider_call: false;
+  };
+};
+
 export type QueryHistoryItem = {
   readonly id: string;
   readonly user_identifier: string | null;
