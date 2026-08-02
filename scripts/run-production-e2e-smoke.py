@@ -874,6 +874,8 @@ def _request(
         method=method,
     )
     opener = urllib.request.build_opener(
+        # Match the certificate probe's direct path instead of inheriting macOS system proxies.
+        urllib.request.ProxyHandler({}),
         _SameOriginRedirectHandler(expected_origin),
     )
     try:
@@ -925,6 +927,10 @@ def _report(
             "authorized_possible" if args.include_query_provider_smoke else "not_called"
         ),
         "http_methods": ["GET", "POST"] if live_side_effects else ["GET"],
+        "transport": {
+            "proxy_mode": "direct",
+            "automatic_retry": False,
+        },
         "base_url": base_url,
         "question": question,
         "auth": auth.to_report_dict() if auth else {},
