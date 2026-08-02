@@ -1081,7 +1081,11 @@ def _project_review_history(value: object) -> list[dict[str, str]]:
         status = item.get("status")
         reviewer = item.get("reviewed_by")
         reviewed_at = item.get("reviewed_at")
-        if not all(isinstance(field, str) and field for field in (status, reviewer, reviewed_at)):
+        if not isinstance(status, str) or not status:
+            continue
+        if not isinstance(reviewer, str) or not reviewer:
+            continue
+        if not isinstance(reviewed_at, str) or not reviewed_at:
             continue
         history.append(
             {
@@ -1102,6 +1106,7 @@ def _project_review_metadata(
     review_note: str,
 ) -> dict[str, object]:
     reviewed_at = _datetime_to_iso(utc_now())
+    assert reviewed_at is not None
     history = _project_review_history(metadata.get("project_review_history"))
     history.append(
         {

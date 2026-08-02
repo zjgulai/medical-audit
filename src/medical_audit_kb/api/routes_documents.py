@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Sequence
 from typing import Annotated, Literal, cast
 from urllib.parse import quote
 from uuid import UUID
@@ -1378,7 +1379,7 @@ def _effective_document_search_collections(
 
 def _document_search_items(
     state: ApiState,
-    results: list[HybridSearchResult],
+    results: Sequence[HybridSearchResult],
     *,
     limit: int,
 ) -> list[DocumentSearchItem]:
