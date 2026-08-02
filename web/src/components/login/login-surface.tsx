@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 
-import { BrandLogo } from "@/components/shell/brand-logo";
+import { BrandLockup } from "@/components/shell/brand-lockup";
 import { writeAuditClientSession } from "@/lib/audit-user";
 import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
 
@@ -50,14 +50,7 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
     <main className="audit-login-shell audit-login-shell-compact">
       <section className="audit-login-center-stack" aria-label={`${AUDIT_PLATFORM_NAME}登录入口`}>
         <form className="audit-login-card audit-login-card-compact" action={fallbackAction} method="get" onSubmit={handleSubmit}>
-          <div className="audit-login-card-brand">
-            <span className="audit-login-compact-logo">
-              <BrandLogo priority height={30} width={30} />
-            </span>
-            <div>
-              <p>{AUDIT_PLATFORM_NAME}</p>
-            </div>
-          </div>
+          <BrandLockup priority />
 
           <div className="audit-login-heading-block">
             <p className="audit-kicker">欢迎登录</p>

@@ -270,9 +270,9 @@ describe("ReplicaReportWorkbench", () => {
   it("requires an explicit ready project before a template can be opened", async () => {
     renderWorkbench();
 
-    expect(await screen.findByRole("heading", { name: "六类模板目录", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "选择报告或底稿", level: 2 })).toBeInTheDocument();
     expect(screen.getByText("请先选择项目后填写模板")).toBeInTheDocument();
-    expect(screen.getByText("系统仍会独立校验项目可见范围与角色权限。")).toBeInTheDocument();
+    expect(screen.getByText("项目范围和下载权限会在每次操作时重新校验。")).toBeInTheDocument();
     expect(screen.queryByText(/后端仍会独立执行/)).not.toBeInTheDocument();
     const buttons = screen.getAllByRole("button", { name: /^填写模板：/ });
     expect(buttons).toHaveLength(3);
@@ -291,6 +291,11 @@ describe("ReplicaReportWorkbench", () => {
     await selectTemplateAndProject();
 
     expect(screen.getByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).toBeInTheDocument();
+    expect(screen.getByText("大模型分析结果")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "费用分类汇总" })).toHaveAttribute(
+      "placeholder",
+      "粘贴大模型分析结论，并保留关键依据和不确定项"
+    );
     expect(screen.getByRole("textbox", { name: "费用分类汇总" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "支付分项合计" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "人工复核意见" })).toBeInTheDocument();
@@ -407,13 +412,13 @@ describe("ReplicaReportWorkbench", () => {
 
     expect(await screen.findByText("报告总数")).toBeInTheDocument();
     expect(screen.getByText("已签发报告")).toBeInTheDocument();
-    expect(screen.getByText("门禁阻断报告")).toBeInTheDocument();
+    expect(screen.getByText("待补充证据")).toBeInTheDocument();
     expect(screen.getByText("证据链待补齐")).toBeInTheDocument();
     expect(screen.getByText("workpaper-001")).toBeInTheDocument();
 
     const blockedRow = screen.getByRole("row", { name: /医保费用补证底稿/ });
     expect(within(blockedRow).queryByRole("link", { name: "查看任务" })).not.toBeInTheDocument();
-    expect(within(blockedRow).getByText("详情请从项目管理进入")).toBeInTheDocument();
+    expect(within(blockedRow).getByText("负责人：审计办")).toBeInTheDocument();
     expect(within(blockedRow).getByRole("button", { name: "下载任务 DOCX" })).toBeEnabled();
     expect(within(blockedRow).queryByRole("button", { name: "下载报告 DOCX" })).not.toBeInTheDocument();
     expect(within(blockedRow).queryByRole("button", { name: "下载报告 Markdown" })).not.toBeInTheDocument();
@@ -453,7 +458,9 @@ describe("ReplicaReportWorkbench", () => {
     });
     act(() => writeAuditClientRole("member"));
     expect(await screen.findByRole("option", { name: "Beta 收费专项" })).toBeInTheDocument();
-    expect(screen.getByText("FreshReviewTaskStore")).toBeInTheDocument();
+    expect(screen.getByText("管理与服务详情").closest("details")).toHaveTextContent(
+      "FreshReviewTaskStore"
+    );
 
     await act(async () => {
       firstReport.resolve(reportResponse({ backend: "StaleReviewTaskStore" }));
@@ -478,7 +485,7 @@ describe("ReplicaReportWorkbench", () => {
       expect(button).toBeDisabled();
     }
     for (const textbox of screen.getAllByRole("textbox")) expect(textbox).toBeDisabled();
-    expect(screen.getByRole("button", { name: "正在创建草稿…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在保存草稿…" })).toBeDisabled();
     fireEvent.change(screen.getByRole("combobox", { name: "所属项目" }), {
       target: { value: "BETA" }
     });
@@ -604,7 +611,7 @@ describe("ReplicaReportWorkbench", () => {
     fetchProjectsMock.mockReturnValueOnce(projects.promise);
     renderWorkbench();
 
-    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "选择报告或底稿" })).toBeInTheDocument();
     expect(screen.getByText("报告总数")).toBeInTheDocument();
     expect(screen.getByText("正在读取可见项目…")).toBeInTheDocument();
 
@@ -634,14 +641,14 @@ describe("ReplicaReportWorkbench", () => {
     renderWorkbench();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("报表工作台读取失败");
-    expect(screen.getByText("读取异常")).toBeInTheDocument();
+    expect(screen.getByText("管理与服务详情").closest("details")).toHaveTextContent("读取异常");
     expect(screen.queryByText("error")).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Alpha 医保专项" })).toBeInTheDocument();
     expect(screen.queryByText("报告总数")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试工作台" }));
 
-    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
-    expect(screen.getByText("已连接")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "选择报告或底稿" })).toBeInTheDocument();
+    expect(screen.getByText("管理与服务详情").closest("details")).toHaveTextContent("已连接");
     expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2);
     expect(fetchProjectsMock).toHaveBeenCalledTimes(2);
   });
@@ -663,7 +670,7 @@ describe("ReplicaReportWorkbench", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "刷新工作台" }));
     expect(await screen.findByRole("option", { name: "Beta 收费专项" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "六类模板目录" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "选择报告或底稿" })).toBeInTheDocument();
 
     const staleForm = screen.queryByRole("form", { name: "费用汇总风险底稿草稿" });
     await act(async () => {
@@ -720,7 +727,7 @@ describe("ReplicaReportWorkbench", () => {
     renderWorkbench();
 
     expect(await screen.findByText("当前没有可见项目")).toBeInTheDocument();
-    expect(screen.getByText("暂无报告台账")).toBeInTheDocument();
+    expect(screen.getByText("暂无报告或底稿")).toBeInTheDocument();
     expect(screen.queryByText("2026年医疗费用专项审计报告")).not.toBeInTheDocument();
   });
 

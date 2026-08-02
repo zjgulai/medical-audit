@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Annotated, Literal, cast
 from urllib.parse import quote
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
+from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
 
 from medical_audit_kb.api.app import ApiState, PreviewReference, get_api_state, record_operation
@@ -30,6 +33,7 @@ from medical_audit_kb.api.document_upload_ingestion import (
     DocumentUploadIngestionError,
 )
 from medical_audit_kb.api.document_upload_store import document_storage_objects_schema_ready
+from medical_audit_kb.api.postgres_status import psycopg_database_url
 from medical_audit_kb.api.search_backend_details import safe_search_backend_details
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import SOURCE_COLLECTION_DEFINITIONS
@@ -173,6 +177,20 @@ class DocumentSourceCollectionCatalogResponse(BaseModel):
     boundaries: DocumentSourceCollectionCatalogBoundaries
 
 
+class DocumentSearchHitLocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    page_number: int | None
+    line_start: int | None
+    line_end: int | None
+    sheet_name: str | None
+    row_number: int | None
+    article_number: str | None
+    snippet: str
+    preview_url: str
+
+
 class DocumentSearchItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -191,6 +209,7 @@ class DocumentSearchItem(BaseModel):
     download_url: str
     match_count: int
     matched_snippets: list[str]
+    hit_locations: list[DocumentSearchHitLocation]
 
 
 class DocumentSearchBoundaries(BaseModel):
@@ -206,10 +225,37 @@ class DocumentSearchBoundaries(BaseModel):
 class DocumentSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    contract_version: Literal["document-search-v2"]
+    contract_version: Literal["document-search-v3"]
     query: str
     effective_source_collections: list[SourceCollection]
     items: list[DocumentSearchItem]
+    store: dict[str, object]
+    boundaries: DocumentSearchBoundaries
+
+
+class DocumentLibraryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    source_collection: SourceCollection
+    source_label: str
+    file_ext: str
+    size_bytes: int
+    updated_at: str
+    chunk_count: int
+    page_count: int
+    preview_url: str | None
+    download_url: str | None
+    provenance: dict[str, str]
+
+
+class DocumentLibraryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["document-library-v1"]
+    effective_source_collections: list[SourceCollection]
+    items: list[DocumentLibraryItem]
     store: dict[str, object]
     boundaries: DocumentSearchBoundaries
 
@@ -451,6 +497,7 @@ def document_search(
         x_role=x_role,
         default_role=HospitalRole.MEMBER,
     )
+
     role = user.legacy_api_role
     if state.search_engine is None:
         raise HTTPException(status_code=409, detail="search engine is not initialized")
@@ -461,7 +508,7 @@ def document_search(
     )
     if not effective_source_collections:
         return DocumentSearchResponse(
-            contract_version="document-search-v2",
+            contract_version="document-search-v3",
             query=q,
             effective_source_collections=[],
             items=[],
@@ -498,7 +545,7 @@ def document_search(
     )
     items = _document_search_items(state, results, limit=limit)
     return DocumentSearchResponse(
-        contract_version="document-search-v2",
+        contract_version="document-search-v3",
         query=q,
         effective_source_collections=list(effective_source_collections),
         items=items,
@@ -513,6 +560,54 @@ def document_search(
             object_storage_write=False,
             query_history_write=False,
         ),
+    )
+
+
+@router.get("/library", response_model=DocumentLibraryResponse)
+def document_library(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    source_collection: Annotated[list[SourceCollection] | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> DocumentLibraryResponse:
+    user = resolve_authenticated_user(
+        state,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        default_role=HospitalRole.MEMBER,
+    )
+    effective_source_collections = _effective_document_search_collections(
+        role=user.legacy_api_role,
+        requested=tuple(source_collection or ()),
+    )
+    if not effective_source_collections:
+        return _document_library_response(
+            effective_source_collections=(),
+            items=[],
+            ready=True,
+            backend="empty-permission-scope",
+        )
+    try:
+        items = _document_library_items_from_postgres(
+            state,
+            effective_source_collections=effective_source_collections,
+            user_identifier=user.user_identifier,
+            can_read_all_personal=can_read_all_personal_uploads(user.legacy_api_role),
+            limit=limit,
+        )
+    except (psycopg.Error, ValueError, TypeError):
+        return _document_library_response(
+            effective_source_collections=effective_source_collections,
+            items=[],
+            ready=False,
+            backend="postgres-unavailable",
+        )
+    return _document_library_response(
+        effective_source_collections=effective_source_collections,
+        items=items,
+        ready=True,
+        backend="postgres-source-documents",
     )
 
 
@@ -1377,6 +1472,181 @@ def _effective_document_search_collections(
     return tuple(sorted(allowed, key=lambda item: item.value))
 
 
+def _document_library_response(
+    *,
+    effective_source_collections: Sequence[SourceCollection],
+    items: list[DocumentLibraryItem],
+    ready: bool,
+    backend: str,
+) -> DocumentLibraryResponse:
+    return DocumentLibraryResponse(
+        contract_version="document-library-v1",
+        effective_source_collections=list(effective_source_collections),
+        items=items,
+        store={"ready": ready, "backend": backend},
+        boundaries=DocumentSearchBoundaries(
+            production_write=False,
+            provider_call=False,
+            database_write=False,
+            object_storage_write=False,
+            query_history_write=False,
+        ),
+    )
+
+
+def _document_library_items_from_postgres(
+    state: ApiState,
+    *,
+    effective_source_collections: Sequence[SourceCollection],
+    user_identifier: str,
+    can_read_all_personal: bool,
+    limit: int,
+) -> list[DocumentLibraryItem]:
+    with (
+        psycopg.connect(
+            psycopg_database_url(state.settings.database_url),
+            connect_timeout=2,
+        ) as connection,
+        connection.cursor(row_factory=dict_row) as cursor,
+    ):
+        cursor.execute(
+            """
+            SELECT DISTINCT ON (sd.source_collection, sd.relative_path)
+              sd.id::text AS source_document_id,
+              sd.source_collection,
+              sd.relative_path,
+              sd.file_name,
+              sd.file_ext,
+              sd.sha256,
+              sd.size_bytes,
+              sd.updated_at,
+              sd.metadata,
+              spv.version_key AS source_package_version_key,
+              first_chunk.id::text AS preview_chunk_id,
+              first_chunk.locator AS first_locator,
+              first_chunk.text AS first_text,
+              chunk_summary.chunk_count,
+              chunk_summary.page_count
+            FROM source_documents sd
+            JOIN source_package_versions spv ON spv.id = sd.source_package_version_id
+            JOIN index_versions iv
+              ON iv.source_package_version_id = sd.source_package_version_id
+             AND iv.status = 'active'
+            LEFT JOIN LATERAL (
+              SELECT dc.id, dc.locator, dc.text
+              FROM document_chunks dc
+              WHERE dc.source_document_id = sd.id
+              ORDER BY dc.chunk_index, dc.id
+              LIMIT 1
+            ) first_chunk ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT
+                COUNT(*)::bigint AS chunk_count,
+                COUNT(DISTINCT dc.page_number) FILTER (
+                  WHERE dc.page_number IS NOT NULL
+                )::bigint AS page_count
+              FROM document_chunks dc
+              WHERE dc.source_document_id = sd.id
+            ) chunk_summary ON TRUE
+            WHERE sd.status = 'indexed'
+              AND sd.source_collection = ANY(%s)
+              AND (
+                sd.source_collection <> %s
+                OR %s
+                OR sd.metadata ->> 'created_by' = %s
+              )
+            ORDER BY
+              sd.source_collection,
+              sd.relative_path,
+              iv.activated_at DESC NULLS LAST,
+              iv.created_at DESC
+            LIMIT %s
+            """,
+            (
+                [collection.value for collection in effective_source_collections],
+                SourceCollection.PERSONAL_MATERIALS.value,
+                can_read_all_personal,
+                user_identifier,
+                limit,
+            ),
+        )
+        rows = cursor.fetchall()
+
+    items: list[DocumentLibraryItem] = []
+    for row in rows:
+        collection = _source_collection_from_value(row.get("source_collection"))
+        source_document_id = _required_row_text(row, "source_document_id")
+        relative_path = _required_row_text(row, "relative_path")
+        preview_chunk_id = _optional_text(row.get("preview_chunk_id"))
+        raw_metadata = row.get("metadata")
+        metadata: Mapping[str, object] = raw_metadata if isinstance(raw_metadata, Mapping) else {}
+        preview_url: str | None = None
+        download_url: str | None = None
+        if preview_chunk_id is not None:
+            chunk_uuid = UUID(preview_chunk_id)
+            raw_locator = row.get("first_locator")
+            locator = dict(raw_locator) if isinstance(raw_locator, Mapping) else {}
+            locator.update({
+                "source_path": relative_path,
+                "source_collection": collection.value,
+            })
+            created_by = metadata.get("created_by")
+            if isinstance(created_by, str) and created_by.strip():
+                locator["created_by"] = created_by.strip()
+            state.preview_references[chunk_uuid] = PreviewReference(
+                locator=locator,
+                citation_text=_optional_text(row.get("first_text")) or "",
+            )
+            preview_url = f"/api/v1/preview/{preview_chunk_id}"
+            download_url = f"/api/v1/documents/source/{preview_chunk_id}/download"
+        items.append(
+            DocumentLibraryItem(
+                id=f"source-document-{source_document_id}",
+                title=_required_row_text(row, "file_name"),
+                source_collection=collection,
+                source_label=_source_collection_label(collection),
+                file_ext=_required_row_text(row, "file_ext"),
+                size_bytes=_int_or_none(row.get("size_bytes")) or 0,
+                updated_at=_iso_datetime(row.get("updated_at")),
+                chunk_count=_int_or_none(row.get("chunk_count")) or 0,
+                page_count=_int_or_none(row.get("page_count")) or 0,
+                preview_url=preview_url,
+                download_url=download_url,
+                provenance={
+                    "relative_path": relative_path,
+                    "sha256": _required_row_text(row, "sha256"),
+                    "source_package_version_key": _required_row_text(
+                        row,
+                        "source_package_version_key",
+                    ),
+                },
+            )
+        )
+    return items
+
+
+def _source_collection_from_value(value: object) -> SourceCollection:
+    if not isinstance(value, str):
+        raise ValueError("source collection is missing")
+    return SourceCollection(value)
+
+
+def _required_row_text(row: Mapping[str, object], key: str) -> str:
+    value = _optional_text(row.get(key))
+    if value is None:
+        raise ValueError(f"document library row is missing {key}")
+    return value
+
+
+def _iso_datetime(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    text = _optional_text(value)
+    if text is None:
+        raise ValueError("document library row is missing updated_at")
+    return text
+
+
 def _document_search_items(
     state: ApiState,
     results: Sequence[HybridSearchResult],
@@ -1403,16 +1673,10 @@ def _document_search_item(
     collection = _source_collection_from_result(result)
     title = _document_result_title(result)
     snippet = _document_result_snippet(result.chunk.text)
-    reference_locator = {
-        **result.chunk.locator,
-        "source_collection": collection.value,
-    }
-    if collection is SourceCollection.PERSONAL_MATERIALS:
-        reference_locator["created_by"] = result.chunk.metadata.get("created_by")
-    state.preview_references[result.chunk.chunk_id] = PreviewReference(
-        locator=reference_locator,
-        citation_text=snippet,
-    )
+    hit_locations = [
+        _document_search_hit_location(state, item, collection=collection)
+        for item in results
+    ]
     matched_snippets = list(
         dict.fromkeys(_document_result_snippet(item.chunk.text) for item in results)
     )[:3]
@@ -1432,7 +1696,87 @@ def _document_search_item(
         download_url=_document_download_url(result),
         match_count=len(results),
         matched_snippets=matched_snippets,
+        hit_locations=hit_locations,
     )
+
+
+def _document_search_hit_location(
+    state: ApiState,
+    result: HybridSearchResult,
+    *,
+    collection: SourceCollection,
+) -> DocumentSearchHitLocation:
+    snippet = _document_result_snippet(result.chunk.text)
+    locator = result.chunk.locator
+    reference_locator = {**locator, "source_collection": collection.value}
+    if collection is SourceCollection.PERSONAL_MATERIALS:
+        reference_locator["created_by"] = result.chunk.metadata.get("created_by")
+    state.preview_references[result.chunk.chunk_id] = PreviewReference(
+        locator=reference_locator,
+        citation_text=snippet,
+    )
+    page_number = _optional_positive_int(locator.get("page_number"))
+    line_start = _optional_positive_int(locator.get("line_start"))
+    line_end = _optional_positive_int(locator.get("line_end"))
+    sheet_name = _optional_text(locator.get("sheet_name"))
+    row_number = _optional_positive_int(locator.get("row_number"))
+    article_number = _optional_text(locator.get("article_number"))
+    return DocumentSearchHitLocation(
+        label=_document_location_label(
+            page_number=page_number,
+            line_start=line_start,
+            line_end=line_end,
+            sheet_name=sheet_name,
+            row_number=row_number,
+            article_number=article_number,
+        ),
+        page_number=page_number,
+        line_start=line_start,
+        line_end=line_end,
+        sheet_name=sheet_name,
+        row_number=row_number,
+        article_number=article_number,
+        snippet=snippet,
+        preview_url=f"/api/v1/preview/{result.chunk.chunk_id}",
+    )
+
+
+def _document_location_label(
+    *,
+    page_number: int | None,
+    line_start: int | None,
+    line_end: int | None,
+    sheet_name: str | None,
+    row_number: int | None,
+    article_number: str | None,
+) -> str:
+    if page_number is not None:
+        return f"第 {page_number} 页"
+    if sheet_name and row_number is not None:
+        return f"{sheet_name} · 第 {row_number} 行"
+    if sheet_name:
+        return sheet_name
+    if article_number:
+        return article_number
+    if line_start is not None and line_end is not None and line_end != line_start:
+        return f"第 {line_start}–{line_end} 行"
+    if line_start is not None:
+        return f"第 {line_start} 行"
+    return "原文位置"
+
+
+def _optional_positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit() and int(value) > 0:
+        return int(value)
+    return None
+
+
+def _optional_text(value: object) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _document_identity(result: HybridSearchResult) -> str:

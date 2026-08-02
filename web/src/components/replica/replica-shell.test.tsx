@@ -60,7 +60,7 @@ describe("ReplicaShell", () => {
     expect(screen.getByText("复刻页面内容")).toBeInTheDocument();
   });
 
-  it("renders ten main modules and one separate medical topic entry", () => {
+  it("renders eleven main modules with the cockpit directly after projects", () => {
     vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
 
     render(
@@ -70,11 +70,29 @@ describe("ReplicaShell", () => {
     );
 
     const mainNav = screen.getByRole("navigation", { name: "主导航" });
-    expect(within(mainNav).getAllByRole("link")).toHaveLength(10);
+    const mainLinks = within(mainNav).getAllByRole("link");
+    expect(mainLinks).toHaveLength(11);
     expect(within(mainNav).getByRole("link", { name: /文本 OCR/ })).toHaveAttribute("href", "/ocr");
+    expect(within(mainNav).getByRole("link", { name: "审计驾驶舱" })).toHaveAttribute(
+      "href",
+      "/audit-cockpit"
+    );
+    expect(mainLinks.slice(-2).map((link) => link.textContent)).toEqual(["项目管理", "审计驾驶舱"]);
     expect(within(mainNav).queryByText("医保审计专题")).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "打开医保审计专题" })).toHaveLength(1);
     expect(screen.queryByText("医保基金合规审计")).not.toBeInTheDocument();
+  });
+
+  it("uses the same shared brand lockup as the login surface", () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS", "0");
+
+    render(
+      <ReplicaShell>
+        <main>复刻页面内容</main>
+      </ReplicaShell>
+    );
+
+    expect(screen.getByTestId("audit-brand-lockup")).toHaveTextContent("AI审计一体化协作平台");
   });
 
   it("marks the medical topic active and uses its label in the page chrome", () => {

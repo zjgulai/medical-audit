@@ -24,12 +24,13 @@ describe("primaryNavigation", () => {
       "/analytics",
       "/graph",
       "/reports",
-      "/projects"
+      "/projects",
+      "/audit-cockpit"
     ]);
   });
 
-  it("keeps the portal at ten primary modules", () => {
-    expect(primaryNavigation).toHaveLength(10);
+  it("keeps the portal at eleven primary modules", () => {
+    expect(primaryNavigation).toHaveLength(11);
   });
 
   it("promotes document search to a Next-native module", () => {
@@ -56,6 +57,19 @@ describe("primaryNavigation", () => {
       href: "/projects",
       target: "workspace"
     });
+  });
+
+  it("places the audit cockpit directly after project management", () => {
+    const projectIndex = primaryNavigation.findIndex((item) => item.id === "projects");
+
+    expect(primaryNavigation[projectIndex + 1]).toMatchObject({
+      id: "audit-cockpit",
+      label: "审计驾驶舱",
+      href: "/audit-cockpit",
+      target: "workspace"
+    });
+    const projectUtilityIndex = sidebarUtilityNavigation.findIndex((item) => item.id === "projects");
+    expect(sidebarUtilityNavigation[projectUtilityIndex + 1]?.id).toBe("audit-cockpit");
   });
 
   it("marks evidence chat as the core live module", () => {
@@ -92,7 +106,7 @@ describe("primaryNavigation", () => {
       "/archive"
     ]);
     expect(sidebarUtilityNavigation.map((item) => item.href)).toEqual(
-      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/rules", "/remediation", "/graph"])
+      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/audit-cockpit", "/rules", "/remediation", "/graph"])
     );
     expect(sidebarUtilityNavigation.map((item) => item.href)).not.toEqual(
       expect.arrayContaining(systemNavigation.map((item) => item.href))

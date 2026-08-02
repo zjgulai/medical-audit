@@ -26,6 +26,7 @@ import type {
   ChatModelAlias,
   ChatModelCatalogResponse,
   ContractAuditJobResponse,
+  DocumentLibraryResponse,
   DocumentSourceCollectionCatalogResponse,
   DocumentSearchResponse,
   DocumentUploadGovernanceRequest,
@@ -515,9 +516,13 @@ export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
   return getJsonWithAuditHeaders<ArchiveWorkbenchResponse>("/api/v1/archive/workbench");
 }
 
-export function uploadAnalysisTable(file: File): Promise<TableAnalysisUploadResponse> {
+export function uploadAnalysisTable(
+  file: File,
+  analysisCase: "audit-data" | "dupont" = "audit-data"
+): Promise<TableAnalysisUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("analysis_case", analysisCase);
   return postForm<TableAnalysisUploadResponse>("/api/v1/analytics/table-upload", formData, {
     exposeValidationDetail: true
   });
@@ -561,6 +566,19 @@ export function searchDocuments(options: {
   return getJsonWithAuditHeaders<DocumentSearchResponse>(
     `/api/v1/documents/search?${params.toString()}`
   );
+}
+
+export function fetchDocumentLibrary(options: {
+  readonly sourceCollections?: readonly string[];
+  readonly limit?: number;
+} = {}): Promise<DocumentLibraryResponse> {
+  const params = new URLSearchParams();
+  for (const sourceCollection of options.sourceCollections ?? []) {
+    params.append("source_collection", sourceCollection);
+  }
+  if (options.limit) params.set("limit", String(options.limit));
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return getJsonWithAuditHeaders<DocumentLibraryResponse>(`/api/v1/documents/library${suffix}`);
 }
 
 export async function fetchDocumentFileBlob(path: string): Promise<Blob> {

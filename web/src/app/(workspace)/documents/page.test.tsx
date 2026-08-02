@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReplicaRuntimeResult } from "@/components/replica/use-replica-runtime";
-import { fetchDocumentFileBlob, runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
+import {
+  fetchDocumentFileBlob,
+  fetchDocumentLibrary,
+  runKnowledgeQuery,
+  searchDocuments
+} from "@/lib/api-client";
 import type { ReplicaDocumentsData } from "@/lib/replica-adapters";
 
 import DocumentsPage from "./page";
@@ -56,6 +61,7 @@ function makeApiRuntime(): ReplicaRuntimeResult<ReplicaDocumentsData> {
 
 vi.mock("@/lib/api-client", () => ({
   fetchDocumentFileBlob: vi.fn(),
+  fetchDocumentLibrary: vi.fn(),
   runKnowledgeQuery: vi.fn(),
   searchDocuments: vi.fn()
 }));
@@ -63,6 +69,7 @@ vi.mock("@/lib/api-client", () => ({
 const runKnowledgeQueryMock = vi.mocked(runKnowledgeQuery);
 const searchDocumentsMock = vi.mocked(searchDocuments);
 const fetchDocumentFileBlobMock = vi.mocked(fetchDocumentFileBlob);
+const fetchDocumentLibraryMock = vi.mocked(fetchDocumentLibrary);
 
 function makeAiResponse(
   overrides: Partial<Awaited<ReturnType<typeof runKnowledgeQuery>>> = {}
@@ -92,6 +99,19 @@ function makeAiResponse(
 describe("DocumentsPage", () => {
   beforeEach(() => {
     runtimeMock.current = makeApiRuntime();
+    fetchDocumentLibraryMock.mockResolvedValue({
+      contract_version: "document-library-v1",
+      effective_source_collections: [],
+      items: [],
+      store: { ready: true, backend: "unit-test" },
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
+    });
   });
 
   afterEach(() => {
@@ -113,6 +133,53 @@ describe("DocumentsPage", () => {
     expect(screen.queryByDisplayValue("劳动争议司法案件解释")).not.toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
     expect(searchDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  it("loads original audit documents with preview, download and provenance instead of category placeholders", async () => {
+    fetchDocumentLibraryMock.mockResolvedValue({
+      contract_version: "document-library-v1",
+      effective_source_collections: ["medical-insurance-laws"],
+      items: [
+        {
+          id: "source-document-1",
+          title: "医疗保障基金使用监督管理条例.pdf",
+          source_collection: "medical-insurance-laws",
+          source_label: "医保法律政策",
+          file_ext: "pdf",
+          size_bytes: 2048,
+          updated_at: "2026-07-30T10:00:00Z",
+          chunk_count: 18,
+          page_count: 9,
+          preview_url: "/api/v1/preview/chunk-law-1",
+          download_url: "/api/v1/documents/source/chunk-law-1/download",
+          provenance: {
+            relative_path: "医保法规/医疗保障基金使用监督管理条例.pdf",
+            sha256: "a".repeat(64),
+            source_package_version_key: "knowledge-20260730"
+          }
+        }
+      ],
+      store: { ready: true, backend: "postgres-source-documents" },
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
+    });
+
+    render(<DocumentsPage />);
+
+    expect((await screen.findAllByText("医疗保障基金使用监督管理条例.pdf")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "预览原文" })).toHaveAttribute(
+      "href",
+      "/api/v1/preview/chunk-law-1"
+    );
+    expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
+    expect(screen.getByText("9 页")).toBeInTheDocument();
+    expect(screen.getByText("医保法规/医疗保障基金使用监督管理条例.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("医保法规库 文档目录")).not.toBeInTheDocument();
   });
 
   it("mounts the personal material panel without regressing search, catalog, history, or AI controls", () => {
@@ -327,7 +394,20 @@ describe("DocumentsPage", () => {
           preview_url: "/api/v1/preview/chunk-1",
           download_url: "/api/v1/documents/source/chunk-1/download",
           match_count: 2,
-          matched_snippets: ["医保支付政策引用片段。"]
+          matched_snippets: ["医保支付政策引用片段。"],
+          hit_locations: [
+            {
+              label: "第 6 页",
+              page_number: 6,
+              line_start: null,
+              line_end: null,
+              sheet_name: null,
+              row_number: null,
+              article_number: null,
+              snippet: "医保支付政策引用片段。",
+              preview_url: "/api/v1/preview/chunk-1"
+            }
+          ]
         }
       ],
       store: { ready: true, backend: "unit-test" },
@@ -360,6 +440,7 @@ describe("DocumentsPage", () => {
     );
     expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
     expect(screen.getByText("2 处")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "关键词命中位置" })).toHaveTextContent("第 6 页");
     expect(screen.getByText("文档检索 provider_call：否")).toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
 

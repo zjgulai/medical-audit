@@ -141,6 +141,10 @@ class InMemoryAnalyticsUploadStore:
         record = {
             "id": upload_key,
             "name": file_name,
+            "analysis_case": str(analysis_summary.get("analysis_case") or "audit-data"),
+            "analysis_case_label": str(
+                analysis_summary.get("analysis_case_label") or "审计数据分析"
+            ),
             "extension": extension,
             "size_bytes": len(content),
             "size_kb": _size_kb(len(content)),
@@ -202,6 +206,10 @@ def _record_to_payload(record: AnalyticsUploadRecord) -> dict[str, object]:
     return {
         "id": record.upload_key,
         "name": record.file_name,
+        "analysis_case": str(record.analysis_summary.get("analysis_case") or "audit-data"),
+        "analysis_case_label": str(
+            record.analysis_summary.get("analysis_case_label") or "审计数据分析"
+        ),
         "extension": record.extension,
         "size_bytes": record.size_bytes,
         "size_kb": _size_kb(record.size_bytes),

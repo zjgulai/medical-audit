@@ -123,7 +123,7 @@ describe("KnowledgeBasePage", () => {
     render(<KnowledgeBasePage />);
 
     expect(screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "打开目录" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "查看原文档" })).toHaveAttribute(
       "href",
       `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
@@ -131,25 +131,16 @@ describe("KnowledgeBasePage", () => {
       "href",
       `/chat?question=${encodeURIComponent(`请基于「${HUMAN_KNOWLEDGE_LABEL}」回答审计问题`)}&source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
-    expect(screen.getByRole("link", { name: "查看图谱" })).toHaveAttribute(
-      "href",
-      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
-    );
-    expect(screen.getByRole("link", { name: "检索全部目录" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "查看全部原文档" })).toHaveAttribute(
       "href",
       `/documents?source_collection=${INTERNAL_SOURCE_SENTINEL}`
     );
-    expect(screen.getByRole("link", { name: "查看全部图谱" })).toHaveAttribute(
-      "href",
-      `/graph?source_collection=${INTERNAL_SOURCE_SENTINEL}`
-    );
     expect(screen.queryByText(INTERNAL_SOURCE_SENTINEL)).not.toBeInTheDocument();
     expect(screen.queryByText(INTERNAL_ACCESS_SENTINEL)).not.toBeInTheDocument();
-    expect(screen.getAllByText("49,051").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("120").length).toBeGreaterThan(0);
+    expect(screen.getByText("可追溯")).toBeInTheDocument();
+    expect(screen.getByText("其他领域知识暂不进入产品前台")).toBeInTheDocument();
     expect(screen.getByText("来自当前知识目录")).toBeInTheDocument();
-    expect(screen.getByText("知识目录")).toBeInTheDocument();
-    expect(screen.getByText("当前可用于检索的知识片段数量")).toBeInTheDocument();
+    expect(screen.queryByText("当前可用于检索的知识片段数量")).not.toBeInTheDocument();
     expect(screen.queryByText(/后端目录/)).not.toBeInTheDocument();
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
     expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
@@ -160,7 +151,7 @@ describe("KnowledgeBasePage", () => {
       "data-coverage-status",
       "core-incomplete"
     );
-    expect(screen.getByText(/已装载 1 \/ 1 个注册集合/)).toBeInTheDocument();
+    expect(screen.getByText(/尚未达到五个核心审计来源的发布门槛/)).toBeInTheDocument();
   });
 
   it("labels five populated collections as core-ready without claiming full registry coverage", () => {
@@ -170,7 +161,7 @@ describe("KnowledgeBasePage", () => {
       "supervision-rules-knowledge",
       "medical-insurance-catalog",
       "risk-negative-list",
-      "personal-materials"
+      "management-judicial-audit-procedure"
     ] as const;
     runtimeMock.current = {
       ...ready,
@@ -195,8 +186,8 @@ describe("KnowledgeBasePage", () => {
 
     const coverage = screen.getByLabelText("知识库发布覆盖");
     expect(coverage).toHaveAttribute("data-coverage-status", "core-ready");
-    expect(within(coverage).getByText(/已装载 5 \/ 25 个注册集合/)).toBeInTheDocument();
-    expect(within(coverage).getByText(/本次仅承诺核心范围/)).toBeInTheDocument();
+    expect(within(coverage).getByText(/五个核心审计来源已装载/)).toBeInTheDocument();
+    expect(within(coverage).getByText(/其他领域继续保留在后台/)).toBeInTheDocument();
     expect(within(coverage).queryByText(/全量可用/)).not.toBeInTheDocument();
   });
 
@@ -207,7 +198,7 @@ describe("KnowledgeBasePage", () => {
       "supervision-rules-knowledge",
       "medical-insurance-catalog",
       "risk-negative-list",
-      "other-agriculture-water"
+      "personal-materials"
     ] as const;
     runtimeMock.current = {
       ...ready,
@@ -232,7 +223,7 @@ describe("KnowledgeBasePage", () => {
 
     const coverage = screen.getByLabelText("知识库发布覆盖");
     expect(coverage).toHaveAttribute("data-coverage-status", "core-incomplete");
-    expect(within(coverage).getByText(/尚未达到核心 5 个知识集合的发布门槛/)).toBeInTheDocument();
+    expect(within(coverage).getByText(/尚未达到五个核心审计来源的发布门槛/)).toBeInTheDocument();
   });
 
   it("keeps registry cards while marking every unavailable metric as pending sync", () => {
@@ -278,10 +269,10 @@ describe("KnowledgeBasePage", () => {
     const cardHeading = screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL, level: 2 })[0];
     const card = cardHeading.closest("article");
     expect(card).not.toBeNull();
-    expect(within(card as HTMLElement).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+    expect(within(card as HTMLElement).getAllByText("待同步").length).toBeGreaterThanOrEqual(1);
     expect(within(card as HTMLElement).queryByText(/^0$/)).not.toBeInTheDocument();
     expect(within(card as HTMLElement).queryByText("0 个片段")).not.toBeInTheDocument();
-    expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(2);
+    expect(within(screen.getByLabelText("知识库数据口径")).getAllByText("待同步").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText("知识库发布覆盖")).toHaveAttribute(
       "data-coverage-status",
       "unknown"
@@ -300,8 +291,8 @@ describe("KnowledgeBasePage", () => {
           ready.data.knowledgeBases[0]!,
           {
             ...ready.data.knowledgeBases[0]!,
-            id: "kb-review-partial-medical-policy",
-            name: "医保政策补充库",
+            id: "kb-supervision-rules-knowledge",
+            name: "医保监管规则库",
             documentCount: null,
             chunkCount: null,
             appCount: null
@@ -317,10 +308,10 @@ describe("KnowledgeBasePage", () => {
 
     render(<KnowledgeBasePage />);
 
-    const categoryTitle = within(screen.getByLabelText("知识库分类卡片")).getByText("医疗领域法律法规");
+    const categoryTitle = within(screen.getByLabelText("知识库分类卡片")).getByText("医保相关规则制度");
     const categoryCard = categoryTitle.closest("button");
     expect(categoryCard).not.toBeNull();
-    expect(categoryCard as HTMLButtonElement).toHaveTextContent("待同步 · 待同步");
+    expect(categoryCard as HTMLButtonElement).toHaveTextContent("待同步");
     expect(categoryCard as HTMLButtonElement).not.toHaveTextContent("12 份文档");
     expect(categoryCard as HTMLButtonElement).not.toHaveTextContent("120 个片段");
   });
@@ -343,5 +334,30 @@ describe("KnowledgeBasePage", () => {
     expect(screen.getByText("知识库读取失败")).toBeInTheDocument();
     expect(screen.queryByText("暂无可用知识库")).not.toBeInTheDocument();
     expect(screen.queryByText("未找到知识库")).not.toBeInTheDocument();
+  });
+
+  it("keeps non-audit source collections out of the lightweight product catalog", () => {
+    const ready = makeMetricsReadyRuntime();
+    runtimeMock.current = {
+      ...ready,
+      data: {
+        ...ready.data,
+        knowledgeBases: [
+          ...ready.data.knowledgeBases,
+          {
+            ...ready.data.knowledgeBases[0]!,
+            id: "kb-policy-general-policy",
+            name: "综合政策资料库",
+            description: "非当前审计产品范围。"
+          }
+        ]
+      }
+    };
+
+    render(<KnowledgeBasePage />);
+
+    expect(screen.getAllByRole("heading", { name: HUMAN_KNOWLEDGE_LABEL }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("综合政策资料库")).not.toBeInTheDocument();
+    expect(screen.getByText("其他领域知识暂不进入产品前台")).toBeInTheDocument();
   });
 });

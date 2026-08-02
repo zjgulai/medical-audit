@@ -8,15 +8,21 @@ import {
   visiblePrimaryNavigation,
   type NavigationItem
 } from "@/lib/navigation";
-import { AUDIT_PLATFORM_NAME, AUDIT_PLATFORM_SUBTITLE } from "@/lib/brand";
+import { AUDIT_PLATFORM_SUBTITLE } from "@/lib/brand";
 
-import { BrandLogo } from "./brand-logo";
+import { BrandLockup } from "./brand-lockup";
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-const SIDEBAR_PINNED_UTILITY_IDS = new Set(["agent-market", "knowledge-base", "analytics"]);
+const SIDEBAR_PINNED_UTILITY_IDS = new Set([
+  "agent-market",
+  "knowledge-base",
+  "analytics",
+  "projects",
+  "audit-cockpit"
+]);
 
 function NavigationLink({
   item,
@@ -102,15 +108,12 @@ export function AppSidebar({ collapsed = false }: { readonly collapsed?: boolean
       }`}
     >
       <Link href="/workspace" className="audit-focus-ring rounded-[var(--audit-radius-lg)]" aria-label="打开门户首页">
-        <div className={`flex items-center gap-3 ${collapsed ? "md:justify-center md:gap-0" : ""}`}>
-          <div className="grid size-10 shrink-0 place-items-center rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-white shadow-[0_8px_18px_rgb(35_45_84/0.08)]">
-            <BrandLogo priority />
-          </div>
-          <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
-            <p className="truncate text-sm font-semibold text-[var(--audit-ink)]">{AUDIT_PLATFORM_NAME}</p>
-            <p className="audit-meta">{AUDIT_PLATFORM_SUBTITLE}</p>
-          </div>
-        </div>
+        <BrandLockup
+          className={collapsed ? "md:justify-center [&_.audit-brand-lockup-copy]:md:hidden" : ""}
+          compact
+          priority
+          subtitle={AUDIT_PLATFORM_SUBTITLE}
+        />
       </Link>
 
       <nav

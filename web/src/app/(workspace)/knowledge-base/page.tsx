@@ -7,18 +7,17 @@ import {
   ReplicaEmptyState,
   ReplicaFilterButton,
   ReplicaNotice,
-  ReplicaPageHeader,
-  ReplicaRuntimeBadge
+  ReplicaPageHeader
 } from "@/components/replica/replica-page-kit";
 import { useReplicaKnowledgeBaseData } from "@/components/replica/use-replica-runtime";
 import type { SourceCollection } from "@/lib/api-types";
 import type { ReplicaKnowledgeBaseItem } from "@/lib/replica-adapters";
+import { isAuditProductSourceCollection } from "@/lib/audit-knowledge-scope";
 import { isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
 type ProductKnowledgeCategoryId =
   | "all"
   | "my"
-  | "national"
   | "audit-laws"
   | "medical-laws"
   | "insurance-rules"
@@ -38,12 +37,6 @@ const productCategoryMeta: readonly Omit<ProductKnowledgeCategory, "items">[] = 
     title: "我的知识库",
     description: "个人上传材料、院内台账、访谈记录和仅本人可见的审计资料。",
     tone: "blue"
-  },
-  {
-    id: "national",
-    title: "国家制度文档",
-    description: "国家政策、综合制度、财政采购、公开披露和行业管理文件。",
-    tone: "green"
   },
   {
     id: "audit-laws",
@@ -80,7 +73,7 @@ const releaseKnowledgeScope = {
     "supervision-rules-knowledge",
     "medical-insurance-catalog",
     "risk-negative-list",
-    "personal-materials"
+    "management-judicial-audit-procedure"
   ] satisfies readonly SourceCollection[]
 } as const;
 const knowledgeBaseSourceCollectionMap: Record<string, readonly SourceCollection[]> = {
@@ -122,7 +115,11 @@ function categoryForKnowledgeBase(item: ReplicaKnowledgeBaseItem): ProductKnowle
   if (sources.includes("management-judicial-audit-procedure") || text.includes("审计程序") || text.includes("司法审计")) {
     return "audit-laws";
   }
-  return "national";
+  return "audit-laws";
+}
+
+function isAuditKnowledgeBase(item: ReplicaKnowledgeBaseItem): boolean {
+  return sourceCollectionsFromKnowledgeBaseId(item.id).some(isAuditProductSourceCollection);
 }
 
 function buildProductCategories(items: readonly ReplicaKnowledgeBaseItem[]): readonly ProductKnowledgeCategory[] {
@@ -144,10 +141,6 @@ function documentCountForItem(item: ReplicaKnowledgeBaseItem): number | null {
     : null;
 }
 
-function chunkCountForItem(item: ReplicaKnowledgeBaseItem): number | null {
-  return typeof item.chunkCount === "number" && item.chunkCount >= 0 ? item.chunkCount : null;
-}
-
 function sumDocuments(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
   if (items.length === 0) {
     return null;
@@ -155,21 +148,6 @@ function sumDocuments(items: readonly ReplicaKnowledgeBaseItem[]): number | null
   let total = 0;
   for (const item of items) {
     const count = documentCountForItem(item);
-    if (count === null) {
-      return null;
-    }
-    total += count;
-  }
-  return total;
-}
-
-function sumChunks(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
-  if (items.length === 0) {
-    return null;
-  }
-  let total = 0;
-  for (const item of items) {
-    const count = chunkCountForItem(item);
     if (count === null) {
       return null;
     }
@@ -194,12 +172,12 @@ function sourceCollectionsFromKnowledgeBases(items: readonly ReplicaKnowledgeBas
 function populatedKnowledgeBaseCount(items: readonly ReplicaKnowledgeBaseItem[]): number | null {
   if (
     items.length === 0
-    || items.some((item) => documentCountForItem(item) === null || chunkCountForItem(item) === null)
+    || items.some((item) => documentCountForItem(item) === null)
   ) {
     return null;
   }
   return items.filter((item) => (
-    (documentCountForItem(item) ?? 0) > 0 || (chunkCountForItem(item) ?? 0) > 0
+    (documentCountForItem(item) ?? 0) > 0
   )).length;
 }
 
@@ -207,7 +185,7 @@ function hasPopulatedRequiredKnowledgeBases(items: readonly ReplicaKnowledgeBase
   return releaseKnowledgeScope.requiredSourceCollections.every((requiredSource) => (
     items.some((item) => (
       sourceCollectionsFromKnowledgeBaseId(item.id).includes(requiredSource)
-      && ((documentCountForItem(item) ?? 0) > 0 || (chunkCountForItem(item) ?? 0) > 0)
+      && (documentCountForItem(item) ?? 0) > 0
     ))
   ));
 }
@@ -219,7 +197,11 @@ export default function KnowledgeBasePage() {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [detailOpen, setDetailOpen] = useState(true);
   const knowledgeBaseData = useReplicaKnowledgeBaseData();
-  const knowledgeBases = knowledgeBaseData.data.knowledgeBases;
+  const allKnowledgeBases = knowledgeBaseData.data.knowledgeBases;
+  const knowledgeBases = useMemo(
+    () => allKnowledgeBases.filter(isAuditKnowledgeBase),
+    [allKnowledgeBases]
+  );
 
   const productCategories = useMemo(() => buildProductCategories(knowledgeBases), [knowledgeBases]);
   const activeItems = useMemo(() => {
@@ -229,14 +211,8 @@ export default function KnowledgeBasePage() {
     return scopedItems.filter((item) => matchesKnowledgeBase(item, query));
   }, [activeCategory, knowledgeBases, productCategories, query]);
 
-  const totalDocuments = knowledgeBaseData.data.summary?.totalDocumentCount ??
-    (knowledgeBaseData.source === "fixture" ? sumDocuments(knowledgeBases) : null);
-  const totalChunks = knowledgeBaseData.data.summary?.currentSearchEmbeddingCount ??
-    (knowledgeBaseData.source === "fixture"
-      ? knowledgeBaseData.data.currentSearchEmbeddingCount ?? sumChunks(knowledgeBases)
-      : null);
-  const registeredKnowledgeBaseCount = knowledgeBaseData.data.summary?.sourceCollectionCount
-    ?? (knowledgeBases.length > 0 ? knowledgeBases.length : null);
+  const totalDocuments = sumDocuments(knowledgeBases);
+  const registeredKnowledgeBaseCount = knowledgeBases.length > 0 ? knowledgeBases.length : null;
   const populatedCount = knowledgeBaseData.data.metricsSource === "knowledge-base-catalog"
     ? populatedKnowledgeBaseCount(knowledgeBases)
     : null;
@@ -257,7 +233,6 @@ export default function KnowledgeBasePage() {
     : productCategories.find((category) => category.id === activeCategory)?.items ?? [];
   const activeCategorySourceCollections = sourceCollectionsFromKnowledgeBases(activeCategoryItems);
   const activeCategoryDocumentsHref = knowledgeBaseCategoryDocumentsHref(activeCategorySourceCollections);
-  const activeCategoryGraphHref = knowledgeBaseCategoryGraphHref(activeCategorySourceCollections);
 
   const unavailableState = knowledgeBaseData.status === "loading"
     ? { title: "知识库加载中", description: "正在读取当前可访问的知识库目录。" }
@@ -281,29 +256,20 @@ export default function KnowledgeBasePage() {
     >
       <ReplicaPageHeader
         kicker="知识库"
-        title="知识库分类"
-        description="按医院审计人员可理解的业务类别组织知识库，隐藏内部来源字段，只保留可检索、可引用、可授权的内容入口。"
+        title="审计知识库"
+        description="只保留审计工作需要的法规、监管规则、支付目录、风险清单和个人资料；每份原文都可追溯、预览和按权限下载。"
         actions={
-          <>
-            <ReplicaRuntimeBadge
-              source={knowledgeBaseData.source}
-              status={knowledgeBaseData.status}
-              issueCount={knowledgeBaseData.issues.length}
-            />
-            <button type="button" className="replica-primary-button" onClick={() => setActiveCategory("my")}>
-              我的知识库
-            </button>
-          </>
+          <button type="button" className="replica-primary-button" onClick={() => setActiveCategory("my")}>
+            我的审计资料
+          </button>
         }
       />
 
       <section className="replica-kb-summary-band" aria-label="知识库数据口径">
         <article>
-          <span>装载覆盖</span>
-          <strong>{populatedCount === null || registeredKnowledgeBaseCount === null
-            ? "待同步"
-            : `${populatedCount} / ${registeredKnowledgeBaseCount}`}</strong>
-          <p>发布口径：{releaseKnowledgeScope.label}</p>
+          <span>审计知识库</span>
+          <strong>{registeredKnowledgeBaseCount ?? "待同步"}</strong>
+          <p>其他领域知识暂不进入产品前台</p>
         </article>
         <article>
           <span>文档数</span>
@@ -311,14 +277,14 @@ export default function KnowledgeBasePage() {
           <p>{knowledgeBaseData.source === "fixture" ? "本地静态目录" : "来自当前知识目录"}</p>
         </article>
         <article>
-          <span>知识片段</span>
-          <strong>{formatChunkCount(totalChunks, false)}</strong>
-          <p>当前可用于检索的知识片段数量</p>
+          <span>原文能力</span>
+          <strong>可追溯</strong>
+          <p>预览、下载和来源版本</p>
         </article>
         <article>
-          <span>数据来源</span>
-          <strong>{knowledgeBaseData.source === "fixture" ? "本地目录" : "知识目录"}</strong>
-          <p>页面仅展示，不执行生产写入</p>
+          <span>最近更新</span>
+          <strong>{newestUpdatedAt(knowledgeBases)}</strong>
+          <p>以知识库目录返回为准</p>
         </article>
       </section>
 
@@ -329,20 +295,18 @@ export default function KnowledgeBasePage() {
         data-coverage-status={releaseCoverageStatus}
       >
         <div>
-          <span>当前发布范围</span>
-          <strong>{releaseKnowledgeScope.label}</strong>
+          <span>轻量发布范围</span>
+          <strong>审计核心知识</strong>
         </div>
         {releaseCoverageStatus === "unknown" ? (
-          <p>知识集合装载指标尚未同步，本页面不会把未知状态显示为全量可用。</p>
+          <p>文档指标尚未同步；页面不会用空卡片冒充可用知识库。</p>
         ) : releaseCoverageStatus === "core-ready" ? (
           <p>
-            已装载 {populatedCount} / {registeredKnowledgeBaseCount} 个注册集合；本次仅承诺核心范围，
-            其余空集合继续标记为待激活。
+            五个核心审计来源已装载；其他领域继续保留在后台，但不进入当前产品前台。
           </p>
         ) : (
           <p>
-            已装载 {populatedCount} / {registeredKnowledgeBaseCount} 个注册集合，尚未达到
-            {releaseKnowledgeScope.label}的发布门槛。
+            当前尚未达到五个核心审计来源的发布门槛，缺失来源不会以空数据冒充。
           </p>
         )}
       </section>
@@ -382,7 +346,7 @@ export default function KnowledgeBasePage() {
               <span>{category.title}</span>
               <strong>{category.items.length}</strong>
               <p>{category.description}</p>
-              <small>{formatDocumentCount(sumDocuments(category.items))} · {formatChunkCount(sumChunks(category.items))}</small>
+              <small>{formatDocumentCount(sumDocuments(category.items))}</small>
             </button>
           ))}
         </div>
@@ -393,10 +357,7 @@ export default function KnowledgeBasePage() {
           <span>{query.trim() ? `关键词：${query.trim()}` : "按产品分类展示"}</span>
           <span>{knowledgeBaseData.data.canUploadPersonal ? "支持我的知识库" : "个人上传待开通"}</span>
           <Link href={activeCategoryDocumentsHref}>
-            {activeCategory === allCategory ? "检索全部目录" : "检索当前分类"}
-          </Link>
-          <Link href={activeCategoryGraphHref}>
-            {activeCategory === allCategory ? "查看全部图谱" : "查看当前图谱"}
+            {activeCategory === allCategory ? "查看全部原文档" : "查看分类原文档"}
           </Link>
         </div>
 
@@ -429,12 +390,12 @@ export default function KnowledgeBasePage() {
                       <dd>{formatDocumentCount(documentCountForItem(item), false)}</dd>
                     </div>
                     <div>
-                      <dt>知识片段</dt>
-                      <dd>{formatChunkCount(chunkCountForItem(item), false)}</dd>
+                      <dt>最近更新</dt>
+                      <dd>{item.updatedAt}</dd>
                     </div>
                     <div>
-                      <dt>同步</dt>
-                      <dd>{item.updatedAt}</dd>
+                      <dt>原文</dt>
+                      <dd>可预览下载</dd>
                     </div>
                   </dl>
                 </article>
@@ -460,44 +421,29 @@ export default function KnowledgeBasePage() {
                     <dd>{formatDocumentCount(documentCountForItem(selectedKnowledgeBase), false)}</dd>
                   </div>
                   <div>
-                    <dt>知识片段</dt>
-                    <dd>{formatChunkCount(chunkCountForItem(selectedKnowledgeBase), false)}</dd>
-                  </div>
-                  <div>
                     <dt>最后同步</dt>
                     <dd>{newestUpdatedAt([selectedKnowledgeBase])}</dd>
                   </div>
                 </dl>
-                <div className="replica-kb-tags">
-                  {selectedKnowledgeBase.tags.slice(0, 4).map((tag) => (
-                    <span key={tag}>{tag.replace(" chunks", " 片段")}</span>
-                  ))}
-                </div>
                 <section className="replica-kb-next-panel" aria-label="知识库权限说明">
-                  <h3>{selectedKnowledgeBase.scope === "个人知识库" ? "我的知识库权限" : "可调用入口"}</h3>
+                  <h3>{selectedKnowledgeBase.scope === "个人知识库" ? "我的资料权限" : "原文溯源"}</h3>
                   <p>
                     {selectedKnowledgeBase.scope === "个人知识库"
                       ? "个人知识库仅本人可见；需要纳入项目共享时，由管理员配置范围。"
-                      : "该知识库可用于文档检索、AI 对话和审计专题核验。"}
+                      : "原文档保留来源、版本与文件校验信息，可用于审计检索和 AI 审证。"}
                   </p>
                 </section>
                 <div className="replica-kb-detail-actions">
                   {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
-                    <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>打开目录</Link>
+                    <Link href={knowledgeBaseDocumentsHref(selectedKnowledgeBase)}>查看原文档</Link>
                   ) : (
-                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "打开目录")}>打开目录</button>
+                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "查看原文档")}>查看原文档</button>
                   )}
                   {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
                     <Link href={knowledgeBaseChatHref(selectedKnowledgeBase)}>进入 AI 对话</Link>
                   ) : (
                     <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "进入 AI 对话")}>进入 AI 对话</button>
                   )}
-                  {sourceCollectionsFromKnowledgeBaseId(selectedKnowledgeBase.id).length > 0 ? (
-                    <Link href={knowledgeBaseGraphHref(selectedKnowledgeBase)}>查看图谱</Link>
-                  ) : (
-                    <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "查看图谱")}>查看图谱</button>
-                  )}
-                  <button type="button" onClick={() => recordKnowledgeBaseAction(selectedKnowledgeBase, "权限设置")}>权限设置</button>
                 </div>
               </aside>
             ) : null}
@@ -506,13 +452,6 @@ export default function KnowledgeBasePage() {
       </section>
     </main>
   );
-}
-
-function formatChunkCount(value: number | null, includeUnit = true): string {
-  if (value === null) {
-    return "待同步";
-  }
-  return `${value.toLocaleString()}${includeUnit ? " 个片段" : ""}`;
 }
 
 function formatDocumentCount(value: number | null, includeUnit = true): string {
@@ -539,15 +478,7 @@ function knowledgeBaseCategoryDocumentsHref(sourceCollections: readonly SourceCo
   return routeWithSourceCollections("/documents", sourceCollections);
 }
 
-function knowledgeBaseGraphHref(item: ReplicaKnowledgeBaseItem): string {
-  return knowledgeBaseCategoryGraphHref(sourceCollectionsFromKnowledgeBaseId(item.id));
-}
-
-function knowledgeBaseCategoryGraphHref(sourceCollections: readonly SourceCollection[]): string {
-  return routeWithSourceCollections("/graph", sourceCollections);
-}
-
-function routeWithSourceCollections(route: "/documents" | "/graph", sourceCollections: readonly SourceCollection[]): string {
+function routeWithSourceCollections(route: "/documents", sourceCollections: readonly SourceCollection[]): string {
   if (sourceCollections.length === 0) {
     return route;
   }

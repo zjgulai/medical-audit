@@ -1064,6 +1064,8 @@ describe("replica backend read adapters", () => {
         {
           id: "analytics-real-1",
           name: "真实收费.csv",
+          analysis_case: "audit-data",
+          analysis_case_label: "审计数据分析",
           extension: "csv",
           size_bytes: 0,
           size_kb: 0,

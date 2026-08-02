@@ -79,58 +79,54 @@ function CategoryCatalog({
   selectedTemplateId,
   onSelectTemplate
 }: CategoryCatalogProps) {
+  const activeTemplates = templates.filter((template) => {
+    const category = categories.find((item) => item.id === template.category_id);
+    return category?.availability === "active";
+  });
+  const awaitingCategories = categories.filter(
+    (category) => category.availability !== "active"
+  );
   return (
     <section className="replica-report-catalog-section" aria-label="报表分类目录">
       <div className="replica-report-section-heading">
         <div>
-          <p>模板目录</p>
-          <h2>六类模板目录</h2>
+          <p>第 2 步</p>
+          <h2>选择报告或底稿</h2>
         </div>
         <span>{selectionHint}</span>
       </div>
-      <div className="replica-report-catalog">
-        {categories.map((category, index) => {
-          const categoryTemplates = templates.filter((template) => template.category_id === category.id);
-          const active = category.availability === "active";
+      <div className="replica-report-deliverable-grid">
+        {activeTemplates.length > 0 ? activeTemplates.map((template) => {
+          const category = categories.find((item) => item.id === template.category_id);
           return (
             <article
-              className={active ? "is-active" : "is-awaiting"}
-              key={category.id}
+              className={selectedTemplateId === template.id ? "is-selected" : ""}
+              key={template.id}
             >
-              <div className="replica-report-category-heading">
-                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <h3>{category.label}</h3>
-                  <p>{active ? `${categoryTemplates.length} 项受控模板` : "模板尚未进入目录"}</p>
-                </div>
+              <div>
+                <span>{category?.label ?? "审计交付物"}</span>
+                <h3>{template.name}</h3>
+                <p>{template.output_type} · 支持人工复核后下载</p>
               </div>
-              {active ? (
-                <div className="replica-report-template-list">
-                  {categoryTemplates.length > 0 ? categoryTemplates.map((template) => (
-                    <div className="replica-report-template" key={template.id}>
-                      <div>
-                        <strong>{template.name}</strong>
-                        <span>{template.output_type} · {template.source_table}</span>
-                      </div>
-                      <button
-                        aria-label={`填写模板：${template.name}`}
-                        aria-pressed={selectedTemplateId === template.id}
-                        disabled={!canSelect}
-                        type="button"
-                        onClick={() => onSelectTemplate(template.id)}
-                      >
-                        填写模板
-                      </button>
-                    </div>
-                  )) : <p className="replica-report-empty-inline">当前无已启用模板</p>}
-                </div>
-              ) : (
-                <span className="replica-report-awaiting-badge">待业务模板确认</span>
-              )}
+              <button
+                aria-label={`填写模板：${template.name}`}
+                aria-pressed={selectedTemplateId === template.id}
+                disabled={!canSelect}
+                type="button"
+                onClick={() => onSelectTemplate(template.id)}
+              >
+                {selectedTemplateId === template.id ? "已选择" : "选择"}
+              </button>
             </article>
           );
-        })}
+        }) : <p className="replica-report-empty-inline">当前没有可用的报告或底稿</p>}
       </div>
+      {awaitingCategories.length > 0 ? (
+        <details className="replica-report-admin-details">
+          <summary>查看暂未启用的模板分类</summary>
+          <p>{awaitingCategories.map((category) => category.label).join("、")}</p>
+        </details>
+      ) : null}
     </section>
   );
 }
@@ -157,13 +153,14 @@ function DraftPanel({
     <section className="replica-report-draft-panel" aria-labelledby="report-draft-title">
       <div className="replica-report-section-heading">
         <div>
-          <p>受控底稿草稿</p>
+          <p>第 3 步 · 汇入分析结论</p>
           <h2 id="report-draft-title">创建草稿：{template.name}</h2>
         </div>
-        <span>{template.evidence_bindings.length} 个允许字段</span>
+        <span>{nonEmptyFieldCount} 项已填写</span>
       </div>
       <p className="replica-report-draft-note">
-        仅提交当前模板声明的 evidence_bindings；空白字段不会进入草稿。
+        将已有的大模型分析结果粘贴到对应内容区，补充关键证据并人工修订后保存草稿。
+        空白项不会写入。
       </p>
       <form aria-label={`${template.name}草稿`} onSubmit={onSubmit}>
         {template.evidence_bindings.map((field, index) => {
@@ -171,13 +168,15 @@ function DraftPanel({
           const countId = `replica-report-field-${index}-count`;
           return (
             <label key={field}>
-              <span>{field}</span>
+              <span>{index === 0 ? "大模型分析结果" : field}</span>
+              {index === 0 ? <em>将写入：{field}</em> : null}
               <textarea
                 aria-describedby={countId}
                 aria-label={field}
                 disabled={saving}
                 maxLength={4000}
                 name={field}
+                placeholder={index === 0 ? "粘贴大模型分析结论，并保留关键依据和不确定项" : `补充${field}`}
                 rows={3}
                 value={value}
                 onChange={(event) => onFieldChange(field, event.target.value)}
@@ -191,9 +190,9 @@ function DraftPanel({
             disabled={!canCreate || !projectKey || nonEmptyFieldCount === 0 || saving}
             type="submit"
           >
-            {saving ? "正在创建草稿…" : "创建受控草稿"}
+            {saving ? "正在保存草稿…" : "保存并进入人工复核"}
           </button>
-          <span>{projectKey ? `目标项目：${projectKey}` : "请先选择所属项目"}</span>
+          <span>{projectKey ? "草稿将归入已选项目" : "请先选择所属项目"}</span>
         </div>
       </form>
       {error ? <p className="replica-report-error" role="alert">{error}</p> : null}
@@ -201,24 +200,23 @@ function DraftPanel({
         <div className="replica-report-handoff" aria-live="polite">
           <div>
             <span>{boundaryAnomaly ? "草稿响应边界异常" : "草稿已进入待复核队列"}</span>
-            <strong>{result.task_id}</strong>
+            <strong>{boundaryAnomaly ? "请停止后续操作" : "等待人工确认后再作为正式结论"}</strong>
           </div>
-          <ul>
-            <li>
-              {result.formal_report_created === false ? "未生成正式报告" : "正式报告状态异常"}
-            </li>
-            <li>
-              {result.provider_call === false ? "未调用外部服务" : "检测到外部服务调用"}
-            </li>
-            <li>
-              审计记录：{result.audit.durability}
-              {result.audit.status === "degraded" ? "（降级）" : ""}
-              {result.audit.status === "local-only" ? "（本地）" : ""}
-            </li>
-          </ul>
-          <details className="replica-runtime-diagnostics">
-            <summary>查看响应边界</summary>
+          <details className="replica-report-admin-details">
+            <summary>管理与审计详情</summary>
             <ul>
+              <li>任务编号：{result.task_id}</li>
+              <li>
+                {result.formal_report_created === false ? "未生成正式报告" : "正式报告状态异常"}
+              </li>
+              <li>
+                {result.provider_call === false ? "未调用外部服务" : "检测到外部服务调用"}
+              </li>
+              <li>
+                审计记录：{result.audit.durability}
+                {result.audit.status === "degraded" ? "（降级）" : ""}
+                {result.audit.status === "local-only" ? "（本地）" : ""}
+              </li>
               <li><code>formal_report_created={String(result.formal_report_created)}</code></li>
               <li><code>provider_call={String(result.provider_call)}</code></li>
             </ul>
@@ -241,9 +239,8 @@ function ReportMetrics({ metrics }: { readonly metrics: ReportWorkbenchResponse[
   const items = [
     ["报告总数", metrics.report_count],
     ["已签发报告", metrics.signed_report_count],
-    ["门禁阻断报告", metrics.blocked_report_count],
-    ["已纳入疑点", metrics.included_finding_count],
-    ["报告 DOCX", metrics.docx_download_count]
+    ["待补充证据", metrics.blocked_report_count],
+    ["已纳入审计疑点", metrics.included_finding_count]
   ] as const;
   return (
     <section className="replica-report-metrics" aria-label="报告指标">
@@ -289,13 +286,13 @@ function ReportLedger({
     <section className="replica-report-ledger" aria-labelledby="report-ledger-title">
       <div className="replica-report-section-heading">
         <div>
-          <p>复核与报告</p>
-          <h2 id="report-ledger-title">报告台账</h2>
+          <p>最近交付物</p>
+          <h2 id="report-ledger-title">报告与底稿</h2>
         </div>
         <span>{entries.length} 条</span>
       </div>
       {entries.length === 0 ? (
-        <p className="replica-report-empty">暂无报告台账</p>
+        <p className="replica-report-empty">暂无报告或底稿</p>
       ) : (
         <div className="replica-report-table-wrap">
           <table>
@@ -303,9 +300,8 @@ function ReportLedger({
               <tr>
                 <th>报告 / 底稿</th>
                 <th>状态</th>
-                <th>证据与门禁</th>
-                <th>负责人</th>
-                <th>受控操作</th>
+                <th>关键情况</th>
+                <th>下载</th>
               </tr>
             </thead>
             <tbody>
@@ -313,17 +309,16 @@ function ReportLedger({
                 <tr key={entry.id}>
                   <td>
                     <strong>{entry.title}</strong>
-                    <span>{entry.report_no} · {entry.id}</span>
+                    <span>{entry.report_no} · 更新于 {entry.updated_at.slice(0, 10)}</span>
                   </td>
                   <td><span className={`replica-report-status status-${entry.status}`}>{entry.status}</span></td>
                   <td>
                     <strong>{entry.gate_summary}</strong>
                     <span>{entry.included_finding_count} 个疑点 · {entry.appendix_count} 个附件</span>
                   </td>
-                  <td>{entry.owner}</td>
                   <td>
                     <nav aria-label={`${entry.title}操作`}>
-                      <span>详情请从项目管理进入</span>
+                      <span>负责人：{entry.owner}</span>
                       <AuthenticatedDownloadButton
                         disabled={downloadLocked}
                         href={entry.download_links.task_docx}
@@ -372,11 +367,12 @@ function ReportLedger({
 
 function EvidenceLedger({ sources }: { readonly sources: readonly ReportWorkbenchEvidenceSource[] }) {
   return (
-    <section className="replica-report-evidence" aria-labelledby="report-evidence-title">
+    <details className="replica-report-evidence" aria-labelledby="report-evidence-title">
+      <summary>查看已纳入的证据（{sources.length}）</summary>
       <div className="replica-report-section-heading">
         <div>
           <p>证据来源</p>
-          <h2 id="report-evidence-title">底稿证据索引</h2>
+          <h2 id="report-evidence-title">证据清单</h2>
         </div>
         <span>{sources.length} 条</span>
       </div>
@@ -396,7 +392,7 @@ function EvidenceLedger({ sources }: { readonly sources: readonly ReportWorkbenc
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }
 
@@ -659,9 +655,9 @@ export function ReplicaReportWorkbench() {
     <main className="replica-page replica-page-standard replica-report-workbench">
       <header className="replica-page-header">
         <div>
-          <p className="replica-kicker">受控报告工作台</p>
-          <h1>审计底稿与报告台账</h1>
-          <p>按业务模板形成可追溯草稿，正式报告生成与签发仍由后续门禁控制。</p>
+          <p className="replica-kicker">审计交付</p>
+          <h1>报告与底稿</h1>
+          <p>选择项目和交付物，汇入大模型分析结果，人工复核后预览或下载。</p>
         </div>
         <div className="replica-report-boundary" aria-label="报告边界">
           <span>{canCreate ? "草稿可创建" : "当前身份只读"}</span>
@@ -671,7 +667,7 @@ export function ReplicaReportWorkbench() {
 
       <section className="replica-report-control-band" aria-label="草稿项目上下文">
         <div>
-          <p>项目归属</p>
+          <p>第 1 步 · 选择项目</p>
           <label>
             <span>所属项目</span>
             <select
@@ -695,16 +691,16 @@ export function ReplicaReportWorkbench() {
           {projectContextNotice ? <span role="status">{projectContextNotice}</span> : null}
         </div>
         <div>
-          <p>当前身份边界</p>
-          <strong>{canCreate ? "可创建底稿草稿" : "当前角色无权新建底稿草稿"}</strong>
-          <span>系统仍会独立校验项目可见范围与角色权限。</span>
+          <p>权限状态</p>
+          <strong>{canCreate ? "可创建并保存草稿" : "当前角色无权新建底稿草稿"}</strong>
+          <span>项目范围和下载权限会在每次操作时重新校验。</span>
           {submittingFromAnotherRole ? <span>上一身份的草稿请求仍在处理中</span> : null}
         </div>
-        <div>
-          <p>报告数据来源</p>
-          <strong>{roleReportState.response?.store.backend ?? "尚未就绪"}</strong>
-          <span>{lanePhaseLabels[roleReportState.phase]}</span>
-        </div>
+        <details className="replica-report-admin-details">
+          <summary>管理与服务详情</summary>
+          <p>服务状态：{lanePhaseLabels[roleReportState.phase]}</p>
+          <p>存储实现：{roleReportState.response?.store.backend ?? "尚未就绪"}</p>
+        </details>
       </section>
 
       {roleReportState.phase === "loading" ? (

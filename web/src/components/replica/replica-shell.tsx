@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { BrandLogo } from "@/components/shell/brand-logo";
 import { useAuditUser } from "@/components/shell/audit-user-context";
+import { BrandLockup } from "@/components/shell/brand-lockup";
 import {
   createQueryHistoryReviewTask,
   fetchProjects,
@@ -174,12 +174,7 @@ export function ReplicaShell({ children }: ReplicaShellProps) {
     >
       <aside className="replica-sidebar" aria-label={`${AUDIT_PLATFORM_NAME}导航`}>
         <Link href="/chat" className="replica-brand" aria-label={AUDIT_PLATFORM_NAME}>
-          <span className="replica-brand-mark">
-            <BrandLogo height={28} priority width={28} />
-          </span>
-          <span className="replica-brand-copy">
-            <strong className="replica-brand-text">{AUDIT_PLATFORM_NAME}</strong>
-          </span>
+          <BrandLockup compact priority />
         </Link>
 
         <nav className="replica-main-nav" aria-label="主导航">

@@ -127,6 +127,15 @@ export const primaryNavigation: readonly NavigationItem[] = [
     description: "管理审计项目、成员、角色和任务流转。",
     emphasis: "standard",
     target: "workspace"
+  },
+  {
+    id: "audit-cockpit",
+    label: "审计驾驶舱",
+    href: "/audit-cockpit",
+    symbol: "舱",
+    description: "查看项目进度、风险分布、待办事项和证据准备情况。",
+    emphasis: "primary",
+    target: "workspace"
   }
 ];
 
@@ -222,6 +231,7 @@ export const sidebarUtilityNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("analytics"),
   requireNavigationItemById("reports"),
   requireNavigationItemById("projects"),
+  requireNavigationItemById("audit-cockpit"),
   requireNavigationItemById("guided-check"),
   requireNavigationItemById("rules"),
   requireNavigationItemById("remediation"),
@@ -244,6 +254,7 @@ export const navigationGroups: readonly NavigationGroup[] = [
       requireNavigationItemById("analytics"),
       requireNavigationItemById("reports"),
       requireNavigationItemById("projects"),
+      requireNavigationItemById("audit-cockpit"),
       requireNavigationItemById("guided-check"),
       requireNavigationItemById("remediation")
     ]

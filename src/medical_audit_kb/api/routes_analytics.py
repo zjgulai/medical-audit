@@ -9,7 +9,7 @@ from io import BytesIO, StringIO
 from typing import Annotated, Literal
 from zipfile import BadZipFile
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,8 @@ router = APIRouter(prefix="/analytics")
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {"csv", "xlsx", "xlsm"}
 ColumnType = Literal["数值", "日期", "标识", "文本", "空列"]
+AnalysisCase = Literal["audit-data", "dupont"]
+CaseStatus = Literal["completed", "needs-input"]
 
 
 class TableColumnProfile(BaseModel):
@@ -40,10 +42,26 @@ class TableColumnProfile(BaseModel):
     audit_hint: str
 
 
+class TableAnalysisMetric(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    value: float | int | None
+    display_value: str
+    formula: str | None = None
+    status: Literal["available", "unavailable"]
+
+
 class TableUploadAnalysisResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    analysis_case: AnalysisCase
+    analysis_case_label: str
+    case_status: Literal["completed", "needs-input"]
+    case_metrics: list[TableAnalysisMetric]
+    case_findings: list[str]
     size_kb: int
     extension: str
     status: Literal["parsed"]
@@ -67,6 +85,8 @@ class AnalyticsUploadHistoryItem(BaseModel):
 
     id: str
     name: str
+    analysis_case: AnalysisCase = "audit-data"
+    analysis_case_label: str = "审计数据分析"
     extension: str
     size_bytes: int
     size_kb: int
@@ -95,6 +115,7 @@ class AnalyticsUploadHistoryResponse(BaseModel):
 async def analyze_table_upload(
     file: Annotated[UploadFile, File()],
     state: Annotated[ApiState, Depends(get_api_state)],
+    analysis_case: Annotated[AnalysisCase, Form()] = "audit-data",
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> TableUploadAnalysisResponse:
@@ -142,6 +163,7 @@ async def analyze_table_upload(
         extension=extension,
         rows=rows,
         sheet_name=sheet_name,
+        analysis_case=analysis_case,
     )
     upload_record: dict[str, object] | None = None
     if state.analytics_upload_store is not None:
@@ -166,6 +188,7 @@ async def analyze_table_upload(
         {
             "upload_id": upload_record.get("id") if upload_record else None,
             "file_name": file_name,
+            "analysis_case": response.analysis_case,
             "extension": extension,
             "sheet_name": sheet_name,
             "row_count": response.row_count,
@@ -278,6 +301,7 @@ def _build_response(
     extension: str,
     rows: list[list[str]],
     sheet_name: str | None,
+    analysis_case: AnalysisCase = "audit-data",
 ) -> TableUploadAnalysisResponse:
     columns = [cell or f"field_{index + 1}" for index, cell in enumerate(rows[0])]
     normalized_rows = [_normalize_row(row, len(columns)) for row in rows[1:]]
@@ -348,8 +372,22 @@ def _build_response(
     if sheet_name:
         source_label = f"{source_label}（sheet: {sheet_name}）"
 
+    case_status, case_metrics, case_findings = _build_case_analysis(
+        analysis_case=analysis_case,
+        columns=columns,
+        rows=normalized_rows,
+        empty_cell_count=empty_cell_count,
+        duplicate_row_count=duplicate_row_count,
+        audit_signals=audit_signals,
+    )
+
     return TableUploadAnalysisResponse(
         name=file_name,
+        analysis_case=analysis_case,
+        analysis_case_label=_analysis_case_label(analysis_case),
+        case_status=case_status,
+        case_metrics=case_metrics,
+        case_findings=case_findings,
         size_kb=max(1, round(size_bytes / 1024)),
         extension=extension,
         status="parsed",
@@ -368,6 +406,11 @@ def _build_response(
 def _analysis_summary(response: TableUploadAnalysisResponse) -> dict[str, object]:
     return {
         "status": response.status,
+        "analysis_case": response.analysis_case,
+        "analysis_case_label": response.analysis_case_label,
+        "case_status": response.case_status,
+        "case_metrics": [metric.model_dump(mode="json") for metric in response.case_metrics],
+        "case_findings": list(response.case_findings),
         "sheet_name": response.sheet_name,
         "row_count": response.row_count,
         "column_count": len(response.columns),
@@ -378,6 +421,278 @@ def _analysis_summary(response: TableUploadAnalysisResponse) -> dict[str, object
         "recommendations": list(response.recommendations),
         "columns": [column.model_dump(mode="json") for column in response.columns],
     }
+
+
+def _analysis_case_label(analysis_case: AnalysisCase) -> str:
+    return "财务杜邦分析" if analysis_case == "dupont" else "审计数据分析"
+
+
+def _build_case_analysis(
+    *,
+    analysis_case: AnalysisCase,
+    columns: list[str],
+    rows: list[list[str]],
+    empty_cell_count: int,
+    duplicate_row_count: int,
+    audit_signals: list[str],
+) -> tuple[CaseStatus, list[TableAnalysisMetric], list[str]]:
+    if analysis_case == "dupont":
+        return _build_dupont_analysis(columns=columns, rows=rows)
+
+    row_count = len(rows)
+    metrics = [
+        TableAnalysisMetric(
+            key="row_count",
+            label="数据行数",
+            value=row_count,
+            display_value=f"{row_count} 行",
+            status="available",
+        ),
+        TableAnalysisMetric(
+            key="duplicate_row_count",
+            label="完全重复记录",
+            value=duplicate_row_count,
+            display_value=f"{duplicate_row_count} 条",
+            status="available",
+        ),
+        TableAnalysisMetric(
+            key="empty_cell_count",
+            label="空值单元",
+            value=empty_cell_count,
+            display_value=f"{empty_cell_count} 个",
+            status="available",
+        ),
+        TableAnalysisMetric(
+            key="audit_signal_count",
+            label="可识别审计维度",
+            value=len(audit_signals),
+            display_value=f"{len(audit_signals)} 类",
+            status="available",
+        ),
+    ]
+    findings = [
+        (
+            f"发现 {duplicate_row_count} 条完全重复记录，建议优先核对重复收费或重复入账。"
+            if duplicate_row_count > 0
+            else "未发现完全重复记录；仍需结合业务主键继续检查近似重复。"
+        ),
+        (
+            f"发现 {empty_cell_count} 个空值单元，需确认必填字段和业务允许缺失范围。"
+            if empty_cell_count > 0
+            else "当前样本未发现空值单元。"
+        ),
+        (
+            f"已识别可用于核验的字段维度：{'、'.join(audit_signals)}。"
+            if audit_signals
+            else "未识别到常用审计字段，请核对表头或补充字段映射。"
+        ),
+    ]
+    return ("completed" if rows else "needs-input"), metrics, findings
+
+
+def _build_dupont_analysis(
+    *,
+    columns: list[str],
+    rows: list[list[str]],
+) -> tuple[CaseStatus, list[TableAnalysisMetric], list[str]]:
+    required_columns: dict[str, tuple[str, tuple[str, ...]]] = {
+        "net_profit": (
+            "净利润",
+            ("净利润", "税后净利润", "net_profit", "net profit"),
+        ),
+        "revenue": (
+            "营业收入",
+            ("营业收入", "营业总收入", "销售收入", "revenue", "sales"),
+        ),
+        "average_assets": (
+            "平均总资产",
+            (
+                "平均总资产",
+                "平均资产总额",
+                "总资产平均余额",
+                "average_total_assets",
+                "avg_assets",
+            ),
+        ),
+        "average_equity": (
+            "平均净资产",
+            (
+                "平均净资产",
+                "平均股东权益",
+                "所有者权益平均余额",
+                "average_equity",
+                "avg_equity",
+            ),
+        ),
+    }
+    indexes = {
+        key: _find_column_index(columns, aliases)
+        for key, (_, aliases) in required_columns.items()
+    }
+    missing = [required_columns[key][0] for key, index in indexes.items() if index is None]
+    if missing:
+        return (
+            "needs-input",
+            _unavailable_dupont_metrics(),
+            [
+                f"缺少杜邦分析必需字段：{'、'.join(missing)}。",
+                "请使用页面案例模板的字段名，或将现有列重命名后重新分析。",
+            ],
+        )
+
+    resolved_indexes = {key: int(index) for key, index in indexes.items() if index is not None}
+    selected_row: list[str] | None = None
+    selected_values: dict[str, Decimal] | None = None
+    for row in reversed(rows):
+        values = {
+            key: _decimal_from_cell(row[index] if index < len(row) else "")
+            for key, index in resolved_indexes.items()
+        }
+        if all(value is not None for value in values.values()):
+            concrete = {key: value for key, value in values.items() if value is not None}
+            if (
+                concrete["revenue"] != 0
+                and concrete["average_assets"] != 0
+                and concrete["average_equity"] != 0
+            ):
+                selected_row = row
+                selected_values = concrete
+                break
+
+    if selected_values is None:
+        return (
+            "needs-input",
+            _unavailable_dupont_metrics(),
+            [
+                "没有找到四项指标均为有效数值且分母非零的数据行。",
+                "请检查营业收入、平均总资产和平均净资产是否为非零数值。",
+            ],
+        )
+
+    net_profit_margin = selected_values["net_profit"] / selected_values["revenue"]
+    total_asset_turnover = selected_values["revenue"] / selected_values["average_assets"]
+    equity_multiplier = selected_values["average_assets"] / selected_values["average_equity"]
+    return_on_equity = selected_values["net_profit"] / selected_values["average_equity"]
+    metrics = [
+        _dupont_metric(
+            key="net_profit_margin",
+            label="销售净利率",
+            value=net_profit_margin,
+            percentage=True,
+            formula="净利润 ÷ 营业收入",
+        ),
+        _dupont_metric(
+            key="total_asset_turnover",
+            label="总资产周转率",
+            value=total_asset_turnover,
+            formula="营业收入 ÷ 平均总资产",
+        ),
+        _dupont_metric(
+            key="equity_multiplier",
+            label="权益乘数",
+            value=equity_multiplier,
+            formula="平均总资产 ÷ 平均净资产",
+        ),
+        _dupont_metric(
+            key="return_on_equity",
+            label="净资产收益率",
+            value=return_on_equity,
+            percentage=True,
+            formula="销售净利率 × 总资产周转率 × 权益乘数",
+        ),
+    ]
+    period_index = _find_column_index(
+        columns,
+        ("期间", "年度", "年份", "日期", "period", "year"),
+    )
+    period = (
+        selected_row[period_index].strip()
+        if selected_row is not None
+        and period_index is not None
+        and period_index < len(selected_row)
+        and selected_row[period_index].strip()
+        else "最近一条有效记录"
+    )
+    findings = [
+        f"{period}的净资产收益率为 {_format_percent(return_on_equity)}。",
+        (
+            "本次结果由销售净利率、总资产周转率和权益乘数三项可复核指标分解得出，"
+            "可分别检查盈利能力、资产使用效率和财务杠杆。"
+        ),
+        "这是确定性公式计算结果，未调用外部大模型；正式结论仍需结合会计政策和同比口径复核。",
+    ]
+    return "completed", metrics, findings
+
+
+def _unavailable_dupont_metrics() -> list[TableAnalysisMetric]:
+    return [
+        TableAnalysisMetric(
+            key=key,
+            label=label,
+            value=None,
+            display_value="待补充数据",
+            formula=formula,
+            status="unavailable",
+        )
+        for key, label, formula in (
+            ("net_profit_margin", "销售净利率", "净利润 ÷ 营业收入"),
+            ("total_asset_turnover", "总资产周转率", "营业收入 ÷ 平均总资产"),
+            ("equity_multiplier", "权益乘数", "平均总资产 ÷ 平均净资产"),
+            (
+                "return_on_equity",
+                "净资产收益率",
+                "销售净利率 × 总资产周转率 × 权益乘数",
+            ),
+        )
+    ]
+
+
+def _dupont_metric(
+    *,
+    key: str,
+    label: str,
+    value: Decimal,
+    formula: str,
+    percentage: bool = False,
+) -> TableAnalysisMetric:
+    return TableAnalysisMetric(
+        key=key,
+        label=label,
+        value=float(round(value, 8)),
+        display_value=_format_percent(value) if percentage else f"{value:.2f}",
+        formula=formula,
+        status="available",
+    )
+
+
+def _format_percent(value: Decimal) -> str:
+    return f"{value * Decimal('100'):.2f}%"
+
+
+def _find_column_index(columns: list[str], aliases: tuple[str, ...]) -> int | None:
+    normalized_aliases = {_normalized_column_name(alias) for alias in aliases}
+    for index, column in enumerate(columns):
+        if _normalized_column_name(column) in normalized_aliases:
+            return index
+    return None
+
+
+def _normalized_column_name(value: str) -> str:
+    return "".join(
+        character.lower()
+        for character in value.strip()
+        if character not in " _-（）()"
+    )
+
+
+def _decimal_from_cell(value: str) -> Decimal | None:
+    normalized = value.strip().replace(",", "")
+    if not normalized:
+        return None
+    try:
+        return Decimal(normalized)
+    except InvalidOperation:
+        return None
 
 
 def _normalize_row(row: list[str], column_count: int) -> list[str]:

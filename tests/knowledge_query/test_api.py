@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from medical_audit_kb.api import routes_documents
 from medical_audit_kb.api.agent_store import (
     AGENT_ID_PREFIX,
     InMemoryAgentStore,
@@ -3207,6 +3208,16 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "charge-sample.csv"
+    assert body["analysis_case"] == "audit-data"
+    assert body["analysis_case_label"] == "审计数据分析"
+    assert body["case_status"] == "completed"
+    assert {metric["key"] for metric in body["case_metrics"]} == {
+        "row_count",
+        "duplicate_row_count",
+        "empty_cell_count",
+        "audit_signal_count",
+    }
+    assert any("完全重复记录" in finding for finding in body["case_findings"])
     assert body["upload_id"].startswith(ANALYTICS_UPLOAD_ID_PREFIX)
     assert body["sha256"]
     assert body["retention_status"] == "retained"
@@ -3290,6 +3301,68 @@ def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
     assert body["columns"][3]["name"] == "收费金额"
     assert body["columns"][3]["type"] == "数值"
     assert body["message"] == "后端已完成 XLSX 工作簿（sheet: 收费明细）的字段画像。"
+
+
+def test_analytics_table_upload_executes_dupont_case_with_reproducible_metrics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={
+            "file": (
+                "dupont-example.csv",
+                "\n".join(
+                    [
+                        "年度,净利润,营业收入,平均总资产,平均净资产",
+                        "2024,80,900,1800,720",
+                        "2025,100,1000,2000,800",
+                    ]
+                ),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["analysis_case"] == "dupont"
+    assert body["analysis_case_label"] == "财务杜邦分析"
+    assert body["case_status"] == "completed"
+    metrics = {metric["key"]: metric for metric in body["case_metrics"]}
+    assert metrics["net_profit_margin"]["display_value"] == "10.00%"
+    assert metrics["total_asset_turnover"]["display_value"] == "0.50"
+    assert metrics["equity_multiplier"]["display_value"] == "2.50"
+    assert metrics["return_on_equity"]["display_value"] == "12.50%"
+    assert metrics["return_on_equity"]["formula"] == (
+        "销售净利率 × 总资产周转率 × 权益乘数"
+    )
+    assert body["case_findings"][0] == "2025的净资产收益率为 12.50%。"
+    assert "未调用外部大模型" in body["case_findings"][-1]
+    assert state.operation_logs[-1]["payload"]["analysis_case"] == "dupont"
+
+
+def test_analytics_dupont_case_reports_missing_required_columns(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={"file": ("incomplete.csv", "年度,净利润\n2025,100", "text/csv")},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["case_status"] == "needs-input"
+    assert body["case_findings"][0] == "缺少杜邦分析必需字段：营业收入、平均总资产、平均净资产。"
+    assert all(metric["status"] == "unavailable" for metric in body["case_metrics"])
 
 
 def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
@@ -4065,7 +4138,7 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["contract_version"] == "document-search-v2"
+    assert body["contract_version"] == "document-search-v3"
     assert body["query"] == "医保基金审核依据"
     assert body["effective_source_collections"] == [SourceCollection.MEDICAL_INSURANCE_LAWS.value]
     assert body["boundaries"]["query_history_write"] is False
@@ -4074,6 +4147,19 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
     assert body["items"][0]["download_url"].startswith("/api/v1/documents/source/")
     assert body["items"][0]["match_count"] == 1
     assert body["items"][0]["matched_snippets"]
+    assert body["items"][0]["hit_locations"] == [
+        {
+            "label": "第一条",
+            "page_number": None,
+            "line_start": 1,
+            "line_end": 1,
+            "sheet_name": None,
+            "row_number": None,
+            "article_number": "第一条",
+            "snippet": "第一条 医疗机构应当保留医保基金审核依据。",
+            "preview_url": body["items"][0]["preview_url"],
+        }
+    ]
     download_response = client.get(
         body["items"][0]["download_url"],
         headers={"X-Role": "it-admin", "X-User-Id": "auditor-1"},
@@ -4081,6 +4167,102 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
     assert download_response.status_code == 200
     assert download_response.headers["content-disposition"].startswith("attachment;")
     assert "医疗机构应当保留医保基金审核依据" in download_response.text
+    assert state.query_history_store.list_queries() == []
+
+
+def test_document_library_lists_traceable_original_documents_without_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    preview_chunk_id = uuid4()
+
+    def _library_items(
+        request_state: ApiState,
+        *,
+        effective_source_collections: Sequence[SourceCollection],
+        user_identifier: str,
+        can_read_all_personal: bool,
+        limit: int,
+    ) -> list[routes_documents.DocumentLibraryItem]:
+        assert request_state is state
+        assert effective_source_collections == (
+            SourceCollection.MEDICAL_INSURANCE_LAWS,
+        )
+        assert user_identifier == "auditor-1"
+        assert can_read_all_personal is False
+        assert limit == 5
+        return [
+            routes_documents.DocumentLibraryItem(
+                id="source-document-law-1",
+                title="医疗保障基金使用监督管理条例.pdf",
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+                source_label="医保法律法规",
+                file_ext="pdf",
+                size_bytes=2048,
+                updated_at="2026-08-01T12:00:00+08:00",
+                chunk_count=18,
+                page_count=12,
+                preview_url=f"/api/v1/preview/{preview_chunk_id}",
+                download_url=f"/api/v1/documents/source/{preview_chunk_id}/download",
+                provenance={
+                    "relative_path": "medical-insurance-laws/fund-regulation.pdf",
+                    "sha256": "a" * 64,
+                    "source_package_version_key": "medical-insurance-laws-20260801",
+                },
+            )
+        ]
+
+    monkeypatch.setattr(
+        routes_documents,
+        "_document_library_items_from_postgres",
+        _library_items,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/documents/library",
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        params={
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "limit": 5,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contract_version"] == "document-library-v1"
+    assert body["effective_source_collections"] == [
+        SourceCollection.MEDICAL_INSURANCE_LAWS.value
+    ]
+    assert body["store"] == {"ready": True, "backend": "postgres-source-documents"}
+    assert body["items"] == [
+        {
+            "id": "source-document-law-1",
+            "title": "医疗保障基金使用监督管理条例.pdf",
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "source_label": "医保法律法规",
+            "file_ext": "pdf",
+            "size_bytes": 2048,
+            "updated_at": "2026-08-01T12:00:00+08:00",
+            "chunk_count": 18,
+            "page_count": 12,
+            "preview_url": f"/api/v1/preview/{preview_chunk_id}",
+            "download_url": f"/api/v1/documents/source/{preview_chunk_id}/download",
+            "provenance": {
+                "relative_path": "medical-insurance-laws/fund-regulation.pdf",
+                "sha256": "a" * 64,
+                "source_package_version_key": "medical-insurance-laws-20260801",
+            },
+        }
+    ]
+    assert body["boundaries"] == {
+        "production_write": False,
+        "provider_call": False,
+        "database_write": False,
+        "object_storage_write": False,
+        "query_history_write": False,
+    }
     assert state.query_history_store.list_queries() == []
 
 
