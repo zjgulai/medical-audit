@@ -160,6 +160,20 @@ FRONTEND_CONTRACTS: tuple[FrontendContract, ...] = (
         "/api/v1/documents/uploads/{upload_id}/index",
         "DocumentUploadResponse",
     ),
+    FrontendContract(
+        "ocr-capabilities",
+        "fetchOcrCapabilities",
+        "get",
+        "/api/v1/ocr/capabilities",
+        "OcrCapabilityResponse",
+    ),
+    FrontendContract(
+        "ocr-extraction",
+        "extractOcrText",
+        "post",
+        "/api/v1/ocr/extract",
+        "OcrExtractionResponse",
+    ),
     FrontendContract("agents-list", "fetchAgents", "get", "/api/v1/agents", "AgentsResponse"),
     FrontendContract(
         "agent-detail",

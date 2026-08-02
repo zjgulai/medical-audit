@@ -20,6 +20,7 @@ describe("primaryNavigation", () => {
       "/agent-market",
       "/knowledge-base",
       "/documents",
+      "/ocr",
       "/analytics",
       "/graph",
       "/reports",
@@ -27,8 +28,8 @@ describe("primaryNavigation", () => {
     ]);
   });
 
-  it("keeps the portal at nine primary modules", () => {
-    expect(primaryNavigation).toHaveLength(9);
+  it("keeps the portal at ten primary modules", () => {
+    expect(primaryNavigation).toHaveLength(10);
   });
 
   it("promotes document search to a Next-native module", () => {
@@ -81,12 +82,13 @@ describe("primaryNavigation", () => {
     });
   });
 
-  it("keeps the sidebar visible layer to five common entries", () => {
+  it("keeps the sidebar visible layer to six common entries", () => {
     expect(visiblePrimaryNavigation.map((item) => item.href)).toEqual([
       "/workspace",
       "/medical-audit",
       "/chat",
       "/documents",
+      "/ocr",
       "/archive"
     ]);
     expect(sidebarUtilityNavigation.map((item) => item.href)).toEqual(
@@ -109,6 +111,7 @@ describe("primaryNavigation", () => {
       "/medical-audit",
       "/chat",
       "/documents",
+      "/ocr",
       "/archive"
     ]);
     expect(navigationGroups[3].items).toEqual(systemNavigation);

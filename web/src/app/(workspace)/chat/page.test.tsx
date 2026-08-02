@@ -288,6 +288,13 @@ describe("ChatPortalPage", () => {
     expect(apiMocks.fetchQueryModels).toHaveBeenCalledTimes(1);
   });
 
+  it("routes the OCR shortcut to the dedicated evidence workbench", async () => {
+    render(<ChatPortalPage />);
+
+    await screen.findByRole("option", { name: "DeepSeek V4 Pro" });
+    expect(screen.getByRole("link", { name: /OCR 识别/ })).toHaveAttribute("href", "/ocr");
+  });
+
   it("selects an agent from slash command and submits it to the query API", async () => {
     render(<ChatPortalPage />);
 
