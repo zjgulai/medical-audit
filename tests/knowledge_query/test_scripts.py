@@ -415,6 +415,7 @@ def test_run_production_e2e_smoke_script_is_valid_and_does_not_store_secret() ->
     assert "edge-regression" in script_text
     assert "--include-shared-edge-regression" in script_text
     assert "shared-edge-regression-is-opt-in" in script_text
+    assert "urllib.request.ProxyHandler({})" in script_text
 
 
 def test_run_production_e2e_smoke_excludes_shared_edge_by_default(
@@ -502,6 +503,10 @@ def test_run_production_e2e_smoke_defaults_to_get_only(
     assert report["database_write"] is False
     assert report["provider_call"] == "not_called"
     assert report["http_methods"] == ["GET"]
+    assert report["transport"] == {
+        "proxy_mode": "direct",
+        "automatic_retry": False,
+    }
     not_run_steps = {
         item["name"]: item["details"]["reason"]
         for item in report["steps"]
@@ -636,6 +641,55 @@ def test_run_production_e2e_smoke_rejects_cross_origin_redirects_without_forward
         target_server.server_close()
 
     assert target_hits == []
+
+
+def test_run_production_e2e_smoke_uses_explicit_direct_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_e2e_smoke_direct_transport",
+        Path("scripts/run-production-e2e-smoke.py"),
+    )
+    captured_handlers: list[object] = []
+
+    class FakeResponse:
+        status = 200
+        headers: dict[str, str] = {}
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"status":"ok"}'
+
+        def geturl(self) -> str:
+            return "https://audit.example.test/health"
+
+    class FakeOpener:
+        def open(self, *_args: object, **_kwargs: object) -> FakeResponse:
+            return FakeResponse()
+
+    def fake_build_opener(*handlers: object) -> FakeOpener:
+        captured_handlers.extend(handlers)
+        return FakeOpener()
+
+    monkeypatch.setattr(module.urllib.request, "build_opener", fake_build_opener)
+
+    response = module._request(
+        "https://audit.example.test/health",
+        method="GET",
+        timeout_seconds=1,
+    )
+
+    assert response.status == 200
+    assert len(captured_handlers) == 2
+    proxy_handler = captured_handlers[0]
+    assert isinstance(proxy_handler, module.urllib.request.ProxyHandler)
+    assert proxy_handler.proxies == {}
+    assert isinstance(captured_handlers[1], module._SameOriginRedirectHandler)
 
 
 def test_run_production_e2e_smoke_reads_search_status_from_no_write_catalog(
