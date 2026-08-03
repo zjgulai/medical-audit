@@ -251,6 +251,7 @@ function hasCompleteRouteEvidence(
     expectedScreenshotName = null,
     expectedScreenshotWidth = null,
     expectedScreenshotHeight = null,
+    minimumBodyTextLength = 80,
   } = {},
 ) {
   const observedPath = typeof check?.finalUrl === "string" ? finalPath(check.finalUrl) : null;
@@ -288,7 +289,7 @@ function hasCompleteRouteEvidence(
     Number.isInteger(check.headingCount) &&
     check.headingCount > 0 &&
     Number.isInteger(check.bodyTextLength) &&
-    check.bodyTextLength >= 80 &&
+    check.bodyTextLength >= minimumBodyTextLength &&
     isNonNegativeInteger(check.fileInputCount) &&
     isNonNegativeInteger(check.scrollWidth) &&
     isNonNegativeInteger(check.clientWidth) &&
@@ -341,6 +342,11 @@ function assertGate(report, expected = {}) {
           .map((check) => [check.route, check.expectedChromeTitle])
       : [],
   );
+  const expectedRouteMinimumTextLengths = new Map(
+    Array.isArray(expectedRouteChecks)
+      ? expectedRouteChecks.map((check) => [check.route, check.minimumBodyTextLength ?? 80])
+      : [],
+  );
   const expectedAliasRouteChecks = report.contract_profile === "hardened" ? aliasRouteChecks : [];
   const expectedAliasRoutes = expectedAliasRouteChecks.map((check) => check.route);
   const expectedAliasPaths = new Map(
@@ -387,6 +393,7 @@ function assertGate(report, expected = {}) {
           }),
           expectedScreenshotWidth: expectedViewportDimensions.get(check?.viewport)?.width,
           expectedScreenshotHeight: expectedViewportDimensions.get(check?.viewport)?.height,
+          minimumBodyTextLength: expectedRouteMinimumTextLengths.get(check?.route) ?? 80,
         }),
     )
     .map((check) => ({ route: check?.route ?? null, viewport: check?.viewport ?? null }));

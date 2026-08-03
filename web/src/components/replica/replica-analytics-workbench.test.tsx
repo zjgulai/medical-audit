@@ -164,6 +164,8 @@ describe("ReplicaAnalyticsWorkbench", () => {
     );
     expect(screen.getAllByText(/建议包含患者\/对象/)).toHaveLength(2);
     expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
+    expect(screen.getByText("浏览本地文件")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择分析表格")).toHaveClass("replica-analytics-file-input");
     expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
     expect(uploadMock).not.toHaveBeenCalled();
     await waitFor(() => expect(fetchHistoryMock).toHaveBeenCalledTimes(1));

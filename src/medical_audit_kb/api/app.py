@@ -181,7 +181,6 @@ class HealthResponse(BaseModel):
 
     status: str
     version: str
-    data_root: str
 
 
 DeploymentShaStatus = Literal["set", "missing", "invalid"]
@@ -427,7 +426,6 @@ def create_app(
         return HealthResponse(
             status="ok",
             version=__version__,
-            data_root=str(state.source_root),
         )
 
     @app.get(f"{API_V1_PREFIX}/health", response_model=HealthResponse)

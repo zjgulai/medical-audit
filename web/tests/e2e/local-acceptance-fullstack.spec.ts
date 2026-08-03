@@ -6,6 +6,44 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       window.localStorage.setItem("medical-audit-authenticated", "authenticated");
       window.localStorage.setItem("medical-audit-current-role", "admin");
     });
+    await page.route("**/api/v1/documents/library**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          contract_version: "document-library-v1",
+          effective_source_collections: ["medical-insurance-laws"],
+          items: [
+            {
+              id: "document-fullstack-001",
+              title: "医保基金审核依据",
+              source_collection: "medical-insurance-laws",
+              source_label: "法规政策",
+              file_ext: "md",
+              size_bytes: 128,
+              updated_at: "2026-08-01T00:00:00Z",
+              chunk_count: 1,
+              page_count: 1,
+              preview_url: "/api/v1/preview/document-fullstack-001",
+              download_url: "/api/v1/documents/source/document-fullstack-001/download",
+              provenance: {
+                relative_path: "全量法律/law.md",
+                sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                source_package_version_key: "local-fullstack-fixture-v1"
+              }
+            }
+          ],
+          store: { ready: true, backend: "playwright-local-fullstack-fixture" },
+          boundaries: {
+            production_write: false,
+            provider_call: false,
+            database_write: false,
+            object_storage_write: false,
+            query_history_write: false
+          }
+        })
+      })
+    );
   });
 
   test("chat reaches local models, knowledge sources, agents, attachment analysis and query APIs", async ({ page }) => {
@@ -66,7 +104,11 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await searchRequestPromise;
 
     await expect(page.getByText("1 条匹配").first()).toBeVisible();
-    await expect(page.getByText("medical-insurance-laws").first()).toBeVisible();
+    await expect(page.getByText("法规政策").first()).toBeVisible();
+    await expect(page.getByText("medical-insurance-laws")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "关键词命中位置" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "预览原文" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "下载原文" })).toBeVisible();
   });
 
   test("agent directories expose mine and market pages with local backend data", async ({ page }) => {
@@ -83,10 +125,13 @@ test.describe("local fullstack acceptance for restored replica product", () => {
 
   test("analytics workbench, preview modules and medical audit remain interactive", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "上传表格", exact: true })).toBeVisible();
-    await expect(page.getByText("provider_call=false", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "分析历史", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "选择一个审计案例，上传数据即可得到可复核结果", exact: true })
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "上传数据并执行审计数据分析", exact: true })).toBeVisible();
+    await expect(page.getByText("浏览本地文件", { exact: true })).toBeVisible();
+    await expect(page.getByText("provider_call=false", { exact: true })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "分析记录", exact: true })).toBeVisible();
 
     await page.goto("/graph");
     await expect(page.getByRole("heading", { name: "知识依据与项目证据链", exact: true })).toBeVisible();
@@ -102,7 +147,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     expect(await reportWorkbenchResponse.json()).toMatchObject({
       store: { ready: true, backend: "InMemoryReviewTaskStore" }
     });
-    await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "报告与底稿", level: 1, exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "报表分类目录" })).toBeVisible();
 
     await page.goto("/projects");
@@ -113,6 +158,23 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     await expect(page.getByRole("heading", { name: "医保审计", exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "费用汇总表" }).click();
     await expect(page.getByLabel("医保费用汇总表")).toBeVisible();
+  });
+
+  test("audit-only knowledge, OCR and the project cockpit stay reachable", async ({ page }) => {
+    await page.goto("/knowledge-base");
+    await expect(page.getByRole("heading", { name: "审计知识库", exact: true })).toBeVisible();
+    await expect(page.getByText("审计核心知识", { exact: true })).toBeVisible();
+    await expect(page.getByText("原文溯源", { exact: true })).toBeVisible();
+
+    await page.goto("/ocr");
+    await expect(page.getByRole("heading", { name: "扫描材料识别工作台", exact: true })).toBeVisible();
+    await expect(page.getByText(/Unlimited-OCR/).first()).toBeVisible();
+
+    await page.goto("/audit-cockpit");
+    await expect(page.getByRole("heading", { name: "审计驾驶舱", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "进入项目管理", exact: true })).toHaveAttribute("href", "/projects");
+    const navigationLabels = await page.getByRole("navigation", { name: "主导航" }).getByRole("link").allTextContents();
+    expect(navigationLabels.slice(-2)).toEqual(["项目管理", "审计驾驶舱"]);
   });
 
   test("report download controls remain in the mobile viewport", async ({ page }) => {
@@ -152,7 +214,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       await route.fulfill({ response, json: body });
     });
     await page.goto("/reports");
-    await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "报告与底稿", level: 1, exact: true })).toBeVisible();
 
     const downloadControls = page.locator(".replica-report-table-wrap button");
     await expect(downloadControls.first()).toBeVisible();

@@ -63,6 +63,38 @@ async function mockReplicaBackend(page: Page) {
       can_govern_personal_uploads: true
     }
   });
+  await mockJson(page, "**/api/v1/documents/library**", {
+    contract_version: "document-library-v1",
+    effective_source_collections: ["medical-insurance-laws"],
+    items: [
+      {
+        id: "document-e2e-001",
+        title: "医保基金审核依据",
+        source_collection: "medical-insurance-laws",
+        source_label: "法规政策",
+        file_ext: "pdf",
+        size_bytes: 4096,
+        updated_at: "2026-08-01T00:00:00Z",
+        chunk_count: 1,
+        page_count: 6,
+        preview_url: "/api/v1/preview/chunk-e2e-001",
+        download_url: "/api/v1/documents/source/chunk-e2e-001/download",
+        provenance: {
+          relative_path: "审计法规/医保基金审核依据.pdf",
+          sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          source_package_version_key: "fixture-v1"
+        }
+      }
+    ],
+    store: { ready: true, backend: "playwright-fixture" },
+    boundaries: {
+      production_write: false,
+      provider_call: false,
+      database_write: false,
+      object_storage_write: false,
+      query_history_write: false
+    }
+  });
   await mockJson(page, "**/api/v1/knowledge-base/catalog", {
     contract_version: "knowledge-base-catalog-v1",
     role: "admin",
@@ -156,7 +188,7 @@ async function mockReplicaBackend(page: Page) {
     }
   });
   await mockJson(page, "**/api/v1/documents/search**", {
-    contract_version: "document-search-v1",
+    contract_version: "document-search-v3",
     query: "医保基金审核依据是什么？",
     effective_source_collections: ["medical-insurance-laws"],
     items: [
@@ -172,7 +204,23 @@ async function mockReplicaBackend(page: Page) {
         matched_by: ["vector"],
         index_version_key: "active",
         source_package_version_key: "fixture",
-        preview_url: "/api/v1/preview/chunk-e2e-001"
+        preview_url: "/api/v1/preview/chunk-e2e-001",
+        download_url: "/api/v1/documents/source/chunk-e2e-001/download",
+        match_count: 1,
+        matched_snippets: ["医保基金使用应遵循目录限制条件、支付范围和监管规则。"],
+        hit_locations: [
+          {
+            label: "第 6 页",
+            page_number: 6,
+            line_start: null,
+            line_end: null,
+            sheet_name: null,
+            row_number: null,
+            article_number: null,
+            snippet: "医保基金使用应遵循目录限制条件、支付范围和监管规则。",
+            preview_url: "/api/v1/preview/chunk-e2e-001"
+          }
+        ]
       }
     ],
     store: { ready: true, backend: "playwright-fixture" },
@@ -325,12 +373,18 @@ const sidebarRoutes = [
   { href: "/chat", label: "AI 对话", heading: "AI，让审计更智能" },
   { href: "/agents", label: "我的智能体", heading: "我的智能体" },
   { href: "/agent-market", label: "智能体广场", heading: "智能体广场" },
-  { href: "/knowledge-base", label: "知识库", heading: "知识库分类" },
+  { href: "/knowledge-base", label: "知识库", heading: "审计知识库" },
   { href: "/documents", label: "文档检索", heading: "文档检索" },
-  { href: "/analytics", label: "AI数据分析", heading: "表格分析工作台" },
+  { href: "/ocr", label: "文本 OCR", heading: "扫描材料识别工作台" },
+  {
+    href: "/analytics",
+    label: "AI数据分析",
+    heading: "选择一个审计案例，上传数据即可得到可复核结果"
+  },
   { href: "/graph", label: "知识图谱", heading: "知识依据与项目证据链" },
-  { href: "/reports", label: "审计底稿/报告", heading: "审计底稿与报告台账" },
-  { href: "/projects", label: "项目管理", heading: "项目协作工作台" }
+  { href: "/reports", label: "审计底稿/报告", heading: "报告与底稿" },
+  { href: "/projects", label: "项目管理", heading: "项目协作工作台" },
+  { href: "/audit-cockpit", label: "审计驾驶舱", heading: "审计驾驶舱" }
 ] as const;
 
 const topicRoute = { href: "/medical-audit", label: "医保审计专题", heading: "医保审计" } as const;
@@ -364,6 +418,10 @@ test("replica shell renders the restored sidebar navigation", async ({ page }) =
   for (const route of sidebarRoutes) {
     await expect(navigation.getByRole("link", { name: route.label })).toHaveAttribute("href", route.href);
   }
+  const navigationLabels = await navigation.getByRole("link").allTextContents();
+  expect(navigationLabels).toEqual(sidebarRoutes.map((route) => route.label));
+  expect(sidebarRoutes.at(-2)?.label).toBe("项目管理");
+  expect(sidebarRoutes.at(-1)?.label).toBe("审计驾驶舱");
 });
 
 test("all restored sidebar pages expose their current product skeleton", async ({ page }) => {
@@ -493,7 +551,9 @@ test("compatibility route CTAs keep the medical audit workflow reachable", async
   await page.goto("/fund-compliance/review");
   await page.getByRole("link", { name: "进入分析" }).first().click();
   await expect(page).toHaveURL(/\/analytics\?template=medical-expense-summary$/);
-  await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "选择一个审计案例，上传数据即可得到可复核结果", exact: true })
+  ).toBeVisible();
 
   await page.goto("/guided-check");
   await page.getByRole("link", { name: "进入 AI 对话" }).click();
@@ -506,20 +566,34 @@ test("document search, preview modules and medical audit keep core interactions 
   await page.getByLabel("检索关键词").fill("医保基金审核依据是什么？");
   await page.getByRole("button", { name: "搜索", exact: true }).click();
   await expect(page.getByText("1 条匹配").first()).toBeVisible();
-  await expect(page.getByText("medical-insurance-laws").first()).toBeVisible();
+  await expect(page.getByText("法规政策").first()).toBeVisible();
+  await expect(page.getByText("medical-insurance-laws")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "关键词命中位置" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "第 6 页" })).toHaveAttribute(
+    "href",
+    "/api/v1/preview/chunk-e2e-001"
+  );
+  await expect(page.getByRole("link", { name: "预览原文" })).toHaveAttribute(
+    "href",
+    "/api/v1/preview/chunk-e2e-001"
+  );
+  await expect(page.getByRole("button", { name: "下载原文" })).toBeVisible();
 
   await page.goto("/analytics");
-  await expect(page.getByRole("heading", { name: "表格分析工作台", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "上传表格", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "分析历史", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "选择一个审计案例，上传数据即可得到可复核结果", exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "上传数据并执行审计数据分析", exact: true })).toBeVisible();
+  await expect(page.getByText("浏览本地文件", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "分析记录", exact: true })).toBeVisible();
 
   await page.goto("/graph");
   await expect(page.getByLabel("知识依据图谱工作台")).toBeVisible();
   await expect(page.getByRole("tab", { name: "知识依据" })).toHaveAttribute("aria-selected", "true");
 
   await page.goto("/reports");
-  await expect(page.getByRole("heading", { name: "审计底稿与报告台账", exact: true })).toBeVisible();
-  await expect(page.getByRole("region", { name: "报表分类目录" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "报告与底稿", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "草稿项目上下文" })).toBeVisible();
 
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "项目协作工作台", exact: true })).toBeVisible();

@@ -120,7 +120,8 @@ def test_health_endpoint_returns_api_status(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["data_root"] == str(tmp_path / "data")
+    assert body["version"]
+    assert "data_root" not in body
 
 
 def test_deployment_metadata_reports_sha_without_runtime_side_effects(
