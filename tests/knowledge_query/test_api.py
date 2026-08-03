@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from medical_audit_kb.api import routes_documents
+from medical_audit_kb.api import chat_models, routes_documents
 from medical_audit_kb.api.agent_store import (
     AGENT_ID_PREFIX,
     InMemoryAgentStore,
@@ -39,7 +39,12 @@ from medical_audit_kb.api.auth_user_store import (
     AUTH_USER_ID_PREFIX,
     SqlAlchemyAuthUserStore,
 )
-from medical_audit_kb.api.chat_models import ChatModelAlias, chat_model_config_from_env
+from medical_audit_kb.api.chat_models import (
+    ChatModelAlias,
+    ChatModelUnavailableError,
+    chat_model_config_from_env,
+    contract_audit_generation_provider_for_alias,
+)
 from medical_audit_kb.api.document_upload_ingestion import SqlAlchemyDocumentUploadIndexer
 from medical_audit_kb.api.document_upload_store import (
     DOCUMENT_UPLOAD_ID_PREFIX,
@@ -5585,6 +5590,58 @@ def test_chat_model_config_uses_verified_provider_defaults(
     assert config.thinking_mode == expected_thinking_mode
 
 
+def test_contract_audit_deepseek_provider_uses_strict_beta_output_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_API_KEY_ENV",
+        "TEST_DEEPSEEK_CHAT_KEY",
+    )
+    monkeypatch.setenv("TEST_DEEPSEEK_CHAT_KEY", "test-key")
+    captured: dict[str, object] = {}
+
+    class RecordingProvider:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        chat_models,
+        "OpenAICompatibleAnswerGenerationProvider",
+        RecordingProvider,
+    )
+
+    provider = contract_audit_generation_provider_for_alias(ChatModelAlias.DEEPSEEK_V4_PRO)
+
+    assert isinstance(provider, RecordingProvider)
+    assert captured["provider"] == "deepseek"
+    assert captured["model_name"] == "deepseek-v4-pro"
+    assert captured["base_url"] == "https://api.deepseek.com/beta"
+    assert captured["deepseek_output_mode"] == "strict_tool_call"
+
+
+def test_contract_audit_deepseek_rejects_non_official_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_chat_model_env(monkeypatch)
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_API_KEY_ENV",
+        "TEST_DEEPSEEK_CHAT_KEY",
+    )
+    monkeypatch.setenv("TEST_DEEPSEEK_CHAT_KEY", "test-key")
+    monkeypatch.setenv(
+        "MEDICAL_AUDIT_KB_CHAT_MODEL_DEEPSEEK_V4_PRO_BASE_URL",
+        "https://proxy.example.test/v1",
+    )
+
+    with pytest.raises(ChatModelUnavailableError) as error_info:
+        contract_audit_generation_provider_for_alias(ChatModelAlias.DEEPSEEK_V4_PRO)
+
+    assert error_info.value.reason == (
+        "contract_audit_strict_output_requires_official_deepseek_base_url"
+    )
+
+
 def test_kimi_chat_model_rejects_insufficient_output_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -7341,6 +7398,62 @@ def test_contract_audit_job_calls_versioned_agent_and_completes(tmp_path: Path) 
     assert body["status"] == "completed"
     assert body["agent"]["prompt_version_key"] == "contract-audit-v2@2.0.0"
     assert body["result"]["conclusion"]["analysis_markdown"].endswith("[C1]")
+
+
+def test_contract_audit_selected_deepseek_uses_strict_provider_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class ContractProvider:
+        provider = "deepseek"
+        model_name = "deepseek-v4-pro"
+        provider_version = "v1"
+
+        def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+            raise AssertionError("contract audit must bind its agent prompt")
+
+        def generate_answer_with_agent(
+            self,
+            question: str,
+            citations: Sequence[Citation],
+            *,
+            agent_prompt: str,
+            prompt_version_key: str,
+        ) -> str:
+            assert "合同审计智能体" in agent_prompt
+            assert prompt_version_key == "contract-audit-v2@2.0.0"
+            return f"付款安排需人工复核 {citations[0].marker}"
+
+    def contract_provider_for(alias: ChatModelAlias) -> ContractProvider:
+        captured["alias"] = alias
+        return ContractProvider()
+
+    monkeypatch.setattr(
+        "medical_audit_kb.api.routes_contract_audits.contract_audit_generation_provider_for_alias",
+        contract_provider_for,
+    )
+    state = _api_state(tmp_path)
+    state.answer_generation_provider = None
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        data={"model": "deepseek-v4-pro"},
+        files={
+            "file": (
+                "采购合同.txt",
+                "合同价款100万元，验收后付款。".encode(),  # noqa: RUF001
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert captured["alias"] == ChatModelAlias.DEEPSEEK_V4_PRO
 
 
 def test_contract_audit_upload_is_rejected_before_unbounded_buffering(
