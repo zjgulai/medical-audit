@@ -83,7 +83,7 @@ describe("AuditCockpit", () => {
     expect(screen.getByRole("heading", { name: "审计驾驶舱" })).toBeInTheDocument();
     await waitFor(() => expect(fetchProjectDashboardMock).toHaveBeenCalledWith("AUDIT-2026"));
     expect(await screen.findByRole("heading", { name: "医保基金专项审计" })).toBeInTheDocument();
-    expect(screen.getByText("待处理疑点")).toBeInTheDocument();
+    expect(await screen.findByText("待处理疑点")).toBeInTheDocument();
     expect(screen.getByText("审计实施")).toBeInTheDocument();
     expect(screen.getByText("复核高额重复收费")).toBeInTheDocument();
     expect(screen.getByText("新增审计疑点")).toBeInTheDocument();

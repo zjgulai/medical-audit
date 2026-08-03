@@ -109,9 +109,18 @@ const routeCheckProfiles = {
   ],
   hardened: [
     {
+      route: "/",
+      expectedPath: "/",
+      session: "anonymous",
+      minimumBodyTextLength: 60,
+      requiredText: [/登录工作台/],
+      requiredControlText: [/(^|\s)登录($|\s)/],
+    },
+    {
       route: "/login",
       expectedPath: "/login",
       session: "anonymous",
+      minimumBodyTextLength: 60,
       requiredText: [/登录工作台/],
       requiredControlText: [/(^|\s)登录($|\s)/],
     },
@@ -155,6 +164,8 @@ const routeCheckProfiles = {
       session: "workspace",
       requiredText: [/智能体广场/, /详情/],
       requiredTextAny: [[/全部/, /财务收支审计/, /采购招标审计/, /工程审计/]],
+      navigationOnlyRequiredText: [/智能体广场/, /未找到智能体|读取失败/],
+      navigationOnlyRequiredTextAny: [],
     },
     {
       route: "/analytics",
@@ -167,6 +178,13 @@ const routeCheckProfiles = {
       expectedPath: "/projects",
       session: "workspace",
       requiredText: [/项目管理/, /项目协作工作台/, /可见项目/],
+    },
+    {
+      route: "/audit-cockpit",
+      expectedPath: "/audit-cockpit",
+      expectedChromeTitle: "审计驾驶舱",
+      session: "workspace",
+      requiredText: [/审计驾驶舱/, /项目总览/, /进入项目管理/],
     },
     {
       route: "/documents",
@@ -185,7 +203,7 @@ const routeCheckProfiles = {
       route: "/knowledge-base",
       expectedPath: "/knowledge-base",
       session: "workspace",
-      requiredText: [/知识库分类|知识库/, /一级专题|可查询|知识库/],
+      requiredText: [/审计知识库/, /审计核心知识/, /五个核心审计来源/],
     },
     {
       route: "/graph",
@@ -204,7 +222,7 @@ const routeCheckProfiles = {
       route: "/reports",
       expectedPath: "/reports",
       session: "workspace",
-      requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/],
+      requiredText: [/报告与底稿/, /选择项目和交付物/, /所属项目/],
     },
     {
       route: "/remediation",
@@ -219,6 +237,7 @@ const routeCheckProfiles = {
       expectedChromeTitle: "归档工作台",
       session: "workspace",
       requiredText: [/归档工作台/, /归档包/, /签名链|归档策略|审计日志/],
+      navigationOnlyRequiredText: [/归档工作台/, /归档工作台暂不可用|归档数据读取失败/],
     },
     {
       route: "/guided-check",
@@ -279,6 +298,7 @@ function parseArgs(argv) {
     adminRole: "it-admin",
     adminApiKeyEnv: null,
     contractProfile: DEFAULT_CONTRACT_PROFILE,
+    navigationOnlyReadonly: false,
     allowAuditLogWrites: false,
     confirmProductionWrite: null,
     expectedDeploySha: null,
@@ -311,6 +331,8 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--contract-profile=")) {
       options.contractProfile = arg.split("=", 2)[1];
+    } else if (arg === "--navigation-only-readonly") {
+      options.navigationOnlyReadonly = true;
     } else if (arg === "--allow-audit-log-writes") {
       options.allowAuditLogWrites = true;
     } else if (arg === "--confirm-production-write" && next) {
@@ -363,6 +385,9 @@ Options:
   --admin-role <role>       Role for admin API checks (default: it-admin)
   --admin-api-key-env <name> Env var for admin API key (optional)
   --contract-profile <name> Acceptance contract profile: ${contractProfiles.join("|")} (default: ${DEFAULT_CONTRACT_PROFILE})
+  --navigation-only-readonly
+                            Block application API requests and run page/static GET checks only;
+                            cannot be combined with production-write authorization
   --allow-audit-log-writes Authorize audit-log-only writes made by the acceptance flow
   --confirm-production-write <host>
                             Required with --allow-audit-log-writes for every target;
@@ -374,7 +399,36 @@ Options:
 `);
 }
 
+function buildAcceptanceExecutionBoundary(options) {
+  if (options.navigationOnlyReadonly) {
+    return {
+      side_effect_mode: "navigation-only-readonly",
+      production_side_effect: "none",
+      database_write: false,
+      audit_log_write_expected: false,
+      run_api_permission_probes: false,
+      require_release_guard: false,
+    };
+  }
+  return {
+    side_effect_mode: "audit-log-write-enabled",
+    production_side_effect: "audit-log-only",
+    database_write: "audit-log-only",
+    audit_log_write_expected: true,
+    run_api_permission_probes: true,
+    require_release_guard: true,
+  };
+}
+
 function validateSideEffectAuthorization(options) {
+  if (options.navigationOnlyReadonly) {
+    if (options.allowAuditLogWrites || options.confirmProductionWrite !== null) {
+      throw new Error(
+        "--navigation-only-readonly cannot be combined with production-write authorization",
+      );
+    }
+    return normalizeProductionBaseUrl(options.baseUrl);
+  }
   if (!options.allowAuditLogWrites) {
     throw new Error(
       "Frontend acceptance fails closed by default: browser routes and API permission checks can write audit-log records. " +
@@ -423,7 +477,10 @@ function validateAcceptanceEvidenceOptions(options) {
       "--acceptance-run-id must match fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>",
     );
   }
-  if (typeof options.releaseGuardReport !== "string" || options.releaseGuardReport.trim() === "") {
+  if (
+    !options.navigationOnlyReadonly &&
+    (typeof options.releaseGuardReport !== "string" || options.releaseGuardReport.trim() === "")
+  ) {
     throw new Error("--release-guard-report is required");
   }
 }
@@ -905,6 +962,28 @@ function isIgnorableFailedRequest({ url, error }, baseUrl) {
   }
 }
 
+function partitionReadonlyConsoleErrors(consoleErrors, blockedApiRequestCount) {
+  let remainingBlockedErrors = Math.max(0, blockedApiRequestCount);
+  const expected = [];
+  const actionable = [];
+  for (const message of consoleErrors) {
+    if (
+      remainingBlockedErrors > 0 &&
+      (
+        message === "Failed to load resource: net::ERR_FAILED" ||
+        message === "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT" ||
+        message === "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector"
+      )
+    ) {
+      expected.push(message);
+      remainingBlockedErrors -= 1;
+    } else {
+      actionable.push(message);
+    }
+  }
+  return { expected, actionable };
+}
+
 function isRecoveredAbortedRequest(failed, successfulResponseUrls) {
   return (
     failed.method === "GET"
@@ -1265,6 +1344,23 @@ function issue(severity, type, message) {
   return { severity, type, message };
 }
 
+function routeCheckForExecution(routeCheck, { navigationOnlyReadonly = false } = {}) {
+  if (!navigationOnlyReadonly) {
+    return routeCheck;
+  }
+  const executionCheck = { ...routeCheck };
+  if (routeCheck.navigationOnlyRequiredText) {
+    executionCheck.requiredText = routeCheck.navigationOnlyRequiredText;
+  }
+  if (routeCheck.navigationOnlyRequiredControlText) {
+    executionCheck.requiredControlText = routeCheck.navigationOnlyRequiredControlText;
+  }
+  if (routeCheck.navigationOnlyRequiredTextAny) {
+    executionCheck.requiredTextAny = routeCheck.navigationOnlyRequiredTextAny;
+  }
+  return executionCheck;
+}
+
 function classify(check, routeCheck, data) {
   const issues = [];
   if (routeCheck.expectedPath) {
@@ -1351,7 +1447,8 @@ function classify(check, routeCheck, data) {
       ),
     );
   }
-  if (compactText(data.bodyText).length < 80) {
+  const minimumBodyTextLength = routeCheck.minimumBodyTextLength ?? 80;
+  if (compactText(data.bodyText).length < minimumBodyTextLength) {
     issues.push(issue("P1", "thin-page", `body text length ${compactText(data.bodyText).length}`));
   }
   if (data.headings.length === 0) {
@@ -1639,6 +1736,7 @@ function buildAuditPermissionProbeHeaders({ adminRole, adminApiKey, adminUserId 
 async function run() {
   const options = parseArgs(process.argv.slice(2));
   const baseUrl = validateSideEffectAuthorization(options);
+  const executionBoundary = buildAcceptanceExecutionBoundary(options);
   const baseOrigin = new URL(baseUrl).origin;
   const outputPath = resolveRepoPath(options.output);
   const screenshotDir = resolveRepoPath(options.screenshotDir);
@@ -1655,11 +1753,13 @@ async function run() {
   }
   validateAcceptanceEvidenceOptions(options);
   const acceptanceUserId = deriveAcceptanceUserId(options.acceptanceRunId);
-  const releaseGuard = loadReleaseGuardEvidence(
-    options.releaseGuardReport,
-    options.expectedDeploySha,
-    options.acceptanceRunId,
-  );
+  const releaseGuard = executionBoundary.require_release_guard
+    ? loadReleaseGuardEvidence(
+        options.releaseGuardReport,
+        options.expectedDeploySha,
+        options.acceptanceRunId,
+      )
+    : null;
   const acceptanceHeaders = {
     "X-User-Id": acceptanceUserId,
     "X-Role": adminRole,
@@ -1700,6 +1800,7 @@ async function run() {
           const context = await browser.newContext(
             buildBrowserContextOptions(viewport, session, acceptanceHeaders),
           );
+          const readonlyBlockedApiRequests = [];
           await context.route("**/*", async (route) => {
             if (route.request().method() !== "GET") {
               await route.abort("blockedbyclient");
@@ -1715,6 +1816,17 @@ async function run() {
             if (requestOrigin !== baseOrigin) {
               await route.abort("blockedbyclient");
               return;
+            }
+            if (options.navigationOnlyReadonly) {
+              const requestUrl = new URL(route.request().url());
+              if (requestUrl.pathname.startsWith("/api/")) {
+                readonlyBlockedApiRequests.push({
+                  url: route.request().url(),
+                  method: route.request().method(),
+                });
+                await route.abort("blockedbyclient");
+                return;
+              }
             }
             await route.continue();
           });
@@ -1789,9 +1901,26 @@ async function run() {
           const recoveredAbortedRequests = failedRequests.filter((failed) =>
             isRecoveredAbortedRequest(failed, successfulResponseUrls)
           );
-          const actionableFailedRequests = failedRequests.filter((failed) =>
-            !isRecoveredAbortedRequest(failed, successfulResponseUrls)
+          const readonlyBlockedApiRequestUrls = new Set(
+            readonlyBlockedApiRequests.map((request) => request.url),
           );
+          const expectedReadonlyBlockedRequests = failedRequests.filter(
+            (failed) =>
+              options.navigationOnlyReadonly &&
+              failed.method === "GET" &&
+              readonlyBlockedApiRequestUrls.has(failed.url),
+          );
+          const actionableFailedRequests = failedRequests.filter((failed) =>
+            !isRecoveredAbortedRequest(failed, successfulResponseUrls) &&
+            !(
+              options.navigationOnlyReadonly &&
+              failed.method === "GET" &&
+              readonlyBlockedApiRequestUrls.has(failed.url)
+            )
+          );
+          const consoleErrorPartition = options.navigationOnlyReadonly
+            ? partitionReadonlyConsoleErrors(consoleErrors, readonlyBlockedApiRequests.length)
+            : { expected: [], actionable: consoleErrors };
           const check = {
             route: routeCheck.route,
             inputSearch,
@@ -1821,23 +1950,26 @@ async function run() {
             floatingControlOcclusions: sanitizeFloatingControlOcclusions(
               data.floatingControlOcclusions,
             ),
-            consoleErrorCount: consoleErrors.length,
+            consoleErrorCount: consoleErrorPartition.actionable.length,
+            expectedReadonlyConsoleErrorCount: consoleErrorPartition.expected.length,
             failedRequestCount: actionableFailedRequests.length,
             failedRequests: actionableFailedRequests.map(sanitizeFailedRequest),
             recoveredAbortedRequestCount: recoveredAbortedRequests.length,
             recoveredAbortedRequests: recoveredAbortedRequests.map(sanitizeFailedRequest),
+            readonlyBlockedApiRequestCount: expectedReadonlyBlockedRequests.length,
+            readonlyBlockedApiRequests: expectedReadonlyBlockedRequests.map(sanitizeFailedRequest),
             interactionErrorCount: interactionErrors.length,
             issues: classify(
               {
                 status,
                 error,
-                consoleErrors,
+                consoleErrors: consoleErrorPartition.actionable,
                 failedRequests: actionableFailedRequests,
                 interactionErrors,
                 finalUrl: observedFinalUrl,
                 finalSearch: observedFinalSearch,
               },
-              routeCheck,
+              routeCheckForExecution(routeCheck, options),
               data,
             ),
           };
@@ -1881,16 +2013,18 @@ async function run() {
         }
       }
     }
-    try {
-      apiCheckResult = await checkAuditLogApiPermissions({
-        baseUrl,
-        adminRole,
-        adminApiKey,
-        adminUserId: acceptanceUserId,
-        timeoutMs: options.timeoutMs,
-      });
-    } catch (error) {
-      apiCheckError = error instanceof Error ? error.message : String(error);
+    if (executionBoundary.run_api_permission_probes) {
+      try {
+        apiCheckResult = await checkAuditLogApiPermissions({
+          baseUrl,
+          adminRole,
+          adminApiKey,
+          adminUserId: acceptanceUserId,
+          timeoutMs: options.timeoutMs,
+        });
+      } catch (error) {
+        apiCheckError = error instanceof Error ? error.message : String(error);
+      }
     }
   } finally {
     await browser.close();
@@ -1924,7 +2058,7 @@ async function run() {
     initialReleaseIdentity,
     finalReleaseIdentity,
     options.expectedDeploySha,
-    releaseGuard.current_release_target,
+    releaseGuard?.current_release_target ?? null,
   );
 
   const report = {
@@ -1932,13 +2066,13 @@ async function run() {
     generated_at: new Date().toISOString(),
     base_url: sanitizeUrl(baseUrl),
     contract_profile: options.contractProfile,
-    side_effect_mode: "audit-log-write-enabled",
-    production_side_effect: "audit-log-only",
-    database_write: "audit-log-only",
-    audit_log_write_expected: true,
+    side_effect_mode: executionBoundary.side_effect_mode,
+    production_side_effect: executionBoundary.production_side_effect,
+    database_write: executionBoundary.database_write,
+    audit_log_write_expected: executionBoundary.audit_log_write_expected,
     provider_call_status: "not_observed",
     provider_evidence_source: "outside-frontend-acceptance-scope",
-    collector_provider_call_status: releaseGuard.collector_provider_call_status,
+    collector_provider_call_status: releaseGuard?.collector_provider_call_status ?? "not_called",
     http_methods: ["GET"],
     expected_deploy_sha: options.expectedDeploySha,
     acceptance_run_id: options.acceptanceRunId,
@@ -1953,11 +2087,19 @@ async function run() {
       alias_execution_check_count: aliasChecks.length,
       total_execution_check_count: allChecks.length,
       viewports: viewports.map((viewport) => viewport.name),
-      api_checks: apiCheckResult?.checks || { error: apiCheckError !== null },
+      api_checks: executionBoundary.run_api_permission_probes
+        ? (apiCheckResult?.checks || { error: apiCheckError !== null })
+        : { skipped: true, reason: "navigation-only-readonly" },
       executed_api_probes: apiCheckResult?.executedProbes || [],
       executed_api_probe_count: apiCheckResult?.executedProbes.length || 0,
-      skipped_api_probes: [],
-      skipped_api_probe_count: 0,
+      skipped_api_probes: executionBoundary.run_api_permission_probes
+        ? []
+        : ["/audit/logs", "/audit/logs/export"],
+      skipped_api_probe_count: executionBoundary.run_api_permission_probes ? 0 : 2,
+      readonly_blocked_api_request_count: allChecks.reduce(
+        (total, check) => total + check.readonlyBlockedApiRequestCount,
+        0,
+      ),
       skipped_routes: [],
       skipped_route_count: 0,
       screenshot_capture: captureScreenshots,
@@ -1986,6 +2128,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
 
 export {
   aliasRouteChecks,
+  buildAcceptanceExecutionBoundary,
   buildAuditPermissionProbeHeaders,
   buildBrowserContextOptions,
   classify,
@@ -1997,7 +2140,9 @@ export {
   isLoginGateSnapshot,
   loadReleaseGuardEvidence,
   normalizeProductionBaseUrl,
+  partitionReadonlyConsoleErrors,
   readPngEvidence,
+  routeCheckForExecution,
   routeCheckProfiles,
   sanitizeFailedRequest,
   sanitizeUrl,

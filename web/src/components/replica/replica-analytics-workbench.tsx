@@ -201,13 +201,18 @@ export function ReplicaAnalyticsWorkbench() {
         <p className="replica-analytics-case-requirement">{activeCase.requiredColumns}</p>
         <label className="replica-analytics-file-field">
           <span>选择 CSV 或 XLSX 文件</span>
-          <input
-            type="file"
-            accept=".xlsx,.csv"
-            aria-label="选择分析表格"
-            disabled={uploading}
-            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
-          />
+          <span className="replica-analytics-file-picker">
+            <span className="replica-analytics-file-button" aria-hidden="true">浏览本地文件</span>
+            <small aria-hidden="true">CSV / XLSX，单文件</small>
+            <input
+              className="replica-analytics-file-input"
+              type="file"
+              accept=".xlsx,.csv"
+              aria-label="选择分析表格"
+              disabled={uploading}
+              onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+            />
+          </span>
         </label>
         <p className="replica-analytics-selection">
           {selectedFile ? `已选择：${selectedFile.name}（尚未提交）` : "尚未选择文件"}

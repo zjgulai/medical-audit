@@ -2621,6 +2621,109 @@ def test_production_frontend_acceptance_rejects_clipped_controls_and_occluding_f
     ]
 
 
+def test_production_frontend_acceptance_uses_route_specific_text_minimum() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify } from " + json.dumps(runner_path.as_uri()) + "; "
+        "const data = { bodyText: 'x'.repeat(79), headings: ['登录工作台'], "
+        "controlText: ['登录'], fileInputCount: 0, horizontalOverflow: false, "
+        "scrollWidth: 100, clientWidth: 100, overflowOffenders: [], "
+        "interactiveOverflowOffenders: [], floatingControlOcclusions: [] }; "
+        "const check = { status: 200, error: null, consoleErrors: [], failedRequests: [], "
+        "interactionErrors: [], finalUrl: 'https://audit.example.test/' }; "
+        "const hasThin = (routeCheck) => classify(check, routeCheck, data)"
+        ".some((item) => item.type === 'thin-page'); "
+        "console.log(JSON.stringify({ defaultMinimum: hasThin({ route: '/' }), "
+        "loginMinimum: hasThin({ route: '/', minimumBodyTextLength: 60 }) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "defaultMinimum": True,
+        "loginMinimum": False,
+    }
+
+
+def test_production_frontend_acceptance_pairs_blocked_api_console_errors() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { partitionReadonlyConsoleErrors } from "
+        + json.dumps(runner_path.as_uri())
+        + "; console.log(JSON.stringify(partitionReadonlyConsoleErrors(["
+        "'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector', "
+        "'Failed to load resource: net::ERR_FAILED', "
+        "'Failed to load resource: net::ERR_FAILED', "
+        "'Unhandled application error'], 2)));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "expected": [
+            "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector",
+            "Failed to load resource: net::ERR_FAILED",
+        ],
+        "actionable": [
+            "Failed to load resource: net::ERR_FAILED",
+            "Unhandled application error",
+        ],
+    }
+
+
+def test_production_frontend_acceptance_navigation_only_uses_fail_closed_page_contracts() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify, routeCheckForExecution, routeCheckProfiles } from "
+        + json.dumps(runner_path.as_uri())
+        + "; const byRoute = Object.fromEntries(routeCheckProfiles.hardened"
+        ".map((item) => [item.route, item])); "
+        "const data = (bodyText, heading) => ({ "
+        "bodyText: `${bodyText} ${'审计页面内容'.repeat(30)}`, "
+        "headings: [heading], controlText: [], fileInputCount: 0, "
+        "horizontalOverflow: false, scrollWidth: 100, clientWidth: 100, "
+        "overflowOffenders: [], interactiveOverflowOffenders: [], "
+        "floatingControlOcclusions: [], chromeTitle: heading }); "
+        "const check = (route) => ({ status: 200, error: null, consoleErrors: [], "
+        "failedRequests: [], interactionErrors: [], "
+        "finalUrl: `https://audit.example.test${route}` }); "
+        "const issueTypes = (route, bodyText, heading) => classify(check(route), "
+        "routeCheckForExecution(byRoute[route], { navigationOnlyReadonly: true }), "
+        "data(bodyText, heading)).map((item) => item.type); "
+        "console.log(JSON.stringify({ "
+        "agentMarket: issueTypes('/agent-market', "
+        "'智能体广场 已安装状态读取失败 未找到智能体', '智能体广场'), "
+        "archive: issueTypes('/archive', "
+        "'归档工作台暂不可用 归档数据读取失败，页面不会注入本地样例或旧数据', "
+        "'归档工作台'), "
+        "reports: issueTypes('/reports', "
+        "'报告与底稿 选择项目和交付物 所属项目', '报告与底稿') }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "agentMarket": [],
+        "archive": [],
+        "reports": [],
+    }
+
+
 def test_production_frontend_acceptance_only_audits_positioned_floating_markers() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (
@@ -2945,9 +3048,11 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "expectedSearch: item.expectedSearch ?? '', session: item.session }); "
         "console.log(JSON.stringify({ independent: routeCheckProfiles.hardened.map(project), "
         "aliases: aliasRouteChecks.map(project), "
-        "loginRequiredText: routeCheckProfiles.hardened[0].requiredText.map(String), "
+        "loginRequiredText: routeCheckProfiles.hardened"
+        ".find((item) => item.route === '/login').requiredText.map(String), "
         "loginRequiredControlText: "
-        "routeCheckProfiles.hardened[0].requiredControlText.map(String), "
+        "routeCheckProfiles.hardened"
+        ".find((item) => item.route === '/login').requiredControlText.map(String), "
         "chromeTitles: Object.fromEntries(routeCheckProfiles.hardened"
         ".filter((item) => item.expectedChromeTitle)"
         ".map((item) => [item.route, item.expectedChromeTitle])) }));"
@@ -2962,6 +3067,7 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert [item["route"] for item in payload["independent"]] == [
+        "/",
         "/login",
         "/medical-audit",
         "/fund-compliance",
@@ -2971,6 +3077,7 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "/agent-market",
         "/analytics",
         "/projects",
+        "/audit-cockpit",
         "/documents",
         "/ocr",
         "/knowledge-base",
@@ -2985,12 +3092,14 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         item["route"] for item in payload["independent"]
     ]
     assert payload["independent"][0]["session"] == "anonymous"
+    assert payload["independent"][1]["session"] == "anonymous"
     assert all(
-        item["session"] == "workspace" for item in payload["independent"][1:]
+        item["session"] == "workspace" for item in payload["independent"][2:]
     )
     assert payload["loginRequiredText"] == ["/登录工作台/"]
     assert payload["loginRequiredControlText"] == ["/(^|\\s)登录($|\\s)/"]
     assert payload["chromeTitles"] == {
+        "/audit-cockpit": "审计驾驶舱",
         "/fund-compliance": "医保基金使用合规",
         "/fund-compliance/review": "医保基金复核表单",
         "/rules": "规则运行工作台",
@@ -3029,6 +3138,45 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
             "session": "workspace",
         },
     ]
+
+
+def test_production_frontend_acceptance_navigation_only_mode_is_zero_write() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { buildAcceptanceExecutionBoundary, validateAcceptanceEvidenceOptions, "
+        "validateSideEffectAuthorization } from "
+        + json.dumps(runner_path.as_uri())
+        + "; const options = { baseUrl: 'https://audit.lute-tlz-dddd.top', "
+        "navigationOnlyReadonly: true, allowAuditLogWrites: false, "
+        "confirmProductionWrite: null, expectedDeploySha: 'a'.repeat(40), "
+        "acceptanceRunId: 'fa-20260803t100000z-deadbeef', releaseGuardReport: null }; "
+        "const normalized = validateSideEffectAuthorization(options); "
+        "validateAcceptanceEvidenceOptions(options); "
+        "const boundary = buildAcceptanceExecutionBoundary(options); "
+        "let mixedModeError = null; try { validateSideEffectAuthorization({ ...options, "
+        "allowAuditLogWrites: true, confirmProductionWrite: 'audit.lute-tlz-dddd.top' }); "
+        "} catch (error) { mixedModeError = String(error.message ?? error); } "
+        "console.log(JSON.stringify({ normalized, boundary, mixedModeError }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["normalized"] == "https://audit.lute-tlz-dddd.top"
+    assert payload["boundary"] == {
+        "side_effect_mode": "navigation-only-readonly",
+        "production_side_effect": "none",
+        "database_write": False,
+        "audit_log_write_expected": False,
+        "run_api_permission_probes": False,
+        "require_release_guard": False,
+    }
+    assert "cannot be combined" in payload["mixedModeError"]
 
 
 def test_production_frontend_acceptance_anonymous_context_omits_acceptance_headers() -> None:
@@ -3112,8 +3260,7 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
 
     assert script_text.count("/表格分析工作台/") == 2
     assert script_text.count("/上传表格|分析历史/") == 2
-    assert script_text.count("/审计底稿与报告台账/") == 2
-    assert script_text.count("/六类模板目录/") == 2
+    assert "requiredText: [/报告与底稿/, /选择项目和交付物/, /所属项目/]" in script_text
     assert "/项目协作工作台/" in script_text
     assert "/可见项目/" in script_text
     assert "/内测中|待开通/" not in script_text
