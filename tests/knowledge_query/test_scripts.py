@@ -2700,14 +2700,31 @@ def test_production_frontend_acceptance_navigation_only_uses_fail_closed_page_co
         "const issueTypes = (route, bodyText, heading) => classify(check(route), "
         "routeCheckForExecution(byRoute[route], { navigationOnlyReadonly: true }), "
         "data(bodyText, heading)).map((item) => item.type); "
+        "const fullIssueTypes = (route, bodyText, heading) => classify(check(route), "
+        "byRoute[route], data(bodyText, heading)).map((item) => item.type); "
         "console.log(JSON.stringify({ "
         "agentMarket: issueTypes('/agent-market', "
         "'智能体广场 已安装状态读取失败 未找到智能体', '智能体广场'), "
+        "analytics: issueTypes('/analytics', "
+        "'表格分析 选择一个审计案例 审计数据分析 财务杜邦分析', "
+        "'选择一个审计案例，上传数据即可得到可复核结果'), "
+        "documents: issueTypes('/documents', "
+        "'文档检索 原文档 搜索历史读取失败 文档目录读取失败 原文档目录读取失败', "
+        "'文档检索'), "
+        "knowledgeBase: issueTypes('/knowledge-base', "
+        "'审计知识库 审计核心知识 文档指标尚未同步 页面不会用空卡片冒充可用知识库', "
+        "'审计知识库'), "
         "archive: issueTypes('/archive', "
         "'归档工作台暂不可用 归档数据读取失败，页面不会注入本地样例或旧数据', "
         "'归档工作台'), "
         "reports: issueTypes('/reports', "
-        "'报告与底稿 选择项目和交付物 所属项目', '报告与底稿') }));"
+        "'报告与底稿 选择项目和交付物 所属项目', '报告与底稿'), "
+        "fullDocuments: fullIssueTypes('/documents', "
+        "'文档检索 原文档 搜索历史读取失败 文档目录读取失败 原文档目录读取失败', "
+        "'文档检索'), "
+        "fullKnowledgeBase: fullIssueTypes('/knowledge-base', "
+        "'审计知识库 审计核心知识 文档指标尚未同步 页面不会用空卡片冒充可用知识库', "
+        "'审计知识库') }));"
     )
     result = subprocess.run(
         ["node", "--input-type=module", "--eval", program],
@@ -2719,8 +2736,13 @@ def test_production_frontend_acceptance_navigation_only_uses_fail_closed_page_co
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
         "agentMarket": [],
+        "analytics": [],
+        "documents": [],
+        "knowledgeBase": [],
         "archive": [],
         "reports": [],
+        "fullDocuments": ["missing-required-text"],
+        "fullKnowledgeBase": ["missing-required-text"],
     }
 
 
@@ -3258,8 +3280,20 @@ def test_production_frontend_acceptance_contract_tracks_live_workbenches() -> No
         encoding="utf-8"
     )
 
-    assert script_text.count("/表格分析工作台/") == 2
-    assert script_text.count("/上传表格|分析历史/") == 2
+    current_analytics_contract = (
+        "requiredText: [/表格分析/, /选择一个审计案例/, /审计数据分析/, /财务杜邦分析/]"
+    )
+    assert script_text.count(current_analytics_contract) == 2
+    assert "/表格分析工作台/" not in script_text
+    assert "/上传表格|分析历史/" not in script_text
+    assert (
+        "navigationOnlyRequiredText: [/文档检索/, /原文档/, "
+        "/文档目录读取失败|原文档目录读取失败/]"
+    ) in script_text
+    assert (
+        "navigationOnlyRequiredText: [/审计知识库/, /审计核心知识/, "
+        "/文档指标尚未同步/, /不会用空卡片冒充可用知识库/]"
+    ) in script_text
     assert "requiredText: [/报告与底稿/, /选择项目和交付物/, /所属项目/]" in script_text
     assert "/项目协作工作台/" in script_text
     assert "/可见项目/" in script_text

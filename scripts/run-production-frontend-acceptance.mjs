@@ -83,7 +83,7 @@ const routeCheckProfiles = {
     { route: "/agent-market", requiredText: [/智能体广场/, /招标流程核验|政策依据速查|凭证异常识别|纪要结构提取/] },
     {
       route: "/analytics",
-      requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
+      requiredText: [/表格分析/, /选择一个审计案例/, /审计数据分析/, /财务杜邦分析/],
     },
     {
       route: "/projects",
@@ -171,7 +171,7 @@ const routeCheckProfiles = {
       route: "/analytics",
       expectedPath: "/analytics",
       session: "workspace",
-      requiredText: [/AI数据分析/, /表格分析工作台/, /上传表格|分析历史/],
+      requiredText: [/表格分析/, /选择一个审计案例/, /审计数据分析/, /财务杜邦分析/],
     },
     {
       route: "/projects",
@@ -191,6 +191,7 @@ const routeCheckProfiles = {
       expectedPath: "/documents",
       session: "workspace",
       requiredText: [/文档检索/, /对话文档|检索结果|法律法规库|法规政策/],
+      navigationOnlyRequiredText: [/文档检索/, /原文档/, /文档目录读取失败|原文档目录读取失败/],
     },
     {
       route: "/ocr",
@@ -204,6 +205,7 @@ const routeCheckProfiles = {
       expectedPath: "/knowledge-base",
       session: "workspace",
       requiredText: [/审计知识库/, /审计核心知识/, /五个核心审计来源/],
+      navigationOnlyRequiredText: [/审计知识库/, /审计核心知识/, /文档指标尚未同步/, /不会用空卡片冒充可用知识库/],
     },
     {
       route: "/graph",
