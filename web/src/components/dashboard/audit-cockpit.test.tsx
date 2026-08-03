@@ -117,6 +117,7 @@ describe("AuditCockpit", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
 
     await waitFor(() => expect(fetchProjectDashboardMock).toHaveBeenCalledTimes(2));
+    expect(fetchProjectDashboardMock).toHaveBeenNthCalledWith(2, "AUDIT-2026");
     expect(await screen.findByText("复核高额重复收费")).toBeInTheDocument();
   });
 
