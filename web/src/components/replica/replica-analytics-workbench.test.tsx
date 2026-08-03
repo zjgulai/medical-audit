@@ -22,6 +22,8 @@ const historyReady: TableAnalysisUploadHistoryResponse = {
     {
       id: "upload-history-1",
       name: "历史收费.csv",
+      analysis_case: "audit-data",
+      analysis_case_label: "审计数据分析",
       extension: "csv",
       size_bytes: 0,
       size_kb: 0,
@@ -43,6 +45,28 @@ const historyReady: TableAnalysisUploadHistoryResponse = {
 
 const uploadResult: TableAnalysisUploadResponse = {
   name: "本次收费.xlsx",
+  analysis_case: "audit-data",
+  analysis_case_label: "审计数据分析",
+  case_status: "completed",
+  case_metrics: [
+    {
+      key: "row_count",
+      label: "数据行数",
+      value: 2,
+      display_value: "2 行",
+      formula: null,
+      status: "available"
+    },
+    {
+      key: "duplicate_row_count",
+      label: "完全重复记录",
+      value: 1,
+      display_value: "1 条",
+      formula: null,
+      status: "available"
+    }
+  ],
+  case_findings: ["发现 1 条完全重复记录，建议优先核对。"],
   size_kb: 0,
   extension: "xlsx",
   status: "parsed",
@@ -59,8 +83,8 @@ const uploadResult: TableAnalysisUploadResponse = {
   ],
   row_count: 2,
   empty_cell_count: 0,
-  duplicate_row_count: 0,
-  message: "后端已完成表格字段画像。",
+  duplicate_row_count: 1,
+  message: "已完成表格字段画像。",
   quality_findings: ["未发现空值单元。"],
   audit_signals: ["金额/费用字段"],
   recommendations: ["进入重复收费核验。"],
@@ -68,6 +92,32 @@ const uploadResult: TableAnalysisUploadResponse = {
   sha256: "a".repeat(64),
   retention_status: "retained",
   created_at: "2026-07-12T09:00:00Z"
+};
+
+const dupontResult: TableAnalysisUploadResponse = {
+  ...uploadResult,
+  name: "财务杜邦分析案例.csv",
+  analysis_case: "dupont",
+  analysis_case_label: "财务杜邦分析",
+  case_metrics: [
+    {
+      key: "net_profit_margin",
+      label: "销售净利率",
+      value: 0.1,
+      display_value: "10.00%",
+      formula: "净利润 ÷ 营业收入",
+      status: "available"
+    },
+    {
+      key: "return_on_equity",
+      label: "净资产收益率",
+      value: 0.125,
+      display_value: "12.50%",
+      formula: "销售净利率 × 总资产周转率 × 权益乘数",
+      status: "available"
+    }
+  ],
+  case_findings: ["2025年的净资产收益率为 12.50%。"]
 };
 
 function deferred<T>() {
@@ -91,15 +141,6 @@ function chooseFile(name = "本次收费.xlsx") {
   return { input, file };
 }
 
-function expectDefinition(
-  scope: HTMLElement,
-  term: string,
-  value: string
-) {
-  const definitionTerm = within(scope).getByText(term, { selector: "dt" });
-  expect(definitionTerm.nextElementSibling).toHaveTextContent(value);
-}
-
 describe("ReplicaAnalyticsWorkbench", () => {
   beforeEach(() => {
     fetchHistoryMock.mockReset();
@@ -108,109 +149,103 @@ describe("ReplicaAnalyticsWorkbench", () => {
     uploadMock.mockResolvedValue(uploadResult);
   });
 
-  it("records an accepted file without uploading and explains the controlled-write boundary", async () => {
+  it("leads with two executable audit cases and keeps technical boundaries collapsed", async () => {
     render(<ReplicaAnalyticsWorkbench />);
 
-    expect(screen.getByText("上传 CSV 或 XLSX 表格，查看字段画像、数据质量线索与审计建议。")).toBeInTheDocument();
-    expect(screen.queryByText(/读取后端字段画像/)).not.toBeInTheDocument();
-    const { input, file } = chooseFile();
-
-    expect(input).toHaveAttribute("accept", ".xlsx,.csv");
-    expect(screen.getByText(`已选择：${file.name}（尚未上传）`)).toBeInTheDocument();
-    expect(uploadMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/上传是受控写入/)).toBeInTheDocument();
-    expect(screen.getByText(/只有分析记录服务就绪时才保留历史/)).toBeInTheDocument();
-    expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
-    expect(screen.getByText(/当前分析不调用外部模型/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /选择一个审计案例/ })).toBeInTheDocument();
+    const cases = screen.getByRole("radiogroup", { name: "分析案例" });
+    expect(within(cases).getByRole("radio", { name: /审计数据分析/ })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    expect(within(cases).getByRole("radio", { name: /财务杜邦分析/ })).toHaveAttribute(
+      "aria-checked",
+      "false"
+    );
+    expect(screen.getAllByText(/建议包含患者\/对象/)).toHaveLength(2);
     expect(screen.getByText("provider_call=false").closest("details")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /OCR/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /OCR/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/OCR/i)).not.toBeInTheDocument();
-    expect(document.querySelector('input[id*="ocr" i], input[name*="ocr" i]')).toBeNull();
+    expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
+    expect(uploadMock).not.toHaveBeenCalled();
     await waitFor(() => expect(fetchHistoryMock).toHaveBeenCalledTimes(1));
   });
 
-  it("submits exactly once and renders the complete backend profile before refreshing history", async () => {
+  it("loads and executes the DuPont example exactly once", async () => {
     const pendingUpload = deferred<TableAnalysisUploadResponse>();
     uploadMock.mockReturnValue(pendingUpload.promise);
     render(<ReplicaAnalyticsWorkbench />);
-    const { file } = chooseFile();
 
-    const submit = screen.getByRole("button", { name: "上传并分析" });
+    fireEvent.click(screen.getByRole("radio", { name: /财务杜邦分析/ }));
+    expect(screen.getAllByText(/必需字段：净利润、营业收入/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "载入财务杜邦分析案例" }));
+    expect(screen.getByText("已选择：财务杜邦分析案例.csv（尚未提交）")).toBeInTheDocument();
+
+    const submit = screen.getByRole("button", { name: "开始财务杜邦分析" });
     fireEvent.click(submit);
     fireEvent.click(submit);
     expect(uploadMock).toHaveBeenCalledTimes(1);
-    expect(uploadMock).toHaveBeenCalledWith(file);
+    expect(uploadMock.mock.calls[0][0].name).toBe("财务杜邦分析案例.csv");
+    expect(uploadMock.mock.calls[0][1]).toBe("dupont");
     expect(screen.getByLabelText("选择分析表格")).toBeDisabled();
 
-    await act(async () => pendingUpload.resolve(uploadResult));
+    await act(async () => pendingUpload.resolve(dupontResult));
 
     const result = await screen.findByRole("region", { name: "本次分析结果" });
-    for (const text of [
-      "本次收费.xlsx",
-      "收费明细",
-      "金额",
-      "数值",
-      "可用于费用异常核验。",
-      "后端已完成表格字段画像。",
-      "未发现空值单元。",
-      "金额/费用字段",
-      "进入重复收费核验。",
-      "upload-current-1",
-      "a".repeat(64),
-      "2026-07-12T09:00:00Z"
-    ]) {
-      expect(within(result).getByText(text)).toBeInTheDocument();
-    }
-    expectDefinition(result, "文件大小", "0 KB");
-    expectDefinition(result, "扩展名", "xlsx");
-    expectDefinition(result, "解析状态", "parsed");
-    expectDefinition(result, "数据行", "2");
-    expectDefinition(result, "空单元格", "0");
-    expectDefinition(result, "重复行", "0");
-    const columnRow = within(result).getByRole("row", { name: /金额/ });
-    const columnCells = within(columnRow).getAllByRole("cell");
-    expect(columnCells[2]).toHaveTextContent("0");
-    expect(columnCells[3]).toHaveTextContent("2");
-    expect(columnCells[4]).toHaveTextContent("128.50");
-    expectDefinition(result, "retention_status", "retained");
-    expect(within(result).getByText("已保留分析文件和结果记录。")).toBeInTheDocument();
+    expect(within(result).getByRole("heading", { name: "财务杜邦分析结果" })).toBeInTheDocument();
+    expect(within(result).getByText("10.00%")).toBeInTheDocument();
+    expect(within(result).getByText("12.50%")).toBeInTheDocument();
+    expect(within(result).getByText(/净利润 ÷ 营业收入/)).toBeInTheDocument();
+    expect(within(result).getByText(/2025年的净资产收益率/)).toBeInTheDocument();
     await waitFor(() => expect(fetchHistoryMock).toHaveBeenCalledTimes(2));
   });
 
-  it("keeps a successful upload result when the independent history refresh fails", async () => {
+  it("renders audit conclusions first and keeps field and record internals in details", async () => {
+    render(<ReplicaAnalyticsWorkbench />);
+    const { file } = chooseFile();
+    fireEvent.click(screen.getByRole("button", { name: "开始审计数据分析" }));
+
+    expect(uploadMock).toHaveBeenCalledWith(file, "audit-data");
+    const result = await screen.findByRole("region", { name: "本次分析结果" });
+    expect(within(result).getByText("2 行")).toBeInTheDocument();
+    expect(within(result).getByText("1 条")).toBeInTheDocument();
+    expect(within(result).getByText(/发现 1 条完全重复记录/)).toBeInTheDocument();
+    expect(within(result).getByText("查看字段识别与数据质量").closest("details")).not.toBeNull();
+    expect(within(result).getByText("管理与审计详情").closest("details")).not.toBeNull();
+    expect(within(result).getByText("upload-current-1")).toBeInTheDocument();
+    expect(within(result).getByText("a".repeat(64))).toBeInTheDocument();
+    expect(within(result).getByText("外部模型调用").nextElementSibling).toHaveTextContent("否");
+  });
+
+  it("clears evidence when the case or selected file changes", async () => {
+    render(<ReplicaAnalyticsWorkbench />);
+    chooseFile("文件A.xlsx");
+    fireEvent.click(screen.getByRole("button", { name: "开始审计数据分析" }));
+    expect(await screen.findByRole("region", { name: "本次分析结果" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: /财务杜邦分析/ }));
+    expect(screen.queryByRole("region", { name: "本次分析结果" })).not.toBeInTheDocument();
+    expect(screen.getByText("尚未选择文件")).toBeInTheDocument();
+
+    chooseFile("文件B.csv");
+    expect(screen.getByText("已选择：文件B.csv（尚未提交）")).toBeInTheDocument();
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a successful result when the independent history refresh fails", async () => {
     fetchHistoryMock
       .mockResolvedValueOnce(historyReady)
       .mockRejectedValueOnce(new Error("history refresh failed"));
     render(<ReplicaAnalyticsWorkbench />);
     chooseFile();
-    fireEvent.click(screen.getByRole("button", { name: "上传并分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始审计数据分析" }));
 
     expect(await screen.findByRole("region", { name: "本次分析结果" })).toHaveTextContent(
-      "本次收费.xlsx"
+      "审计数据分析结果"
     );
-    expect(await screen.findByText("分析历史读取失败")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "本次分析结果" })).toHaveTextContent(
-      "已保留分析文件和结果记录。"
-    );
+    expect(await screen.findByText("分析记录读取失败")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "本次分析结果" })).toHaveTextContent("分析完成");
   });
 
-  it("clears evidence from file A as soon as file B is selected without uploading B", async () => {
-    render(<ReplicaAnalyticsWorkbench />);
-    chooseFile("文件A.xlsx");
-    fireEvent.click(screen.getByRole("button", { name: "上传并分析" }));
-    expect(await screen.findByRole("region", { name: "本次分析结果" })).toHaveTextContent(
-      "本次收费.xlsx"
-    );
-
-    chooseFile("文件B.csv");
-
-    expect(screen.getByText("已选择：文件B.csv（尚未上传）")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "本次分析结果" })).not.toBeInTheDocument();
-    expect(uploadMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("states when an analysis was not retained and never invents a profile after upload failure", async () => {
+  it("states when analysis was not retained and never invents results after failure", async () => {
     uploadMock
       .mockResolvedValueOnce({
         ...uploadResult,
@@ -222,18 +257,17 @@ describe("ReplicaAnalyticsWorkbench", () => {
       .mockRejectedValueOnce(new Error("uploaded table file is too large"));
     render(<ReplicaAnalyticsWorkbench />);
     chooseFile("临时.csv");
-    fireEvent.click(screen.getByRole("button", { name: "上传并分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始审计数据分析" }));
 
-    expect(await screen.findByText("未配置 analytics store，本次分析未保留。")).toBeInTheDocument();
+    expect(await screen.findByText("分析记录存储未配置，本次结果未保留。")).toBeInTheDocument();
 
     chooseFile("超大.csv");
-    fireEvent.click(screen.getByRole("button", { name: "上传并分析" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("uploaded table file is too large");
+    fireEvent.click(screen.getByRole("button", { name: "开始审计数据分析" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("uploaded table file is too large");
     expect(screen.queryByRole("region", { name: "本次分析结果" })).not.toBeInTheDocument();
   });
 
-  it("separates history ready, zero values, degraded, empty, error and retry states", async () => {
+  it("keeps history useful for auditors while placing implementation fields in details", async () => {
     fetchHistoryMock
       .mockResolvedValueOnce(historyReady)
       .mockResolvedValueOnce({ ...historyReady, store: { ready: false, backend: "none" } })
@@ -244,33 +278,22 @@ describe("ReplicaAnalyticsWorkbench", () => {
       });
     render(<ReplicaAnalyticsWorkbench />);
 
-    const history = await screen.findByRole("region", { name: "分析历史" });
-    expect(within(history).getByText("历史收费.csv")).toBeInTheDocument();
-    expect(within(history).getByText("SqlAlchemyAnalyticsUploadStore")).toBeInTheDocument();
+    const history = await screen.findByRole("region", { name: "分析记录" });
     const historyItem = within(history).getByRole("article", { name: "历史收费.csv" });
-    expectDefinition(historyItem, "记录 ID", "upload-history-1");
-    expectDefinition(historyItem, "原始字节", "0");
-    expectDefinition(historyItem, "文件大小", "0 KB");
-    expectDefinition(historyItem, "数据行", "0");
-    expectDefinition(historyItem, "字段数", "0");
-    expectDefinition(historyItem, "空单元格", "0");
-    expectDefinition(historyItem, "重复行", "0");
-    expectDefinition(historyItem, "分析状态", "parsed");
-    expectDefinition(historyItem, "保留状态", "retained");
-    expect(within(historyItem).queryByText("next-admin")).not.toBeInTheDocument();
-    expect(within(historyItem).queryByText("b".repeat(64))).not.toBeInTheDocument();
-    expectDefinition(historyItem, "sha256（截断）", "bbbbbbbbbbbb…bbbbbb");
+    expect(within(historyItem).getByText("审计数据分析")).toBeInTheDocument();
+    expect(within(historyItem).getByText("2026-07-12 · 0 行数据")).toBeInTheDocument();
+    expect(within(historyItem).getByText("管理信息").closest("details")).not.toBeNull();
+    expect(within(historyItem).getByText("upload-history-1")).toBeInTheDocument();
+    expect(within(historyItem).getByText("bbbbbbbbbbbb…bbbbbb")).toBeInTheDocument();
+    expect(within(history).getByText("记录服务状态").closest("details")).not.toBeNull();
 
-    fireEvent.click(within(history).getByRole("button", { name: "刷新历史" }));
-    expect(await within(history).findByText("历史存储未就绪")).toBeInTheDocument();
-    expect(within(history).getByText("历史收费.csv")).toBeInTheDocument();
-    expect(within(history).getByText("none")).toBeInTheDocument();
+    fireEvent.click(within(history).getByRole("button", { name: "刷新" }));
+    expect(await within(history).findByText("分析记录暂不可用")).toBeInTheDocument();
 
-    fireEvent.click(within(history).getByRole("button", { name: "刷新历史" }));
-    expect(await within(history).findByText("分析历史读取失败")).toBeInTheDocument();
-    expect(within(history).queryByText("历史收费.csv")).not.toBeInTheDocument();
-    fireEvent.click(within(history).getByRole("button", { name: "重试读取历史" }));
-    expect(await within(history).findByText("当前没有保留的分析记录")).toBeInTheDocument();
+    fireEvent.click(within(history).getByRole("button", { name: "刷新" }));
+    expect(await within(history).findByText("分析记录读取失败")).toBeInTheDocument();
+    fireEvent.click(within(history).getByRole("button", { name: "重试" }));
+    expect(await within(history).findByText("当前没有分析记录")).toBeInTheDocument();
   });
 
   it("ignores an older history request that settles after a retry", async () => {
@@ -278,23 +301,24 @@ describe("ReplicaAnalyticsWorkbench", () => {
     fetchHistoryMock.mockReturnValueOnce(first.promise).mockResolvedValueOnce(historyReady);
     render(<ReplicaAnalyticsWorkbench />);
 
-    fireEvent.click(screen.getByRole("button", { name: "刷新历史" }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     expect(await screen.findByText("历史收费.csv")).toBeInTheDocument();
     await act(async () => first.resolve({ items: [], store: { ready: true, backend: "old" } }));
     expect(screen.getByText("历史收费.csv")).toBeInTheDocument();
-    expect(screen.queryByText("当前没有保留的分析记录")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前没有分析记录")).not.toBeInTheDocument();
   });
 
-  it("links document follow-up only to the existing document and chat surfaces", async () => {
+  it("routes results into source review and report delivery", async () => {
     render(<ReplicaAnalyticsWorkbench />);
 
-    expect(screen.getByRole("link", { name: "前往文档" })).toHaveAttribute("href", "/documents");
-    expect(screen.getByRole("link", { name: "前往问答" })).toHaveAttribute("href", "/chat");
-    expect(screen.getByText("本批不含 OCR")).toBeInTheDocument();
-    expect(screen.queryByLabelText(/OCR/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /OCR/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /OCR/i })).not.toBeInTheDocument();
-    expect(document.querySelector('input[id*="ocr" i], input[name*="ocr" i]')).toBeNull();
+    expect(screen.getByRole("link", { name: "核对原始文档" })).toHaveAttribute(
+      "href",
+      "/documents"
+    );
+    expect(screen.getByRole("link", { name: "形成报告与底稿" })).toHaveAttribute(
+      "href",
+      "/reports"
+    );
     await waitFor(() => expect(fetchHistoryMock).toHaveBeenCalledTimes(1));
   });
 });

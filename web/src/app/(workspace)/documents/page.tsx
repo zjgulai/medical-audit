@@ -6,12 +6,24 @@ import Link from "next/link";
 import { PersonalMaterialReadPanel } from "@/components/documents/personal-material-read-panel";
 import {
   buildReplicaLocalGateNotice,
-  ReplicaNotice,
-  ReplicaRuntimeBadge
+  ReplicaNotice
 } from "@/components/replica/replica-page-kit";
 import { useReplicaDocumentsData } from "@/components/replica/use-replica-runtime";
-import { fetchDocumentFileBlob, runKnowledgeQuery, searchDocuments } from "@/lib/api-client";
-import type { DocumentSearchResponse, QueryResponse, SourceCollection } from "@/lib/api-types";
+import {
+  fetchDocumentFileBlob,
+  fetchDocumentLibrary,
+  runKnowledgeQuery,
+  searchDocuments
+} from "@/lib/api-client";
+import type {
+  DocumentLibraryItem,
+  DocumentLibraryResponse,
+  DocumentSearchHitLocation,
+  DocumentSearchResponse,
+  QueryResponse,
+  SourceCollection
+} from "@/lib/api-types";
+import { AUDIT_PRODUCT_SOURCE_COLLECTIONS } from "@/lib/audit-knowledge-scope";
 import type { ReferenceDocumentResult } from "@/lib/reference-replica-data";
 import { FALLBACK_SOURCE_COLLECTION_GROUPS, isSourceCollectionValue } from "@/lib/source-collection-catalog";
 
@@ -26,10 +38,14 @@ const ALL_DOCUMENTS_CATEGORY = "全部文档";
 const DEFAULT_DOCUMENT_QUERY = "医保基金监管";
 
 type DocumentPreview = ReferenceDocumentResult & {
-  readonly previewType: "对话文档" | "检索命中" | "知识库目录";
+  readonly previewType: "对话文档" | "检索命中" | "原文档";
   readonly previewUrl?: string;
   readonly downloadUrl?: string;
   readonly matchCount?: number;
+  readonly hitLocations?: readonly DocumentSearchHitLocation[];
+  readonly pageCount?: number;
+  readonly sizeBytes?: number;
+  readonly provenance?: DocumentLibraryItem["provenance"];
   readonly sourceCollection?: string;
 };
 
@@ -53,6 +69,11 @@ type SearchRequestSnapshot = {
   readonly sourceCollections: readonly SourceCollection[];
   readonly categoryLabel: string;
 };
+
+type DocumentLibraryState =
+  | { readonly kind: "idle" | "loading" }
+  | { readonly kind: "ready" | "empty" | "degraded"; readonly response: DocumentLibraryResponse }
+  | { readonly kind: "error" };
 
 export default function DocumentsPage() {
   const documentsData = useReplicaDocumentsData();
@@ -92,6 +113,7 @@ export default function DocumentsPage() {
   const [documentSearchState, setDocumentSearchState] = useState<DocumentSearchState>({ kind: "idle" });
   const [aiSearchState, setAiSearchState] = useState<AiDocumentSearchState>({ kind: "idle" });
   const [urlSourceCollections, setUrlSourceCollections] = useState<readonly SourceCollection[]>([]);
+  const [documentLibraryState, setDocumentLibraryState] = useState<DocumentLibraryState>({ kind: "idle" });
   const documentSearchResponse = documentSearchState.kind === "results" || documentSearchState.kind === "empty"
     ? documentSearchState.response
     : null;
@@ -99,13 +121,16 @@ export default function DocumentsPage() {
     ? aiSearchState.response
     : null;
   const hasExplicitSearch = documentSearchState.kind !== "idle" || aiSearchState.kind !== "idle";
-  const documentResults = useMemo(
+  const documentResults = useMemo<readonly DocumentPreview[]>(
     () => aiSearchState.kind === "results"
       ? queryResponseToDocumentResults(aiSearchState.response)
       : documentSearchState.kind === "results"
         ? documentSearchResponseToDocumentResults(documentSearchState.response)
         : !hasExplicitSearch && runtimeDataVisible && documentsData.source === "fixture"
-          ? documentsData.data.results
+          ? documentsData.data.results.map((item) => ({
+            ...item,
+            previewType: "对话文档" as const
+          }))
           : [],
     [
       aiSearchState,
@@ -120,6 +145,12 @@ export default function DocumentsPage() {
   const activeSourceCollections = useMemo(
     () => selectedSourceCollections(categories, activeCategory, urlSourceCollections),
     [activeCategory, categories, urlSourceCollections]
+  );
+  const directorySourceCollections = useMemo(
+    () => activeSourceCollections.length > 0
+      ? activeSourceCollections
+      : AUDIT_PRODUCT_SOURCE_COLLECTIONS,
+    [activeSourceCollections]
   );
   const executedRequest = aiSearchState.kind !== "idle"
     ? aiSearchState.request
@@ -159,6 +190,33 @@ export default function DocumentsPage() {
       setQuery(initialQuery.trim());
     }
   }, [categories]);
+
+  useEffect(() => {
+    if (documentsData.source === "fixture" || documentsData.status === "error") {
+      setDocumentLibraryState({ kind: "idle" });
+      return;
+    }
+    let active = true;
+    setDocumentLibraryState({ kind: "loading" });
+    fetchDocumentLibrary({ sourceCollections: directorySourceCollections, limit: 30 })
+      .then((response) => {
+        if (!active) return;
+        setDocumentLibraryState({
+          kind: !response.store.ready
+            ? "degraded"
+            : response.items.length === 0
+              ? "empty"
+              : "ready",
+          response
+        });
+      })
+      .catch(() => {
+        if (active) setDocumentLibraryState({ kind: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [directorySourceCollections, documentsData.source, documentsData.status]);
 
   const filteredResults = useMemo(() => {
     if (hasExplicitSearch) {
@@ -244,31 +302,16 @@ export default function DocumentsPage() {
     }
   }
 
-  const apiDirectoryDocuments = useMemo(
-    () => categories.slice(0, 10).map((category) => categoryToDirectoryPreview(category)),
-    [categories]
-  );
-  const shouldShowApiDirectory =
-    !hasExplicitSearch &&
-    documentsData.source !== "fixture" &&
-    apiDirectoryDocuments.length > 0;
-  const shownFeaturedDocuments: readonly DocumentPreview[] = shouldShowApiDirectory
-    ? apiDirectoryDocuments
-    : filteredResults.length > 0
-      ? (filteredResults.map((item) => ({
-        id: item.id,
-        title: item.title,
-        category: item.category,
-        excerpt: item.excerpt,
-        source: item.source,
-        updatedAt: item.updatedAt,
-        previewUrl: (item as DocumentPreview).previewUrl,
-        downloadUrl: (item as DocumentPreview).downloadUrl,
-        matchCount: (item as DocumentPreview).matchCount,
-        sourceCollection: (item as DocumentPreview).sourceCollection,
-        previewType: "检索命中" as const
-      })).slice(0, 10) as readonly DocumentPreview[])
-      : [];
+  const libraryDocuments = documentLibraryState.kind === "ready"
+    ? documentLibraryState.response.items.map(documentLibraryItemToPreview)
+    : [];
+  const shownFeaturedDocuments: readonly DocumentPreview[] = hasExplicitSearch
+    ? filteredResults.length > 0
+      ? filteredResults.slice(0, 10)
+      : []
+    : documentsData.source === "fixture"
+      ? filteredResults.slice(0, 10)
+      : libraryDocuments;
 
   const selectedDocument =
     shownFeaturedDocuments.find((item) => item.id === selectedDocumentId) ??
@@ -317,14 +360,7 @@ export default function DocumentsPage() {
         <div>
           <p className="replica-kicker">文档检索</p>
           <h1 id="replica-doc-title">文档检索</h1>
-          <p>快速检索系统内的相关文档</p>
-          <div className="mt-3">
-            <ReplicaRuntimeBadge
-              source={documentsData.source}
-              status={documentsData.status}
-              issueCount={documentsData.issues.length}
-            />
-          </div>
+          <p>按原文档检索审计依据，定位关键词所在页面并直接预览或下载。</p>
         </div>
         <div className="replica-doc-illustration" aria-hidden="true">
           <span className="replica-doc-illustration-shelf" />
@@ -425,12 +461,12 @@ export default function DocumentsPage() {
 
       <section className="replica-doc-results-panel" aria-labelledby="replica-doc-panel-title">
         <div className="replica-doc-results-head">
-          <h2 id="replica-doc-panel-title">对话文档</h2>
+          <h2 id="replica-doc-panel-title">原文档</h2>
           <button
             type="button"
-            aria-label="查看全部对话文档"
+            aria-label="查看全部原文档"
             onClick={() => setActionNotice(buildReplicaLocalGateNotice({
-              action: "查看全部对话文档",
+              action: "查看全部原文档",
               nextStep: "文档列表分页 API"
             }))}
           >
@@ -439,6 +475,26 @@ export default function DocumentsPage() {
           </button>
         </div>
         {actionNotice ? <ReplicaNotice>{actionNotice}</ReplicaNotice> : null}
+        {!hasExplicitSearch && documentLibraryState.kind === "loading" ? (
+          <div role="status" aria-live="polite" aria-label="原文档目录加载状态">
+            <ReplicaNotice>正在读取审计知识库原文档…</ReplicaNotice>
+          </div>
+        ) : null}
+        {!hasExplicitSearch && documentLibraryState.kind === "empty" ? (
+          <div role="status" aria-live="polite" aria-label="原文档目录空状态">
+            <ReplicaNotice>当前审计知识库暂无可展示原文档</ReplicaNotice>
+          </div>
+        ) : null}
+        {!hasExplicitSearch && documentLibraryState.kind === "degraded" ? (
+          <div role="status" aria-live="polite" aria-label="原文档目录降级状态">
+            <ReplicaNotice>原文档目录暂未就绪，请稍后重试。</ReplicaNotice>
+          </div>
+        ) : null}
+        {!hasExplicitSearch && documentLibraryState.kind === "error" ? (
+          <div role="alert" aria-label="原文档目录错误状态">
+            <ReplicaNotice>原文档目录读取失败</ReplicaNotice>
+          </div>
+        ) : null}
         {documentSearchState.kind === "empty" ? (
           <div role="status" aria-live="polite" aria-label="文档检索空状态">
             <ReplicaNotice>未找到匹配文档</ReplicaNotice>
@@ -457,11 +513,14 @@ export default function DocumentsPage() {
           </div>
         ) : null}
         {documentSearchResponse ? (
-          <div role="status" aria-live="polite" aria-label="文档检索完成状态">
-            <ReplicaNotice>
-              文档检索 provider_call：{documentSearchResponse.boundaries.provider_call ? "是" : "否"}
-            </ReplicaNotice>
-          </div>
+          <details className="replica-doc-runtime-details">
+            <summary>检索执行详情</summary>
+            <div role="status" aria-live="polite" aria-label="文档检索完成状态">
+              <ReplicaNotice>
+                文档检索 provider_call：{documentSearchResponse.boundaries.provider_call ? "是" : "否"}
+              </ReplicaNotice>
+            </div>
+          </details>
         ) : null}
         {aiSearchState.kind === "empty" ? (
           <div role="status" aria-live="polite" aria-label="AI+ 空状态">
@@ -474,10 +533,13 @@ export default function DocumentsPage() {
           </div>
         ) : null}
         {aiSearchResponse ? (
-          <div role="status" aria-live="polite" aria-label="AI+ 完成状态">
-            <ReplicaNotice>AI+ provider_call：当前查询契约未独立提供</ReplicaNotice>
-            <ReplicaNotice>AI+ generation_status：{aiSearchResponse.generation_status}</ReplicaNotice>
-          </div>
+          <details className="replica-doc-runtime-details">
+            <summary>AI 审证执行详情</summary>
+            <div role="status" aria-live="polite" aria-label="AI+ 完成状态">
+              <ReplicaNotice>AI+ provider_call：当前查询契约未独立提供</ReplicaNotice>
+              <ReplicaNotice>AI+ generation_status：{aiSearchResponse.generation_status}</ReplicaNotice>
+            </div>
+          </details>
         ) : null}
         <div className="replica-doc-results-shell">
           <div className="replica-doc-two-column-list">
@@ -521,10 +583,35 @@ export default function DocumentsPage() {
                     <dd>{selectedDocument.matchCount} 处</dd>
                   </div>
                 ) : null}
+                {selectedDocument.pageCount ? (
+                  <div>
+                    <dt>页数</dt>
+                    <dd>{selectedDocument.pageCount} 页</dd>
+                  </div>
+                ) : null}
+                {typeof selectedDocument.sizeBytes === "number" ? (
+                  <div>
+                    <dt>文件大小</dt>
+                    <dd>{formatFileSize(selectedDocument.sizeBytes)}</dd>
+                  </div>
+                ) : null}
               </dl>
+              {selectedDocument.hitLocations?.length ? (
+                <section className="replica-doc-hit-locations" aria-label="关键词命中位置">
+                  <h4>关键词命中位置</h4>
+                  <ul>
+                    {selectedDocument.hitLocations.map((hit, index) => (
+                      <li key={`${hit.preview_url}-${index}`}>
+                        <a href={hit.preview_url}>{hit.label}</a>
+                        <p>{hit.snippet}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
               <div className="replica-doc-detail-actions">
                 {selectedDocument.previewUrl ? (
-                  <Link href={selectedDocument.previewUrl}>预览原文</Link>
+                  <a href={selectedDocument.previewUrl}>预览原文</a>
                 ) : (
                   <button type="button" onClick={() => void recordDocumentAction(selectedDocument, "预览原文")}>预览原文</button>
                 )}
@@ -538,6 +625,16 @@ export default function DocumentsPage() {
                 ) : null}
                 <Link href={documentChatHref(selectedDocument, displayedQuery)}>加入对话</Link>
               </div>
+              {selectedDocument.provenance ? (
+                <details className="replica-doc-provenance">
+                  <summary>查看原文溯源</summary>
+                  <dl>
+                    <div><dt>来源路径</dt><dd>{selectedDocument.provenance.relative_path}</dd></div>
+                    <div><dt>来源版本</dt><dd>{selectedDocument.provenance.source_package_version_key}</dd></div>
+                    <div><dt>文件校验</dt><dd>{compactHash(selectedDocument.provenance.sha256)}</dd></div>
+                  </dl>
+                </details>
+              ) : null}
             </aside>
           ) : null}
         </div>
@@ -557,54 +654,10 @@ export default function DocumentsPage() {
         ) : null}
       </section>
 
-      <PersonalMaterialReadPanel />
-
-      <section className="replica-document-layout replica-doc-legacy-results" aria-label="检索命中明细">
-        <aside className="replica-category-list" aria-label="文档分类">
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              className={activeCategory === category.name ? "is-active" : ""}
-              onClick={() => {
-                setActiveCategory(category.name);
-                setUrlSourceCollections([]);
-              }}
-            >
-              <strong>{category.name}</strong>
-              <span>{category.description}</span>
-              <em>{formatDocumentCount(category.count)}</em>
-            </button>
-          ))}
-        </aside>
-
-        <section className="replica-panel replica-document-results">
-          <div className="replica-results-head">
-            <div>
-              <p className="replica-kicker">{displayedCategory}</p>
-              <h2>检索结果</h2>
-            </div>
-            <span>关键词：{displayedQuery}</span>
-          </div>
-
-          <div className="replica-result-list">
-            {filteredResults.map((item) => (
-              <article key={item.id} className="replica-result-card">
-                <div className="replica-result-card-top">
-                  <span>{item.category}</span>
-                  <time>{item.updatedAt}</time>
-                </div>
-                <h3>{item.title}</h3>
-                <p>{item.excerpt}</p>
-                <div>
-                  <strong>{item.source}</strong>
-                  <span>{hasExplicitSearch ? "命中结果" : "fixture 文档"}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </section>
+      <details className="replica-doc-personal-materials">
+        <summary>个人上传材料</summary>
+        <PersonalMaterialReadPanel />
+      </details>
     </main>
   );
 }
@@ -677,25 +730,47 @@ function sourceCollectionScopeLabel(
   return names.slice(0, 2).join("、") + (names.length > 2 ? ` 等 ${names.length} 个` : "");
 }
 
-function categoryToDirectoryPreview(
-  category: { readonly id: string; readonly name: string; readonly description: string; readonly count: number | null }
-): DocumentPreview {
-  const sourceCollection = category.id.startsWith("source-")
-    ? category.id.slice("source-".length)
-    : undefined;
-
+function documentLibraryItemToPreview(item: DocumentLibraryItem): DocumentPreview {
+  const documentFacts = [
+    `${item.file_ext.toUpperCase()} 原文`,
+    item.page_count ? `${item.page_count.toLocaleString()} 页` : null,
+    typeof item.size_bytes === "number" ? formatFileSize(item.size_bytes) : null
+  ].filter((value): value is string => Boolean(value));
   return {
-    id: `directory-${category.id}`,
-    title: `${category.name} 文档目录`,
-    category: category.name,
-    excerpt: category.description,
-    source: category.count === null
-      ? "文档数量待同步"
-      : `${category.count.toLocaleString()} 份文档`,
-    updatedAt: "生产目录",
-    previewType: "知识库目录",
-    sourceCollection
+    id: item.id,
+    title: item.title,
+    category: item.source_label,
+    excerpt: documentFacts.join(" · "),
+    source: item.source_label,
+    updatedAt: formatDocumentDate(item.updated_at),
+    previewType: "原文档",
+    previewUrl: item.preview_url ?? undefined,
+    downloadUrl: item.download_url ?? undefined,
+    sourceCollection: item.source_collection,
+    pageCount: item.page_count,
+    sizeBytes: item.size_bytes,
+    provenance: item.provenance
   };
+}
+
+function formatDocumentDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 10);
+  return parsed.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+}
+
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function compactHash(value: string): string {
+  return value.length > 20 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
 }
 
 function aggregateDocumentCount(
@@ -732,12 +807,15 @@ function documentSearchResponseToDocumentResults(
     title: item.title,
     category: item.source_label,
     excerpt: compactDocumentText(item.snippet, 120),
-    source: item.source_collection,
-    updatedAt: item.index_version_key || "检索命中",
+    source: item.source_label || sourceCollectionFallbackLabelByValue.get(item.source_collection) || "审计知识库",
+    updatedAt: typeof item.match_count === "number"
+      ? `${item.match_count.toLocaleString()} 处命中`
+      : "已命中",
     previewType: "检索命中",
     previewUrl: item.preview_url,
     downloadUrl: item.download_url,
     matchCount: item.match_count,
+    hitLocations: item.hit_locations,
     sourceCollection: item.source_collection
   }));
 }

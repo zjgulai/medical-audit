@@ -136,7 +136,8 @@ export const referenceNavigation: readonly ReferenceNavigationItem[] = [
   { id: "analysis", label: "AI数据分析", href: "/analytics", icon: "ai" },
   { id: "graph", label: "知识图谱", href: "/graph", icon: "graph" },
   { id: "workpaper", label: "审计底稿/报告", href: "/reports", icon: "paper" },
-  { id: "project", label: "项目管理", href: "/projects", icon: "folder" }
+  { id: "project", label: "项目管理", href: "/projects", icon: "folder" },
+  { id: "audit-cockpit", label: "审计驾驶舱", href: "/audit-cockpit", icon: "graph" }
 ];
 
 export const referenceTopicNavigation: ReferenceNavigationItem = {

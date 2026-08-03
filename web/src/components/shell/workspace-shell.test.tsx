@@ -29,6 +29,7 @@ describe("WorkspaceShell", () => {
 
     expect(mainNavigation).toHaveClass("grid");
     expect(screen.getByText("AI审计一体化协作平台")).toBeInTheDocument();
+    expect(screen.getByTestId("audit-brand-lockup")).toBeInTheDocument();
     for (const label of ["工作台", "医保审计专题", "审计助手", "文档检索", "项目归档"]) {
       expect(within(mainNavigation).getByText(label)).toBeInTheDocument();
     }

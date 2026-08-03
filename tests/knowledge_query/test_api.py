@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from medical_audit_kb.api import routes_documents
 from medical_audit_kb.api.agent_store import (
     AGENT_ID_PREFIX,
     InMemoryAgentStore,
@@ -26,7 +27,12 @@ from medical_audit_kb.api.analytics_upload_store import (
     InMemoryAnalyticsUploadStore,
     SqlAlchemyAnalyticsUploadStore,
 )
-from medical_audit_kb.api.app import ApiState, create_app
+from medical_audit_kb.api.app import (
+    ApiState,
+    PreviewReference,
+    PreviewReferenceCache,
+    create_app,
+)
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
 from medical_audit_kb.api.auth_user_store import (
     AUTH_ROLE_ASSIGNMENT_ID_PREFIX,
@@ -3207,6 +3213,16 @@ def test_analytics_table_upload_profiles_csv_file(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "charge-sample.csv"
+    assert body["analysis_case"] == "audit-data"
+    assert body["analysis_case_label"] == "审计数据分析"
+    assert body["case_status"] == "completed"
+    assert {metric["key"] for metric in body["case_metrics"]} == {
+        "row_count",
+        "duplicate_row_count",
+        "empty_cell_count",
+        "audit_signal_count",
+    }
+    assert any("完全重复记录" in finding for finding in body["case_findings"])
     assert body["upload_id"].startswith(ANALYTICS_UPLOAD_ID_PREFIX)
     assert body["sha256"]
     assert body["retention_status"] == "retained"
@@ -3292,6 +3308,127 @@ def test_analytics_table_upload_profiles_xlsx_file(tmp_path: Path) -> None:
     assert body["message"] == "后端已完成 XLSX 工作簿（sheet: 收费明细）的字段画像。"
 
 
+def test_analytics_table_upload_executes_dupont_case_with_reproducible_metrics(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={
+            "file": (
+                "dupont-example.csv",
+                "\n".join(
+                    [
+                        "年度,净利润,营业收入,平均总资产,平均净资产",
+                        "2024,80,900,1800,720",
+                        "2025,100,1000,2000,800",
+                    ]
+                ),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["analysis_case"] == "dupont"
+    assert body["analysis_case_label"] == "财务杜邦分析"
+    assert body["case_status"] == "completed"
+    metrics = {metric["key"]: metric for metric in body["case_metrics"]}
+    assert metrics["net_profit_margin"]["display_value"] == "10.00%"
+    assert metrics["total_asset_turnover"]["display_value"] == "0.50"
+    assert metrics["equity_multiplier"]["display_value"] == "2.50"
+    assert metrics["return_on_equity"]["display_value"] == "12.50%"
+    assert metrics["return_on_equity"]["formula"] == (
+        "销售净利率 × 总资产周转率 × 权益乘数"
+    )
+    assert body["case_findings"][0] == "2025的净资产收益率为 12.50%。"
+    assert "未调用外部大模型" in body["case_findings"][-1]
+    assert state.operation_logs[-1]["payload"]["analysis_case"] == "dupont"
+
+
+def test_analytics_dupont_case_falls_back_to_the_latest_valid_row(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={
+            "file": (
+                "dupont-row-fallback.csv",
+                "\n".join(
+                    [
+                        "年度,净利润,营业收入,平均总资产,平均净资产",
+                        "2024,80,800,1600,640",
+                        "2025,100,0,2000,800",
+                    ]
+                ),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["case_status"] == "completed"
+    assert body["case_findings"][0] == "2024的净资产收益率为 12.50%。"
+
+
+@pytest.mark.parametrize("non_finite_value", ("nan", "NaN", "Infinity", "-inf"))
+def test_analytics_dupont_case_rejects_non_finite_decimal_cells(
+    tmp_path: Path,
+    non_finite_value: str,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={
+            "file": (
+                "dupont-non-finite.csv",
+                (
+                    "年度,净利润,营业收入,平均总资产,平均净资产\n"
+                    f"2025,{non_finite_value},1000,2000,800"
+                ),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["case_status"] == "needs-input"
+    assert all(metric["value"] is None for metric in body["case_metrics"])
+
+
+def test_analytics_dupont_case_reports_missing_required_columns(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    response = client.post(
+        "/analytics/table-upload",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+        data={"analysis_case": "dupont"},
+        files={"file": ("incomplete.csv", "年度,净利润\n2025,100", "text/csv")},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["case_status"] == "needs-input"
+    assert body["case_findings"][0] == "缺少杜邦分析必需字段：营业收入、平均总资产、平均净资产。"
+    assert all(metric["status"] == "unavailable" for metric in body["case_metrics"])
+
+
 def test_analytics_table_upload_rejects_unsupported_extension(tmp_path: Path) -> None:
     client = TestClient(create_app(_api_state(tmp_path)))
 
@@ -3374,6 +3511,34 @@ def test_analytics_upload_history_is_owner_scoped_and_redacts_storage_path(
     }
     assert "storage_path" not in json.dumps(owner_history.json())
     assert "storage_path" not in json.dumps(admin_history.json())
+
+
+def test_analytics_upload_history_normalizes_unknown_analysis_case(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    store = InMemoryAnalyticsUploadStore(upload_root=tmp_path / "retained-uploads")
+    state.analytics_upload_store = store
+    store.add_upload(
+        file_name="future-case.csv",
+        extension="csv",
+        content=b"item,amount\nA,10",
+        analysis_summary={
+            "analysis_case": "future-case",
+            "analysis_case_label": "未发布分析类型",
+            "status": "parsed",
+        },
+        created_by="analytics-owner",
+    )
+
+    response = TestClient(create_app(state)).get(
+        "/analytics/table-uploads",
+        headers={"X-User-Id": "analytics-owner", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["items"][0]["analysis_case"] == "audit-data"
+    assert response.json()["items"][0]["analysis_case_label"] == "审计数据分析"
 
 
 def test_sql_analytics_upload_removes_retained_file_when_database_write_fails(
@@ -4065,7 +4230,7 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["contract_version"] == "document-search-v2"
+    assert body["contract_version"] == "document-search-v3"
     assert body["query"] == "医保基金审核依据"
     assert body["effective_source_collections"] == [SourceCollection.MEDICAL_INSURANCE_LAWS.value]
     assert body["boundaries"]["query_history_write"] is False
@@ -4074,6 +4239,19 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
     assert body["items"][0]["download_url"].startswith("/api/v1/documents/source/")
     assert body["items"][0]["match_count"] == 1
     assert body["items"][0]["matched_snippets"]
+    assert body["items"][0]["hit_locations"] == [
+        {
+            "label": "第一条",
+            "page_number": None,
+            "line_start": 1,
+            "line_end": 1,
+            "sheet_name": None,
+            "row_number": None,
+            "article_number": "第一条",
+            "snippet": "第一条 医疗机构应当保留医保基金审核依据。",
+            "preview_url": body["items"][0]["preview_url"],
+        }
+    ]
     download_response = client.get(
         body["items"][0]["download_url"],
         headers={"X-Role": "it-admin", "X-User-Id": "auditor-1"},
@@ -4082,6 +4260,203 @@ def test_documents_search_is_readonly_and_scoped_to_source_collection(tmp_path: 
     assert download_response.headers["content-disposition"].startswith("attachment;")
     assert "医疗机构应当保留医保基金审核依据" in download_response.text
     assert state.query_history_store.list_queries() == []
+
+
+def test_document_library_lists_traceable_original_documents_without_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    preview_chunk_id = uuid4()
+
+    def _library_items(
+        request_state: ApiState,
+        *,
+        effective_source_collections: Sequence[SourceCollection],
+        user_identifier: str,
+        can_read_all_personal: bool,
+        limit: int,
+    ) -> list[routes_documents.DocumentLibraryItem]:
+        assert request_state is state
+        assert effective_source_collections == (
+            SourceCollection.MEDICAL_INSURANCE_LAWS,
+        )
+        assert user_identifier == "auditor-1"
+        assert can_read_all_personal is False
+        assert limit == 5
+        return [
+            routes_documents.DocumentLibraryItem(
+                id="source-document-law-1",
+                title="医疗保障基金使用监督管理条例.pdf",
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS,
+                source_label="医保法律法规",
+                file_ext="pdf",
+                size_bytes=2048,
+                updated_at="2026-08-01T12:00:00+08:00",
+                chunk_count=18,
+                page_count=12,
+                preview_url=f"/api/v1/preview/{preview_chunk_id}",
+                download_url=f"/api/v1/documents/source/{preview_chunk_id}/download",
+                provenance={
+                    "relative_path": "medical-insurance-laws/fund-regulation.pdf",
+                    "sha256": "a" * 64,
+                    "source_package_version_key": "medical-insurance-laws-20260801",
+                },
+            )
+        ]
+
+    monkeypatch.setattr(
+        routes_documents,
+        "_document_library_items_from_postgres",
+        _library_items,
+    )
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/documents/library",
+        headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        params={
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "limit": 5,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["contract_version"] == "document-library-v1"
+    assert body["effective_source_collections"] == [
+        SourceCollection.MEDICAL_INSURANCE_LAWS.value
+    ]
+    assert body["store"] == {"ready": True, "backend": "postgres-source-documents"}
+    assert body["items"] == [
+        {
+            "id": "source-document-law-1",
+            "title": "医疗保障基金使用监督管理条例.pdf",
+            "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+            "source_label": "医保法律法规",
+            "file_ext": "pdf",
+            "size_bytes": 2048,
+            "updated_at": "2026-08-01T12:00:00+08:00",
+            "chunk_count": 18,
+            "page_count": 12,
+            "preview_url": f"/api/v1/preview/{preview_chunk_id}",
+            "download_url": f"/api/v1/documents/source/{preview_chunk_id}/download",
+            "provenance": {
+                "relative_path": "medical-insurance-laws/fund-regulation.pdf",
+                "sha256": "a" * 64,
+                "source_package_version_key": "medical-insurance-laws-20260801",
+            },
+        }
+    ]
+    assert body["boundaries"] == {
+        "production_write": False,
+        "provider_call": False,
+        "database_write": False,
+        "object_storage_write": False,
+        "query_history_write": False,
+    }
+    assert state.query_history_store.list_queries() == []
+
+
+def test_document_library_limits_documents_before_chunk_lateral_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CursorStub:
+        query = ""
+        params: tuple[object, ...] = ()
+
+        def __enter__(self) -> "CursorStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self) -> list[dict[str, object]]:
+            return []
+
+    class ConnectionStub:
+        def __init__(self, cursor: CursorStub) -> None:
+            self._cursor = cursor
+
+        def __enter__(self) -> "ConnectionStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def cursor(self, *, row_factory: object) -> CursorStub:
+            assert row_factory is routes_documents.dict_row
+            return self._cursor
+
+    state = _api_state(tmp_path)
+    cursor = CursorStub()
+    monkeypatch.setattr(
+        routes_documents.psycopg,
+        "connect",
+        lambda *_args, **_kwargs: ConnectionStub(cursor),
+    )
+
+    items = routes_documents._document_library_items_from_postgres(
+        state,
+        effective_source_collections=(SourceCollection.MEDICAL_INSURANCE_LAWS,),
+        user_identifier="auditor-1",
+        can_read_all_personal=False,
+        limit=5,
+    )
+
+    assert items == []
+    normalized_query = " ".join(cursor.query.split())
+    assert normalized_query.startswith("WITH limited_documents AS")
+    assert normalized_query.index("LIMIT %s") < normalized_query.index("LEFT JOIN LATERAL")
+    assert "FROM limited_documents limited" in normalized_query
+    assert cursor.params[-1] == 5
+
+
+def test_document_library_logs_degraded_postgres_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _raise_mapping_error(*_args: object, **_kwargs: object) -> list[object]:
+        raise ValueError("invalid document-library row")
+
+    monkeypatch.setattr(
+        routes_documents,
+        "_document_library_items_from_postgres",
+        _raise_mapping_error,
+    )
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    with caplog.at_level("WARNING", logger=routes_documents.__name__):
+        response = client.get(
+            "/documents/library",
+            headers={"X-Role": "auditor", "X-User-Id": "auditor-1"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["store"] == {
+        "ready": False,
+        "backend": "postgres-unavailable",
+    }
+    assert "document library read failed" in caplog.text
+
+
+def test_preview_reference_cache_evicts_oldest_entries_and_refreshes_replacements() -> None:
+    cache = PreviewReferenceCache(max_size=2)
+    first, second, third = uuid4(), uuid4(), uuid4()
+    cache[first] = PreviewReference(locator={"source_path": "first.pdf"})
+    cache[second] = PreviewReference(locator={"source_path": "second.pdf"})
+    cache[first] = PreviewReference(locator={"source_path": "first-new.pdf"})
+    cache[third] = PreviewReference(locator={"source_path": "third.pdf"})
+
+    assert list(cache) == [first, third]
+    assert cache[first].locator["source_path"] == "first-new.pdf"
+    assert second not in cache
 
 
 def test_personal_document_source_download_is_owner_scoped(tmp_path: Path) -> None:

@@ -99,7 +99,7 @@ beforeEach(() => {
 });
 
 describe("ReportsPage", () => {
-  it("replaces the preview with the six-category report workbench", async () => {
+  it("replaces the preview with the simplified report and workpaper flow", async () => {
     render(
       <AuditUserProvider>
         <ReportsPage />
@@ -107,14 +107,14 @@ describe("ReportsPage", () => {
     );
 
     expect(screen.queryByText("内测中")).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "审计底稿与报告台账" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "报告与底稿", level: 1 })).toBeInTheDocument();
 
     const catalog = screen.getByRole("region", { name: "报表分类目录" });
     expect(within(catalog).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual(
-      ["计划类", "底稿类", "取证类", "函证类", "报告类", "整改类"]
+      ["费用汇总风险底稿", "分类费用复核清单", "就诊明细疑点摘要"]
     );
     expect(within(catalog).getAllByRole("button", { name: /^填写模板：/ })).toHaveLength(3);
-    expect(within(catalog).getAllByText("待业务模板确认")).toHaveLength(5);
+    expect(within(catalog).getByText("计划类、取证类、函证类、报告类、整改类")).toBeInTheDocument();
 
     expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("");
     expect(createReportDraftMock).not.toHaveBeenCalled();

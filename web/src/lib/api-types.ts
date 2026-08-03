@@ -360,6 +360,16 @@ export type AuthSessionResponse = {
 };
 
 export type TableAnalysisColumnType = "数值" | "日期" | "标识" | "文本" | "空列";
+export type TableAnalysisCase = "audit-data" | "dupont";
+
+export type TableAnalysisMetric = {
+  readonly key: string;
+  readonly label: string;
+  readonly value: number | null;
+  readonly display_value: string;
+  readonly formula: string | null;
+  readonly status: "available" | "unavailable";
+};
 
 export type TableAnalysisColumnProfile = {
   readonly name: string;
@@ -372,6 +382,11 @@ export type TableAnalysisColumnProfile = {
 
 export type TableAnalysisUploadResponse = {
   readonly name: string;
+  readonly analysis_case: TableAnalysisCase;
+  readonly analysis_case_label: string;
+  readonly case_status: "completed" | "needs-input";
+  readonly case_metrics: readonly TableAnalysisMetric[];
+  readonly case_findings: readonly string[];
   readonly size_kb: number;
   readonly extension: string;
   readonly status: "parsed";
@@ -393,6 +408,8 @@ export type TableAnalysisUploadResponse = {
 export type TableAnalysisUploadHistoryItem = {
   readonly id: string;
   readonly name: string;
+  readonly analysis_case: TableAnalysisCase;
+  readonly analysis_case_label: string;
   readonly extension: string;
   readonly size_bytes: number;
   readonly size_kb: number;
@@ -608,10 +625,23 @@ export type DocumentSearchItem = {
   readonly download_url?: string;
   readonly match_count?: number;
   readonly matched_snippets?: readonly string[];
+  readonly hit_locations?: readonly DocumentSearchHitLocation[];
+};
+
+export type DocumentSearchHitLocation = {
+  readonly label: string;
+  readonly page_number: number | null;
+  readonly line_start: number | null;
+  readonly line_end: number | null;
+  readonly sheet_name: string | null;
+  readonly row_number: number | null;
+  readonly article_number: string | null;
+  readonly snippet: string;
+  readonly preview_url: string;
 };
 
 export type DocumentSearchResponse = {
-  readonly contract_version: "document-search-v1" | "document-search-v2";
+  readonly contract_version: "document-search-v1" | "document-search-v2" | "document-search-v3";
   readonly query: string;
   readonly effective_source_collections: readonly SourceCollection[];
   readonly items: readonly DocumentSearchItem[];
@@ -622,6 +652,42 @@ export type DocumentSearchResponse = {
   readonly boundaries: {
     readonly production_write: false;
     readonly provider_call: boolean;
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly query_history_write: false;
+  };
+};
+
+export type DocumentLibraryItem = {
+  readonly id: string;
+  readonly title: string;
+  readonly source_collection: SourceCollection;
+  readonly source_label: string;
+  readonly file_ext: string;
+  readonly size_bytes: number;
+  readonly updated_at: string;
+  readonly chunk_count: number;
+  readonly page_count: number;
+  readonly preview_url: string | null;
+  readonly download_url: string | null;
+  readonly provenance: {
+    readonly relative_path: string;
+    readonly sha256: string;
+    readonly source_package_version_key: string;
+  };
+};
+
+export type DocumentLibraryResponse = {
+  readonly contract_version: "document-library-v1";
+  readonly effective_source_collections: readonly SourceCollection[];
+  readonly items: readonly DocumentLibraryItem[];
+  readonly store: {
+    readonly ready: boolean;
+    readonly backend: string;
+  };
+  readonly boundaries: {
+    readonly production_write: false;
+    readonly provider_call: false;
     readonly database_write: false;
     readonly object_storage_write: false;
     readonly query_history_write: false;

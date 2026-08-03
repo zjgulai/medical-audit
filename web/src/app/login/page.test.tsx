@@ -28,6 +28,7 @@ describe("LoginPage", () => {
 
     expect(screen.getByRole("heading", { name: "登录工作台" })).toBeInTheDocument();
     expect(screen.getByText("AI审计一体化协作平台")).toBeInTheDocument();
+    expect(screen.getByTestId("audit-brand-lockup")).toBeInTheDocument();
     expect(screen.queryByText("医保基金合规审计")).not.toBeInTheDocument();
     expect(
       screen.queryByText("面向医院内审人员的医保基金审计、依据检索、表格分析和底稿工作区")

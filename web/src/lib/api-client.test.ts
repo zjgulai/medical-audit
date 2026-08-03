@@ -22,6 +22,7 @@ import {
   fetchAgentMarketCatalog,
   fetchAuditAgentPromptVersions,
   fetchBackendHealth,
+  fetchDocumentLibrary,
   fetchDocumentPermissions,
   fetchDocumentSourceCollections,
   fetchDocumentUploads,
@@ -1320,6 +1321,11 @@ describe("api-client", () => {
         ok: true,
         json: async () => ({
           name: "charge-sample.csv",
+          analysis_case: "dupont",
+          analysis_case_label: "财务杜邦分析",
+          case_status: "completed",
+          case_metrics: [],
+          case_findings: [],
           size_kb: 1,
           extension: "csv",
           status: "parsed",
@@ -1341,7 +1347,7 @@ describe("api-client", () => {
     );
 
     const file = new File(["patient_id"], "charge-sample.csv", { type: "text/csv" });
-    const result = await uploadAnalysisTable(file);
+    const result = await uploadAnalysisTable(file, "dupont");
     const fetchCall = vi.mocked(fetch).mock.calls[0];
 
     expect(fetchCall[0]).toBe("/api/v1/analytics/table-upload");
@@ -1356,8 +1362,18 @@ describe("api-client", () => {
       cache: "no-store"
     });
     expect(fetchCall[1]?.body).toBeInstanceOf(FormData);
+    const formData = fetchCall[1]?.body as FormData;
+    expect(formData.get("file")).toBe(file);
+    expect(formData.get("analysis_case")).toBe("dupont");
     expect(result.name).toBe("charge-sample.csv");
+    expect(result.analysis_case).toBe("dupont");
     expect(result.retention_status).toBe("retained");
+
+    await uploadAnalysisTable(
+      new File(["patient_id"], "default-case.csv", { type: "text/csv" })
+    );
+    const defaultFormData = vi.mocked(fetch).mock.calls[1]?.[1]?.body as FormData;
+    expect(defaultFormData.get("analysis_case")).toBe("audit-data");
   });
 
   it.each([
@@ -1706,6 +1722,48 @@ describe("api-client", () => {
     );
     expect(result.boundaries.query_history_write).toBe(false);
     expect(result.items[0].preview_url).toBe("/api/v1/preview/chunk-001");
+  });
+
+  it("lists original documents for the audit product scope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          contract_version: "document-library-v1",
+          effective_source_collections: ["medical-insurance-laws", "risk-negative-list"],
+          items: [],
+          store: { ready: true, backend: "postgres-source-documents" },
+          boundaries: {
+            production_write: false,
+            provider_call: false,
+            database_write: false,
+            object_storage_write: false,
+            query_history_write: false
+          }
+        })
+      }))
+    );
+
+    const result = await fetchDocumentLibrary({
+      sourceCollections: ["medical-insurance-laws", "risk-negative-list"],
+      limit: 30
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/documents/library?source_collection=medical-insurance-laws&source_collection=risk-negative-list&limit=30",
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Role": "admin",
+          "X-Tenant-Id": "hospital-demo",
+          "X-User-Id": "next-admin"
+        },
+        cache: "no-store"
+      }
+    );
+    expect(result.store.ready).toBe(true);
+    expect(result.boundaries.provider_call).toBe(false);
   });
 
   it("fetches personal document uploads through the versioned API proxy", async () => {
