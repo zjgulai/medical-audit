@@ -16,7 +16,7 @@ from medical_audit_kb.api.auth import (
 from medical_audit_kb.api.chat_models import (
     ChatModelAlias,
     ChatModelUnavailableError,
-    answer_generation_provider_for_alias,
+    contract_audit_generation_provider_for_alias,
 )
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
 from medical_audit_kb.contract_audit.service import MAX_CONTRACT_BYTES, create_contract_audit_job
@@ -47,7 +47,7 @@ async def create_contract_audit(
     generation_provider = state.answer_generation_provider
     if model is not None:
         try:
-            generation_provider = answer_generation_provider_for_alias(model)
+            generation_provider = contract_audit_generation_provider_for_alias(model)
         except ChatModelUnavailableError as exc:
             raise HTTPException(
                 status_code=409,

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from medical_audit_kb.generation.answer_builder import AnswerGenerationProvider
 from medical_audit_kb.generation.answer_providers import (
+    DeepSeekOutputMode,
     OpenAICompatibleAnswerGenerationProvider,
     ThinkingMode,
 )
@@ -33,6 +34,8 @@ DEFAULT_BASE_URL_BY_ALIAS: dict[ChatModelAlias, str] = {
     ChatModelAlias.KIMI_2_7: "https://api.moonshot.cn/v1",
     ChatModelAlias.DEEPSEEK_V4_PRO: "https://api.deepseek.com",
 }
+
+DEEPSEEK_STRICT_BASE_URL = "https://api.deepseek.com/beta"
 
 DEFAULT_MODEL_BY_ALIAS: dict[ChatModelAlias, str] = {
     ChatModelAlias.KIMI_2_7: "kimi-k2.6",
@@ -143,6 +146,53 @@ def answer_generation_provider_for_alias(alias: ChatModelAlias) -> AnswerGenerat
         max_output_tokens=config.max_output_tokens,
         temperature=config.temperature,
         thinking_mode=config.thinking_mode,
+    )
+
+
+def contract_audit_generation_provider_for_alias(
+    alias: ChatModelAlias,
+) -> AnswerGenerationProvider:
+    """Return a selected provider with a fail-closed contract-audit output contract.
+
+    DeepSeek's normal JSON mode is useful for short chat responses but does not
+    provide a schema guarantee for the long, cited contract-audit report.  For
+    the official DeepSeek endpoint, use its documented Beta strict Function
+    Calling endpoint so the report evidence blocks have a machine-verifiable
+    envelope.  Other configured providers retain their existing behavior.
+    """
+    config, reason = chat_model_config_from_env(alias)
+    if config is None:
+        raise ChatModelUnavailableError(alias, reason or "invalid_configuration")
+    if config.provider == "fake":
+        return _FakeChatModelAnswerProvider(alias)
+    api_key = os.getenv(config.api_key_env, "")
+    if not api_key:
+        raise ChatModelUnavailableError(alias, "missing_api_key")
+
+    base_url = config.base_url
+    deepseek_output_mode: DeepSeekOutputMode = "json"
+    if config.provider == "deepseek":
+        normalized_base_url = base_url.rstrip("/")
+        if normalized_base_url not in {
+            DEFAULT_BASE_URL_BY_ALIAS[ChatModelAlias.DEEPSEEK_V4_PRO],
+            DEEPSEEK_STRICT_BASE_URL,
+        }:
+            raise ChatModelUnavailableError(
+                alias,
+                "contract_audit_strict_output_requires_official_deepseek_base_url",
+            )
+        base_url = DEEPSEEK_STRICT_BASE_URL
+        deepseek_output_mode = "strict_tool_call"
+
+    return OpenAICompatibleAnswerGenerationProvider(
+        api_key=api_key,
+        model_name=config.model_name,
+        base_url=base_url,
+        provider=config.provider,
+        max_output_tokens=config.max_output_tokens,
+        temperature=config.temperature,
+        thinking_mode=config.thinking_mode,
+        deepseek_output_mode=deepseek_output_mode,
     )
 
 
