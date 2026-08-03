@@ -711,6 +711,37 @@ describe("ReplicaReportWorkbench", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
+  it("clears an active draft when refresh deactivates its template category", async () => {
+    const inactiveWorkpaperResponse: ReportWorkbenchResponse = {
+      ...reportResponse(),
+      template_categories: templateCategories.map((category) => (
+        category.id === "workpaper"
+          ? { ...category, availability: "awaiting-business-template" }
+          : category
+      ))
+    };
+    fetchReportWorkbenchMock
+      .mockResolvedValueOnce(reportResponse())
+      .mockResolvedValueOnce(inactiveWorkpaperResponse);
+    fetchProjectsMock.mockResolvedValue(projectsResponse([alphaProject]));
+    renderWorkbench();
+    await selectTemplateAndProject();
+    fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
+      target: { value: "不得保留的失活模板草稿" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新工作台" }));
+
+    await waitFor(() => expect(fetchReportWorkbenchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "创建草稿：费用汇总风险底稿" })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByDisplayValue("不得保留的失活模板草稿")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "填写模板：费用汇总风险底稿" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toHaveValue("ALPHA");
+    expect(createReportDraftMock).not.toHaveBeenCalled();
+  });
+
   it("keeps project selection visible without pretending a degraded report lane is ready", async () => {
     fetchReportWorkbenchMock.mockResolvedValueOnce(reportResponse({ ready: false }));
     fetchProjectsMock.mockResolvedValueOnce(projectsResponse());

@@ -156,8 +156,14 @@ function sumDocuments(items: readonly ReplicaKnowledgeBaseItem[]): number | null
   return total;
 }
 
-function newestUpdatedAt(items: readonly ReplicaKnowledgeBaseItem[]) {
-  return items.find((item) => (documentCountForItem(item) ?? 0) > 0)?.updatedAt ?? "待同步";
+function knowledgeBaseSyncStatus(items: readonly ReplicaKnowledgeBaseItem[]): string {
+  if (items.length === 0) return "待同步";
+  const counts = items.map(documentCountForItem);
+  if (counts.some((count) => count === null)) return "状态待确认";
+  const populatedCount = counts.filter((count) => (count ?? 0) > 0).length;
+  if (populatedCount === items.length) return "已同步";
+  if (populatedCount > 0) return "部分同步";
+  return "待同步";
 }
 
 function sourceCollectionsFromKnowledgeBases(items: readonly ReplicaKnowledgeBaseItem[]): readonly SourceCollection[] {
@@ -282,9 +288,9 @@ export default function KnowledgeBasePage() {
           <p>预览、下载和来源版本</p>
         </article>
         <article>
-          <span>最近更新</span>
-          <strong>{newestUpdatedAt(knowledgeBases)}</strong>
-          <p>以知识库目录返回为准</p>
+          <span>同步状态</span>
+          <strong>{knowledgeBaseSyncStatus(knowledgeBases)}</strong>
+          <p>按实际文档装载状态</p>
         </article>
       </section>
 
@@ -390,8 +396,8 @@ export default function KnowledgeBasePage() {
                       <dd>{formatDocumentCount(documentCountForItem(item), false)}</dd>
                     </div>
                     <div>
-                      <dt>最近更新</dt>
-                      <dd>{item.updatedAt}</dd>
+                      <dt>同步状态</dt>
+                      <dd>{knowledgeBaseSyncStatus([item])}</dd>
                     </div>
                     <div>
                       <dt>原文</dt>
@@ -421,8 +427,8 @@ export default function KnowledgeBasePage() {
                     <dd>{formatDocumentCount(documentCountForItem(selectedKnowledgeBase), false)}</dd>
                   </div>
                   <div>
-                    <dt>最后同步</dt>
-                    <dd>{newestUpdatedAt([selectedKnowledgeBase])}</dd>
+                    <dt>同步状态</dt>
+                    <dd>{knowledgeBaseSyncStatus([selectedKnowledgeBase])}</dd>
                   </div>
                 </dl>
                 <section className="replica-kb-next-panel" aria-label="知识库权限说明">

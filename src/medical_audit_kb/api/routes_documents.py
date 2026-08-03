@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -41,6 +42,7 @@ from medical_audit_kb.retrieval.filters import RetrievalFilters
 from medical_audit_kb.retrieval.hybrid_search import HybridSearchResult
 
 router = APIRouter(prefix="/documents")
+logger = logging.getLogger(__name__)
 
 MAX_DOCUMENT_UPLOAD_BYTES = 20 * 1024 * 1024
 SUPPORTED_DOCUMENT_EXTENSIONS = {"pdf", "md", "txt", "csv", "xlsx", "xlsm"}
@@ -597,6 +599,7 @@ def document_library(
             limit=limit,
         )
     except (psycopg.Error, ValueError, TypeError):
+        logger.warning("document library read failed", exc_info=True)
         return _document_library_response(
             effective_source_collections=effective_source_collections,
             items=[],
@@ -1511,31 +1514,58 @@ def _document_library_items_from_postgres(
     ):
         cursor.execute(
             """
-            SELECT DISTINCT ON (sd.source_collection, sd.relative_path)
-              sd.id::text AS source_document_id,
-              sd.source_collection,
-              sd.relative_path,
-              sd.file_name,
-              sd.file_ext,
-              sd.sha256,
-              sd.size_bytes,
-              sd.updated_at,
-              sd.metadata,
-              spv.version_key AS source_package_version_key,
+            WITH limited_documents AS (
+              SELECT DISTINCT ON (sd.source_collection, sd.relative_path)
+                sd.id,
+                sd.source_collection,
+                sd.relative_path,
+                sd.file_name,
+                sd.file_ext,
+                sd.sha256,
+                sd.size_bytes,
+                sd.updated_at,
+                sd.metadata,
+                spv.version_key AS source_package_version_key
+              FROM source_documents sd
+              JOIN source_package_versions spv ON spv.id = sd.source_package_version_id
+              JOIN index_versions iv
+                ON iv.source_package_version_id = sd.source_package_version_id
+               AND iv.status = 'active'
+              WHERE sd.status = 'indexed'
+                AND sd.source_collection = ANY(%s)
+                AND (
+                  sd.source_collection <> %s
+                  OR %s
+                  OR sd.metadata ->> 'created_by' = %s
+                )
+              ORDER BY
+                sd.source_collection,
+                sd.relative_path,
+                iv.activated_at DESC NULLS LAST,
+                iv.created_at DESC
+              LIMIT %s
+            )
+            SELECT
+              limited.id::text AS source_document_id,
+              limited.source_collection,
+              limited.relative_path,
+              limited.file_name,
+              limited.file_ext,
+              limited.sha256,
+              limited.size_bytes,
+              limited.updated_at,
+              limited.metadata,
+              limited.source_package_version_key,
               first_chunk.id::text AS preview_chunk_id,
               first_chunk.locator AS first_locator,
               first_chunk.text AS first_text,
               chunk_summary.chunk_count,
               chunk_summary.page_count
-            FROM source_documents sd
-            JOIN source_package_versions spv ON spv.id = sd.source_package_version_id
-            JOIN index_versions iv
-              ON iv.source_package_version_id = sd.source_package_version_id
-             AND iv.status = 'active'
+            FROM limited_documents limited
             LEFT JOIN LATERAL (
               SELECT dc.id, dc.locator, dc.text
               FROM document_chunks dc
-              WHERE dc.source_document_id = sd.id
+              WHERE dc.source_document_id = limited.id
               ORDER BY dc.chunk_index, dc.id
               LIMIT 1
             ) first_chunk ON TRUE
@@ -1546,21 +1576,11 @@ def _document_library_items_from_postgres(
                   WHERE dc.page_number IS NOT NULL
                 )::bigint AS page_count
               FROM document_chunks dc
-              WHERE dc.source_document_id = sd.id
+              WHERE dc.source_document_id = limited.id
             ) chunk_summary ON TRUE
-            WHERE sd.status = 'indexed'
-              AND sd.source_collection = ANY(%s)
-              AND (
-                sd.source_collection <> %s
-                OR %s
-                OR sd.metadata ->> 'created_by' = %s
-              )
             ORDER BY
-              sd.source_collection,
-              sd.relative_path,
-              iv.activated_at DESC NULLS LAST,
-              iv.created_at DESC
-            LIMIT %s
+              limited.source_collection,
+              limited.relative_path
             """,
             (
                 [collection.value for collection in effective_source_collections],

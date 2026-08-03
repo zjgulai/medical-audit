@@ -71,6 +71,15 @@ function loadingLane<T>(role: AuditClientRole | null): LaneState<T> {
   return { phase: "loading", response: null, role };
 }
 
+function isActiveTemplate(
+  template: WorkpaperTemplateRegistryItem,
+  categories: readonly ReportTemplateCategory[]
+): boolean {
+  return categories.some(
+    (category) => category.id === template.category_id && category.availability === "active"
+  );
+}
+
 function CategoryCatalog({
   categories,
   templates,
@@ -79,10 +88,7 @@ function CategoryCatalog({
   selectedTemplateId,
   onSelectTemplate
 }: CategoryCatalogProps) {
-  const activeTemplates = templates.filter((template) => {
-    const category = categories.find((item) => item.id === template.category_id);
-    return category?.availability === "active";
-  });
+  const activeTemplates = templates.filter((template) => isActiveTemplate(template, categories));
   const awaitingCategories = categories.filter(
     (category) => category.availability !== "active"
   );
@@ -526,7 +532,10 @@ export function ReplicaReportWorkbench() {
     (project) => project.id === selectedProjectKey
   );
   const selectedTemplate = report?.workpaper_templates.find(
-    (template) => template.id === selectedTemplateId
+    (template) => (
+      template.id === selectedTemplateId
+      && isActiveTemplate(template, report.template_categories)
+    )
   ) ?? null;
   const canCreate = auditUser.can("create_report_draft");
   const unsavedFields = hasNonEmptyValues(fieldValues);
@@ -558,6 +567,19 @@ export function ReplicaReportWorkbench() {
     setDraftResult(null);
     setProjectContextNotice("原项目已不可见，请重新选择");
   }, [projectReady, selectedProjectKey, selectedProjectVisible]);
+
+  useEffect(() => {
+    if (
+      roleReportState.phase !== "ready"
+      || selectedTemplateId === null
+      || selectedTemplate !== null
+    ) return;
+    ++interactionGenerationRef.current;
+    setSelectedTemplateId(null);
+    setFieldValues({});
+    setDraftError(null);
+    setDraftResult(null);
+  }, [roleReportState.phase, selectedTemplate, selectedTemplateId]);
 
   function clearDraftDisplay(): void {
     ++interactionGenerationRef.current;

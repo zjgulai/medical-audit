@@ -59,7 +59,7 @@ class TableUploadAnalysisResponse(BaseModel):
     name: str
     analysis_case: AnalysisCase
     analysis_case_label: str
-    case_status: Literal["completed", "needs-input"]
+    case_status: CaseStatus
     case_metrics: list[TableAnalysisMetric]
     case_findings: list[str]
     size_kb: int
@@ -690,9 +690,10 @@ def _decimal_from_cell(value: str) -> Decimal | None:
     if not normalized:
         return None
     try:
-        return Decimal(normalized)
+        parsed = Decimal(normalized)
     except InvalidOperation:
         return None
+    return parsed if parsed.is_finite() else None
 
 
 def _normalize_row(row: list[str], column_count: int) -> list[str]:

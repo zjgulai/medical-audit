@@ -64,6 +64,7 @@ export function AuditCockpit() {
 
   useEffect(() => {
     if (!selectedProjectId) {
+      ++dashboardRequestRef.current;
       setDashboardState({ phase: "idle", response: null });
       return;
     }
@@ -241,7 +242,7 @@ export function AuditCockpit() {
             <summary>查看数据完整性</summary>
             <dl>
               <div><dt>证据等级</dt><dd>{dashboard.evidence_grade}</dd></div>
-              <div><dt>项目数据</dt><dd>{dashboard.store.status}</dd></div>
+              <div><dt>项目数据</dt><dd>{friendlyStoreStatus(dashboard.store.status)}</dd></div>
               <div><dt>成员数据</dt><dd>{dashboard.store.project_members_ready ? "就绪" : "未就绪"}</dd></div>
               <div><dt>疑点数据</dt><dd>{dashboard.store.audit_findings_ready ? "就绪" : "未就绪"}</dd></div>
             </dl>

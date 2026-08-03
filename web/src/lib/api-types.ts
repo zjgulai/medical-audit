@@ -686,11 +686,11 @@ export type DocumentLibraryResponse = {
     readonly backend: string;
   };
   readonly boundaries: {
-    readonly production_write: boolean;
-    readonly provider_call: boolean;
-    readonly database_write: boolean;
-    readonly object_storage_write: boolean;
-    readonly query_history_write: boolean;
+    readonly production_write: false;
+    readonly provider_call: false;
+    readonly database_write: false;
+    readonly object_storage_write: false;
+    readonly query_history_write: false;
   };
 };
 

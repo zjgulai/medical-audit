@@ -136,6 +136,9 @@ describe("DocumentsPage", () => {
   });
 
   it("loads original audit documents with preview, download and provenance instead of category placeholders", async () => {
+    const formatLocalDate = vi
+      .spyOn(Date.prototype, "toLocaleDateString")
+      .mockReturnValue("2026/07/31");
     fetchDocumentLibraryMock.mockResolvedValue({
       contract_version: "document-library-v1",
       effective_source_collections: ["medical-insurance-laws"],
@@ -178,8 +181,47 @@ describe("DocumentsPage", () => {
     );
     expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
     expect(screen.getByText("9 页")).toBeInTheDocument();
+    expect(screen.getAllByText("2026/07/31")).toHaveLength(2);
     expect(screen.getByText("医保法规/医疗保障基金使用监督管理条例.pdf")).toBeInTheDocument();
     expect(screen.queryByText("医保法规库 文档目录")).not.toBeInTheDocument();
+    expect(formatLocalDate).toHaveBeenCalledWith("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+  });
+
+  it("announces a degraded original-document directory without fixture substitution", async () => {
+    fetchDocumentLibraryMock.mockResolvedValue({
+      contract_version: "document-library-v1",
+      effective_source_collections: ["medical-insurance-laws"],
+      items: [],
+      store: { ready: false, backend: "postgres-unavailable" },
+      boundaries: {
+        production_write: false,
+        provider_call: false,
+        database_write: false,
+        object_storage_write: false,
+        query_history_write: false
+      }
+    });
+
+    render(<DocumentsPage />);
+
+    expect(await screen.findByRole("status", { name: "原文档目录降级状态" })).toHaveTextContent(
+      "原文档目录暂未就绪，请稍后重试。"
+    );
+    expect(screen.queryByText("医保基金监管条例")).not.toBeInTheDocument();
+  });
+
+  it("announces a failed original-document directory request", async () => {
+    fetchDocumentLibraryMock.mockRejectedValue(new Error("network"));
+
+    render(<DocumentsPage />);
+
+    expect(await screen.findByRole("alert", { name: "原文档目录错误状态" })).toHaveTextContent(
+      "原文档目录读取失败"
+    );
   });
 
   it("mounts the personal material panel without regressing search, catalog, history, or AI controls", () => {
@@ -441,6 +483,10 @@ describe("DocumentsPage", () => {
     expect(screen.getByRole("button", { name: "下载原文" })).toBeInTheDocument();
     expect(screen.getByText("2 处")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "关键词命中位置" })).toHaveTextContent("第 6 页");
+    expect(screen.getByRole("link", { name: "第 6 页" })).toHaveAttribute(
+      "href",
+      "/api/v1/preview/chunk-1"
+    );
     expect(screen.getByText("文档检索 provider_call：否")).toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
 

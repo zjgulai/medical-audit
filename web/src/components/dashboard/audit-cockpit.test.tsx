@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchProjectDashboard, fetchProjects } from "@/lib/api-client";
@@ -88,7 +88,36 @@ describe("AuditCockpit", () => {
     expect(screen.getByText("复核高额重复收费")).toBeInTheDocument();
     expect(screen.getByText("新增审计疑点")).toBeInTheDocument();
     expect(screen.getByText("证据状态：", { exact: false })).toHaveTextContent("项目证据已同步");
+    fireEvent.click(screen.getByText("查看数据完整性"));
+    expect(screen.getByText("项目数据").closest("div")).toHaveTextContent("项目证据已同步");
+    expect(screen.queryByText("ready")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "进入项目管理" })).toHaveAttribute("href", "/projects");
+  });
+
+  it("retries a failed project-list request without rendering fixture data", async () => {
+    fetchProjectsMock.mockRejectedValueOnce(new Error("projects unavailable"));
+
+    render(<AuditCockpit />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("项目列表读取失败");
+    expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => expect(fetchProjectsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchProjectDashboardMock).toHaveBeenCalledWith("AUDIT-2026"));
+    expect(await screen.findByRole("heading", { name: "医保基金专项审计" })).toBeInTheDocument();
+  });
+
+  it("retries a failed dashboard request for the same selected project", async () => {
+    fetchProjectDashboardMock.mockRejectedValueOnce(new Error("dashboard unavailable"));
+
+    render(<AuditCockpit />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("项目驾驶舱读取失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+
+    await waitFor(() => expect(fetchProjectDashboardMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("复核高额重复收费")).toBeInTheDocument();
   });
 
   it("shows an honest empty state instead of fixture metrics", async () => {

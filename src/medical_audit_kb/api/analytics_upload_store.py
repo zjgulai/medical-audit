@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from medical_audit_kb.db.models import AnalyticsUploadRecord, Base, utc_now
 
 ANALYTICS_UPLOAD_ID_PREFIX = "analytics-upload-"
+ANALYSIS_CASE_LABELS = {
+    "audit-data": "审计数据分析",
+    "dupont": "财务杜邦分析",
+}
 
 
 class AnalyticsUploadStore(Protocol):
@@ -68,6 +72,12 @@ class SqlAlchemyAnalyticsUploadStore:
         now = utc_now()
         upload_key = _new_upload_key()
         sha256 = hashlib.sha256(content).hexdigest()
+        analysis_case, analysis_case_label = _normalized_analysis_case(analysis_summary)
+        normalized_analysis_summary = copy.deepcopy(analysis_summary)
+        normalized_analysis_summary.update(
+            analysis_case=analysis_case,
+            analysis_case_label=analysis_case_label,
+        )
         storage_path = _write_retained_file(
             upload_root=self.upload_root,
             upload_key=upload_key,
@@ -89,7 +99,7 @@ class SqlAlchemyAnalyticsUploadStore:
             duplicate_row_count=_int_value(analysis_summary.get("duplicate_row_count")),
             status=str(analysis_summary.get("status") or "parsed"),
             created_by=created_by,
-            analysis_summary=copy.deepcopy(analysis_summary),
+            analysis_summary=normalized_analysis_summary,
             created_at=now,
         )
         try:
@@ -131,6 +141,7 @@ class InMemoryAnalyticsUploadStore:
     ) -> dict[str, object]:
         now = utc_now()
         upload_key = _new_upload_key()
+        analysis_case, analysis_case_label = _normalized_analysis_case(analysis_summary)
         storage_path = _write_retained_file(
             upload_root=self.upload_root,
             upload_key=upload_key,
@@ -141,10 +152,8 @@ class InMemoryAnalyticsUploadStore:
         record = {
             "id": upload_key,
             "name": file_name,
-            "analysis_case": str(analysis_summary.get("analysis_case") or "audit-data"),
-            "analysis_case_label": str(
-                analysis_summary.get("analysis_case_label") or "审计数据分析"
-            ),
+            "analysis_case": analysis_case,
+            "analysis_case_label": analysis_case_label,
             "extension": extension,
             "size_bytes": len(content),
             "size_kb": _size_kb(len(content)),
@@ -203,13 +212,12 @@ def _remove_retained_file(*, upload_root: Path, storage_path: str) -> None:
 
 
 def _record_to_payload(record: AnalyticsUploadRecord) -> dict[str, object]:
+    analysis_case, analysis_case_label = _normalized_analysis_case(record.analysis_summary)
     return {
         "id": record.upload_key,
         "name": record.file_name,
-        "analysis_case": str(record.analysis_summary.get("analysis_case") or "audit-data"),
-        "analysis_case_label": str(
-            record.analysis_summary.get("analysis_case_label") or "审计数据分析"
-        ),
+        "analysis_case": analysis_case,
+        "analysis_case_label": analysis_case_label,
         "extension": record.extension,
         "size_bytes": record.size_bytes,
         "size_kb": _size_kb(record.size_bytes),
@@ -230,6 +238,16 @@ def _record_to_payload(record: AnalyticsUploadRecord) -> dict[str, object]:
 
 def _new_upload_key() -> str:
     return f"{ANALYTICS_UPLOAD_ID_PREFIX}{uuid4().hex[:12]}"
+
+
+def _normalized_analysis_case(
+    analysis_summary: dict[str, object],
+) -> tuple[str, str]:
+    raw_case = analysis_summary.get("analysis_case")
+    analysis_case = raw_case.strip() if isinstance(raw_case, str) else ""
+    if analysis_case not in ANALYSIS_CASE_LABELS:
+        analysis_case = "audit-data"
+    return analysis_case, ANALYSIS_CASE_LABELS[analysis_case]
 
 
 def _size_kb(size_bytes: int) -> int:

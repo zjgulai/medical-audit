@@ -67,6 +67,7 @@ import type {
   RulesWorkbenchResponse,
   SearchBackendStatusResponse,
   TableAnalysisUploadHistoryResponse,
+  TableAnalysisCase,
   TableAnalysisUploadResponse
 } from "./api-types";
 import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
@@ -518,7 +519,7 @@ export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
 
 export function uploadAnalysisTable(
   file: File,
-  analysisCase: "audit-data" | "dupont" = "audit-data"
+  analysisCase: TableAnalysisCase = "audit-data"
 ): Promise<TableAnalysisUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);

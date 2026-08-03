@@ -1368,6 +1368,12 @@ describe("api-client", () => {
     expect(result.name).toBe("charge-sample.csv");
     expect(result.analysis_case).toBe("dupont");
     expect(result.retention_status).toBe("retained");
+
+    await uploadAnalysisTable(
+      new File(["patient_id"], "default-case.csv", { type: "text/csv" })
+    );
+    const defaultFormData = vi.mocked(fetch).mock.calls[1]?.[1]?.body as FormData;
+    expect(defaultFormData.get("analysis_case")).toBe("audit-data");
   });
 
   it.each([

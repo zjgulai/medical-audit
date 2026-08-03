@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -74,6 +75,25 @@ class PreviewReference:
     citation_text: str | None = None
 
 
+PREVIEW_REFERENCE_CACHE_MAX_SIZE = 4096
+
+
+class PreviewReferenceCache(OrderedDict[UUID, PreviewReference]):
+    """Insertion-ordered cache that bounds cross-request preview references."""
+
+    def __init__(self, *, max_size: int = PREVIEW_REFERENCE_CACHE_MAX_SIZE) -> None:
+        if max_size < 1:
+            raise ValueError("preview reference cache max_size must be positive")
+        super().__init__()
+        self.max_size = max_size
+
+    def __setitem__(self, key: UUID, value: PreviewReference) -> None:
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        while len(self) > self.max_size:
+            self.popitem(last=False)
+
+
 @dataclass(slots=True)
 class ApiState:
     settings: KnowledgeQuerySettings
@@ -90,7 +110,7 @@ class ApiState:
     evaluation_runs: list[dict[str, object]] = field(default_factory=list)
     query_logs: list[dict[str, object]] = field(default_factory=list)
     operation_logs: list[dict[str, object]] = field(default_factory=list)
-    preview_references: dict[UUID, PreviewReference] = field(default_factory=dict)
+    preview_references: PreviewReferenceCache = field(default_factory=PreviewReferenceCache)
     review_task_store: ReviewTaskStore | None = None
     audit_finding_store: SqlAlchemyAuditFindingStore | None = None
     audit_log_store: AuditLogStore | None = None

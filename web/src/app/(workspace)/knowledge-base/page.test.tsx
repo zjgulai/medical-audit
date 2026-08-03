@@ -140,6 +140,11 @@ describe("KnowledgeBasePage", () => {
     expect(screen.getByText("可追溯")).toBeInTheDocument();
     expect(screen.getByText("其他领域知识暂不进入产品前台")).toBeInTheDocument();
     expect(screen.getByText("来自当前知识目录")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("知识库数据口径")).getByText("已同步")).toBeInTheDocument();
+    expect(screen.getAllByText("同步状态").length).toBeGreaterThan(0);
+    expect(screen.queryByText("active")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近更新")).not.toBeInTheDocument();
+    expect(screen.queryByText("最后同步")).not.toBeInTheDocument();
     expect(screen.queryByText("当前可用于检索的知识片段数量")).not.toBeInTheDocument();
     expect(screen.queryByText(/后端目录/)).not.toBeInTheDocument();
     expect(screen.queryByText("样例")).not.toBeInTheDocument();
@@ -338,6 +343,7 @@ describe("KnowledgeBasePage", () => {
 
   it("keeps non-audit source collections out of the lightweight product catalog", () => {
     const ready = makeMetricsReadyRuntime();
+    const baseKnowledgeBase = ready.data.knowledgeBases[0]!;
     runtimeMock.current = {
       ...ready,
       data: {
@@ -345,10 +351,16 @@ describe("KnowledgeBasePage", () => {
         knowledgeBases: [
           ...ready.data.knowledgeBases,
           {
-            ...ready.data.knowledgeBases[0]!,
             id: "kb-policy-general-policy",
             name: "综合政策资料库",
-            description: "非当前审计产品范围。"
+            scope: baseKnowledgeBase.scope,
+            owner: baseKnowledgeBase.owner,
+            documentCount: baseKnowledgeBase.documentCount,
+            chunkCount: baseKnowledgeBase.chunkCount,
+            appCount: baseKnowledgeBase.appCount,
+            updatedAt: baseKnowledgeBase.updatedAt,
+            description: "非当前审计产品范围。",
+            tags: baseKnowledgeBase.tags
           }
         ]
       }

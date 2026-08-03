@@ -121,13 +121,16 @@ export default function DocumentsPage() {
     ? aiSearchState.response
     : null;
   const hasExplicitSearch = documentSearchState.kind !== "idle" || aiSearchState.kind !== "idle";
-  const documentResults = useMemo(
+  const documentResults = useMemo<readonly DocumentPreview[]>(
     () => aiSearchState.kind === "results"
       ? queryResponseToDocumentResults(aiSearchState.response)
       : documentSearchState.kind === "results"
         ? documentSearchResponseToDocumentResults(documentSearchState.response)
         : !hasExplicitSearch && runtimeDataVisible && documentsData.source === "fixture"
-          ? documentsData.data.results
+          ? documentsData.data.results.map((item) => ({
+            ...item,
+            previewType: "对话文档" as const
+          }))
           : [],
     [
       aiSearchState,
@@ -304,26 +307,10 @@ export default function DocumentsPage() {
     : [];
   const shownFeaturedDocuments: readonly DocumentPreview[] = hasExplicitSearch
     ? filteredResults.length > 0
-      ? (filteredResults.map((item) => ({
-        id: item.id,
-        title: item.title,
-        category: item.category,
-        excerpt: item.excerpt,
-        source: item.source,
-        updatedAt: item.updatedAt,
-        previewUrl: (item as DocumentPreview).previewUrl,
-        downloadUrl: (item as DocumentPreview).downloadUrl,
-        matchCount: (item as DocumentPreview).matchCount,
-        hitLocations: (item as DocumentPreview).hitLocations,
-        sourceCollection: (item as DocumentPreview).sourceCollection,
-        previewType: "检索命中" as const
-      })).slice(0, 10) as readonly DocumentPreview[])
+      ? filteredResults.slice(0, 10)
       : []
     : documentsData.source === "fixture"
-      ? (filteredResults.map((item) => ({
-        ...item,
-        previewType: "对话文档" as const
-      })).slice(0, 10) as readonly DocumentPreview[])
+      ? filteredResults.slice(0, 10)
       : libraryDocuments;
 
   const selectedDocument =
@@ -489,16 +476,24 @@ export default function DocumentsPage() {
         </div>
         {actionNotice ? <ReplicaNotice>{actionNotice}</ReplicaNotice> : null}
         {!hasExplicitSearch && documentLibraryState.kind === "loading" ? (
-          <ReplicaNotice>正在读取审计知识库原文档…</ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="原文档目录加载状态">
+            <ReplicaNotice>正在读取审计知识库原文档…</ReplicaNotice>
+          </div>
         ) : null}
         {!hasExplicitSearch && documentLibraryState.kind === "empty" ? (
-          <ReplicaNotice>当前审计知识库暂无可展示原文档</ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="原文档目录空状态">
+            <ReplicaNotice>当前审计知识库暂无可展示原文档</ReplicaNotice>
+          </div>
         ) : null}
         {!hasExplicitSearch && documentLibraryState.kind === "degraded" ? (
-          <ReplicaNotice>原文档目录暂未就绪，未使用分类卡片替代真实文档。</ReplicaNotice>
+          <div role="status" aria-live="polite" aria-label="原文档目录降级状态">
+            <ReplicaNotice>原文档目录暂未就绪，请稍后重试。</ReplicaNotice>
+          </div>
         ) : null}
         {!hasExplicitSearch && documentLibraryState.kind === "error" ? (
-          <ReplicaNotice>原文档目录读取失败</ReplicaNotice>
+          <div role="alert" aria-label="原文档目录错误状态">
+            <ReplicaNotice>原文档目录读取失败</ReplicaNotice>
+          </div>
         ) : null}
         {documentSearchState.kind === "empty" ? (
           <div role="status" aria-live="polite" aria-label="文档检索空状态">
@@ -607,7 +602,7 @@ export default function DocumentsPage() {
                   <ul>
                     {selectedDocument.hitLocations.map((hit, index) => (
                       <li key={`${hit.preview_url}-${index}`}>
-                        <Link href={hit.preview_url}>{hit.label}</Link>
+                        <a href={hit.preview_url}>{hit.label}</a>
                         <p>{hit.snippet}</p>
                       </li>
                     ))}
@@ -616,7 +611,7 @@ export default function DocumentsPage() {
               ) : null}
               <div className="replica-doc-detail-actions">
                 {selectedDocument.previewUrl ? (
-                  <Link href={selectedDocument.previewUrl}>预览原文</Link>
+                  <a href={selectedDocument.previewUrl}>预览原文</a>
                 ) : (
                   <button type="button" onClick={() => void recordDocumentAction(selectedDocument, "预览原文")}>预览原文</button>
                 )}
@@ -747,7 +742,7 @@ function documentLibraryItemToPreview(item: DocumentLibraryItem): DocumentPrevie
     category: item.source_label,
     excerpt: documentFacts.join(" · "),
     source: item.source_label,
-    updatedAt: item.updated_at.slice(0, 10),
+    updatedAt: formatDocumentDate(item.updated_at),
     previewType: "原文档",
     previewUrl: item.preview_url ?? undefined,
     downloadUrl: item.download_url ?? undefined,
@@ -756,6 +751,16 @@ function documentLibraryItemToPreview(item: DocumentLibraryItem): DocumentPrevie
     sizeBytes: item.size_bytes,
     provenance: item.provenance
   };
+}
+
+function formatDocumentDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 10);
+  return parsed.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
 }
 
 function formatFileSize(sizeBytes: number): string {

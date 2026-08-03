@@ -11071,7 +11071,11 @@ button.replica-graph-node.is-selected {
   cursor: pointer;
 }
 
-.replica-analytics-workbench .replica-analytics-case:hover,
+.replica-analytics-workbench .replica-analytics-case:hover {
+  border-color: #a9c4e2;
+  background: #f7fafd;
+}
+
 .replica-analytics-workbench .replica-analytics-case.is-selected {
   border-color: #5b8fca;
   background: #f1f7fd;
