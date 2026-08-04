@@ -58,10 +58,20 @@ source: human+ai
 - [x] 实现可搜索 PDF 报告导出和前端下载。
 - [x] 增加 OCR、PDF、前端、部署跳过备份的回归测试。
 - [x] 运行 Ruff、mypy、后端 focused/full、前端 test/typecheck/lint/build。
-- [ ] commit、push、PR、合并到 `main`。
-- [ ] 无备份部署到生产，并启用 DeepSeek 辅助 OCR env。
-- [ ] 生产执行脱敏扫描 PDF -> OCR -> 审计智能体 -> PDF 下载全链路。
-- [ ] 生产后执行 SHA/健康/静态/数据库/审计日志只读复核并保存 receipt。
+- [x] commit、push、PR、合并到 `main`。
+- [x] 无备份部署到生产，并启用 DeepSeek 辅助 OCR env。
+- [x] 生产执行脱敏扫描 PDF -> OCR -> 审计智能体 -> PDF 下载全链路。
+- [x] 生产后执行 SHA/健康/静态/数据库/审计日志只读复核并保存 receipt。
+
+# 执行回执
+
+- 功能 PR：`#272`；生产部署 SHA：`2e9495d7b26d896549cdeea14aa012dda202f3f6`。
+- 生产 OCR capability：`enabled=true`，引擎为 `deepseek-v4-pro+tesseract-chi_sim+eng`。
+- L4 脱敏全链路 run：`loop129-contract-ocr-4e749ebb010b4edc912b3b1c0854dfd6`，合同审计 job 为 `completed`，PDF 为 `application/pdf`、可搜索且保留引用标记。
+- 最终 L3 只读复核：部署 marker、静态 manifest 与目标 SHA 一致，应用、PostgreSQL、ClamAV、Nginx 健康，manifest mismatch 为 0，复核过程 audit-log delta 为 0。
+- 生产前端只读验收：桌面和移动端共 44 次路由检查通过，P0/P1 均为 0；`/chat` 生产静态资产包含“下载 PDF 报告”。
+- 按明确授权跳过本轮 app/env/DB/nginx/web 备份；未生成 Loop 129 备份工件。
+- 首轮 L4 harness 在受保护的 deployment metadata GET 上缺少审计鉴权头，provider 调用前以 401 停止；补齐同一组只读审计头后复跑通过。
 
 # 停止条件
 

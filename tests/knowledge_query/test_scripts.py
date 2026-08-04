@@ -5125,6 +5125,54 @@ def test_production_contract_audit_ocr_e2e_requires_confirmation_and_builds_imag
     assert calls == 0
 
 
+def test_production_contract_audit_ocr_e2e_authenticates_metadata_probe(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_contract_audit_ocr_e2e_metadata_auth",
+        Path("scripts/run-production-contract-audit-ocr-e2e.py"),
+    )
+    observed_headers: list[dict[str, str] | None] = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"deploy_sha": "a" * 40}
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> object:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, _url: str, **kwargs: object) -> Response:
+            headers = kwargs.get("headers")
+            observed_headers.append(headers if isinstance(headers, dict) else None)
+            if len(observed_headers) > 1:
+                raise module.ProductionContractAuditError("stop after capability probe")
+            return Response()
+
+    monkeypatch.setattr(module.httpx, "Client", Client)
+
+    with pytest.raises(module.ProductionContractAuditError, match="stop after capability probe"):
+        module._run(
+            base_url=module.PRODUCTION_BASE_URL,
+            expected_deploy_sha="a" * 40,
+            timeout_seconds=1.0,
+        )
+
+    assert observed_headers[0] is not None
+    assert observed_headers[0]["X-Role"] == "auditor"
+    assert observed_headers[0]["X-Tenant-Id"] == "hospital-demo"
+    assert observed_headers[0]["X-User-Id"].startswith("loop129-contract-ocr-")
+
+
 def _patch_deploy_execute_snapshot(
     monkeypatch: MonkeyPatch,
     module: types.ModuleType,
