@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 from zipfile import ZipFile
 
+import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -7354,6 +7355,185 @@ def test_contract_audit_job_persists_and_downloads_without_provider(
     assert "合同审计报告" in markdown.text
     assert docx.status_code == 200
     assert docx.content.startswith(b"PK")
+
+
+def test_contract_audit_fails_closed_for_image_only_pdf_without_unlimited_ocr(
+    tmp_path: Path,
+) -> None:
+    pdf_bytes = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(pdf_bytes)
+    state = _api_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "扫描采购合同.pdf",
+                pdf_bytes.getvalue(),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "unlimited_ocr_unavailable",
+        "message": (
+            "该合同为扫描件或图片型 PDF，Unlimited-OCR 服务尚未启用。"
+            "请上传可搜索文字版 PDF/DOCX，或联系管理员启用 OCR 后重新提交。"
+        ),
+    }
+    assert not (tmp_path / "index" / "contract-audit-jobs").exists()
+    assert state.operation_logs == []
+
+
+def test_contract_audit_runs_ocr_then_agent_and_exposes_report(tmp_path: Path) -> None:
+    class StaticUnlimitedOcrClient:
+        calls = 0
+
+        async def extract_text(
+            self,
+            *,
+            file_name: str,
+            extension: str,
+            content: bytes,
+        ) -> UnlimitedOcrResult:
+            self.calls += 1
+            assert file_name == "扫描采购合同.pdf"
+            assert extension == "pdf"
+            assert content.startswith(b"%PDF")
+            text = "第一条：设备验收合格后付款。"
+            return UnlimitedOcrResult(
+                text=text,
+                page_count=1,
+                model="baidu/Unlimited-OCR",
+                source_commit="d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+                pages=(
+                    UnlimitedOcrPage(
+                        page_number=1,
+                        text=text,
+                        image_sha256="a" * 64,
+                        text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                        mapping_status="resolved",
+                    ),
+                ),
+            )
+
+    class ContractProvider:
+        provider = "fake"
+        model_name = "fake-contract-model"
+        provider_version = "v1"
+
+        def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+            raise AssertionError("contract audit must bind its agent prompt")
+
+        def generate_answer_with_agent(
+            self,
+            question: str,
+            citations: Sequence[Citation],
+            *,
+            agent_prompt: str,
+            prompt_version_key: str,
+        ) -> str:
+            assert "合同审计智能体" in agent_prompt
+            assert prompt_version_key == "contract-audit-v2@2.0.0"
+            return f"# 审计洞察\n付款条款需人工复核 {citations[0].marker}"
+
+    pdf_bytes = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(pdf_bytes)
+    state = _api_state(tmp_path)
+    ocr_client = StaticUnlimitedOcrClient()
+    state.ocr_client = ocr_client
+    state.answer_generation_provider = ContractProvider()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={
+            "file": (
+                "扫描采购合同.pdf",
+                pdf_bytes.getvalue(),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["result"]["extraction_quality"] == {
+        "method": "unlimited-ocr",
+        "page_count": 1,
+        "covered_pages": [1],
+        "mapping_status": "resolved",
+        "issues": [],
+        "ocr": {
+            "model": "baidu/Unlimited-OCR",
+            "source_commit": "d49ff64afffc1f47ab563dc1c589bc2f78808fa4",
+        },
+    }
+    assert body["result"]["conclusion"]["analysis_markdown"].endswith("[C1]")
+    assert body["downloads"]["docx"].endswith("?format=docx")
+    assert ocr_client.calls == 1
+    assert state.operation_logs[-1]["action"] == "contract-audit-create"
+
+
+def test_contract_audit_runs_native_text_pdf_without_ocr(tmp_path: Path) -> None:
+    class ContractProvider:
+        provider = "fake"
+        model_name = "fake-contract-model"
+        provider_version = "v1"
+
+        def generate_answer(self, question: str, citations: Sequence[Citation]) -> str:
+            raise AssertionError("contract audit must bind its agent prompt")
+
+        def generate_answer_with_agent(
+            self,
+            question: str,
+            citations: Sequence[Citation],
+            *,
+            agent_prompt: str,
+            prompt_version_key: str,
+        ) -> str:
+            return f"# 审计洞察\n付款条款需人工复核 {citations[0].marker}"
+
+    document = pymupdf.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), "Contract payment follows acceptance and delivery.")
+        pdf_content = document.tobytes()
+    finally:
+        document.close()
+
+    state = _api_state(tmp_path)
+    state.answer_generation_provider = ContractProvider()
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/v1/contract-audits",
+        headers={"X-User-Id": "auditor-1", "X-Role": "auditor"},
+        files={"file": ("采购合同.pdf", pdf_content, "application/pdf")},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["result"]["extraction_quality"] == {
+        "method": "native-pdf",
+        "page_count": 1,
+        "covered_pages": [1],
+        "mapping_status": "resolved",
+        "issues": [],
+        "ocr": None,
+    }
+    assert body["result"]["conclusion"]["analysis_markdown"].endswith("[C1]")
 
 
 def test_contract_audit_job_calls_versioned_agent_and_completes(tmp_path: Path) -> None:
