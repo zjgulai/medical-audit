@@ -293,6 +293,13 @@ function ChatPortalContent() {
           projectName: "全院审计项目"
         });
         const analysis = job.result.conclusion.analysis_markdown?.trim();
+        const downloads = job.status === "completed" && analysis
+          ? [
+              { label: "下载 Word 报告", href: job.downloads.docx },
+              { label: "下载 Markdown", href: job.downloads.markdown },
+              { label: "下载结构化 JSON", href: job.downloads.json }
+            ]
+          : null;
         setMessages((current) => [
           ...current,
           {
@@ -300,11 +307,7 @@ function ChatPortalContent() {
             role: "assistant",
             text: analysis || contractAuditStatusMessage(job.status),
             meta: `合同审计 Job：${job.job_id} · 状态：${job.status} · 来源 SHA-256：${job.source.sha256}`,
-            downloads: [
-              { label: "下载 Word 报告", href: job.downloads.docx },
-              { label: "下载 Markdown", href: job.downloads.markdown },
-              { label: "下载结构化 JSON", href: job.downloads.json }
-            ]
+            ...(downloads ? { downloads } : {})
           }
         ]);
         setPendingContractFile(null);
@@ -368,7 +371,7 @@ function ChatPortalContent() {
         {
           id: `contract-ready-${Date.now()}`,
           role: "assistant",
-          text: "合同已进入待审计队列。请输入“请进行合同审计”或选择合同审计智能体后发送；系统将保留页面证据链并生成可下载报告。"
+          text: "合同已进入待审计队列。请输入“请进行合同审计”或选择合同审计智能体后发送；系统将保留页面证据链，并仅在文本或 OCR 页面映射通过后生成可下载报告。"
         }
       ]);
       setUploading(false);
@@ -630,7 +633,7 @@ function isContractAuditIntent(value: string): boolean {
 
 function contractAuditStatusMessage(status: string): string {
   if (status === "extraction_review_required") {
-    return "页面与 OCR 文本的映射尚未达到可定性标准，请先人工复核提取结果。";
+    return "页面与 OCR 文本的映射尚未达到可审计标准，尚未生成报告。若为扫描件，请上传可搜索文字版 PDF/DOCX，或请管理员启用 Unlimited-OCR 后重新提交。";
   }
   if (status === "insufficient_evidence") {
     return "合同文本已保存并建立页面证据，但当前模型通道不可用，未生成风险定性。";

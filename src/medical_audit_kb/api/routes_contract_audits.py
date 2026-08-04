@@ -19,7 +19,11 @@ from medical_audit_kb.api.chat_models import (
     contract_audit_generation_provider_for_alias,
 )
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
-from medical_audit_kb.contract_audit.service import MAX_CONTRACT_BYTES, create_contract_audit_job
+from medical_audit_kb.contract_audit.service import (
+    MAX_CONTRACT_BYTES,
+    ContractAuditOcrUnavailableError,
+    create_contract_audit_job,
+)
 from medical_audit_kb.contract_audit.store import ContractAuditJobStore, FileContractAuditJobStore
 
 router = APIRouter()
@@ -65,6 +69,11 @@ async def create_contract_audit(
             ocr_client=state.ocr_client,
             generation_provider=generation_provider,
         )
+    except ContractAuditOcrUnavailableError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     record_operation(

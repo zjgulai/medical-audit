@@ -37,6 +37,18 @@ SUPPORTED_EXTENSIONS = frozenset(
 )
 
 
+class ContractAuditOcrUnavailableError(RuntimeError):
+    """Raised before a scanned contract can create an empty audit report."""
+
+    code = "unlimited_ocr_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "该合同为扫描件或图片型 PDF，Unlimited-OCR 服务尚未启用。"
+            "请上传可搜索文字版 PDF/DOCX，或联系管理员启用 OCR 后重新提交。"
+        )
+
+
 async def create_contract_audit_job(
     *,
     store: ContractAuditJobStore,
@@ -184,14 +196,7 @@ async def _extract_pages(
         return pages, _extraction_metadata(pages, method="native-docx-logical-page")
 
     if ocr_client is None:
-        return [], {
-            "method": "ocr-unavailable",
-            "page_count": 1,
-            "covered_pages": [],
-            "mapping_status": "unresolved",
-            "issues": ["Unlimited-OCR is not configured for this file."],
-            "ocr": None,
-        }
+        raise ContractAuditOcrUnavailableError
     try:
         result = await ocr_client.extract_text(
             file_name=file_name,
