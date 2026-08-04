@@ -69,7 +69,7 @@ source: human+ai
 - 生产 OCR capability：`enabled=true`，引擎为 `deepseek-v4-pro+tesseract-chi_sim+eng`。
 - L4 脱敏全链路 run：`loop129-contract-ocr-4e749ebb010b4edc912b3b1c0854dfd6`，合同审计 job 为 `completed`，PDF 为 `application/pdf`、可搜索且保留引用标记。
 - 最终 L3 只读复核：部署 marker、静态 manifest 与目标 SHA 一致，应用、PostgreSQL、ClamAV、Nginx 健康，manifest mismatch 为 0，复核过程 audit-log delta 为 0。
-- 生产前端只读验收：桌面和移动端共 44 次路由检查通过，P0/P1 均为 0；`/chat` 生产静态资产包含“下载 PDF 报告”。
+- 生产前端只读验收：桌面和移动端共 46 次路由检查通过，P0/P1 均为 0；`/chat` 生产静态资产包含“下载 PDF 报告”。
 - 按明确授权跳过本轮 app/env/DB/nginx/web 备份；未生成 Loop 129 备份工件。
 - 首轮 L4 harness 在受保护的 deployment metadata GET 上缺少审计鉴权头，provider 调用前以 401 停止；补齐同一组只读审计头后复跑通过。
 
