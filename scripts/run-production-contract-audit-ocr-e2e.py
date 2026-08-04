@@ -80,7 +80,10 @@ def _run(
     source_sha256 = hashlib.sha256(scanned_pdf).hexdigest()
 
     with httpx.Client(timeout=timeout_seconds, follow_redirects=False) as client:
-        metadata_response = client.get(f"{base_url}/api/v1/deployment/metadata")
+        metadata_response = client.get(
+            f"{base_url}/api/v1/deployment/metadata",
+            headers=headers,
+        )
         metadata_response.raise_for_status()
         metadata = metadata_response.json()
         if metadata.get("deploy_sha") != expected_deploy_sha:
