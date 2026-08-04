@@ -333,7 +333,7 @@ def _document_extraction_error_detail(
             )
         return "文档未检测到可读取文字，请确认内容后重新上传。"
     if extension in OCR_IMAGE_EXTENSIONS:
-        return "图片 OCR 服务尚未启用，请联系管理员完成 Unlimited-OCR 服务配置。"
+        return "图片 OCR 服务尚未启用，请联系管理员完成 OCR 运行时配置。"
     if extension == "pdf":
         return "PDF 解析失败，文件可能损坏、加密或格式不完整。请重新导出后再上传。"
     return "文档解析失败，请确认文件完整且格式正确后重试。"

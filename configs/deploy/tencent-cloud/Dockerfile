@@ -9,6 +9,13 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     UV_HTTP_TIMEOUT=120 \
     UV_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml uv.lock README.md ./
 COPY configs ./configs
 COPY scripts ./scripts

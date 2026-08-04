@@ -128,7 +128,8 @@ describe("ChatPortalPage", () => {
       downloads: {
         json: "/api/v1/contract-audits/job/report?format=json",
         markdown: "/api/v1/contract-audits/job/report?format=markdown",
-        docx: "/api/v1/contract-audits/job/report?format=docx"
+        docx: "/api/v1/contract-audits/job/report?format=docx",
+        pdf: "/api/v1/contract-audits/job/report?format=pdf"
       }
     });
     apiMocks.fetchQueryHistory.mockResolvedValue(emptyQueryHistory);
@@ -578,6 +579,10 @@ describe("ChatPortalPage", () => {
       });
     });
     expect(await screen.findByText(/发现付款条款需复核/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下载 PDF 报告" })).toHaveAttribute(
+      "href",
+      "/api/v1/contract-audits/job/report?format=pdf"
+    );
     expect(screen.getByRole("link", { name: "下载 Word 报告" })).toHaveAttribute(
       "href",
       "/api/v1/contract-audits/job/report?format=docx"
@@ -606,7 +611,8 @@ describe("ChatPortalPage", () => {
       downloads: {
         json: "/api/v1/contract-audits/failed/report?format=json",
         markdown: "/api/v1/contract-audits/failed/report?format=markdown",
-        docx: "/api/v1/contract-audits/failed/report?format=docx"
+        docx: "/api/v1/contract-audits/failed/report?format=docx",
+        pdf: "/api/v1/contract-audits/failed/report?format=pdf"
       }
     });
     const { container } = render(<ChatPortalPage />);
@@ -644,7 +650,8 @@ describe("ChatPortalPage", () => {
       downloads: {
         json: "/api/v1/contract-audits/review-required/report?format=json",
         markdown: "/api/v1/contract-audits/review-required/report?format=markdown",
-        docx: "/api/v1/contract-audits/review-required/report?format=docx"
+        docx: "/api/v1/contract-audits/review-required/report?format=docx",
+        pdf: "/api/v1/contract-audits/review-required/report?format=pdf"
       }
     });
     const { container } = render(<ChatPortalPage />);

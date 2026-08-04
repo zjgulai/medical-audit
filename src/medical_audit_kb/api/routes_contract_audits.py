@@ -19,6 +19,7 @@ from medical_audit_kb.api.chat_models import (
     contract_audit_generation_provider_for_alias,
 )
 from medical_audit_kb.api.docx_export import DOCX_MEDIA_TYPE, markdown_to_docx
+from medical_audit_kb.api.pdf_export import PDF_MEDIA_TYPE, markdown_to_pdf
 from medical_audit_kb.contract_audit.service import (
     MAX_CONTRACT_BYTES,
     ContractAuditOcrUnavailableError,
@@ -111,7 +112,7 @@ def download_contract_audit_report(
     job_id: str,
     state: Annotated[ApiState, Depends(get_api_state)],
     report_format: Annotated[
-        Literal["json", "markdown", "docx"], Query(alias="format")
+        Literal["json", "markdown", "docx", "pdf"], Query(alias="format")
     ] = "docx",
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
@@ -132,6 +133,10 @@ def download_contract_audit_report(
         content = markdown.encode("utf-8")
         media_type = "text/markdown; charset=utf-8"
         suffix = "md"
+    elif report_format == "pdf":
+        content = markdown_to_pdf(markdown, title="合同审计报告", subject=job_id)
+        media_type = PDF_MEDIA_TYPE
+        suffix = "pdf"
     else:
         content = markdown_to_docx(markdown, title="合同审计报告", subject=job_id)
         media_type = DOCX_MEDIA_TYPE

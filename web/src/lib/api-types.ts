@@ -873,6 +873,7 @@ export type ContractAuditJobResponse = {
     readonly json: string;
     readonly markdown: string;
     readonly docx: string;
+    readonly pdf: string;
   };
 };
 

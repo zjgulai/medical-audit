@@ -44,7 +44,7 @@ class ContractAuditOcrUnavailableError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__(
-            "该合同为扫描件或图片型 PDF，Unlimited-OCR 服务尚未启用。"
+            "该合同为扫描件或图片型 PDF，OCR 运行时尚未启用。"
             "请上传可搜索文字版 PDF/DOCX，或联系管理员启用 OCR 后重新提交。"
         )
 
@@ -167,6 +167,7 @@ async def create_contract_audit_job(
             "json": f"/api/v1/contract-audits/{job_id}/report?format=json",
             "markdown": f"/api/v1/contract-audits/{job_id}/report?format=markdown",
             "docx": f"/api/v1/contract-audits/{job_id}/report?format=docx",
+            "pdf": f"/api/v1/contract-audits/{job_id}/report?format=pdf",
         },
     }
     return store.put(job)
@@ -221,7 +222,7 @@ async def _extract_pages(
         else "unresolved"
     )
     issues = [] if mapping == "resolved" else ["OCR page-to-text mapping requires human review."]
-    extraction = _extraction_metadata(pages, method="unlimited-ocr", issues=issues)
+    extraction = _extraction_metadata(pages, method=result.method, issues=issues)
     extraction["page_count"] = result.page_count
     extraction["mapping_status"] = mapping
     extraction["ocr"] = {"model": result.model, "source_commit": result.source_commit}

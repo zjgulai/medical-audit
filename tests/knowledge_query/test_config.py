@@ -46,6 +46,8 @@ from medical_audit_kb.core.config import (
     UNLIMITED_OCR_MAX_PAGES_ENV,
     UNLIMITED_OCR_MODEL_ENV,
     UNLIMITED_OCR_PDF_DPI_ENV,
+    UNLIMITED_OCR_RUNTIME_ENV,
+    UNLIMITED_OCR_TESSERACT_LANGUAGES_ENV,
     UNLIMITED_OCR_TIMEOUT_SECONDS_ENV,
     KnowledgeQuerySettings,
     load_settings,
@@ -267,6 +269,7 @@ def test_environment_overrides_unlimited_ocr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(UNLIMITED_OCR_ENABLED_ENV, "true")
+    monkeypatch.setenv(UNLIMITED_OCR_RUNTIME_ENV, "deepseek-tesseract")
     monkeypatch.setenv(UNLIMITED_OCR_BASE_URL_ENV, "http://ocr.internal:8000/v1")
     monkeypatch.setenv(UNLIMITED_OCR_MODEL_ENV, "baidu/Unlimited-OCR")
     monkeypatch.setenv(UNLIMITED_OCR_API_KEY_NAME_ENV, "UNLIMITED_OCR_TOKEN")
@@ -274,10 +277,12 @@ def test_environment_overrides_unlimited_ocr(
     monkeypatch.setenv(UNLIMITED_OCR_MAX_PAGES_ENV, "25")
     monkeypatch.setenv(UNLIMITED_OCR_PDF_DPI_ENV, "240")
     monkeypatch.setenv(UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV, "16384")
+    monkeypatch.setenv(UNLIMITED_OCR_TESSERACT_LANGUAGES_ENV, "chi_sim+eng")
 
     settings = load_settings()
 
     assert settings.unlimited_ocr.enabled is True
+    assert settings.unlimited_ocr.runtime == "deepseek-tesseract"
     assert settings.unlimited_ocr.base_url == "http://ocr.internal:8000/v1"
     assert settings.unlimited_ocr.model == "baidu/Unlimited-OCR"
     assert settings.unlimited_ocr.api_key_env == "UNLIMITED_OCR_TOKEN"
@@ -285,6 +290,7 @@ def test_environment_overrides_unlimited_ocr(
     assert settings.unlimited_ocr.max_pages == 25
     assert settings.unlimited_ocr.pdf_dpi == 240
     assert settings.unlimited_ocr.max_output_tokens == 16384
+    assert settings.unlimited_ocr.tesseract_languages == "chi_sim+eng"
 
 
 def test_environment_rejects_invalid_document_storage_boolean(

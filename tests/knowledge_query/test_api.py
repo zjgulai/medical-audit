@@ -7349,12 +7349,21 @@ def test_contract_audit_job_persists_and_downloads_without_provider(
         f"/api/v1/contract-audits/{job_id}/report?format=docx",
         headers=headers,
     )
+    pdf = client.get(
+        f"/api/v1/contract-audits/{job_id}/report?format=pdf",
+        headers=headers,
+    )
     assert persisted.status_code == 200
     assert "pages" not in persisted.json()
     assert markdown.status_code == 200
     assert "合同审计报告" in markdown.text
     assert docx.status_code == 200
     assert docx.content.startswith(b"PK")
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-")
+    with pymupdf.open(stream=pdf.content, filetype="pdf") as report:
+        assert "合同审计报告" in "".join(page.get_text() for page in report)
 
 
 def test_contract_audit_fails_closed_for_image_only_pdf_without_unlimited_ocr(
@@ -7383,7 +7392,7 @@ def test_contract_audit_fails_closed_for_image_only_pdf_without_unlimited_ocr(
     assert response.json()["detail"] == {
         "code": "unlimited_ocr_unavailable",
         "message": (
-            "该合同为扫描件或图片型 PDF，Unlimited-OCR 服务尚未启用。"
+            "该合同为扫描件或图片型 PDF，OCR 运行时尚未启用。"
             "请上传可搜索文字版 PDF/DOCX，或联系管理员启用 OCR 后重新提交。"
         ),
     }
@@ -7481,6 +7490,7 @@ def test_contract_audit_runs_ocr_then_agent_and_exposes_report(tmp_path: Path) -
     }
     assert body["result"]["conclusion"]["analysis_markdown"].endswith("[C1]")
     assert body["downloads"]["docx"].endswith("?format=docx")
+    assert body["downloads"]["pdf"].endswith("?format=pdf")
     assert ocr_client.calls == 1
     assert state.operation_logs[-1]["action"] == "contract-audit-create"
 

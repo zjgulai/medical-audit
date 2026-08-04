@@ -120,6 +120,7 @@ class DeployConfig:
     allow_dirty: bool
     skip_web_build: bool
     skip_app_rebuild: bool
+    skip_pre_deploy_backups: bool
     apply_schema: bool
     skip_smoke: bool
     include_query_provider_smoke: bool
@@ -887,7 +888,14 @@ def _run_nonrollback(config: DeployConfig) -> int:
     app_rebuild_attempted = False
     marker_commit_attempted = False
     try:
-        _create_remote_backups(config, owner_token)
+        if getattr(config, "skip_pre_deploy_backups", False):
+            print(
+                "WARNING: pre-deploy app/env/database/nginx/web backups skipped by "
+                "explicit operator authorization",
+                flush=True,
+            )
+        else:
+            _create_remote_backups(config, owner_token)
         _cleanup_remote_sync_artifacts(config, owner_token)
         _sync_application(config, owner_token)
         _prepare_remote_release_incoming(config, owner_token)
@@ -1040,6 +1048,14 @@ def _parse_args() -> argparse.Namespace:
         help="Only sync files and static assets; do not rebuild/restart app.",
     )
     parser.add_argument(
+        "--skip-pre-deploy-backups",
+        action="store_true",
+        help=(
+            "Skip the full app/env/database/nginx/web backup stage. This is a live-only "
+            "operator override and removes the normal artifact rollback path."
+        ),
+    )
+    parser.add_argument(
         "--apply-schema",
         action="store_true",
         help="Apply sql/knowledge-query-schema.sql to production after sync.",
@@ -1098,6 +1114,9 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         raise DeployError("production execute forbids --skip-web-build")
     if execute and bool(args.skip_app_rebuild):
         raise DeployError("production execute forbids --skip-app-rebuild")
+    skip_pre_deploy_backups = bool(getattr(args, "skip_pre_deploy_backups", False))
+    if skip_pre_deploy_backups and not execute:
+        raise DeployError("--skip-pre-deploy-backups requires --execute")
     allow_first_legacy_migration = bool(args.allow_first_legacy_migration)
     if allow_first_legacy_migration and not execute:
         raise DeployError("--allow-first-legacy-migration requires --execute")
@@ -1156,6 +1175,7 @@ def _config_from_args(args: argparse.Namespace) -> DeployConfig:
         allow_dirty=bool(args.allow_dirty),
         skip_web_build=bool(args.skip_web_build),
         skip_app_rebuild=bool(args.skip_app_rebuild),
+        skip_pre_deploy_backups=skip_pre_deploy_backups,
         apply_schema=bool(args.apply_schema),
         skip_smoke=bool(args.skip_smoke),
         include_query_provider_smoke=include_query_provider_smoke,
@@ -1209,6 +1229,10 @@ def _print_plan(config: DeployConfig) -> None:
     print(f"remote_app_dir: {config.remote_app_dir}", flush=True)
     print(f"remote_web_dir: {config.remote_web_dir}", flush=True)
     print(f"base_url: {config.base_url}", flush=True)
+    print(
+        f"pre_deploy_backups: {'skipped' if config.skip_pre_deploy_backups else 'required'}",
+        flush=True,
+    )
 
 
 def _validate_local_state(config: DeployConfig) -> None:

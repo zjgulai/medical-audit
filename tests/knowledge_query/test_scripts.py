@@ -16,6 +16,7 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import ClassVar
 
+import pymupdf
 import pytest
 import yaml
 from pytest import MonkeyPatch
@@ -5039,6 +5040,7 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
         allow_dirty=False,
         skip_web_build=False,
         skip_app_rebuild=False,
+        skip_pre_deploy_backups=False,
         apply_schema=False,
         skip_smoke=False,
         include_query_provider_smoke=False,
@@ -5057,6 +5059,70 @@ def test_deploy_tencent_cloud_defaults_smoke_report_path() -> None:
     assert config.report_path == Path(
         "tmp/outputs/production-e2e-smoke-after-deploy-20260611T184000+0800.json",
     ).resolve()
+
+
+def test_deploy_tencent_cloud_skip_backups_requires_explicit_live_execute(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "deploy_tencent_cloud_skip_pre_deploy_backups",
+        Path("scripts/deploy-tencent-cloud-production.py"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["deploy-tencent-cloud-production.py", "--skip-pre-deploy-backups"],
+    )
+    with pytest.raises(module.DeployError, match="requires --execute"):
+        module._config_from_args(module._parse_args())
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "deploy-tencent-cloud-production.py",
+            "--execute",
+            "--confirm-production",
+            module.DEFAULT_DOMAIN,
+            "--approved-sha",
+            "a" * 40,
+            "--skip-pre-deploy-backups",
+        ],
+    )
+    assert module._config_from_args(module._parse_args()).skip_pre_deploy_backups is True
+
+
+def test_production_contract_audit_ocr_e2e_requires_confirmation_and_builds_image_pdf(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = _load_script_module(
+        "run_production_contract_audit_ocr_e2e",
+        Path("scripts/run-production-contract-audit-ocr-e2e.py"),
+    )
+    content = module._sanitized_scanned_contract_pdf()
+    with pymupdf.open(stream=content, filetype="pdf") as document:
+        assert document.page_count == 1
+        assert "".join(page.get_text() for page in document).strip() == ""
+
+    calls = 0
+
+    def forbidden_run(**_kwargs: object) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("live E2E must not run without confirmation")
+
+    monkeypatch.setattr(module, "_run", forbidden_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run-production-contract-audit-ocr-e2e.py",
+            "--expected-deploy-sha",
+            "a" * 40,
+        ],
+    )
+    assert module.main() == 2
+    assert calls == 0
 
 
 def _patch_deploy_execute_snapshot(

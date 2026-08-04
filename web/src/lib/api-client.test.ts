@@ -410,7 +410,7 @@ describe("api-client", () => {
           contract_version: "contract-audit-job-v2",
           job_id: "contract-audit-0123456789abcdef0123456789abcdef",
           status: "completed",
-          downloads: { json: "/j", markdown: "/m", docx: "/d" }
+          downloads: { json: "/j", markdown: "/m", docx: "/d", pdf: "/p" }
         })
       }))
     );
@@ -515,7 +515,7 @@ describe("api-client", () => {
         json: async () => ({
           detail: {
             code: "unlimited_ocr_unavailable",
-            message: "Unlimited-OCR 服务尚未启用，请联系管理员完成运行时门禁。"
+            message: "OCR 服务尚未启用，请联系管理员完成运行时配置。"
           }
         })
       }))
@@ -523,7 +523,7 @@ describe("api-client", () => {
 
     await expect(
       extractOcrText(new File(["image"], "scan.png", { type: "image/png" }))
-    ).rejects.toThrow("Unlimited-OCR 服务尚未启用，请联系管理员完成运行时门禁。");
+    ).rejects.toThrow("OCR 服务尚未启用，请联系管理员完成运行时配置。");
   });
 
   it("surfaces actionable validation detail for an image-only PDF attachment", async () => {

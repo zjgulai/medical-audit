@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from io import BytesIO
 from typing import Any
 
@@ -14,11 +15,13 @@ from medical_audit_kb.api.routes_chat import (
 from medical_audit_kb.core.config import UnlimitedOcrSettings
 from medical_audit_kb.ocr.unlimited_ocr import (
     SUPPORTED_IMAGE_EXTENSIONS,
+    DeepSeekAssistedOcrClient,
     UnlimitedOcrClient,
     UnlimitedOcrError,
     _clean_ocr_text,
     _page_results,
     _render_images,
+    unlimited_ocr_client_from_settings,
 )
 
 
@@ -114,6 +117,133 @@ def test_unlimited_ocr_uses_pinned_vllm_contract_without_retry(
     assert result.pages[0].mapping_status == "resolved"
     assert len(result.pages[0].image_sha256) == 64
     assert str(content[1]["image_url"]["url"]).startswith("data:image/png;base64,")
+
+
+def test_deepseek_assisted_ocr_uses_text_only_strict_page_correction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "submit_ocr_pages",
+                                        "arguments": json.dumps(
+                                            {
+                                                "pages": [
+                                                    {
+                                                        "page_number": 1,
+                                                        "text": "第一条：验收后付款。",
+                                                    }
+                                                ]
+                                            },
+                                            ensure_ascii=False,
+                                        ),
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout: float) -> None:
+            assert timeout == 60
+
+        async def __aenter__(self) -> FakeAsyncClient:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(
+            self,
+            endpoint: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, object],
+        ) -> FakeResponse:
+            calls.append({"endpoint": endpoint, "headers": headers, "json": json})
+            return FakeResponse()
+
+    monkeypatch.setenv("TEST_DEEPSEEK_OCR_KEY", "test-key")
+    monkeypatch.setattr(
+        "medical_audit_kb.ocr.unlimited_ocr.shutil.which",
+        lambda _name: "/usr/bin/tesseract",
+    )
+    monkeypatch.setattr(
+        "medical_audit_kb.ocr.unlimited_ocr._tesseract_text",
+        lambda *_args, **_kwargs: "第一条:验收后付款讯。",
+    )
+    monkeypatch.setattr(
+        "medical_audit_kb.ocr.unlimited_ocr.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+    pdf_bytes = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(pdf_bytes)
+    settings = UnlimitedOcrSettings(
+        enabled=True,
+        runtime="deepseek-tesseract",
+        base_url="https://api.deepseek.com/beta",
+        model="deepseek-v4-pro",
+        api_key_env="TEST_DEEPSEEK_OCR_KEY",
+        timeout_seconds=60,
+        pdf_dpi=72,
+        max_output_tokens=2048,
+    )
+    client = unlimited_ocr_client_from_settings(settings)
+
+    assert isinstance(client, DeepSeekAssistedOcrClient)
+    result = asyncio.run(
+        client.extract_text(
+            file_name="扫描合同.pdf",
+            extension="pdf",
+            content=pdf_bytes.getvalue(),
+        )
+    )
+
+    assert result.text == "第一条：验收后付款。"
+    assert result.method == "deepseek-assisted-ocr"
+    assert result.model == "deepseek-v4-pro+tesseract-chi_sim+eng"
+    assert result.pages[0].mapping_status == "resolved"
+    assert len(calls) == 1
+    request = calls[0]
+    assert request["endpoint"] == "https://api.deepseek.com/beta/chat/completions"
+    payload = request["json"]
+    assert payload["model"] == "deepseek-v4-pro"
+    assert payload["thinking"] == {"type": "disabled"}
+    assert payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "submit_ocr_pages"},
+    }
+    serialized_payload = json.dumps(payload, ensure_ascii=False)
+    assert "第一条:验收后付款讯。" in serialized_payload
+    assert "image_url" not in serialized_payload
+
+
+def test_deepseek_assisted_ocr_factory_fails_closed_without_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MISSING_DEEPSEEK_OCR_KEY", raising=False)
+    settings = UnlimitedOcrSettings(
+        enabled=True,
+        runtime="deepseek-tesseract",
+        api_key_env="MISSING_DEEPSEEK_OCR_KEY",
+    )
+
+    assert unlimited_ocr_client_from_settings(settings) is None
 
 
 def test_unlimited_ocr_does_not_advertise_or_render_webp() -> None:
