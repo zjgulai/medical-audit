@@ -295,6 +295,7 @@ function ChatPortalContent() {
         const analysis = job.result.conclusion.analysis_markdown?.trim();
         const downloads = job.status === "completed" && analysis
           ? [
+              { label: "下载 PDF 报告", href: job.downloads.pdf },
               { label: "下载 Word 报告", href: job.downloads.docx },
               { label: "下载 Markdown", href: job.downloads.markdown },
               { label: "下载结构化 JSON", href: job.downloads.json }
@@ -633,7 +634,7 @@ function isContractAuditIntent(value: string): boolean {
 
 function contractAuditStatusMessage(status: string): string {
   if (status === "extraction_review_required") {
-    return "页面与 OCR 文本的映射尚未达到可审计标准，尚未生成报告。若为扫描件，请上传可搜索文字版 PDF/DOCX，或请管理员启用 Unlimited-OCR 后重新提交。";
+    return "页面与 OCR 文本的映射尚未达到可审计标准，尚未生成报告。若为扫描件，请上传可搜索文字版 PDF/DOCX，或请管理员启用 OCR 后重新提交。";
   }
   if (status === "insufficient_evidence") {
     return "合同文本已保存并建立页面证据，但当前模型通道不可用，未生成风险定性。";

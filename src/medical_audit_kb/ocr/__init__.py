@@ -1,4 +1,5 @@
 from medical_audit_kb.ocr.unlimited_ocr import (
+    DeepSeekAssistedOcrClient,
     UnlimitedOcrClient,
     UnlimitedOcrError,
     UnlimitedOcrResult,
@@ -6,6 +7,7 @@ from medical_audit_kb.ocr.unlimited_ocr import (
 )
 
 __all__ = [
+    "DeepSeekAssistedOcrClient",
     "UnlimitedOcrClient",
     "UnlimitedOcrError",
     "UnlimitedOcrResult",

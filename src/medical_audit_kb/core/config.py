@@ -88,6 +88,7 @@ DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY_ENV: Final = (
     "MEDICAL_AUDIT_DOCUMENT_UPLOAD_INDEXING_INDEX_VERSION_KEY"
 )
 UNLIMITED_OCR_ENABLED_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_ENABLED"
+UNLIMITED_OCR_RUNTIME_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_RUNTIME"
 UNLIMITED_OCR_BASE_URL_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_BASE_URL"
 UNLIMITED_OCR_MODEL_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_MODEL"
 UNLIMITED_OCR_API_KEY_NAME_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_API_KEY_ENV"
@@ -96,6 +97,9 @@ UNLIMITED_OCR_MAX_PAGES_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_MAX_PAGES"
 UNLIMITED_OCR_PDF_DPI_ENV: Final = "MEDICAL_AUDIT_UNLIMITED_OCR_PDF_DPI"
 UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV: Final = (
     "MEDICAL_AUDIT_UNLIMITED_OCR_MAX_OUTPUT_TOKENS"
+)
+UNLIMITED_OCR_TESSERACT_LANGUAGES_ENV: Final = (
+    "MEDICAL_AUDIT_UNLIMITED_OCR_TESSERACT_LANGUAGES"
 )
 
 DEFAULT_CONFIG_PATH: Final = Path("configs/knowledge-query-engine-dev.yaml")
@@ -185,6 +189,7 @@ class UnlimitedOcrSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
+    runtime: Literal["unlimited-ocr", "deepseek-tesseract"] = "unlimited-ocr"
     base_url: str = Field(default="http://127.0.0.1:8000/v1", min_length=1)
     model: str = Field(default="baidu/Unlimited-OCR", min_length=1)
     api_key_env: str | None = None
@@ -193,6 +198,7 @@ class UnlimitedOcrSettings(BaseModel):
     pdf_dpi: int = Field(default=300, ge=72, le=600)
     max_total_pixels: int = Field(default=400_000_000, ge=1)
     max_output_tokens: int = Field(default=32_768, ge=256, le=65_536)
+    tesseract_languages: str = Field(default="chi_sim+eng", pattern=r"^[A-Za-z0-9_+.-]+$")
     source_commit: str = "d49ff64afffc1f47ab563dc1c589bc2f78808fa4"
 
 
@@ -452,6 +458,9 @@ def _unlimited_ocr_env_overrides(data: dict[str, Any]) -> dict[str, Any] | None:
     if enabled := os.getenv(UNLIMITED_OCR_ENABLED_ENV):
         settings["enabled"] = _parse_bool_env(enabled, UNLIMITED_OCR_ENABLED_ENV)
         changed = True
+    if runtime := os.getenv(UNLIMITED_OCR_RUNTIME_ENV):
+        settings["runtime"] = runtime
+        changed = True
     if base_url := os.getenv(UNLIMITED_OCR_BASE_URL_ENV):
         settings["base_url"] = base_url
         changed = True
@@ -472,6 +481,9 @@ def _unlimited_ocr_env_overrides(data: dict[str, Any]) -> dict[str, Any] | None:
         changed = True
     if max_output_tokens := os.getenv(UNLIMITED_OCR_MAX_OUTPUT_TOKENS_ENV):
         settings["max_output_tokens"] = int(max_output_tokens)
+        changed = True
+    if tesseract_languages := os.getenv(UNLIMITED_OCR_TESSERACT_LANGUAGES_ENV):
+        settings["tesseract_languages"] = tesseract_languages
         changed = True
     if not changed:
         return None

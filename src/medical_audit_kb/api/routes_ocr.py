@@ -87,15 +87,16 @@ def get_ocr_capabilities(
     state: Annotated[ApiState, Depends(get_api_state)],
 ) -> OcrCapabilityResponse:
     settings = state.settings.unlimited_ocr
+    client = state.ocr_client
     return OcrCapabilityResponse(
         contract_version="unlimited-ocr-capability-v1",
-        enabled=state.ocr_client is not None,
-        engine=settings.model,
-        source_commit=settings.source_commit,
+        enabled=client is not None,
+        engine=str(getattr(client, "engine", settings.model)),
+        source_commit=str(getattr(client, "source_version", settings.source_commit)),
         supported_extensions=sorted(SUPPORTED_OCR_EXTENSIONS),
         max_upload_bytes=MAX_OCR_UPLOAD_BYTES,
-        max_pages=settings.max_pages,
-        pdf_dpi=settings.pdf_dpi,
+        max_pages=int(getattr(client, "max_pages", settings.max_pages)),
+        pdf_dpi=int(getattr(client, "pdf_dpi", settings.pdf_dpi)),
         boundaries=OcrCapabilityBoundaries(),
     )
 
@@ -120,7 +121,7 @@ async def extract_ocr_text(
             status_code=409,
             detail={
                 "code": "unlimited_ocr_unavailable",
-                "message": "Unlimited-OCR 服务尚未启用，请联系管理员完成运行时门禁。",
+                "message": "OCR 服务尚未启用，请联系管理员完成运行时配置。",
             },
         )
 
