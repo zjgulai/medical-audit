@@ -118,11 +118,14 @@
     {
       "page_id": "medical-audit",
       "route": "/medical-audit",
-      "connection_status": "static_shell_first_batch",
-      "data_source_grade": "frontend_static_plus_partial_backend_contract",
+      "connection_status": "connected_first_batch",
+      "data_source_grade": "backend_api_connected",
       "endpoints": [
-        { "name": "medical-audit-project", "method": "GET", "path": "/api/v1/projects/{projectId}" },
-        { "name": "medical-audit-findings", "method": "GET", "path": "/api/v1/audit-findings?project_key={projectId}" },
+        { "name": "projects-list", "method": "GET", "path": "/api/v1/projects" },
+        { "name": "project-dashboard", "method": "GET", "path": "/api/v1/projects/{projectId}/dashboard" },
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings?project_key={projectId}" },
+        { "name": "document-source-collections", "method": "GET", "path": "/api/v1/documents/source-collections" },
+        { "name": "reports-workbench", "method": "GET", "path": "/api/v1/reports/workbench" },
         {
           "name": "medical-audit-query",
           "method": "POST",
@@ -133,9 +136,13 @@
             "source_collections": ["medical-insurance-laws", "supervision-rules-knowledge"],
             "topic": "medical-insurance-fund"
           }
-        }
+        },
+        { "name": "create-review-task", "method": "POST", "path": "/api/v1/review-tasks" },
+        { "name": "update-review-status", "method": "PATCH", "path": "/api/v1/audit-findings/{findingId}/review-status" },
+        { "name": "add-finding-to-report", "method": "POST", "path": "/api/v1/reports/findings" },
+        { "name": "register-supplement", "method": "POST", "path": "/api/v1/audit-findings/{findingId}/supplement" }
       ],
-      "notes": "当前页面优先保持重构 UI；下一阶段接入专题项目、疑点任务和知识库问答数据，形成最小审计流程闭环。"
+      "notes": "医保审计专项工作台，已全量接入后端 API：项目/疑点/报告/复核/知识查询完整闭环。f37e69f9 验收通过。"
     },
     {
       "page_id": "knowledge-base",
@@ -231,20 +238,41 @@
     {
       "page_id": "fund-compliance",
       "route": "/fund-compliance",
-      "connection_status": "static_shell_first_batch",
-      "endpoints": []
+      "connection_status": "connected_first_batch",
+      "data_source_grade": "backend_api_connected",
+      "endpoints": [
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings?review_status=pending-review" },
+        { "name": "rules-workbench", "method": "GET", "path": "/api/v1/rules/workbench" },
+        { "name": "reports-workbench", "method": "GET", "path": "/api/v1/reports/workbench" },
+        { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
+      ],
+      "notes": "医保基金使用合规汇总入口（compatibility-workbench），聚合疑点/规则/报告运行状态，导航到 /medical-audit、/fund-compliance/review、/guided-check、/archive。"
     },
     {
       "page_id": "fund-compliance-review",
       "route": "/fund-compliance/review",
-      "connection_status": "static_shell_first_batch",
-      "endpoints": []
+      "connection_status": "connected_first_batch",
+      "data_source_grade": "backend_api_connected",
+      "endpoints": [
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings?review_status=pending-review" },
+        { "name": "rules-workbench", "method": "GET", "path": "/api/v1/rules/workbench" },
+        { "name": "reports-workbench", "method": "GET", "path": "/api/v1/reports/workbench" },
+        { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
+      ],
+      "notes": "医保费用复核表单页面（compatibility-workbench），展示费用汇总/分类汇总/就诊明细三类模板和当前疑点/规则统计。"
     },
     {
       "page_id": "guided-check",
       "route": "/guided-check",
-      "connection_status": "static_shell_first_batch",
-      "endpoints": []
+      "connection_status": "connected_first_batch",
+      "data_source_grade": "backend_api_connected",
+      "endpoints": [
+        { "name": "audit-findings", "method": "GET", "path": "/api/v1/audit-findings?review_status=pending-review" },
+        { "name": "rules-workbench", "method": "GET", "path": "/api/v1/rules/workbench" },
+        { "name": "reports-workbench", "method": "GET", "path": "/api/v1/reports/workbench" },
+        { "name": "search-backend", "method": "GET", "path": "/api/backend/index/search-backend" }
+      ],
+      "notes": "引导式核查入口（compatibility-workbench），按数据→规则→AI审证→底稿→归档串联步骤，展示风险摘要和材料准备状态。"
     }
   ]
 }
