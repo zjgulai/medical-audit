@@ -34,6 +34,7 @@ medical-audit-kb = "medical_audit_kb.cli:main"
 [dependency-groups]
 dev = [
     "aiosqlite>=0.20.0",
+    "httpx2>=2.9.1",
     "mypy>=1.11.0",
     "pytest>=8.3.0",
     "ruff>=0.6.0",

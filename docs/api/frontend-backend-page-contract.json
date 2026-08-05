@@ -136,11 +136,7 @@
             "source_collections": ["medical-insurance-laws", "supervision-rules-knowledge"],
             "topic": "medical-insurance-fund"
           }
-        },
-        { "name": "create-review-task", "method": "POST", "path": "/api/v1/review-tasks" },
-        { "name": "update-review-status", "method": "PATCH", "path": "/api/v1/audit-findings/{findingId}/review-status" },
-        { "name": "add-finding-to-report", "method": "POST", "path": "/api/v1/reports/findings" },
-        { "name": "register-supplement", "method": "POST", "path": "/api/v1/audit-findings/{findingId}/supplement" }
+        }
       ],
       "notes": "医保审计专项工作台，已全量接入后端 API：项目/疑点/报告/复核/知识查询完整闭环。f37e69f9 验收通过。"
     },
