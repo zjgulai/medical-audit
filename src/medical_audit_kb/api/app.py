@@ -779,10 +779,20 @@ def answer_generation_provider_from_settings(
             temperature=temperature,
         )
     if provider == "openai":
+        answer_base_url = os.getenv(
+            "MEDICAL_AUDIT_KB_ANSWER_BASE_URL", "https://api.openai.com/v1"
+        )
+        # Infer provider dialect from base_url so DeepSeek JSON prompt and
+        # citation-marker validation are used when the endpoint is deepseek.
+        openai_provider_dialect = os.getenv(
+            "MEDICAL_AUDIT_KB_ANSWER_PROVIDER_DIALECT",
+            "deepseek" if "deepseek" in answer_base_url.lower() else "openai",
+        )
         return OpenAICompatibleAnswerGenerationProvider.from_env(
             api_key_env=api_key_env,
             model_name=model_name,
-            base_url=os.getenv("MEDICAL_AUDIT_KB_ANSWER_BASE_URL", "https://api.openai.com/v1"),
+            base_url=answer_base_url,
+            provider=openai_provider_dialect,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
