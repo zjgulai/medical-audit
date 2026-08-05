@@ -476,6 +476,7 @@ def create_app(
     from medical_audit_kb.api.routes_preview import router as preview_router
     from medical_audit_kb.api.routes_projects import router as projects_router
     from medical_audit_kb.api.routes_query import router as query_router
+    from medical_audit_kb.api.routes_remediation import router as remediation_router
     from medical_audit_kb.api.routes_workbench import router as workbench_router
 
     web_static_root = _web_static_export_root()
@@ -498,6 +499,7 @@ def create_app(
         projects_router,
         index_router,
         preview_router,
+        remediation_router,
     )
     for router in routers:
         app.include_router(router)

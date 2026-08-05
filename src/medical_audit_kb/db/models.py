@@ -1277,3 +1277,40 @@ class FindingEvidenceItem(Base):
     )
 
     audit_finding: Mapped[AuditFinding] = relationship(back_populates="evidence_items")
+
+
+class RemediationItem(Base):
+    __tablename__ = "remediation_items"
+    __table_args__ = (
+        Index("idx_remediation_items_finding", "audit_finding_id"),
+        Index("idx_remediation_items_status", "status"),
+        Index("idx_remediation_items_project", "project_key"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    item_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    audit_finding_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("audit_findings.id", ondelete="SET NULL")
+    )
+    project_key: Mapped[str | None] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="pending-rectification")
+    responsible_dept: Mapped[str | None] = mapped_column(String(256))
+    responsible_person: Mapped[str | None] = mapped_column(String(128))
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rectification_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    acceptance_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    attachment_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    closed_by: Mapped[str | None] = mapped_column(Text)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
