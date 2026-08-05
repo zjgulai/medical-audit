@@ -105,7 +105,7 @@ OWNER_SIGNOFF_STATUS_LABELS: dict[str, str] = {
 class QueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)
     source_collections: list[SourceCollection] = Field(default_factory=list)
     years: list[int] = Field(default_factory=list)
@@ -453,6 +453,31 @@ def query_logs(
             user_identifier=owner_identifier,
         ),
         "store": {"ready": False, "backend": "memory"},
+    }
+
+
+@router.get("/review-tasks")
+def list_review_tasks(
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict[str, object]:
+    require_permission(
+        state,
+        permission=Permission.CREATE_REVIEW_TASK,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="review-tasks-list",
+    )
+    store = _review_task_store_for_api(state)
+    tasks = store.list_tasks()[:limit]
+    record_operation(state, "review-tasks-list", {"count": len(tasks)})
+    return {
+        "format": "review-tasks-list-v1",
+        "items": tasks,
+        "count": len(tasks),
+        "store": {"ready": True, "backend": store.__class__.__name__},
     }
 
 

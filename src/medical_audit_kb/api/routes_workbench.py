@@ -883,8 +883,61 @@ def rules_workbench(
 @router.get("/remediation/workbench")
 def remediation_workbench(
     state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    metrics = _remediation_metrics()
+    from medical_audit_kb.api.remediation_store import list_remediation_items
+
+    store = state.review_task_store
+    db_items: list[dict[str, object]] = []
+    backend = "ReadonlyRemediationWorkbenchSeed"
+    if store is not None and hasattr(store, "_session_factory"):
+        try:
+            with store._session_factory() as session:  # noqa: SLF001
+                items = list_remediation_items(session, limit=200)
+                db_items = [
+                    {
+                        "id": str(it.id),
+                        "item_key": it.item_key,
+                        "title": it.title,
+                        "status": it.status,
+                        "responsible_dept": it.responsible_dept,
+                        "due_date": it.due_date.isoformat() if it.due_date else None,
+                        "progress": 100 if it.status == "closed" else (
+                            75 if it.status in {"pending-acceptance", "accepted"} else
+                            50 if it.status == "in-rectification" else 0
+                        ),
+                    }
+                    for it in items
+                ]
+            backend = "SqlAlchemyRemediationStore"
+        except SQLAlchemyError:
+            pass
+
+    if db_items:
+        case_count = len(db_items)
+        active_count = sum(1 for i in db_items if i["status"] != "closed")
+        closed_count = case_count - active_count
+        total_progress = sum(cast(int, i["progress"]) for i in db_items)
+        avg_progress = round(total_progress / case_count) if case_count else 0
+        pending_accept = sum(1 for i in db_items if i["status"] == "pending-acceptance")
+        rejected_count = sum(1 for i in db_items if i["status"] == "rejected")
+        metrics: dict[str, object] = {
+            "case_count": case_count,
+            "active_case_count": active_count,
+            "closed_case_count": closed_count,
+            "pending_evidence_count": pending_accept,
+            "blocked_gate_count": rejected_count,
+            "average_progress": avg_progress,
+            "timeline_count": 0,
+        }
+        remediation_cases: tuple[dict[str, object], ...] = tuple(db_items)
+        evidence_grade = "backend-db"
+    else:
+        metrics = _remediation_metrics()
+        remediation_cases = REMEDIATION_CASES
+        evidence_grade = "local-readonly-api"
+
     record_operation(
         state,
         "remediation-workbench-view",
@@ -901,14 +954,14 @@ def remediation_workbench(
         "workbench_id": "FUND-USAGE-REMEDIATION",
         "workbench_title": "整改事项与补证闭环",
         "workbench_scope": "把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。",
-        "remediation_cases": REMEDIATION_CASES,
+        "remediation_cases": remediation_cases,
         "evidence_requests": REMEDIATION_EVIDENCE_REQUESTS,
         "closure_gates": REMEDIATION_CLOSURE_GATES,
         "timeline": REMEDIATION_TIMELINE,
         "metrics": metrics,
-        "evidence_grade": "local-readonly-api",
+        "evidence_grade": evidence_grade,
         "production_side_effect": "none",
-        "store": {"ready": True, "backend": "ReadonlyRemediationWorkbenchSeed"},
+        "store": {"ready": True, "backend": backend},
     }
 
 
