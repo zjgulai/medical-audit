@@ -262,6 +262,63 @@ def query(
         )
     except NoCitedEvidenceError as exc:
         raise HTTPException(status_code=404, detail="no cited evidence found") from exc
+
+    # When citation generation fails on a rule-only query, retry with medical-insurance-laws
+    # added as a supplementary collection. Rule documents have coarse chunks that embeddings
+    # rank poorly; law documents carry the same legal basis and produce reliable citations.
+    _rule_only_collections = frozenset({
+        SourceCollection.SUPERVISION_RULES_KNOWLEDGE,
+        SourceCollection.MANAGEMENT_ORG_PERSONNEL_QUALIFICATION,
+        SourceCollection.MANAGEMENT_MARKET_QUALITY,
+        SourceCollection.MANAGEMENT_LICENSE_ENFORCEMENT,
+        SourceCollection.MANAGEMENT_SAFETY_EMERGENCY,
+        SourceCollection.MANAGEMENT_JUDICIAL_AUDIT_PROCEDURE,
+        SourceCollection.MANAGEMENT_ECOLOGY_RESOURCES,
+        SourceCollection.MANAGEMENT_URBAN_MUNICIPAL,
+        SourceCollection.MANAGEMENT_GENERAL_ADMIN,
+    })
+    if (
+        answer.generation_status.value == "retrieval_fallback"
+        and generation_provider is not None
+        and effective_source_collections
+        and set(effective_source_collections).issubset(_rule_only_collections)
+        and SourceCollection.MEDICAL_INSURANCE_LAWS not in effective_source_collections
+    ):
+        retry_collections = (*effective_source_collections, SourceCollection.MEDICAL_INSURANCE_LAWS)
+        retry_filters = RetrievalFilters(
+            source_collections=retry_collections,
+            domains=topic.domains if topic else (),
+            domain_fallback_collections=topic.fallback_collections if topic else (),
+            years=tuple(payload.years),
+            regions=tuple(payload.regions),
+            document_types=tuple(payload.document_types),
+            business_topics=tuple(payload.business_topics),
+            title_only=payload.title_only,
+            title_query=payload.question if payload.title_only else "",
+            personal_material_created_by="",
+            personal_material_include_all=False,
+        )
+        retry_results = state.search_engine.search(
+            payload.question, filters=retry_filters, top_k=payload.top_k
+        )
+        try:
+            retry_answer = build_citation_backed_answer(
+                payload.question,
+                retry_results,
+                generation_provider=generation_provider,
+                agent_prompt=str(selected_agent.get("prompt") or "") if selected_agent else None,
+                agent_prompt_version_key=(
+                    str(selected_agent.get("prompt_version_key") or "")
+                    if selected_agent
+                    else None
+                ),
+            )
+            if retry_answer.generation_status.value == "generated":
+                answer = retry_answer
+                results = retry_results
+                effective_source_collections = retry_collections
+        except NoCitedEvidenceError:
+            pass
     for citation in answer.citations:
         state.preview_references[citation.chunk_id] = PreviewReference(
             locator=citation.locator,
