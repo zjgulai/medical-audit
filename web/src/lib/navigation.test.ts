@@ -6,7 +6,6 @@ import {
   navigationGroups,
   primaryNavigation,
   sidebarUtilityNavigation,
-  secondaryNavigation,
   systemNavigation,
   visiblePrimaryNavigation
 } from "./navigation";
@@ -59,54 +58,28 @@ describe("primaryNavigation", () => {
     });
   });
 
-  it("places the audit cockpit directly after project management", () => {
-    const projectIndex = primaryNavigation.findIndex((item) => item.id === "projects");
-
-    expect(primaryNavigation[projectIndex + 1]).toMatchObject({
+  it("places the audit cockpit first in the primary navigation", () => {
+    expect(visiblePrimaryNavigation[0]).toMatchObject({
       id: "audit-cockpit",
       label: "审计驾驶舱",
       href: "/audit-cockpit",
       target: "workspace"
     });
-    const projectUtilityIndex = sidebarUtilityNavigation.findIndex((item) => item.id === "projects");
-    expect(sidebarUtilityNavigation[projectUtilityIndex + 1]?.id).toBe("audit-cockpit");
   });
 
-  it("marks evidence chat as the core live module", () => {
-    const chat = primaryNavigation.find((item) => item.href === "/chat");
-
-    expect(chat).toMatchObject({
-      label: "审计助手",
-      emphasis: "primary",
-      target: "workspace"
-    });
-  });
-
-  it("does not expose legacy bridge routes as primary navigation", () => {
-    expect(primaryNavigation.map((item) => item.href)).not.toEqual(
-      expect.arrayContaining(["/guided-check", "/rules", "/remediation", "/archive"])
-    );
-  });
-
-  it("keeps secondary workspace routes addressable outside the primary sidebar", () => {
-    expect(secondaryNavigation.map((item) => item.href)).toEqual(["/guided-check", "/rules", "/remediation", "/archive"]);
-    expect(findNavigationItemForPath("/rules")).toMatchObject({
-      label: "规则库",
-      target: "workspace"
-    });
-  });
-
-  it("keeps the sidebar visible layer to six common entries", () => {
+  it("keeps the sidebar visible layer to eight workbench entries", () => {
     expect(visiblePrimaryNavigation.map((item) => item.href)).toEqual([
-      "/workspace",
+      "/audit-cockpit",
       "/medical-audit",
       "/chat",
+      "/remediation",
+      "/reports",
       "/documents",
       "/ocr",
       "/archive"
     ]);
     expect(sidebarUtilityNavigation.map((item) => item.href)).toEqual(
-      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/audit-cockpit", "/rules", "/remediation", "/graph"])
+      expect.arrayContaining(["/agent-market", "/agents", "/analytics", "/projects", "/rules", "/graph"])
     );
     expect(sidebarUtilityNavigation.map((item) => item.href)).not.toEqual(
       expect.arrayContaining(systemNavigation.map((item) => item.href))
@@ -121,9 +94,11 @@ describe("primaryNavigation", () => {
       "系统管理"
     ]);
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
-      "/workspace",
+      "/audit-cockpit",
       "/medical-audit",
       "/chat",
+      "/remediation",
+      "/reports",
       "/documents",
       "/ocr",
       "/archive"

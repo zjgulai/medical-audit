@@ -42,23 +42,17 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("账号 / 工号")).toBeRequired();
     expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
     expect(screen.getByRole("checkbox", { name: "保持本机登录" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "联系信息中心" })).toHaveAttribute("href", "#support");
+    expect(screen.getByText("遇到问题联系信息中心")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "联系信息中心" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
-  it("keeps the information-center link connected to visible support guidance", () => {
+  it("keeps the information-center support text visible in the login form", () => {
     render(<LoginPage />);
 
-    const supportLink = screen.getByRole("link", { name: "联系信息中心" });
-    if (!(supportLink instanceof HTMLAnchorElement)) {
-      throw new TypeError("Expected the information-center link to be an anchor");
-    }
-    const supportHash = new URL(supportLink.href).hash;
-    const supportTarget = document.querySelector(supportHash);
-
-    expect(supportHash).toBe("#support");
-    expect(supportTarget).not.toBeNull();
-    expect(supportTarget).toBeVisible();
+    const supportText = screen.getByText("遇到问题联系信息中心");
+    expect(supportText).toBeVisible();
+    expect(supportText.tagName).not.toBe("A");
   });
 
   it("uses the compact card layout requested by the PPT feedback", () => {

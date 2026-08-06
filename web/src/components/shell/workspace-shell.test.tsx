@@ -30,10 +30,10 @@ describe("WorkspaceShell", () => {
     expect(mainNavigation).toHaveClass("grid");
     expect(screen.getByText("AI审计一体化协作平台")).toBeInTheDocument();
     expect(screen.getByTestId("audit-brand-lockup")).toBeInTheDocument();
-    for (const label of ["工作台", "医保审计专题", "审计助手", "文档检索", "项目归档"]) {
+    for (const label of ["审计驾驶舱", "医保审计专题", "审计助手", "文档检索", "项目归档"]) {
       expect(within(mainNavigation).getByText(label)).toBeInTheDocument();
     }
-    for (const label of ["我的智能体", "智能体广场", "知识库", "AI数据分析", "项目管理", "审计底稿/报告"]) {
+    for (const label of ["我的智能体", "智能体广场", "知识库", "AI数据分析", "项目管理"]) {
       expect(within(mainNavigation).queryByText(label)).not.toBeInTheDocument();
     }
     expect(screen.getByText("更多")).toBeInTheDocument();

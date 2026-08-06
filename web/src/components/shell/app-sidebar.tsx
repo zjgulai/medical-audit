@@ -45,7 +45,7 @@ function NavigationLink({
     <>
       <span
         aria-hidden="true"
-        className={`grid size-7 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] text-[11px] font-semibold ${
+        className={`grid h-7 w-8 shrink-0 place-items-center rounded-[var(--audit-radius-sm)] text-[10px] font-semibold leading-none ${
           isActive ? "bg-white/18 text-white" : "bg-[var(--audit-surface-subtle)] text-[var(--audit-primary)]"
         }`}
       >

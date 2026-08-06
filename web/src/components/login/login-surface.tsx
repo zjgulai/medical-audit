@@ -86,18 +86,16 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
                 <input className="size-4 rounded border-[var(--audit-line)]" type="checkbox" name="remember" />
                 保持本机登录
               </label>
-              <a className="audit-focus-ring rounded-[var(--audit-radius-sm)] px-2 py-1 text-sm font-semibold text-[var(--audit-primary)]" href="#support">
-                联系信息中心
-              </a>
+              <span className="text-sm text-[var(--audit-ink-subtle)]">遇到问题联系信息中心</span>
             </div>
           </div>
 
-          <button className="audit-focus-ring audit-btn audit-btn-primary mt-7 w-full" type="submit">
+          <button className="audit-focus-ring audit-btn audit-btn-primary mt-7 w-full py-3.5 text-base" type="submit">
             登录
           </button>
 
           <p id="support" className="audit-login-support">
-            账号由医院信息中心统一开通，如需协助，请联系院内管理员。
+            账号由医院信息中心统一开通，如需协助请联系院内管理员。
           </p>
         </form>
       </section>
