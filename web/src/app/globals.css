@@ -289,6 +289,199 @@ select {
   margin-top: 8px;
 }
 
+/* ─── Medical Audit: Filter Bar ──────────────────────────── */
+
+.replica-medical-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--audit-line-soft);
+  margin-bottom: 14px;
+}
+
+.replica-medical-rule-select {
+  min-width: 110px;
+}
+
+.replica-medical-count-pill {
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--audit-primary-soft);
+  color: var(--audit-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.replica-medical-filter-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ─── Medical Audit: Finding Card ───────────────────────── */
+
+.audit-finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-finding-list__footer {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--audit-ink-subtle);
+  text-align: right;
+}
+
+.audit-finding-card {
+  border: 1px solid var(--audit-line-soft);
+  border-radius: var(--audit-radius-md);
+  background: var(--audit-surface);
+  box-shadow: var(--audit-shadow-card);
+  padding: 12px 14px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.audit-finding-card:hover {
+  border-color: var(--audit-primary-line);
+  box-shadow: 0 4px 14px rgb(21 95 168 / 0.08);
+}
+
+.audit-finding-card.is-active {
+  border-color: var(--audit-primary);
+  background: var(--audit-primary-soft);
+  box-shadow: 0 0 0 2px var(--audit-primary-line);
+}
+
+.audit-finding-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.audit-finding-card__head input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.audit-finding-card__key {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--audit-ink);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audit-finding-card__key:hover {
+  color: var(--audit-primary);
+  text-decoration: underline;
+}
+
+.audit-finding-severity {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.audit-finding-severity--high {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.audit-finding-severity--medium {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.audit-finding-severity--low {
+  background: #f0fdf4;
+  color: #067647;
+}
+
+.audit-finding-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.audit-finding-status--pending-review {
+  background: var(--audit-primary-soft);
+  color: var(--audit-primary);
+}
+
+.audit-finding-status--confirmed-violation {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.audit-finding-status--needs-evidence {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.audit-finding-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--audit-ink-muted);
+}
+
+.audit-finding-card__amount {
+  font-weight: 600;
+  color: var(--audit-ink);
+}
+
+.audit-finding-card__date {
+  margin-left: auto;
+  color: var(--audit-ink-subtle);
+}
+
+.audit-finding-card__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--audit-line-soft);
+}
+
+.audit-finding-card__actions button {
+  padding: 3px 10px;
+  border-radius: var(--audit-radius-sm);
+  border: 1px solid var(--audit-line);
+  background: var(--audit-surface);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--audit-ink-muted);
+  cursor: pointer;
+  transition: border-color 100ms, color 100ms, background 100ms;
+}
+
+.audit-finding-card__actions button:first-child {
+  border-color: var(--audit-primary-line);
+  color: var(--audit-primary);
+}
+
+.audit-finding-card__actions button:first-child:hover {
+  background: var(--audit-primary-soft);
+}
+
 .audit-btn-primary:hover {
   border-color: var(--audit-primary-hover);
   background: var(--audit-primary-hover);

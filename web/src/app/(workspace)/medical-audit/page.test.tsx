@@ -391,7 +391,7 @@ describe("MedicalAuditPage", () => {
 
     render(<MedicalAuditPage />);
 
-    const findingButton = await screen.findByRole("button", { name: "finding-f044ebd309b659dc" });
+    const findingButton = await screen.findByRole("button", { name: "policy drug scope" });
     fireEvent.click(findingButton);
 
     const drawer = screen.getByLabelText("疑点详情");
@@ -408,7 +408,7 @@ describe("MedicalAuditPage", () => {
 
     render(<MedicalAuditPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "新建审计任务" }));
+    fireEvent.click(await screen.findByRole("button", { name: "新建任务" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("创建审计任务草稿");
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "创建复核任务" }));
 

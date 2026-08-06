@@ -241,29 +241,6 @@ function riskLabelFromSeverity(severity: string): Exclude<RiskFilter, "全部风
   return "低风险";
 }
 
-function riskClassFromSeverity(severity: string): string {
-  if (severity === "critical" || severity === "high") {
-    return "is-high";
-  }
-  if (severity === "medium") {
-    return "is-medium";
-  }
-  return "is-low";
-}
-
-function statusClassFromReviewStatus(status: string): string {
-  if (status === "confirmed-violation") {
-    return "is-danger";
-  }
-  if (status === "pending-review" || status === "needs-evidence") {
-    return "is-medium";
-  }
-  if (status === "closed") {
-    return "is-low";
-  }
-  return "is-muted";
-}
-
 function statusLabel(options: Record<string, string>, status: string): string {
   return options[status] ?? statusLabelFallback[status] ?? humanizeKey(status);
 }
@@ -969,52 +946,46 @@ function SmartAuditView({
         projectState={projectState}
       />
       <MetricCards auditState={auditState} sourceState={sourceState} reportState={reportState} />
-      <div className="replica-medical-rule-tabs" role="tablist" aria-label="规则筛选">
-        {ruleTabs.map((tab) => (
-          <button
-            aria-selected={activeRule === tab.id}
-            className={activeRule === tab.id ? "is-active" : ""}
-            key={tab.id}
-            role="tab"
-            type="button"
-            onClick={() => onRuleChange(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div className="replica-medical-toolbar">
-        <div>
-          <label className="replica-medical-select">
-            <span>风险</span>
-            <select value={riskFilter} onChange={(event) => onRiskFilterChange(event.target.value as RiskFilter)}>
-              {riskOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="replica-medical-select">
-            <span>复核状态</span>
-            <select value={reviewStatus} onChange={(event) => onReviewStatusChange(event.target.value)}>
-              <option value="">全部状态</option>
-              {Object.entries(statusOptions).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="replica-medical-tag is-blue">当前 {filteredFindings.length} 条</span>
-        </div>
-        <div>
+      <div className="replica-medical-filter-bar">
+        <label className="replica-medical-select replica-medical-rule-select">
+          <span>规则分类</span>
+          <select value={activeRule} onChange={(event) => onRuleChange(event.target.value as RuleFilter)}>
+            {ruleTabs.map((tab) => (
+              <option key={tab.id} value={tab.id}>
+                {tab.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="replica-medical-select">
+          <span>风险</span>
+          <select value={riskFilter} onChange={(event) => onRiskFilterChange(event.target.value as RiskFilter)}>
+            {riskOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="replica-medical-select">
+          <span>复核状态</span>
+          <select value={reviewStatus} onChange={(event) => onReviewStatusChange(event.target.value)}>
+            <option value="">全部状态</option>
+            {Object.entries(statusOptions).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="replica-medical-count-pill">{filteredFindings.length} 条</span>
+        <div className="replica-medical-filter-actions">
           <button
             className="replica-secondary-button"
             type="button"
             onClick={() => onDialog({ kind: "new-task" })}
           >
-            新建审计任务
+            新建任务
           </button>
           <button className="replica-primary-button" type="button" onClick={() => onDialog({ kind: "import" })}>
             批量导入
@@ -1268,75 +1239,67 @@ function FindingsTable({
     );
   }
   return (
-    <>
-      <div className="replica-medical-data-table">
-        <table>
-          <thead>
-            <tr>
-              <th aria-label="选择">选择</th>
-              <th>疑点键</th>
-              <th>规则/类型</th>
-              <th>源记录</th>
-              <th>科室/机构</th>
-              <th>涉及金额</th>
-              <th>风险</th>
-              <th>复核状态</th>
-              <th>证据</th>
-              <th>更新日期</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {findings.map((finding) => (
-              <tr className={selectedFindingKey === finding.finding_key ? "is-active" : ""} key={finding.finding_key}>
-                <td>
-                  <input
-                    aria-label={`选择 ${finding.finding_key}`}
-                    checked={selectedKeys.has(finding.finding_key)}
-                    type="checkbox"
-                    onChange={() => onToggleFinding(finding.finding_key)}
-                  />
-                </td>
-                <td>
-                  <button className="is-link-number" type="button" onClick={() => onSelectFinding(finding.finding_key)}>
-                    {finding.finding_key}
-                  </button>
-                </td>
-                <td>
-                  <span className="replica-medical-dimension">{findingTitle(finding)}</span>
-                </td>
-                <td>{findingSubject(finding)}</td>
-                <td>{findingDepartment(finding)}</td>
-                <td className="is-number">{formatCurrency(findingAmount(finding))}</td>
-                <td>
-                  <span className={`replica-medical-tag ${riskClassFromSeverity(finding.severity)}`}>
-                    {riskLabelFromSeverity(finding.severity)}
-                  </span>
-                </td>
-                <td>
-                  <span className={`replica-medical-tag ${statusClassFromReviewStatus(finding.review_status)}`}>
-                    {statusLabel(statusOptions, finding.review_status)}
-                  </span>
-                </td>
-                <td>{finding.evidence_items.length} 条</td>
-                <td>{formatDate(finding.updated_at)}</td>
-                <td>
-                  <button type="button" onClick={() => onDialog({ kind: "review", finding })}>
-                    复核
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="replica-medical-pagination">
-        <span>当前展示 {findings.length} 条生产疑点，分页由后端查询合同下一批接入。</span>
-        <button className="is-active" type="button">
-          1
-        </button>
-      </div>
-    </>
+    <div className="audit-finding-list">
+      {findings.map((finding) => {
+        const isSelected = selectedFindingKey === finding.finding_key;
+        const isChecked = selectedKeys.has(finding.finding_key);
+        const amount = findingAmount(finding);
+        return (
+          <article
+            key={finding.finding_key}
+            className={`audit-finding-card ${isSelected ? "is-active" : ""} ${isChecked ? "is-checked" : ""}`}
+            aria-current={isSelected ? "true" : undefined}
+          >
+            <div className="audit-finding-card__head">
+              <input
+                aria-label={`选择 ${finding.finding_key}`}
+                checked={isChecked}
+                type="checkbox"
+                onChange={() => onToggleFinding(finding.finding_key)}
+              />
+              <span className={`audit-finding-severity audit-finding-severity--${finding.severity}`}>
+                {riskLabelFromSeverity(finding.severity)}
+              </span>
+              <button
+                className="audit-finding-card__key"
+                type="button"
+                onClick={() => onSelectFinding(finding.finding_key)}
+              >
+                {findingTitle(finding)}
+              </button>
+              <span className={`audit-finding-status audit-finding-status--${finding.review_status.replace(/[^a-z-]/g, "")}`}>
+                {statusLabel(statusOptions, finding.review_status)}
+              </span>
+            </div>
+            <div className="audit-finding-card__meta">
+              <span>{findingSubject(finding)}</span>
+              {findingDepartment(finding) ? <span>{findingDepartment(finding)}</span> : null}
+              {amount !== null ? (
+                <span className="audit-finding-card__amount">涉及 {formatCurrency(amount)}</span>
+              ) : null}
+              {finding.evidence_items.length > 0 ? (
+                <span>{finding.evidence_items.length} 条证据</span>
+              ) : null}
+              <span className="audit-finding-card__date">{formatDate(finding.updated_at)}</span>
+            </div>
+            <div className="audit-finding-card__actions">
+              <button type="button" onClick={() => onDialog({ kind: "review", finding })}>
+                复核
+              </button>
+              <button type="button" onClick={() => onDialog({ kind: "new-task", finding })}>
+                建任务
+              </button>
+              <button type="button" onClick={() => onDialog({ kind: "report", finding })}>
+                加入报告
+              </button>
+            </div>
+          </article>
+        );
+      })}
+      <p className="audit-finding-list__footer">
+        当前展示 {findings.length} 条疑点，分页由后端查询合同下一批接入。
+      </p>
+    </div>
   );
 }
 
