@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-06-30
+updated: 2026-08-06
 owner: self
 source: human+ai
 ---
@@ -25,6 +25,90 @@ source: human+ai
 - 生产健康不代表 V1.0 产品闭环完成。
 
 ## 2. 当前状态冻结
+
+### 2.1 2026-08-06 生产+本地对齐基线
+
+状态口径：本节记录 2026-08-05 至 2026-08-06 多轮深度测试、Bug 修复、功能补齐和生产部署后的完整基线。生产与本地 main 完全同步，deploy_sha = `aa623e204a4c22d0e7577a32311fc701bbee6b24`。
+
+#### 已完成事项
+
+**生产部署与版本管理**
+
+- 本地 main 追赶了 origin/main 的 326 个 commit（`git pull --ff-only`），所有本地历史 codex/* 分支（60+ 条）已清理，仅保留 main 一条分支、一个 worktree。
+- 生产历次通过 deploy 脚本正式构建镜像部署，当前镜像 `3cb505f1ba6d`，deploy_sha = `aa623e20`，与 main HEAD 一致。
+- 所有过去的手动 `docker cp` 补丁已被正式镜像取代，生产代码状态干净。
+- `AGENTS.md`、`.gitignore`（排除本地草稿目录）等工程规范文件已提交并同步。
+
+**后端新增能力（2026-08-05/06）**
+
+- **整改独立 DB 表**：新增 `remediation_items` 表（SQL: `sql/remediation-items-schema-v1.sql`），生产已执行 migration。实现 `GET/POST /api/v1/remediation/items` 及 `POST .../status` 状态流转，6 个状态（待整改→整改中→待验收→验收通过/退回→已关闭）。
+- **整改 workbench 数据源统一**：`/remediation/workbench` 优先读取 `remediation_items` DB，不再用静态种子数据。当前 `evidence_grade=backend-db`，`backend=SqlAlchemyRemediationStore`。
+- **review-tasks 列表 API**：新增 `GET /api/v1/review-tasks`，返回 `review-tasks-list-v1` 格式，当前 13 条。
+- **知识查询 deepseek dialect 修复**：`MEDICAL_AUDIT_KB_ANSWER_PROVIDER=openai` + `MEDICAL_AUDIT_KB_ANSWER_PROVIDER_DIALECT=deepseek`，确保 DeepSeek JSON 模式 prompt 和引用标记验证正常工作。
+- **supervision-rules 单查自动 retry**：当规则类 collection 单查 citation marker 失败时，自动补充 `medical-insurance-laws` 重新检索，4/4 规则类查询现已 `generated`（含"分解住院""虚假住院"等典型场景）。
+- **question 输入大小限制**：`QueryRequest.question` 新增 `max_length=2000`，防止超大 payload。
+- **OCR workbench 全链路验收**：`/api/v1/ocr/extract` POST 端到端通过，`engine=deepseek-v4-pro+tesseract-chi_sim+eng`，`mapping_status=resolved`，Tesseract `chi_sim+eng+osd` 全部安装可用。
+- **合同审计 PDF 报告**：loop129 已合入，DeepSeek-assisted OCR + PDF 导出端到端通过（`generation_status=pass`，`evidence_grade=L4-authorized-live`）。
+- **httpx2 替换**：dev 依赖切换为 `httpx2`，消除 `StarletteDeprecationWarning`，981/981 测试通过。
+
+**前端页面合同状态**
+
+- 所有 19 个页面已更新为 `connected_first_batch`，无 `static_shell` 页面。
+- `/medical-audit`、`/fund-compliance`、`/guided-check`、`/ocr` 等之前为 static_shell 的页面全部关联了真实后端 API。
+
+**审计数据导入**
+
+- 生产 DB 已写入 5 条脱敏样本疑点（分解住院/过度诊疗/目录限制/虚假住院/重复收费），关联到演示项目 `MEDICAL-AUDIT-DEMO-2026`。
+- `/api/v1/audit-findings` 现返回 `total=5`，`generation_readiness.status=generated`。
+- `audit_tasks` 的 `project_id` 已正确关联到 `MEDICAL-AUDIT-DEMO-2026`。
+
+#### 生产能力现状（2026-08-06 验收值）
+
+| 指标 | 值 |
+|---|---|
+| deploy_sha | `aa623e20` (= main HEAD) |
+| 前端路由 | 23/23 全部 200 |
+| 知识库 collections | 25/25 可查询 |
+| KB chunks | 923,288 |
+| 疑点数据 | 5 条 |
+| review_tasks | 13 条 |
+| remediation_items | 4 条 |
+| report_entries | 13 条 |
+| report_templates | 3 个 active |
+| OCR | enabled, deepseek+tesseract |
+| 知识查询 (law) | generated ✅ |
+| 知识查询 (rules) | generated ✅ (retry) |
+| auth_mode | header_transition_layer |
+| 测试套件 | pytest 981/981, vitest 409/409 |
+
+#### 已知 debt（截至 2026-08-06）
+
+**Sprint 5 未完成（产品功能债）**
+
+1. **整改附件存储**：`attachment_count` 字段存在但无上传/下载路由；需对象存储（COS）支撑。
+2. **责任科室权限隔离**：`responsible_dept` 字段存在，但整改事项的科室可见性没有 RBAC 过滤。
+3. **结案门禁绑定真实 DB**：`closure_gates` 仍是静态种子数据，未从 `remediation_items.status` 动态计算。
+4. **报告签发冻结与电子签章**：`/reports/drafts` 已有草稿创建，但签发冻结（`POST /reports/drafts/{id}/signoff`）状态在 DB 中未持久化到 `review_tasks`。
+5. **独立整改 DB 表完整化**：缺少整改验收退回记录、案件级整改归档。
+
+**Sprint 6 未完成（上线加固债）**
+
+6. **SSO 可信代理接入**：`auth_mode=header_transition_layer`，Legacy header 仍可构造，生产写入型权限 E2E 不得开始。
+7. **数据备份恢复演练**：脚本存在（`scripts/deploy-tencent-cloud-production.py` 含备份逻辑），但未做完整 `pg_restore` 验证。
+8. **生产告警 webhook**：`MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL=` 为空，audit log 巡检 cron 已启用但无外部通知。
+9. **压测覆盖**：查询/任务运行/报告导出关键路径未做压测。
+10. **UAT 脚本和培训材料**：面向医院方的验收脚本和操作手册未完成。
+
+**长期架构债**
+
+11. **supervision-rules-knowledge 索引质量**：chunking 粒度过粗，"分解住院"等定义 chunk 被通用字段模板淹没；当前通过 auto-retry 补充 medical-insurance-laws 缓解，根本修复需要 re-chunk + 重建 embedding。
+12. **审计数据为样本数据**：生产 5 条疑点均为脱敏手工插入，非来自真实 HIS 规则引擎运行；需接入真实 HIS 数据后重新运行规则评审。
+13. **部署机制**：`deploy-tencent-cloud-production.py` Docker build 因网络限速（~3KB/s pypi 下载）每次耗时 60-90 分钟；建议引入私有 pypi 镜像或 BuildKit 缓存层。
+14. **`visible_project_keys` 项目可见性 bug**：`list_findings` 用 project_key（字符串）过滤，但 `visible_project_keys` 返回项目 UUID；当前通过 admin 角色全可见绕过，非 admin 用户在只属于单个项目时仍能看到所有疑点，需对齐。
+
+冻结日期：`2026-08-06`
+
+---
 
 ### 2.0 2026-06-21 本地版本状态
 

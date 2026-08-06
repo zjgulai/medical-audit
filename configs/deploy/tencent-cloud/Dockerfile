@@ -6,7 +6,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_HTTP_TIMEOUT=120 \
+    UV_HTTP_TIMEOUT=180 \
     UV_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
 
 RUN apt-get update \
@@ -16,15 +16,20 @@ RUN apt-get update \
         tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy dependency manifests first so the uv sync layer is cached
+# as long as pyproject.toml and uv.lock do not change.
 COPY pyproject.toml uv.lock README.md ./
+
+RUN uv sync --frozen --no-dev --no-editable
+
+# Copy the rest of the source after dependencies are installed
 COPY configs ./configs
 COPY scripts ./scripts
 COPY sql ./sql
 COPY src ./src
 COPY web/out ./web/out
 
-RUN uv sync --frozen --no-dev --no-editable \
-    && chmod +x scripts/serve-chat-workbench-container.py
+RUN chmod +x scripts/serve-chat-workbench-container.py
 
 EXPOSE 8000
 
