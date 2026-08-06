@@ -16,17 +16,18 @@ RUN apt-get update \
         tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency manifests first so the uv sync layer is cached
-# as long as pyproject.toml and uv.lock do not change.
+# Copy manifests and source together: uv sync --no-editable installs the
+# local package from src/, so src/ must be present at sync time.
+# Static assets (configs/scripts/sql/web/out) are copied after sync so
+# that code-only changes reuse the cached dependency layer above.
 COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
 
 RUN uv sync --frozen --no-dev --no-editable
 
-# Copy the rest of the source after dependencies are installed
 COPY configs ./configs
 COPY scripts ./scripts
 COPY sql ./sql
-COPY src ./src
 COPY web/out ./web/out
 
 RUN chmod +x scripts/serve-chat-workbench-container.py
