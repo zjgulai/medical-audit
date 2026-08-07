@@ -91,7 +91,7 @@ describe("AuditCockpit", () => {
     fireEvent.click(screen.getByText("查看数据完整性"));
     expect(screen.getByText("项目数据").closest("div")).toHaveTextContent("项目证据已同步");
     expect(screen.queryByText("ready")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入项目管理" })).toHaveAttribute("href", "/projects");
+    expect(screen.getByRole("link", { name: "项目管理" })).toHaveAttribute("href", "/projects");
   });
 
   it("retries a failed project-list request without rendering fixture data", async () => {

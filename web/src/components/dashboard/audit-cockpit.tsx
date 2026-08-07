@@ -115,7 +115,12 @@ export function AuditCockpit() {
               <option key={project.id} value={project.id}>{project.name}</option>
             ))}
           </select>
-          <Link href="/projects">进入项目管理</Link>
+          <div className="audit-cockpit-project-actions">
+            {selectedProjectId ? (
+              <Link href={`/medical-audit?project=${encodeURIComponent(selectedProjectId)}`}>进入医保审计</Link>
+            ) : null}
+            <Link href="/projects">项目管理</Link>
+          </div>
         </div>
       </header>
 

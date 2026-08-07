@@ -24,6 +24,12 @@ import type {
 
 import MedicalAuditPage from "./page";
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/medical-audit"
+}));
+
 vi.mock("@/lib/api-client", () => ({
   addMedicalAuditFindingToReport: vi.fn(),
   createMedicalAuditReviewTask: vi.fn(),
@@ -333,9 +339,7 @@ describe("MedicalAuditPage", () => {
     expect(screen.getByText("知识检索可用")).toBeInTheDocument();
     expect(screen.queryByText(/检索后端/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SqlAlchemyAuditFindingStore/)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
-    expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
-    expect(screen.getByText("张主任")).toBeInTheDocument();
+    expect(screen.getByText("医保基金使用合规专项自查")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开医保审计助手" })).toHaveAttribute(
       "data-layout-floating-control",
       "medical-ai"
@@ -378,9 +382,7 @@ describe("MedicalAuditPage", () => {
       expect(screen.getAllByText("finding-f044ebd309b659dc").length).toBeGreaterThanOrEqual(1);
     });
 
-    expect(screen.getByRole("heading", { name: "专题项目待恢复" })).toBeInTheDocument();
-    expect(screen.getByText("专题驾驶舱等待项目数据恢复")).toBeInTheDocument();
-    expect(screen.getByText("专题数据暂不可用")).toBeInTheDocument();
+    expect(screen.getByText("专题项目待恢复")).toBeInTheDocument();
     expect(screen.queryByText("专题驾驶舱等待项目接口恢复")).not.toBeInTheDocument();
     expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
   });

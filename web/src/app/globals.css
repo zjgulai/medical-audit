@@ -1129,6 +1129,12 @@ select {
   text-decoration: none;
 }
 
+.audit-cockpit-project-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
 .audit-cockpit-project-strip {
   display: flex;
   align-items: center;
@@ -5940,7 +5946,85 @@ select {
 }
 
 @media (max-width: 640px) {
-  .replica-medical-project-panel {
+.replica-medical-project-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 16px 0;
+  border: 1px solid #dfe7f1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 16px;
+  flex-wrap: wrap;
+}
+
+.replica-medical-project-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.replica-medical-project-bar-title span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--audit-ink-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.replica-medical-project-bar-title strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--audit-ink);
+}
+
+.replica-medical-project-bar-title em {
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  border-radius: 999px;
+  background: var(--audit-primary-soft);
+  color: var(--audit-primary);
+  padding: 2px 8px;
+}
+
+.replica-medical-project-bar-flow {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.replica-medical-project-bar-flow > div {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 14px;
+  border-left: 1px solid var(--audit-line-soft);
+}
+
+.replica-medical-project-bar-flow > div:first-child {
+  border-left: none;
+}
+
+.replica-medical-project-bar-flow span {
+  font-size: 11px;
+  color: var(--audit-ink-subtle);
+}
+
+.replica-medical-project-bar-flow strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--audit-primary);
+}
+
+.replica-medical-project-bar-flow small {
+  font-size: 11px;
+  color: var(--audit-ink-subtle);
+}
+
+.replica-medical-project-panel {
     margin-inline: 12px;
     padding: 14px;
   }
