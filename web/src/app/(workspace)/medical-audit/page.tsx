@@ -387,6 +387,7 @@ export default function MedicalAuditPage() {
   const [workflowDialog, setWorkflowDialog] = useState<WorkflowDialog | null>(null);
   const [workflowActionState, setWorkflowActionState] = useState<WorkflowActionState>({ status: "idle" });
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
 
   const [auditState, setAuditState] = useState<LoadState<AuditFindingsResponse>>({
     status: "loading"
@@ -688,7 +689,7 @@ export default function MedicalAuditPage() {
   }
 
   return (
-    <div className="replica-medical-page">
+    <div className={`replica-medical-page ${isRulesOpen ? "" : "rules-collapsed"}`}>
       <h1 className="replica-medical-sr-title">医保审计</h1>
       <MedicalStatusRail
         activeTool={activeTool}
@@ -697,11 +698,13 @@ export default function MedicalAuditPage() {
       />
       <RuleNavigator
         activeRule={activeRule}
+        isOpen={isRulesOpen}
         medicalSources={medicalSources}
         searchQuery={searchQuery}
         sourceState={sourceState}
         onRuleChange={setActiveRule}
         onSearchChange={setSearchQuery}
+        onToggle={() => setIsRulesOpen((v) => !v)}
       />
       <section
         className={`replica-medical-content ${selectedFinding && activeView === "audit" ? "has-drawer" : ""} ${isAiOpen ? "has-drawer" : ""}`}
@@ -834,63 +837,82 @@ function MedicalStatusRail({
 
 function RuleNavigator({
   activeRule,
+  isOpen,
   medicalSources,
   searchQuery,
   sourceState,
   onRuleChange,
-  onSearchChange
+  onSearchChange,
+  onToggle
 }: {
   readonly activeRule: RuleFilter;
+  readonly isOpen: boolean;
   readonly medicalSources: readonly DocumentSourceCollectionCatalogItem[];
   readonly searchQuery: string;
   readonly sourceState: LoadState<DocumentSourceCollectionCatalogResponse>;
   readonly onRuleChange: (rule: RuleFilter) => void;
   readonly onSearchChange: (query: string) => void;
+  readonly onToggle: () => void;
 }) {
   return (
-    <aside className="replica-medical-rules">
-      <h2>审计规则与知识范围</h2>
-      <label className="replica-medical-search">
-        <span>搜</span>
-        <input
-          aria-label="搜索疑点、规则或源记录"
-          placeholder="搜索疑点、规则、源记录"
-          value={searchQuery}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </label>
-      <nav aria-label="规则分类">
-        <section>
-          <button className="is-active" type="button">
-            规则维度
-          </button>
-          <div>
-            {ruleTabs.map((tab) => (
-              <button
-                className={activeRule === tab.id ? "is-active" : ""}
-                key={tab.id}
-                type="button"
-                onClick={() => onRuleChange(tab.id)}
-              >
-                {tab.label}
+    <aside className={`replica-medical-rules ${isOpen ? "is-open" : "is-collapsed"}`} aria-label="规则与知识筛选">
+      <button
+        aria-expanded={isOpen}
+        aria-label={isOpen ? "收起规则面板" : "展开规则与知识库筛选"}
+        className="replica-medical-rules-toggle"
+        type="button"
+        onClick={onToggle}
+      >
+        <span aria-hidden="true">{isOpen ? "←" : "☰"}</span>
+        {isOpen ? <span>收起</span> : null}
+      </button>
+
+      {isOpen ? (
+        <>
+          <h2>规则与知识库</h2>
+          <label className="replica-medical-search">
+            <span>搜</span>
+            <input
+              aria-label="搜索疑点、规则或源记录"
+              placeholder="搜索疑点、规则、源记录"
+              value={searchQuery}
+              onChange={(event) => onSearchChange(event.target.value)}
+            />
+          </label>
+          <nav aria-label="规则分类">
+            <section>
+              <button className="is-active" type="button">
+                规则维度
               </button>
-            ))}
-          </div>
-        </section>
-        <section>
-          <button type="button">一级知识库</button>
-          <div>
-            {sourceState.status === "loading" ? <button type="button">正在加载知识库</button> : null}
-            {sourceState.status === "error" ? <button type="button">知识库分类读取异常</button> : null}
-            {medicalSources.slice(0, 9).map((source) => (
-              <button key={source.source_collection} title={source.description} type="button">
-                {source.label}
-              </button>
-            ))}
-            {medicalSources.length > 9 ? <button type="button">其余 {medicalSources.length - 9} 个</button> : null}
-          </div>
-        </section>
-      </nav>
+              <div>
+                {ruleTabs.map((tab) => (
+                  <button
+                    className={activeRule === tab.id ? "is-active" : ""}
+                    key={tab.id}
+                    type="button"
+                    onClick={() => onRuleChange(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section>
+              <button type="button">知识库范围</button>
+              <div>
+                {sourceState.status === "loading" ? <button type="button">正在加载</button> : null}
+                {sourceState.status === "error" ? <button type="button">读取异常</button> : null}
+                {medicalSources.slice(0, 9).map((source) => (
+                  <button key={source.source_collection} title={source.description} type="button">
+                    {source.label}
+                  </button>
+                ))}
+                {medicalSources.length > 9 ? <button type="button">+{medicalSources.length - 9} 个</button> : null}
+              </div>
+            </section>
+          </nav>
+        </>
+      ) : null}
     </aside>
   );
 }
@@ -1491,62 +1513,35 @@ function TemplateWorkbookView({
       <header className="replica-medical-table-head">
         <div>
           <h2>{config.title}</h2>
-          <span>{template ? "后端模板已注册" : "等待后端模板映射"}</span>
+          <span>{template ? "模板已就绪" : "待导入数据"}</span>
         </div>
         <div>
           <button className="replica-secondary-button" type="button" onClick={() => onDialog("new-task")}>
             创建审计任务
           </button>
           <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
-            导入模板文件
+            导入表格文件
           </button>
         </div>
       </header>
-      <div className="replica-medical-table-meta">
-        <span>
-          数据状态：<strong>{reportState.status === "ready" ? reportState.data.store.backend : "读取中"}</strong>
-        </span>
-        <span>
-          模板：<strong>{template?.name ?? config.title}</strong>
-        </span>
-        <span>
-          输出：<strong>{template?.output_type ?? "导入后生成审计底稿"}</strong>
-        </span>
-      </div>
-      <div className="replica-medical-summary-cards">
-        <article>
-          <span>导入目标</span>
-          <strong>{config.title}</strong>
-          <p>{config.description}</p>
-        </article>
-        <article>
-          <span>字段数量</span>
-          <strong>{columns.length}</strong>
-          <p>字段来自后端模板注册表或本地模板合同。</p>
-        </article>
-        <article>
-          <span>生产动作</span>
-          <strong>确认后执行</strong>
-          <p>本页面先进入导入门禁，不直接写入生产。</p>
-        </article>
-      </div>
-      <div className="replica-medical-data-table is-wide">
-        <table>
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {columns.map((column, index) => (
-                <td key={column}>{index === 0 ? "导入后由后端解析回填" : "待导入"}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
+
+      <div className="replica-medical-table-empty-guide">
+        <div>
+          <strong>如何导入 {config.title}？</strong>
+          <ol>
+            <li>点击右上角「导入表格文件」，上传从 HIS 导出的 Excel 文件</li>
+            <li>系统自动匹配字段，生成疑点规则运行所需的数据结构</li>
+            <li>导入完成后，返回「智能审计」视图即可查看生成的疑点</li>
+          </ol>
+          <p className="replica-medical-table-empty-desc">{config.description}</p>
+          <div className="replica-medical-table-columns-preview">
+            <span>模板包含 {columns.length} 个字段：</span>
+            <span>{columns.slice(0, 6).join(" · ")}{columns.length > 6 ? ` · ... 等 ${columns.length - 6} 项` : ""}</span>
+          </div>
+        </div>
+        <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
+          立即导入
+        </button>
       </div>
     </section>
   );

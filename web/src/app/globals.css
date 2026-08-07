@@ -5468,6 +5468,10 @@ select {
   background: #edf2f8;
 }
 
+.replica-medical-page.rules-collapsed {
+  --medical-rules: 40px;
+}
+
 .replica-medical-sr-title {
   position: absolute;
   width: 1px;
@@ -5543,9 +5547,49 @@ select {
 .replica-medical-rules {
   min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   border-right: 1px solid #dce5f0;
   background: #ffffff;
+  padding: 10px 8px 28px;
+  transition: padding 0.18s;
+}
+
+.replica-medical-rules.is-open {
   padding: 18px 14px 28px;
+}
+
+.replica-medical-rules.is-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 4px;
+}
+
+.replica-medical-rules-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #42526b;
+  cursor: pointer;
+  transition: background 0.12s;
+  margin-bottom: 4px;
+}
+
+.replica-medical-rules-toggle:hover {
+  background: #f0f4fa;
+}
+
+.replica-medical-rules.is-collapsed .replica-medical-rules-toggle {
+  justify-content: center;
+  padding: 6px;
+  font-size: 16px;
 }
 
 .replica-medical-rules h2 {
@@ -6743,6 +6787,58 @@ select {
   font-style: normal;
   font-weight: 780;
   padding: 3px 8px;
+}
+
+.replica-medical-table-empty-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border: 1px dashed var(--audit-line-soft);
+  border-radius: 16px;
+  background: var(--audit-surface-subtle);
+  padding: 28px 32px;
+  margin-top: 16px;
+}
+
+.replica-medical-table-empty-guide strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--audit-ink);
+  margin-bottom: 12px;
+}
+
+.replica-medical-table-empty-guide ol {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.replica-medical-table-empty-guide li {
+  font-size: 13px;
+  color: var(--audit-ink-body);
+  line-height: 1.5;
+}
+
+.replica-medical-table-empty-desc {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--audit-ink-muted);
+}
+
+.replica-medical-table-columns-preview {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--audit-ink-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.replica-medical-table-empty-guide > button {
+  align-self: flex-start;
 }
 
 .replica-medical-table-meta {

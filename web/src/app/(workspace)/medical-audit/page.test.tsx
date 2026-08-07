@@ -336,7 +336,6 @@ describe("MedicalAuditPage", () => {
     expect(screen.getByRole("heading", { name: "医保基金使用合规专项自查" })).toBeInTheDocument();
     expect(screen.getByText("核对非目录项目发生基金支付的结算明细")).toBeInTheDocument();
     expect(screen.getByText("张主任")).toBeInTheDocument();
-    expect(screen.getByText("医保法规库")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开医保审计助手" })).toHaveAttribute(
       "data-layout-floating-control",
       "medical-ai"
@@ -443,10 +442,10 @@ describe("MedicalAuditPage", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "费用汇总表" }));
 
     await waitFor(() => {
-      expect(screen.getByText("后端模板已注册")).toBeInTheDocument();
+      expect(screen.getByText("模板已就绪")).toBeInTheDocument();
     });
     expect(screen.getAllByText("医保费用汇总表").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("机构编码").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("导入后由后端解析回填")).toBeInTheDocument();
+    expect(screen.getByText(/机构编码/)).toBeInTheDocument();
+    expect(screen.getByText(/立即导入/)).toBeInTheDocument();
   });
 });
