@@ -74,7 +74,7 @@ describe("primaryNavigation", () => {
       "/chat",
       "/remediation",
       "/reports",
-      "/documents",
+      "/knowledge-base",
       "/ocr",
       "/archive"
     ]);
@@ -88,9 +88,8 @@ describe("primaryNavigation", () => {
 
   it("groups the sidebar around audit workbench concepts", () => {
     expect(navigationGroups.map((group) => group.label)).toEqual([
-      "常用入口",
-      "审计工具",
-      "依据与规则",
+      "审计工作流",
+      "工具支撑",
       "系统管理"
     ]);
     expect(navigationGroups[0].items.map((item) => item.href)).toEqual([
@@ -99,11 +98,11 @@ describe("primaryNavigation", () => {
       "/chat",
       "/remediation",
       "/reports",
-      "/documents",
+      "/knowledge-base",
       "/ocr",
       "/archive"
     ]);
-    expect(navigationGroups[3].items).toEqual(systemNavigation);
+    expect(navigationGroups[2].items).toEqual(systemNavigation);
   });
 
   it("keeps workbench home and backend system routes addressable for tabs", () => {

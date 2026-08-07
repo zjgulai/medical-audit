@@ -240,13 +240,11 @@ export default function KnowledgeBasePage() {
   const activeCategorySourceCollections = sourceCollectionsFromKnowledgeBases(activeCategoryItems);
   const activeCategoryDocumentsHref = knowledgeBaseCategoryDocumentsHref(activeCategorySourceCollections);
 
-  const unavailableState = knowledgeBaseData.status === "loading"
-    ? { title: "知识库加载中", description: "正在读取当前可访问的知识库目录。" }
-    : knowledgeBaseData.status === "error"
-      ? { title: "知识库读取失败", description: "当前无法读取知识库目录，请稍后重试。" }
-      : knowledgeBaseData.status === "empty" || knowledgeBases.length === 0
-        ? { title: "暂无可用知识库", description: "当前角色下没有可读取的知识库目录。" }
-        : null;
+  const unavailableState = knowledgeBaseData.status === "error"
+    ? { title: "知识库读取失败", description: "当前无法读取知识库目录，请稍后重试。" }
+    : knowledgeBaseData.status === "empty" || (knowledgeBaseData.status !== "loading" && knowledgeBases.length === 0)
+      ? { title: "暂无可用知识库", description: "当前角色下没有可读取的知识库目录。" }
+      : null;
 
   function recordKnowledgeBaseAction(item: ReplicaKnowledgeBaseItem, action: string) {
     setSelectedKnowledgeBaseId(item.id);
@@ -369,7 +367,17 @@ export default function KnowledgeBasePage() {
 
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
 
-        {unavailableState ? (
+        {knowledgeBaseData.status === "loading" ? (
+          <div className="replica-kb-skeleton-grid" aria-label="知识库加载中" aria-busy="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="replica-kb-skeleton-card">
+                <div className="replica-kb-skeleton-line replica-kb-skeleton-line--title" />
+                <div className="replica-kb-skeleton-line" />
+                <div className="replica-kb-skeleton-line replica-kb-skeleton-line--short" />
+              </div>
+            ))}
+          </div>
+        ) : unavailableState ? (
           <ReplicaEmptyState title={unavailableState.title} description={unavailableState.description} />
         ) : activeItems.length === 0 ? (
           <ReplicaEmptyState title="未找到知识库" description="调整关键词或切换分类后重试。" />

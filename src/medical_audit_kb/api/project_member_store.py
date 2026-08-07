@@ -552,6 +552,57 @@ def visible_project_keys(
     return frozenset(default_visible | custom_visible)
 
 
+def visible_project_keys_for_findings(
+    *,
+    user_identifier: str,
+    is_admin: bool,
+    store: ProjectMemberStore,
+) -> frozenset[str]:
+    normalized_user_identifier = _optional_str(user_identifier)
+    if normalized_user_identifier in {None, "anonymous"}:
+        return frozenset()
+    project_payloads = project_payloads_with_member_counts({}, store)
+    all_project_keys = frozenset(str(project["id"]) for project in project_payloads)
+    if is_admin:
+        return all_project_keys
+
+    default_visible = {
+        str(project["id"])
+        for project in project_payloads
+        if project.get("creator_user_identifier") == normalized_user_identifier
+    }
+    for project_key, default_members in DEFAULT_PROJECT_MEMBERS_BY_PROJECT.items():
+        if any(
+            member.get("status") == "在项目中"
+            and member.get("user_identifier") == normalized_user_identifier
+            for member in default_members
+        ):
+            default_visible.add(project_key)
+
+    custom_visible: set[str] = set()
+    has_any_custom_member_record = False
+    for project_key in all_project_keys:
+        custom_members = _effective_custom_project_members(
+            project_key,
+            store.list_members(project_key),
+        )
+        if custom_members:
+            has_any_custom_member_record = True
+        if any(
+            member.get("status") == "在项目中"
+            and _member_user_identifier(member) == normalized_user_identifier
+            for member in custom_members
+        ):
+            custom_visible.add(project_key)
+
+    # 私有化单院场景：若系统尚未为任何项目配置自定义成员，则认证用户默认可见
+    # 所有 default 项目（避免因 hardcoded fixture user_identifier 导致疑点查询为空）。
+    if not has_any_custom_member_record and not default_visible:
+        return all_project_keys
+
+    return frozenset(default_visible | custom_visible)
+
+
 def normalize_project_status(status: str) -> str:
     return "待开始" if status == "待启动" else status
 

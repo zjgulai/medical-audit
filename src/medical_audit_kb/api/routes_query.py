@@ -48,6 +48,7 @@ from medical_audit_kb.api.project_member_store import (
     project_exists,
     supports_persistent_project_writes,
     visible_project_keys,
+    visible_project_keys_for_findings,
 )
 from medical_audit_kb.api.query_history_store import (
     QueryHistoryNotFoundError,
@@ -1933,7 +1934,7 @@ def _visible_audit_finding_project_keys(
 ) -> frozenset[str]:
     store = _project_member_store_for_audit_findings(state)
     try:
-        return visible_project_keys(
+        return visible_project_keys_for_findings(
             user_identifier=user.user_identifier,
             is_admin=user.role is HospitalRole.ADMIN,
             store=store,

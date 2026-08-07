@@ -294,9 +294,11 @@ def _metrics_from_postgres(
     latest_by_collection: dict[SourceCollection, dict[str, object]] = {}
     totals: dict[str, int] = {}
     with (
-        psycopg.connect(psycopg_database_url(database_url), connect_timeout=2) as connection,
+        psycopg.connect(psycopg_database_url(database_url), connect_timeout=3) as connection,
         connection.cursor(row_factory=dict_row) as cursor,
     ):
+        cursor.execute("SET statement_timeout = '8s'")
+
         cursor.execute(
             """
             SELECT
@@ -304,10 +306,10 @@ def _metrics_from_postgres(
               COUNT(DISTINCT sd.id)::bigint AS document_count,
               COUNT(DISTINCT dc.id)::bigint AS chunk_count,
               COUNT(DISTINCT ce.id)::bigint AS embedding_count,
-              COUNT(DISTINCT ce.id) FILTER (
-                WHERE iv.status = 'active'
-              )::bigint AS active_embedding_count,
-              COALESCE(SUM(LENGTH(dc.text)), 0)::bigint AS character_count
+              COUNT(DISTINCT dc.id) FILTER (
+                WHERE iv.status = 'candidate'
+              )::bigint AS candidate_chunk_count,
+              COALESCE(SUM(DISTINCT LENGTH(dc.text)), 0)::bigint AS character_count
             FROM source_documents sd
             LEFT JOIN document_chunks dc ON dc.source_document_id = sd.id
             LEFT JOIN chunk_embeddings ce ON ce.chunk_id = dc.id
@@ -324,33 +326,10 @@ def _metrics_from_postgres(
                 document_count=_int_value(row.get("document_count")),
                 chunk_count=_int_value(row.get("chunk_count")),
                 embedding_count=_int_value(row.get("embedding_count")),
-                active_embedding_count=_int_value(row.get("active_embedding_count")),
-                candidate_chunk_count=0,
+                active_embedding_count=0,
+                candidate_chunk_count=_int_value(row.get("candidate_chunk_count")),
                 character_count=_int_value(row.get("character_count")),
                 linked_app_count=1,
-            )
-
-        cursor.execute(
-            """
-            SELECT
-              sd.source_collection AS collection,
-              COUNT(DISTINCT dc.id)::bigint AS candidate_chunk_count
-            FROM index_versions iv
-            JOIN source_documents sd
-              ON sd.source_package_version_id = iv.source_package_version_id
-            JOIN document_chunks dc
-              ON dc.source_document_id = sd.id
-            WHERE iv.status = 'candidate'
-            GROUP BY sd.source_collection
-            """
-        )
-        for row in cursor.fetchall():
-            collection = _collection_from_row(row.get("collection"))
-            if collection is None:
-                continue
-            current = metrics_by_collection.get(collection, _empty_metrics())
-            metrics_by_collection[collection] = current.model_copy(
-                update={"candidate_chunk_count": _int_value(row.get("candidate_chunk_count"))}
             )
 
         cursor.execute(

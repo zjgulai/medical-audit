@@ -933,10 +933,12 @@ def remediation_workbench(
         }
         remediation_cases: tuple[dict[str, object], ...] = tuple(db_items)
         evidence_grade = "backend-db"
+        closure_gates: tuple[dict[str, object], ...] = _dynamic_closure_gates(db_items)
     else:
         metrics = _remediation_metrics()
         remediation_cases = REMEDIATION_CASES
         evidence_grade = "local-readonly-api"
+        closure_gates = REMEDIATION_CLOSURE_GATES
 
     record_operation(
         state,
@@ -956,7 +958,7 @@ def remediation_workbench(
         "workbench_scope": "把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。",
         "remediation_cases": remediation_cases,
         "evidence_requests": REMEDIATION_EVIDENCE_REQUESTS,
-        "closure_gates": REMEDIATION_CLOSURE_GATES,
+        "closure_gates": closure_gates,
         "timeline": REMEDIATION_TIMELINE,
         "metrics": metrics,
         "evidence_grade": evidence_grade,
@@ -1587,6 +1589,62 @@ def _rules_metrics() -> dict[str, object]:
         "source_count": len(RULE_SOURCE_COVERAGES),
         "run_count": len(RULE_RUN_SNAPSHOTS),
     }
+
+
+def _dynamic_closure_gates(
+    db_items: list[dict[str, object]],
+) -> tuple[dict[str, object], ...]:
+    has_pending_acceptance = any(i["status"] == "pending-acceptance" for i in db_items)
+    has_rejected = any(i["status"] == "rejected" for i in db_items)
+    all_resolved = all(
+        i["status"] in {"closed", "accepted"} for i in db_items
+    ) if db_items else False
+
+    return (
+        {
+            "id": "remediation-gate-evidence",
+            "label": "补证材料完整",
+            "status": (
+                "阻断" if has_pending_acceptance
+                else ("通过" if all_resolved else "待人工确认")
+            ),
+            "detail": (
+                "仍有事项处于待验收状态，需上传补证附件后方可闭环。"
+                if has_pending_acceptance
+                else (
+                    "所有事项已通过补证核验。"
+                    if all_resolved
+                    else "整改进行中，补证材料待逐项归档。"
+                )
+            ),
+            "owner": "信息科",
+        },
+        {
+            "id": "remediation-gate-owner",
+            "label": "责任科室确认",
+            "status": "阻断" if has_rejected else ("通过" if all_resolved else "待人工确认"),
+            "detail": "存在验收退回事项，责任科室需重新确认整改措施。" if has_rejected else (
+                "所有责任科室已确认。" if all_resolved else "部分事项责任科室确认尚未完成。"
+            ),
+            "owner": "项目负责人",
+        },
+        {
+            "id": "remediation-gate-review",
+            "label": "审计验收结论",
+            "status": "通过" if all_resolved else "待人工确认",
+            "detail": "所有整改事项已结案，可提交验收结论。" if all_resolved else (
+                "整改说明不能自动关闭，必须由审计员逐项记录验收结论。"
+            ),
+            "owner": "审计员",
+        },
+        {
+            "id": "remediation-gate-archive",
+            "label": "归档前检查",
+            "status": "通过" if all_resolved else "待人工确认",
+            "detail": "已关闭事项可进入项目档案，未关闭事项继续留在整改台账。",
+            "owner": "信息科",
+        },
+    )
 
 
 def _remediation_metrics() -> dict[str, object]:

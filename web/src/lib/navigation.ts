@@ -221,47 +221,41 @@ export const visiblePrimaryNavigation: readonly NavigationItem[] = [
   requireNavigationItemById("ai-chat"),
   requireNavigationItemById("remediation"),
   requireNavigationItemById("reports"),
-  requireNavigationItemById("documents"),
+  requireNavigationItemById("knowledge-base"),
   requireNavigationItemById("text-ocr"),
   requireNavigationItemById("archive")
 ];
 
 export const sidebarUtilityNavigation: readonly NavigationItem[] = [
-  requireNavigationItemById("agent-market"),
-  requireNavigationItemById("my-agents"),
-  requireNavigationItemById("knowledge-base"),
+  requireNavigationItemById("documents"),
   requireNavigationItemById("analytics"),
-  requireNavigationItemById("projects"),
+  requireNavigationItemById("agent-market"),
   requireNavigationItemById("rules"),
-  requireNavigationItemById("guided-check"),
   requireNavigationItemById("graph"),
+  requireNavigationItemById("projects"),
+  requireNavigationItemById("my-agents"),
+  requireNavigationItemById("guided-check"),
   requireNavigationItemById("workspace")
 ];
 
 export const navigationGroups: readonly NavigationGroup[] = [
   {
-    id: "primary",
-    label: "常用入口",
+    id: "workflow",
+    label: "审计工作流",
     items: visiblePrimaryNavigation
   },
   {
-    id: "audit-tools",
-    label: "审计工具",
+    id: "tools",
+    label: "工具支撑",
     items: [
-      requireNavigationItemById("agent-market"),
-      requireNavigationItemById("my-agents"),
+      requireNavigationItemById("documents"),
       requireNavigationItemById("analytics"),
-      requireNavigationItemById("projects"),
-      requireNavigationItemById("guided-check")
-    ]
-  },
-  {
-    id: "evidence",
-    label: "依据与规则",
-    items: [
-      requireNavigationItemById("knowledge-base"),
+      requireNavigationItemById("agent-market"),
+      requireNavigationItemById("rules"),
       requireNavigationItemById("graph"),
-      requireNavigationItemById("rules")
+      requireNavigationItemById("projects"),
+      requireNavigationItemById("my-agents"),
+      requireNavigationItemById("guided-check")
     ]
   },
   {

@@ -12875,7 +12875,57 @@ button.replica-graph-node.is-selected {
   }
 
   .ocr-result-actions {
-    display: grid;
+     display: grid;
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+@media (max-width: 600px) {
+  .replica-medical-filter-bar {
+    gap: 6px;
+    padding: 8px 0 10px;
+  }
+
+  .replica-medical-filter-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+
+.replica-kb-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.replica-kb-skeleton-card {
+  border: 1px solid var(--audit-line-soft);
+  border-radius: var(--audit-radius-md);
+  padding: 16px;
+  background: var(--audit-surface);
+}
+
+.replica-kb-skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--audit-surface-subtle) 25%, #e8eef6 50%, var(--audit-surface-subtle) 75%);
+  background-size: 200% 100%;
+  animation: replica-skeleton-shimmer 1.5s infinite;
+  margin-bottom: 8px;
+}
+
+.replica-kb-skeleton-line--title {
+  height: 18px;
+  width: 65%;
+  margin-bottom: 10px;
+}
+
+.replica-kb-skeleton-line--short {
+  width: 40%;
+}
+
+@keyframes replica-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
