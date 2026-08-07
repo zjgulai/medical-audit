@@ -900,13 +900,28 @@ def remediation_workbench(
                         "id": str(it.id),
                         "item_key": it.item_key,
                         "title": it.title,
-                        "status": it.status,
+                        "status": _remediation_status_label(it.status),
+                        "status_key": it.status,
+                        "department": it.responsible_dept or "待指定",
                         "responsible_dept": it.responsible_dept,
+                        "owner": it.responsible_dept or "待指定",
+                        "reportNo": it.item_key,
+                        "sourceFinding": str(it.audit_finding_id) if it.audit_finding_id else "",
+                        "dueDate": it.due_date.isoformat() if it.due_date else "待定",
                         "due_date": it.due_date.isoformat() if it.due_date else None,
                         "progress": 100 if it.status == "closed" else (
                             75 if it.status in {"pending-acceptance", "accepted"} else
                             50 if it.status == "in-rectification" else 0
                         ),
+                        "evidenceStatus": (
+                            "已验收" if it.status in {"accepted", "closed"} else
+                            "需退回" if it.status == "rejected" else
+                            "已提交" if it.status == "pending-acceptance" else
+                            "待补证"
+                        ),
+                        "nextAction": _remediation_next_action(it.status),
+                        "href": f"/remediation?item={it.id}",
+                        "attachment_count": it.attachment_count,
                     }
                     for it in items
                 ]
@@ -916,12 +931,12 @@ def remediation_workbench(
 
     if db_items:
         case_count = len(db_items)
-        active_count = sum(1 for i in db_items if i["status"] != "closed")
+        active_count = sum(1 for i in db_items if i.get("status_key") != "closed")
         closed_count = case_count - active_count
         total_progress = sum(cast(int, i["progress"]) for i in db_items)
         avg_progress = round(total_progress / case_count) if case_count else 0
-        pending_accept = sum(1 for i in db_items if i["status"] == "pending-acceptance")
-        rejected_count = sum(1 for i in db_items if i["status"] == "rejected")
+        pending_accept = sum(1 for i in db_items if i.get("status_key") == "pending-acceptance")
+        rejected_count = sum(1 for i in db_items if i.get("status_key") == "rejected")
         metrics: dict[str, object] = {
             "case_count": case_count,
             "active_case_count": active_count,
@@ -1591,13 +1606,40 @@ def _rules_metrics() -> dict[str, object]:
     }
 
 
+_REMEDIATION_STATUS_LABELS: dict[str, str] = {
+    "pending-rectification": "待整改",
+    "in-rectification": "整改中",
+    "pending-acceptance": "待验收",
+    "accepted": "验收通过",
+    "rejected": "验收退回",
+    "closed": "已关闭",
+}
+
+_REMEDIATION_NEXT_ACTIONS: dict[str, str] = {
+    "pending-rectification": "启动整改措施",
+    "in-rectification": "提交验收申请",
+    "pending-acceptance": "等待验收结论",
+    "accepted": "办理结案手续",
+    "rejected": "修正整改方案后重新提交",
+    "closed": "已完成，归档留存",
+}
+
+
+def _remediation_status_label(status: str) -> str:
+    return _REMEDIATION_STATUS_LABELS.get(status, status)
+
+
+def _remediation_next_action(status: str) -> str:
+    return _REMEDIATION_NEXT_ACTIONS.get(status, "联系项目负责人")
+
+
 def _dynamic_closure_gates(
     db_items: list[dict[str, object]],
 ) -> tuple[dict[str, object], ...]:
-    has_pending_acceptance = any(i["status"] == "pending-acceptance" for i in db_items)
-    has_rejected = any(i["status"] == "rejected" for i in db_items)
+    has_pending_acceptance = any(i.get("status_key") == "pending-acceptance" for i in db_items)
+    has_rejected = any(i.get("status_key") == "rejected" for i in db_items)
     all_resolved = all(
-        i["status"] in {"closed", "accepted"} for i in db_items
+        i.get("status_key") in {"closed", "accepted"} for i in db_items
     ) if db_items else False
 
     return (

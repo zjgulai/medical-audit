@@ -513,6 +513,26 @@ export function fetchRemediationWorkbench(): Promise<RemediationWorkbenchRespons
   return getJsonWithAuditHeaders<RemediationWorkbenchResponse>("/api/v1/remediation/workbench");
 }
 
+export function updateRemediationItemStatus(
+  itemId: string,
+  status: string,
+  note: string = ""
+): Promise<{ format: string; item: Record<string, unknown> }> {
+  return postJson(
+    `/api/v1/remediation/items/${encodeURIComponent(itemId)}/status`,
+    { status, note }
+  );
+}
+
+export function fetchRemediationItems(): Promise<{
+  format: string;
+  items: readonly Record<string, unknown>[];
+  count: number;
+  status_options: Record<string, string>;
+}> {
+  return getJsonWithAuditHeaders("/api/v1/remediation/items");
+}
+
 export async function uploadRemediationAttachment(
   itemId: string,
   file: File

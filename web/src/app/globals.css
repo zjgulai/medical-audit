@@ -1048,6 +1048,92 @@ select {
   line-height: 1.4;
 }
 
+.workspace-pending-review {
+  border: 1px solid var(--audit-line-soft);
+  border-radius: 16px;
+  background: var(--audit-surface);
+  padding: 20px 24px;
+}
+
+.workspace-pending-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.workspace-pending-review-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--audit-ink);
+}
+
+.workspace-pending-review-head a {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--audit-primary);
+  text-decoration: none;
+}
+
+.workspace-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--audit-line-soft);
+  border-radius: 10px;
+  background: var(--audit-surface-subtle);
+  transition: border-color 0.12s;
+}
+
+.workspace-pending-item:hover {
+  border-color: var(--audit-primary);
+}
+
+.workspace-pending-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-pending-info strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--audit-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-pending-info small {
+  font-size: 11px;
+  color: var(--audit-ink-subtle);
+}
+
+.workspace-pending-action {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--audit-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.workspace-pending-empty {
+  font-size: 13px;
+  color: #2e7d32;
+  font-weight: 600;
+  margin: 0;
+  padding: 8px 0;
+}
+
 .audit-cockpit-hero {
   position: relative;
   display: flex;
@@ -5073,6 +5159,47 @@ select {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.remediation-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.remediation-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.remediation-status-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remediation-note-input {
+  border: 1px solid var(--audit-line-soft);
+  border-radius: var(--audit-radius-sm);
+  padding: 5px 10px;
+  font-size: 12px;
+  width: 220px;
+  background: var(--audit-surface);
+  color: var(--audit-ink-body);
+}
+
+.remediation-note-input:focus {
+  outline: none;
+  border-color: var(--audit-primary);
+}
+
+.remediation-status-done {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2e7d32;
 }
 
 .remediation-upload-success {

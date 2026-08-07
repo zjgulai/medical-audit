@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchRemediationWorkbench, uploadRemediationAttachment } from "@/lib/api-client";
+import {
+  fetchRemediationWorkbench,
+  updateRemediationItemStatus,
+  uploadRemediationAttachment
+} from "@/lib/api-client";
 import type { RemediationWorkbenchResponse } from "@/lib/api-types";
 
 import {

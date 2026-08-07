@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { fetchAuditFindings, fetchRemediationWorkbench } from "@/lib/api-client";
-import type { AuditFindingsResponse, RemediationWorkbenchResponse } from "@/lib/api-types";
+import type { AuditFinding, AuditFindingsResponse, RemediationWorkbenchResponse } from "@/lib/api-types";
 import { useAuditUser } from "@/components/shell/audit-user-context";
 
 const QUICK_LINKS = [
@@ -16,12 +16,32 @@ const QUICK_LINKS = [
   { href: "/knowledge-base", label: "知识库", desc: "法规、规则和政策文件", tone: "rose" }
 ] as const;
 
+const SEVERITY_LABEL: Record<string, string> = {
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险"
+};
+
+const SEVERITY_CLASS: Record<string, string> = {
+  high: "audit-finding-severity--high",
+  medium: "audit-finding-severity--medium",
+  low: "audit-finding-severity--low"
+};
+
 type WorkspaceData = {
   readonly pendingReview: number;
   readonly blockedGates: number;
   readonly totalFindings: number;
   readonly activeRemediation: number;
+  readonly pendingFindings: readonly AuditFinding[];
 };
+
+function findingDisplayTitle(finding: AuditFinding): string {
+  const meta = finding.metadata as Record<string, unknown> | null;
+  if (meta?.title && typeof meta.title === "string") return meta.title;
+  if (meta?.display_name && typeof meta.display_name === "string") return meta.display_name;
+  return finding.finding_type.replace(/_/g, " ");
+}
 
 export default function WorkspacePage() {
   const auditUser = useAuditUser();
@@ -31,15 +51,17 @@ export default function WorkspacePage() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
+      fetchAuditFindings("pending-review").catch((): AuditFindingsResponse | null => null),
       fetchAuditFindings().catch((): AuditFindingsResponse | null => null),
       fetchRemediationWorkbench().catch((): RemediationWorkbenchResponse | null => null)
-    ]).then(([findings, remediation]) => {
+    ]).then(([pendingFindings, allFindings, remediation]) => {
       if (cancelled) return;
       setData({
-        pendingReview: findings?.stats.pending_review ?? 0,
-        totalFindings: findings?.stats.total ?? 0,
+        pendingReview: allFindings?.stats.pending_review ?? 0,
+        totalFindings: allFindings?.stats.total ?? 0,
         blockedGates: remediation?.metrics.blocked_gate_count ?? 0,
-        activeRemediation: remediation?.metrics.active_case_count ?? 0
+        activeRemediation: remediation?.metrics.active_case_count ?? 0,
+        pendingFindings: pendingFindings?.items.slice(0, 5) ?? []
       });
       setLoading(false);
     });
@@ -85,6 +107,38 @@ export default function WorkspacePage() {
           <Link href="/remediation">跟踪进度</Link>
         </article>
       </section>
+
+      {!loading ? (
+        <section className="workspace-pending-review" aria-label="今日待复核">
+          <div className="workspace-pending-review-head">
+            <h2>待复核疑点</h2>
+            <Link href="/medical-audit">查看全部</Link>
+          </div>
+          {data && data.pendingFindings.length > 0 ? (
+            <div className="workspace-pending-list">
+              {data.pendingFindings.map((finding) => (
+                <article key={finding.finding_key} className="workspace-pending-item">
+                  <span className={`audit-finding-severity ${SEVERITY_CLASS[finding.severity] ?? ""}`}>
+                    {SEVERITY_LABEL[finding.severity] ?? finding.severity}
+                  </span>
+                  <div className="workspace-pending-info">
+                    <strong>{findingDisplayTitle(finding)}</strong>
+                    <small>{finding.finding_key}</small>
+                  </div>
+                  <Link
+                    className="workspace-pending-action"
+                    href={`/medical-audit?finding=${encodeURIComponent(finding.finding_key)}`}
+                  >
+                    进入复核 →
+                  </Link>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="workspace-pending-empty">暂无待复核疑点，审计进度良好 ✓</p>
+          )}
+        </section>
+      ) : null}
 
       <section className="workspace-home-links" aria-label="常用功能入口">
         <h2>常用功能</h2>
