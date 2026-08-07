@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-06
+updated: 2026-08-07
 owner: self
 source: human+ai
 ---
@@ -25,6 +25,85 @@ source: human+ai
 - 生产健康不代表 V1.0 产品闭环完成。
 
 ## 2. 当前状态冻结
+
+### 2.2 2026-08-07 Sprint 1-4 完整基线（最新）
+
+状态口径：本节记录 2026-08-07 多轮 sprint 执行、对抗性 UI 审计、Bug 修复和生产部署后的完整基线。生产与本地 main 完全同步，deploy_sha = `484c348fe9aadc2771a5d4683cc2822b9ea815af`。
+
+#### 本轮已完成事项（2026-08-07）
+
+**工程治理**
+
+- 84 条 `origin/codex/*` 历史分支全部清理，远端仅保留 `main`。
+- 预先存在的 Dockerfile `UV_HTTP_TIMEOUT` 测试不一致（120 vs 180）已修复。
+- 测试套件：pytest 核心 API 套件通过，vitest 406/406 通过，ruff/mypy 全绿。
+
+**后端新增能力（Sprint 3）**
+
+- **`visible_project_keys_for_findings` bug 修复**：私有化单院场景下，无自定义成员配置时认证用户默认可见所有 default 项目；疑点查询不再对非 admin 用户返回空集。
+- **知识库 catalog SQL 性能优化**：4 个串行 SQL → 3 个，去掉 `COUNT(DISTINCT chunk_embeddings) FILTER (WHERE status='active')` 全表聚合（923K 行），加 `statement_timeout=8s` 防线程池阻塞，知识库页加载速度显著提升。
+- **`remediation closure_gates` 动态化**：`_dynamic_closure_gates()` 从 DB items 实时计算门禁状态（`pending-acceptance`→阻断，`rejected`→阻断，全部 closed/accepted→通过），不再硬编码。
+- **整改附件上传路由（S1）**：`POST /api/v1/remediation/items/{id}/attachments`（multipart, 20MiB 限制，白名单扩展名），`GET /api/v1/remediation/items/{id}/attachments`，`attachment_count` 字段同步递增。
+
+**前端 UI/UX 优化（Sprint 1-4）**
+
+- **导航重构**：侧边栏从 4 分组重构为「审计工作流」+「工具支撑」两层；知识库从 utility 升入 workflow 主区；文档检索降级到 utility。
+- **医保专题 filter bar 合并**：3 层 tab（14 按钮）→ 3 个 select + count pill + 3 action buttons。
+- **Finding cards 升级**：11 列表格 → 信息卡片（严重度 badge + 标题 + 状态 + meta 行 + action 行）。
+- **知识库骨架屏**：loading 状态从文字提示改为 6 格 shimmer 骨架屏。
+- **mobile filter bar 适配**：max-width 600px 操作按钮组换行左对齐。
+- **workspace 工作台**：原 redirect /chat → 真实仪表板（4 个实时 KPI + 6 个快捷入口）。
+- **FindingDrawer 去技术字段**：屏蔽 chunk_id/待映射/JSON 原始输出，改为患者/金额/违规摘要等可读语言。
+- **WorkflowGateDialog 复核意见输入**：review 类型加必填 textarea，按钮 disabled 直到填写，不再写入硬编码机器文本。
+- **整改工作台可操作化**：移除死链接，加入附件上传入口（复用 S1 路由），门禁状态三色视觉化（阻断/通过/待确认）。
+- **RuleNavigator 默认折叠**：左侧规则栏从常驻 260px → 默认 40px 折叠，toggle 展开，首屏可见目标从 28 降至约 18。
+- **TemplateWorkbookView 空状态引导**：空表格占位行 → 3 步操作引导 + 字段预览 + 「立即导入」CTA。
+- **驾驶舱⇄医保专题联动**：驾驶舱加「进入医保审计」链接携带 `?project=id`，医保专题页读 URL 参数优先选择对应项目。
+- **ProjectFlowPanel 紧凑化**：三区大面板（项目头/4步流程/队列/人员）→ 单行紧凑状态条（项目名 + 4 步计数），消除与驾驶舱的重叠。
+- **CSS 体系对齐**：`audit-cockpit-page` 宽度合同对齐 `replica-page-standard`（`min(1440px, calc(100% - 72px))`）。
+
+#### 生产能力现状（2026-08-07 验收值）
+
+| 指标 | 值 |
+|---|---|
+| deploy_sha | `484c348f` (= main HEAD) |
+| 容器状态 | healthy，Up ~30 min |
+| 前端路由 | 23/23 全部 200 |
+| 知识库 collections | 25/25 可查询 |
+| KB chunks | 923,288 |
+| 疑点数据 | 5 条（脱敏样本） |
+| review_tasks | 13 条 |
+| remediation_items | 4 条 |
+| report_entries | 13 条 |
+| report_templates | 3 个 active |
+| OCR | deepseek+tesseract enabled |
+| 知识查询 | generated ✅（law + rules） |
+| auth_mode | header_transition_layer |
+| 测试套件 | vitest 406/406，pytest 核心套件通过 |
+| 远端分支 | main 唯一（84 条 codex/* 已清理） |
+
+#### 已知 debt（截至 2026-08-07）
+
+**阻塞单院试运行（外部依赖）**
+
+1. **真实 HIS 数据接入**：生产 5 条疑点均为手工脱敏样本，非来自 HIS 规则引擎；需院方提供 DDL + 字段字典 + 脱敏数据集。
+2. **SSO 认证**：`auth_mode=header_transition_layer`，X-Role header 可自行构造；需确认院方 SSO 协议（选 A：nginx 可信代理 / 选 B：SAML/OAuth2）。
+
+**产品功能债（可自主推进）**
+
+3. **整改附件附到真实 case ID**：前端上传时用的是 workbench 返回的静态 case id，需映射到 `remediation_items.id` 真实 UUID。
+4. **整改状态更新 UI**：工作台可读取和上传附件，但无法在页面直接更新整改状态（需要独立操作流）。
+5. **报告签发持久化**：`POST /reports/drafts` 已有，但 `is_signed_off/signed_at/signer` 未持久化到 DB。
+6. **告警 webhook**：`MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL=` 为空，cron 已启用但无外部通知；需院方/团队提供钉钉/企业微信 webhook URL。
+
+**长期架构债**
+
+7. **supervision-rules-knowledge re-chunk**：定义类内容与字段模板混在同一 chunk；auto-retry 缓解，根本修复需重新 chunking + 重建 embedding（需 embedding quota）。
+8. **数据备份 pg_restore 完整验证**：gzip 完整性通过，DDL 可解析，但未在真实 PostgreSQL 实例做完整 pg_restore 演练。
+9. **压测覆盖**：知识查询 QPS/合同审计并发/报告导出未做压测。
+10. **UAT 脚本和培训材料**：面向院方的验收脚本和操作手册未完成。
+
+---
 
 ### 2.1 2026-08-06 生产+本地对齐基线
 
