@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -215,3 +215,119 @@ def update_status(
         "updated_by": user.user_identifier,
     })
     return {"format": "remediation-item-v1", "item": result}
+
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+ALLOWED_ATTACHMENT_EXTENSIONS = frozenset({
+    "pdf", "png", "jpg", "jpeg", "gif", "webp",
+    "xlsx", "xls", "csv", "docx", "doc", "txt", "zip",
+})
+
+
+@router.post("/remediation/items/{item_id}/attachments")
+async def upload_attachment(
+    item_id: UUID,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    file: Annotated[UploadFile, File(...)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    user = require_permission(
+        state, permission=Permission.CREATE_REVIEW_TASK,
+        x_user_id=x_user_id, x_role=x_role,
+        attempted_action="remediation-attachment-upload",
+    )
+    upload_store = state.document_upload_store
+    if upload_store is None:
+        raise HTTPException(status_code=409, detail="附件存储未启用，请联系管理员配置。")
+
+    file_name = file.filename or "attachment"
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    if ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        raise HTTPException(status_code=422, detail=f"不支持的附件格式：{ext}")
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(status_code=413, detail="附件超过 20 MiB 限制。")
+        chunks.append(chunk)
+    if total == 0:
+        raise HTTPException(status_code=422, detail="附件内容为空。")
+    content = b"".join(chunks)
+
+    try:
+        with _db_session(state) as session:
+            item = get_remediation_item(session, item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="remediation item not found")
+            upload = upload_store.add_upload(
+                file_name=file_name,
+                extension=ext,
+                content=content,
+                created_by=user.user_identifier,
+                metadata={
+                    "scope": "project",
+                    "project_key": f"remediation:{item_id}",
+                    "document_type": "整改附件",
+                    "description": f"整改事项附件：{item.item_key}",
+                },
+            )
+            item.attachment_count = (item.attachment_count or 0) + 1
+            session.commit()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="remediation store unavailable") from exc
+
+    record_operation(state, "remediation-attachment-upload", {
+        "item_id": str(item_id), "file_name": file_name,
+        "size_bytes": total, "uploaded_by": user.user_identifier,
+    })
+    return {
+        "format": "remediation-attachment-v1",
+        "upload_id": upload.get("id") or upload.get("upload_id"),
+        "file_name": file_name,
+        "size_bytes": total,
+        "item_id": str(item_id),
+    }
+
+
+@router.get("/remediation/items/{item_id}/attachments")
+def list_attachments(
+    item_id: UUID,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    require_permission(
+        state, permission=Permission.CREATE_REVIEW_TASK,
+        x_user_id=x_user_id, x_role=x_role,
+        attempted_action="remediation-attachment-list",
+    )
+    upload_store = state.document_upload_store
+    if upload_store is None:
+        return {"format": "remediation-attachments-v1", "item_id": str(item_id), "items": []}
+
+    try:
+        with _db_session(state) as session:
+            item = get_remediation_item(session, item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="remediation item not found")
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="remediation store unavailable") from exc
+
+    uploads = upload_store.list_uploads(
+        created_by=None,
+        include_all=True,
+        project_key=f"remediation:{item_id}",
+        limit=200,
+    )
+    return {
+        "format": "remediation-attachments-v1",
+        "item_id": str(item_id),
+        "items": uploads,
+        "count": len(uploads),
+    }

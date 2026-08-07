@@ -845,3 +845,109 @@ def _project_state(
     )
     state.audit_log_store = SqlAlchemyAuditLogStore(database_url)
     return state, database_url
+
+
+def _remediation_state(tmp_path: Path) -> tuple[ApiState, str]:
+    from medical_audit_kb.api.review_task_store import SqlAlchemyReviewTaskStore  # noqa: PLC0415
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    database_url = f"sqlite:///{tmp_path / 'remediation-test.db'}"
+    state, pg_url = _project_state(tmp_path)
+    state.review_task_store = SqlAlchemyReviewTaskStore(database_url, create_schema=True)
+    state.document_upload_store = InMemoryDocumentUploadStore(
+        upload_root=tmp_path / "uploads"
+    )
+    return state, database_url
+
+
+MEMBER_HEADERS = {"X-User-Id": "auditor-1", "X-Role": "member"}
+
+
+def test_remediation_attachment_upload_and_list(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    create_resp = client.post(
+        "/remediation/items",
+        json={"title": "附件测试整改事项", "description": "补证材料测试"},
+        headers=MEMBER_HEADERS,
+    )
+    assert create_resp.status_code == 200
+    item_id = create_resp.json()["item"]["id"]
+
+    pdf_content = b"%PDF-1.4 test attachment content"
+    upload_resp = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("evidence.pdf", pdf_content, "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+    assert upload_resp.status_code == 200
+    upload_body = upload_resp.json()
+    assert upload_body["format"] == "remediation-attachment-v1"
+    assert upload_body["file_name"] == "evidence.pdf"
+    assert upload_body["size_bytes"] == len(pdf_content)
+    assert upload_body["item_id"] == item_id
+
+    get_resp = client.get(f"/remediation/items/{item_id}", headers=MEMBER_HEADERS)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["item"]["attachment_count"] == 1
+
+    list_resp = client.get(f"/remediation/items/{item_id}/attachments", headers=MEMBER_HEADERS)
+    assert list_resp.status_code == 200
+    list_body = list_resp.json()
+    assert list_body["format"] == "remediation-attachments-v1"
+    assert list_body["count"] == 1
+
+
+def test_remediation_attachment_rejects_oversized_file(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    create_resp = client.post(
+        "/remediation/items",
+        json={"title": "大文件测试"},
+        headers=MEMBER_HEADERS,
+    )
+    assert create_resp.status_code == 200
+    item_id = create_resp.json()["item"]["id"]
+
+    big = b"x" * (21 * 1024 * 1024)
+    resp = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("big.pdf", big, "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+    assert resp.status_code == 413
+
+
+def test_remediation_attachment_rejects_unsupported_extension(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    create_resp = client.post(
+        "/remediation/items",
+        json={"title": "扩展名测试"},
+        headers=MEMBER_HEADERS,
+    )
+    assert create_resp.status_code == 200
+    item_id = create_resp.json()["item"]["id"]
+
+    resp = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
+        headers=MEMBER_HEADERS,
+    )
+    assert resp.status_code == 422
+
+
+def test_remediation_attachment_404_for_missing_item(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+
+    import uuid  # noqa: PLC0415
+    fake_id = str(uuid.uuid4())
+    resp = client.post(
+        f"/remediation/items/{fake_id}/attachments",
+        files={"file": ("doc.pdf", b"%PDF", "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+    assert resp.status_code == 404
