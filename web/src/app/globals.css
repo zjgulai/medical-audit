@@ -904,7 +904,7 @@ select {
 
 .audit-cockpit-page {
   display: grid;
-  max-width: 1440px;
+  width: min(1440px, calc(100% - 72px));
   margin: 0 auto;
   gap: 20px;
   color: var(--audit-ink);
