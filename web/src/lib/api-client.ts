@@ -513,6 +513,26 @@ export function fetchRemediationWorkbench(): Promise<RemediationWorkbenchRespons
   return getJsonWithAuditHeaders<RemediationWorkbenchResponse>("/api/v1/remediation/workbench");
 }
 
+export async function uploadRemediationAttachment(
+  itemId: string,
+  file: File
+): Promise<{ upload_id: string; file_name: string; size_bytes: number; item_id: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return postForm(
+    `/api/v1/remediation/items/${encodeURIComponent(itemId)}/attachments`,
+    formData
+  );
+}
+
+export function fetchRemediationAttachments(
+  itemId: string
+): Promise<{ format: string; item_id: string; items: readonly Record<string, unknown>[]; count: number }> {
+  return getJsonWithAuditHeaders(
+    `/api/v1/remediation/items/${encodeURIComponent(itemId)}/attachments`
+  );
+}
+
 export function fetchArchiveWorkbench(): Promise<ArchiveWorkbenchResponse> {
   return getJsonWithAuditHeaders<ArchiveWorkbenchResponse>("/api/v1/archive/workbench");
 }

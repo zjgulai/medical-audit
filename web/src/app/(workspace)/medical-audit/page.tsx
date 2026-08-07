@@ -581,7 +581,7 @@ export default function MedicalAuditPage() {
     return selectedFinding ? [selectedFinding.finding_key] : [];
   }
 
-  async function handleWorkflowConfirm(dialog: WorkflowDialog) {
+  async function handleWorkflowConfirm(dialog: WorkflowDialog, reviewerNote: string) {
     setWorkflowActionState({ status: "running", message: "正在提交到后端流程..." });
     try {
       let response: MedicalAuditWorkflowActionResponse | undefined;
@@ -619,8 +619,8 @@ export default function MedicalAuditPage() {
           keys.map((key) =>
             updateMedicalAuditReviewStatus(key, {
               status: "confirmed-violation",
-              reviewer_note: "已通过医保审计工作台完成初步复核，证据链进入报告准备。",
-              conclusion: "确认该疑点需纳入后续底稿或报告流程。"
+              reviewer_note: reviewerNote.trim() || "已通过医保审计工作台完成初步复核。",
+              conclusion: reviewerNote.trim() || "确认该疑点需纳入后续底稿或报告流程。"
             })
           )
         );
@@ -1303,6 +1303,35 @@ function FindingsTable({
   );
 }
 
+function findingRuleLabel(finding: BackendAuditFinding): string {
+  const key = finding.rule_version_key ?? finding.rule_key;
+  if (!key) return "规则已关联，版本待确认";
+  if (key.startsWith("rule-")) return `规则编号：${key.replace("rule-", "").toUpperCase()}`;
+  return key;
+}
+
+function findingLocatorSummary(locator: BackendAuditFinding["source_record_locator"]): string {
+  if (!locator || typeof locator !== "object") return "源记录已关联";
+  const parts: string[] = [];
+  if ("patient" in locator && locator.patient) parts.push(`患者：${String(locator.patient)}`);
+  if ("diagnosis" in locator && locator.diagnosis) parts.push(`诊断：${String(locator.diagnosis)}`);
+  if ("interval_days" in locator && locator.interval_days !== undefined) parts.push(`间隔：${String(locator.interval_days)}天`);
+  if ("dept" in locator && locator.dept) parts.push(`科室：${String(locator.dept)}`);
+  if ("date" in locator && locator.date) parts.push(`日期：${String(locator.date)}`);
+  if ("amount" in locator && locator.amount !== undefined) parts.push(`金额：${String(locator.amount)}`);
+  return parts.length > 0 ? parts.join("　") : "源记录已关联，请查看详情";
+}
+
+function findingCalculationSummary(trace: BackendAuditFinding["calculation_trace"]): string {
+  if (!trace || typeof trace !== "object") return "规则计算已完成";
+  const parts: string[] = [];
+  if ("rule" in trace && trace.rule) parts.push(String(trace.rule));
+  if ("result" in trace && trace.result !== undefined) parts.push(`结果：${String(trace.result)}`);
+  if ("threshold" in trace && trace.threshold !== undefined) parts.push(`阈值：${String(trace.threshold)}`);
+  if ("violation_type" in trace && trace.violation_type) parts.push(`类型：${String(trace.violation_type)}`);
+  return parts.length > 0 ? parts.join("　") : "规则计算已完成，疑点已标记";
+}
+
 function FindingDrawer({
   finding,
   sourceKeys,
@@ -1317,6 +1346,7 @@ function FindingDrawer({
   readonly onDialog: (kind: WorkflowKind, finding?: BackendAuditFinding | null) => void;
 }) {
   const evidence = finding.evidence_items[0];
+  const amount = findingAmount(finding);
   return (
     <aside className="replica-medical-drawer" aria-label="疑点详情">
       <div className="replica-medical-drawer-head">
@@ -1324,50 +1354,58 @@ function FindingDrawer({
           关闭
         </button>
       </div>
-      <h2>{finding.finding_key}</h2>
+      <h2>{findingTitle(finding)}</h2>
+      <p className="replica-medical-source">{finding.finding_key}</p>
       <dl>
         <div>
-          <dt>疑点名称</dt>
-          <dd>{findingTitle(finding)}</dd>
-        </div>
-        <div>
-          <dt>源记录</dt>
+          <dt>患者/单据</dt>
           <dd>{findingSubject(finding)}</dd>
         </div>
+        {findingDepartment(finding) ? (
+          <div>
+            <dt>科室</dt>
+            <dd>{findingDepartment(finding)}</dd>
+          </div>
+        ) : null}
+        {amount !== null ? (
+          <div>
+            <dt>涉及金额</dt>
+            <dd className="audit-finding-card__amount">{formatCurrency(amount)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>复核状态</dt>
           <dd>{statusLabel(statusOptions, finding.review_status)}</dd>
         </div>
         <div>
-          <dt>任务</dt>
+          <dt>复核任务</dt>
           <dd>{finding.review_task_id ?? "尚未关联复核任务"}</dd>
         </div>
         <div>
-          <dt>规则版本</dt>
-          <dd>{finding.rule_version_key ?? finding.rule_key ?? "待映射"}</dd>
-        </div>
-        <div>
-          <dt>审计运行</dt>
-          <dd>{finding.audit_run_key ?? "待映射"}</dd>
+          <dt>适用规则</dt>
+          <dd>{findingRuleLabel(finding)}</dd>
         </div>
       </dl>
-      <h3>证据链</h3>
-      <div className="replica-medical-evidence is-blue">
-        <strong>{evidence?.citation_id ?? evidence?.evidence_type ?? "结构化证据"}</strong>
-        <p>{evidence?.snippet ?? "后端已返回疑点，但暂未附带文本证据片段。"}</p>
-        <p>
-          chunk: <code>{evidence?.chunk_id ?? "未关联"}</code>
-        </p>
-      </div>
-      <h3>源记录定位</h3>
+
+      {evidence ? (
+        <>
+          <h3>关键证据</h3>
+          <div className="replica-medical-evidence is-blue">
+            <strong>{evidence.citation_id ?? evidence.evidence_type ?? "结构化证据"}</strong>
+            <p>{evidence.snippet ?? "证据已关联，原文片段待加载。"}</p>
+          </div>
+        </>
+      ) : null}
+
+      <h3>违规摘要</h3>
       <div className="replica-medical-evidence">
-        <p>{stringifyShort(finding.source_record_locator)}</p>
+        <p>{findingLocatorSummary(finding.source_record_locator)}</p>
       </div>
-      <h3>计算过程</h3>
       <div className="replica-medical-evidence">
-        <p>{stringifyShort(finding.calculation_trace)}</p>
+        <p>{findingCalculationSummary(finding.calculation_trace)}</p>
       </div>
-      <h3>生产流转</h3>
+
+      <h3>处理进度</h3>
       <ul className="replica-medical-related">
         <li>
           <span>复核任务</span>
@@ -1375,14 +1413,14 @@ function FindingDrawer({
         </li>
         <li>
           <span>证据条目</span>
-          <strong>{finding.evidence_items.length}</strong>
+          <strong>{finding.evidence_items.length} 条</strong>
         </li>
         <li>
-          <span>知识库范围</span>
-          <strong>{sourceKeys.length}</strong>
+          <span>可用知识库</span>
+          <strong>{sourceKeys.length} 个</strong>
         </li>
       </ul>
-      <p className="replica-medical-source">更新时间：{formatDate(finding.updated_at)}</p>
+      <p className="replica-medical-source">最后更新：{formatDate(finding.updated_at)}</p>
       <div className="replica-medical-drawer-actions">
         <button className="is-primary" type="button" onClick={() => onDialog("review", finding)}>
           进入复核
@@ -1589,11 +1627,14 @@ function WorkflowGateDialog({
   readonly actionState: WorkflowActionState;
   readonly dialog: WorkflowDialog | null;
   readonly onClose: () => void;
-  readonly onConfirm: (dialog: WorkflowDialog) => void;
+  readonly onConfirm: (dialog: WorkflowDialog, reviewerNote: string) => void;
 }) {
+  const [reviewerNote, setReviewerNote] = useState("");
+
   if (!dialog) {
     return null;
   }
+  const isReview = dialog.kind === "review";
   const copy = {
     "new-task": {
       title: "创建审计任务草稿",
@@ -1608,10 +1649,10 @@ function WorkflowGateDialog({
       primary: dialog.finding ? "登记补充材料" : "记录导入预检"
     },
     review: {
-      title: "疑点复核动作",
+      title: "疑点复核",
       body: dialog.finding
-        ? `疑点 ${dialog.finding.finding_key} 已选中。确认后会写入复核状态、意见、结论和审计事件。`
-        : "批量复核会对已选疑点写入复核状态、意见、结论和审计事件。",
+        ? `疑点 ${dialog.finding.finding_key}（${findingTitle(dialog.finding)}）`
+        : `已选 ${dialog.finding === undefined ? "当前疑点" : "批量疑点"}，确认后写入复核状态和审计事件。`,
       primary: "确认违规并写入"
     },
     report: {
@@ -1636,6 +1677,26 @@ function WorkflowGateDialog({
       >
         <h2>{copy.title}</h2>
         <p>{copy.body}</p>
+
+        {isReview ? (
+          <div className="replica-medical-review-note-field">
+            <label htmlFor="reviewer-note-input">
+              <strong>复核意见</strong>
+              <span>（必填，将写入审计底稿）</span>
+            </label>
+            <textarea
+              id="reviewer-note-input"
+              disabled={isRunning}
+              maxLength={1000}
+              placeholder="请填写复核意见，例如：经核查，患者两次住院间隔仅 10 天，符合分解住院特征，建议退费..."
+              rows={4}
+              value={reviewerNote}
+              onChange={(e) => setReviewerNote(e.target.value)}
+            />
+            <span className="replica-medical-char-count">{reviewerNote.length}/1000</span>
+          </div>
+        ) : null}
+
         <div className="replica-medical-evidence is-blue">
           <strong>生产写入边界</strong>
           <p>该动作只写入复核任务、dossier 或审计事件；正式报告签发、文件入库解析和归档仍需单独流程。</p>
@@ -1660,7 +1721,12 @@ function WorkflowGateDialog({
           <button className="replica-secondary-button" disabled={isRunning} type="button" onClick={onClose}>
             关闭
           </button>
-          <button className="replica-primary-button" disabled={isRunning} type="button" onClick={() => onConfirm(dialog)}>
+          <button
+            className="replica-primary-button"
+            disabled={isRunning || (isReview && reviewerNote.trim().length === 0)}
+            type="button"
+            onClick={() => onConfirm(dialog, reviewerNote)}
+          >
             {isRunning ? "提交中..." : copy.primary}
           </button>
         </div>

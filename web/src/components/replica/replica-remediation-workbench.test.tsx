@@ -92,8 +92,8 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(await screen.findByText("整改台账")).toBeInTheDocument();
     expect(screen.getByText("补证请求")).toBeInTheDocument();
     expect(screen.getByText("关闭门禁")).toBeInTheDocument();
-    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore").closest("details")).not.toBeNull();
-    expect(screen.getByText(/当前为只读整改数据，页面不会直接更新或关闭整改事项。/)).toBeInTheDocument();
+    expect(screen.queryByText("SqlAlchemyRemediationWorkbenchStore")).not.toBeInTheDocument();
+    expect(screen.queryByText(/当前为只读整改数据，页面不会直接更新或关闭整改事项。/)).not.toBeInTheDocument();
   });
 
   it("does not expose zero metrics or retired fixtures while the initial read is pending", () => {
@@ -126,8 +126,8 @@ describe("ReplicaRemediationWorkbench", () => {
 
     render(<ReplicaRemediationWorkbench />);
 
-    expect(await screen.findByText("暂无整改、补证、门禁或时间线记录")).toBeInTheDocument();
-    expect(screen.getByText("SqlAlchemyRemediationWorkbenchStore").closest("details")).not.toBeNull();
+    expect(await screen.findByText("暂无整改记录")).toBeInTheDocument();
+    expect(screen.queryByText("SqlAlchemyRemediationWorkbenchStore")).not.toBeInTheDocument();
     expect(screen.queryByText("重复收费退费与流程复核")).not.toBeInTheDocument();
   });
 
@@ -137,7 +137,7 @@ describe("ReplicaRemediationWorkbench", () => {
     render(<ReplicaRemediationWorkbench />);
 
     expect(await screen.findByText("整改工作台暂不可用")).toBeInTheDocument();
-    expect(screen.getByText("整改数据读取失败，页面不会注入本地样例或旧数据。")).toBeInTheDocument();
+    expect(screen.getByText("整改数据读取失败，请稍后重试。")).toBeInTheDocument();
     expect(screen.queryByText(/整改 API/)).not.toBeInTheDocument();
     expect(screen.queryByText("remediation-case-001")).not.toBeInTheDocument();
     expect(screen.queryByText("重复收费退费与流程复核")).not.toBeInTheDocument();
