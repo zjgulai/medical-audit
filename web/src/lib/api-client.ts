@@ -413,6 +413,24 @@ export function createReportDraft(
   );
 }
 
+export function signReportDraft(
+  taskId: string,
+  signoffNote: string = ""
+): Promise<{
+  format: string;
+  task_id: string;
+  report_id: string;
+  signed_by: string;
+  signed_at: string;
+  signoff_note: string;
+  status: string;
+}> {
+  return postJson(
+    `/api/v1/reports/drafts/${encodeURIComponent(taskId)}/signoff`,
+    { signoff_note: signoffNote }
+  );
+}
+
 function safeArtifactFilename(value: string): string | null {
   const basename = value.replaceAll("\\", "/").split("/").at(-1) ?? "";
   const sanitized = basename

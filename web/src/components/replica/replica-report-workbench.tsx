@@ -10,7 +10,8 @@ import {
   downloadAuditArtifact,
   fetchProjects,
   fetchReportWorkbench,
-  isBackendRequestError
+  isBackendRequestError,
+  signReportDraft
 } from "@/lib/api-client";
 import type {
   ProjectsResponse,
@@ -278,14 +279,89 @@ function AuthenticatedDownloadButton({
   );
 }
 
+function SignoffButton({
+  entry,
+  signoffState,
+  onSignoff
+}: {
+  readonly entry: ReportWorkbenchEntry;
+  readonly signoffState: { readonly status: string; readonly taskId?: string; readonly message?: string; readonly signedBy?: string };
+  readonly onSignoff: (taskId: string, note: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [note, setNote] = useState("");
+  const isSigning = signoffState.status === "signing" && signoffState.taskId === entry.id;
+  const isSuccess = signoffState.status === "success" && signoffState.taskId === entry.id;
+  const isError = signoffState.status === "error" && signoffState.taskId === entry.id;
+
+  if (entry.signoff?.signed) {
+    return (
+      <span className="report-signoff-done">
+        ✓ 已签发 · {entry.signoff.signed_by || "已签发"} · {entry.signoff.signed_at.slice(0, 10)}
+      </span>
+    );
+  }
+
+  if (entry.status === "门禁阻断") return null;
+
+  return (
+    <span className="report-signoff-group">
+      {expanded ? (
+        <>
+          <input
+            className="report-signoff-note"
+            disabled={isSigning}
+            maxLength={500}
+            placeholder="签发说明（可选）"
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <button
+            className="replica-primary-button"
+            disabled={isSigning}
+            type="button"
+            onClick={() => { onSignoff(entry.id, note); setExpanded(false); setNote(""); }}
+          >
+            {isSigning ? "签发中..." : "确认签发"}
+          </button>
+          <button
+            className="replica-secondary-button"
+            disabled={isSigning}
+            type="button"
+            onClick={() => { setExpanded(false); setNote(""); }}
+          >
+            取消
+          </button>
+        </>
+      ) : (
+        <button
+          className="replica-primary-button"
+          disabled={isSigning}
+          type="button"
+          onClick={() => setExpanded(true)}
+        >
+          {isSigning ? "签发中..." : "签发报告"}
+        </button>
+      )}
+      {isSuccess ? <span className="report-signoff-success">✓ 签发成功</span> : null}
+      {isError ? <span className="report-signoff-error">{signoffState.message}</span> : null}
+    </span>
+  );
+}
+
 function ReportLedger({
   entries,
   downloadingPath,
-  onDownload
+  signoffState,
+  onDownload,
+  onSignoff
 }: {
   readonly entries: readonly ReportWorkbenchEntry[];
   readonly downloadingPath: string | null;
+  readonly signoffState: { readonly status: string; readonly taskId?: string; readonly message?: string; readonly signedBy?: string };
   readonly onDownload: (href: string) => Promise<void>;
+  readonly onSignoff: (taskId: string, note: string) => void;
 }) {
   const downloadLocked = downloadingPath !== null;
   return (
@@ -325,6 +401,11 @@ function ReportLedger({
                   <td>
                     <nav aria-label={`${entry.title}操作`}>
                       <span>负责人：{entry.owner}</span>
+                      <SignoffButton
+                        entry={entry}
+                        signoffState={signoffState}
+                        onSignoff={onSignoff}
+                      />
                       <AuthenticatedDownloadButton
                         disabled={downloadLocked}
                         href={entry.download_links.task_docx}
@@ -452,6 +533,12 @@ export function ReplicaReportWorkbench() {
   const [projectContextNotice, setProjectContextNotice] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
+  const [signoffState, setSignoffState] = useState<
+    | { readonly status: "idle" }
+    | { readonly status: "signing"; readonly taskId: string }
+    | { readonly status: "success"; readonly taskId: string; readonly signedBy: string }
+    | { readonly status: "error"; readonly taskId: string; readonly message: string }
+  >({ status: "idle" });
 
   const abortPendingDownload = useCallback((updateState: boolean) => {
     ++downloadGenerationRef.current;
@@ -673,6 +760,19 @@ export function ReplicaReportWorkbench() {
     }
   }, []);
 
+  const handleSignoff = useCallback(async (taskId: string, note: string) => {
+    setSignoffState({ status: "signing", taskId });
+    try {
+      const result = await signReportDraft(taskId, note);
+      setSignoffState({ status: "success", taskId, signedBy: result.signed_by });
+      if (mountedRef.current) {
+        loadWorkbench(reportState.role ?? auditUser.role);
+      }
+    } catch {
+      setSignoffState({ status: "error", taskId, message: "签发失败，请确认权限后重试。" });
+    }
+  }, [auditUser.role, loadWorkbench, reportState.role]);
+
   return (
     <main className="replica-page replica-page-standard replica-report-workbench">
       <header className="replica-page-header">
@@ -772,7 +872,9 @@ export function ReplicaReportWorkbench() {
             <ReportLedger
               downloadingPath={downloadingPath}
               entries={report.report_entries}
+              signoffState={signoffState}
               onDownload={handleDownload}
+              onSignoff={handleSignoff}
             />
             <EvidenceLedger sources={report.report_evidence_sources} />
           </div>

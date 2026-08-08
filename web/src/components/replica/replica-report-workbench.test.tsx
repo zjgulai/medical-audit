@@ -426,7 +426,7 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.queryByRole("link", { name: "查看证据" })).not.toBeInTheDocument();
     expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
     expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
-    expect(screen.queryByRole("button", { name: /签发/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /签发报告/ })).toBeInTheDocument();
   });
 
   it("keeps technicians read-only even when active templates are visible", async () => {

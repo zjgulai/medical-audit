@@ -2604,7 +2604,47 @@ select {
   color: #4c6378;
   font-size: 11px;
   font-weight: 700;
-  white-space: nowrap;
+   white-space: nowrap;
+}
+
+.report-signoff-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.report-signoff-note {
+  border: 1px solid var(--audit-line-soft);
+  border-radius: var(--audit-radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  width: 200px;
+  background: var(--audit-surface);
+  color: var(--audit-ink-body);
+}
+
+.report-signoff-note:focus {
+  outline: none;
+  border-color: var(--audit-primary);
+}
+
+.report-signoff-done {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2e7d32;
+}
+
+.report-signoff-success {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2e7d32;
+}
+
+.report-signoff-error {
+  font-size: 11px;
+  color: var(--audit-danger);
 }
 
 .replica-report-workbench [class*="status-门禁阻断"] {

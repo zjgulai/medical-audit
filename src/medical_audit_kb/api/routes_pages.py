@@ -726,6 +726,78 @@ def create_report_template_draft(
     }
 
 
+class ReportSignoffRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    signoff_note: str = Field(default="", max_length=2000)
+
+
+@router.post("/reports/drafts/{task_id}/signoff")
+def sign_report_draft(
+    task_id: str,
+    payload: ReportSignoffRequest,
+    state: Annotated[ApiState, Depends(get_api_state)],
+    x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
+    x_role: Annotated[str | None, Header(alias="X-Role")] = None,
+) -> dict[str, object]:
+    from medical_audit_kb.api.auth import (  # noqa: PLC0415
+        Permission,
+        require_permission,
+    )
+    user = require_permission(
+        state,
+        permission=Permission.CREATE_REVIEW_TASK,
+        x_user_id=x_user_id,
+        x_role=x_role,
+        attempted_action="report-draft-signoff",
+    )
+    task_store = _review_task_store(state)
+    try:
+        task = task_store.get_task(task_id)
+    except (KeyError, AttributeError) as exc:
+        raise HTTPException(status_code=404, detail="report draft not found") from exc
+    if task is None:
+        raise HTTPException(status_code=404, detail="report draft not found")
+
+    task_dict = task if isinstance(task, dict) else dict(task)
+    dossier = _with_review_task_governance_defaults(_dict_value(task_dict.get("dossier")))
+    if _signed_report_context(dossier)["signed"]:
+        raise HTTPException(status_code=409, detail="该报告草稿已签发，不可重复签发。")
+
+    signed_report = _build_review_task_signed_report(
+        task=task_dict,
+        signed_by=user.user_identifier,
+        signoff_note=payload.signoff_note,
+    )
+    dossier["signed_report"] = signed_report
+    _update_review_task(
+        state,
+        task_id,
+        {
+            "dossier": dossier,
+            "updated_at": _utc_now_iso(),
+        },
+    )
+    record_operation(
+        state,
+        "report-draft-signoff",
+        {
+            "task_id": task_id,
+            "report_id": signed_report["report_id"],
+            "signed_by": user.user_identifier,
+            "actor_role": user.role.value,
+        },
+    )
+    return {
+        "format": "report-signoff-v1",
+        "task_id": task_id,
+        "report_id": str(signed_report["report_id"]),
+        "signed_by": str(signed_report["signed_by"]),
+        "signed_at": str(signed_report["signed_at"]),
+        "signoff_note": str(signed_report["signoff_note"]),
+        "status": "signed",
+    }
+
+
 @router.get("/reports/workbench")
 def reports_workbench(
     request: Request,
@@ -2334,6 +2406,13 @@ def _review_task_report_entry(task: dict[str, object]) -> dict[str, object]:
         "gate_summary": str(report_gate.get("status_label") or "未执行报告门禁"),
         "updated_at": str(payload["updated_at"]),
         "href": "/pages/review-tasks",
+        "signoff": {
+            "signed": bool(signed_report.get("signed")),
+            "signed_by": str(signed_report.get("signed_by") or ""),
+            "signed_at": str(signed_report.get("signed_at") or ""),
+            "signoff_note": str(signed_report.get("signoff_note") or ""),
+            "report_id": str(signed_report.get("report_id") or ""),
+        },
         "download_links": {
             "page": "/pages/review-tasks",
             "task_docx": f"/review-tasks/{encoded_task_id}/export?format=docx",

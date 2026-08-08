@@ -1173,6 +1173,13 @@ export type ReportWorkbenchEntry = {
   readonly gate_summary: string;
   readonly updated_at: string;
   readonly href: string;
+  readonly signoff?: {
+    readonly signed: boolean;
+    readonly signed_by: string;
+    readonly signed_at: string;
+    readonly signoff_note: string;
+    readonly report_id: string;
+  };
   readonly download_links: ReportDownloadLinks;
 };
 
