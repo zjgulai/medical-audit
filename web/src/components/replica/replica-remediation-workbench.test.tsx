@@ -1,16 +1,19 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchRemediationWorkbench } from "@/lib/api-client";
+import { fetchRemediationWorkbench, updateRemediationItemStatus } from "@/lib/api-client";
 import type { RemediationWorkbenchResponse } from "@/lib/api-types";
 
 import { ReplicaRemediationWorkbench } from "./replica-remediation-workbench";
 
 vi.mock("@/lib/api-client", () => ({
-  fetchRemediationWorkbench: vi.fn()
+  fetchRemediationWorkbench: vi.fn(),
+  updateRemediationItemStatus: vi.fn(),
+  uploadRemediationAttachment: vi.fn()
 }));
 
 const fetchRemediationWorkbenchMock = vi.mocked(fetchRemediationWorkbench);
+const updateRemediationItemStatusMock = vi.mocked(updateRemediationItemStatus);
 
 const remediationResponse: RemediationWorkbenchResponse = {
   format: "remediation-workbench-v1",
@@ -25,6 +28,7 @@ const remediationResponse: RemediationWorkbenchResponse = {
       department: "医保办",
       owner: "医保办",
       status: "整改中",
+      status_key: "in-rectification",
       dueDate: "2026-07-20",
       reportNo: "REPORT-001",
       sourceFinding: "finding-runtime-001",
@@ -154,5 +158,63 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(await screen.findByText("整改数据受限")).toBeInTheDocument();
     expect(screen.getByText("整改存储状态未就绪，已停止展示可能不完整的整改记录。")).toBeInTheDocument();
     expect(screen.queryByText("remediation-case-001")).not.toBeInTheDocument();
+  });
+
+  it("shows status action buttons for items with known status_key", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue(remediationResponse);
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByText("整改台账")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提交验收" })).toBeInTheDocument();
+  });
+
+  it("calls updateRemediationItemStatus on action confirm", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue(remediationResponse);
+    updateRemediationItemStatusMock.mockResolvedValue({ format: "ok", item: {} });
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByRole("button", { name: "提交验收" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "提交验收" }));
+
+    expect(await screen.findByRole("button", { name: "确认提交验收" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认提交验收" }));
+
+    await waitFor(() => {
+      expect(updateRemediationItemStatusMock).toHaveBeenCalledWith(
+        "remediation-case-001",
+        "pending-acceptance",
+        ""
+      );
+    });
+  });
+
+  it("does not show action buttons for closed items", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue({
+      ...remediationResponse,
+      remediation_cases: [{
+        ...remediationResponse.remediation_cases[0],
+        status: "已关闭",
+        status_key: "closed"
+      }]
+    });
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByText("整改台账")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /整改|验收|关闭/ })).not.toBeInTheDocument();
+  });
+
+  it("uses item.id (not linkedCaseId) for evidence request upload", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue(remediationResponse);
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByText("待补充证据")).toBeInTheDocument();
+    const uploadButtons = screen.getAllByRole("button", { name: "上传附件" });
+    expect(uploadButtons.length).toBeGreaterThan(0);
   });
 });

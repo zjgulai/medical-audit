@@ -9,6 +9,125 @@ import {
 } from "@/lib/api-client";
 import type { RemediationWorkbenchResponse } from "@/lib/api-types";
 
+// 状态流转表：status_key → [{label, nextStatus}]
+const STATUS_TRANSITIONS: Record<string, ReadonlyArray<{ readonly label: string; readonly next: string }>> = {
+  "pending-rectification": [{ label: "开始整改", next: "in-rectification" }],
+  "in-rectification":      [{ label: "提交验收", next: "pending-acceptance" }],
+  "pending-acceptance":    [
+    { label: "验收通过", next: "accepted" },
+    { label: "退回整改", next: "rejected" }
+  ],
+  "rejected":              [{ label: "重新整改", next: "in-rectification" }],
+  "accepted":              [{ label: "关闭事项", next: "closed" }],
+  "closed":                []
+};
+
+type ActionState =
+  | { readonly phase: "idle" }
+  | { readonly phase: "confirming"; readonly next: string; readonly label: string }
+  | { readonly phase: "submitting" }
+  | { readonly phase: "done" }
+  | { readonly phase: "error"; readonly message: string };
+
+function StatusActionButtons({
+  itemId,
+  statusKey,
+  onSuccess
+}: {
+  readonly itemId: string;
+  readonly statusKey: string;
+  readonly onSuccess: () => void;
+}) {
+  const [actionState, setActionState] = useState<ActionState>({ phase: "idle" });
+  const [note, setNote] = useState("");
+
+  const transitions = STATUS_TRANSITIONS[statusKey] ?? [];
+
+  const handlePick = (label: string, next: string) => {
+    setNote("");
+    setActionState({ phase: "confirming", next, label });
+  };
+
+  const handleCancel = () => {
+    setActionState({ phase: "idle" });
+    setNote("");
+  };
+
+  const handleConfirm = async () => {
+    if (actionState.phase !== "confirming") return;
+    const { next } = actionState;
+    setActionState({ phase: "submitting" });
+    try {
+      await updateRemediationItemStatus(itemId, next, note.trim());
+      setActionState({ phase: "done" });
+      setTimeout(() => {
+        setActionState({ phase: "idle" });
+        onSuccess();
+      }, 1200);
+    } catch {
+      setActionState({ phase: "error", message: "操作失败，请重试" });
+      setTimeout(() => setActionState({ phase: "idle" }), 4000);
+    }
+  };
+
+  if (transitions.length === 0) return null;
+
+  if (actionState.phase === "done") {
+    return <span className="remediation-status-done">✓ 已更新</span>;
+  }
+
+  if (actionState.phase === "error") {
+    return <span className="remediation-upload-error">{actionState.message}</span>;
+  }
+
+  if (actionState.phase === "confirming" || actionState.phase === "submitting") {
+    return (
+      <span className="remediation-status-action-group">
+        <input
+          aria-label="备注（可选）"
+          className="remediation-note-input"
+          disabled={actionState.phase === "submitting"}
+          placeholder="备注（可选）"
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <button
+          className="replica-primary-button"
+          disabled={actionState.phase === "submitting"}
+          type="button"
+          onClick={handleConfirm}
+        >
+          {actionState.phase === "submitting" ? "提交中..." : `确认${actionState.label}`}
+        </button>
+        <button
+          className="replica-secondary-button"
+          disabled={actionState.phase === "submitting"}
+          type="button"
+          onClick={handleCancel}
+        >
+          取消
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="remediation-status-actions">
+      {transitions.map(({ label, next }) => (
+        <button
+          key={next}
+          className="replica-secondary-button"
+          type="button"
+          onClick={() => handlePick(label, next)}
+        >
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 import {
   ReplicaEmptyState,
   ReplicaMetric,
@@ -104,6 +223,24 @@ export function ReplicaRemediationWorkbench() {
   const [state, setState] = useState<RemediationState>({ status: "loading", data: null });
   const [uploadState, setUploadState] = useState<UploadState>({ status: "idle" });
 
+  const fetchData = useCallback(() => {
+    fetchRemediationWorkbench()
+      .then((data) => {
+        if (!data.store.ready) {
+          setState({ status: "degraded", data: null });
+          return;
+        }
+        const empty = data.remediation_cases.length === 0
+          && data.evidence_requests.length === 0
+          && data.closure_gates.length === 0
+          && data.timeline.length === 0;
+        setState({ status: empty ? "empty" : "ready", data });
+      })
+      .catch(() => {
+        setState({ status: "error", data: null });
+      });
+  }, []);
+
   useEffect(() => {
     let active = true;
     fetchRemediationWorkbench()
@@ -147,7 +284,7 @@ export function ReplicaRemediationWorkbench() {
       <ReplicaPageHeader
         kicker="整改闭环"
         title="整改工作台"
-        description="跟踪整改事项、补证请求和关闭门禁。可在此上传补证附件，更新状态请联系项目负责人通过审计任务流程处理。"
+        description="跟踪整改事项、补证请求和关闭门禁。可在此更新整改状态、上传补证附件。"
         actions={<ReplicaRuntimeBadge source="api" status={state.status} hasSeedData={hasSeedData} />}
       />
 
@@ -184,7 +321,7 @@ export function ReplicaRemediationWorkbench() {
                 </div>
                 <div className="replica-record-list">
                   {data.remediation_cases.map((item) => (
-                    <article key={item.id}>
+                    <article key={item.id} className="remediation-item-actions">
                       <div>
                         <h3>{item.title}</h3>
                         <p>{item.department} · {item.reportNo}</p>
@@ -192,6 +329,11 @@ export function ReplicaRemediationWorkbench() {
                       </div>
                       <span>{item.progress}% · {item.evidenceStatus}</span>
                       <strong>{item.status}</strong>
+                      <StatusActionButtons
+                        itemId={item.id}
+                        statusKey={item.status_key ?? ""}
+                        onSuccess={fetchData}
+                      />
                       <AttachmentUploadButton
                         itemId={item.id}
                         uploadState={uploadState}
@@ -216,12 +358,12 @@ export function ReplicaRemediationWorkbench() {
                       <div>
                         <h3>{item.title}</h3>
                         <p>{item.detail}</p>
-                        <small>{item.linkedCaseId} · 截止 {item.dueDate}</small>
+                        <small>截止 {item.dueDate}</small>
                       </div>
                       <span>{item.owner} · {item.kind}</span>
                       <strong>{item.status}</strong>
                       <AttachmentUploadButton
-                        itemId={item.linkedCaseId ?? item.id}
+                        itemId={item.id}
                         uploadState={uploadState}
                         onUpload={handleUpload}
                       />

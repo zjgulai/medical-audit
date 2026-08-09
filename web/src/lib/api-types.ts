@@ -164,12 +164,13 @@ export type RemediationCaseApiItem = {
   readonly title: string;
   readonly department: string;
   readonly owner: "医保办" | "财务科" | "信息科" | "药剂科";
-  readonly status: "待整改" | "整改中" | "待验收" | "已关闭";
+  readonly status: string;
+  readonly status_key: string;
   readonly dueDate: string;
   readonly reportNo: string;
   readonly sourceFinding: string;
   readonly progress: number;
-  readonly evidenceStatus: "待补证" | "已提交" | "需退回" | "已验收";
+  readonly evidenceStatus: string;
   readonly nextAction: string;
   readonly href: string;
 };
