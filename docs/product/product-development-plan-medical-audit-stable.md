@@ -82,6 +82,35 @@ source: human+ai
 - 生产前端和权限只读门禁通过；文档专项 probe 仅在新页面文本检查失败，明确记录为部署前产品形态差异，不是当前服务故障。
 - 正式执行、备份、回滚和部署后验收顺序见 `docs/superpowers/plans/2026-07-13-ppt-feedback-production-deployment.md`。当前状态为 `ready_for_owner_authorization`，仍保持 `production unchanged`、`provider_call=false`、`database_write=false`。
 
+### 1.3 2026-08-09 Sprint 1–5 本地基线（最新）
+
+状态口径：Sprint-5 全部本地实现已完成，vitest 406/406，ruff/mypy 全绿。本地 main `226d3d0d` 领先 origin/main 1 commit；origin/main `d31a1b1d` 领先生产 deploy_sha `484c348f` 3 commits（Sprint-5 全部内容）。**生产仍停留在 Sprint-4，Sprint-5 功能尚未部署。**
+
+**Sprint-5 已完成事项（2026-08-08/09）**
+
+- **整改工作台可操作化（Batch-A）**：`routes_workbench.py` 补齐前端字段（`department`/`nextAction`/`evidenceStatus`/`reportNo`/`dueDate`），英文 status 映射中文标签；前端新增 `StatusActionButtons` 组件，支持六步状态流转（开始整改/提交验收/验收通过/退回/关闭），带 note 输入框和即时刷新。
+- **报告签发持久化与 UI（Batch-B）**：`routes_pages.py` 暴露 5 个签发字段，新增 `POST /api/v1/reports/drafts/{task_id}/signoff` JSON 接口；前端新增 `SignoffButton` 组件，签发后显示绿色 ✓ 标签。
+- **workspace 今日待复核预览（Batch-C）**：`workspace/page.tsx` 加载 pending-review 疑点列表（最多 5 条），无待复核时显示「审计进度良好 ✓」。
+- **知识库来源标签本地化**：`replica-rules-workbench.tsx` 新增 26 个 collection key → 中文标签映射，修复重复展示 raw key 的 bug。
+- **验收文本合同对齐**：`run-production-frontend-acceptance.mjs` 更新 `/workspace` 和 `/remediation` 路由文本合同。
+
+**本地/生产差异一览**
+
+| 功能项 | 本地 main | 生产 |
+|---|---|---|
+| 整改状态操作 | ✅ StatusActionButtons | ❌ 旧只读展示 |
+| 报告签发 UI | ✅ SignoffButton | ❌ 旧 UI |
+| workspace 待复核 | ✅ 疑点预览卡片 | ❌ 旧 redirect |
+| 知识库来源标签 | ✅ 中文化 | ❌ raw key |
+
+**下一步关键任务（按优先级）**
+
+1. push 本地 commit `226d3d0d`，将 origin/main 推进到最新。
+2. 部署 Sprint-5（origin/main `d31a1b1d`）到生产，运行 L3 只读验收。
+3. 验证 `PATCH /api/v1/remediation/items/{id}/status` HTTP 方法与前端 `updateRemediationItemStatus` 的一致性（现有后端为 `POST .../status`）。
+4. 整改附件上传映射到真实 `remediation_items.id` UUID（当前前端使用静态 case id）。
+5. Sprint-6 上线加固：SSO 可信代理接入、pg_restore 恢复演练、告警 webhook 配置、压测覆盖。
+
 当前未完成：
 
 - 门户核心模块的后端持久化和真实业务闭环：`/agents` 和 `/projects` 已完成生产持久化写入验收；`/analytics` 已完成生产上传解析、上传留存和历史记录验收，但病毒扫描、脱敏留存、对象存储、下载权限隔离和正式工作簿治理仍未完成；`/documents` 已完成生产查询验收，搜索历史持久化、后端 `title_only`、个人材料治理状态机、本地策略扫描/DLP 标记和受控下载已完成本地实现但尚未生产部署，仍需个人材料真实入向量索引、外部杀毒/DLP 服务、脱敏改写和对象存储治理。

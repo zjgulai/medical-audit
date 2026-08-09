@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-07
+updated: 2026-08-09
 owner: self
 source: human+ai
 ---
@@ -25,6 +25,92 @@ source: human+ai
 - 生产健康不代表 V1.0 产品闭环完成。
 
 ## 2. 当前状态冻结
+
+### 2.3 2026-08-09 Sprint-5 完整基线（最新）
+
+状态口径：本节记录 Sprint-5 在 2026-08-08/09 执行后的完整基线。本地 main 领先 origin/main 1 个 commit（`226d3d0d`），尚未 push；生产仍停留在 Sprint-4 deploy_sha = `484c348f`，尚未部署 sprint-5 内容。
+
+#### 本轮已完成事项（Sprint-5，2026-08-08/09）
+
+**Sprint-5 Batch-A — 整改工作台可操作化**
+
+- `routes_workbench.py`：`remediation_workbench` 返回的 `db_items` 补齐前端字段（`department`/`nextAction`/`evidenceStatus`/`reportNo`/`dueDate`），英文 `status` 映射为中文标签，保留 `status_key` 供门禁和 metrics 计算。
+- 新增 `_remediation_status_label` / `_remediation_next_action` 辅助函数和 `_REMEDIATION_STATUS_LABELS` / `_REMEDIATION_NEXT_ACTIONS` 映射字典。
+- `api-client.ts`：新增 `updateRemediationItemStatus` + `fetchRemediationItems`。
+- `replica-remediation-workbench.tsx`：加入 `StatusActionButtons` 组件，根据 `status_key` 展示下一步操作（开始整改/提交验收/验收通过/退回/关闭），点击展开 note 输入框，确认后调用状态更新 API，成功自动刷新。
+
+**Sprint-5 Batch-B — 报告签发持久化与 UI**
+
+- `routes_pages.py`：`_review_task_report_entry` 暴露 `signed`/`signed_by`/`signed_at`/`signoff_note`/`report_id` 五个签发字段，直接从 `dossier.signed_report` 读取（已持久化在 `review_tasks`）。
+- 新增 `POST /api/v1/reports/drafts/{task_id}/signoff` JSON 接口，复用 `_build_review_task_signed_report` + `_update_review_task`；已签发返回 409；权限 `CREATE_REVIEW_TASK`（member 及以上）；`ReportSignoffRequest.signoff_note` max_length=2000。
+- `replica-report-workbench.tsx`：新增 `SignoffButton` 组件（草稿→展开说明输入→成功显示绿色 ✓ 标签）；门禁阻断时不显示签发按钮；成功后刷新工作台。
+- `api-client.ts`：新增 `signReportDraft(taskId, note)`。
+- `api-types.ts`：`ReportWorkbenchEntry` 加可选 signoff 字段。
+
+**Sprint-5 Batch-C — workspace 今日待复核预览**
+
+- `workspace/page.tsx`：加载 pending-review 疑点列表（最多 5 条），每条展示风险等级 badge + 疑点名称 + 「进入复核」快捷链接；无待复核时显示绿色「审计进度良好 ✓」。
+
+**Sprint-5 — 知识库来源标签本地化**
+
+- `replica-rules-workbench.tsx`：新增 `SOURCE_COLLECTION_LABELS` 映射（26 个 collection key → 中文标签），`RuleCard` 和 `SourceCard` 来源字段改为本地化显示，修复 `SourceCard` 重复展示 raw key 的 bug。
+
+**Sprint-5 — 验收文本合同对齐**
+
+- `scripts/run-production-frontend-acceptance.mjs`：更新 `/workspace`（`工作台/待复核疑点`）和 `/remediation`（`整改工作台/整改事项`）路由的验收文本合同，对齐 Sprint-5 页面副本。
+
+#### 本地/生产差异（截至 2026-08-09）
+
+| 项目 | 本地 main HEAD | 生产 deploy_sha |
+|---|---|---|
+| commit | `226d3d0d` | `484c348f`（Sprint-4） |
+| origin/main | `d31a1b1d`（Sprint-5 Batch-B） | 未部署 Sprint-5 |
+| 报告签发 UI | ✅ SignoffButton 已实现 | ❌ 旧 UI |
+| 整改状态操作 | ✅ StatusActionButtons | ❌ 旧只读展示 |
+| workspace 待复核预览 | ✅ 已实现 | ❌ 旧 redirect |
+| 知识库来源标签 | ✅ 中文化 | ❌ raw key |
+
+**待 push 的本地 commit**：`226d3d0d fix(replica): localize collection labels and update acceptance text contracts`（1 commit ahead of origin/main）
+
+#### 生产能力现状（2026-08-09 验收值，仍基于 Sprint-4 deploy）
+
+| 指标 | 值 |
+|---|---|
+| deploy_sha | `484c348f`（Sprint-4，Sprint-5 尚未部署） |
+| 本地 main | `226d3d0d`（领先 origin/main 1 commit） |
+| 容器状态 | healthy（最后 L3 验收值） |
+| 前端路由 | 23/23 |
+| 知识库 collections | 25/25 |
+| KB chunks | 923,288 |
+| 疑点数据 | 5 条（脱敏样本） |
+| review_tasks | 13 条 |
+| remediation_items | 4 条 |
+| report_entries | 13 条 |
+| 测试套件 | vitest 406/406，ruff/mypy 全绿 |
+| auth_mode | header_transition_layer |
+
+#### 已知 debt（截至 2026-08-09）
+
+**阻塞单院试运行（外部依赖）**
+
+1. **真实 HIS 数据接入**：生产 5 条疑点均为手工脱敏样本，非来自 HIS 规则引擎；需院方提供 DDL + 字段字典 + 脱敏数据集。
+2. **SSO 认证**：`auth_mode=header_transition_layer`，X-Role header 可自行构造；需确认院方 SSO 协议。
+
+**产品功能债（可自主推进）**
+
+3. **Sprint-5 代码尚未 push/部署**：本地 main `226d3d0d` 领先 origin/main 1 commit；origin/main `d31a1b1d` 领先生产 3 commits（Sprint-5 全部内容）；需 push 本地 commit 后再走部署流程。
+4. **整改附件映射真实 case ID**：前端上传时用的是 workbench 返回的静态 case id，需映射到 `remediation_items.id` 真实 UUID。
+5. **整改状态 UI 后端 PATCH 路由**：前端 `StatusActionButtons` 调用 `PATCH /api/v1/remediation/items/{id}/status`，需确认后端路由已对应（`POST .../status` 已有，需核实 HTTP 方法一致性）。
+6. **告警 webhook**：`MEDICAL_AUDIT_AUDIT_LOG_ALERT_WEBHOOK_URL=` 为空，cron 已启用但无外部通知。
+
+**长期架构债**
+
+7. **supervision-rules-knowledge re-chunk**：定义类内容与字段模板混在同一 chunk；auto-retry 缓解，根本修复需重新 chunking + 重建 embedding。
+8. **数据备份 pg_restore 完整验证**：gzip 完整性通过，未做完整 pg_restore 演练。
+9. **压测覆盖**：查询 QPS/任务运行/报告导出关键路径未做压测。
+10. **UAT 脚本和培训材料**：面向院方的验收脚本和操作手册未完成。
+
+---
 
 ### 2.2 2026-08-07 Sprint 1-4 完整基线（最新）
 
