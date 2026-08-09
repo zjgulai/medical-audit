@@ -61,7 +61,7 @@ const viewports = [
 const DEFAULT_CONTRACT_PROFILE = "hardened";
 const routeCheckProfiles = {
   legacy: [
-    { route: "/workspace", requiredText: [/AI，让审计更智能/] },
+    { route: "/workspace", requiredText: [/工作台/, /待复核疑点|常用功能/] },
     {
       route: "/fund-compliance",
       postLoadWaitMs: 5_000,
@@ -96,7 +96,7 @@ const routeCheckProfiles = {
     { route: "/graph", requiredText: [/知识图谱/, /新建图谱/] },
     { route: "/rules", requiredText: [/知识库/, /法规/, /审计规则|规则|发布门禁/] },
     { route: "/reports", requiredText: [/审计底稿与报告台账/, /六类模板目录/, /报告台账/] },
-    { route: "/remediation", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },
+    { route: "/remediation", postLoadWaitMs: 5_000, requiredText: [/整改工作台/, /整改事项|整改数据加载中/] },
     { route: "/archive", requiredText: [/底稿与报告/, /历史生成记录/, /历史记录/] },
     { route: "/guided-check", requiredText: [/AI，让审计更智能/] },
     { route: "/findings", postLoadWaitMs: 5_000, requiredText: [/医保审计/, /智能审计 - 规则导航/] },

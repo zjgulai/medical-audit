@@ -19,6 +19,39 @@ import {
   ReplicaRuntimeBadge
 } from "./replica-page-kit";
 
+const SOURCE_COLLECTION_LABELS: Record<string, string> = {
+  "medical-insurance-laws": "法规政策",
+  "supervision-rules-knowledge": "监管两库",
+  "medical-insurance-catalog": "医保目录",
+  "risk-negative-list": "风险清单",
+  "policy-general-policy": "综合政策",
+  "policy-finance-price-procurement": "财政价格采购",
+  "policy-data-statistics-disclosure": "数据统计",
+  "policy-reform-pilot": "改革试点",
+  "policy-social-security-livelihood": "社保民生",
+  "policy-industry-business-environment": "营商环境",
+  "management-org-personnel-qualification": "机构人员资质",
+  "management-market-quality": "市场质量",
+  "management-license-enforcement": "许可执法",
+  "management-safety-emergency": "安全应急",
+  "management-judicial-audit-procedure": "司法审计",
+  "management-ecology-resources": "生态资源",
+  "management-urban-municipal": "城市市政",
+  "management-general-admin": "综合行政",
+  "other-agriculture-water": "农业水利",
+  "other-culture-tourism-sports": "文化旅游",
+  "other-defense-confidentiality": "国防保密",
+  "other-education-research": "教育科研",
+  "other-ethnic-religious-foreign": "民族宗教外事",
+  "other-transport-maritime": "交通航运",
+  "personal-materials": "个人资料",
+  "conversation-documents": "对话审证沉淀",
+};
+
+function sourceCollectionLabel(key: string): string {
+  return SOURCE_COLLECTION_LABELS[key] ?? key;
+}
+
 type RulesState =
   | { readonly status: "loading"; readonly data: null }
   | { readonly status: "ready"; readonly data: RulesWorkbenchResponse }
@@ -79,7 +112,7 @@ function RuleCard({ item }: { readonly item: RuleLibraryApiItem }) {
       <p className="font-mono text-xs text-[var(--audit-blue)]">{item.code}</p>
       <p>{item.evidenceScope}</p>
       <dl className="replica-kb-stats">
-        <div><dt>来源</dt><dd>{item.sourceCollection}</dd></div>
+        <div><dt>来源</dt><dd>{sourceCollectionLabel(item.sourceCollection ?? "")}</dd></div>
         <div><dt>证据</dt><dd>{item.evidenceCount}</dd></div>
         <div><dt>疑点</dt><dd>{item.findingCount}</dd></div>
         <div><dt>责任人</dt><dd>{item.owner}</dd></div>
@@ -115,7 +148,7 @@ function SourceCard({ item }: { readonly item: RuleSourceCoverageApiItem }) {
     <article className="replica-kb-card">
       <div className="replica-kb-card-head">
         <div>
-          <span>{item.sourceCollection}</span>
+          <span className="replica-kb-source-label">{item.name}</span>
           <h3>{item.name}</h3>
         </div>
         <strong>{item.indexStatus}</strong>
