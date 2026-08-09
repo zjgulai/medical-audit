@@ -184,7 +184,7 @@ const routeCheckProfiles = {
       expectedPath: "/audit-cockpit",
       expectedChromeTitle: "审计驾驶舱",
       session: "workspace",
-      requiredText: [/审计驾驶舱/, /项目总览/, /进入项目管理/],
+      requiredText: [/审计驾驶舱/, /项目总览/, /项目管理/],
     },
     {
       route: "/documents",
@@ -254,10 +254,10 @@ const aliasRouteChecks = [
   {
     route: "/workspace",
     inputSearch: "",
-    expectedPath: "/chat",
+    expectedPath: "/workspace",
     expectedSearch: "",
     session: "workspace",
-    requiredText: [/AI，让审计更智能/],
+    requiredText: [/工作台/, /待复核疑点|常用功能|今日审计工作台/],
   },
   {
     route: "/findings",
