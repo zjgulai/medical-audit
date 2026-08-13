@@ -13501,3 +13501,16 @@ button.replica-graph-node.is-selected {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+/* The production shell stays visible while every protected data path is fail-closed. */
+.audit-runtime-access-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgb(217 119 6 / 35%);
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-align: center;
+}

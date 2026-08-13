@@ -6,7 +6,6 @@ import {
   createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
-  fetchProjectDashboard,
   fetchProjects,
   fetchReportWorkbench,
   recordMedicalAuditImportPreflight,
@@ -17,15 +16,18 @@ import type {
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogResponse,
   MedicalAuditWorkflowActionResponse,
-  ProjectDashboardResponse,
   ProjectsResponse,
   ReportWorkbenchResponse
 } from "@/lib/api-types";
 
 import MedicalAuditPage from "./page";
 
+const { useSearchParamsMock } = vi.hoisted(() => ({
+  useSearchParamsMock: vi.fn(() => new URLSearchParams())
+}));
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: useSearchParamsMock,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/medical-audit"
 }));
@@ -35,7 +37,6 @@ vi.mock("@/lib/api-client", () => ({
   createMedicalAuditReviewTask: vi.fn(),
   fetchAuditFindings: vi.fn(),
   fetchDocumentSourceCollections: vi.fn(),
-  fetchProjectDashboard: vi.fn(),
   fetchProjects: vi.fn(),
   fetchReportWorkbench: vi.fn(),
   recordMedicalAuditImportPreflight: vi.fn(),
@@ -47,7 +48,6 @@ const addMedicalAuditFindingToReportMock = vi.mocked(addMedicalAuditFindingToRep
 const createMedicalAuditReviewTaskMock = vi.mocked(createMedicalAuditReviewTask);
 const fetchAuditFindingsMock = vi.mocked(fetchAuditFindings);
 const fetchDocumentSourceCollectionsMock = vi.mocked(fetchDocumentSourceCollections);
-const fetchProjectDashboardMock = vi.mocked(fetchProjectDashboard);
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
 const recordMedicalAuditImportPreflightMock = vi.mocked(recordMedicalAuditImportPreflight);
@@ -208,54 +208,6 @@ const projectsResponse: ProjectsResponse = {
   store: { ready: true, backend: "SqlAlchemyProjectMemberStore" }
 };
 
-const projectDashboardResponse: ProjectDashboardResponse = {
-  format: "project-dashboard-v1",
-  project: projectSummary,
-  metrics: [
-    {
-      key: "open_findings",
-      label: "未闭环疑点",
-      value: "1",
-      helper: "来自审计疑点库",
-      tone: "warning"
-    }
-  ],
-  queue: [
-    {
-      id: "queue-1",
-      title: "核对非目录项目发生基金支付的结算明细",
-      owner: "医保办",
-      dueLabel: "今日",
-      status: "open",
-      risk: "medium"
-    }
-  ],
-  activities: [],
-  status_distribution: [{ status: "confirmed-violation", label: "确认违规", count: 1 }],
-  member_workloads: [
-    {
-      name: "张主任",
-      role: "项目负责人",
-      department: "审计办",
-      total: 1,
-      pending: 1,
-      closed: 0
-    }
-  ],
-  evidence_grade: "live-db-connected",
-  production_side_effect: "none",
-  store: {
-    ready: true,
-    project_members_ready: true,
-    audit_findings_ready: true,
-    status: "ready",
-    backend: {
-      project_members: "SqlAlchemyProjectMemberStore",
-      audit_findings: "SqlAlchemyAuditFindingStore"
-    }
-  }
-};
-
 const workflowResponse: MedicalAuditWorkflowActionResponse = {
   format: "medical-audit-workflow-action-v1",
   action: "review-task-create",
@@ -284,10 +236,10 @@ const workflowResponse: MedicalAuditWorkflowActionResponse = {
 };
 
 function mockApis() {
+  useSearchParamsMock.mockReturnValue(new URLSearchParams());
   fetchAuditFindingsMock.mockResolvedValue(auditFindingsResponse);
   fetchDocumentSourceCollectionsMock.mockResolvedValue(sourceCollectionsResponse);
   fetchProjectsMock.mockResolvedValue(projectsResponse);
-  fetchProjectDashboardMock.mockResolvedValue(projectDashboardResponse);
   fetchReportWorkbenchMock.mockResolvedValue(reportWorkbenchResponse);
   addMedicalAuditFindingToReportMock.mockResolvedValue({
     ...workflowResponse,
@@ -331,7 +283,6 @@ describe("MedicalAuditPage", () => {
     expect(fetchAuditFindingsMock).toHaveBeenCalledWith(undefined);
     expect(fetchDocumentSourceCollectionsMock).toHaveBeenCalled();
     expect(fetchProjectsMock).toHaveBeenCalled();
-    expect(fetchProjectDashboardMock).toHaveBeenCalledWith("SELF-CHECK-FUND-20260607");
     expect(fetchReportWorkbenchMock).toHaveBeenCalled();
     expect(screen.getByText("疑点数据已同步")).toBeInTheDocument();
     expect(screen.getByText("知识库分类已同步")).toBeInTheDocument();
@@ -346,7 +297,7 @@ describe("MedicalAuditPage", () => {
     );
     expect(screen.getByRole("button", { name: "DIP/DRG审计" })).toHaveTextContent("DIP/DRG审计");
     expect(screen.getByText("查看数据与权限说明").closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText(/页面初始加载读取生产数据/)).toBeInTheDocument();
+    expect(screen.getByText(/本地测试模式读取受控业务数据/)).toBeInTheDocument();
     expect(screen.queryByText("当前页面只读取生产数据；写入类动作仍需经过独立确认门禁。")).not.toBeInTheDocument();
     expect(screen.queryByText("207")).not.toBeInTheDocument();
     expect(screen.queryByText("20251203001")).not.toBeInTheDocument();
@@ -384,7 +335,6 @@ describe("MedicalAuditPage", () => {
 
     expect(screen.getByText("专题项目待恢复")).toBeInTheDocument();
     expect(screen.queryByText("专题驾驶舱等待项目接口恢复")).not.toBeInTheDocument();
-    expect(fetchProjectDashboardMock).not.toHaveBeenCalled();
   });
 
   it("opens a backend-backed finding drawer and links context into chat", async () => {
@@ -402,6 +352,56 @@ describe("MedicalAuditPage", () => {
       "href",
       expect.stringContaining("/chat?question=")
     );
+  });
+
+  it("opens the visible finding from the finding deep link after data loads", async () => {
+    mockApis();
+    useSearchParamsMock.mockReturnValue(
+      new URLSearchParams("finding=finding-deep-link-visible")
+    );
+    fetchAuditFindingsMock.mockResolvedValue({
+      ...auditFindingsResponse,
+      items: [
+        ...auditFindingsResponse.items,
+        {
+          ...auditFindingsResponse.items[0],
+          finding_key: "finding-deep-link-visible",
+          rule_key: "deep-link-rule",
+          metadata: {
+            department: "医保办",
+            subject: "深链目标疑点"
+          },
+          evidence_items: [
+            {
+              ...auditFindingsResponse.items[0].evidence_items[0],
+              snippet: "深链目标的唯一证据摘要。"
+            }
+          ]
+        }
+      ],
+      stats: { ...auditFindingsResponse.stats, total: 2, open: 2 }
+    });
+
+    render(<MedicalAuditPage />);
+
+    const drawer = await screen.findByLabelText("疑点详情");
+    expect(within(drawer).getByText("finding-deep-link-visible")).toBeInTheDocument();
+    expect(within(drawer).getByText("深链目标的唯一证据摘要。")).toBeInTheDocument();
+    expect(screen.queryByText(/未找到可见疑点/)).not.toBeInTheDocument();
+  });
+
+  it("uses one non-disclosing message for an invalid or invisible finding link", async () => {
+    mockApis();
+    useSearchParamsMock.mockReturnValue(
+      new URLSearchParams("finding=secret-or-deleted-finding")
+    );
+
+    render(<MedicalAuditPage />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "未找到可见疑点，已显示当前可访问的疑点清单。"
+    );
+    expect(screen.queryByText("secret-or-deleted-finding")).not.toBeInTheDocument();
   });
 
   it("submits create and import actions through backend workflow contracts", async () => {

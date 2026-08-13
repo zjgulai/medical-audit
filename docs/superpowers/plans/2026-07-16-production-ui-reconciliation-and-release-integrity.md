@@ -1,3 +1,14 @@
+---
+title: Production UI Reconciliation and Release Integrity Implementation Plan
+doc_type: implementation-plan
+module: deployment
+status: superseded
+created: 2026-07-16
+updated: 2026-08-13
+owner: self
+source: human+ai
+---
+
 # Production UI Reconciliation and Release Integrity Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

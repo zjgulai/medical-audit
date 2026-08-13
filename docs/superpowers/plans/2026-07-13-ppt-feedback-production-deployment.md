@@ -1,7 +1,13 @@
 ---
 title: PPT 反馈产品优化生产部署与验收计划
+doc_type: deployment-plan
+module: deployment
+created: 2026-07-13
+updated: 2026-08-13
+owner: self
+source: human+ai
 created_at: 2026-07-13
-updated_at: 2026-07-13
+updated_at: 2026-08-13
 project: medical_audit
 scope: ppt-feedback-production-promotion
 status: local-fix-validated-awaiting-pr-rereview

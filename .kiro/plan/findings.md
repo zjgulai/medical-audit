@@ -1,11 +1,40 @@
 ---
 title: "medical_audit loop findings"
+doc_type: findings
+module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
+created: 2026-06-30
+updated: 2026-08-13
 status: "active"
+owner: self
+source: human+ai
 ---
 
 # Findings
+
+## 2026-08-13 全量复盘结论
+
+已确认事实：
+
+- 生产可信身份尚未建设，Header/LocalStorage 角色模拟不能作为生产认证。
+- 整改接口此前缺少完整项目可见性和服务端迁移门禁；Sample ID 不能用于 UUID 附件接口。
+- 报告草稿 JSON 签发接口此前错误复用 `CREATE_REVIEW_TASK`，可绕过正式 `SIGN_REPORTS` 门禁。
+- 知识统计此前存在 Join 放大和 `SUM(DISTINCT LENGTH(...))` 对等长文本误减。
+- 旧稳定文档和三账包含过期 SHA、路由和生产状态，不能继续作为当前证据。
+- 候选收口复审确认两个同源附件鉴权顺序缺陷：上传接口会在父整改项可见性检查前处理扩展名和文件体；附件列表在存储未启用时会在父资源检查前返回空列表。两条 RED 分别稳定得到 `422` 和 `200`，最小修复后统一满足不可见资源 `404` 合同。
+
+推断：OpenCode 优化扩大了功能面，但权限、测试合同和文档同步没有同时收口。
+
+不确定项：生产配置、数据和业务行为未逐功能读取；在可信身份门禁完成前保持 `not_production_verified`。
+
+清理事实：首批 4 个低风险 exact paths 已经用户确认于 14:45 移动到同卷系统 Trash，约 40 MiB；移动完成时目标 inode 和内容哈希一致，Git 状态未变化。16:02 新鲜复核发现 Finder 已于 15:10 清空 Trash，源和目标均不存在，当前不可恢复；系统日志不能证明触发者。该变化不授权其他旧工作区或生产备份删除。
+
+第二批清理事实：416 个选定历史证据文件已归并并通过隔离解包哈希验证；5 个相互独立旧目录约 2.50 GiB 已按用户确认移动到受管同卷隔离目录。移动前后 inode、全量树哈希和候选 Git 状态一致，可按精确映射恢复，但未释放磁盘空间。Loop 128 与父仓库因 worktree/alternates 依赖继续保留；H1 中匹配强凭据特征的源证据不能永久删除，其他永久删除也未授权。
+
+第三批清理事实：Loop 128 和父仓库约 1.218 GiB 已按确认转换为相对 worktree 关联并成对同卷隔离。两个原路径均不存在；移动前后 inode 和非指针载荷哈希一致，worktree 注册、clean 状态、`fsck`、全部 ref tip 祖先关系、alternates 和候选 Git 状态均通过。三份原绝对关联元数据已有本地备份，可按收据恢复。父仓库 objects alternates 继续依赖当前候选仓库，隔离不是自包含 Git 副本，也未释放磁盘空间。
+
+Boundary: no staging or commit, no production business read/write, no provider call, no deploy, no local Docker operation.
 
 ## 2026-07-21 Loop 60 Initial Findings
 

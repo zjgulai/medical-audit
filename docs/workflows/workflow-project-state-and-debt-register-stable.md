@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-09
+updated: 2026-08-13
 owner: self
 source: human+ai
 ---
@@ -26,7 +26,45 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-### 2.3 2026-08-09 Sprint-5 完整基线（最新）
+### 2.4 2026-08-13 全量复盘候选快照（当前）
+
+以下内容是当前权威快照。2.3 及更早章节仅用于追溯历史，不再代表当前状态。
+
+| 维度 | 当前事实 | 证据边界 |
+| --- | --- | --- |
+| 候选起点 | `main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246` | 分支创建时的本地 Git 证据 |
+| 候选分支 | `codex/medical-audit-reanalysis-playbook-20260813` | 尚未合并、推送或部署 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 只读收据；不是本次候选部署证据 |
+| 源码差异 | `25e1654e..ccc73e95` 没有 `src/`、`web/` 业务源码差异 | 不等于配置、数据和行为完全一致 |
+| 本地全栈 | 17 个 Playwright 场景通过；收据覆盖 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流 | 共 27 条功能记录；临时 SQLite、Fake Provider、`provider_call=false` |
+| 候选质量 | Python `995 passed`；Web `412 passed`；Ruff、Mypy、typecheck、lint、build 和本地全栈通过 | L2 本地证据；5 条 warning 来自第三方 SWIG 类型 |
+| 生产业务能力 | `not_production_verified` | 生产仅允许公开壳层；业务读取和写入关闭 |
+
+本轮候选已经实现生产公开壳层门禁、疑点深链、整改可见性和状态机、报告签发权限、知识统计聚合修复，以及逐功能 Playbook。完整测试仍以候选最终收据为准。
+
+候选收口复审补充修复了两项整改附件鉴权顺序缺陷：父整改项不可见时必须在文件扩展名、文件体或附件存储状态处理前返回 `404`。新增回归先复现 `422/200`，修复后定向测试 `6/6` 通过。
+
+当前阻塞与下一门禁：
+
+- 可信 SSO/OIDC 延期；没有可信身份前，不开放生产业务读取、写入或 Provider 调用。
+- merge、push、部署和生产写入均未授权。
+- 首批 4 个低风险路径已按用户确认于 14:45 移动到系统 Trash，约 40 MiB；但 16:02 新鲜复核发现 Finder 在 15:10 清空了 Trash，源和 Trash 目标均不存在，因此当前不可恢复。系统日志不能证明触发者。
+- 旧工作区的 416 个选定证据文件已归并并通过隔离解包哈希校验；第二批 5 个相互独立目录、约 2.50 GiB 已按确认移动到受管同卷隔离目录。
+- Loop 128 及其父仓库约 1.218 GiB 已按确认完成第三批成对隔离：三处 Git 关联元数据已转为相对 worktree 路径，保持同级布局的两个目录已同卷移动到受管隔离目录。
+- 两个目录移动前后 inode 和非指针载荷哈希一致；worktree 注册、clean 状态、`fsck`、全部 ref tip 祖先关系、alternates 和候选 Git 状态均通过。父仓库仍通过 alternates 依赖当前候选仓库，并非自包含副本。
+- 第二批没有使用系统 Trash；移动前后 inode、全量树哈希和候选 Git 状态一致，精确恢复映射已写入收据。隔离不释放磁盘空间，永久删除仍未授权。
+- 第三批同样未使用系统 Trash；原绝对 Git 关联元数据已有 `0700` 本地备份，移动收据记录了成对恢复顺序。隔离不释放磁盘空间，永久删除仍未授权。
+- 生产备份没有新鲜隔离恢复证明，删除门禁为 `blocked`。
+
+当前权威入口：
+
+- [文档索引](../README.md)
+- [系统架构](../architecture/architecture-system-overview-stable.md)
+- [平台 API](../api/api-medical-audit-platform-v1-stable.md)
+- [用户 Playbook](../playbooks/user-playbook-medical-audit-v1-stable.md)
+- [生产验收矩阵](../testing/production-feature-acceptance-matrix-stable.md)
+
+### 2.3 2026-08-09 Sprint-5 完整基线（历史）
 
 状态口径：本节记录 Sprint-5 在 2026-08-08/09 执行后的完整基线。本地 main 领先 origin/main 1 个 commit（`226d3d0d`），尚未 push；生产仍停留在 Sprint-4 deploy_sha = `484c348f`，尚未部署 sprint-5 内容。
 

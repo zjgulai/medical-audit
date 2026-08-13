@@ -1,8 +1,14 @@
 ---
 title: Frontend Cutover Production Readonly Audit
+doc_type: analysis-report
+module: frontend
+created: 2026-07-05
+updated: 2026-08-13
+owner: self
+source: human+ai
 date: 2026-07-05
 project: medical_audit
-status: observed-not-aligned
+status: superseded
 scope: production-readonly-and-local-baseline
 production_write: false
 provider_call: false

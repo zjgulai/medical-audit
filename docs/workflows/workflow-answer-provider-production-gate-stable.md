@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: answer-provider-production-gate
 status: stable
 created: 2026-06-15
-updated: 2026-07-18
+updated: 2026-08-13
 owner: self
 source: human+ai
 ---
@@ -15,11 +15,21 @@ source: human+ai
 > 本文件由 `drafts/analysis/analysis-answer-provider-production-gate-plan-draft-20260615.md` 定稿。
 > 工具链就绪：`audit-answer-provider-gate-readiness.py`、`run-production-chat-model-catalog-readonly-probe.py`、`answer-provider-smoke`、`evaluate-answers`、答案预检与生产 `--require-generated-answer` E2E 闸均已实现。
 
-## 0. 2026-07-18 chat catalog 只读请求边界收口（最新）
+## 0. 2026-08-13 公开壳层边界（当前）
+
+生产候选访问模式为 `public-shell-readonly`。`/api/v1/query/models` 属于受保护业务 API，不再作为公开目录读取；当前脚本只验证部署元数据和该接口返回精确 503 `trusted_identity_required`，不会读取模型条目或调用 Provider。
+
+```bash
+pnpm production:chat-model-catalog-readonly
+```
+
+旧 `production:chat-model-ready` 快捷命令已移除。可信 SSO/OIDC 启用并单独授权业务读取后，才能恢复模型目录 readiness；真实 Provider smoke 仍需另一项独立授权。下方 2026 年 7 月的目录和 Provider 结果均为历史证据，不能证明当前候选或当前生产能力。
+
+## 0.1 2026-07-18 chat catalog 只读请求边界收口（历史）
 
 `run-production-chat-model-catalog-readonly-probe.py` 的 `--base-url` 只接受精确 production origin `https://audit.lute-tlz-dddd.top`（可等价指定 HTTPS `:443`），并拒绝所有 HTTP redirect。该限制在构造认证请求前生效，避免 alias、路径、query、非 HTTPS 或 redirect 目标承接 production probe 的身份头；本地 fixture 仍通过注入 `http_get` 验证，不调用生产。
 
-## 0.1 2026-07-10 chat model catalog 只读门禁补充
+## 0.2 2026-07-10 chat model catalog 只读门禁补充（历史）
 
 `/chat` 现使用模型别名合同，生产判断需要分成两层：
 

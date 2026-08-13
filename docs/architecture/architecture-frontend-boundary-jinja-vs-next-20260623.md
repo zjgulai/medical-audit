@@ -1,91 +1,56 @@
 ---
-title: 前端边界冻结：Jinja 深页 vs Next 门户（E2）
+title: 前端边界：Next 门户与 FastAPI 兼容深页
 doc_type: architecture
 module: frontend
 topic: jinja-next-boundary
 status: stable
 created: 2026-06-23
-updated: 2026-06-23
+updated: 2026-08-13
 owner: self
 source: human+ai
 ---
 
-# 前端边界冻结：Jinja 深页 vs Next 门户（E2）
+# 前端边界：Next 门户与 FastAPI 兼容深页
 
-## 1. 背景
+## 1. 当前结论
 
-项目存在两套前端渲染体系并存（技术债 T-01）：
+Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互”外壳。FastAPI Jinja 页面继续承担兼容深页、服务端表单和导出入口，但不得据此把候选写操作声称为已通过生产验收。
 
-- FastAPI Jinja 深页（`routes_pages.py`，约 120KB），承载写入型审计业务闭环，已过生产写入型验收。
-- Next.js 门户（`web/`，18 路由 + 登录），承载导航、仪表盘和读/轻交互页。
+当前完整架构见 [系统架构总览](architecture-system-overview-stable.md)，逐功能入口见 [用户 Playbook](../playbooks/user-playbook-medical-audit-v1-stable.md)。
 
-无明确边界会导致同一能力双入口、双测试、双文案，维护成本翻倍。本文件冻结边界，作为后续所有 UI 工作的方向基线。
+## 2. 路由归属
 
-## 2. 现状清单（实测，基于 origin/main）
+| 类型 | 当前归属 | 约束 |
+| --- | --- | --- |
+| 产品门户、导航和 20 个独立页面 | Next.js | 主用户入口 |
+| `/workspace`、`/findings`、`/knowledge-query` | Next.js 兼容别名 | 保留兼容合同，不再作为孤儿路由 |
+| 疑点、整改、报告、项目和知识工作台 | Next.js 调用 `/api/v1/*` | 权限与状态机以服务端字段为准 |
+| `/pages/*`、旧表单和下载入口 | FastAPI Jinja | 兼容深页；只维护必要回归 |
+| 静态资源、健康和部署元数据 | Next.js/FastAPI | `public-shell-readonly` 下可公开 |
+| 业务 API 和旧深页中的业务数据 | FastAPI | 生产公开壳层模式统一阻断 |
 
-### 2.1 Jinja 深页与端点（routes_pages.py）
+## 3. 访问模式边界
 
-| 路由 | 类型 | 职责 | 是否有 Next 对应 |
-| --- | --- | --- | --- |
-| `/` | 页面 | 根落地 | 否（Next 用 `/workspace`） |
-| `/pages/query` | 页面 | 知识查询深页 | Next `/knowledge-query`（孤儿） |
-| `/pages/chat` | 页面 | AI 审证对话深页（引用生成、底稿导出） | Next `/chat`（入口壳） |
-| `/pages/chat/export` | 导出 | 对话底稿导出 | — |
-| `/pages/review-tasks` | 页面 | 复核任务台（核心写入业务） | 无 |
-| `/pages/review-tasks/create` | 写 POST | 创建复核任务 | 无 |
-| `/pages/review-tasks/{id}/status` | 写 POST | 状态流转 | 无 |
-| `/pages/review-tasks/{id}/attachments` | 写 POST | 附件登记/归档 | 无 |
-| `/pages/review-tasks/{id}/report-signoff` | 写 POST | 正式报告签发冻结 | 无 |
-| `/pages/review-tasks/{id}/rectification` | 写 POST | 整改事项 | 无 |
-| `/review-tasks/{id}/export|report-draft|signed-report|rectification/export` | 导出 | 各类下载 | 无 |
-| `/pages/audit-findings` | 页面 | 疑点清单 | Next `/findings`（孤儿） |
-| `/pages/audit-findings/{key}/review-task` | 写 POST | 从疑点建复核任务 | 无 |
-| `/audit-findings/{key}/export` | 导出 | 疑点导出 | 无 |
-| `/pages/audit-logs` | 页面 | 审计日志台 | 无 |
-| `/pages/index-admin` | 页面 | 索引发布/回滚/重载运维台 | 无 |
-| `/pages/preview/{chunk_id}` | 页面 | 原文预览 | 被两侧引用 |
-| `/reports/workbench`、`/reports/workpaper-templates` | API | 报告聚合数据 | 被 Next `/reports` 消费 |
+### 3.1 本地测试
 
-### 2.2 Next 门户路由
+`header-transition-test` 允许本地角色模拟，用于成员、主任、技术员和管理员的权限回归。页面必须显示“仅本地测试”，不能把浏览器角色值当作可信认证。
 
-导航内：`workspace, chat, agents, agent-market, knowledge-base, documents, analytics, graph, reports, projects, guided-check, rules, remediation, archive`（+ 系统管理 `index-admin`、`audit-logs` 指向 Jinja）。
-导航外（孤儿）：`findings`、`knowledge-query`。
+### 3.2 生产公开壳层
 
-## 3. 边界决策（冻结）
+`public-shell-readonly` 仅允许产品壳层、静态资源、`/health`、部署元数据和 release manifest。受保护请求在认证、业务逻辑和审计写入前返回 503 `trusted_identity_required`。
 
-### 3.1 长期由 Jinja 承载（写入型业务闭环，已过生产验收，短期不迁移）
+因此，历史文档中的“Jinja 写入型业务已过生产验收”不再是当前候选的有效结论。可信 SSO/OIDC 完成前，Next 和 Jinja 两侧的业务读取与写入都保持关闭。
 
-- 复核任务台全生命周期：`/pages/review-tasks` 及其 create/status/attachments/report-signoff/rectification 写端点与全部导出。
-- 疑点清单与从疑点建任务：`/pages/audit-findings`、`/pages/audit-findings/{key}/review-task`、疑点导出。
-- 审计日志台：`/pages/audit-logs`。
-- 索引运维台：`/pages/index-admin`（受控运维，刻意保留服务端）。
-- 原文预览：`/pages/preview/{chunk_id}`（双侧共用，稳定）。
-- 引用生成与底稿导出：`/pages/chat`、`/pages/chat/export`、`/pages/query`（真实引用/导出在深页执行）。
+## 4. 演进规则
 
-理由：这些是产品的合规核心闭环，已有生产写入型 E2E 与审计日志门禁；用 Jinja form-POST + 服务端渲染最稳，迁移收益低、回归风险高。
+1. 新功能统一使用 Next.js 页面和 `/api/v1/*` 规范接口。
+2. 权限、可见性、状态迁移和可写性由 FastAPI 返回，前端不自行推导。
+3. Jinja 兼容深页只修复缺陷和维持导出，不扩大新的产品入口。
+4. 删除旧路由前必须先更新 20 页面、3 别名合同与逐功能 Playbook。
+5. 任何生产写入验收都必须在可信身份上线后重新授权，不能复用历史 Header 模拟结果。
 
-### 3.2 Next 为唯一门户壳（导航/仪表盘/读与轻交互）
+## 5. 当前证据
 
-- 全部 workspace 导航页继续在 Next 实现与演进。
-- Next `/chat`、`/reports` 作为"入口壳/聚合视图"，通过 `/api/v1/*` 或跳转深页对接 Jinja 能力，不在 Next 重复实现写入逻辑。
-
-### 3.3 孤儿路由处置（承接 E1）
-
-- `/knowledge-query`、`/findings`：不在导航、与 `/pages/query`、`/pages/audit-findings` 重复 → 标记下线候选；下线前先在导航与文档中不再引用，保留一个发布周期后移除或改为重定向。
-
-### 3.4 演进规则（强制）
-
-1. 新的写入型业务流一律在 **Next + `/api/v1/*`** 实现，不再新增 Jinja 页面。
-2. Jinja 深页进入"维护冻结"：可修 bug、可加审计字段，不扩功能面。
-3. Jinja→Next 迁移按"先读后写"顺序，优先迁移只读展示页（`audit-logs`、`audit-findings` 展示）后再考虑写入型（`review-tasks`），且每次迁移必须保留生产写入型 E2E 等价覆盖。
-4. 任一迁移完成后立即删除被取代的 Jinja 路由，避免双入口长期并存。
-
-## 4. 完成判据
-
-- 路由地图无未决归属；每个路由标注"Jinja 维护 / Next 主线 / 下线候选"。
-- 后续 PR 不新增 Jinja 页面（评审项）。
-- 孤儿路由有明确下线计划。
-
-## 5. 状态
-
-E2 边界冻结完成（文档级）。后续 Phase E 代码切片（E3 已铺数据来源徽标、E4 起逐页接 API）均在本边界内推进：只读展示页优先在 Next 接真实 API，写入型闭环暂留 Jinja。
+- 本地：17 个 Playwright 场景，以及 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流已形成机器收据；功能记录总数为 27。
+- 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。
+- 候选：尚未合并、推送或部署，业务功能为 `not_production_verified`。

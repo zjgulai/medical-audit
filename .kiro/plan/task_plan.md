@@ -1,12 +1,36 @@
 ---
 title: "medical_audit loop engineering release readiness plan"
+doc_type: plan
+module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
+created: 2026-06-30
+updated: 2026-08-13
 status: "active"
+owner: self
+source: human+ai
 evidence_grade: "local-fullstack-plus-doc-derived"
 ---
 
 # medical_audit Loop Engineering Plan
+
+## 2026-08-13 当前执行计划
+
+当前候选为 `codex/medical-audit-reanalysis-playbook-20260813`。本轮目标是让代码、权限边界、逐功能验收和权威文档一致；下方旧 Loop 内容是历史记录。
+
+- 已完成：公开壳层 fail-closed 门禁、疑点深链、整改状态机、签发权限、知识统计聚合、逐功能文档和本地全量质量验证。
+- 已完成首批清理门禁：用户确认的 4 个 exact paths 已移动到系统 Trash，源路径、inode、内容哈希、受保护路径和 Git 状态均复核通过。
+- 已完成旧工作区证据归并：416 个选定文件通过 gzip 与隔离解包逐文件哈希校验。
+- 新鲜证据变化：Finder 在 15:10 清空了系统 Trash，首批 4 个对象当前不可恢复；触发者未知。第二批不再使用系统 Trash。
+- 已完成第二批受管隔离：5 个相互独立旧目录、约 2.50 GiB 已按确认同卷移动；inode、全量树哈希和候选 Git 状态移动前后一致，可按收据精确恢复。
+- 已完成第三批受管隔离：Loop 128 及其父仓库约 1.218 GiB 已按确认转换为相对 worktree 关联并成对同卷移动；inode、非指针载荷、Git 注册、`fsck`、alternates 和候选 Git 状态均通过。
+- 已完成候选收口复审：发现整改附件在父资源鉴权前处理文件、附件存储不可用时提前返回空列表两项同源缺陷；新增 RED 回归后完成最小修复。全量门禁刷新为 Python `995 passed`、Web `412 passed`、本地全栈 Playwright `17/17`。
+- 继续保留：H1 潜在敏感源证据不允许永久删除；Loop 128 父仓库隔离后仍依赖当前候选仓库 objects alternates，三份原绝对关联元数据备份不得删除。
+- 未授权：commit、merge、push、部署、生产业务读取/写入、Provider 调用、其他 Trash/隔离移动、任何永久删除和生产删除。
+- 生产边界：仅引用 2026-08-12 L3 只读证据；候选业务功能统一为 `not_production_verified`。
+- 下一门禁：生成并审阅本地候选 exact-manifest；只有获得单独授权后才可 staging 或 commit，不能由本地测试通过推断生产推广授权。
+
+权威任务和差异见 `drafts/analysis/project-reanalysis-and-gap-audit-20260813.md`。
 
 ## Goal
 

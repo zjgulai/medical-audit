@@ -17,7 +17,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from medical_audit_kb.api import chat_models, routes_documents
+from medical_audit_kb.api import chat_models, routes_documents, routes_knowledge_base
 from medical_audit_kb.api.agent_store import (
     AGENT_ID_PREFIX,
     InMemoryAgentStore,
@@ -167,7 +167,87 @@ def test_deployment_metadata_reports_sha_without_runtime_side_effects(
         "allowed_http_methods": ["GET"],
         "non_get_http_methods_allowed": False,
     }
+    assert body["runtime_access"] == {
+        "mode": "header-transition-test",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": True,
+        "writes_allowed": True,
+    }
     assert "MEDICAL_AUDIT_DEPLOY_SHA" not in serialized
+    assert state.operation_logs == []
+
+
+def test_public_shell_readonly_exposes_only_shell_health_and_deploy_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    static_root = tmp_path / "web-out"
+    _write_text(static_root / "index.html", "<html><body>AuditScope Portal</body></html>")
+    _write_text(static_root / "workspace.html", "<html>Workspace Shell</html>")
+    _write_text(static_root / "workspace.txt", "Workspace RSC")
+    _write_text(
+        static_root / "fund-compliance" / "review.html",
+        "<html>Fund Review Shell</html>",
+    )
+    monkeypatch.setenv("MEDICAL_AUDIT_WEB_STATIC_ROOT", str(static_root))
+    state = _api_state(tmp_path)
+
+    class AuditStoreThatMustNotRun:
+        def add_event(self, *_args: object, **_kwargs: object) -> dict[str, object]:
+            raise AssertionError("public shell rejection must not write an audit event")
+
+    state.audit_log_store = AuditStoreThatMustNotRun()  # type: ignore[assignment]
+    client = TestClient(
+        create_app(
+            state,
+            enforce_controlled_api_auth=True,
+            api_access_mode="public-shell-readonly",
+        )
+    )
+
+    assert client.get("/").status_code == 200
+    assert "Workspace Shell" in client.get("/workspace").text
+    assert client.get("/workspace.txt").text == "Workspace RSC"
+    assert "Fund Review Shell" in client.get("/fund-compliance/review").text
+    assert "Fund Review Shell" in client.get("/fund-compliance/review.html").text
+    assert client.get("/health").status_code == 200
+    assert client.head("/api/v1/health").status_code == 200
+    metadata = client.get("/api/v1/deployment/metadata")
+    assert metadata.status_code == 200
+    assert metadata.json()["runtime_access"] == {
+        "mode": "public-shell-readonly",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": False,
+        "writes_allowed": False,
+    }
+    assert client.head("/api/backend/deployment/metadata").status_code == 200
+
+    protected_responses = (
+        client.get("/auth/roles"),
+        client.get("/api/v1/index/postgres-status"),
+        client.get("/api/v1/projects"),
+        client.get("/reports/workbench"),
+        client.get("/projects/SELF-CHECK-FUND-20260607"),
+        client.get(
+            "/api/backend/reports/workbench",
+            headers={
+                "X-User-Id": "next-director",
+                "X-Role": "director",
+                "X-Tenant-Id": "hospital-demo",
+            },
+        ),
+        client.post("/api/v1/query", json={"question": "must not execute"}),
+        client.options("/api/v1/projects"),
+    )
+    expected_detail = {
+        "code": "trusted_identity_required",
+        "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+        "access_mode": "public-shell-readonly",
+    }
+    for response in protected_responses:
+        assert response.status_code == 503
+        assert response.json() == {"detail": expected_detail}
+        assert response.headers["cache-control"] == "no-store"
     assert state.operation_logs == []
 
 
@@ -4422,6 +4502,99 @@ def test_document_library_limits_documents_before_chunk_lateral_reads(
     assert normalized_query.index("LIMIT %s") < normalized_query.index("LEFT JOIN LATERAL")
     assert "FROM limited_documents limited" in normalized_query
     assert cursor.params[-1] == 5
+
+
+def test_knowledge_catalog_postgres_metrics_preaggregate_without_join_amplification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CursorStub:
+        current_query = ""
+        queries: list[str] = []
+
+        def __enter__(self) -> "CursorStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: str) -> None:
+            self.current_query = " ".join(query.split())
+            self.queries.append(self.current_query)
+
+        def fetchall(self) -> list[dict[str, object]]:
+            if "WITH package_flags AS" in self.current_query:
+                return [
+                    {
+                        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                        "document_count": 1,
+                        "chunk_count": 2,
+                        "embedding_count": 2,
+                        "active_embedding_count": 2,
+                        "candidate_chunk_count": 2,
+                        "character_count": 8,
+                    }
+                ]
+            if "SELECT DISTINCT ON" in self.current_query:
+                return [
+                    {
+                        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                        "latest_index_version_key": "index-v2",
+                        "latest_index_status": "candidate",
+                    }
+                ]
+            return []
+
+        def fetchone(self) -> dict[str, object]:
+            return {
+                "source_documents": 1,
+                "document_chunks": 2,
+                "chunk_embeddings": 2,
+            }
+
+    class ConnectionStub:
+        def __init__(self, cursor: CursorStub) -> None:
+            self._cursor = cursor
+
+        def __enter__(self) -> "ConnectionStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def cursor(self, *, row_factory: object) -> CursorStub:
+            assert row_factory is routes_knowledge_base.dict_row
+            return self._cursor
+
+    cursor = CursorStub()
+    monkeypatch.setattr(
+        routes_knowledge_base.psycopg,
+        "connect",
+        lambda *_args, **_kwargs: ConnectionStub(cursor),
+    )
+
+    metrics, totals, latest = routes_knowledge_base._metrics_from_postgres(
+        "postgresql+psycopg://user:pass@localhost:5433/db"
+    )
+
+    metric = metrics[SourceCollection.MEDICAL_INSURANCE_LAWS]
+    assert metric.character_count == 8
+    assert metric.embedding_count == 2
+    assert metric.active_embedding_count == 2
+    assert metric.candidate_chunk_count == 2
+    assert totals == {
+        "source_documents": 1,
+        "document_chunks": 2,
+        "chunk_embeddings": 2,
+    }
+    assert latest[SourceCollection.MEDICAL_INSURANCE_LAWS]["latest_index_version_key"] == "index-v2"
+
+    rollup_query = next(query for query in cursor.queries if "WITH package_flags AS" in query)
+    assert "BOOL_OR(status = 'active')" in rollup_query
+    assert "BOOL_OR(status = 'candidate')" in rollup_query
+    assert "SUM(LENGTH(text))" in rollup_query
+    assert "SUM(DISTINCT" not in rollup_query
+    assert "GROUP BY source_package_version_id" in rollup_query
+    assert "GROUP BY source_document_id" in rollup_query
 
 
 def test_document_library_logs_degraded_postgres_read(

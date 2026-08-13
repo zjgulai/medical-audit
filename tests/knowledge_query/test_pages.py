@@ -162,6 +162,8 @@ def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) 
     assert response.status_code == 200
     body = response.json()
     assert body["format"] == "remediation-workbench-v1"
+    assert body["data_mode"] == "sample"
+    assert body["capabilities"] == {"writable": False}
     assert body["workbench_id"] == "FUND-USAGE-REMEDIATION"
     assert body["metrics"]["case_count"] == 4
     assert body["metrics"]["active_case_count"] == 3
@@ -172,6 +174,8 @@ def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) 
     assert body["production_side_effect"] == "none"
     assert body["store"] == {"ready": True, "backend": "ReadonlyRemediationWorkbenchSeed"}
     assert body["remediation_cases"][0]["sourceFinding"] == "FINDING-F044EBD309B659DC"
+    assert body["remediation_cases"][0]["allowed_transitions"] == []
+    assert body["remediation_cases"][0]["can_upload_attachment"] is False
     assert body["remediation_cases"][0]["href"] == "/reports"
     assert body["evidence_requests"][1]["status"] == "待上传"
     assert body["evidence_requests"][0]["href"] == "/reports"
@@ -1066,7 +1070,6 @@ def test_project_report_draft_enforces_formal_action_permissions_and_actor_bindi
     assert isinstance(signed_dossier, dict)
     assert signed_dossier["signed_report"]["signed_by"] == "next-director"
     assert state.operation_logs[-1]["payload"]["signed_by"] == "next-director"
-
     member_pending_rectification = client.post(
         f"/pages/review-tasks/{task_id}/rectification",
         headers=member_headers,
@@ -1128,6 +1131,110 @@ def test_project_report_draft_enforces_formal_action_permissions_and_actor_bindi
     serialized_denials = json.dumps(denials, ensure_ascii=False)
     assert "field_values" not in serialized_denials
     assert "普通成员补充复核意见" not in serialized_denials
+
+
+def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    project_store = InMemoryProjectMemberStore()
+    project_store.add_member(
+        "SELF-CHECK-FUND-20260607",
+        {
+            "user_identifier": "active-technician-json-signoff",
+            "name": "可见技术人员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    state.project_member_store = project_store
+    client = TestClient(create_app(state))
+    member_headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+    created = client.post(
+        "/reports/drafts",
+        headers=member_headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "签发 API 权限验证"},
+        },
+    )
+    task_id = created.json()["task_id"]
+
+    denied_headers = (
+        member_headers,
+        {
+            "X-User-Id": "active-technician-json-signoff",
+            "X-Role": "technician",
+        },
+        {"X-User-Id": "next-admin", "X-Role": "admin"},
+    )
+    for headers in denied_headers:
+        denied = client.post(
+            f"/reports/drafts/{task_id}/signoff",
+            headers=headers,
+            json={"signoff_note": "must not sign"},
+        )
+        assert denied.status_code == 403
+        assert denied.json()["detail"] == "sign_reports is not allowed"
+
+    unrelated = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers={"X-User-Id": "unrelated-director", "X-Role": "director"},
+        json={"signoff_note": "must stay hidden"},
+    )
+    assert unrelated.status_code == 404
+    assert unrelated.json()["detail"] == "review task not found"
+
+    gate_blocked = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "gate blocked"},
+    )
+    assert gate_blocked.status_code == 409
+    assert gate_blocked.json()["detail"] == "review task is not ready for report draft"
+
+    task = _review_tasks(state)[0]
+    dossier = cast(dict[str, object], task["dossier"])
+    task["status"] = "not-violation"
+    task["status_label"] = "未发现违规"
+    task["reviewer_note"] = "主任已复核"
+    task["conclusion"] = "未发现违规"
+    dossier["owner_signoff"] = {
+        "status": "approved",
+        "status_label": "负责人已确认",
+        "confirmed_by": "next-director",
+        "confirmed_at": "2026-08-13T00:00:00Z",
+    }
+    assert state.review_task_store is not None
+    state.review_task_store.update_task(task_id, task)
+
+    signed = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "主任签发"},
+    )
+    assert signed.status_code == 200
+    assert signed.json()["signed_by"] == "next-director"
+    duplicate = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "duplicate"},
+    )
+    assert duplicate.status_code == 409
+
+    closed_task = state.review_task_store.get_task(task_id)
+    closed_task["status"] = "closed"
+    state.review_task_store.update_task(task_id, closed_task)
+    closed = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "closed"},
+    )
+    assert closed.status_code == 409
+    assert closed.json()["detail"] == "review task is closed and read-only"
 
 
 def test_report_template_draft_fails_closed_when_project_member_store_fails(

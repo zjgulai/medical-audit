@@ -62,6 +62,7 @@ import {
   referenceSearchHistory
 } from "@/lib/reference-replica-data";
 import { FALLBACK_SOURCE_COLLECTION_GROUPS } from "@/lib/source-collection-catalog";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 export type ReplicaRuntimeStatus = "loading" | "ready" | "empty" | "degraded" | "error";
 
@@ -71,7 +72,8 @@ export type ReplicaRuntimeResult<TData> = ReplicaAdapterResult<TData> & {
 };
 
 function replicaApiReadsEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS !== "0";
+  return !isPublicShellReadonly()
+    && process.env.NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS !== "0";
 }
 
 function replicaReadClient(): ReplicaClient {

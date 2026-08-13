@@ -136,6 +136,16 @@ function reportEntry(
     gate_summary: status === "门禁阻断" ? "证据链待补齐" : "报告门禁已通过",
     updated_at: "2026-07-12T08:00:00Z",
     href: "/pages/review-tasks",
+    signoff: {
+      signed: status === "已签发",
+      signed_by: status === "已签发" ? "next-director" : "",
+      signed_at: status === "已签发" ? "2026-07-12T08:00:00Z" : "",
+      signoff_note: "",
+      report_id: status === "已签发" ? "signed-report-001" : "",
+      can_sign: status !== "门禁阻断" && status !== "已签发",
+      gate_ready: status !== "门禁阻断",
+      writes_allowed: status !== "已签发"
+    },
     download_links: downloads
   };
 }
@@ -426,7 +436,7 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.queryByRole("link", { name: "查看证据" })).not.toBeInTheDocument();
     expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
     expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
-    expect(screen.queryByRole("button", { name: /签发报告/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /签发报告/ })).not.toBeInTheDocument();
   });
 
   it("keeps technicians read-only even when active templates are visible", async () => {

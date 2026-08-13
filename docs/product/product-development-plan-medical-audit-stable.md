@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-07-13
+updated: 2026-08-13
 owner: self
 source: human+ai
 ---
@@ -14,9 +14,24 @@ source: human+ai
 
 ## 1. 当前基线
 
+### 1.4 2026-08-13 全量复盘候选基线
+
+本节是当前权威快照；后续 1.1 至 1.3 节均为带日期的历史基线。
+
+- 开始执行时，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`。
+- 2026 年 8 月 12 日 L3 生产只读证据为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；与本地基线没有用户态应用源码差异。
+- 候选分支 `codex/medical-audit-reanalysis-playbook-20260813` 新增生产公开壳层门禁、疑点深链、整改状态机、报告签发权限、知识统计修复、全量文档和 Playbook。
+- 临时 SQLite 与确定性 Fake Provider 的本地全栈 E2E 为 17/17；机器收据覆盖 20 个独立页面、3 个别名和 4 条持久化业务工作流，共 27 条功能记录。
+- 候选收口复审修复了整改附件处理顺序的两项鉴权缺陷；刷新后的 Python 为 `995 passed`，Web 为 `412 passed`，Ruff、Mypy、typecheck、lint、build 和本地全栈均通过。
+- 候选尚未合并、推送或部署。生产业务能力保持 `not_production_verified`。
+
+全量本地质量门禁已完成。2026 年 8 月 13 日经用户确认，首批 4 个低风险 exact paths 于 14:45 移动到系统 Trash，并在当时完成内容与 Git 状态复核；16:02 新鲜复核发现 Trash 已于 15:10 被 Finder 清空，源和 Trash 目标均不再存在，当前不可恢复。旧工作区证据已归并为 416 个文件的离线证据包。第二批 5 个相互独立目录、约 2.50 GiB 已于 16:36 移动到受管同卷隔离目录；移动前后 inode、全量树哈希和候选 Git 状态一致。Loop 128 及其父仓库约 1.218 GiB 已于 17:44 转换为相对 worktree 关联并成对移动到同一受管隔离目录；移动前后 inode、非指针载荷哈希、Git 注册、`fsck`、alternates 和候选 Git 状态均通过。两批隔离均可按精确映射恢复，但未释放磁盘空间。永久删除、commit、push、merge、部署、生产业务测试和生产清理仍需分别授权。
+
 本计划以 `AI审计一体化协作平台 V1.0 PRD` 为母版，并以当前已部署的 AuditScope 知识库网站为工程基线。
 
-当前已完成：
+历史能力清单（截至各条原始证据日期）：
+
+以下条目用于追溯既有能力和历史生产验收，不能覆盖上方 2026-08-13 当前快照；其中版本、计数和“已部署”只在各自原始证据日期成立。
 
 - 知识库查询引擎已实现 `检索 + 引用型回答 + 原文预览 + 索引管理`。
 - 线上入口已部署到 `https://audit.lute-tlz-dddd.top/pages/chat`。
@@ -82,9 +97,9 @@ source: human+ai
 - 生产前端和权限只读门禁通过；文档专项 probe 仅在新页面文本检查失败，明确记录为部署前产品形态差异，不是当前服务故障。
 - 正式执行、备份、回滚和部署后验收顺序见 `docs/superpowers/plans/2026-07-13-ppt-feedback-production-deployment.md`。当前状态为 `ready_for_owner_authorization`，仍保持 `production unchanged`、`provider_call=false`、`database_write=false`。
 
-### 1.3 2026-08-09 Sprint 1–5 本地基线（最新）
+### 1.3 2026-08-09 Sprint 1–5 本地基线（历史，已被 1.4 替代）
 
-状态口径：Sprint-5 全部本地实现已完成，vitest 406/406，ruff/mypy 全绿。本地 main `226d3d0d` 领先 origin/main 1 commit；origin/main `d31a1b1d` 领先生产 deploy_sha `484c348f` 3 commits（Sprint-5 全部内容）。**生产仍停留在 Sprint-4，Sprint-5 功能尚未部署。**
+历史状态口径：本节仅记录 2026 年 8 月 9 日部署前快照。当前状态以 1.4 节和项目状态台账为准。
 
 **Sprint-5 已完成事项（2026-08-08/09）**
 
@@ -103,13 +118,11 @@ source: human+ai
 | workspace 待复核 | ✅ 疑点预览卡片 | ❌ 旧 redirect |
 | 知识库来源标签 | ✅ 中文化 | ❌ raw key |
 
-**下一步关键任务（按优先级）**
+**历史下一步关键任务（已完成或被替代）**
 
-1. push 本地 commit `226d3d0d`，将 origin/main 推进到最新。
-2. 部署 Sprint-5（origin/main `d31a1b1d`）到生产，运行 L3 只读验收。
-3. 验证 `PATCH /api/v1/remediation/items/{id}/status` HTTP 方法与前端 `updateRemediationItemStatus` 的一致性（现有后端为 `POST .../status`）。
-4. 整改附件上传映射到真实 `remediation_items.id` UUID（当前前端使用静态 case id）。
-5. Sprint-6 上线加固：SSO 可信代理接入、pg_restore 恢复演练、告警 webhook 配置、压测覆盖。
+1. Sprint 5 后续已进入生产历史基线；不要继续使用本节的 SHA 作为当前部署判断。
+2. 整改 HTTP 方法、真实 UUID 和签发权限已在 2026 年 8 月 13 日候选中修复。
+3. SSO、恢复演练、告警和压测继续保留为后续任务。
 
 当前未完成：
 

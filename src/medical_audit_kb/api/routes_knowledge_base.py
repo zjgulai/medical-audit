@@ -301,20 +301,47 @@ def _metrics_from_postgres(
 
         cursor.execute(
             """
+            WITH package_flags AS (
+              SELECT
+                source_package_version_id,
+                BOOL_OR(status = 'active') AS has_active_index,
+                BOOL_OR(status = 'candidate') AS has_candidate_index
+              FROM index_versions
+              GROUP BY source_package_version_id
+            ),
+            chunk_rollup AS (
+              SELECT
+                source_document_id,
+                COUNT(*)::bigint AS chunk_count,
+                COALESCE(SUM(LENGTH(text)), 0)::bigint AS character_count
+              FROM document_chunks
+              GROUP BY source_document_id
+            ),
+            embedding_rollup AS (
+              SELECT
+                dc.source_document_id,
+                COUNT(ce.id)::bigint AS embedding_count
+              FROM document_chunks dc
+              LEFT JOIN chunk_embeddings ce ON ce.chunk_id = dc.id
+              GROUP BY dc.source_document_id
+            )
             SELECT
               sd.source_collection,
-              COUNT(DISTINCT sd.id)::bigint AS document_count,
-              COUNT(DISTINCT dc.id)::bigint AS chunk_count,
-              COUNT(DISTINCT ce.id)::bigint AS embedding_count,
-              COUNT(DISTINCT dc.id) FILTER (
-                WHERE iv.status = 'candidate'
-              )::bigint AS candidate_chunk_count,
-              COALESCE(SUM(DISTINCT LENGTH(dc.text)), 0)::bigint AS character_count
+              COUNT(sd.id)::bigint AS document_count,
+              COALESCE(SUM(cr.chunk_count), 0)::bigint AS chunk_count,
+              COALESCE(SUM(er.embedding_count), 0)::bigint AS embedding_count,
+              COALESCE(SUM(er.embedding_count) FILTER (
+                WHERE pf.has_active_index
+              ), 0)::bigint AS active_embedding_count,
+              COALESCE(SUM(cr.chunk_count) FILTER (
+                WHERE pf.has_candidate_index
+              ), 0)::bigint AS candidate_chunk_count,
+              COALESCE(SUM(cr.character_count), 0)::bigint AS character_count
             FROM source_documents sd
-            LEFT JOIN document_chunks dc ON dc.source_document_id = sd.id
-            LEFT JOIN chunk_embeddings ce ON ce.chunk_id = dc.id
-            LEFT JOIN index_versions iv
-              ON iv.source_package_version_id = sd.source_package_version_id
+            LEFT JOIN chunk_rollup cr ON cr.source_document_id = sd.id
+            LEFT JOIN embedding_rollup er ON er.source_document_id = sd.id
+            LEFT JOIN package_flags pf
+              ON pf.source_package_version_id = sd.source_package_version_id
             GROUP BY sd.source_collection
             """
         )
@@ -326,7 +353,7 @@ def _metrics_from_postgres(
                 document_count=_int_value(row.get("document_count")),
                 chunk_count=_int_value(row.get("chunk_count")),
                 embedding_count=_int_value(row.get("embedding_count")),
-                active_embedding_count=0,
+                active_embedding_count=_int_value(row.get("active_embedding_count")),
                 candidate_chunk_count=_int_value(row.get("candidate_chunk_count")),
                 character_count=_int_value(row.get("character_count")),
                 linked_app_count=1,

@@ -1,8 +1,14 @@
 ---
 title: Mainline Clean Cutover Plan And Cleanup Matrix
+doc_type: analysis-plan
+module: frontend
+created: 2026-07-05
+updated: 2026-08-13
+owner: self
+source: human+ai
 date: 2026-07-05
 project: medical_audit
-status: verified-local
+status: superseded
 scope: local-integration
 production_changed: false
 ---

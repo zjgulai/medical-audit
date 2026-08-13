@@ -145,7 +145,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
     const reportWorkbenchResponse = await reportWorkbenchResponsePromise;
     expect(reportWorkbenchResponse.status()).toBe(200);
     expect(await reportWorkbenchResponse.json()).toMatchObject({
-      store: { ready: true, backend: "InMemoryReviewTaskStore" }
+      store: { ready: true, backend: "SqlAlchemyReviewTaskStore" }
     });
     await expect(page.getByRole("heading", { name: "报告与底稿", level: 1, exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "报表分类目录" })).toBeVisible();
@@ -172,7 +172,9 @@ test.describe("local fullstack acceptance for restored replica product", () => {
 
     await page.goto("/audit-cockpit");
     await expect(page.getByRole("heading", { name: "审计驾驶舱", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "进入项目管理", exact: true })).toHaveAttribute("href", "/projects");
+    await expect(
+      page.getByRole("main").getByRole("link", { name: "项目管理", exact: true })
+    ).toHaveAttribute("href", "/projects");
     const navigationLabels = await page.getByRole("navigation", { name: "主导航" }).getByRole("link").allTextContents();
     expect(navigationLabels.slice(-2)).toEqual(["项目管理", "审计驾驶舱"]);
   });
@@ -233,10 +235,12 @@ test.describe("local fullstack acceptance for restored replica product", () => {
   });
 
   test("compatibility routes land on the restored replica shell", async ({ page }) => {
-    const redirects = [
-      { from: "/workspace", to: /\/chat$/ },
-      { from: "/findings", to: /\/medical-audit$/ }
-    ] as const;
+    await page.goto("/workspace");
+    await expect(page).toHaveURL(/\/workspace$/);
+    await expect(page.getByRole("heading", { name: "你好", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "AI审计一体化协作平台" })).toBeVisible();
+
+    const redirects = [{ from: "/findings", to: /\/medical-audit$/ }] as const;
 
     for (const redirect of redirects) {
       await page.goto(redirect.from);
@@ -261,7 +265,7 @@ test.describe("local fullstack acceptance for restored replica product", () => {
       { route: "/rules", heading: "规则运行工作台", marker: "规则法规库" },
       { route: "/archive", heading: "归档工作台", marker: "归档包" },
       { route: "/guided-check", heading: "引导式核查", marker: "核查步骤" },
-      { route: "/remediation", heading: "整改工作台", marker: "整改事项、补证请求、关闭门禁" }
+      { route: "/remediation", heading: "整改工作台", marker: "跟踪整改事项、补证请求和关闭门禁" }
     ] as const;
 
     for (const compatibilityPage of compatibilityPages) {

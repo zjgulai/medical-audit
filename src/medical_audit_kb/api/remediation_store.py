@@ -19,6 +19,15 @@ VALID_STATUSES = frozenset({
     "closed",
 })
 
+REMEDIATION_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+    "pending-rectification": frozenset({"in-rectification"}),
+    "in-rectification": frozenset({"pending-acceptance"}),
+    "pending-acceptance": frozenset({"accepted", "rejected"}),
+    "accepted": frozenset({"closed"}),
+    "rejected": frozenset({"in-rectification"}),
+    "closed": frozenset(),
+}
+
 
 def list_remediation_items(
     session: Session,
@@ -83,6 +92,8 @@ def update_remediation_status(
         return None
     if status not in VALID_STATUSES:
         raise ValueError(f"unsupported status: {status}")
+    if status not in REMEDIATION_STATUS_TRANSITIONS[item.status]:
+        raise ValueError(f"illegal remediation status transition: {item.status} -> {status}")
     if status == "in-rectification":
         item.rectification_note = note or item.rectification_note
     elif status in {"accepted", "rejected"}:

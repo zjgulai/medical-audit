@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchRemediationWorkbench, updateRemediationItemStatus } from "@/lib/api-client";
+import {
+  fetchRemediationWorkbench,
+  updateRemediationItemStatus,
+  uploadRemediationAttachment
+} from "@/lib/api-client";
 import type { RemediationWorkbenchResponse } from "@/lib/api-types";
 
 import { ReplicaRemediationWorkbench } from "./replica-remediation-workbench";
@@ -14,6 +18,7 @@ vi.mock("@/lib/api-client", () => ({
 
 const fetchRemediationWorkbenchMock = vi.mocked(fetchRemediationWorkbench);
 const updateRemediationItemStatusMock = vi.mocked(updateRemediationItemStatus);
+const uploadRemediationAttachmentMock = vi.mocked(uploadRemediationAttachment);
 
 const remediationResponse: RemediationWorkbenchResponse = {
   format: "remediation-workbench-v1",
@@ -35,7 +40,12 @@ const remediationResponse: RemediationWorkbenchResponse = {
       progress: 60,
       evidenceStatus: "待补证",
       nextAction: "补齐退费凭证",
-      href: "/remediation/remediation-case-001"
+      href: "/remediation/remediation-case-001",
+      project_key: "SELF-CHECK-FUND-20260607",
+      legacy_unscoped: false,
+      writable: true,
+      allowed_transitions: [{ status: "pending-acceptance", label: "提交验收" }],
+      can_upload_attachment: true
     }
   ],
   evidence_requests: [
@@ -48,7 +58,9 @@ const remediationResponse: RemediationWorkbenchResponse = {
       owner: "医保办",
       dueDate: "2026-07-18",
       detail: "上传只读验收所需的退费凭证。",
-      href: "/documents"
+      href: "/documents",
+      remediation_item_id: "remediation-case-001",
+      writable: true
     }
   ],
   closure_gates: [
@@ -79,6 +91,8 @@ const remediationResponse: RemediationWorkbenchResponse = {
     timeline_count: 1
   },
   evidence_grade: "production-readonly-api",
+  data_mode: "persistent",
+  capabilities: { writable: true },
   production_side_effect: "audit-log-only",
   store: { ready: true, backend: "SqlAlchemyRemediationWorkbenchStore" }
 };
@@ -198,7 +212,10 @@ describe("ReplicaRemediationWorkbench", () => {
       remediation_cases: [{
         ...remediationResponse.remediation_cases[0],
         status: "已关闭",
-        status_key: "closed"
+        status_key: "closed",
+        writable: false,
+        allowed_transitions: [],
+        can_upload_attachment: false
       }]
     });
 
@@ -208,8 +225,14 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(screen.queryByRole("button", { name: /整改|验收|关闭/ })).not.toBeInTheDocument();
   });
 
-  it("uses item.id (not linkedCaseId) for evidence request upload", async () => {
+  it("uses the real remediation UUID for evidence request upload", async () => {
     fetchRemediationWorkbenchMock.mockResolvedValue(remediationResponse);
+    uploadRemediationAttachmentMock.mockResolvedValue({
+      upload_id: "upload-001",
+      file_name: "receipt.pdf",
+      size_bytes: 7,
+      item_id: "remediation-case-001"
+    });
 
     render(<ReplicaRemediationWorkbench />);
 

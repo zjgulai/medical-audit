@@ -9,19 +9,6 @@ import {
 } from "@/lib/api-client";
 import type { RemediationWorkbenchResponse } from "@/lib/api-types";
 
-// 状态流转表：status_key → [{label, nextStatus}]
-const STATUS_TRANSITIONS: Record<string, ReadonlyArray<{ readonly label: string; readonly next: string }>> = {
-  "pending-rectification": [{ label: "开始整改", next: "in-rectification" }],
-  "in-rectification":      [{ label: "提交验收", next: "pending-acceptance" }],
-  "pending-acceptance":    [
-    { label: "验收通过", next: "accepted" },
-    { label: "退回整改", next: "rejected" }
-  ],
-  "rejected":              [{ label: "重新整改", next: "in-rectification" }],
-  "accepted":              [{ label: "关闭事项", next: "closed" }],
-  "closed":                []
-};
-
 type ActionState =
   | { readonly phase: "idle" }
   | { readonly phase: "confirming"; readonly next: string; readonly label: string }
@@ -31,17 +18,15 @@ type ActionState =
 
 function StatusActionButtons({
   itemId,
-  statusKey,
+  transitions,
   onSuccess
 }: {
   readonly itemId: string;
-  readonly statusKey: string;
+  readonly transitions: readonly { readonly status: string; readonly label: string }[];
   readonly onSuccess: () => void;
 }) {
   const [actionState, setActionState] = useState<ActionState>({ phase: "idle" });
   const [note, setNote] = useState("");
-
-  const transitions = STATUS_TRANSITIONS[statusKey] ?? [];
 
   const handlePick = (label: string, next: string) => {
     setNote("");
@@ -114,12 +99,12 @@ function StatusActionButtons({
 
   return (
     <span className="remediation-status-actions">
-      {transitions.map(({ label, next }) => (
+      {transitions.map(({ label, status }) => (
         <button
-          key={next}
+          key={status}
           className="replica-secondary-button"
           type="button"
-          onClick={() => handlePick(label, next)}
+          onClick={() => handlePick(label, status)}
         >
           {label}
         </button>
@@ -277,7 +262,7 @@ export function ReplicaRemediationWorkbench() {
   }, []);
 
   const data = state.data;
-  const hasSeedData = data?.store.backend === "ReadonlyRemediationWorkbenchSeed";
+  const hasSeedData = data?.data_mode === "sample";
 
   return (
     <main className="replica-page replica-page-standard" data-replica-source="api" data-replica-status={state.status}>
@@ -331,14 +316,16 @@ export function ReplicaRemediationWorkbench() {
                       <strong>{item.status}</strong>
                       <StatusActionButtons
                         itemId={item.id}
-                        statusKey={item.status_key ?? ""}
+                        transitions={item.allowed_transitions}
                         onSuccess={fetchData}
                       />
-                      <AttachmentUploadButton
-                        itemId={item.id}
-                        uploadState={uploadState}
-                        onUpload={handleUpload}
-                      />
+                      {item.can_upload_attachment ? (
+                        <AttachmentUploadButton
+                          itemId={item.id}
+                          uploadState={uploadState}
+                          onUpload={handleUpload}
+                        />
+                      ) : null}
                     </article>
                   ))}
                 </div>
@@ -362,11 +349,13 @@ export function ReplicaRemediationWorkbench() {
                       </div>
                       <span>{item.owner} · {item.kind}</span>
                       <strong>{item.status}</strong>
-                      <AttachmentUploadButton
-                        itemId={item.id}
-                        uploadState={uploadState}
-                        onUpload={handleUpload}
-                      />
+                      {item.writable && item.remediation_item_id ? (
+                        <AttachmentUploadButton
+                          itemId={item.remediation_item_id}
+                          uploadState={uploadState}
+                          onUpload={handleUpload}
+                        />
+                      ) : null}
                     </article>
                   ))}
                 </div>

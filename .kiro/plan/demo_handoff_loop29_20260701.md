@@ -2,13 +2,16 @@
 title: "medical_audit Loop 29 demo handoff"
 project: "medical_audit"
 created_at: "2026-07-01T11:54:00+08:00"
-status: "ready"
+status: "superseded"
+updated: "2026-08-13"
 evidence_grade: "L3-production-read-only"
 deployed_sha: "b1c9a6c229a7880afcbfed35c1903d514914bb15"
 source_evidence: "Loop 28"
 ---
 
 # Loop 29 Demo Handoff
+
+> 这是 2026-07-01 的历史演示交接，已被 `docs/README.md` 和 `drafts/analysis/project-reanalysis-and-gap-audit-20260813.md` 替代。不得将本文 SHA 或截图当作当前生产证据。
 
 ## Opening Position
 

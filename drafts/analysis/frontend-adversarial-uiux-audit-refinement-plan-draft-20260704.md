@@ -1,5 +1,12 @@
 ---
 title: "重构前端对抗式 UI/UX 审计与精修计划"
+doc_type: analysis-plan
+module: frontend
+status: superseded
+created: 2026-07-04
+updated: 2026-08-13
+owner: self
+source: human+ai
 project: "medical_audit"
 created_at: "2026-07-04T23:00:00+08:00"
 scope: "local production-style frontend audit; no production deploy; no backend write"

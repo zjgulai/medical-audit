@@ -113,16 +113,16 @@ const routeCheckProfiles = {
       expectedPath: "/",
       session: "anonymous",
       minimumBodyTextLength: 60,
-      requiredText: [/登录工作台/],
-      requiredControlText: [/(^|\s)登录($|\s)/],
+      requiredTextAny: [[/登录工作台/, /登录暂未开放/]],
+      requiredControlText: [/(^|\s)(登录|进入只读产品导览)($|\s)/],
     },
     {
       route: "/login",
       expectedPath: "/login",
       session: "anonymous",
       minimumBodyTextLength: 60,
-      requiredText: [/登录工作台/],
-      requiredControlText: [/(^|\s)登录($|\s)/],
+      requiredTextAny: [[/登录工作台/, /登录暂未开放/]],
+      requiredControlText: [/(^|\s)(登录|进入只读产品导览)($|\s)/],
     },
     {
       route: "/medical-audit",
@@ -1549,6 +1549,7 @@ async function observeReleaseIdentity({ baseUrl, acceptanceHeaders, timeoutMs })
       deploy_sha_status: deploymentMetadata.body?.deploy_sha_status ?? null,
       observed_deploy_sha: deploymentMetadata.body?.deploy_sha ?? null,
       deploy_sha_source: deploymentMetadata.body?.deploy_sha_source ?? null,
+      runtime_access: deploymentMetadata.body?.runtime_access ?? null,
       body_sha256: deploymentMetadata.bodySha256,
     },
   };
@@ -1574,6 +1575,10 @@ function validateReleaseIdentityObservation(observation, expectedDeploySha, labe
     deploymentMetadata.observed_deploy_sha !== expectedDeploySha ||
     typeof deploymentMetadata.deploy_sha_source !== "string" ||
     deploymentMetadata.deploy_sha_source.length === 0 ||
+    deploymentMetadata.runtime_access?.mode !== "public-shell-readonly" ||
+    deploymentMetadata.runtime_access?.trusted_identity_ready !== false ||
+    deploymentMetadata.runtime_access?.protected_reads_allowed !== false ||
+    deploymentMetadata.runtime_access?.writes_allowed !== false ||
     !SHA256_PATTERN.test(deploymentMetadata.body_sha256 ?? "")
   ) {
     throw new Error(
@@ -1602,7 +1607,8 @@ function validateReleaseIdentityPair(
     initialManifest.source_sha === finalManifest.source_sha &&
     initialMetadata.body_sha256 === finalMetadata.body_sha256 &&
     initialMetadata.observed_deploy_sha === finalMetadata.observed_deploy_sha &&
-    initialMetadata.deploy_sha_source === finalMetadata.deploy_sha_source;
+    initialMetadata.deploy_sha_source === finalMetadata.deploy_sha_source &&
+    JSON.stringify(initialMetadata.runtime_access) === JSON.stringify(finalMetadata.runtime_access);
   if (!stable) {
     throw new Error("release identity changed during frontend acceptance");
   }
@@ -1629,6 +1635,7 @@ function validateReleaseIdentityPair(
       deploy_sha_status: "set",
       observed_deploy_sha: initialMetadata.observed_deploy_sha,
       deploy_sha_source: initialMetadata.deploy_sha_source,
+      runtime_access: initialMetadata.runtime_access,
       initial_body_sha256: initialMetadata.body_sha256,
       final_body_sha256: finalMetadata.body_sha256,
       current_release_target: null,

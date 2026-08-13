@@ -302,7 +302,11 @@ function SignoffButton({
     );
   }
 
-  if (entry.status === "门禁阻断") return null;
+  if (
+    !entry.signoff?.can_sign
+    || !entry.signoff.gate_ready
+    || !entry.signoff.writes_allowed
+  ) return null;
 
   return (
     <span className="report-signoff-group">
@@ -783,7 +787,7 @@ export function ReplicaReportWorkbench() {
         </div>
         <div className="replica-report-boundary" aria-label="报告边界">
           <span>{canCreate ? "草稿可创建" : "当前身份只读"}</span>
-          <span>签发不在本页</span>
+          <span>签发按服务端门禁</span>
         </div>
       </header>
 

@@ -619,6 +619,10 @@ function assertGate(report, expected = {}) {
       deploymentMetadata.observed_deploy_sha === expectedDeploySha &&
       typeof deploymentMetadata.deploy_sha_source === "string" &&
       deploymentMetadata.deploy_sha_source.length > 0 &&
+      deploymentMetadata.runtime_access?.mode === "public-shell-readonly" &&
+      deploymentMetadata.runtime_access?.trusted_identity_ready === false &&
+      deploymentMetadata.runtime_access?.protected_reads_allowed === false &&
+      deploymentMetadata.runtime_access?.writes_allowed === false &&
       /^[0-9a-f]{64}$/.test(deploymentMetadata.initial_body_sha256 ?? "") &&
       deploymentMetadata.final_body_sha256 === deploymentMetadata.initial_body_sha256 &&
       deploymentMetadata.current_release_target === null &&

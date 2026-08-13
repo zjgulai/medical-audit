@@ -277,6 +277,12 @@ def _deployment_metadata_payload() -> dict[str, object]:
             "current_deploy_sha": deploy_sha,
             "deploy_sha_status": "set",
         },
+        "runtime_access": {
+            "mode": "public-shell-readonly",
+            "trusted_identity_ready": False,
+            "protected_reads_allowed": False,
+            "writes_allowed": False,
+        },
         "boundaries": {
             "production_write": False,
             "production_env_write": False,
@@ -964,35 +970,14 @@ def test_run_production_chat_model_catalog_readonly_probe_allows_catalog_only() 
             )
         if url.endswith("/api/v1/query/models"):
             return module.HttpResponse(
-                status=200,
+                status=503,
                 url=url,
                 content=json.dumps(
                     {
-                        "contract_version": "chat-model-catalog-v1",
-                        "default_model": "kimi-2.7",
-                        "items": [
-                            {
-                                "alias": "kimi-2.7",
-                                "label": "Kimi K2.6（兼容别名）",
-                                "provider": None,
-                                "available": False,
-                                "default": True,
-                                "unavailable_reason": "missing_api_key_env",
-                            },
-                            {
-                                "alias": "deepseek-v4-pro",
-                                "label": "DeepSeek V4 Pro",
-                                "provider": None,
-                                "available": False,
-                                "default": False,
-                                "unavailable_reason": "missing_api_key_env",
-                            },
-                        ],
-                        "boundaries": {
-                            "production_write": False,
-                            "provider_call": False,
-                            "secret_values_reported": False,
-                            "source": "environment_capability_probe_only",
+                        "detail": {
+                            "code": "trusted_identity_required",
+                            "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+                            "access_mode": "public-shell-readonly",
                         },
                     }
                 ).encode(),
@@ -1012,9 +997,11 @@ def test_run_production_chat_model_catalog_readonly_probe_allows_catalog_only() 
     )
 
     assert report["status"] == "pass"
-    assert report["summary"]["ready_model_count"] == 0
-    assert report["summary"]["available_model_aliases"] == []
+    assert report["access_mode"] == "public-shell-readonly"
+    assert report["summary"]["catalog_status"] == "blocked_by_access_mode"
+    assert report["summary"]["protected_status_code"] == 503
     assert report["boundaries"]["provider_call"] is False
+    assert report["boundaries"]["protected_business_data_read"] is False
     assert report["boundaries"]["production_env_write"] is False
     assert report["boundaries"]["secret_values_reported"] is False
 
@@ -1039,35 +1026,14 @@ def test_run_production_chat_model_catalog_readonly_probe_can_require_ready_mode
             )
         if url.endswith("/api/v1/query/models"):
             return module.HttpResponse(
-                status=200,
+                status=503,
                 url=url,
                 content=json.dumps(
                     {
-                        "contract_version": "chat-model-catalog-v1",
-                        "default_model": "kimi-2.7",
-                        "items": [
-                            {
-                                "alias": "kimi-2.7",
-                                "label": "Kimi K2.6（兼容别名）",
-                                "provider": None,
-                                "available": False,
-                                "default": True,
-                                "unavailable_reason": "missing_api_key_env",
-                            },
-                            {
-                                "alias": "deepseek-v4-pro",
-                                "label": "DeepSeek V4 Pro",
-                                "provider": None,
-                                "available": False,
-                                "default": False,
-                                "unavailable_reason": "missing_api_key_env",
-                            },
-                        ],
-                        "boundaries": {
-                            "production_write": False,
-                            "provider_call": False,
-                            "secret_values_reported": False,
-                            "source": "environment_capability_probe_only",
+                        "detail": {
+                            "code": "trusted_identity_required",
+                            "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+                            "access_mode": "public-shell-readonly",
                         },
                     }
                 ).encode(),
@@ -1087,10 +1053,12 @@ def test_run_production_chat_model_catalog_readonly_probe_can_require_ready_mode
     )
 
     assert report["status"] == "fail"
-    query_models_step = next(
-        step for step in report["steps"] if step["name"] == "query-models-catalog"
+    readiness_step = next(
+        step for step in report["steps"] if step["name"] == "chat-model-readiness"
     )
-    assert query_models_step["details"]["error"] == "no chat model alias is available"
+    assert readiness_step["details"]["error"] == (
+        "chat model readiness is blocked by public-shell-readonly"
+    )
 
 
 @pytest.mark.parametrize(
@@ -2338,6 +2306,132 @@ def test_run_controlled_api_readonly_permission_smoke_default_reports_limited_re
     assert len(report["skipped_probes"]) == 33
 
 
+def test_run_controlled_api_readonly_permission_smoke_public_shell_contract() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_public_shell",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="https://audit.lute-tlz-dddd.top",
+        api_prefix="/api/v1",
+        mode="enforce",
+        protected_paths=module.DEFAULT_PROTECTED_PATHS,
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+        access_mode="public-shell-readonly",
+    )
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        del timeout_seconds
+        if probe.path == "/health":
+            return module.HttpResponse(status=200, url=probe.url, text='{"status":"ok"}')
+        if probe.path == "/deployment/metadata":
+            return module.HttpResponse(
+                status=200,
+                url=probe.url,
+                text=json.dumps(
+                    {
+                        "runtime_access": {
+                            "mode": "public-shell-readonly",
+                            "trusted_identity_ready": False,
+                            "protected_reads_allowed": False,
+                            "writes_allowed": False,
+                        }
+                    }
+                ),
+            )
+        return module.HttpResponse(
+            status=503,
+            url=probe.url,
+            text=json.dumps(
+                {
+                    "detail": {
+                        "code": "trusted_identity_required",
+                        "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+                        "access_mode": "public-shell-readonly",
+                    }
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    probes = module._build_probes(config)
+    report = module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert [(probe.kind, probe.path) for probe in probes] == [
+        ("public", "/health"),
+        ("public", "/deployment/metadata"),
+        ("protected-read-blocked", "/projects"),
+    ]
+    assert module._build_skipped_probes(config) == []
+    assert report["status"] == "pass"
+    assert report["summary"] == {
+        "probe_count": 3,
+        "executed_probe_count": 3,
+        "skipped_probe_count": 0,
+        "total_probe_count": 3,
+        "issue_count": 0,
+        "observation_count": 0,
+    }
+    assert report["production_side_effect"] == "none"
+    assert report["database_write"] is False
+
+
+def test_run_controlled_api_readonly_permission_smoke_public_shell_fails_open_api() -> None:
+    module = _load_script_module(
+        "run_controlled_api_readonly_permission_smoke_public_shell_open_api",
+        Path("scripts/run-controlled-api-readonly-permission-smoke.py"),
+    )
+    config = module.SmokeConfig(
+        base_url="https://audit.lute-tlz-dddd.top",
+        api_prefix="/api/v1",
+        mode="enforce",
+        protected_paths=("/projects",),
+        tenant_id="hospital-demo",
+        project_key="SELF-CHECK-FUND-20260607",
+        admin_role="admin",
+        admin_user_id="permission-smoke-admin",
+        api_key=None,
+        api_key_env=None,
+        timeout_seconds=1,
+        json_output=None,
+        access_mode="public-shell-readonly",
+    )
+
+    def fake_requester(probe: object, timeout_seconds: float) -> object:
+        del timeout_seconds
+        if probe.path == "/projects":
+            return module.HttpResponse(status=200, url=probe.url, text='{"items":[]}')
+        if probe.path == "/health":
+            return module.HttpResponse(status=200, url=probe.url, text='{"status":"ok"}')
+        return module.HttpResponse(
+            status=200,
+            url=probe.url,
+            text=json.dumps(
+                {
+                    "runtime_access": {
+                        "mode": "public-shell-readonly",
+                        "trusted_identity_ready": False,
+                        "protected_reads_allowed": False,
+                        "writes_allowed": False,
+                    }
+                }
+            ),
+        )
+
+    report = module.run_readonly_permission_smoke(config, requester=fake_requester)
+
+    assert report["status"] == "fail"
+    assert report["summary"]["issue_count"] == 1
+    assert "protected-read-blocked:/projects" in report["issues"][0]
+
+
 @pytest.mark.parametrize(
     "base_url",
     (
@@ -2886,6 +2980,12 @@ def test_production_frontend_acceptance_binds_run_guard_and_release_identity(
             "deploy_sha_status": "set",
             "observed_deploy_sha": expected_sha,
             "deploy_sha_source": "default_file",
+            "runtime_access": {
+                "mode": "public-shell-readonly",
+                "trusted_identity_ready": False,
+                "protected_reads_allowed": False,
+                "writes_allowed": False,
+            },
             "body_sha256": "c" * 64,
         },
     }
@@ -3071,8 +3171,9 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "expectedSearch: item.expectedSearch ?? '', session: item.session }); "
         "console.log(JSON.stringify({ independent: routeCheckProfiles.hardened.map(project), "
         "aliases: aliasRouteChecks.map(project), "
-        "loginRequiredText: routeCheckProfiles.hardened"
-        ".find((item) => item.route === '/login').requiredText.map(String), "
+        "loginRequiredTextAny: routeCheckProfiles.hardened"
+        ".find((item) => item.route === '/login').requiredTextAny"
+        ".map((group) => group.map(String)), "
         "loginRequiredControlText: "
         "routeCheckProfiles.hardened"
         ".find((item) => item.route === '/login').requiredControlText.map(String), "
@@ -3119,8 +3220,10 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
     assert all(
         item["session"] == "workspace" for item in payload["independent"][2:]
     )
-    assert payload["loginRequiredText"] == ["/登录工作台/"]
-    assert payload["loginRequiredControlText"] == ["/(^|\\s)登录($|\\s)/"]
+    assert payload["loginRequiredTextAny"] == [["/登录工作台/", "/登录暂未开放/"]]
+    assert payload["loginRequiredControlText"] == [
+        "/(^|\\s)(登录|进入只读产品导览)($|\\s)/"
+    ]
     assert payload["chromeTitles"] == {
         "/audit-cockpit": "审计驾驶舱",
         "/fund-compliance": "医保基金使用合规",
@@ -3131,10 +3234,10 @@ def test_production_frontend_acceptance_separates_independent_pages_and_aliases(
         "/guided-check": "引导式核查",
     }
     assert payload["aliases"] == [
-        {
-            "route": "/workspace",
-            "inputSearch": "",
-            "expectedPath": "/chat",
+            {
+                "route": "/workspace",
+                "inputSearch": "",
+                "expectedPath": "/workspace",
             "expectedSearch": "",
             "session": "workspace",
         },
@@ -3524,6 +3627,12 @@ def test_production_frontend_acceptance_gate_rejects_inconsistent_report(
                 "deploy_sha_status": "set",
                 "observed_deploy_sha": expected_sha,
                 "deploy_sha_source": "default_file",
+                "runtime_access": {
+                    "mode": "public-shell-readonly",
+                    "trusted_identity_ready": False,
+                    "protected_reads_allowed": False,
+                    "writes_allowed": False,
+                },
                 "initial_body_sha256": "c" * 64,
                 "final_body_sha256": "c" * 64,
                 "current_release_target": None,
@@ -4990,7 +5099,7 @@ def test_local_fullstack_e2e_runs_playwright_serially_for_stable_route_compilati
     assert 'command = [pnpm, "--dir", "web", "e2e", "--workers=1"]' in script_text
 
 
-def test_local_fullstack_e2e_configures_in_memory_report_store(tmp_path: Path) -> None:
+def test_local_fullstack_e2e_configures_isolated_sqlite_stores(tmp_path: Path) -> None:
     module = _load_script_module(
         "run_local_fullstack_e2e_report_store",
         Path("scripts/run-local-fullstack-e2e.py"),
@@ -4999,9 +5108,51 @@ def test_local_fullstack_e2e_configures_in_memory_report_store(tmp_path: Path) -
     state = module._api_state(tmp_path)
 
     assert state.review_task_store is not None
-    assert state.review_task_store.__class__.__name__ == "InMemoryReviewTaskStore"
-    assert state.audit_finding_store is None
-    assert state.audit_log_store is None
+    assert state.settings.database_url.startswith("sqlite:///")
+    assert state.review_task_store.__class__.__name__ == "SqlAlchemyReviewTaskStore"
+    assert state.audit_finding_store.__class__.__name__ == "SqlAlchemyAuditFindingStore"
+    assert state.audit_log_store.__class__.__name__ == "SqlAlchemyAuditLogStore"
+    assert state.project_member_store.__class__.__name__ == "SqlAlchemyProjectMemberStore"
+    assert state.document_upload_store.__class__.__name__ == "SqlAlchemyDocumentUploadStore"
+    assert state.query_history_store.__class__.__name__ == "SqlAlchemyQueryHistoryStore"
+    assert state.ocr_client.__class__.__name__ == "_DeterministicFakeOcrClient"
+
+
+def test_local_fullstack_e2e_report_includes_live_business_workflow_receipts(
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_local_fullstack_e2e_workflow_receipts",
+        Path("scripts/run-local-fullstack-e2e.py"),
+    )
+    workflows = [
+        module._workflow_receipt(
+            feature_id="workflow-remediation-state-and-attachment",
+            roles=["member", "director"],
+            steps={"create": 200},
+            expected_state="pass",
+            database_side_effect="temporary SQLite only",
+            failure_recovery="discard and rerun",
+        )
+    ]
+    report = module._local_feature_acceptance_report(
+        repo_root=Path.cwd(),
+        backend_url="http://127.0.0.1:8021",
+        status="pass",
+        workflow_receipts=workflows,
+        database_snapshot={"before": {}, "after": {}},
+    )
+
+    assert report["independent_route_count"] == 20
+    assert report["alias_count"] == 3
+    assert report["workflow_count"] == 1
+    assert report["feature_count"] == 24
+    assert report["candidate_identity"]["branch"]
+    assert report["candidate_identity"]["manifest_sha256"]
+    assert report["feature_receipts"][-1]["feature_id"] == (
+        "workflow-remediation-state-and-attachment"
+    )
+    assert report["feature_receipts"][-1]["provider_call"] is False
 
 
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
@@ -5433,6 +5584,7 @@ def _deploy_release_fixture(
             "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
             "NEXT_PUBLIC_AUDIT_ORG_NAME": "测试医院",
             "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+            "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE": "public-shell-readonly",
             "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": "1",
         },
         "source_sha": source_sha,
@@ -6325,6 +6477,7 @@ def test_deploy_tencent_cloud_remote_release_verifier_recomputes_file_hashes(
             "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
             "NEXT_PUBLIC_AUDIT_ORG_NAME": None,
             "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+            "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE": None,
             "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": None,
         },
         "source_sha": source_sha,
@@ -6462,6 +6615,7 @@ def test_deploy_tencent_cloud_promotion_reuses_only_identical_immutable_release(
                 "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
                 "NEXT_PUBLIC_AUDIT_ORG_NAME": None,
                 "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+                "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE": None,
                 "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": None,
             },
             "source_sha": approved_sha,
@@ -8841,11 +8995,15 @@ def test_deploy_tencent_cloud_uses_locked_dependency_inputs(
             repo_root,
             None,
         ),
-        (
-            ["corepack", "pnpm", "web:build:release"],
-            repo_root,
-            {**original_environment, "MEDICAL_AUDIT_DEPLOY_SHA": "a" * 40},
-        ),
+            (
+                ["corepack", "pnpm", "web:build:release"],
+                repo_root,
+                {
+                    **original_environment,
+                    "MEDICAL_AUDIT_DEPLOY_SHA": "a" * 40,
+                    "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE": "public-shell-readonly",
+                },
+            ),
     ]
     assert os.environ == original_environment
     script_text = Path("scripts/deploy-tencent-cloud-production.py").read_text(
@@ -10305,6 +10463,7 @@ def test_web_release_manifest_is_deterministic_complete_and_secret_safe(
             "NEXT_PUBLIC_AUDIT_ORG_LOGO": None,
             "NEXT_PUBLIC_AUDIT_ORG_NAME": "测试医院",
             "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK": None,
+            "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE": None,
             "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS": "",
         },
         "source_sha": "a" * 40,

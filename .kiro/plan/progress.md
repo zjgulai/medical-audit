@@ -1,11 +1,36 @@
 ---
 title: "medical_audit loop progress"
+doc_type: progress
+module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
+created: 2026-06-30
+updated: 2026-08-13
 status: "active"
+owner: self
+source: human+ai
 ---
 
 # Progress
+
+## 2026-08-13 全量复盘候选进展
+
+- 从 `ccc73e95820e39559430e96c01d52c8dfb77a246` 创建候选分支并生成关键文件备份。
+- 完成生产公开壳层访问模式和前端只读呈现；受保护请求在认证、业务和审计写入前返回 503。
+- 完成疑点定位、整改、报告签发、知识统计和工程告警的定向修复与测试。
+- 候选收口复审新增两条整改附件 RED 回归：不可见父整改项必须先于扩展名或文件体校验返回 `404`；附件存储不可用时也必须先确认父整改项存在和可见。修复后整改附件定向测试 `6/6` 通过。
+- 本地全栈 E2E 17/17 通过，机器收据覆盖 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流，共 27 条功能记录；确定性 Fake OCR 已纳入，没有真实 Provider 调用。
+- 已建立架构、API、用户与运维 Playbook、生产验收矩阵和中文技术写作规则。
+- 全量质量门禁刷新通过：Python `995 passed`、5 条第三方 SWIG `DeprecationWarning`；Web `41` 个文件、`412` 项测试通过；Ruff、Mypy 117 个源文件、ESLint、TypeScript、Next.js `26/26` 静态页面构建均通过。docs lint 和最终 `git diff --check` 由候选收口尾门复核。
+- 首批 4 个约 40 MiB 的 exact paths 已在用户确认后于 14:45 移动到系统 Trash；当时四个目标保留原 inode 和内容哈希、Git 状态哈希不变。16:02 新鲜复核发现 Finder 已于 15:10 清空 Trash，源和目标均不存在，当前不可恢复；系统日志不能证明触发者。
+- 清理收据 SHA-256 为 `cc03c126ed6e81fb6b6864b6760110e6c5d17551134034750a6f343d664d91d2`。
+- 旧工作区证据包包含 416 个选定文件，归档 SHA-256 为 `80f730232fd54c385350dd87302a7f3b01ae4e7d82715581ec9f09a2e4fc5836`；gzip 与隔离解包逐文件源哈希校验通过。
+- 第二批 5 个相互独立目录、约 2.50 GiB 已在用户确认后移动到受管同卷隔离目录；移动前后 inode、全量树哈希和候选 Git 状态一致，四个有效独立 Git 仓库的隔离后连通性检查通过。受管隔离移动收据 SHA-256 为 `b7e4f85d71146b6b1cc77d63622dc7f989b8afe538f4f585b8e57d39b6962426`。
+- Loop 128 父子目录约 1.218 GiB 已在用户确认后转换为相对 worktree 关联，并成对移动到受管同卷隔离目录。两个原路径均不存在；inode、非指针载荷哈希、worktree 注册、clean 状态、`fsck`、ref tip 祖先关系、alternates 和候选 Git 状态均通过。
+- Loop 128 成对隔离移动收据 SHA-256 为 `f10217bf562e84de1eea735d4f6f2e78d509a8f9e4f288bbe80cc8e8a9b27d4d`。三份原绝对关联元数据备份已保留；父仓库仍依赖当前候选仓库 objects alternates。
+- 既有隔离未释放磁盘空间；H1 永久删除保持 `blocked`，其他永久删除均未授权。
+
+Boundary: `production_candidate_not_deployed`, `staging=false`, `commit=false`, `provider_call=false`, `local_docker_untouched`, `first_cleanup_batch_not_recoverable_after_finder_empty`, `second_cleanup_batch_recoverable_managed_quarantine`, `loop128_pair_recoverable_managed_quarantine`, `permanent_delete=false`.
 
 ## 2026-07-21 Loop 60 H1 Citation Marker Remediation Start
 

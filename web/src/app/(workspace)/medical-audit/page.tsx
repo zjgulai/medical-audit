@@ -8,7 +8,6 @@ import {
   createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
-  fetchProjectDashboard,
   fetchProjects,
   fetchReportWorkbench,
   recordMedicalAuditImportPreflight,
@@ -22,7 +21,6 @@ import type {
   DocumentSourceCollectionCatalogItem,
   DocumentSourceCollectionCatalogResponse,
   MedicalAuditWorkflowActionResponse,
-  ProjectDashboardResponse,
   ProjectSummaryApiItem,
   ProjectsResponse,
   ReportWorkbenchResponse,
@@ -394,6 +392,7 @@ export default function MedicalAuditPage() {
 function MedicalAuditPageInner() {
   const searchParams = useSearchParams();
   const preferredProjectId = searchParams.get("project");
+  const preferredFindingKey = searchParams.get("finding");
   const [activeTool, setActiveTool] = useState<ToolId>("audit");
   const [activeView, setActiveView] = useState<AuditView>("audit");
   const [activeRule, setActiveRule] = useState<RuleFilter>("all");
@@ -406,6 +405,7 @@ function MedicalAuditPageInner() {
   const [workflowActionState, setWorkflowActionState] = useState<WorkflowActionState>({ status: "idle" });
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [findingLinkNotice, setFindingLinkNotice] = useState<string | null>(null);
 
   const [auditState, setAuditState] = useState<LoadState<AuditFindingsResponse>>({
     status: "loading"
@@ -419,10 +419,6 @@ function MedicalAuditPageInner() {
   const [projectState, setProjectState] = useState<LoadState<ProjectsResponse>>({
     status: "loading"
   });
-  const [dashboardState, setDashboardState] = useState<LoadState<ProjectDashboardResponse>>({
-    status: "loading"
-  });
-
   useEffect(() => {
     let cancelled = false;
     setAuditState({ status: "loading" });
@@ -432,7 +428,26 @@ function MedicalAuditPageInner() {
           return;
         }
         setAuditState({ status: "ready", data });
-        setSelectedFindingKey((current) => current ?? data.items[0]?.finding_key ?? null);
+        if (preferredFindingKey) {
+          const linkedFinding = data.items.find(
+            (finding) => finding.finding_key === preferredFindingKey
+          );
+          if (linkedFinding) {
+            setActiveTool("audit");
+            setActiveView("audit");
+            setActiveRule("all");
+            setRiskFilter("全部风险");
+            setSearchQuery("");
+            setSelectedFindingKey(linkedFinding.finding_key);
+            setFindingLinkNotice(null);
+          } else {
+            setSelectedFindingKey(data.items[0]?.finding_key ?? null);
+            setFindingLinkNotice("未找到可见疑点，已显示当前可访问的疑点清单。");
+          }
+        } else {
+          setSelectedFindingKey((current) => current ?? data.items[0]?.finding_key ?? null);
+          setFindingLinkNotice(null);
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -445,7 +460,7 @@ function MedicalAuditPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [reviewStatus]);
+  }, [preferredFindingKey, reviewStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -487,47 +502,23 @@ function MedicalAuditPageInner() {
   useEffect(() => {
     let cancelled = false;
     setProjectState({ status: "loading" });
-    setDashboardState({ status: "loading" });
     fetchProjects()
       .then((projects) => {
         if (cancelled) {
           return;
         }
         setProjectState({ status: "ready", data: projects });
-        const project = selectMedicalAuditProject(projects.items, preferredProjectId);
-        if (!project) {
-          setDashboardState({
-            status: "error",
-            message: "当前没有可关联的审计专题项目"
-          });
-          return;
-        }
-        return fetchProjectDashboard(project.id)
-          .then((dashboard) => {
-            if (!cancelled) {
-              setDashboardState({ status: "ready", data: dashboard });
-            }
-          })
-          .catch((error: unknown) => {
-            if (!cancelled) {
-              setDashboardState({
-                status: "error",
-                message: error instanceof Error ? error.message : "专题驾驶舱接口读取异常"
-              });
-            }
-          });
       })
       .catch((error: unknown) => {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "审计专题项目接口读取异常";
           setProjectState({ status: "error", message });
-          setDashboardState({ status: "error", message: "专题驾驶舱等待项目数据恢复" });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preferredProjectId]);
 
   const auditData = auditState.status === "ready" ? auditState.data : null;
   const sourceData = sourceState.status === "ready" ? sourceState.data : null;
@@ -754,20 +745,21 @@ function MedicalAuditPageInner() {
           </div>
           <details className="replica-medical-notice">
             <summary>查看数据与权限说明</summary>
-            <p>页面初始加载读取生产数据；复核、报告、任务和补充材料写入仍需经过独立确认门禁。</p>
+            <p>本地测试模式读取受控业务数据；生产公开壳层不会读取业务数据，写操作也保持关闭。</p>
             <p>
               疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
               <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
-              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
-              <code>/api/v1/projects/:id/dashboard</code>。
+              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code>。
             </p>
           </details>
+          {findingLinkNotice ? (
+            <p className="replica-medical-notice" role="status">{findingLinkNotice}</p>
+          ) : null}
           {activeView === "audit" ? (
             <SmartAuditView
               activeRule={activeRule}
               auditState={auditState}
               activeProject={activeProject}
-              dashboardState={dashboardState}
               filteredFindings={filteredFindings}
               projectState={projectState}
               reportState={reportState}
@@ -939,7 +931,6 @@ function SmartAuditView({
   activeRule,
   auditState,
   activeProject,
-  dashboardState,
   filteredFindings,
   projectState,
   reportState,
@@ -959,7 +950,6 @@ function SmartAuditView({
   readonly activeRule: RuleFilter;
   readonly auditState: LoadState<AuditFindingsResponse>;
   readonly activeProject: ProjectSummaryApiItem | null;
-  readonly dashboardState: LoadState<ProjectDashboardResponse>;
   readonly filteredFindings: readonly BackendAuditFinding[];
   readonly projectState: LoadState<ProjectsResponse>;
   readonly reportState: LoadState<ReportWorkbenchResponse>;

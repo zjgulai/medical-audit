@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import { BrandLockup } from "@/components/shell/brand-lockup";
 import { writeAuditClientSession } from "@/lib/audit-user";
 import { AUDIT_PLATFORM_NAME } from "@/lib/brand";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type LoginSurfaceProps = {
   readonly redirectTo?: string;
@@ -38,8 +39,14 @@ function resolveRedirectPath(redirectTo: string | undefined): string {
 }
 
 export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
+  const publicShellReadonly = isPublicShellReadonly();
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (publicShellReadonly) {
+      window.location.assign("/workspace");
+      return;
+    }
     writeAuditClientSession();
     window.location.assign(resolveRedirectPath(redirectTo));
   }
@@ -53,11 +60,15 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
           <BrandLockup priority />
 
           <div className="audit-login-heading-block">
-            <p className="audit-kicker">欢迎登录</p>
-            <h1>登录工作台</h1>
+            <p className="audit-kicker">{publicShellReadonly ? "产品导览" : "欢迎登录"}</p>
+            <h1>{publicShellReadonly ? "登录暂未开放" : "登录工作台"}</h1>
           </div>
 
-          <div className="mt-7 space-y-5">
+          {publicShellReadonly ? (
+            <p className="audit-login-support">
+              当前仅开放不含真实业务数据的只读产品导览。可信身份认证启用前，业务读取、写入和 Provider 调用均不可用。
+            </p>
+          ) : <div className="mt-7 space-y-5">
             <label className="block">
               <span className="audit-label">账号 / 工号</span>
               <input
@@ -88,14 +99,16 @@ export function LoginSurface({ redirectTo }: LoginSurfaceProps) {
               </label>
               <span className="text-sm text-[var(--audit-ink-subtle)]">遇到问题联系信息中心</span>
             </div>
-          </div>
+          </div>}
 
           <button className="audit-focus-ring audit-btn audit-btn-primary mt-7 w-full py-3.5 text-base" type="submit">
-            登录
+            {publicShellReadonly ? "进入只读产品导览" : "登录"}
           </button>
 
           <p id="support" className="audit-login-support">
-            账号由医院信息中心统一开通，如需协助请联系院内管理员。
+            {publicShellReadonly
+              ? "导览页面不读取真实业务数据，也不接受任何业务写入。"
+              : "账号由医院信息中心统一开通，如需协助请联系院内管理员。"}
           </p>
         </form>
       </section>

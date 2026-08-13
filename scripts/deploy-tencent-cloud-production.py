@@ -55,6 +55,7 @@ PUBLIC_BUILD_VARIABLES = (
     "NEXT_PUBLIC_AUDIT_ORG_LOGO",
     "NEXT_PUBLIC_AUDIT_ORG_NAME",
     "NEXT_PUBLIC_MEDICAL_AUDIT_AGENT_EXTENSION_PACK",
+    "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE",
     "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS",
 )
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -1334,6 +1335,7 @@ def _build_static_frontend(config: DeployConfig) -> None:
     )
     child_environment = os.environ.copy()
     child_environment["MEDICAL_AUDIT_DEPLOY_SHA"] = config.approved_sha
+    child_environment["NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE"] = "public-shell-readonly"
     _run(
         ["corepack", "pnpm", "web:build:release"],
         cwd=config.repo_root,
