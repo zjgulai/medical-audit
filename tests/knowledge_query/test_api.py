@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import urllib.parse
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pypdf import PdfWriter
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -82,8 +84,14 @@ from medical_audit_kb.db.models import (
     AuditRule,
     AuditRun,
     AuditTask,
+    Base,
+    ChunkEmbedding,
+    DocumentChunk,
+    IndexVersion,
     ReviewTask,
     RuleVersion,
+    SourceDocument,
+    SourcePackageVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -4595,6 +4603,116 @@ def test_knowledge_catalog_postgres_metrics_preaggregate_without_join_amplificat
     assert "SUM(DISTINCT" not in rollup_query
     assert "GROUP BY source_package_version_id" in rollup_query
     assert "GROUP BY source_document_id" in rollup_query
+
+
+def test_knowledge_catalog_metrics_against_real_postgres() -> None:
+    database_url = os.environ.get("MEDICAL_AUDIT_TEST_POSTGRES_URL", "").strip()
+    if not database_url:
+        pytest.skip("MEDICAL_AUDIT_TEST_POSTGRES_URL is not configured")
+    parsed_url = make_url(database_url)
+    if not (parsed_url.database or "").startswith("medical_audit_test_"):
+        pytest.fail("real PostgreSQL regression requires a dedicated medical_audit_test_* database")
+
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    try:
+        package_a = SourcePackageVersion(
+            version_key=f"metrics-active-{uuid4().hex}",
+            source_root_path="/fixture/active",
+            description="real PostgreSQL aggregation fixture",
+        )
+        package_b = SourcePackageVersion(
+            version_key=f"metrics-candidate-{uuid4().hex}",
+            source_root_path="/fixture/candidate",
+            description="real PostgreSQL aggregation fixture",
+        )
+        with Session(engine) as session:
+            session.add_all([package_a, package_b])
+            session.flush()
+            document_a = SourceDocument(
+                source_package_version_id=package_a.id,
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                relative_path="active.md",
+                file_name="active.md",
+                file_ext=".md",
+                media_type="text/markdown",
+                sha256="a" * 64,
+                size_bytes=8,
+                status="indexed",
+            )
+            document_b = SourceDocument(
+                source_package_version_id=package_b.id,
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                relative_path="candidate.md",
+                file_name="candidate.md",
+                file_ext=".md",
+                media_type="text/markdown",
+                sha256="b" * 64,
+                size_bytes=3,
+                status="indexed",
+            )
+            session.add_all([document_a, document_b])
+            session.flush()
+            chunks = [
+                DocumentChunk(source_document_id=document_a.id, chunk_index=0, text="甲乙丙丁"),
+                DocumentChunk(source_document_id=document_a.id, chunk_index=1, text="戊己庚辛"),
+                DocumentChunk(source_document_id=document_b.id, chunk_index=0, text="壬癸子"),
+            ]
+            session.add_all(chunks)
+            session.flush()
+            session.add_all([
+                ChunkEmbedding(
+                    chunk_id=chunk.id,
+                    provider="fixture",
+                    model_name="fixture-embedding",
+                    provider_version="v1",
+                    dimension=2,
+                    embedding=[0.1, 0.2],
+                )
+                for chunk in chunks
+            ])
+            session.add_all([
+                IndexVersion(
+                    source_package_version_id=package_a.id,
+                    version_key=f"index-active-{uuid4().hex}",
+                    status="active",
+                    chunk_count=2,
+                    document_count=1,
+                ),
+                IndexVersion(
+                    source_package_version_id=package_a.id,
+                    version_key=f"index-candidate-a-{uuid4().hex}",
+                    status="candidate",
+                    chunk_count=2,
+                    document_count=1,
+                ),
+                IndexVersion(
+                    source_package_version_id=package_b.id,
+                    version_key=f"index-candidate-b-{uuid4().hex}",
+                    status="candidate",
+                    chunk_count=1,
+                    document_count=1,
+                ),
+            ])
+            session.commit()
+
+        metrics, totals, _latest = routes_knowledge_base._metrics_from_postgres(database_url)
+
+        metric = metrics[SourceCollection.MEDICAL_INSURANCE_LAWS]
+        assert metric.document_count == 2
+        assert metric.chunk_count == 3
+        assert metric.embedding_count == 3
+        assert metric.active_embedding_count == 2
+        assert metric.candidate_chunk_count == 3
+        assert metric.character_count == 11
+        assert totals == {
+            "source_documents": 2,
+            "document_chunks": 3,
+            "chunk_embeddings": 3,
+        }
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_document_library_logs_degraded_postgres_read(

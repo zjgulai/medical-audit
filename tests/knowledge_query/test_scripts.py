@@ -2841,6 +2841,47 @@ def test_production_frontend_acceptance_navigation_only_uses_fail_closed_page_co
     }
 
 
+def test_production_frontend_acceptance_rejects_write_controls_in_public_shell() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classify, routeCheckForExecution, routeCheckProfiles } from "
+        + json.dumps(runner_path.as_uri())
+        + "; const byRoute = Object.fromEntries(routeCheckProfiles.hardened"
+        ".map((item) => [item.route, item])); "
+        "const check = (route) => ({ status: 200, error: null, consoleErrors: [], "
+        "failedRequests: [], interactionErrors: [], "
+        "finalUrl: `https://audit.example.test${route}` }); "
+        "const issueTypes = (route, bodyText, heading, controlText) => classify("
+        "check(route), routeCheckForExecution(byRoute[route], { navigationOnlyReadonly: true }), "
+        "{ bodyText: `${bodyText} ${'审计页面内容'.repeat(30)}`, headings: [heading], "
+        "controlText, fileInputCount: 0, horizontalOverflow: false, scrollWidth: 100, "
+        "clientWidth: 100, overflowOffenders: [], interactiveOverflowOffenders: [], "
+        "floatingControlOcclusions: [], chromeTitle: heading }).map((item) => item.type); "
+        "console.log(JSON.stringify({ "
+        "medical: issueTypes('/medical-audit', '医保审计 智能审计', '医保审计', ['新建任务']), "
+        "chat: issueTypes('/chat', 'AI，让审计更智能 AI 对话', 'AI，让审计更智能', ['发送问题']), "
+        "analytics: issueTypes('/analytics', "
+        "'表格分析 选择一个审计案例 审计数据分析 财务杜邦分析', "
+        "'选择一个审计案例', ['开始审计数据分析']), "
+        "ocr: issueTypes('/ocr', '扫描材料识别工作台 Unlimited-OCR 上传待识别文件', "
+        "'扫描材料识别工作台', ['开始文本识别']) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "medical": ["forbidden-control"],
+        "chat": ["forbidden-control"],
+        "analytics": ["forbidden-control"],
+        "ocr": ["forbidden-control"],
+    }
+
+
 def test_production_frontend_acceptance_only_audits_positioned_floating_markers() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (

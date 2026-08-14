@@ -269,6 +269,31 @@ describe("MedicalAuditPage", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("renders a non-interactive shell without protected API reads in production mode", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+    mockApis();
+
+    render(<MedicalAuditPage />);
+
+    expect(await screen.findByText("生产只读导览已关闭业务疑点读取。")).toBeInTheDocument();
+    expect(fetchAuditFindingsMock).not.toHaveBeenCalled();
+    expect(fetchDocumentSourceCollectionsMock).not.toHaveBeenCalled();
+    expect(fetchProjectsMock).not.toHaveBeenCalled();
+    expect(fetchReportWorkbenchMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "任务配置" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量导入" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量复核" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "费用汇总表" }));
+    expect(screen.queryByRole("button", { name: "创建审计任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导入表格文件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "立即导入" })).not.toBeInTheDocument();
+    expect(createMedicalAuditReviewTaskMock).not.toHaveBeenCalled();
+    expect(recordMedicalAuditImportPreflightMock).not.toHaveBeenCalled();
   });
 
   it("renders production audit findings and removes the old static metric baseline", async () => {

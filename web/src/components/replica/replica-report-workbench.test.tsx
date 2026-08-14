@@ -7,7 +7,8 @@ import {
   createReportDraft,
   downloadAuditArtifact,
   fetchProjects,
-  fetchReportWorkbench
+  fetchReportWorkbench,
+  signReportDraft
 } from "@/lib/api-client";
 import type {
   ProjectSummaryApiItem,
@@ -27,6 +28,7 @@ vi.mock("@/lib/api-client", () => ({
   downloadAuditArtifact: vi.fn(),
   fetchProjects: vi.fn(),
   fetchReportWorkbench: vi.fn(),
+  signReportDraft: vi.fn(),
   isBackendRequestError: (error: unknown) => (
     error instanceof Error && error.name === "BackendRequestError" && "status" in error
   )
@@ -36,6 +38,7 @@ const createReportDraftMock = vi.mocked(createReportDraft);
 const downloadAuditArtifactMock = vi.mocked(downloadAuditArtifact);
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
+const signReportDraftMock = vi.mocked(signReportDraft);
 
 const templateCategories: readonly ReportTemplateCategory[] = [
   { id: "plan", label: "计划类", availability: "awaiting-business-template" },
@@ -269,6 +272,15 @@ beforeEach(() => {
     blob: new Blob(["artifact"], { type: "application/octet-stream" }),
     filename: "review-task-001.docx"
   });
+  signReportDraftMock.mockResolvedValue({
+    format: "signed-review-report-v1",
+    task_id: "ready-report",
+    report_id: "signed-ready-report",
+    signed_by: "next-director",
+    signed_at: "2026-08-14T00:00:00Z",
+    signoff_note: "证据与负责人确认已复核",
+    status: "signed"
+  });
 });
 
 afterEach(() => {
@@ -437,6 +449,34 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
     expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /签发报告/ })).not.toBeInTheDocument();
+  });
+
+  it("submits signoff only when all server gates allow it", async () => {
+    window.localStorage.setItem(AUDIT_ROLE_STORAGE_KEY, "director");
+    const ready = reportEntry("ready-report", "草稿", {
+      page: "/pages/review-tasks",
+      task_docx: "/review-tasks/ready-report/export?format=docx",
+      report_docx: null,
+      report_markdown: null,
+      report_json: null
+    });
+    fetchReportWorkbenchMock.mockResolvedValue(reportResponse({ entries: [ready] }));
+
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole("button", { name: "签发报告" }));
+    fireEvent.change(screen.getByPlaceholderText("签发说明（可选）"), {
+      target: { value: "证据与负责人确认已复核" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认签发" }));
+
+    await waitFor(() => {
+      expect(signReportDraftMock).toHaveBeenCalledWith(
+        "ready-report",
+        "证据与负责人确认已复核"
+      );
+    });
+    expect(await screen.findByText("✓ 签发成功")).toBeInTheDocument();
   });
 
   it("keeps technicians read-only even when active templates are visible", async () => {

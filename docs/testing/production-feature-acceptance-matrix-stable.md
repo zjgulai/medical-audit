@@ -4,14 +4,14 @@ doc_type: acceptance-matrix
 module: testing
 status: stable
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai+local-acceptance
 ---
 
 # medical_audit 本地与生产功能验收矩阵
 
-矩阵区分本地活体验收、生产壳层只读验收和受保护业务能力。2026 年 8 月 13 日的候选尚未部署，生产列不得继承本地结果。
+矩阵区分本地活体验收、生产壳层只读验收和受保护业务能力。2026 年 8 月 14 日的候选尚未部署，生产列不得继承本地结果。
 
 ## 页面与功能
 
@@ -19,17 +19,17 @@ source: human+ai+local-acceptance
 |---|---|---|---|---|
 | R01 | `/` | Playwright pass | `production_evidence=L3 shell pass` | 首页和只读入口 |
 | R02 | `/login` | Playwright pass | `production_evidence=blocked_by_access_mode` | 登录占位，不建立可信会话 |
-| R03 | `/medical-audit` | 深链和页面 pass | `production_evidence=blocked_by_access_mode` | 疑点业务不可读 |
+| R03 | `/medical-audit` | 深链、页面和只读壳层负向控件 pass | `production_evidence=blocked_by_access_mode` | 疑点业务不可读，无写控件 |
 | R04 | `/fund-compliance` | 页面和 CTA pass | `production_evidence=L3 shell pass` | 产品导览 |
 | R05 | `/fund-compliance/review` | 表单和 CTA pass | `production_evidence=blocked_by_access_mode` | 数据提交未验证 |
-| R06 | `/chat` | Fake 查询全流程 pass | `production_evidence=not_run` | 真实 Provider 未调用 |
+| R06 | `/chat` | Fake 查询和只读壳层负向控件 pass | `production_evidence=blocked_by_access_mode` | 无输入、上传、选择或发送控件 |
 | R07 | `/agents` | 目录和详情 pass | `production_evidence=not_production_verified` | 写入能力未验证 |
 | R08 | `/agent-market` | 目录 pass | `production_evidence=L3 shell pass` | 安装未验证 |
-| R09 | `/analytics` | 页面和入口 pass | `production_evidence=not_run` | 文件和 Provider 未运行 |
+| R09 | `/analytics` | 页面和只读壳层负向控件 pass | `production_evidence=blocked_by_access_mode` | 无上传、重试或刷新控件 |
 | R10 | `/projects` | 项目和可见性 pass | `production_evidence=blocked_by_access_mode` | 生产业务数据关闭 |
 | R11 | `/audit-cockpit` | 页面和项目入口 pass | `production_evidence=L3 shell pass` | 壳层通过，指标不可读 |
 | R12 | `/documents` | 检索、预览、下载控件 pass | `production_evidence=blocked_by_access_mode` | 真实文档不可读 |
-| R13 | `/ocr` | 页面和能力合同 pass | `production_evidence=not_run` | 真实 OCR 未调用 |
+| R13 | `/ocr` | 页面、能力合同和只读壳层负向控件 pass | `production_evidence=blocked_by_access_mode` | 无文件选择或识别控件 |
 | R14 | `/knowledge-base` | 聚合和页面 pass | `production_evidence=L3 shell pass` | 壳层通过，catalog 受保护 |
 | R15 | `/graph` | 页面和关系视图 pass | `production_evidence=L3 shell pass` | 动态项目数据未验证 |
 | R16 | `/rules` | Seed 合同 pass | `production_evidence=sample_only` | 只读 Sample |
@@ -46,15 +46,18 @@ source: human+ai+local-acceptance
 | 功能 | 本地合同 | 生产状态 |
 |---|---|---|
 | public shell 保护业务 GET、POST、OPTIONS | `503`、`no-store`、无审计增量 | `production_evidence=not_production_verified` |
+| public shell 四个高风险页面不请求业务 API、不显示写控件 | React 回归和生产验收合同 pass | `production_evidence=not_production_verified` |
 | 疑点 `?finding=` 定位与不可见统一提示 | pass | `production_evidence=blocked_by_access_mode` |
 | 整改真实 UUID 附件 | pass | `production_evidence=not_production_verified` |
 | 整改空库真实空状态 | pass | `production_evidence=not_production_verified` |
 | 整改 Sample `writable=false` | pass | `production_evidence=sample_only` |
 | 整改项目可见性和 `404` | pass | `production_evidence=not_production_verified` |
 | 成员和主任完整状态机 | pass | `production_evidence=not_production_verified` |
+| 整改并发过期状态更新 | 一个提交成功、一个 `409` | `production_evidence=not_production_verified` |
 | 报告仅主任签发 | pass | `production_evidence=not_production_verified` |
 | 重复签发、关闭态和不可见任务 | pass | `production_evidence=not_production_verified` |
-| 知识库等长 chunk 和多 index 聚合 | pass | `production_evidence=blocked_by_access_mode` |
+| 报告并发重复签发 | 一个 `200`、一个 `409`、一条操作日志 | `production_evidence=not_production_verified` |
+| 知识库等长 chunk 和多 index 聚合 | SQLite 和真实 PostgreSQL pass | `production_evidence=blocked_by_access_mode` |
 | 确定性 Fake OCR、页映射和审计记录 | pass | `production_evidence=not_production_verified` |
 | 真实 OCR/LLM Provider | not_run | `production_evidence=not_run` |
 | 真实 HIS 与医院现场 UAT | not_run | `production_evidence=not_run` |

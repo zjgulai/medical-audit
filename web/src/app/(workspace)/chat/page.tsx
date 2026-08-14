@@ -22,6 +22,7 @@ import type {
   SourceCollection
 } from "@/lib/api-types";
 import type { ReferenceAgentCard, ReferenceHistoryMessage } from "@/lib/reference-replica-data";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type LocalMessage = {
   readonly id: string;
@@ -95,6 +96,7 @@ function mapHistoryMessages(messages: readonly ReferenceHistoryMessage[] | undef
 }
 
 function ChatPortalContent() {
+  const publicShellReadonly = isPublicShellReadonly();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<readonly LocalMessage[]>([]);
   const [notice, setNotice] = useState("");
@@ -150,6 +152,9 @@ function ChatPortalContent() {
   }, [chatData.data.agents, commandQuery]);
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      return;
+    }
     let mounted = true;
     const stored = window.localStorage.getItem(MODEL_STORAGE_KEY);
     const preferredModel: ChatModelAlias =
@@ -178,9 +183,12 @@ function ChatPortalContent() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [publicShellReadonly]);
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      return;
+    }
     let mounted = true;
     void fetchDocumentSourceCollections()
       .then((catalog) => {
@@ -196,7 +204,7 @@ function ChatPortalContent() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [publicShellReadonly]);
 
   useEffect(() => {
     if (!requestedAgentId) {
@@ -267,6 +275,9 @@ function ChatPortalContent() {
 
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (publicShellReadonly) {
+      return;
+    }
     const value = question.trim();
     if (!value || submitting) {
       return;
@@ -351,7 +362,7 @@ function ChatPortalContent() {
   }
 
   async function handleAttachment(file: File | null) {
-    if (!file || uploading) {
+    if (publicShellReadonly || !file || uploading) {
       return;
     }
     const attachmentModel = selectedModelOption?.available ? selectedModel : null;
@@ -420,6 +431,14 @@ function ChatPortalContent() {
           </section>
         )}
 
+        {publicShellReadonly ? (
+          <section className="replica-chat-box" aria-label="AI 对话只读导览">
+            <div className="replica-chat-readonly-notice" role="status">
+              <strong>AI 对话仅开放产品导览</strong>
+              <p>可信身份认证启用前，附件上传、知识库选择、模型选择和问题发送均不开放，也不会调用 Provider。</p>
+            </div>
+          </section>
+        ) : (
         <form className="replica-chat-box" onSubmit={submitQuestion}>
           <textarea
             value={question}
@@ -547,6 +566,7 @@ function ChatPortalContent() {
             </div>
           </div>
         </form>
+        )}
         {notice && <ReplicaNotice>{notice}</ReplicaNotice>}
         <nav className="replica-chat-shortcuts" aria-label="AI 对话快捷入口">
           {chatShortcuts.map((shortcut) => (

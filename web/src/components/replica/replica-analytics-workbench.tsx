@@ -9,6 +9,7 @@ import type {
   TableAnalysisUploadHistoryResponse,
   TableAnalysisUploadResponse
 } from "@/lib/api-types";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type HistoryPhase = "loading" | "ready" | "empty" | "degraded" | "error";
 
@@ -69,6 +70,7 @@ function caseOption(caseId: TableAnalysisCase): AnalysisCaseOption {
 }
 
 export function ReplicaAnalyticsWorkbench() {
+  const publicShellReadonly = isPublicShellReadonly();
   const [analysisCase, setAnalysisCase] = useState<TableAnalysisCase>("audit-data");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -84,6 +86,10 @@ export function ReplicaAnalyticsWorkbench() {
   const activeCase = caseOption(analysisCase);
 
   const loadHistory = useCallback(async () => {
+    if (publicShellReadonly) {
+      setHistoryState({ phase: "degraded", response: null });
+      return;
+    }
     const requestId = ++historyRequestRef.current;
     setHistoryState({ phase: "loading", response: null });
     try {
@@ -101,7 +107,7 @@ export function ReplicaAnalyticsWorkbench() {
       if (!mountedRef.current || requestId !== historyRequestRef.current) return;
       setHistoryState({ phase: "error", response: null });
     }
-  }, []);
+  }, [publicShellReadonly]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -132,7 +138,7 @@ export function ReplicaAnalyticsWorkbench() {
   }
 
   async function submitUpload() {
-    if (!selectedFile || uploadInFlightRef.current) return;
+    if (publicShellReadonly || !selectedFile || uploadInFlightRef.current) return;
     uploadInFlightRef.current = true;
     setUploading(true);
     setUploadError(null);
@@ -188,6 +194,20 @@ export function ReplicaAnalyticsWorkbench() {
         </div>
       </section>
 
+      {publicShellReadonly ? (
+        <section className="replica-analytics-upload" aria-labelledby="analytics-upload-title">
+          <div className="replica-analytics-section-heading">
+            <div>
+              <p className="replica-kicker">第 2 步</p>
+              <h2 id="analytics-upload-title">上传数据并执行{activeCase.label}</h2>
+            </div>
+            <span>只读导览</span>
+          </div>
+          <p className="replica-analytics-degraded" role="status">
+            可信身份认证启用前，表格上传、分析记录读取和业务写入均不开放。
+          </p>
+        </section>
+      ) : (
       <section className="replica-analytics-upload" aria-labelledby="analytics-upload-title">
         <div className="replica-analytics-section-heading">
           <div>
@@ -244,10 +264,15 @@ export function ReplicaAnalyticsWorkbench() {
           <code>provider_call=false</code>
         </details>
       </section>
+      )}
 
       {uploadResult ? <AnalysisResult response={uploadResult} /> : null}
 
-      <HistoryPanel state={historyState} onReload={() => void loadHistory()} />
+      <HistoryPanel
+        publicShellReadonly={publicShellReadonly}
+        state={historyState}
+        onReload={() => void loadHistory()}
+      />
 
       <aside className="replica-analytics-followup" aria-label="分析后续入口">
         <div>
@@ -369,9 +394,11 @@ function ResultList({ title, items }: { readonly title: string; readonly items: 
 }
 
 function HistoryPanel({
+  publicShellReadonly,
   state,
   onReload
 }: {
+  readonly publicShellReadonly: boolean;
   readonly state: HistoryState;
   readonly onReload: () => void;
 }) {
@@ -383,9 +410,11 @@ function HistoryPanel({
           <p className="replica-kicker">最近工作</p>
           <h2>分析记录</h2>
         </div>
-        <button type="button" className="replica-secondary-button" onClick={onReload}>
-          刷新
-        </button>
+        {publicShellReadonly ? <span>只读导览</span> : (
+          <button type="button" className="replica-secondary-button" onClick={onReload}>
+            刷新
+          </button>
+        )}
       </div>
 
       {state.phase === "loading" ? (
@@ -396,9 +425,11 @@ function HistoryPanel({
       {state.phase === "error" ? (
         <div className="replica-analytics-error" role="alert">
           <p>分析记录读取失败</p>
-          <button type="button" className="replica-secondary-button" onClick={onReload}>
-            重试
-          </button>
+          {publicShellReadonly ? null : (
+            <button type="button" className="replica-secondary-button" onClick={onReload}>
+              重试
+            </button>
+          )}
         </div>
       ) : null}
       {state.phase === "empty" ? <p className="replica-analytics-empty">当前没有分析记录</p> : null}

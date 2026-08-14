@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import OcrWorkbenchPage from "./page";
 
@@ -11,6 +11,10 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("@/lib/api-client", () => apiMocks);
 
 describe("OcrWorkbenchPage", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.fetchOcrCapabilities.mockResolvedValue({
@@ -100,5 +104,17 @@ describe("OcrWorkbenchPage", () => {
     expect(container.querySelector('input[type="file"]')).toBeDisabled();
     expect(screen.getByRole("button", { name: "开始文本识别" })).toBeDisabled();
     expect(apiMocks.extractOcrText).not.toHaveBeenCalled();
+  });
+
+  it("removes OCR upload controls and capability reads from the production shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    const { container } = render(<OcrWorkbenchPage />);
+
+    expect(await screen.findByText(/OCR 文件上传、文本识别和 Provider 调用均不开放/)).toBeInTheDocument();
+    expect(apiMocks.fetchOcrCapabilities).not.toHaveBeenCalled();
+    expect(apiMocks.extractOcrText).not.toHaveBeenCalled();
+    expect(container.querySelector('input[type="file"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始文本识别" })).not.toBeInTheDocument();
   });
 });

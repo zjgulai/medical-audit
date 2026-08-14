@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -1237,6 +1238,75 @@ def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates
     assert closed.json()["detail"] == "review task is closed and read-only"
 
 
+def test_report_draft_signoff_is_atomic_under_concurrent_requests(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = SqlAlchemyReviewTaskStore(
+        f"sqlite:///{tmp_path / 'atomic-report-signoff.db'}",
+        create_schema=True,
+    )
+    app = create_app(state)
+    member_headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/reports/drafts",
+            headers=member_headers,
+            json={
+                "template_id": "workpaper-summary-risk",
+                "project_key": "SELF-CHECK-FUND-20260607",
+                "field_values": {"人工复核意见": "并发签发验证"},
+            },
+        )
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+    assert state.review_task_store is not None
+    task = state.review_task_store.get_task(task_id)
+    dossier = cast(dict[str, object], task["dossier"])
+    task.update({
+        "status": "not-violation",
+        "status_label": "未发现违规",
+        "reviewer_note": "主任已复核",
+        "conclusion": "未发现违规",
+    })
+    dossier["owner_signoff"] = {
+        "status": "approved",
+        "status_label": "负责人已确认",
+        "confirmed_by": "next-director",
+        "confirmed_at": "2026-08-14T00:00:00Z",
+    }
+    state.review_task_store.update_task(task_id, task)
+    start = Barrier(2)
+
+    def sign(index: int) -> object:
+        start.wait(timeout=5)
+        with TestClient(app) as client:
+            return client.post(
+                f"/reports/drafts/{task_id}/signoff",
+                headers=director_headers,
+                json={"signoff_note": f"并发签发-{index}"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(sign, (1, 2)))
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    successful = next(response for response in responses if response.status_code == 200)
+    persisted = state.review_task_store.get_task(task_id)
+    persisted_dossier = cast(dict[str, object], persisted["dossier"])
+    signed_report = cast(dict[str, object], persisted_dossier["signed_report"])
+    successful_body = successful.json()
+    assert signed_report["report_id"] == successful_body["report_id"]
+    assert signed_report["signed_by"] == successful_body["signed_by"]
+    assert signed_report["signed_at"] == successful_body["signed_at"]
+    assert signed_report["signoff_note"] == successful_body["signoff_note"]
+    assert len([
+        log for log in state.operation_logs if log["action"] == "report-draft-signoff"
+    ]) == 1
+
+
 def test_report_template_draft_fails_closed_when_project_member_store_fails(
     tmp_path: Path,
 ) -> None:
@@ -2318,6 +2388,13 @@ def test_report_template_draft_concurrent_requests_use_distinct_ids_and_persist_
             values: dict[str, object],
         ) -> dict[str, object]:
             return self.delegate.update_task(task_id, values)
+
+        def mutate_task(
+            self,
+            task_id: str,
+            mutator: Callable[[dict[str, object]], dict[str, object]],
+        ) -> dict[str, object]:
+            return self.delegate.mutate_task(task_id, mutator)
 
     state = _api_state(tmp_path)
     state.project_member_store = InMemoryProjectMemberStore()

@@ -5,10 +5,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from medical_audit_kb.db.models import RemediationItem
+from medical_audit_kb.db.models import RemediationItem, utc_now
 
 VALID_STATUSES = frozenset({
     "pending-rectification",
@@ -27,6 +27,10 @@ REMEDIATION_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     "rejected": frozenset({"in-rectification"}),
     "closed": frozenset(),
 }
+
+
+class RemediationStatusConflictError(ValueError):
+    pass
 
 
 def list_remediation_items(
@@ -94,14 +98,36 @@ def update_remediation_status(
         raise ValueError(f"unsupported status: {status}")
     if status not in REMEDIATION_STATUS_TRANSITIONS[item.status]:
         raise ValueError(f"illegal remediation status transition: {item.status} -> {status}")
+    previous_status = item.status
+    values: dict[str, Any] = {
+        "status": status,
+        "updated_at": utc_now(),
+    }
     if status == "in-rectification":
-        item.rectification_note = note or item.rectification_note
+        if note:
+            values["rectification_note"] = note
     elif status in {"accepted", "rejected"}:
-        item.acceptance_note = note or item.acceptance_note
+        if note:
+            values["acceptance_note"] = note
     elif status == "closed":
-        from medical_audit_kb.db.models import utc_now  # noqa: PLC0415
-        item.closed_by = closed_by
-        item.closed_at = utc_now()
-    item.status = status
-    session.flush()
-    return item
+        values["closed_by"] = closed_by
+        values["closed_at"] = utc_now()
+    result = session.execute(
+        update(RemediationItem)
+        .where(
+            RemediationItem.id == item_id,
+            RemediationItem.status == previous_status,
+        )
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    if getattr(result, "rowcount", None) != 1:
+        session.expire_all()
+        latest = session.get(RemediationItem, item_id)
+        latest_status = latest.status if latest is not None else "deleted"
+        raise RemediationStatusConflictError(
+            "remediation status changed concurrently: "
+            f"{previous_status} -> {latest_status}"
+        )
+    session.expire_all()
+    return session.get(RemediationItem, item_id)

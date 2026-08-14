@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAnalysisUploadHistory, uploadAnalysisTable } from "@/lib/api-client";
 import type {
@@ -142,6 +142,10 @@ function chooseFile(name = "本次收费.xlsx") {
 }
 
 describe("ReplicaAnalyticsWorkbench", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     fetchHistoryMock.mockReset();
     uploadMock.mockReset();
@@ -169,6 +173,21 @@ describe("ReplicaAnalyticsWorkbench", () => {
     expect(screen.queryByText(/analytics store ready/)).not.toBeInTheDocument();
     expect(uploadMock).not.toHaveBeenCalled();
     await waitFor(() => expect(fetchHistoryMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("removes upload and history controls from the production shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    render(<ReplicaAnalyticsWorkbench />);
+
+    expect(await screen.findByText(/表格上传、分析记录读取和业务写入均不开放/)).toBeInTheDocument();
+    expect(fetchHistoryMock).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("选择分析表格")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /载入.*案例/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /开始.*分析/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
   });
 
   it("loads and executes the DuPont example exactly once", async () => {

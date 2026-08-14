@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,8 +22,12 @@ from medical_audit_kb.api.project_member_store import (
     ProjectIdentityConflictError,
     SqlAlchemyProjectMemberStore,
 )
+from medical_audit_kb.api.remediation_store import (
+    RemediationStatusConflictError,
+    update_remediation_status,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
-from medical_audit_kb.db.models import AuditProject, AuditProjectMember
+from medical_audit_kb.db.models import AuditProject, AuditProjectMember, RemediationItem
 
 ADMIN_HEADERS = {"X-User-Id": "project-admin", "X-Role": "admin"}
 PROJECT_PAYLOAD = {
@@ -1048,6 +1053,69 @@ def test_remediation_status_machine_permissions_and_closed_state(tmp_path: Path)
     )
     assert closed_transition.status_code == 409
     assert closed_upload.status_code == 409
+
+
+def test_remediation_status_update_rejects_a_stale_concurrent_writer(
+    tmp_path: Path,
+) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "并发状态测试", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    assert created.status_code == 200
+    item_id = created.json()["item"]["id"]
+    for target in ("in-rectification", "pending-acceptance"):
+        response = client.post(
+            f"/remediation/items/{item_id}/status",
+            json={"status": target},
+            headers=MEMBER_HEADERS,
+        )
+        assert response.status_code == 200
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    first = Session(engine)
+    stale = Session(engine, expire_on_commit=False)
+    try:
+        remediation_id = UUID(item_id)
+        first_item = first.get(RemediationItem, remediation_id)
+        stale_item = stale.get(RemediationItem, remediation_id)
+        assert first_item is not None and first_item.status == "pending-acceptance"
+        assert stale_item is not None and stale_item.status == "pending-acceptance"
+        stale.commit()
+
+        accepted = update_remediation_status(
+            first,
+            remediation_id,
+            status="accepted",
+            note="并发请求一已验收",
+        )
+        assert accepted is not None and accepted.status == "accepted"
+        first.commit()
+
+        with pytest.raises(
+            RemediationStatusConflictError,
+            match="pending-acceptance -> accepted",
+        ):
+            update_remediation_status(
+                stale,
+                remediation_id,
+                status="rejected",
+                note="陈旧请求不得覆盖",
+            )
+        stale.rollback()
+    finally:
+        first.close()
+        stale.close()
+
+    with Session(engine) as verification:
+        persisted = verification.get(RemediationItem, remediation_id)
+        assert persisted is not None
+        assert persisted.status == "accepted"
+        assert persisted.acceptance_note == "并发请求一已验收"
+    engine.dispose()
 
 
 def test_remediation_parent_project_visibility_hides_resource_existence(tmp_path: Path) -> None:

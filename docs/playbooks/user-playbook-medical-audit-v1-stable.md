@@ -4,14 +4,14 @@ doc_type: user-playbook
 module: platform
 status: stable
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai+local-acceptance
 ---
 
 # AI 审计一体化协作平台用户 Playbook
 
-本文按 22 个功能域说明角色、前置条件、操作、副作用和恢复方法。生产当前采用 `public-shell-readonly`；除公开壳层外，业务能力均不得标记为生产已验证。
+本文按 22 个功能域说明角色、前置条件、操作、副作用和恢复方法。候选的生产访问模式设计为 `public-shell-readonly`；除公开壳层外，业务能力均不得标记为生产已验证。2026 年 8 月 12 日的生产证据早于该候选，不能证明访问模式已经部署。
 
 证据值只使用 `L3 shell pass`、`blocked_by_access_mode`、`not_production_verified`、`sample_only` 或 `not_run`。
 
@@ -87,6 +87,8 @@ source: human+ai+local-acceptance
 4. 更新复核状态或创建复核任务。
 
 **预期结果**：仅定位可见疑点。无效、不可见或已删除 ID 均显示「未找到可见疑点」。
+
+生产只读壳层不加载疑点、任务或报告数据，也不显示新建、导入、复核、补充材料或生成报告控件。
 
 **副作用**：查看列表无业务写入；状态和任务操作写入疑点、任务及审计记录。
 
@@ -166,13 +168,14 @@ source: human+ai+local-acceptance
 
 **操作步骤**：
 
-1. 选择模型。
+1. 本地选择模型。
 2. 选择一个或多个知识来源。
 3. 使用 `@` 选择智能体。
 4. 可选上传测试附件。
 5. 输入问题并发送。
+6. 在生产只读壳层确认页面只显示能力说明，不显示输入、上传、知识来源、智能体、模型或发送控件。
 
-**预期结果**：回答带引用；模型、知识库和智能体选择写入请求合同。
+**预期结果**：本地回答带引用，模型、知识库和智能体选择写入请求合同。生产只读壳层不请求模型、来源或会话 API。
 
 **副作用**：查询可能写历史和审计日志；附件产生文件记录；真实 Provider 调用需单独授权。
 
@@ -184,7 +187,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：模型、来源、智能体、附件和查询 E2E 通过。
 
-**生产证据**：`not_run`。
+**生产证据**：`blocked_by_access_mode`；候选尚未部署。
 
 ## 7. 智能体
 
@@ -252,11 +255,12 @@ source: human+ai+local-acceptance
 
 **操作步骤**：
 
-1. 选择审计案例或分析模板。
+1. 本地选择审计案例或分析模板。
 2. 上传文件。
 3. 查看分析结果和历史记录。
+4. 在生产只读壳层确认没有示例上传、文件上传、刷新、重试或历史加载请求。
 
-**预期结果**：文件来源、分析状态和历史可追踪；Fake 分析不得冒充 Provider 结果。
+**预期结果**：本地文件来源、分析状态和历史可追踪，Fake 分析不得冒充 Provider 结果。生产只读壳层只提供能力导览。
 
 **副作用**：上传文件并写分析历史；可能调用 Provider。
 
@@ -268,7 +272,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：页面和上传入口 E2E 通过。
 
-**生产证据**：`not_run`。
+**生产证据**：`blocked_by_access_mode`；候选尚未部署。
 
 ## 10. 项目、成员和文件
 
@@ -366,12 +370,13 @@ source: human+ai+local-acceptance
 
 **操作步骤**：
 
-1. 查看 OCR capability。
+1. 本地查看 OCR capability。
 2. 上传支持的扫描文件。
 3. 启动文本识别。
 4. 核对页数、文本和错误页。
+5. 在生产只读壳层确认没有 capability 请求、文件选择或「开始文本识别」控件。
 
-**预期结果**：能力不可用时禁止启动；结果区分 Fake 与真实 Provider。
+**预期结果**：本地能力不可用时禁止启动，结果区分 Fake 与真实 Provider。生产只读壳层只显示能力说明。
 
 **副作用**：上传临时文件；真实 OCR 可能产生 Provider 调用和费用。
 
@@ -383,7 +388,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：页面和 capability 合同测试通过。
 
-**生产证据**：`not_run`。
+**生产证据**：`blocked_by_access_mode`；候选尚未部署。
 
 ## 14. 知识库
 
@@ -485,7 +490,7 @@ source: human+ai+local-acceptance
 4. 主任在三项均为 `true` 时签发。
 5. 下载 DOCX、Markdown 或 JSON 交付物。
 
-**预期结果**：成员、技术人员和管理员看不到签发按钮；重复签发被拒绝。
+**预期结果**：成员、技术人员和管理员看不到签发按钮；重复签发被拒绝。两个并发签发请求只允许一个返回 `200`，另一个返回 `409`，并且只写一条签发操作日志。
 
 **副作用**：草稿和签发写任务、报告及审计日志；下载为读取。
 
@@ -495,7 +500,7 @@ source: human+ai+local-acceptance
 
 **已知限制**：生产签发和导出未执行。
 
-**本地证据**：角色、可见性、构建门禁、重复签发和关闭态测试通过。
+**本地证据**：角色、可见性、构建门禁、重复签发、并发签发和关闭态测试通过。
 
 **生产证据**：`not_production_verified`。
 
@@ -515,7 +520,7 @@ source: human+ai+local-acceptance
 4. 主任选择 `accepted` 或 `rejected`。
 5. 若通过，主任从 `accepted` 迁移到 `closed`。
 
-**预期结果**：前端只显示 `allowed_transitions`；Sample 模式无写按钮；关闭后不可上传或改状态。
+**预期结果**：前端只显示 `allowed_transitions`；Sample 模式无写按钮；关闭后不可上传或改状态。两个基于同一旧状态的并发更新只允许一个提交，过期请求返回 `409`。
 
 **副作用**：创建、状态、附件和关闭均写入 Store、文件和审计日志。
 
@@ -525,7 +530,7 @@ source: human+ai+local-acceptance
 
 **已知限制**：生产整改业务未验证。
 
-**本地证据**：UUID、空库、Sample、项目可见性、状态机、附件和关闭态测试通过。
+**本地证据**：UUID、空库、Sample、项目可见性、状态机、并发冲突、附件和关闭态测试通过。
 
 **生产证据**：`not_production_verified`。
 

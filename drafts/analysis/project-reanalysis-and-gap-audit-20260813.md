@@ -4,11 +4,11 @@ doc_type: analysis-report
 module: repository
 status: active
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai
-observed_at: 2026-08-13T12:54:09+08:00
-local_git_sha: ccc73e95820e39559430e96c01d52c8dfb77a246
+observed_at: 2026-08-14T10:40:19+08:00
+local_git_sha: ea33cd8e586da324f10b4783f808df68090d8cec
 production_git_sha: 25e1654e0c44ca5cbb2bb42e82debdb40fa6f224
 evidence_grade: L2-local-live+prior-L3-production-read-only
 production_side_effect: none
@@ -231,13 +231,24 @@ production_delete=not_run
 | 性能、告警和灾备 | 运维与测试 | 基线和目标未定义 | 非功能需求评审 | not_run |
 | 共享 Nginx HTTP/2 警告 | 基础设施负责人 | 共享配置不在本轮范围 | 独立变更授权 | not_run |
 
-## 候选收口复审
+## 2026 年 8 月 13 日候选收口复审
 
 - 高风险 diff 复审发现两项整改附件鉴权顺序缺陷：上传在父资源可见性前处理文件；列表在附件存储未启用时提前返回空结果。
 - 两条新增 RED 回归分别稳定得到 `422` 和 `200`；最小修复后整改附件定向测试 `6/6` 通过，不可见资源统一先返回 `404`。
 - 全量 Python 为 `995 passed, 5 warnings`；5 条 warning 均来自第三方 SWIG 类型。Ruff 和 Mypy 117 个源文件通过。
 - Web 为 41 个文件、412 项测试通过；typecheck、lint、26/26 静态页面构建通过。完整本地全栈 Playwright 为 `17/17`，机器收据为 `status=pass`、`feature_count=27`、`provider_call=false`。
 - 最终候选 exact-manifest 和收口收据保存在 `/Users/pray/.Codex/file-history/medical_audit-20260813T181500+0800-candidate-closeout/`；该本地收据不构成 staging、commit、push、部署或生产业务验收授权。
+
+## 2026 年 8 月 14 日 Draft PR 复审整改
+
+- Draft PR 复审确认两类 P1：生产只读壳层仍残留可写控件；报告签发和整改状态迁移存在并发竞态。
+- `/medical-audit`、`/chat`、`/ocr` 和 `/analytics` 在 `public-shell-readonly` 构建中不请求受保护 API，也不渲染上传、创建、发送、签发或状态变更控件。生产前端验收合同同时把这些控件列为壳层禁用项。
+- 报告签发改为在任务存储锁和数据库行锁内重新检查项目可见性、关闭态、签发态和构建门禁。两个并发请求只允许一个成功，另一个返回 `409`，并且只生成一条签发操作日志。
+- 整改状态更新使用旧状态条件更新。过期会话不能覆盖已经提交的状态；冲突返回 `409`。
+- 知识库统计新增真实 PostgreSQL 回归，覆盖等长 chunk、多个 index version、active 和 candidate 聚合。测试数据库名必须使用 `medical_audit_test_` 前缀，测试结束删除临时表。
+- 本轮使用原生临时 PostgreSQL，不使用或修改本地 Docker。完整 Python 为 `999 passed, 5 warnings`；Web 为 41 个文件、417 项测试通过；typecheck、lint 和 26/26 页面构建通过。
+- 本轮 21 个授权变更文件的路径、SHA-256、质量门禁和外部副作用边界保存在 `/Users/pray/.Codex/file-history/medical_audit-20260814T101746+0800-p1-fix/p1-review-remediation-receipt.json`。
+- 本轮证据等级为 L2 本地活体验证。没有访问生产业务、执行 Provider 调用、stage、commit、push、合并或部署。
 
 ## 交付边界
 
@@ -250,9 +261,10 @@ production_delete=not_run
 本节在候选代码和文档收口后更新；收据为本地证据，不代表候选已提交、合并或部署。
 
 - 本地全栈收据：`tmp/outputs/local-fullstack-feature-acceptance-latest.json`；最新运行是 `status=pass`、`feature_count=27`、`provider_call=false`，包含 20 个独立页面、3 个别名和 4 条活体业务工作流。
-- 收据候选身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，基线 SHA `ccc73e95820e39559430e96c01d52c8dfb77a246`；未提交文件清单和 manifest SHA-256 以机器收据中的 `candidate_identity` 为准。
-- Python：`uv run pytest` 为 `995 passed, 5 warnings`；`uv run ruff check .` 和 `uv run mypy src` 通过，Mypy 覆盖 117 个源文件。5 条 warning 来自第三方 SWIG 类型。
-- Web：`pnpm web:test` 为 41 个文件、412 项测试通过；typecheck、lint 和 build 通过，Next.js 生成 26/26 个静态页面，仓库自有 warning 为零。
+- 本地全栈收据会绑定整个脏工作树，因此也记录了本轮明确保留的 `AGENTS.md`、`.claude/` 和 `CLAUDE.md`。本轮授权范围以专项收据中的 21 个 `scoped_files_sha256` 为准，不把这些既有用户文件计入交付。
+- 收据候选身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，当前基线 SHA `ea33cd8e586da324f10b4783f808df68090d8cec`；本轮复审整改仍未提交，文件清单和 manifest SHA-256 以最新机器收据为准。
+- Python：连接原生临时 PostgreSQL 的 `uv run pytest` 为 `999 passed, 5 warnings`；`uv run ruff check .` 和 `uv run mypy src` 通过，Mypy 覆盖 117 个源文件。5 条 warning 来自第三方 SWIG 类型。
+- Web：`pnpm web:test` 为 41 个文件、417 项测试通过；typecheck、lint 和 build 通过，Next.js 生成 26/26 个静态页面，仓库自有 warning 为零。
 - 文档：固定上游 commit `90ff8ccc07da5afc5ae00eb3516f9efa98bd572d` 的中文样式检查与项目文档合同均通过；119 个纳入检查的 Markdown 文件没有 frontmatter、断链、标题或覆盖错误。
 - 工程：`git diff --check` 通过。最后新增的根路径公开壳层负向回归通过；完整 Python 套件的其余代码未再变更。
 - 依赖版本：Python 3.12.13、uv 0.11.11、Node.js 22.22.0、pnpm 9.15.0、Next.js 15.5.19。

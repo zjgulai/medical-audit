@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
 import { extractOcrText, fetchOcrCapabilities } from "@/lib/api-client";
 import type { OcrCapabilityResponse, OcrExtractionResponse } from "@/lib/api-types";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type CapabilityState =
   | { readonly kind: "loading" }
@@ -13,6 +14,7 @@ type CapabilityState =
 const DEFAULT_ACCEPT = ".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff";
 
 export default function OcrWorkbenchPage() {
+  const publicShellReadonly = isPublicShellReadonly();
   const [capability, setCapability] = useState<CapabilityState>({ kind: "loading" });
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<OcrExtractionResponse | null>(null);
@@ -20,6 +22,13 @@ export default function OcrWorkbenchPage() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      setCapability({
+        kind: "error",
+        message: "生产只读导览不读取 OCR 能力，也不开放文件上传和识别操作。"
+      });
+      return;
+    }
     let mounted = true;
     void fetchOcrCapabilities()
       .then((response) => {
@@ -38,7 +47,7 @@ export default function OcrWorkbenchPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [publicShellReadonly]);
 
   const capabilityValue = capability.kind === "ready" ? capability.value : null;
   const runtimeReady = capabilityValue?.enabled === true;
@@ -63,7 +72,7 @@ export default function OcrWorkbenchPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file || !runtimeReady || submitting) {
+    if (publicShellReadonly || !file || !runtimeReady || submitting) {
       return;
     }
     if (capabilityValue && file.size > capabilityValue.max_upload_bytes) {
@@ -154,6 +163,26 @@ export default function OcrWorkbenchPage() {
       ) : null}
 
       <div className="ocr-workbench__grid">
+        {publicShellReadonly ? (
+          <section className="ocr-upload-card" aria-label="OCR 只读导览">
+            <div className="ocr-section-heading">
+              <div>
+                <p>材料输入</p>
+                <h2>上传待识别文件</h2>
+              </div>
+              <span>只读导览</span>
+            </div>
+            <div className="ocr-alert is-warning" role="status">
+              可信身份认证启用前，OCR 文件上传、文本识别和 Provider 调用均不开放。
+            </div>
+            <dl className="ocr-safety-list">
+              <div><dt>业务数据读取</dt><dd>已关闭</dd></div>
+              <div><dt>文件上传</dt><dd>已关闭</dd></div>
+              <div><dt>OCR Provider</dt><dd>不调用</dd></div>
+              <div><dt>业务写入</dt><dd>已关闭</dd></div>
+            </dl>
+          </section>
+        ) : (
         <form className="ocr-upload-card" onSubmit={submit}>
           <div className="ocr-section-heading">
             <div>
@@ -191,6 +220,7 @@ export default function OcrWorkbenchPage() {
             <div><dt>操作留痕</dt><dd>成功后仅写安全元数据与哈希</dd></div>
           </dl>
         </form>
+        )}
 
         <section className="ocr-result-card" aria-labelledby="ocr-result-title">
           <div className="ocr-section-heading">

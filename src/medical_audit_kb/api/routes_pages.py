@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import urllib.parse
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -744,30 +744,15 @@ def sign_report_draft(
         request=request,
         attempted_action="report-draft-signoff",
     )
-    _ensure_review_task_writable(
+    signed_report = _sign_review_task_report_atomically(
         state,
-        task,
+        task_id,
+        task=task,
+        actor=user,
         request=request,
         attempted_action="report-draft-signoff",
         endpoint=f"/reports/drafts/{task_id}/signoff",
-    )
-    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
-    if _signed_report_context(dossier)["signed"]:
-        raise HTTPException(status_code=409, detail="该报告草稿已签发，不可重复签发。")
-
-    signed_report = _build_review_task_signed_report(
-        task=task,
-        signed_by=user.user_identifier,
         signoff_note=payload.signoff_note,
-    )
-    dossier["signed_report"] = signed_report
-    _update_review_task(
-        state,
-        task_id,
-        {
-            "dossier": dossier,
-            "updated_at": _utc_now_iso(),
-        },
     )
     record_operation(
         state,
@@ -1339,27 +1324,15 @@ async def sign_review_task_report_page(
     )
     form = await _urlencoded_form(request)
     signoff_note = _form_optional_str(form, "signoff_note")
-    _ensure_review_task_writable(
+    signed_report = _sign_review_task_report_atomically(
         state,
-        task,
+        task_id,
+        task=task,
+        actor=actor,
         request=request,
         attempted_action="review-task-report-signoff",
         endpoint=f"/pages/review-tasks/{task_id}/report-signoff",
-    )
-    dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
-    signed_report = _build_review_task_signed_report(
-        task=task,
-        signed_by=actor.user_identifier,
         signoff_note=signoff_note,
-    )
-    dossier["signed_report"] = signed_report
-    _update_review_task(
-        state,
-        task_id,
-        {
-            "dossier": dossier,
-            "updated_at": _utc_now_iso(),
-        },
     )
     record_operation(
         state,
@@ -3017,6 +2990,64 @@ def _update_review_task(
         return _review_task_store(state).update_task(task_id, values)
     except ReviewTaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail="review task not found") from exc
+
+
+def _mutate_review_task(
+    state: ApiState,
+    task_id: str,
+    mutator: Callable[[dict[str, object]], dict[str, object]],
+) -> dict[str, object]:
+    try:
+        return _review_task_store(state).mutate_task(task_id, mutator)
+    except ReviewTaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="review task not found") from exc
+
+
+def _sign_review_task_report_atomically(
+    state: ApiState,
+    task_id: str,
+    *,
+    task: dict[str, object],
+    actor: AuthenticatedUser,
+    request: Request,
+    attempted_action: str,
+    endpoint: str,
+    signoff_note: str,
+) -> dict[str, object]:
+    expected_project_key = _review_task_project_key(task)
+
+    def mutate(current: dict[str, object]) -> dict[str, object]:
+        if _review_task_project_key(current) != expected_project_key:
+            raise HTTPException(
+                status_code=409,
+                detail="review task project scope changed during signoff",
+            )
+        _ensure_review_task_writable(
+            state,
+            current,
+            request=request,
+            attempted_action=attempted_action,
+            endpoint=endpoint,
+        )
+        dossier = _with_review_task_governance_defaults(
+            _dict_value(current.get("dossier"))
+        )
+        signed_report = _build_review_task_signed_report(
+            task=current,
+            signed_by=actor.user_identifier,
+            signoff_note=signoff_note,
+        )
+        dossier["signed_report"] = signed_report
+        return {
+            "dossier": dossier,
+            "updated_at": _utc_now_iso(),
+        }
+
+    updated_task = _mutate_review_task(state, task_id, mutate)
+    updated_dossier = _with_review_task_governance_defaults(
+        _dict_value(updated_task.get("dossier"))
+    )
+    return _dict_value(updated_dossier.get("signed_report"))
 
 
 def _review_task_store(state: ApiState) -> ReviewTaskStore:

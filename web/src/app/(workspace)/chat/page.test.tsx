@@ -254,6 +254,23 @@ describe("ChatPortalPage", () => {
     });
   });
 
+  it("renders a non-interactive AI shell without protected catalog reads", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    const { container } = render(<ChatPortalPage />);
+
+    expect(await screen.findByText("AI 对话仅开放产品导览")).toBeInTheDocument();
+    expect(apiMocks.fetchQueryModels).not.toHaveBeenCalled();
+    expect(apiMocks.fetchDocumentSourceCollections).not.toHaveBeenCalled();
+    expect(apiMocks.fetchAgents).not.toHaveBeenCalled();
+    expect(apiMocks.fetchQueryHistory).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("输入相关问题以对话")).not.toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "上传附件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发送问题" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("选择模型")).not.toBeInTheDocument();
+  });
+
   it("submits selected model, knowledge base, and agent to the query API", async () => {
     render(<ChatPortalPage />);
 

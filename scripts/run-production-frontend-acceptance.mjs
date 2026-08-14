@@ -129,6 +129,9 @@ const routeCheckProfiles = {
       expectedPath: "/medical-audit",
       session: "workspace",
       requiredText: [/医保审计/, /智能审计/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(任务配置|新建任务|批量导入|批量复核|复核|建任务|加入报告|进入复核|补充材料|创建审计任务|导入表格文件|立即导入)(?=\s|$)/,
+      ],
     },
     {
       route: "/fund-compliance",
@@ -150,6 +153,9 @@ const routeCheckProfiles = {
       expectedPath: "/chat",
       session: "workspace",
       requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(上传附件|发送问题|选择模型|全部知识库|智能体)(?=\s|$)/,
+      ],
     },
     {
       route: "/agents",
@@ -172,6 +178,10 @@ const routeCheckProfiles = {
       expectedPath: "/analytics",
       session: "workspace",
       requiredText: [/表格分析/, /选择一个审计案例/, /审计数据分析/, /财务杜邦分析/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(选择分析表格|开始审计数据分析|开始财务杜邦分析|刷新|重试)(?=\s|$)/,
+        /(^|\s)载入(审计数据分析|财务杜邦分析)案例(?=\s|$)/,
+      ],
     },
     {
       route: "/projects",
@@ -199,6 +209,10 @@ const routeCheckProfiles = {
       session: "workspace",
       requiredText: [/扫描材料识别工作台/, /Unlimited-OCR/, /上传待识别文件/],
       requiredControlText: [/开始文本识别/],
+      navigationOnlyRequiredControlText: [],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(开始文本识别|选择扫描 PDF 或图片)(?=\s|$)/,
+      ],
     },
     {
       route: "/knowledge-base",
@@ -1357,6 +1371,9 @@ function routeCheckForExecution(routeCheck, { navigationOnlyReadonly = false } =
   if (routeCheck.navigationOnlyRequiredControlText) {
     executionCheck.requiredControlText = routeCheck.navigationOnlyRequiredControlText;
   }
+  if (routeCheck.navigationOnlyForbiddenControlText) {
+    executionCheck.forbiddenControlText = routeCheck.navigationOnlyForbiddenControlText;
+  }
   if (routeCheck.navigationOnlyRequiredTextAny) {
     executionCheck.requiredTextAny = routeCheck.navigationOnlyRequiredTextAny;
   }
@@ -1470,6 +1487,11 @@ function classify(check, routeCheck, data) {
   for (const pattern of routeCheck.requiredControlText ?? []) {
     if (!matchText(pattern, combinedControlText)) {
       issues.push(issue("P1", "missing-control", String(pattern)));
+    }
+  }
+  for (const pattern of routeCheck.forbiddenControlText ?? []) {
+    if (matchText(pattern, combinedControlText)) {
+      issues.push(issue("P1", "forbidden-control", String(pattern)));
     }
   }
   for (const patternGroup of routeCheck.requiredTextAny ?? []) {
