@@ -26,9 +26,27 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-### 2.5 2026-08-14 Draft PR 与文档收口快照（当前）
+### 2.6 2026-08-14 exact-head 交付观察（当前）
 
-以下内容是当前权威快照。2.4 及更早章节只用于追溯各自日期的历史状态。
+本节采用带时间的外部观察。tracked 文档不声明自身 commit SHA，也不保存瞬时 push 状态。
+
+| 维度 | 观察事实 | 证据边界 |
+| --- | --- | --- |
+| 外部观察时间 | 2026-08-14 14:41（Asia/Shanghai） | GitHub 与仓库外只读审计收据 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` | `OPEN/DRAFT`、merge state `CLEAN`；review 数量为 0 |
+| exact-head CI | Python `1003 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739)；只覆盖观测 head |
+| 本地完整回归 | Python `1002 passed, 1 skipped`；Web `417 passed`；Playwright `17/17` | L2 本地；唯一 skip 已在 exact-head CI 覆盖 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 候选未部署；业务读取、写入和 Provider 调用保持关闭 |
+
+门禁结论：exact-head CI 为 `PASS`；CodeRabbit 因 Draft 跳过 review，人工 review 数量为 0。CI 不能替代 review，Ready、merge、部署和生产验收仍是独立门禁。
+
+状态合同：当前状态段只写带时间的外部观察；后续 commit、push 或 CI 变化不会反向使该观察失真。最新身份必须从 PR、Actions run 和仓库外收据重新解析。
+
+### 2.5 2026-08-14 Draft PR 与文档收口快照（历史：push 前）
+
+以下内容保留本地提交完成、外部 push 发生前的历史快照。当前状态以 2.6 节为准；2.4 及更早章节同样只用于追溯。
 
 | 维度 | 当前事实 | 证据边界 |
 | --- | --- | --- |

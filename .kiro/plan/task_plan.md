@@ -14,7 +14,21 @@ evidence_grade: "local-fullstack-plus-doc-derived"
 
 # medical_audit Loop Engineering Plan
 
-## 2026-08-14 PR #275 文档与 P2 收口计划
+## 2026-08-14 exact-head 交付观察与状态合同修复
+
+本节以 2026-08-14 14:41（Asia/Shanghai）的外部观察为依据，不把 tracked 文档自身 SHA 或瞬时 push 状态写成当前身份。
+
+- [x] 核验 Draft PR #275 的 base `ccc73e95`、观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`、`OPEN/DRAFT`、merge state `CLEAN` 和 review 数量 0。
+- [x] 核验 exact-head CI run `31776394739` 为 `success`：Python `1003 passed`、Web `417 passed`、普通/公开壳层构建和文档门禁通过。
+- [x] 识别 P1 根因：当前状态文档把提交前 head 和瞬时 push 状态写成长期事实，外部 push 后必然漂移。
+- [x] 将 README、文档入口、开发计划、状态台账、前端边界、验收矩阵、差异报告和三账改为「带时间外部观察」模型。
+- [x] 重构 `docs:lint` 当前状态合同：校验观察时间、观察 SHA、CI run 和证据角色，不要求 tracked 文档等于自身 `HEAD` 或某个瞬时 push 状态。
+- [x] 完成本地 `docs:lint`、Ruff、`git diff --check`、旧瞬时口径扫描和 scoped manifest。
+- [ ] 后续独立门禁：审阅本地差异后再决定 staging/commit；push、PR 正文更新、Ready、review、merge、部署和生产验收继续分别授权。
+
+边界：本门禁只允许本地文档与文档检查器修复、验证和仓库外收据；不包含 Git/GitHub 写入、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026-08-14 PR #275 文档与 P2 收口计划（历史：push 前）
 
 当前远端 Git 基线为 Draft PR #275 head `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本节管理其上的本地收口提交。
 
@@ -31,7 +45,7 @@ evidence_grade: "local-fullstack-plus-doc-derived"
 
 边界：`local_commit_created=true`、`push=false`、`pr_mutation=false`、`production_access=false`、`provider_call=false`、`local_docker_untouched=true`。
 
-## 2026-08-13 当前执行计划
+## 2026-08-13 执行计划（历史）
 
 当前候选为 `codex/medical-audit-reanalysis-playbook-20260813`。本轮目标是让代码、权限边界、逐功能验收和权威文档一致；下方旧 Loop 内容是历史记录。
 

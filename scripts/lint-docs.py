@@ -93,6 +93,60 @@ PRODUCTION_EVIDENCE_VALUES = {
     "sample_only",
     "not_run",
 }
+CURRENT_STATE_SECTIONS = (
+    ("README.md", "## 当前候选状态", "## 当前材料的权威层级"),
+    ("docs/README.md", "# medical_audit 文档入口", "## 历史文档状态"),
+    (
+        "docs/product/product-development-plan-medical-audit-stable.md",
+        "### 1.6 2026-08-14 exact-head CI 外部观察（当前）",
+        "### 1.5 2026-08-14 Draft PR 与本地收口基线（历史：push 前）",
+    ),
+    (
+        "docs/workflows/workflow-project-state-and-debt-register-stable.md",
+        "### 2.6 2026-08-14 exact-head 交付观察（当前）",
+        "### 2.5 2026-08-14 Draft PR 与文档收口快照（历史：push 前）",
+    ),
+    (
+        "docs/architecture/architecture-frontend-boundary-jinja-vs-next-20260623.md",
+        "## 5. 当前证据",
+        None,
+    ),
+    (
+        "docs/testing/production-feature-acceptance-matrix-stable.md",
+        "# medical_audit 本地与生产功能验收矩阵",
+        "## 页面与功能",
+    ),
+    (
+        "drafts/analysis/project-reanalysis-and-gap-audit-20260813.md",
+        "# medical_audit 全量复盘、差异与清理审计",
+        "## 提交前与生产历史事实",
+    ),
+    (
+        ".kiro/plan/task_plan.md",
+        "## 2026-08-14 exact-head 交付观察与状态合同修复",
+        "## 2026-08-14 PR #275 文档与 P2 收口计划（历史：push 前）",
+    ),
+    (
+        ".kiro/plan/progress.md",
+        "## 2026-08-14 exact-head 观察与状态合同修复进展",
+        "## 2026-08-14 PR #275 文档与 P2 收口进展（历史：push 前）",
+    ),
+    (
+        ".kiro/plan/findings.md",
+        "## 2026-08-14 exact-head 交付审计与状态合同发现",
+        "## 2026-08-14 PR #275 交付审计与收口发现（历史：push 前）",
+    ),
+)
+VOLATILE_CURRENT_STATE_PHRASES = (
+    "尚未推送",
+    "仍未推送",
+    "未提交、未推送",
+    "local-commit-not-pushed",
+    "push=false",
+    "pr_mutation=false",
+    "与本地 `HEAD` 一致",
+    "当前远端 head",
+)
 LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 
@@ -138,6 +192,7 @@ def main() -> int:
     _check_playbook_sections(playbook, errors)
     _check_production_evidence(matrix, errors)
     _check_current_state_evidence(errors)
+    _check_dated_current_state_sections(errors)
 
     for item in warnings:
         print(f"WARN: {item}")
@@ -291,29 +346,76 @@ def _check_current_state_evidence(errors: list[str]) -> None:
     assert parsed is not None
     fields, _ = parsed
     for field in (
-        "observed_at",
-        "local_git_sha",
-        "local_git_sha_role",
-        "local_worktree_status",
+        "repository_observed_at",
+        "repository_observed_sha",
+        "repository_observed_sha_role",
+        "delivery_observed_at",
+        "delivery_observed_pr_head",
+        "delivery_observed_ci_run",
+        "delivery_observed_ci_conclusion",
+        "delivery_status_model",
+        "production_observed_at",
         "production_git_sha",
         "evidence_grade",
         "production_side_effect",
     ):
         if not fields.get(field):
             errors.append(f"{report.relative_to(REPO_ROOT)}: missing evidence field `{field}`")
-    if not re.fullmatch(r"[0-9a-f]{40}", fields.get("local_git_sha", "")):
+    for field in ("repository_observed_sha", "delivery_observed_pr_head", "production_git_sha"):
+        if not re.fullmatch(r"[0-9a-f]{40}", fields.get(field, "")):
+            errors.append(
+                f"{report.relative_to(REPO_ROOT)}: {field} must be a 40-character lowercase SHA"
+            )
+    if fields.get("repository_observed_sha_role") != "precommit-base":
         errors.append(
-            f"{report.relative_to(REPO_ROOT)}: local_git_sha must be a 40-character lowercase SHA"
+            f"{report.relative_to(REPO_ROOT)}: "
+            "repository_observed_sha_role must be `precommit-base`"
         )
-    if fields.get("local_git_sha_role") != "observed-precommit-head":
+    if fields.get("delivery_status_model") != "dated-external-observations":
         errors.append(
-            f"{report.relative_to(REPO_ROOT)}: local_git_sha_role must be `observed-precommit-head`"
+            f"{report.relative_to(REPO_ROOT)}: "
+            "delivery_status_model must be `dated-external-observations`"
         )
-    if fields.get("local_worktree_status") != "local-commit-not-pushed":
-        relative = report.relative_to(REPO_ROOT)
+    if not re.fullmatch(r"[1-9][0-9]*", fields.get("delivery_observed_ci_run", "")):
         errors.append(
-            f"{relative}: local_worktree_status must be `local-commit-not-pushed`"
+            f"{report.relative_to(REPO_ROOT)}: delivery_observed_ci_run must be numeric"
         )
+    if fields.get("delivery_observed_ci_conclusion") not in {
+        "cancelled",
+        "failure",
+        "pending",
+        "success",
+    }:
+        errors.append(
+            f"{report.relative_to(REPO_ROOT)}: invalid delivery_observed_ci_conclusion"
+        )
+
+
+def _check_dated_current_state_sections(errors: list[str]) -> None:
+    for relative, start_marker, end_marker in CURRENT_STATE_SECTIONS:
+        path = REPO_ROOT / relative
+        if not path.is_file():
+            errors.append(f"missing current-state document: {relative}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        if start_marker not in text:
+            errors.append(f"{relative}: missing current-state marker `{start_marker}`")
+            continue
+        section = text.split(start_marker, 1)[1]
+        if end_marker is not None:
+            if end_marker not in section:
+                errors.append(f"{relative}: missing historical boundary `{end_marker}`")
+                continue
+            section = section.split(end_marker, 1)[0]
+        if "外部观察" not in section:
+            errors.append(
+                f"{relative}: current-state section must use a dated external observation"
+            )
+        for phrase in VOLATILE_CURRENT_STATE_PHRASES:
+            if phrase in section:
+                errors.append(
+                    f"{relative}: current-state section contains volatile phrase `{phrase}`"
+                )
 
 
 def _canonical_openapi_operations() -> set[tuple[str, str]]:

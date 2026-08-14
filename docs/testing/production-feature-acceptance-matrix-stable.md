@@ -11,7 +11,7 @@ source: human+ai+local-acceptance
 
 # medical_audit 本地与生产功能验收矩阵
 
-矩阵区分本地活体验收、PR exact-head CI、生产壳层历史只读验收和受保护业务能力。Draft PR #275 的远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在其上有 1 个尚未推送的原子提交。候选尚未部署，生产列不得继承本地或 CI 结果。
+矩阵区分本地活体验收、PR exact-head CI、生产壳层历史只读验收和受保护业务能力。外部观察时间为 2026-08-14 14:41（Asia/Shanghai）：Draft PR #275 的观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`，[exact-head CI run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739) 成功。候选尚未部署，生产列不得继承本地或 CI 结果。
 
 ## 页面与功能
 
@@ -81,7 +81,7 @@ source: human+ai+local-acceptance
 - 四条活体业务工作流分别覆盖整改状态与附件、报告签发权限、项目/成员/文件持久化，以及确定性 Fake OCR 页映射。
 - `candidate_identity.changed_files` 和 `candidate_identity.manifest_sha256` 绑定收据运行时的预提交候选文件；最终值直接读取机器收据，避免文档修改使静态抄录失效。
 
-收据中的 `git_sha` 是预提交运行时基线 SHA；当时的候选差异由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。当前本地分支已经形成 1 个原子提交；最终提交身份和文件哈希由 Git 对象与仓库外提交收据绑定。远端 exact-head CI 仍只覆盖 `cc711fdb4dc2b36d2b5de705939a7726917960f1`，推送后的 CI 需要重新取得新提交证据。
+收据中的 `git_sha` 是预提交运行时基线 SHA；当时的候选差异由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。2026-08-14 14:41 的外部观察显示，PR head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` 已由 run `31776394739` 完成 exact-head CI：Python `1003 passed`、Web `417 passed`，文档合同为 119 个 tracked Markdown、123 个 API 操作、0 error、0 warning。后续 commit 必须取得新的外部 run 证据，不能继承本次结论。
 
 ## 生产证据说明
 

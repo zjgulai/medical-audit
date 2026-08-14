@@ -55,4 +55,4 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 
 - 本地：17 个 Playwright 场景，以及 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流已形成机器收据；功能记录总数为 27。
 - 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。
-- 候选：分支此前已推送为 Draft PR #275；当前远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`，本地在其上有 1 个尚未推送的原子提交。候选尚未合并或部署，业务功能保持 `not_production_verified`。
+- 候选外部观察：截至 2026-08-14 14:41（Asia/Shanghai），Draft PR #275 的观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`，exact-head CI run `31776394739` 成功；PR 当时仍为 Draft，review 数量为 0。该观察不证明 merge 或部署，业务功能保持 `not_production_verified`。

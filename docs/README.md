@@ -11,7 +11,7 @@ source: human+ai
 
 # medical_audit 文档入口
 
-本目录是 `AI 审计一体化协作平台` 的权威文档入口。当前 Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 基于 `ccc73e95820e39559430e96c01d52c8dfb77a246`，远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在该 head 之上有 1 个原子提交，尚未推送。候选尚未合并或部署。2026 年 8 月 12 日的 L3 只读证据显示，生产当时运行 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`，本门禁未刷新生产状态。
+本目录是 `AI 审计一体化协作平台` 的权威文档入口。外部观察时间为 2026-08-14 14:41（Asia/Shanghai）：Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`；[exact-head CI run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739) 成功。PR 当时为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。该观察不等同于 tracked 文档自身身份，也不证明候选已经合并或部署。2026 年 8 月 12 日的 L3 只读证据显示，生产当时运行 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；本轮没有刷新生产状态。
 
 ## 阅读顺序
 
@@ -40,7 +40,7 @@ source: human+ai
 
 - `fact`：本地候选已使用临时 SQLite 和确定性 Fake Provider 完成 17 项 Playwright E2E；机器收据覆盖 20 个独立页面和 3 个兼容别名。
 - `fact`：候选将生产访问模式设为 `public-shell-readonly`，保护业务读取、写入和 Provider 调用。
-- `fact`：PR #275 exact-head CI 已通过；当前本地原子提交尚未推送，不能继承远端 exact-head CI 结论。
+- `fact`：外部观察显示 PR #275 的 `b9553349…` exact-head CI 已通过 Python `1003` 项、Web `417` 项测试和文档门禁；后续 commit 必须取得新的外部 run 证据。
 - `fact`：候选尚未部署，因此不能把本地访问门禁结果称为生产通过。
 - `inference`：生产应用源码与候选基线的用户态差异很小，但运行配置、数据和业务行为仍需发布后只读验收。
 - `uncertain`：可信身份、真实 HIS、真实 OCR/LLM Provider、现场 UAT 和隔离恢复演练尚未完成。
@@ -58,4 +58,4 @@ source: human+ai
 pnpm docs:lint
 ```
 
-该命令运行固定版本的中文文案检查器，并验证 frontmatter、相对链接、标题层级、页面与 Playbook 覆盖、OpenAPI 逐方法/路径覆盖，以及当前状态证据字段的格式和语义角色。最终提交身份由 Git 对象和仓库外提交收据绑定，避免 tracked 文档自引用 `HEAD`。
+该命令运行固定版本的中文文案检查器，并验证 frontmatter、相对链接、标题层级、页面与 Playbook 覆盖、OpenAPI 逐方法/路径覆盖，以及带时间外部观察字段的格式和语义角色。当前状态段不得写入瞬时 push 状态；最终提交身份由 Git 对象、GitHub 和仓库外收据绑定，避免 tracked 文档自引用 `HEAD`。

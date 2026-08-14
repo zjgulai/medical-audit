@@ -13,7 +13,20 @@ source: human+ai
 
 # Progress
 
-## 2026-08-14 PR #275 文档与 P2 收口进展
+## 2026-08-14 exact-head 观察与状态合同修复进展
+
+- 外部观察时间为 2026-08-14 14:41（Asia/Shanghai）。PR #275 的 base 为 `ccc73e95`，观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`；PR 为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。
+- exact-head CI run `31776394739` 全绿：Python `1003 passed`，Web `417 passed`，Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档门禁通过。
+- 只读交付审计确认本地与 GitHub PR 的 92 文件路径集合一致，5 个提交保持线性；最新 18 文件提交 manifest 与仓库外提交收据一致。
+- 确认 P1 文档漂移根因：tracked 当前状态段包含 `cc711fdb…` 和提交前 push 状态，外部状态变化后必然失真。
+- 当前修复将权威入口和三账改为带时间外部观察；后续 commit 只能引用已发生的观察，不得继承其 exact-head CI 结论。
+- `docs:lint` 当前状态合同改为校验观察字段和稳定状态模型，并检查当前段不含瞬时 push 口径。
+- 本地验证通过：`pnpm docs:lint` 为 119 个 tracked Markdown、123 个 API 操作、0 error、0 warning；Ruff、`git diff --check` 和当前状态合同正反向定向检查通过。10 个变更 Markdown 的全量中文风格检查为 0 error、0 warning；143 条 style advice 均来自本门禁未修改的既有正文，本门禁不做盲目批量替换。
+- 本门禁没有执行 Git/GitHub 写入、生产访问、Provider 调用或本地 Docker 操作。
+
+Boundary: local documentation contract remediation only; Git and external promotion remain separate authorization gates.
+
+## 2026-08-14 PR #275 文档与 P2 收口进展（历史：push 前）
 
 - 复核 Draft PR #275：base `ccc73e95`、head `cc711fdb4dc2b36d2b5de705939a7726917960f1`，`OPEN/DRAFT`、`MERGEABLE/CLEAN`；exact-head CI run `31768924010` 全绿，但 CodeRabbit 因 Draft 跳过 review，人工 review 为零。
 - 先红后绿修复只读导航门禁：新增回归最初因缺少分类函数失败；修复后，任一受保护 API 尝试产生 `readonly-protected-api-request-attempt` P1。

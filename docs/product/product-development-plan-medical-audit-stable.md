@@ -14,9 +14,21 @@ source: human+ai
 
 ## 1. 当前基线
 
-### 1.5 2026-08-14 Draft PR 与本地收口基线
+### 1.6 2026-08-14 exact-head CI 外部观察（当前）
 
-本节是当前权威快照；1.4 及更早章节保留各自日期的历史事实。
+本节采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
+
+- 外部观察时间：2026-08-14 14:41（Asia/Shanghai）。
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`；PR 为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。
+- [GitHub Actions run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739) 在观测 head 成功：Python `1003 passed`，Web `417 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过。
+- 提交前本地完整回归为 Python `1002 passed, 1 skipped, 5 warnings`、Web `417 passed`、Playwright `17/17`。本机跳过的 PostgreSQL 聚合回归已包含在 exact-head CI 的 `1003 passed` 中。
+- API 文档覆盖 112 个规范路径、123 个方法/路径操作；`docs:lint` 对 FastAPI OpenAPI 执行双向检查。
+- CodeRabbit 因 Draft 跳过 review。CI 成功不能替代代码评审，也不能证明 Ready、merge 或部署。
+- 生产只引用 2026 年 8 月 12 日 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 的 L3 历史只读观察；候选业务能力继续为 `not_production_verified`。
+
+### 1.5 2026-08-14 Draft PR 与本地收口基线（历史：push 前）
+
+本节保留本地提交完成、外部 push 发生前的历史快照。当前状态以上方 1.6 节为准；1.4 及更早章节同样只用于追溯。
 
 - Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 为 `OPEN`、`DRAFT`、`MERGEABLE/CLEAN`。base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在其上有 1 个原子提交，尚未推送。
 - exact-head GitHub Actions 通过 Python `1001` 项、Web `417` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查。该证据只覆盖远端 head；本地完整套件覆盖当前提交内容，但不构成远端 exact-head CI 证据。

@@ -13,7 +13,26 @@ source: human+ai
 
 # Findings
 
-## 2026-08-14 PR #275 交付审计与收口发现
+## 2026-08-14 exact-head 交付审计与状态合同发现
+
+已确认事实：
+
+- PR #275 的观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` 与 exact-head CI run `31776394739` 一致，CI 结论为 `success`。
+- Python exact-head CI 为 `1003 passed`，Web 为 `417 passed`；PR diff 是 5 个线性提交、92 个文件，本地与 GitHub 路径集合一致。
+- PR 保持 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0；CodeRabbit 明确因 Draft 跳过 review。
+- tracked 当前状态段仍引用提交前 head `cc711fdb…` 和瞬时 push 状态，导致外部状态变化后文档自然漂移。
+
+根因：commit SHA 取决于 tracked 文档内容，外部 push 和 CI 又发生在 commit 之后，因此 tracked 文档无法同时把「自身 exact SHA」和「已 push/CI 终态」作为永远成立的当前事实。
+
+处理结论：权威当前状态改为带时间的外部观察，最终身份由 Git 对象、GitHub 和仓库外收据解析；`docs:lint` 只校验证据字段、语义角色和当前段禁止项，不再要求文档等于自身 `HEAD` 或瞬时 push 状态。
+
+推断：该模型可以保留可复核 SHA 和 CI 证据，同时避免每次外部状态变化都让同一 commit 内的文档自动失真。
+
+不确定项：本门禁没有代码 review、merge、部署或生产业务验收；生产能力继续为 `not_production_verified`。
+
+Boundary: local documentation contract remediation only; no Git write, PR mutation, production access, provider call or local Docker operation.
+
+## 2026-08-14 PR #275 交付审计与收口发现（历史：push 前）
 
 已确认事实：
 
