@@ -7,6 +7,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
+
+from medical_audit_kb.api.app import API_V1_PREFIX, ApiState, create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTMATTER_FIELDS = (
@@ -78,6 +81,11 @@ API_FAMILIES = (
     "/operation/logs",
     "/preview",
 )
+OPENAPI_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put"})
+API_OPERATION_ROW_RE = re.compile(
+    rf"^\|\s*(DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT)\s*\|\s*`({API_V1_PREFIX}[^`]*)`\s*\|",
+    re.MULTILINE,
+)
 PRODUCTION_EVIDENCE_VALUES = {
     "L3 shell pass",
     "blocked_by_access_mode",
@@ -125,6 +133,7 @@ def main() -> int:
         for family in API_FAMILIES:
             if family not in api_text:
                 errors.append(f"{api_doc.relative_to(REPO_ROOT)}: missing API family `{family}`")
+        _check_openapi_operation_coverage(api_doc, api_text, errors)
 
     _check_playbook_sections(playbook, errors)
     _check_production_evidence(matrix, errors)
@@ -136,7 +145,9 @@ def main() -> int:
         print(f"ERROR: {item}")
     print(
         "documentation contract summary: "
-        f"tracked={len(tracked_markdown)} errors={len(errors)} warnings={len(warnings)}"
+        f"tracked={len(tracked_markdown)} "
+        f"api_operations={len(_canonical_openapi_operations())} "
+        f"errors={len(errors)} warnings={len(warnings)}"
     )
     return 2 if errors else 0
 
@@ -282,12 +293,58 @@ def _check_current_state_evidence(errors: list[str]) -> None:
     for field in (
         "observed_at",
         "local_git_sha",
+        "local_git_sha_role",
+        "local_worktree_status",
         "production_git_sha",
         "evidence_grade",
         "production_side_effect",
     ):
         if not fields.get(field):
             errors.append(f"{report.relative_to(REPO_ROOT)}: missing evidence field `{field}`")
+    if not re.fullmatch(r"[0-9a-f]{40}", fields.get("local_git_sha", "")):
+        errors.append(
+            f"{report.relative_to(REPO_ROOT)}: local_git_sha must be a 40-character lowercase SHA"
+        )
+    if fields.get("local_git_sha_role") != "observed-precommit-head":
+        errors.append(
+            f"{report.relative_to(REPO_ROOT)}: local_git_sha_role must be `observed-precommit-head`"
+        )
+    if fields.get("local_worktree_status") != "local-commit-not-pushed":
+        relative = report.relative_to(REPO_ROOT)
+        errors.append(
+            f"{relative}: local_worktree_status must be `local-commit-not-pushed`"
+        )
+
+
+def _canonical_openapi_operations() -> set[tuple[str, str]]:
+    placeholder = cast(Any, object())
+    state = ApiState(
+        settings=placeholder,
+        index_pipeline=placeholder,
+        preview_resolver=placeholder,
+    )
+    schema = create_app(state, api_access_mode="public-shell-readonly").openapi()
+    return {
+        (method.upper(), path)
+        for path, path_item in schema["paths"].items()
+        if path.startswith(API_V1_PREFIX)
+        for method in path_item
+        if method in OPENAPI_METHODS
+    }
+
+
+def _check_openapi_operation_coverage(
+    path: Path,
+    text: str,
+    errors: list[str],
+) -> None:
+    expected = _canonical_openapi_operations()
+    documented = {(method, route) for method, route in API_OPERATION_ROW_RE.findall(text)}
+    relative = path.relative_to(REPO_ROOT)
+    for method, route in sorted(expected - documented):
+        errors.append(f"{relative}: missing OpenAPI operation `{method} {route}`")
+    for method, route in sorted(documented - expected):
+        errors.append(f"{relative}: stale OpenAPI operation `{method} {route}`")
 
 
 if __name__ == "__main__":

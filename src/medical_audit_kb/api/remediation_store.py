@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import false, or_, select, update
 from sqlalchemy.orm import Session
 
 from medical_audit_kb.db.models import RemediationItem, utc_now
@@ -38,13 +38,24 @@ def list_remediation_items(
     *,
     project_key: str | None = None,
     status: str | None = None,
+    visible_project_keys: Collection[str] | None = None,
+    include_legacy_unscoped: bool = False,
     limit: int = 100,
 ) -> Sequence[RemediationItem]:
-    stmt = select(RemediationItem).order_by(RemediationItem.created_at.desc()).limit(limit)
+    stmt = select(RemediationItem)
     if project_key is not None:
         stmt = stmt.where(RemediationItem.project_key == project_key)
+    elif visible_project_keys is not None:
+        normalized_project_keys = tuple(sorted(set(visible_project_keys)))
+        visibility_filters = []
+        if normalized_project_keys:
+            visibility_filters.append(RemediationItem.project_key.in_(normalized_project_keys))
+        if include_legacy_unscoped:
+            visibility_filters.append(RemediationItem.project_key.is_(None))
+        stmt = stmt.where(or_(*visibility_filters) if visibility_filters else false())
     if status is not None:
         stmt = stmt.where(RemediationItem.status == status)
+    stmt = stmt.order_by(RemediationItem.created_at.desc()).limit(limit)
     return session.scalars(stmt).all()
 
 

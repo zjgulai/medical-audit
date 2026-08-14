@@ -4,7 +4,7 @@ doc_type: api-reference
 module: platform-api
 status: stable
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai+openapi
 ---
@@ -71,6 +71,136 @@ source: human+ai+openapi
 | 审计日志 | `GET /audit/logs`、`GET /audit/logs/export` | 审计事件查询和导出 | `READ_AUDIT_LOGS` |
 | 操作日志 | `GET /operation/logs`、`GET /operation/logs/export` | 进程内操作观测 | 生产受保护 |
 | 预览 | `GET /preview/{chunk_id}` | 文档定位和预览 | 按文档权限 |
+
+## OpenAPI 逐操作清单
+
+下表是规范前缀 `/api/v1` 的机器对账清单。`docs:lint` 会从 FastAPI OpenAPI 读取当前操作，并逐项核对方法与路径；新增、删除或改名后，代码和本文必须在同一候选中更新。接口出现在清单中只表示代码合同存在，不表示生产业务访问已经开放。
+
+| 方法 | 规范路径 |
+|---|---|
+| GET | `/api/v1/` |
+| GET | `/api/v1/agent-market/catalog` |
+| POST | `/api/v1/agent-market/templates/{template_id}/install` |
+| GET | `/api/v1/agents` |
+| POST | `/api/v1/agents` |
+| GET | `/api/v1/agents/{agent_key}` |
+| GET | `/api/v1/agents/{agent_key}/feedback` |
+| POST | `/api/v1/agents/{agent_key}/feedback` |
+| GET | `/api/v1/agents/{agent_key}/invocations` |
+| POST | `/api/v1/agents/{agent_key}/invocations` |
+| POST | `/api/v1/agents/{agent_key}/lifecycle` |
+| GET | `/api/v1/agents/{agent_key}/prompt-versions` |
+| POST | `/api/v1/agents/{agent_key}/prompt-versions` |
+| POST | `/api/v1/agents/{agent_key}/prompt-versions/review` |
+| POST | `/api/v1/agents/{agent_key}/prompt-versions/rollback` |
+| POST | `/api/v1/analytics/table-upload` |
+| GET | `/api/v1/analytics/table-uploads` |
+| GET | `/api/v1/archive/workbench` |
+| GET | `/api/v1/audit-findings` |
+| POST | `/api/v1/audit-findings/import-preflight` |
+| GET | `/api/v1/audit-findings/{finding_key}/export` |
+| POST | `/api/v1/audit-findings/{finding_key}/report-entry` |
+| POST | `/api/v1/audit-findings/{finding_key}/review-status` |
+| POST | `/api/v1/audit-findings/{finding_key}/review-task` |
+| POST | `/api/v1/audit-findings/{finding_key}/supplemental-material` |
+| GET | `/api/v1/audit/logs` |
+| GET | `/api/v1/audit/logs/export` |
+| GET | `/api/v1/auth/roles` |
+| GET | `/api/v1/auth/session` |
+| GET | `/api/v1/auth/users` |
+| POST | `/api/v1/auth/users` |
+| PATCH | `/api/v1/auth/users/{user_key}` |
+| POST | `/api/v1/auth/users/{user_key}/role-assignments` |
+| PATCH | `/api/v1/auth/users/{user_key}/role-assignments/{assignment_key}` |
+| POST | `/api/v1/chat/attachments/analyze` |
+| POST | `/api/v1/contract-audits` |
+| GET | `/api/v1/contract-audits/{job_id}` |
+| GET | `/api/v1/contract-audits/{job_id}/report` |
+| GET | `/api/v1/deployment/metadata` |
+| GET | `/api/v1/documents/governance/status` |
+| GET | `/api/v1/documents/library` |
+| GET | `/api/v1/documents/permissions` |
+| GET | `/api/v1/documents/search` |
+| GET | `/api/v1/documents/source-collections` |
+| GET | `/api/v1/documents/source/{chunk_id}/download` |
+| GET | `/api/v1/documents/uploads` |
+| POST | `/api/v1/documents/uploads` |
+| GET | `/api/v1/documents/uploads/{upload_id}/download` |
+| POST | `/api/v1/documents/uploads/{upload_id}/governance` |
+| POST | `/api/v1/documents/uploads/{upload_id}/index` |
+| POST | `/api/v1/documents/uploads/{upload_id}/index-ingestion` |
+| POST | `/api/v1/documents/uploads/{upload_id}/index-readiness/governance-result` |
+| POST | `/api/v1/documents/uploads/{upload_id}/index-readiness/manual-approval` |
+| GET | `/api/v1/graph/workbench` |
+| GET | `/api/v1/health` |
+| GET | `/api/v1/index/evaluation/history` |
+| GET | `/api/v1/index/evaluation/latest/export` |
+| POST | `/api/v1/index/evaluation/run` |
+| GET | `/api/v1/index/failures` |
+| POST | `/api/v1/index/incremental` |
+| GET | `/api/v1/index/jobs` |
+| GET | `/api/v1/index/pending` |
+| GET | `/api/v1/index/postgres-status` |
+| POST | `/api/v1/index/rebuild` |
+| POST | `/api/v1/index/retry-file` |
+| GET | `/api/v1/index/search-backend` |
+| POST | `/api/v1/index/search-backend/postgres` |
+| GET | `/api/v1/index/versions` |
+| POST | `/api/v1/index/versions/activate` |
+| POST | `/api/v1/index/versions/rollback` |
+| GET | `/api/v1/knowledge-base/catalog` |
+| GET | `/api/v1/ocr/capabilities` |
+| POST | `/api/v1/ocr/extract` |
+| GET | `/api/v1/operation/logs` |
+| GET | `/api/v1/operation/logs/export` |
+| GET | `/api/v1/pages/audit-findings` |
+| POST | `/api/v1/pages/audit-findings/{finding_key}/review-task` |
+| GET | `/api/v1/pages/audit-logs` |
+| GET | `/api/v1/pages/chat` |
+| GET | `/api/v1/pages/chat/export` |
+| GET | `/api/v1/pages/index-admin` |
+| GET | `/api/v1/pages/preview/{chunk_id}` |
+| GET | `/api/v1/pages/query` |
+| GET | `/api/v1/pages/review-tasks` |
+| POST | `/api/v1/pages/review-tasks/create` |
+| POST | `/api/v1/pages/review-tasks/{task_id}/attachments` |
+| POST | `/api/v1/pages/review-tasks/{task_id}/rectification` |
+| POST | `/api/v1/pages/review-tasks/{task_id}/report-signoff` |
+| POST | `/api/v1/pages/review-tasks/{task_id}/status` |
+| GET | `/api/v1/preview/{chunk_id}` |
+| GET | `/api/v1/projects` |
+| POST | `/api/v1/projects` |
+| GET | `/api/v1/projects/{project_key}` |
+| GET | `/api/v1/projects/{project_key}/dashboard` |
+| GET | `/api/v1/projects/{project_key}/files` |
+| POST | `/api/v1/projects/{project_key}/files` |
+| GET | `/api/v1/projects/{project_key}/files/{upload_id}/download` |
+| GET | `/api/v1/projects/{project_key}/files/{upload_id}/preview` |
+| POST | `/api/v1/projects/{project_key}/files/{upload_id}/review` |
+| GET | `/api/v1/projects/{project_key}/members` |
+| POST | `/api/v1/projects/{project_key}/members` |
+| POST | `/api/v1/query` |
+| GET | `/api/v1/query/logs` |
+| POST | `/api/v1/query/logs/{query_log_id}/review-task` |
+| GET | `/api/v1/query/models` |
+| GET | `/api/v1/remediation/items` |
+| POST | `/api/v1/remediation/items` |
+| GET | `/api/v1/remediation/items/{item_id}` |
+| GET | `/api/v1/remediation/items/{item_id}/attachments` |
+| POST | `/api/v1/remediation/items/{item_id}/attachments` |
+| POST | `/api/v1/remediation/items/{item_id}/status` |
+| GET | `/api/v1/remediation/workbench` |
+| POST | `/api/v1/reports/drafts` |
+| POST | `/api/v1/reports/drafts/{task_id}/signoff` |
+| GET | `/api/v1/reports/workbench` |
+| GET | `/api/v1/reports/workpaper-templates` |
+| GET | `/api/v1/review-tasks` |
+| GET | `/api/v1/review-tasks/{task_id}/attachments/{attachment_id}/download` |
+| GET | `/api/v1/review-tasks/{task_id}/export` |
+| GET | `/api/v1/review-tasks/{task_id}/rectification/export` |
+| GET | `/api/v1/review-tasks/{task_id}/report-draft` |
+| GET | `/api/v1/review-tasks/{task_id}/signed-report` |
+| GET | `/api/v1/rules/workbench` |
 
 ## 整改合同
 

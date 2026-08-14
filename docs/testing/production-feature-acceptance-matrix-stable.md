@@ -11,7 +11,7 @@ source: human+ai+local-acceptance
 
 # medical_audit 本地与生产功能验收矩阵
 
-矩阵区分本地活体验收、生产壳层只读验收和受保护业务能力。2026 年 8 月 14 日的候选尚未部署，生产列不得继承本地结果。
+矩阵区分本地活体验收、PR exact-head CI、生产壳层历史只读验收和受保护业务能力。Draft PR #275 的远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在其上有 1 个尚未推送的原子提交。候选尚未部署，生产列不得继承本地或 CI 结果。
 
 ## 页面与功能
 
@@ -46,18 +46,20 @@ source: human+ai+local-acceptance
 | 功能 | 本地合同 | 生产状态 |
 |---|---|---|
 | public shell 保护业务 GET、POST、OPTIONS | `503`、`no-store`、无审计增量 | `production_evidence=not_production_verified` |
-| public shell 四个高风险页面不请求业务 API、不显示写控件 | React 回归和生产验收合同 pass | `production_evidence=not_production_verified` |
+| public shell 不请求业务 API、不显示写控件 | React 回归；导航验收发现任一受保护 API 尝试即记 P1 并失败 | `production_evidence=not_production_verified` |
 | 疑点 `?finding=` 定位与不可见统一提示 | pass | `production_evidence=blocked_by_access_mode` |
 | 整改真实 UUID 附件 | pass | `production_evidence=not_production_verified` |
 | 整改空库真实空状态 | pass | `production_evidence=not_production_verified` |
 | 整改 Sample `writable=false` | pass | `production_evidence=sample_only` |
 | 整改项目可见性和 `404` | pass | `production_evidence=not_production_verified` |
+| 整改可见性先于排序与 `LIMIT` | 多项目窗口回归 pass | `production_evidence=not_production_verified` |
 | 成员和主任完整状态机 | pass | `production_evidence=not_production_verified` |
 | 整改并发过期状态更新 | 一个提交成功、一个 `409` | `production_evidence=not_production_verified` |
 | 报告仅主任签发 | pass | `production_evidence=not_production_verified` |
 | 重复签发、关闭态和不可见任务 | pass | `production_evidence=not_production_verified` |
 | 报告并发重复签发 | 一个 `200`、一个 `409`、一条操作日志 | `production_evidence=not_production_verified` |
 | 知识库等长 chunk 和多 index 聚合 | SQLite 和真实 PostgreSQL pass | `production_evidence=blocked_by_access_mode` |
+| OpenAPI 文档逐操作覆盖 | 112 个路径、123 个方法/路径操作由 `docs:lint` 对账 | `production_evidence=not_run` |
 | 确定性 Fake OCR、页映射和审计记录 | pass | `production_evidence=not_production_verified` |
 | 真实 OCR/LLM Provider | not_run | `production_evidence=not_run` |
 | 真实 HIS 与医院现场 UAT | not_run | `production_evidence=not_run` |
@@ -77,9 +79,9 @@ source: human+ai+local-acceptance
 - `workflow_count=4`。
 - `feature_count=27`。
 - 四条活体业务工作流分别覆盖整改状态与附件、报告签发权限、项目/成员/文件持久化，以及确定性 Fake OCR 页映射。
-- `candidate_identity.changed_files` 和 `candidate_identity.manifest_sha256` 绑定收据运行时的未提交候选文件；最终值直接读取机器收据，避免文档修改使静态抄录失效。
+- `candidate_identity.changed_files` 和 `candidate_identity.manifest_sha256` 绑定收据运行时的预提交候选文件；最终值直接读取机器收据，避免文档修改使静态抄录失效。
 
-收据中的 `git_sha` 是运行时基线 SHA；未提交候选由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。最终提交后仍应重跑，生成只依赖唯一提交 SHA 的发布收据。
+收据中的 `git_sha` 是预提交运行时基线 SHA；当时的候选差异由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。当前本地分支已经形成 1 个原子提交；最终提交身份和文件哈希由 Git 对象与仓库外提交收据绑定。远端 exact-head CI 仍只覆盖 `cc711fdb4dc2b36d2b5de705939a7726917960f1`，推送后的 CI 需要重新取得新提交证据。
 
 ## 生产证据说明
 

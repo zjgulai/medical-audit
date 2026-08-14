@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai
 ---
@@ -14,9 +14,22 @@ source: human+ai
 
 ## 1. 当前基线
 
+### 1.5 2026-08-14 Draft PR 与本地收口基线
+
+本节是当前权威快照；1.4 及更早章节保留各自日期的历史事实。
+
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 为 `OPEN`、`DRAFT`、`MERGEABLE/CLEAN`。base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在其上有 1 个原子提交，尚未推送。
+- exact-head GitHub Actions 通过 Python `1001` 项、Web `417` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查。该证据只覆盖远端 head；本地完整套件覆盖当前提交内容，但不构成远端 exact-head CI 证据。
+- 本门禁完整本地回归为 Python `1002 passed, 1 skipped, 5 warnings`、Web `417 passed`、Playwright `17/17`；Ruff、Mypy、typecheck、lint、26/26 构建和 docs lint 通过。唯一 skip 是本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`；对应 PostgreSQL 回归已在 exact-head CI 的 PostgreSQL service 中通过。
+- 本地收口补齐 OpenAPI 逐操作清单和机器覆盖门禁；当前规范 API 为 112 个 `/api/v1` 路径、123 个方法/路径操作。
+- 生产导航验收现在把壳层主动发起受保护 API 请求列为 P1；整改列表在 SQL `LIMIT` 前完成项目可见性过滤。
+- 后端无访问模式环境变量时保留本地 Header 回退，作为显式受控兼容风险；生产 Compose、env 示例和部署脚本必须显式固定 `public-shell-readonly`。新增部署入口没有该设置时一律 NO-GO。
+- 候选分支此前已经推送；本门禁原子提交尚未推送，PR 尚无代码评审，候选未合并、未部署，生产业务能力保持 `not_production_verified`。
+- 2026 年 8 月 12 日生产 SHA `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 仅是既有 L3 历史观测，本门禁没有刷新生产状态。
+
 ### 1.4 2026-08-13 全量复盘候选基线
 
-本节是当前权威快照；后续 1.1 至 1.3 节均为带日期的历史基线。
+本节保留 2026 年 8 月 13 日候选建立时的历史快照；当前状态以上方 1.5 节为准，后续 1.1 至 1.3 节同样是带日期的历史基线。
 
 - 开始执行时，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`。
 - 2026 年 8 月 12 日 L3 生产只读证据为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；与本地基线没有用户态应用源码差异。

@@ -176,7 +176,12 @@ def list_items(
     try:
         with _db_session(state) as session:
             items = list_remediation_items(
-                session, project_key=project_key, status=status, limit=limit
+                session,
+                project_key=project_key,
+                status=status,
+                visible_project_keys=visible_keys,
+                include_legacy_unscoped=user.role is HospitalRole.ADMIN,
+                limit=limit,
             )
             payload = [
                 _item_payload(item, user=user)

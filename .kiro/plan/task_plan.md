@@ -5,7 +5,7 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-13
+updated: 2026-08-14
 status: "active"
 owner: self
 source: human+ai
@@ -13,6 +13,23 @@ evidence_grade: "local-fullstack-plus-doc-derived"
 ---
 
 # medical_audit Loop Engineering Plan
+
+## 2026-08-14 PR #275 文档与 P2 收口计划
+
+当前远端 Git 基线为 Draft PR #275 head `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本节管理其上的本地收口提交。
+
+- [x] 锁定 PR base/head、exact-head CI、review 状态和本门禁授权边界。
+- [x] 补齐 `/api/v1` OpenAPI 逐操作清单，并使 `docs:lint` 对 123 个方法/路径操作执行缺失和陈旧双向检查。
+- [x] 修复只读导航验收合同：公开壳层主动请求任一受保护 API 时记录 P1 并失败。
+- [x] 修复整改列表窗口：项目可见性进入 SQL 查询后再排序和 `LIMIT`。
+- [x] 显式接受后端无访问模式环境变量时的本地 Header 回退风险；生产启动路径必须设置 `public-shell-readonly`，新增部署入口缺少显式设置即 NO-GO。
+- [x] 同步 README、稳定开发计划、状态/债务台账、前端边界、验收矩阵、差异报告和三账的 PR/HEAD/CI 口径。
+- [x] 执行完整 Python、Ruff、Mypy、Web、build、本地全栈 E2E 和 docs lint：Python `1002 passed, 1 skipped`、Web `417 passed`、Playwright `17/17`；唯一 skip 是本机缺少 PostgreSQL 测试 URL，对应回归已在 exact-head CI 通过。
+- [x] 完成最终 `git diff --check`、18 文件 scoped manifest 和本地收据校验；收据位于 `/Users/pray/.Codex/file-history/medical_audit-20260814T132341+0800-doc-openapi-p2-gate/`。
+- [x] 按授权将 18 个 scoped 文件形成 1 个本地原子提交；用户既有 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 未纳入提交。
+- [ ] 后续独立门禁：push 与 PR 正文更新；Ready、review、merge、部署或生产验收继续分别授权。
+
+边界：`local_commit_created=true`、`push=false`、`pr_mutation=false`、`production_access=false`、`provider_call=false`、`local_docker_untouched=true`。
 
 ## 2026-08-13 当前执行计划
 

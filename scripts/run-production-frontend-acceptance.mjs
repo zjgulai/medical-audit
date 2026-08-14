@@ -1000,6 +1000,19 @@ function partitionReadonlyConsoleErrors(consoleErrors, blockedApiRequestCount) {
   return { expected, actionable };
 }
 
+function classifyReadonlyApiRequestAttempts(blockedApiRequests) {
+  if (blockedApiRequests.length === 0) {
+    return [];
+  }
+  const requestCount = blockedApiRequests.length;
+  return [{
+    severity: "P1",
+    type: "readonly-protected-api-request-attempt",
+    message: `public shell attempted ${requestCount} protected API requests`,
+    requestCount,
+  }];
+}
+
 function isRecoveredAbortedRequest(failed, successfulResponseUrls) {
   return (
     failed.method === "GET"
@@ -1987,22 +2000,25 @@ async function run() {
             failedRequests: actionableFailedRequests.map(sanitizeFailedRequest),
             recoveredAbortedRequestCount: recoveredAbortedRequests.length,
             recoveredAbortedRequests: recoveredAbortedRequests.map(sanitizeFailedRequest),
-            readonlyBlockedApiRequestCount: expectedReadonlyBlockedRequests.length,
-            readonlyBlockedApiRequests: expectedReadonlyBlockedRequests.map(sanitizeFailedRequest),
+            readonlyBlockedApiRequestCount: readonlyBlockedApiRequests.length,
+            readonlyBlockedApiRequests: readonlyBlockedApiRequests.map(sanitizeFailedRequest),
             interactionErrorCount: interactionErrors.length,
-            issues: classify(
-              {
-                status,
-                error,
-                consoleErrors: consoleErrorPartition.actionable,
-                failedRequests: actionableFailedRequests,
-                interactionErrors,
-                finalUrl: observedFinalUrl,
-                finalSearch: observedFinalSearch,
-              },
-              routeCheckForExecution(routeCheck, options),
-              data,
-            ),
+            issues: [
+              ...classify(
+                {
+                  status,
+                  error,
+                  consoleErrors: consoleErrorPartition.actionable,
+                  failedRequests: actionableFailedRequests,
+                  interactionErrors,
+                  finalUrl: observedFinalUrl,
+                  finalSearch: observedFinalSearch,
+                },
+                routeCheckForExecution(routeCheck, options),
+                data,
+              ),
+              ...classifyReadonlyApiRequestAttempts(readonlyBlockedApiRequests),
+            ],
           };
           const shouldCaptureScreenshot =
             captureScreenshots &&
@@ -2163,6 +2179,7 @@ export {
   buildAuditPermissionProbeHeaders,
   buildBrowserContextOptions,
   classify,
+  classifyReadonlyApiRequestAttempts,
   deriveAcceptanceUserId,
   finalPath,
   finalSearch,

@@ -5,13 +5,35 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-13
+updated: 2026-08-14
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Findings
+
+## 2026-08-14 PR #275 交付审计与收口发现
+
+已确认事实：
+
+- PR head `cc711fdb` 的 CI 全绿不等于文档已对齐、代码已 review、PR 可合并或候选已部署。
+- 权威文档曾混用 `ccc73e95`、`ea33cd8e`、旧测试数和“尚未推送”状态；PR 正文也仍绑定旧本地证据。
+- 稳定 API 文档此前只覆盖接口族，不能证明 112 个路径、123 个方法/路径操作完整；旧 `docs:lint` 会对此误报通过。
+- 生产导航验收此前记录受保护 API 尝试，但不会因该计数失败。
+- 整改列表此前在 SQL `LIMIT` 后才删除不可见项目，隐藏数据可挤占用户的结果窗口。
+- 后端同时缺少访问模式和 dev-mode 环境变量时回退 `header-transition-test`；配置完备的生产 Compose、env 示例和部署脚本显式固定公开壳层，因此当前生产发布路径的控制有效，但通用启动器仍存在误分类风险。
+
+处理结论：
+
+- 文档、OpenAPI 覆盖门禁、只读导航门禁和整改列表查询均已在本地收口。
+- 后端通用缺省行为采用“显式风险接受”，不是“修复完成”。触发新增启动器、编排方式、SSO 或统一 runtime profile 时必须重新决策；缺少显式访问模式的发布候选直接 NO-GO。
+
+推断：把 CI、文档覆盖、review 和部署状态分成独立门禁，可以避免“测试全绿”掩盖交付合同漂移。
+
+不确定项：本门禁没有刷新生产状态，也没有执行真实业务读取、写入或 Provider 调用；生产业务能力继续为 `not_production_verified`。
+
+Boundary: one local atomic commit, no push, no PR mutation, no production access, no provider call, no local Docker operation.
 
 ## 2026-08-13 全量复盘结论
 

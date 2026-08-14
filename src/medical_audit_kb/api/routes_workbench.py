@@ -914,7 +914,12 @@ def remediation_workbench(
                 store=member_store,
             )
             with store._session_factory() as session:  # noqa: SLF001
-                items = list_remediation_items(session, limit=200)
+                items = list_remediation_items(
+                    session,
+                    visible_project_keys=visible_keys,
+                    include_legacy_unscoped=user.role is HospitalRole.ADMIN,
+                    limit=200,
+                )
                 db_items = [
                     {
                         "id": str(it.id),

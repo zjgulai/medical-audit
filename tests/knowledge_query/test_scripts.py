@@ -2776,6 +2776,39 @@ def test_production_frontend_acceptance_pairs_blocked_api_console_errors() -> No
     }
 
 
+def test_production_frontend_acceptance_rejects_protected_api_attempts_in_readonly_mode() -> None:
+    runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
+    program = (
+        "import { classifyReadonlyApiRequestAttempts } from "
+        + json.dumps(runner_path.as_uri())
+        + "; const requests = ["
+        "{ url: 'https://audit.example.test/api/v1/projects', method: 'GET' }, "
+        "{ url: 'https://audit.example.test/api/v1/reports/workbench', method: 'GET' }]; "
+        "console.log(JSON.stringify({ "
+        "none: classifyReadonlyApiRequestAttempts([]), "
+        "blocked: classifyReadonlyApiRequestAttempts(requests) }));"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "none": [],
+        "blocked": [
+            {
+                "severity": "P1",
+                "type": "readonly-protected-api-request-attempt",
+                "message": "public shell attempted 2 protected API requests",
+                "requestCount": 2,
+            }
+        ],
+    }
+
+
 def test_production_frontend_acceptance_navigation_only_uses_fail_closed_page_contracts() -> None:
     runner_path = Path("scripts/run-production-frontend-acceptance.mjs").resolve()
     program = (

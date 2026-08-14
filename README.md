@@ -5,7 +5,7 @@ module: repository
 topic: project-overview
 status: stable
 created: 2026-05-31
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai
 ---
@@ -22,11 +22,13 @@ source: human+ai
 
 ## 当前候选状态
 
-- 本地基线：`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`；候选分支为 `codex/medical-audit-reanalysis-playbook-20260813`。
+- Git 基线：`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`；Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`。本地候选分支在该 head 之上有 1 个原子提交，尚未推送；提交 SHA 以 Git 对象和仓库外提交收据为准。
+- PR 证据：exact-head GitHub Actions 已通过 Python `1001` 项和 Web `417` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查。CodeRabbit 因 Draft 跳过代码评审，当前没有人工 review。
+- 本地收口：本门禁在 `cc711fdb` 之上形成 1 个尚未推送的文档与 P2 修复原子提交；Python `1002 passed, 1 skipped`，唯一跳过项是本机未配置 PostgreSQL 测试 URL，Web `417 passed`，Ruff、Mypy、typecheck、lint、build、docs lint 和本地全栈均通过。候选 manifest 和提交身份以仓库外收据为准。
 - 生产历史证据：2026 年 8 月 12 日 L3 只读观测为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`。
 - 本地验收：临时 SQLite、确定性 Fake Provider、17 项 Playwright E2E 通过；机器收据覆盖 20 个独立页面、3 个兼容别名和 4 条真实 HTTP/SQLite 业务工作流，共 27 条功能记录。
 - 生产边界：候选默认 `public-shell-readonly`，只开放产品导览、健康和部署元数据；业务读取、写入和 Provider 调用关闭。
-- 交付边界：候选尚未合并、推送或部署。本地结果不能作为生产完成证明。
+- 交付边界：候选分支此前已推送并建立 Draft PR；本门禁原子提交尚未推送，PR 仍未合并或部署。本地结果不能作为生产完成证明。
 
 权威文档从 [docs/README.md](docs/README.md) 开始阅读。用户操作见 [用户 Playbook](docs/playbooks/user-playbook-medical-audit-v1-stable.md)，运维与安全边界见 [管理员运维 Playbook](docs/playbooks/admin-operations-playbook-stable.md)。
 

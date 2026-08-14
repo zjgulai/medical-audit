@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -1155,6 +1156,40 @@ def test_remediation_parent_project_visibility_hides_resource_existence(tmp_path
         404,
         404,
         404,
+    ]
+
+
+def test_remediation_list_filters_project_visibility_before_limit(tmp_path: Path) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    now = datetime.now(UTC)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        session.add_all(
+            [
+                RemediationItem(
+                    item_key="remediation-visible-before-limit",
+                    title="成员可见整改",
+                    project_key=REMEDIATION_PROJECT_KEY,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                RemediationItem(
+                    item_key="remediation-hidden-before-limit",
+                    title="其他项目整改",
+                    project_key="CATALOG-LIMIT-202606",
+                    created_at=now + timedelta(seconds=1),
+                    updated_at=now + timedelta(seconds=1),
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/remediation/items?limit=1", headers=MEMBER_HEADERS)
+
+    assert response.status_code == 200
+    assert [item["item_key"] for item in response.json()["items"]] == [
+        "remediation-visible-before-limit"
     ]
 
 

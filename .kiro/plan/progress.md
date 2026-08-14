@@ -5,13 +5,28 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-13
+updated: 2026-08-14
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Progress
+
+## 2026-08-14 PR #275 文档与 P2 收口进展
+
+- 复核 Draft PR #275：base `ccc73e95`、head `cc711fdb4dc2b36d2b5de705939a7726917960f1`，`OPEN/DRAFT`、`MERGEABLE/CLEAN`；exact-head CI run `31768924010` 全绿，但 CodeRabbit 因 Draft 跳过 review，人工 review 为零。
+- 先红后绿修复只读导航门禁：新增回归最初因缺少分类函数失败；修复后，任一受保护 API 尝试产生 `readonly-protected-api-request-attempt` P1。
+- 先红后绿修复整改列表窗口：隐藏项目原先可占用 `LIMIT=1` 并使可见结果为空；可见项目过滤下推 SQL 后回归通过。
+- API 稳定文档已列出 112 个规范路径、123 个方法/路径操作；`docs:lint` 从 FastAPI OpenAPI 双向对账，并校验差异报告观察基线 SHA 的格式和证据角色。
+- README、文档入口、开发计划、状态/债务台账、前端边界、验收矩阵和差异报告已区分 main、PR exact head、本地未推送提交和历史生产观测。
+- 后端无访问模式环境变量时的 Header 回退没有伪装为已修复；已登记为本地兼容风险，生产 Compose、env 示例和部署脚本继续显式固定 `public-shell-readonly`。
+- 完整本地质量门禁通过：Python `1002 passed, 1 skipped, 5 warnings`；Web 41 个文件、417 项测试；Ruff、Mypy 117 个源文件、typecheck、lint、26/26 build、Playwright `17/17` 和 docs lint 通过。
+- 唯一 skip 是本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`；对应 PostgreSQL 聚合回归已在 PR exact-head CI 的 PostgreSQL service 通过。5 条 warning 仍是第三方 PyMuPDF/SWIG 类型导入。
+- 最终文档后置同步和 `git diff --check` 已完成；本门禁限定为 18 个授权文件，用户既有 `AGENTS.md`、`.claude/`、`CLAUDE.md` 不计入交付差异。scoped manifest 与外部收据保存在 `/Users/pray/.Codex/file-history/medical_audit-20260814T132341+0800-doc-openapi-p2-gate/`。
+- 18 个 scoped 文件已形成 1 个本地原子提交；提交后发现 tracked 文档自引用 `HEAD` 会导致文档门禁必然失效，已在同一提交内改为“观察基线 SHA + 证据角色 + 仓库外提交收据”合同。提交尚未推送，PR 未修改。
+
+Boundary: `remote_head=cc711fdb4dc2b36d2b5de705939a7726917960f1`, `local_commit_created=true`, `push=false`, `pr_mutation=false`, `production_access=false`, `provider_call=false`, `local_docker_untouched=true`.
 
 ## 2026-08-13 全量复盘候选进展
 

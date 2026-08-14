@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-13
+updated: 2026-08-14
 owner: self
 source: human+ai
 ---
@@ -26,9 +26,35 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-### 2.4 2026-08-13 全量复盘候选快照（当前）
+### 2.5 2026-08-14 Draft PR 与文档收口快照（当前）
 
-以下内容是当前权威快照。2.3 及更早章节仅用于追溯历史，不再代表当前状态。
+以下内容是当前权威快照。2.4 及更早章节只用于追溯各自日期的历史状态。
+
+| 维度 | 当前事实 | 证据边界 |
+| --- | --- | --- |
+| 主分支基线 | `main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246` | 本地 Git 只读核验 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，head `cc711fdb4dc2b36d2b5de705939a7726917960f1` | `OPEN`、`DRAFT`、`MERGEABLE/CLEAN`；尚无 code review |
+| exact-head CI | Python `1001 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | GitHub Actions run `31768924010`；只覆盖 `cc711fdb` |
+| 当前本地提交 | OpenAPI 覆盖门禁、只读导航 API 请求门禁、整改可见性分页和状态文档同步 | 1 个原子提交，尚未推送；Python `1002 passed, 1 skipped`、Web `417 passed`、Playwright `17/17`，其余本地门禁通过 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账，缺失或陈旧操作均阻断 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 未部署候选；业务读取、写入和 Provider 调用保持关闭 |
+
+本门禁处理结果：
+
+- `P1-current-state-document-drift`：本地权威文档已改为区分主分支、PR exact head、本地未推送提交和历史生产观测；PR 正文本身仍需在后续独立 GitHub 写入门禁更新。
+- `P1-openapi-documentation-coverage-gap`：本地已补齐逐操作清单，并把方法/路径集合与 FastAPI OpenAPI 纳入 `docs:lint`。
+- `P2-readonly-navigation-contract`：已修复。`public-shell-readonly` 导航中只要出现受保护 API 尝试，就记录 P1 并使验收失败。
+- `P2-remediation-limit-before-visibility`：已修复。项目可见性进入 SQL 查询后再排序和 `LIMIT`，避免隐藏项目挤占结果窗口。
+- `P2-generic-backend-default`：显式接受为受控兼容风险，不将其标记为已修复。现有测试和本地直接启动继续允许 Header 回退；生产 Compose、生产 env 示例和部署脚本必须显式指定 `public-shell-readonly`。责任人为后端/运维维护者；统一 runtime profile 或可信身份上线时重新评估。在新增启动器、编排或部署路径时，如果缺少显式访问模式，发布门禁直接 NO-GO。
+
+当前下一步边界：本地原子提交已经完成；push 与 PR 正文更新仍需独立授权，Ready、review、merge、部署和生产验收继续分别授权。
+
+本地完整回归已经完成。唯一 skip 是本机没有配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL` 的知识统计 PostgreSQL 回归；它不是仓库失败，对应测试已在 PR exact-head CI 的 PostgreSQL service 中通过。5 条 warning 仍来自 `pymupdf==1.27.2.2` 的 SWIG 类型导入。
+
+### 2.4 2026-08-13 全量复盘候选快照（历史）
+
+以下内容保留候选创建日的历史快照。当前状态以 2.5 节为准；2.3 及更早章节同样只用于追溯。
 
 | 维度 | 当前事实 | 证据边界 |
 | --- | --- | --- |

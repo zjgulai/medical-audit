@@ -7,8 +7,11 @@ created: 2026-08-13
 updated: 2026-08-14
 owner: self
 source: human+ai
-observed_at: 2026-08-14T10:40:19+08:00
-local_git_sha: ea33cd8e586da324f10b4783f808df68090d8cec
+observed_at: 2026-08-14T13:23:41+08:00
+local_git_sha: cc711fdb4dc2b36d2b5de705939a7726917960f1
+local_git_sha_role: observed-precommit-head
+local_worktree_status: local-commit-not-pushed
+pull_request: https://github.com/zjgulai/medical-audit/pull/275
 production_git_sha: 25e1654e0c44ca5cbb2bb42e82debdb40fa6f224
 evidence_grade: L2-local-live+prior-L3-production-read-only
 production_side_effect: none
@@ -17,16 +20,18 @@ provider_call: false
 
 # medical_audit 全量复盘、差异与清理审计
 
-本报告记录候选分支 `codex/medical-audit-reanalysis-playbook-20260813` 的代码、文档、本地测试、生产历史证据和清理边界。报告不证明候选已合并、推送或部署。
+本报告记录候选分支 `codex/medical-audit-reanalysis-playbook-20260813` 的代码、文档、本地测试、生产历史证据和清理边界。候选此前已经推送并建立 Draft PR #275；本门禁原子提交尚未推送，报告不证明 PR 已更新，也不证明候选已合并或部署。
 
 ## 事实
 
 ### Git 与生产基线
 
 - 开始执行时，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`，工作树干净。
+- 当前 Draft PR #275 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`。本地候选分支在该 head 之上有 1 个原子提交，尚未推送；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，尚无代码评审。
+- exact-head GitHub Actions run `31768924010` 已通过 Python `1001` 项、Web `417` 项测试和全部 CI job；本地完整套件覆盖当前提交内容，但本地提交不继承远端 exact-head CI 结论。
 - 2026 年 8 月 12 日 L3 只读证据显示，生产部署 SHA 为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`。
 - `25e1654e..ccc73e95` 没有 `src/` 或 `web/` 业务源码差异，仅含验收脚本和 Sprint 5 文档。
-- 候选在 `ccc73e95` 之上新增未提交代码和文档；生产未变更。
+- 当前本地在 `cc711fdb` 之上新增本门禁授权的 1 个原子提交。生产状态未在本门禁刷新。
 
 ### 已修复问题
 
@@ -37,6 +42,9 @@ provider_call: false
 5. 报告签发复用项目可见性、关闭态、构建门禁和 `SIGN_REPORTS`。
 6. 知识库统计按 package 和文档预聚合，修复等长文本与多 index 放大。
 7. 更新旧 E2E 断言，修复 React lint 警告和 Next.js 根目录警告。
+8. 生产导航验收把公开壳层主动发起受保护 API 请求列为 P1，并在出现任一请求时失败。
+9. 整改列表把项目可见性下推到 SQL 查询，在排序和 `LIMIT` 前过滤不可见项目。
+10. API 文档补齐 112 个规范路径、123 个方法/路径操作；`docs:lint` 从 FastAPI OpenAPI 逐项对账。
 
 ### 本地验证
 
@@ -79,7 +87,7 @@ provider_call: false
 - tracked Markdown 有 3 个无效 frontmatter 和 11 个字段不完整文件。
 - `drafts/analysis/backlog-20260807.md` 有一条确定断链。
 
-候选新增权威文档入口、架构、API、用户和管理员 Playbook、验收矩阵、写作规则和 `docs:lint`。
+候选新增权威文档入口、架构、API、用户和管理员 Playbook、验收矩阵、写作规则和 `docs:lint`。2026 年 8 月 14 日收口门禁进一步修正 PR、Git、CI 和本地提交的状态口径，并把 OpenAPI 方法/路径覆盖、观察基线 SHA 格式和证据角色纳入机器检查。tracked 文档不自引用最终 `HEAD`；最终提交身份由 Git 对象和仓库外提交收据绑定。
 
 ## 本地清理边界
 
@@ -250,22 +258,31 @@ production_delete=not_run
 - 本轮 21 个授权变更文件的路径、SHA-256、质量门禁和外部副作用边界保存在 `/Users/pray/.Codex/file-history/medical_audit-20260814T101746+0800-p1-fix/p1-review-remediation-receipt.json`。
 - 本轮证据等级为 L2 本地活体验证。没有访问生产业务、执行 Provider 调用、stage、commit、push、合并或部署。
 
+## 2026 年 8 月 14 日 PR #275 交付审计与本地收口
+
+- PR #275 的 exact head `cc711fdb4dc2b36d2b5de705939a7726917960f1` 通过 GitHub Actions，但只读交付审计给出 Ready/merge `NO-GO`：权威状态文档和 PR 正文仍引用旧 SHA、旧测试数或「尚未推送」，API 文档也未逐操作覆盖 OpenAPI。
+- 本地收口已经修复权威状态文档和 OpenAPI 逐操作门禁。PR 正文属于 GitHub 外部写入，本门禁没有修改，必须在后续独立授权的 push/PR 更新门禁处理。
+- 只读导航 API 请求门禁和整改可见性分页已通过先红后绿的定向回归。
+- 后端未设置访问模式环境变量时继续回退 `header-transition-test`，本轮没有把它写成已修复。该行为被显式接受为本地兼容风险；生产 Compose、生产 env 示例和部署脚本必须设置 `public-shell-readonly`，任何缺少显式模式的新部署入口均为 NO-GO。
+- 本门禁证据等级为 L2 本地；未访问生产、未调用 Provider、未操作本地 Docker 或数据库服务。已按授权形成 1 个本地原子提交，但未推送、未修改 PR。
+- 完整本地回归为 Python `1002 passed, 1 skipped, 5 warnings`、Web `417 passed` 和 Playwright `17/17`；Ruff、Mypy、typecheck、lint、26/26 build、docs lint 均通过。唯一 skip 是本机没有 `MEDICAL_AUDIT_TEST_POSTGRES_URL`；对应真实 PostgreSQL 聚合回归已在 exact-head CI 通过。
+
 ## 交付边界
 
-- 未执行 merge、push、PR、部署、生产 POST、生产业务 GET、Provider 调用或生产删除。
+- 候选分支此前已推送并建立 Draft PR #275。本门禁已执行 1 个本地原子提交；未执行 push、PR 修改、Ready、review、merge、部署、生产 POST、生产业务 GET、Provider 调用或生产删除。
 - 本地 Docker 未扫描、清理、构建或修改。
 - 首批 4 个 exact paths 已按确认移动到系统 Trash，但随后被 Finder 清空，当前不可恢复；操作触发者未知。第二批 5 个旧目录与第三批 Loop 128 父子目录均已按确认移动到受管同卷隔离目录，当前可恢复且未释放磁盘空间。所有永久删除仍未授权。
 
 ## 完成证据
 
-本节在候选代码和文档收口后更新；收据为本地证据，不代表候选已提交、合并或部署。
+本节在候选代码和文档收口后更新；收据为本地证据，只证明本地提交内容，不代表候选已推送、合并或部署。
 
 - 本地全栈收据：`tmp/outputs/local-fullstack-feature-acceptance-latest.json`；最新运行是 `status=pass`、`feature_count=27`、`provider_call=false`，包含 20 个独立页面、3 个别名和 4 条活体业务工作流。
-- 本地全栈收据会绑定整个脏工作树，因此也记录了本轮明确保留的 `AGENTS.md`、`.claude/` 和 `CLAUDE.md`。本轮授权范围以专项收据中的 21 个 `scoped_files_sha256` 为准，不把这些既有用户文件计入交付。
-- 收据候选身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，当前基线 SHA `ea33cd8e586da324f10b4783f808df68090d8cec`；本轮复审整改仍未提交，文件清单和 manifest SHA-256 以最新机器收据为准。
-- Python：连接原生临时 PostgreSQL 的 `uv run pytest` 为 `999 passed, 5 warnings`；`uv run ruff check .` 和 `uv run mypy src` 通过，Mypy 覆盖 117 个源文件。5 条 warning 来自第三方 SWIG 类型。
+- 本地全栈收据会绑定整个脏工作树，因此也记录了本轮明确保留的 `AGENTS.md`、`.claude/` 和 `CLAUDE.md`。本门禁授权范围以专项收据中的 18 个 `scoped_files_sha256` 为准，不把这些既有用户文件计入交付。
+- 收据候选身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，预提交观察基线 SHA 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；最终提交 SHA、18 个文件及其 SHA-256 以 Git 对象和仓库外提交收据为准。
+- Python：`uv run pytest` 为 `1002 passed, 1 skipped, 5 warnings`；`uv run ruff check .` 和 `uv run mypy src` 通过，Mypy 覆盖 117 个源文件。唯一 skip 是本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`，对应 PostgreSQL 聚合回归已在 PR exact-head CI 通过；5 条 warning 来自第三方 SWIG 类型。
 - Web：`pnpm web:test` 为 41 个文件、417 项测试通过；typecheck、lint 和 build 通过，Next.js 生成 26/26 个静态页面，仓库自有 warning 为零。
-- 文档：固定上游 commit `90ff8ccc07da5afc5ae00eb3516f9efa98bd572d` 的中文样式检查与项目文档合同均通过；119 个纳入检查的 Markdown 文件没有 frontmatter、断链、标题或覆盖错误。
+- 文档：固定上游 commit `90ff8ccc07da5afc5ae00eb3516f9efa98bd572d` 的中文样式检查与项目文档合同均通过；119 个纳入检查的 Markdown 文件没有 frontmatter、断链或标题错误，FastAPI OpenAPI 的 123 个方法/路径操作全部逐项覆盖。
 - 工程：`git diff --check` 通过。最后新增的根路径公开壳层负向回归通过；完整 Python 套件的其余代码未再变更。
 - 依赖版本：Python 3.12.13、uv 0.11.11、Node.js 22.22.0、pnpm 9.15.0、Next.js 15.5.19。
 - 既有生产 L3 收据：`tmp/outputs/project-reanalysis-production-state-20260812.json`，SHA-256 为 `9e08f2271ceb0334f500c2f346395fe02590343755cd47afbce22468cdb4aa21`。本轮未刷新生产状态。
