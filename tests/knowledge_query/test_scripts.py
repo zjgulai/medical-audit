@@ -5189,11 +5189,62 @@ def test_local_fullstack_e2e_report_includes_live_business_workflow_receipts(
     assert report["workflow_count"] == 1
     assert report["feature_count"] == 24
     assert report["candidate_identity"]["branch"]
+    assert report["candidate_identity"]["branch_source"] in {
+        "git-symbolic-ref",
+        "github-head-ref",
+        "github-ref-name",
+        "detached-head",
+    }
     assert report["candidate_identity"]["manifest_sha256"]
     assert report["feature_receipts"][-1]["feature_id"] == (
         "workflow-remediation-state-and-attachment"
     )
     assert report["feature_receipts"][-1]["provider_call"] is False
+
+
+def test_local_fullstack_e2e_candidate_identity_labels_detached_checkout(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_local_fullstack_e2e_detached_candidate_identity",
+        Path("scripts/run-local-fullstack-e2e.py"),
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "codex@example.test"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Codex Test"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "candidate.txt").write_text("candidate\n", encoding="utf-8")
+    subprocess.run(["git", "add", "candidate.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "candidate"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "--detach"], cwd=repo, check=True, capture_output=True)
+
+    monkeypatch.setenv("GITHUB_HEAD_REF", "codex/ci-fix")
+    monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
+    github_identity = module._candidate_identity(repo)
+    assert github_identity["branch"] == "codex/ci-fix"
+    assert github_identity["branch_source"] == "github-head-ref"
+
+    monkeypatch.delenv("GITHUB_HEAD_REF")
+    detached_identity = module._candidate_identity(repo)
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short=12", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert detached_identity["branch"] == f"detached@{commit}"
+    assert detached_identity["branch_source"] == "detached-head"
 
 
 def test_audit_tencent_cloud_deployment_state_blocks_missing_backup_stamp() -> None:
@@ -10818,6 +10869,27 @@ def test_ci_workflow_is_pinned_provider_off_and_deployment_free() -> None:
     assert backend["env"]["MEDICAL_AUDIT_KB_ANSWER_PROVIDER"] == "fallback"
     assert backend["env"]["MEDICAL_AUDIT_UNLIMITED_OCR_ENABLED"] == "false"
     assert "medical_audit_test_ci" in backend["env"]["MEDICAL_AUDIT_TEST_POSTGRES_URL"]
+    backend_steps = backend["steps"]
+    backend_python_versions = [
+        step["with"]["python-version"]
+        for step in backend_steps
+        if step.get("uses")
+        == "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
+    ]
+    assert backend_python_versions == ["3.10", "3.12"]
+    assert any(
+        step.get("uses")
+        == "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+        for step in backend_steps
+    )
+    assert any(
+        step.get("uses")
+        == "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"
+        for step in backend_steps
+    )
+    assert any(
+        step.get("run") == "pnpm install --frozen-lockfile" for step in backend_steps
+    )
 
     required_commands = (
         "uv sync --frozen",

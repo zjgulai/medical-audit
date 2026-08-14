@@ -1065,13 +1065,7 @@ def _local_feature_acceptance_report(
 
 
 def _candidate_identity(repo_root: Path) -> JsonObject:
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    branch, branch_source = _candidate_branch(repo_root)
     status_lines = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=repo_root,
@@ -1103,11 +1097,38 @@ def _candidate_identity(repo_root: Path) -> JsonObject:
     ).encode("utf-8")
     return {
         "branch": branch,
+        "branch_source": branch_source,
         "worktree_dirty": bool(changed_files),
         "changed_file_count": len(changed_files),
         "changed_files": changed_files,
         "manifest_sha256": hashlib.sha256(manifest_payload).hexdigest(),
     }
+
+
+def _candidate_branch(repo_root: Path) -> tuple[str, str]:
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if branch:
+        return branch, "git-symbolic-ref"
+    for variable, source in (
+        ("GITHUB_HEAD_REF", "github-head-ref"),
+        ("GITHUB_REF_NAME", "github-ref-name"),
+    ):
+        if value := os.getenv(variable, "").strip():
+            return value, source
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short=12", "HEAD"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return f"detached@{commit}", "detached-head"
 
 
 def _file_sha256(path: Path) -> str:
