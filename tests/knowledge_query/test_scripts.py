@@ -10787,3 +10787,62 @@ def test_web_release_manifest_hashes_from_open_parent_directory_during_swap(
     assert hashlib.sha256(outside_content).hexdigest() not in output.read_text(
         encoding="utf-8"
     )
+
+
+def test_ci_workflow_is_pinned_provider_off_and_deployment_free() -> None:
+    workflow_path = Path(".github/workflows/ci.yml")
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+    package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+
+    assert workflow["name"] == "CI"
+    assert set(workflow["on"]) == {"pull_request", "push"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"backend", "web", "docs"}
+    assert package["packageManager"] == "pnpm@9.15.0"
+
+    expected_action_pins = {
+        "actions/checkout": "d23441a48e516b6c34aea4fa41551a30e30af803",
+        "actions/setup-python": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/setup-node": "249970729cb0ef3589644e2896645e5dc5ba9c38",
+        "pnpm/action-setup": "0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+    }
+    for action, revision in expected_action_pins.items():
+        assert f"uses: {action}@{revision}" in workflow_text
+
+    backend = workflow["jobs"]["backend"]
+    assert backend["services"]["postgres"]["image"] == "pgvector/pgvector:pg16"
+    assert backend["services"]["postgres"]["env"]["POSTGRES_DB"] == (
+        "medical_audit_test_ci"
+    )
+    assert backend["env"]["MEDICAL_AUDIT_KB_ANSWER_PROVIDER"] == "fallback"
+    assert backend["env"]["MEDICAL_AUDIT_UNLIMITED_OCR_ENABLED"] == "false"
+    assert "medical_audit_test_ci" in backend["env"]["MEDICAL_AUDIT_TEST_POSTGRES_URL"]
+
+    required_commands = (
+        "uv sync --frozen",
+        "uv run ruff check .",
+        "uv run mypy src",
+        "uv run pytest",
+        "pnpm install --frozen-lockfile",
+        "pnpm web:test",
+        "pnpm web:typecheck",
+        "pnpm web:lint",
+        "pnpm web:build",
+        "pnpm web:build:static",
+        "pnpm docs:lint",
+    )
+    for command in required_commands:
+        assert command in workflow_text
+
+    forbidden_fragments = (
+        "workflow_dispatch:",
+        "${{ secrets.",
+        "production:permission-readonly",
+        "production:frontend-acceptance",
+        "deploy-tencent-cloud",
+        "git push",
+        "gh pr",
+    )
+    for fragment in forbidden_fragments:
+        assert fragment not in workflow_text
