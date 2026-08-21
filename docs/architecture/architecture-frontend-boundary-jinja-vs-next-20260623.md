@@ -53,6 +53,6 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 
 ## 5. 当前证据
 
-- 本地：17 个 Playwright 场景，以及 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流已形成合同；功能记录总数为 27。
-- 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。
-- 候选外部观察：截至 2026-08-22 00:59（Asia/Shanghai），Draft PR #275 的观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`，exact-head CI run `32499803192` 成功；Python `1018 passed`、Web `419 passed`，普通构建、公开壳层构建和文档门禁通过。PR 当时仍为 Draft，review、review request 和 review thread 均为 0；CodeRabbit 因 Draft 跳过 review。该观察不证明 Ready、merge 或部署，业务功能保持 `not_production_verified`。
+- 本地：17 个 Playwright 场景，以及 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流已形成合同；功能记录总数为 27。`evidence_grade=L2-local-live`、`production_side_effect=none`、`provider_call=false`。
+- 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`provider_call=false`；壳层通过不构成业务功能验证。
+- 候选外部观察：截至 2026-08-22 00:59（Asia/Shanghai），Draft PR #275 的观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`，exact-head CI run `32499803192` 成功；Python `1018 passed`、Web `419 passed`，普通构建、公开壳层构建和文档门禁通过。`evidence_grade=L2-exact-head-ci`、`production_side_effect=none`、`provider_call=false`。PR 当时仍为 Draft，review、review request 和 review thread 均为 0；CodeRabbit 因 Draft 跳过 review。该观察不证明 Ready、merge 或部署，业务功能保持 `not_production_verified`。

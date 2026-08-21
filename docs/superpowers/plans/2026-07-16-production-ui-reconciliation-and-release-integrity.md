@@ -3,13 +3,16 @@ title: Production UI Reconciliation and Release Integrity Implementation Plan
 doc_type: implementation-plan
 module: deployment
 status: superseded
+superseded_by: drafts/analysis/project-reanalysis-and-gap-audit-20260813.md
 created: 2026-07-16
-updated: 2026-08-13
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
 
 # Production UI Reconciliation and Release Integrity Implementation Plan
+
+> 本计划已停用，不再作为可执行指引。当前权威状态与后续门禁见 [项目全量复盘与差异审计](../../../drafts/analysis/project-reanalysis-and-gap-audit-20260813.md)。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -3022,6 +3022,13 @@ def _sign_review_task_report_atomically(
     signoff_note: str,
 ) -> dict[str, object]:
     expected_project_key = _review_task_project_key(task)
+    _ensure_review_task_writable(
+        state,
+        task,
+        request=request,
+        attempted_action=attempted_action,
+        endpoint=endpoint,
+    )
 
     def mutate(current: dict[str, object]) -> dict[str, object]:
         if _review_task_project_key(current) != expected_project_key:
@@ -3029,13 +3036,11 @@ def _sign_review_task_report_atomically(
                 status_code=409,
                 detail="review task project scope changed during signoff",
             )
-        _ensure_review_task_writable(
-            state,
-            current,
-            request=request,
-            attempted_action=attempted_action,
-            endpoint=endpoint,
-        )
+        if str(current.get("status", "")).strip() == "closed":
+            raise HTTPException(
+                status_code=409,
+                detail="review task is closed and read-only",
+            )
         dossier = _with_review_task_governance_defaults(
             _dict_value(current.get("dossier"))
         )

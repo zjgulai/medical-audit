@@ -11343,7 +11343,8 @@ def test_ci_workflow_is_pinned_provider_off_and_deployment_free() -> None:
         if step.get("uses")
         == "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
     ]
-    assert backend_python_versions == ["3.10", "3.12"]
+    assert backend_python_versions == ["3.12"]
+    assert "Python 3.10 compatibility runtime" not in workflow_text
     assert any(
         step.get("uses")
         == "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"

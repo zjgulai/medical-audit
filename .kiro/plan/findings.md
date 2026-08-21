@@ -13,6 +13,22 @@ source: human+ai
 
 # Findings
 
+## 2026-08-22 PR #275 独立复审第二轮
+
+已确认事实：
+
+- 候选 head `d159d62f9efdea7ccea08ef2dbe6199fac21cc72` 的 CI run `32511547035` 成功，并在专用 PostgreSQL service 中验证独立 schema 聚合测试。
+- CodeRabbit CLI 第二轮报告 19 项问题。4 项未来日期判断忽略 `Asia/Shanghai` 观察时区；生产 permission read-only 脚本在 `public-shell-readonly` 下只执行公开 GET 和一个预认证 503 GET，并禁止 audit-log write 模式；整改状态标签 fallback 建议会掩盖内部状态机常量不一致，且 GitNexus 风险为 `HIGH`。以上 6 项不进入修复。
+- 成立项包括：无效的 Python 3.10 setup、两个公开壳层工作台仍调用业务 client、签发关闭态审计发生在持久化 mutation 内、SQLite 连接未显式关闭、文档 lint 使用 `assert` 处理输入错误，以及 6 项文档元数据或证据边界缺口。
+- `pyproject.toml` 要求 Python `>=3.12`，因此 CI 正确修复是删除无效的 3.10 setup，而不是新增与运行时合同冲突的 3.10 matrix。
+- 公开壳层工作台、签发关闭态和 CI 合同均已取得先红后绿的定向测试；其余成立项完成最小修正。新 exact-head CI 和第三轮复审尚未取得。
+
+处理结论：Ready 保持 `NO-GO`，直至本轮修复形成新 exact head、CI 全绿且复审没有新的有效问题。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local review remediation and GitHub CI observation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
 ## 2026-08-22 PR #275 独立评审缺陷复核
 
 已确认事实：

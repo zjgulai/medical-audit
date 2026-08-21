@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
@@ -957,7 +958,7 @@ def _sqlite_acceptance_snapshot(database_path: Path) -> JsonObject:
         "query_logs",
         "audit_log_events",
     )
-    with sqlite3.connect(database_path) as connection:
+    with closing(sqlite3.connect(database_path)) as connection:
         available = {
             str(row[0])
             for row in connection.execute(

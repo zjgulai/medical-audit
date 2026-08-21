@@ -6,7 +6,7 @@ status: superseded_postmerge_audit_log_side_effect
 superseded_by: drafts/analysis/project-reanalysis-and-gap-audit-20260813.md
 superseded_date: 2026-08-16
 created: 2026-07-14
-updated: 2026-08-15
+updated: 2026-08-16
 owner: self
 source: fresh-clean-candidate-and-production-readonly-evidence
 ---

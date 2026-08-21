@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: answer-provider-production-gate
 status: stable
 created: 2026-06-15
-updated: 2026-08-13
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -38,6 +38,8 @@ pnpm production:chat-model-catalog-readonly
 
 标准命令：
 
+> 以下命令块仅记录 2026-07-10 当时的目录合同语义，属于历史/已退役步骤，不得按本节执行。同名当前命令必须以第 0 节的 `public-shell-readonly` 503 门禁语义运行。
+
 ```bash
 pnpm production:chat-model-catalog-readonly
 ```
@@ -47,6 +49,8 @@ pnpm production:chat-model-catalog-readonly
 ```bash
 pnpm production:chat-model-ready
 ```
+
+> `production:chat-model-ready` 已移除，属于历史/已退役命令，不得执行。
 
 用于生产模型启用门禁。该命令会在没有可用模型别名时返回非零退出码；这代表继续 provider smoke 的前置条件未满足，而非业务代码需要回滚。
 

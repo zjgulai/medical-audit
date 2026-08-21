@@ -1137,6 +1137,7 @@ def test_project_report_draft_enforces_formal_action_permissions_and_actor_bindi
 
 def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = _api_state(tmp_path)
     project_store = InMemoryProjectMemberStore()
@@ -1230,6 +1231,22 @@ def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates
     closed_task = state.review_task_store.get_task(task_id)
     closed_task["status"] = "closed"
     state.review_task_store.update_task(task_id, closed_task)
+    mutate_called = False
+
+    def fail_if_closed_task_reaches_mutation(
+        _store: object,
+        _task_id: str,
+        _mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
+        nonlocal mutate_called
+        mutate_called = True
+        raise AssertionError("closed task must be rejected before mutation starts")
+
+    monkeypatch.setattr(
+        type(state.review_task_store),
+        "mutate_task",
+        fail_if_closed_task_reaches_mutation,
+    )
     closed = client.post(
         f"/reports/drafts/{task_id}/signoff",
         headers=director_headers,
@@ -1237,6 +1254,7 @@ def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates
     )
     assert closed.status_code == 409
     assert closed.json()["detail"] == "review task is closed and read-only"
+    assert mutate_called is False
 
 
 def test_report_draft_signoff_is_atomic_under_concurrent_requests(

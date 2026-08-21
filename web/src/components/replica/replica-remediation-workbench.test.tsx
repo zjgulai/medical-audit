@@ -101,6 +101,19 @@ const remediationResponse: RemediationWorkbenchResponse = {
 describe("ReplicaRemediationWorkbench", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not request or expose remediation business data in the production shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByText(/整改读取、状态变更和附件上传均不开放/)).toBeInTheDocument();
+    expect(fetchRemediationWorkbenchMock).not.toHaveBeenCalled();
+    expect(updateRemediationItemStatusMock).not.toHaveBeenCalled();
+    expect(uploadRemediationAttachmentMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /提交验收|刷新|重试/ })).not.toBeInTheDocument();
   });
 
   it("keeps remediation on its own route and renders closure gates", async () => {

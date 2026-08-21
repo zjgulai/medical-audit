@@ -343,7 +343,9 @@ def _check_current_state_evidence(errors: list[str]) -> None:
     if not report.is_file():
         return
     parsed = _frontmatter(report)
-    assert parsed is not None
+    if parsed is None:
+        errors.append(f"{report.relative_to(REPO_ROOT)}: missing or invalid frontmatter")
+        return
     fields, _ = parsed
     for field in (
         "repository_observed_at",

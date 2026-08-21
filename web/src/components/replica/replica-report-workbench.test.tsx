@@ -286,9 +286,25 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("ReplicaReportWorkbench", () => {
+  it("does not request or expose report business data in the production shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    renderWorkbench();
+
+    expect(await screen.findByText(/报告读取、草稿创建、下载和签发均不开放/)).toBeInTheDocument();
+    expect(fetchReportWorkbenchMock).not.toHaveBeenCalled();
+    expect(fetchProjectsMock).not.toHaveBeenCalled();
+    expect(createReportDraftMock).not.toHaveBeenCalled();
+    expect(downloadAuditArtifactMock).not.toHaveBeenCalled();
+    expect(signReportDraftMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("combobox", { name: "所属项目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /刷新工作台|重试工作台/ })).not.toBeInTheDocument();
+  });
+
   it("requires an explicit ready project before a template can be opened", async () => {
     renderWorkbench();
 

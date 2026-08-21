@@ -111,7 +111,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-ready-model",
         action="store_true",
-        help="Fail unless at least one chat model alias is available.",
+        help=(
+            "Always fail in public-shell-readonly mode because chat-model readiness is "
+            "blocked until trusted identity is enabled."
+        ),
     )
     parser.add_argument("--report", default=DEFAULT_REPORT)
     return parser.parse_args()
