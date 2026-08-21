@@ -43,7 +43,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Set up Python
+      # The release-guard fixture launches a Python 3.10 subprocess to match the
+      # production collector boundary. The following 3.12 step remains primary.
+      - name: Install Python 3.10 for release guard fixture
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.10"
+
+      - name: Set up primary Python 3.12 runtime
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"

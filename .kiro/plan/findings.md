@@ -13,14 +13,29 @@ source: human+ai
 
 # Findings
 
+## 2026-08-22 PR #275 CI Python 运行时边界纠正
+
+已确认事实：
+
+- 候选 head `c08453f02baa842d514af02785ee92d641bcbff5c` 的 exact-head CI run `32513965724` 中，Web 与 Documentation 成功，Backend 以 `1 failed, 1018 passed` 失败。
+- 失败用例是 `test_release_guard_fixture_capture_executes_under_python_310`；它通过 `uv python find 3.10` 启动独立 Python 3.10 子进程，验证面向生产采集边界的兼容性。CI 删除 3.10 setup 后找不到该解释器。
+- 仓库主运行时仍由 `pyproject.toml` 固定为 Python `>=3.12`。正确的 CI 边界是先安装 Python 3.10 供该子进程使用，再将 Python 3.12 设为主测试运行时；这不是把完整测试矩阵降级到 Python 3.10。
+- 已先修改 CI 合同测试并取得预期红灯；工作流修复后的绿灯和新 exact-head CI 尚未取得。
+
+处理结论：上一轮“Python 3.10 setup 无效、应删除”的判断被新鲜 CI 证据推翻，现已公开纠正。Ready 继续保持 `NO-GO`，直至定向回归、新 exact-head CI 与复审均完成。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local CI remediation and GitHub CI observation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
 ## 2026-08-22 PR #275 独立复审第二轮
 
 已确认事实：
 
 - 候选 head `d159d62f9efdea7ccea08ef2dbe6199fac21cc72` 的 CI run `32511547035` 成功，并在专用 PostgreSQL service 中验证独立 schema 聚合测试。
 - CodeRabbit CLI 第二轮报告 19 项问题。4 项未来日期判断忽略 `Asia/Shanghai` 观察时区；生产 permission read-only 脚本在 `public-shell-readonly` 下只执行公开 GET 和一个预认证 503 GET，并禁止 audit-log write 模式；整改状态标签 fallback 建议会掩盖内部状态机常量不一致，且 GitNexus 风险为 `HIGH`。以上 6 项不进入修复。
-- 成立项包括：无效的 Python 3.10 setup、两个公开壳层工作台仍调用业务 client、签发关闭态审计发生在持久化 mutation 内、SQLite 连接未显式关闭、文档 lint 使用 `assert` 处理输入错误，以及 6 项文档元数据或证据边界缺口。
-- `pyproject.toml` 要求 Python `>=3.12`，因此 CI 正确修复是删除无效的 3.10 setup，而不是新增与运行时合同冲突的 3.10 matrix。
+- 成立项包括：两个公开壳层工作台仍调用业务 client、签发关闭态审计发生在持久化 mutation 内、SQLite 连接未显式关闭、文档 lint 使用 `assert` 处理输入错误，以及 6 项文档元数据或证据边界缺口。关于 Python 3.10 setup 的原判断已被 run `32513965724` 推翻，见上方纠正记录。
+- `pyproject.toml` 要求 Python `>=3.12`，主测试运行时不能降级；发布守卫 fixture 同时需要一个仅供子进程调用的 Python 3.10 解释器。
 - 公开壳层工作台、签发关闭态和 CI 合同均已取得先红后绿的定向测试；其余成立项完成最小修正。新 exact-head CI 和第三轮复审尚未取得。
 
 处理结论：Ready 保持 `NO-GO`，直至本轮修复形成新 exact head、CI 全绿且复审没有新的有效问题。

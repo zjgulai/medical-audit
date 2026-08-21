@@ -11343,8 +11343,11 @@ def test_ci_workflow_is_pinned_provider_off_and_deployment_free() -> None:
         if step.get("uses")
         == "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
     ]
-    assert backend_python_versions == ["3.12"]
-    assert "Python 3.10 compatibility runtime" not in workflow_text
+    assert backend_python_versions == ["3.10", "3.12"]
+    backend_step_names = [step.get("name") for step in backend_steps]
+    assert backend_step_names.index(
+        "Install Python 3.10 for release guard fixture"
+    ) < backend_step_names.index("Set up primary Python 3.12 runtime")
     assert any(
         step.get("uses")
         == "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
