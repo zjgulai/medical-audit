@@ -22,6 +22,7 @@ const repoRoot = path.resolve(path.dirname(__filename), "..");
 
 const DEFAULT_BASE_URL = "https://audit.lute-tlz-dddd.top";
 const PRODUCTION_HOST = "audit.lute-tlz-dddd.top";
+const PRODUCTION_SSH_HOST = "101.34.52.232";
 const DEFAULT_OUTPUT = "tmp/outputs/production-frontend-acceptance-latest.json";
 const DEFAULT_SCREENSHOT_DIR = "tmp/screenshots/production-frontend-acceptance-latest";
 
@@ -34,11 +35,16 @@ function parseArgs(argv) {
     adminRole: "it-admin",
     adminApiKeyEnv: null,
     contractProfile: "hardened",
+    navigationOnlyReadonly: false,
     allowAuditLogWrites: false,
     confirmProductionWrite: null,
     expectedDeploySha: null,
     acceptanceRunId: null,
     releaseGuardReport: null,
+    sshKey: null,
+    postReleaseGuardReport: null,
+    releaseGuardCompareReport: null,
+    confirmProductionReadonly: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -69,6 +75,8 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--contract-profile=")) {
       options.contractProfile = arg.split("=", 2)[1];
+    } else if (arg === "--navigation-only-readonly") {
+      options.navigationOnlyReadonly = true;
     } else if (arg === "--allow-audit-log-writes") {
       options.allowAuditLogWrites = true;
     } else if (arg === "--confirm-production-write" && next) {
@@ -91,6 +99,26 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--release-guard-report=")) {
       options.releaseGuardReport = arg.split("=", 2)[1];
+    } else if (arg === "--ssh-key" && next) {
+      options.sshKey = next;
+      index += 1;
+    } else if (arg.startsWith("--ssh-key=")) {
+      options.sshKey = arg.split("=", 2)[1];
+    } else if (arg === "--post-release-guard-report" && next) {
+      options.postReleaseGuardReport = next;
+      index += 1;
+    } else if (arg.startsWith("--post-release-guard-report=")) {
+      options.postReleaseGuardReport = arg.split("=", 2)[1];
+    } else if (arg === "--release-guard-compare-report" && next) {
+      options.releaseGuardCompareReport = next;
+      index += 1;
+    } else if (arg.startsWith("--release-guard-compare-report=")) {
+      options.releaseGuardCompareReport = arg.split("=", 2)[1];
+    } else if (arg === "--confirm-production-readonly" && next) {
+      options.confirmProductionReadonly = next;
+      index += 1;
+    } else if (arg.startsWith("--confirm-production-readonly=")) {
+      options.confirmProductionReadonly = arg.split("=", 2)[1];
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -116,6 +144,8 @@ Options:
   --admin-role <role>       Default: it-admin
   --admin-api-key-env <name> Optional env var containing admin API key.
   --contract-profile <name> Passed through to the acceptance runner (default: hardened).
+  --navigation-only-readonly
+                            Run shell/static GET navigation only; protected API requests are blocked.
   --allow-audit-log-writes Authorize audit-log-only writes made by the acceptance flow.
   --confirm-production-write <host>
                             Required with --allow-audit-log-writes for every target;
@@ -124,10 +154,26 @@ Options:
   --acceptance-run-id <id>   Unique run id: fa-YYYYMMDDtHHMMSSz-<8..32 lowercase hex>.
   --release-guard-report <path>
                             Passing S1 medical-audit-production-release-guard-v1 report.
+  --ssh-key <path>          SSH key used only for the authorized post-navigation S2 read-only capture.
+  --post-release-guard-report <path>
+                            Output path for the S2 read-only capture.
+  --release-guard-compare-report <path>
+                            Output path for the S1->S2 zero-delta comparison.
+  --confirm-production-readonly <host>
+                            Required in navigation-only mode; must equal the SSH observation target
+                            ${PRODUCTION_SSH_HOST}.
 `);
 }
 
 function validateSideEffectAuthorization(options) {
+  if (options.navigationOnlyReadonly) {
+    if (options.allowAuditLogWrites || options.confirmProductionWrite !== null) {
+      throw new Error(
+        "--navigation-only-readonly cannot be combined with production-write authorization",
+      );
+    }
+    return normalizeProductionBaseUrl(options.baseUrl);
+  }
   if (!options.allowAuditLogWrites) {
     throw new Error(
       "Frontend acceptance gate fails closed by default because the full flow can write audit-log records. " +
@@ -147,7 +193,7 @@ function resolveRepoPath(value) {
   return path.isAbsolute(value) ? value : path.join(repoRoot, value);
 }
 
-function runAcceptance(options) {
+function buildAcceptanceRunnerArgs(options) {
   const runner = path.join(repoRoot, "scripts/run-production-frontend-acceptance.mjs");
   const args = [
     runner,
@@ -174,12 +220,20 @@ function runAcceptance(options) {
   if (options.adminApiKeyEnv) {
     args.push("--admin-api-key-env", options.adminApiKeyEnv);
   }
+  if (options.navigationOnlyReadonly) {
+    args.push("--navigation-only-readonly");
+  }
   if (options.allowAuditLogWrites) {
     args.push("--allow-audit-log-writes");
   }
   if (options.confirmProductionWrite) {
     args.push("--confirm-production-write", options.confirmProductionWrite);
   }
+  return args;
+}
+
+function runAcceptance(options) {
+  const args = buildAcceptanceRunnerArgs(options);
 
   const result = spawnSync(process.execPath, args, {
     cwd: repoRoot,
@@ -194,6 +248,128 @@ function runAcceptance(options) {
   if (result.status !== 0) {
     process.exit(result.status ?? 2);
   }
+}
+
+function validateReadonlyEvidenceOptions(options) {
+  if (!options.navigationOnlyReadonly) {
+    return;
+  }
+  const requiredPaths = [
+    ["--release-guard-report", options.releaseGuardReport],
+    ["--ssh-key", options.sshKey],
+    ["--post-release-guard-report", options.postReleaseGuardReport],
+    ["--release-guard-compare-report", options.releaseGuardCompareReport],
+  ];
+  for (const [label, value] of requiredPaths) {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error(`${label} is required with --navigation-only-readonly`);
+    }
+  }
+  if (options.confirmProductionReadonly !== PRODUCTION_SSH_HOST) {
+    throw new Error(
+      `--confirm-production-readonly must equal ${PRODUCTION_SSH_HOST} in navigation-only mode`,
+    );
+  }
+  const reportPaths = [
+    options.releaseGuardReport,
+    options.postReleaseGuardReport,
+    options.releaseGuardCompareReport,
+  ].map(resolveRepoPath);
+  if (new Set(reportPaths).size !== reportPaths.length) {
+    throw new Error("release guard before, after, and comparison paths must be distinct");
+  }
+}
+
+function runReleaseGuardCommand(args, label) {
+  const guardScript = path.join(repoRoot, "scripts/audit-production-release-guard-snapshot.py");
+  const result = spawnSync("uv", ["run", "python", guardScript, ...args], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} failed with exit code ${result.status ?? "unknown"}`);
+  }
+}
+
+function captureReadonlyPostGuard(options) {
+  const output = resolveRepoPath(options.postReleaseGuardReport);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  runReleaseGuardCommand(
+    [
+      "capture",
+      "--phase",
+      "S2",
+      "--expected-deploy-sha",
+      options.expectedDeploySha,
+      "--acceptance-run-id",
+      options.acceptanceRunId,
+      "--ssh-key",
+      resolveRepoPath(options.sshKey),
+      "--confirm-production-readonly",
+      PRODUCTION_SSH_HOST,
+      "--output",
+      output,
+    ],
+    "post-navigation release guard capture",
+  );
+}
+
+function compareReadonlyReleaseGuards(options) {
+  const output = resolveRepoPath(options.releaseGuardCompareReport);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  runReleaseGuardCommand(
+    [
+      "compare",
+      "--before",
+      resolveRepoPath(options.releaseGuardReport),
+      "--after",
+      resolveRepoPath(options.postReleaseGuardReport),
+      "--expected-deploy-sha",
+      options.expectedDeploySha,
+      "--acceptance-run-id",
+      options.acceptanceRunId,
+      "--output",
+      output,
+    ],
+    "navigation-only release guard comparison",
+  );
+  return JSON.parse(fs.readFileSync(output, "utf8"));
+}
+
+function validateReadonlyGuardComparison(
+  report,
+  { expectedDeploySha, acceptanceRunId, beforeSnapshotId },
+) {
+  const valid =
+    report?.format === "medical-audit-production-release-guard-v1" &&
+    report?.mode === "compare" &&
+    report?.phase === "S2" &&
+    report?.comparison === "S1->S2" &&
+    report?.comparison_profile === "acceptance" &&
+    report?.status === "pass" &&
+    report?.evidence_grade === "L3-production-read-only" &&
+    report?.expected_deploy_sha === expectedDeploySha &&
+    report?.observed_deploy_sha === expectedDeploySha &&
+    report?.provider_call_status === "not_observed" &&
+    report?.collector_provider_call_status === "not_called" &&
+    report?.database_write === false &&
+    report?.transaction_read_only === true &&
+    report?.before_snapshot_id === beforeSnapshotId &&
+    typeof report?.snapshot_id === "string" &&
+    /^[0-9a-f]{64}$/.test(report.snapshot_id) &&
+    report?.current_release_target === `releases/${expectedDeploySha}` &&
+    report?.audit_log_delta === 0 &&
+    report?.attributed_acceptance_run_id === acceptanceRunId &&
+    Array.isArray(report?.blocking_reasons) &&
+    report.blocking_reasons.length === 0 &&
+    report?.guard_execution_write === false &&
+    report?.capture_side_effect === "none";
+  if (!valid) {
+    throw new Error(
+      "navigation-only acceptance requires a passing L3 S1->S2 comparison with zero audit-log delta",
+    );
+  }
+  return report;
 }
 
 function readReport(output) {
@@ -446,6 +622,7 @@ function assertGate(report, expected = {}) {
   const deploymentMetadata = releaseIdentity.deployment_metadata ?? {};
   const expectedDeploySha = expected.expectedDeploySha ?? report.expected_deploy_sha;
   const expectedBaseUrl = expected.baseUrl ?? `${DEFAULT_BASE_URL}/`;
+  const readonlyMode = report.side_effect_mode === "navigation-only-readonly";
   let expectedAcceptanceUserId = null;
   try {
     expectedAcceptanceUserId = deriveAcceptanceUserId(acceptanceRunId);
@@ -471,10 +648,14 @@ function assertGate(report, expected = {}) {
     p1_count: p1.length,
   });
   requireStatus(
-    report.side_effect_mode === "audit-log-write-enabled" &&
-      report.production_side_effect === "audit-log-only" &&
-      report.database_write === "audit-log-only" &&
-      report.audit_log_write_expected === true,
+    readonlyMode
+      ? report.production_side_effect === "none" &&
+          report.database_write === false &&
+          report.audit_log_write_expected === false
+      : report.side_effect_mode === "audit-log-write-enabled" &&
+          report.production_side_effect === "audit-log-only" &&
+          report.database_write === "audit-log-only" &&
+          report.audit_log_write_expected === true,
     "frontend acceptance side-effect contract is inconsistent",
     {
       side_effect_mode: report.side_effect_mode,
@@ -504,8 +685,9 @@ function assertGate(report, expected = {}) {
       acceptance_user_id: report.acceptance_user_id,
     },
   );
-  requireStatus(
-    releaseGuard.format === "medical-audit-production-release-guard-v1" &&
+  if (!readonlyMode) {
+    requireStatus(
+      releaseGuard.format === "medical-audit-production-release-guard-v1" &&
       releaseGuard.mode === "capture" &&
       releaseGuard.phase === "S1" &&
       releaseGuard.status === "pass" &&
@@ -596,17 +778,52 @@ function assertGate(report, expected = {}) {
         (releaseGuard.report_path === expected.releaseGuardEvidence.report_path &&
           releaseGuard.report_sha256 === expected.releaseGuardEvidence.report_sha256 &&
           releaseGuard.snapshot_id === expected.releaseGuardEvidence.snapshot_id)),
-    "frontend acceptance release guard evidence is inconsistent",
-    {
-      release_guard: releaseGuard,
-      provider_call_status: report.provider_call_status,
-    },
-  );
+      "frontend acceptance release guard evidence is inconsistent",
+      {
+        release_guard: releaseGuard,
+        provider_call_status: report.provider_call_status,
+      },
+    );
+  } else {
+    const readonlyGuard = expected.releaseGuardEvidence ?? {};
+    const readonlyComparison = validateReadonlyGuardComparison(
+      expected.releaseGuardComparison,
+      {
+        expectedDeploySha,
+        acceptanceRunId,
+        beforeSnapshotId: readonlyGuard.snapshot_id,
+      },
+    );
+    requireStatus(
+      report.release_guard === null &&
+        readonlyGuard.format === "medical-audit-production-release-guard-v1" &&
+        readonlyGuard.mode === "capture" &&
+        readonlyGuard.phase === "S1" &&
+        readonlyGuard.status === "pass" &&
+        readonlyGuard.evidence_grade === "L3-production-read-only" &&
+        readonlyGuard.expected_deploy_sha === expectedDeploySha &&
+        readonlyGuard.observed_deploy_sha === expectedDeploySha &&
+        readonlyGuard.current_release_target === `releases/${expectedDeploySha}` &&
+        readonlyGuard.audit_attribution?.acceptance_run_id === acceptanceRunId &&
+        readonlyGuard.audit_attribution?.attributable_event_count === 0 &&
+        report.provider_call_status === "not_observed" &&
+        report.provider_evidence_source === "outside-frontend-acceptance-scope" &&
+        report.collector_provider_call_status === "not_called" &&
+        readonlyComparison.audit_log_delta === 0,
+      "navigation-only frontend acceptance release guard evidence is inconsistent",
+      {
+        release_guard: readonlyGuard,
+        release_guard_comparison: readonlyComparison,
+      },
+    );
+  }
   requireStatus(
     releaseIdentity.stable === true &&
       releaseIdentity.expected_deploy_sha === expectedDeploySha &&
-      releaseIdentity.current_release_target === `releases/${expectedDeploySha}` &&
-      releaseIdentity.current_release_target_source === "release-guard-report:S1" &&
+      releaseIdentity.current_release_target ===
+        (readonlyMode ? null : `releases/${expectedDeploySha}`) &&
+      releaseIdentity.current_release_target_source ===
+        (readonlyMode ? "not_observed" : "release-guard-report:S1") &&
       publicManifest.path === "/release-manifest.json" &&
       publicManifest.format === "medical-audit-web-release-manifest-v1" &&
       publicManifest.source_sha === expectedDeploySha &&
@@ -657,11 +874,26 @@ function assertGate(report, expected = {}) {
     },
   );
   requireStatus(
-    executedApiProbes.length === expectedApiProbes.length &&
-      expectedApiProbes.every((probe) => executedApiProbes.includes(probe)) &&
-      summary.executed_api_probe_count === expectedApiProbes.length &&
-      skippedApiProbes.length === 0 &&
-      summary.skipped_api_probe_count === 0,
+    readonlyMode
+      ? executedApiProbes.length === 0 &&
+          summary.executed_api_probe_count === 0 &&
+          JSON.stringify(skippedApiProbes) ===
+            JSON.stringify(["/audit/logs", "/audit/logs/export"]) &&
+          summary.skipped_api_probe_count === 2 &&
+          apiChecks.skipped === true &&
+          apiChecks.reason === "navigation-only-readonly" &&
+          summary.readonly_blocked_api_request_count === 0 &&
+          allRouteChecks.every(
+            (check) =>
+              check?.readonlyBlockedApiRequestCount === 0 &&
+              Array.isArray(check?.readonlyBlockedApiRequests) &&
+              check.readonlyBlockedApiRequests.length === 0,
+          )
+      : executedApiProbes.length === expectedApiProbes.length &&
+          expectedApiProbes.every((probe) => executedApiProbes.includes(probe)) &&
+          summary.executed_api_probe_count === expectedApiProbes.length &&
+          skippedApiProbes.length === 0 &&
+          summary.skipped_api_probe_count === 0,
     "frontend acceptance API probe coverage is incomplete",
     {
       executed_api_probes: executedApiProbes,
@@ -715,30 +947,32 @@ function assertGate(report, expected = {}) {
       total_execution_check_count: summary.total_execution_check_count,
     },
   );
-  requireStatus(
-    auditLogs.execution_status === "executed" &&
-      auditLogs.anonymous_check === "executed" &&
-      auditLogs.missing_tenant_check === "executed" &&
-      auditLogs.allowed_check === "executed" &&
-      auditLogs.anonymous_attribution_user_id === expectedAcceptanceUserId &&
-      [401, 403].includes(auditLogs.anonymous_status) &&
-      [401, 403].includes(auditLogs.missing_tenant_status) &&
-      auditLogs.allowed_status === 200,
-    "audit logs API permission gate failed",
-    auditLogs,
-  );
-  requireStatus(
-    auditLogExports.execution_status === "executed" &&
-      auditLogExports.anonymous_check === "executed" &&
-      auditLogExports.missing_tenant_check === "executed" &&
-      auditLogExports.allowed_check === "executed" &&
-      auditLogExports.anonymous_attribution_user_id === expectedAcceptanceUserId &&
-      [401, 403].includes(auditLogExports.anonymous_status) &&
-      [401, 403].includes(auditLogExports.missing_tenant_status) &&
-      auditLogExports.allowed_status === 200,
-    "audit logs export API permission gate failed",
-    auditLogExports,
-  );
+  if (!readonlyMode) {
+    requireStatus(
+      auditLogs.execution_status === "executed" &&
+        auditLogs.anonymous_check === "executed" &&
+        auditLogs.missing_tenant_check === "executed" &&
+        auditLogs.allowed_check === "executed" &&
+        auditLogs.anonymous_attribution_user_id === expectedAcceptanceUserId &&
+        [401, 403].includes(auditLogs.anonymous_status) &&
+        [401, 403].includes(auditLogs.missing_tenant_status) &&
+        auditLogs.allowed_status === 200,
+      "audit logs API permission gate failed",
+      auditLogs,
+    );
+    requireStatus(
+      auditLogExports.execution_status === "executed" &&
+        auditLogExports.anonymous_check === "executed" &&
+        auditLogExports.missing_tenant_check === "executed" &&
+        auditLogExports.allowed_check === "executed" &&
+        auditLogExports.anonymous_attribution_user_id === expectedAcceptanceUserId &&
+        [401, 403].includes(auditLogExports.anonymous_status) &&
+        [401, 403].includes(auditLogExports.missing_tenant_status) &&
+        auditLogExports.allowed_status === 200,
+      "audit logs export API permission gate failed",
+      auditLogExports,
+    );
+  }
   console.log(
     JSON.stringify(
       {
@@ -751,9 +985,14 @@ function assertGate(report, expected = {}) {
         expected_deploy_sha: report.expected_deploy_sha,
         acceptance_run_id: report.acceptance_run_id,
         acceptance_user_id: report.acceptance_user_id,
-        current_release_target: releaseIdentity.current_release_target,
+        current_release_target:
+          expected.releaseGuardEvidence?.current_release_target ??
+          releaseIdentity.current_release_target,
         public_manifest_sha256: publicManifest.body_sha256,
-        release_guard_report_sha256: releaseGuard.report_sha256,
+        release_guard_report_sha256:
+          expected.releaseGuardEvidence?.report_sha256 ?? releaseGuard.report_sha256,
+        release_guard_audit_log_delta:
+          expected.releaseGuardComparison?.audit_log_delta ?? null,
         route_count: summary.route_count,
         independent_page_count: summary.independent_page_count,
         alias_check_count: summary.alias_check_count,
@@ -762,18 +1001,20 @@ function assertGate(report, expected = {}) {
         total_execution_check_count: summary.total_execution_check_count,
         p0_count: p0.length,
         p1_count: p1.length,
-        api_checks: {
-          "/audit/logs": {
-            anonymous_status: auditLogs.anonymous_status,
-            missing_tenant_status: auditLogs.missing_tenant_status,
-            allowed_status: auditLogs.allowed_status,
-          },
-          "/audit/logs/export": {
-            anonymous_status: auditLogExports.anonymous_status,
-            missing_tenant_status: auditLogExports.missing_tenant_status,
-            allowed_status: auditLogExports.allowed_status,
-          },
-        },
+        api_checks: readonlyMode
+          ? { skipped: true, reason: "navigation-only-readonly" }
+          : {
+              "/audit/logs": {
+                anonymous_status: auditLogs.anonymous_status,
+                missing_tenant_status: auditLogs.missing_tenant_status,
+                allowed_status: auditLogs.allowed_status,
+              },
+              "/audit/logs/export": {
+                anonymous_status: auditLogExports.anonymous_status,
+                missing_tenant_status: auditLogExports.missing_tenant_status,
+                allowed_status: auditLogExports.allowed_status,
+              },
+            },
       },
       null,
       2,
@@ -786,6 +1027,7 @@ function main() {
   const normalizedBaseUrl = validateSideEffectAuthorization(options);
   options.baseUrl = normalizedBaseUrl;
   validateAcceptanceEvidenceOptions(options);
+  validateReadonlyEvidenceOptions(options);
   if (options.contractProfile !== "hardened") {
     throw new Error("Frontend acceptance gate requires --contract-profile hardened");
   }
@@ -806,11 +1048,24 @@ function main() {
   ) {
     throw new Error("release guard report changed during frontend acceptance");
   }
+  let releaseGuardComparison = null;
+  if (options.navigationOnlyReadonly) {
+    captureReadonlyPostGuard(options);
+    releaseGuardComparison = validateReadonlyGuardComparison(
+      compareReadonlyReleaseGuards(options),
+      {
+        expectedDeploySha: options.expectedDeploySha,
+        acceptanceRunId: options.acceptanceRunId,
+        beforeSnapshotId: finalReleaseGuardEvidence.snapshot_id,
+      },
+    );
+  }
   assertGate(readReport(options.output), {
     expectedDeploySha: options.expectedDeploySha,
     acceptanceRunId: options.acceptanceRunId,
     baseUrl: `${normalizedBaseUrl}/`,
     releaseGuardEvidence: finalReleaseGuardEvidence,
+    releaseGuardComparison,
   });
 }
 
@@ -823,4 +1078,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   }
 }
 
-export { assertGate, validateSideEffectAuthorization };
+export {
+  assertGate,
+  buildAcceptanceRunnerArgs,
+  validateReadonlyEvidenceOptions,
+  validateReadonlyGuardComparison,
+  validateSideEffectAuthorization,
+};

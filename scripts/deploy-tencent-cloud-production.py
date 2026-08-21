@@ -58,6 +58,7 @@ PUBLIC_BUILD_VARIABLES = (
     "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE",
     "NEXT_PUBLIC_MEDICAL_AUDIT_REPLICA_API_READS",
 )
+REQUIRED_API_ACCESS_MODE = "public-shell-readonly"
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 FILE_HASH_CHUNK_SIZE = 1024 * 1024
 MAX_RELEASE_MANIFEST_BYTES = 16 * 1024 * 1024
@@ -899,6 +900,7 @@ def _run_nonrollback(config: DeployConfig) -> int:
             _create_remote_backups(config, owner_token)
         _cleanup_remote_sync_artifacts(config, owner_token)
         _sync_application(config, owner_token)
+        _validate_synced_remote_access_mode(config, owner_token)
         _prepare_remote_release_incoming(config, owner_token)
         _sync_static_frontend(config, owner_token)
         _verify_and_promote_remote_release(
@@ -1243,6 +1245,13 @@ def _validate_local_state(config: DeployConfig) -> None:
         return
     if not (config.repo_root / "configs/deploy/tencent-cloud/docker-compose.prod.yaml").exists():
         raise DeployError("production compose file is missing")
+    if not _has_public_shell_api_access_mode(
+        config.repo_root / "configs/deploy/tencent-cloud/docker-compose.prod.yaml",
+    ):
+        raise DeployError(
+            "production compose must pin MEDICAL_AUDIT_API_ACCESS_MODE="
+            f"{REQUIRED_API_ACCESS_MODE}",
+        )
     if not (config.repo_root / "scripts/run-production-e2e-smoke.py").exists():
         raise DeployError("production smoke script is missing")
     _run_capture(["git", "rev-parse", "--is-inside-work-tree"], cwd=config.repo_root)
@@ -1255,6 +1264,16 @@ def _validate_local_state(config: DeployConfig) -> None:
         _validate_release_source(config)
     if config.execute and config.skip_web_build and not (config.repo_root / "web/out").is_dir():
         raise DeployError("web/out is missing; remove --skip-web-build or build first")
+
+
+def _has_public_shell_api_access_mode(compose_file: Path) -> bool:
+    pattern = re.compile(
+        r"^\s*MEDICAL_AUDIT_API_ACCESS_MODE:\s*\"?" + REQUIRED_API_ACCESS_MODE + r"\"?\s*(#.*)?$"
+    )
+    return any(
+        pattern.search(line)
+        for line in compose_file.read_text(encoding="utf-8").splitlines()
+    )
 
 
 def _validate_release_source(config: DeployConfig) -> None:
@@ -1308,6 +1327,25 @@ if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
   exit 80
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
+"""
+    _ssh(config, script)
+
+
+def _validate_synced_remote_access_mode(
+    config: DeployConfig,
+    owner_token: str,
+) -> None:
+    compose_path = (
+        f"{config.remote_app_dir}/configs/deploy/tencent-cloud/docker-compose.prod.yaml"
+    )
+    script = f"""
+set -euo pipefail
+{_remote_lock_guard_script(config, owner_token)}
+access_mode_pattern='^[[:space:]]*MEDICAL_AUDIT_API_ACCESS_MODE:[[:space:]]*\"?{REQUIRED_API_ACCESS_MODE}\"?([[:space:]]*#[[:space:]]+.*)?$'
+if ! grep -Eq "$access_mode_pattern" {shlex.quote(compose_path)}; then
+  echo "synced production compose must pin MEDICAL_AUDIT_API_ACCESS_MODE=public-shell-readonly" >&2
+  exit 82
+fi
 """
     _ssh(config, script)
 
@@ -1636,6 +1674,14 @@ def _validate_manifest_metadata(
         )
     ):
         raise DeployError("web release manifest public_build_variables is invalid")
+    if (
+        public_build_variables["NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE"]
+        != "public-shell-readonly"
+    ):
+        raise DeployError(
+            "web release manifest must set "
+            "NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE=public-shell-readonly"
+        )
 
 
 def _manifest_file_entries(payload: Mapping[str, object]) -> dict[str, _ReleaseFileEvidence]:
@@ -2655,18 +2701,12 @@ if ! docker exec ai_video_nginx nginx -t >/dev/null 2>&1; then
   exit 80
 fi
 curl -fsS http://127.0.0.1:18080/health >/dev/null
-auth_headers=(
-  -H 'X-User-Id: deploy-smoke-admin'
-  -H 'X-Role: it-admin'
-  -H 'X-Project-Key: SELF-CHECK-FUND-20260607'
-  -H 'X-Tenant-Id: hospital-demo'
-)
-curl -fsS "${{auth_headers[@]}}" \
-  http://127.0.0.1:18080/knowledge-base/catalog >/dev/null
-curl -fsS "${{auth_headers[@]}}" \
-  {shlex.quote(config.base_url)}/api/v1/knowledge-base/catalog >/dev/null
 curl -fsS {shlex.quote(config.base_url)}/api/v1/health >/dev/null
-curl -fsS "${{auth_headers[@]}}" {shlex.quote(config.base_url)}/documents >/dev/null
+curl -fsS {shlex.quote(config.base_url)}/api/v1/deployment/metadata >/dev/null
+curl -fsS {shlex.quote(config.base_url)}/documents >/dev/null
+protected_status="$(curl -sS -o /dev/null -w '%{{http_code}}' \
+  {shlex.quote(config.base_url)}/api/v1/knowledge-base/catalog)"
+test "$protected_status" = 503
 """
     _ssh(config, script)
 
@@ -2727,6 +2767,8 @@ def _run_production_smoke(config: DeployConfig) -> None:
         config.base_url,
         "--report",
         str(config.report_path),
+        "--access-mode",
+        "public-shell-readonly",
     ]
     if config.include_query_provider_smoke:
         args.extend(

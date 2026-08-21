@@ -745,6 +745,28 @@ def test_compare_s1_to_s2_allows_only_run_attributable_audit_delta() -> None:
     assert report["attributed_acceptance_run_id"] == run_id
 
 
+def test_compare_s1_to_s2_accepts_verified_zero_audit_delta() -> None:
+    module = _load_module()
+    run_id = "fa-20260815t040000z-deadbeef"
+    before_fixture = _versioned_fixture()
+    before_fixture["audit_attribution"] = _audit_attribution(run_id, [])
+    before = _capture(module, before_fixture, phase="S1", expected_deploy_sha=SHA_A)
+    after_fixture = copy.deepcopy(before_fixture)
+    after = _capture(module, after_fixture, phase="S2", expected_deploy_sha=SHA_A)
+
+    report = module._compare_snapshots(
+        before,
+        after,
+        expected_deploy_sha=SHA_A,
+        acceptance_run_id=run_id,
+    )
+
+    assert report["status"] == "pass"
+    assert report["database_write"] is False
+    assert report["audit_log_delta"] == 0
+    assert report["attributed_acceptance_run_id"] == run_id
+
+
 @pytest.mark.parametrize(
     "mutation", ["missing", "wrong-run", "unattributed", "concurrent", "reused-run"]
 )

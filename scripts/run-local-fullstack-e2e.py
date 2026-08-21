@@ -974,6 +974,7 @@ def _local_feature_acceptance_report(
     routes = (
         "/",
         "/login",
+        "/workspace",
         "/medical-audit",
         "/fund-compliance",
         "/fund-compliance/review",
@@ -993,7 +994,7 @@ def _local_feature_acceptance_report(
         "/archive",
         "/guided-check",
     )
-    aliases = ("/workspace", "/findings", "/knowledge-query")
+    aliases = ("/findings", "/knowledge-query")
     feature_receipts: list[JsonObject] = [
         {
             "feature_id": f"route-{index:02d}",

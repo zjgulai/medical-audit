@@ -9,6 +9,7 @@ APP_MODULE="${MEDICAL_AUDIT_KB_APP_MODULE:-medical_audit_kb.api.app:create_app}"
 LOG_LEVEL="${MEDICAL_AUDIT_KB_LOG_LEVEL:-warning}"
 LOAD_BACKEND="${MEDICAL_AUDIT_KB_LOAD_BACKEND:-1}"
 OPEN_BROWSER="${MEDICAL_AUDIT_KB_OPEN_BROWSER:-0}"
+API_ACCESS_MODE="${MEDICAL_AUDIT_API_ACCESS_MODE:-header-transition-test}"
 
 EMBEDDING_PROVIDER="${KIMI_EMBEDDING_PROVIDER:-openai}"
 EMBEDDING_MODEL="${KIMI_EMBEDDING_MODEL:-kimi-for-coding}"
@@ -142,6 +143,7 @@ main() {
   assert_port_is_not_serving_stale_api
 
   export MEDICAL_AUDIT_KB_CONFIG="${CONFIG_PATH}"
+  export MEDICAL_AUDIT_API_ACCESS_MODE="${API_ACCESS_MODE}"
   trap cleanup EXIT INT TERM
 
   uv run uvicorn "${APP_MODULE}" \

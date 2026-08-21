@@ -125,6 +125,12 @@ const routeCheckProfiles = {
       requiredControlText: [/(^|\s)(登录|进入只读产品导览)($|\s)/],
     },
     {
+      route: "/workspace",
+      expectedPath: "/workspace",
+      session: "workspace",
+      requiredText: [/工作台/, /待复核疑点|常用功能|今日审计工作台/],
+    },
+    {
       route: "/medical-audit",
       expectedPath: "/medical-audit",
       session: "workspace",
@@ -265,14 +271,6 @@ const routeCheckProfiles = {
   ],
 };
 const aliasRouteChecks = [
-  {
-    route: "/workspace",
-    inputSearch: "",
-    expectedPath: "/workspace",
-    expectedSearch: "",
-    session: "workspace",
-    requiredText: [/工作台/, /待复核疑点|常用功能|今日审计工作台/],
-  },
   {
     route: "/findings",
     inputSearch: "",
