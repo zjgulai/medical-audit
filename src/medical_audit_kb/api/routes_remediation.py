@@ -64,7 +64,12 @@ class RemediationStatusUpdateRequest(BaseModel):
     note: str = Field(default="", max_length=2048)
 
 
-def _item_payload(item: object, *, user: AuthenticatedUser) -> dict[str, object]:
+def _item_payload(
+    item: object,
+    *,
+    user: AuthenticatedUser,
+    attachment_store_ready: bool,
+) -> dict[str, object]:
     from medical_audit_kb.db.models import RemediationItem as M
 
     assert isinstance(item, M)
@@ -96,7 +101,8 @@ def _item_payload(item: object, *, user: AuthenticatedUser) -> dict[str, object]
         "updated_at": item.updated_at.isoformat(),
         "legacy_unscoped": legacy_unscoped,
         "allowed_transitions": allowed_transitions,
-        "can_upload_attachment": item.status != "closed"
+        "can_upload_attachment": attachment_store_ready
+        and item.status != "closed"
         and not legacy_unscoped
         and user_has_permission(user, Permission.CREATE_REVIEW_TASK),
     }
@@ -184,7 +190,11 @@ def list_items(
                 limit=limit,
             )
             payload = [
-                _item_payload(item, user=user)
+                _item_payload(
+                    item,
+                    user=user,
+                    attachment_store_ready=state.document_upload_store is not None,
+                )
                 for item in items
                 if item.project_key in visible_keys
                 or (item.project_key is None and user.role is HospitalRole.ADMIN)
@@ -235,7 +245,11 @@ def create_item(
                 created_by=user.user_identifier,
             )
             session.commit()
-            result = _item_payload(item, user=user)
+            result = _item_payload(
+                item,
+                user=user,
+                attachment_store_ready=state.document_upload_store is not None,
+            )
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="remediation store unavailable") from exc
     record_operation(state, "remediation-create", {
@@ -262,7 +276,15 @@ def get_item(
             item = get_remediation_item(session, item_id)
             if item is not None:
                 _require_visible_project(state, user, item.project_key)
-            result = _item_payload(item, user=user) if item is not None else None
+            result = (
+                _item_payload(
+                    item,
+                    user=user,
+                    attachment_store_ready=state.document_upload_store is not None,
+                )
+                if item is not None
+                else None
+            )
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="remediation store unavailable") from exc
     if result is None:
@@ -314,7 +336,11 @@ def update_status(
             if item is None:
                 raise HTTPException(status_code=404, detail="remediation item not found")
             session.commit()
-            result = _item_payload(item, user=user)
+            result = _item_payload(
+                item,
+                user=user,
+                attachment_store_ready=state.document_upload_store is not None,
+            )
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="remediation store unavailable") from exc
     except ValueError as exc:

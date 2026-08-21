@@ -226,6 +226,22 @@ describe("ReplicaRemediationWorkbench", () => {
     expect(screen.queryByRole("button", { name: /整改|验收|关闭/ })).not.toBeInTheDocument();
   });
 
+  it("hides upload for active items when the API capability is false", async () => {
+    fetchRemediationWorkbenchMock.mockResolvedValue({
+      ...remediationResponse,
+      remediation_cases: [{
+        ...remediationResponse.remediation_cases[0],
+        can_upload_attachment: false
+      }],
+      evidence_requests: []
+    });
+
+    render(<ReplicaRemediationWorkbench />);
+
+    expect(await screen.findByRole("button", { name: "提交验收" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("上传补证附件")).not.toBeInTheDocument();
+  });
+
   it("uses the real remediation UUID for evidence request upload", async () => {
     fetchRemediationWorkbenchMock.mockResolvedValue(remediationResponse);
     uploadRemediationAttachmentMock.mockResolvedValue({

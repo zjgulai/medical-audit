@@ -1242,6 +1242,44 @@ def test_remediation_attachment_visibility_precedes_file_validation(tmp_path: Pa
     assert response.status_code == 404
 
 
+def test_remediation_capabilities_fail_closed_without_attachment_store(
+    tmp_path: Path,
+) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "附件能力门禁", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    assert created.status_code == 200
+    item_id = created.json()["item"]["id"]
+    assert created.json()["item"]["can_upload_attachment"] is True
+
+    state.document_upload_store = None
+    detail = client.get(f"/remediation/items/{item_id}", headers=MEMBER_HEADERS)
+    listing = client.get("/remediation/items", headers=MEMBER_HEADERS)
+    workbench = client.get("/remediation/workbench", headers=MEMBER_HEADERS)
+    upload = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("evidence.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+
+    assert detail.status_code == 200
+    assert detail.json()["item"]["can_upload_attachment"] is False
+    assert listing.status_code == 200
+    listed_item = next(item for item in listing.json()["items"] if item["id"] == item_id)
+    assert listed_item["can_upload_attachment"] is False
+    assert workbench.status_code == 200
+    workbench_item = next(
+        item for item in workbench.json()["remediation_cases"] if item["id"] == item_id
+    )
+    assert workbench_item["can_upload_attachment"] is False
+    assert upload.status_code == 409
+    assert upload.json()["detail"] == "附件存储未启用，请联系管理员配置。"
+
+
 def test_remediation_attachment_list_checks_parent_when_store_unavailable(
     tmp_path: Path,
 ) -> None:

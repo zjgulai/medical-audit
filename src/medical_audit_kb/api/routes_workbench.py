@@ -955,7 +955,8 @@ def remediation_workbench(
                             user=user,
                             writable=bool(it.project_key) and it.status != "closed",
                         ),
-                        "can_upload_attachment": bool(it.project_key)
+                        "can_upload_attachment": state.document_upload_store is not None
+                        and bool(it.project_key)
                         and it.status != "closed"
                         and user_has_permission(user, Permission.CREATE_REVIEW_TASK),
                     }
