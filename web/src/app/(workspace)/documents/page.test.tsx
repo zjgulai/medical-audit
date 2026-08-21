@@ -622,6 +622,9 @@ describe("DocumentsPage", () => {
 
     render(<DocumentsPage />);
     await screen.findByRole("status", { name: "原文档目录空状态" });
+    fetchDocumentLibraryMock.mockImplementation(
+      () => new Promise<Awaited<ReturnType<typeof fetchDocumentLibrary>>>(() => undefined)
+    );
     fireEvent.click(screen.getByRole("button", { name: "医保法规库 (12)" }));
     fireEvent.click(screen.getByRole("button", { name: "搜索" }));
 
