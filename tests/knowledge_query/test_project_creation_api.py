@@ -1309,4 +1309,5 @@ def test_remediation_attachment_list_checks_parent_when_store_unavailable(
         "format": "remediation-attachments-v1",
         "item_id": item_id,
         "items": [],
+        "count": 0,
     }

@@ -4635,9 +4635,16 @@ def test_knowledge_catalog_metrics_against_real_postgres() -> None:
     if not (parsed_url.database or "").startswith("medical_audit_test_"):
         pytest.fail("real PostgreSQL regression requires a dedicated medical_audit_test_* database")
 
-    engine = create_engine(database_url)
-    Base.metadata.create_all(engine)
+    schema_name = f"medical_audit_metrics_{uuid4().hex}"
+    schema_database_url = parsed_url.update_query_dict(
+        {"options": f"-csearch_path={schema_name},public"}
+    ).render_as_string(hide_password=False)
+    control_engine = create_engine(database_url)
+    engine = create_engine(schema_database_url)
     try:
+        with control_engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema_name}"')
+        Base.metadata.create_all(engine)
         package_a = SourcePackageVersion(
             version_key=f"metrics-active-{uuid4().hex}",
             source_root_path="/fixture/active",
@@ -4718,7 +4725,9 @@ def test_knowledge_catalog_metrics_against_real_postgres() -> None:
             ])
             session.commit()
 
-        metrics, totals, _latest = routes_knowledge_base._metrics_from_postgres(database_url)
+        metrics, totals, _latest = routes_knowledge_base._metrics_from_postgres(
+            schema_database_url
+        )
 
         metric = metrics[SourceCollection.MEDICAL_INSURANCE_LAWS]
         assert metric.document_count == 2
@@ -4733,8 +4742,12 @@ def test_knowledge_catalog_metrics_against_real_postgres() -> None:
             "chunk_embeddings": 3,
         }
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
+        try:
+            with control_engine.begin() as connection:
+                connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+        finally:
+            control_engine.dispose()
 
 
 def test_document_library_logs_degraded_postgres_read(

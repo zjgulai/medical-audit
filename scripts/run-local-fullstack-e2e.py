@@ -454,12 +454,49 @@ def _run_business_workflow_acceptance(
     database_path: Path,
 ) -> tuple[list[JsonObject], JsonObject]:
     before = _sqlite_acceptance_snapshot(database_path)
-    receipts = [
-        _accept_remediation_workflow(backend_url),
-        _accept_report_signoff_workflow(backend_url),
-        _accept_project_workflow(backend_url),
-        _accept_ocr_workflow(backend_url),
-    ]
+    workflow_specs = (
+        (
+            "workflow-remediation-state-and-attachment",
+            ["member", "director", "technician", "admin"],
+            _accept_remediation_workflow,
+        ),
+        (
+            "workflow-report-signoff-permissions",
+            ["member", "director", "technician", "admin"],
+            _accept_report_signoff_workflow,
+        ),
+        (
+            "workflow-project-member-file-persistence",
+            ["member", "admin"],
+            _accept_project_workflow,
+        ),
+        (
+            "workflow-ocr-deterministic-fake",
+            ["admin"],
+            _accept_ocr_workflow,
+        ),
+    )
+    receipts: list[JsonObject] = []
+    for feature_id, roles, workflow in workflow_specs:
+        try:
+            receipts.append(workflow(backend_url))
+        except RuntimeError as exc:
+            receipts.append(
+                _workflow_receipt(
+                    feature_id=feature_id,
+                    roles=roles,
+                    steps={},
+                    expected_state="workflow acceptance completes without a runtime failure",
+                    database_side_effect="partial temporary SQLite changes may exist",
+                    failure_recovery=(
+                        "inspect the recorded error, discard the temporary directory, "
+                        "and rerun"
+                    ),
+                    status="fail",
+                    error=str(exc),
+                )
+            )
+            break
     after = _sqlite_acceptance_snapshot(database_path)
     for receipt in receipts:
         receipt["database_snapshot_before"] = before
@@ -888,10 +925,12 @@ def _workflow_receipt(
     expected_state: str,
     database_side_effect: str,
     failure_recovery: str,
+    status: str = "pass",
+    error: str | None = None,
 ) -> JsonObject:
-    return {
+    receipt: JsonObject = {
         "feature_id": feature_id,
-        "status": "pass",
+        "status": status,
         "precondition": "isolated temporary SQLite and deterministic fake providers",
         "roles": roles,
         "steps": steps,
@@ -902,6 +941,9 @@ def _workflow_receipt(
         "production_evidence": "not_production_verified",
         "provider_call": False,
     }
+    if error is not None:
+        receipt["error"] = error
+    return receipt
 
 
 def _sqlite_acceptance_snapshot(database_path: Path) -> JsonObject:

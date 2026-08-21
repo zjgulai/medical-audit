@@ -2072,7 +2072,7 @@ def test_report_workbench_caches_signoff_actor_per_project(
 
     assert response.status_code == 200
     assert len(response.json()["report_entries"]) == 5
-    assert calls <= 2
+    assert 1 <= calls <= 2
 
 
 def test_report_template_draft_owner_can_export_json_markdown_and_docx(

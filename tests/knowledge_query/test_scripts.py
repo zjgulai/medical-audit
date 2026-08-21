@@ -5555,6 +5555,45 @@ def test_local_fullstack_e2e_report_includes_live_business_workflow_receipts(
     assert report["feature_receipts"][-1]["provider_call"] is False
 
 
+def test_local_fullstack_e2e_records_business_workflow_runtime_failure(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script_module(
+        "run_local_fullstack_e2e_workflow_failure_receipt",
+        Path("scripts/run-local-fullstack-e2e.py"),
+    )
+    snapshots = iter([
+        {"audit_projects": 0},
+        {"audit_projects": 1},
+    ])
+
+    def fail_remediation(_backend_url: str) -> dict[str, object]:
+        raise RuntimeError("remediation acceptance failed")
+
+    def unexpected_workflow(_backend_url: str) -> dict[str, object]:
+        raise AssertionError("workflow execution must stop after the first failure")
+
+    monkeypatch.setattr(module, "_sqlite_acceptance_snapshot", lambda _path: next(snapshots))
+    monkeypatch.setattr(module, "_accept_remediation_workflow", fail_remediation)
+    monkeypatch.setattr(module, "_accept_report_signoff_workflow", unexpected_workflow)
+
+    receipts, snapshot = module._run_business_workflow_acceptance(
+        backend_url="http://127.0.0.1:8021",
+        database_path=tmp_path / "acceptance.db",
+    )
+
+    assert snapshot == {
+        "before": {"audit_projects": 0},
+        "after": {"audit_projects": 1},
+    }
+    assert len(receipts) == 1
+    assert receipts[0]["feature_id"] == "workflow-remediation-state-and-attachment"
+    assert receipts[0]["status"] == "fail"
+    assert receipts[0]["error"] == "remediation acceptance failed"
+    assert receipts[0]["provider_call"] is False
+
+
 def test_local_fullstack_e2e_candidate_identity_labels_detached_checkout(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,

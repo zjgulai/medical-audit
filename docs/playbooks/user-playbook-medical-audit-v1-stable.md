@@ -4,7 +4,7 @@ doc_type: user-playbook
 module: platform
 status: stable
 created: 2026-08-13
-updated: 2026-08-15
+updated: 2026-08-22
 owner: self
 source: human+ai+local-acceptance
 ---
@@ -14,6 +14,8 @@ source: human+ai+local-acceptance
 本文按 22 个功能域说明角色、前置条件、操作、副作用和恢复方法。候选的生产访问模式设计为 `public-shell-readonly`；除公开壳层外，业务能力均不得标记为生产已验证。2026 年 8 月 12 日的生产证据早于该候选，不能证明访问模式已经部署。
 
 证据值只使用 `L3 shell pass`、`blocked_by_access_mode`、`not_production_verified`、`sample_only` 或 `not_run`。
+
+本文各节的 `L3 shell pass` 共享同一历史观察窗：`observed_at=2026-08-12`、`deploy_sha=25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`、`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`provider_call=false`，收据为 `tmp/outputs/project-reanalysis-production-state-20260812.json`。该观察窗只证明当时的公开壳层、健康和部署拓扑，不证明当前候选已经部署，也不证明受保护业务功能已在生产验证。
 
 ## 1. 首页和访问边界
 
@@ -41,7 +43,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：Playwright 页面、健康和门禁单测通过。
 
-**生产证据**：`L3 shell pass`；候选访问模式尚未部署。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗）；候选访问模式尚未部署。
 
 ## 2. 登录占位页与本地角色模拟
 
@@ -329,7 +331,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：驾驶舱、项目入口和导航 E2E 通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗，未覆盖当前候选）。
 
 ## 12. 文档检索和个人资料
 
@@ -416,7 +418,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：SQL 聚合、runtime metrics 和页面测试通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗，未覆盖当前候选）。
 
 ## 15. 知识图谱
 
@@ -445,7 +447,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：图谱页面、标签和项目链接测试通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗，未覆盖当前候选）。
 
 ## 16. 规则
 
@@ -587,7 +589,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：页面、步骤和 CTA E2E 通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗，未覆盖当前候选）。
 
 ## 21. 独立工作台与兼容跳转
 
@@ -615,7 +617,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：`/workspace` 独立页面和 2 个兼容跳转的 Playwright 合同通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`L3 shell pass`（仅指上述 2026-08-12 历史观察窗，未覆盖当前候选）。
 
 ## 22. 管理端索引状态、审计日志和只读运维检查
 

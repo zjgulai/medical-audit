@@ -484,7 +484,12 @@ def list_attachments(
 
     upload_store = state.document_upload_store
     if upload_store is None:
-        return {"format": "remediation-attachments-v1", "item_id": str(item_id), "items": []}
+        return {
+            "format": "remediation-attachments-v1",
+            "item_id": str(item_id),
+            "items": [],
+            "count": 0,
+        }
 
     uploads = upload_store.list_uploads(
         created_by=None,

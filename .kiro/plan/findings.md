@@ -13,6 +13,22 @@ source: human+ai
 
 # Findings
 
+## 2026-08-22 PR #275 独立评审缺陷复核
+
+已确认事实：
+
+- CodeRabbit CLI 对 `main..候选 head` 完成独立评审并报告 10 项问题。
+- 其中 5 项不成立：4 项日期判断忽略项目 `Asia/Shanghai` 时区，另 1 项所称 Vitest 环境变量未清理已有 `afterEach(vi.unstubAllEnvs)` 覆盖。
+- 其余 5 项可复现或可由代码合同直接证明：Playbook 的旧生产 L3 证据缺少统一观察窗；整改附件空结果缺少 `count`；本地全栈 workflow 抛出 `RuntimeError` 时不会生成失败收据；缓存测试没有证明 resolver 至少被调用一次；真实 PostgreSQL 聚合测试会在共享测试数据库执行全局 `drop_all`。
+- 整改附件和 workflow 失败收据按测试先红后绿完成最小修复；缓存测试补上 resolver 调用次数下限；真实 PostgreSQL 测试改为每次创建唯一 schema 并在结束时只删除该 schema；Playbook 补充了观察时间、部署 SHA、证据等级、副作用、Provider 和收据边界。
+- 本地完整 Python、Ruff、Mypy 和文档契约检查通过；本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`，真实 PostgreSQL schema 隔离用例按合同跳过，仍需 exact-head CI 的专用数据库证据。
+
+处理结论：独立评审的本地缺陷修复已完成，但 Ready 仍不得仅凭本地结果提升；下一门禁是形成新 exact head、取得 CI 和复审证据，并确认没有新的有效问题。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local review remediation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
 ## 当前 PR #275 Ready 审计与身份漂移结论
 
 外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。
