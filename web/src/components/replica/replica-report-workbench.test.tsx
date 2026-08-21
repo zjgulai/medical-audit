@@ -573,7 +573,10 @@ describe("ReplicaReportWorkbench", () => {
 
   it("keeps the POST lock across a role change and releases it only after settle", async () => {
     const firstDraft = deferred<ReportDraftCreateResponse>();
-    createReportDraftMock.mockReturnValue(firstDraft.promise);
+    const secondDraft = deferred<ReportDraftCreateResponse>();
+    createReportDraftMock
+      .mockReturnValueOnce(firstDraft.promise)
+      .mockReturnValueOnce(secondDraft.promise);
     renderWorkbench();
     await selectTemplateAndProject();
     fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
@@ -596,6 +599,12 @@ describe("ReplicaReportWorkbench", () => {
     });
     fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
     expect(createReportDraftMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      secondDraft.resolve(draftResponse());
+      await secondDraft.promise;
+    });
+    expect(await screen.findByText("草稿已进入待复核队列")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
   });
 
   it("preserves unsaved fields when a project change is cancelled and clears only after confirmation", async () => {

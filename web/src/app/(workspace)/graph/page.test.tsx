@@ -436,6 +436,8 @@ describe("GraphPage", () => {
   it("isolates stale project responses across project and role changes", async () => {
     const projectARead = deferred<GraphWorkbenchResponse>();
     const projectBRead = deferred<GraphWorkbenchResponse>();
+    const directorKnowledgeRead = deferred<GraphWorkbenchResponse>();
+    const directorProjectsRead = deferred<ProjectsResponse>();
     apiMocks.fetchGraphWorkbench.mockImplementation((options?: { view?: string; projectKey?: string }) => {
       if (options?.projectKey === "PROJECT-A") return projectARead.promise;
       if (options?.projectKey === "PROJECT-B") return projectBRead.promise;
@@ -464,10 +466,23 @@ describe("GraphPage", () => {
     expect(screen.getByText("PROJECT-B 项目证据链")).toBeInTheDocument();
     expect(screen.queryByText("PROJECT-A 项目证据链")).not.toBeInTheDocument();
 
+    apiMocks.fetchGraphWorkbench.mockReturnValueOnce(directorKnowledgeRead.promise);
+    apiMocks.fetchProjects.mockReturnValueOnce(directorProjectsRead.promise);
     currentRole = "director";
     view.rerender(<GraphPage />);
     expect(screen.getByRole("tab", { name: "知识依据" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("combobox", { name: "证据链所属项目" })).toHaveValue("");
+
+    await act(async () => {
+      directorKnowledgeRead.resolve({
+        ...knowledgeGraph(),
+        graph_title: "主任知识依据"
+      });
+      directorProjectsRead.resolve(projects("DIRECTOR-A"));
+      await Promise.all([directorKnowledgeRead.promise, directorProjectsRead.promise]);
+    });
+    expect(await screen.findByText("主任知识依据")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "DIRECTOR-A 项目" })).toBeInTheDocument();
   });
 
   it("keeps knowledge ready when the independent project list lane fails", async () => {
