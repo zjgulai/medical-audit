@@ -5,13 +5,71 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-14
+updated: 2026-08-21
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Findings
+
+## 2026-08-21 本地访问入口与证据同步复核结论
+
+已确认事实：
+
+- FastAPI 在缺少 `MEDICAL_AUDIT_API_ACCESS_MODE` 且未显式启用 dev mode 时正确进入 `public-shell-readonly`。
+- 本地 `scripts/serve-chat-workbench.sh` 原先没有声明访问模式，却会用 Header 调用受保护的搜索后端初始化接口，因此新缺省合同下必然得到 `503 trusted_identity_required`。
+- 生产 compose 显式固定 `public-shell-readonly` 且关闭 HTTP 后端 bootstrap；本轮不需要、也不应让生产容器默认进入 Header 模式。
+- 最新完整本地收据为 Python `1016 passed, 1 skipped, 5 warnings`，而 README、稳定开发计划和状态台账的当前段仍写 `1012 passed`；差异报告同时存在新旧两种当前口径。
+
+处理结论：
+
+- 仅本地 Shell 启动器在调用者没有显式模式时设置 `header-transition-test`；显式模式优先，FastAPI 和生产 compose 的 fail-closed 缺省不变。
+- 合同测试验证默认本地值和显式生产值两条路径；知识查询运行手册同步了命令、身份 Header、错误诊断和本地限定。
+- 当前证据文档统一到 `1016 passed`，历史章节中的 `1012 passed` 继续按时间点保留。
+- 完整 Python、Web、构建、文档和本地全栈门禁通过，当前最高证据等级仍为 `L2-local-live`。
+
+合理推断：首次 Web 并行回归的单次等待超时来自与 Python 全套并发时的资源竞争；依据是目标文件独立 `23/23` 和随后 Web 全套独立 `418/418` 均通过。该推断不等于已证明测试不存在时序脆弱性。
+
+不确定项：外部 Codex review 未形成终态；候选尚未提交、取得新 exact-head CI 或部署，生产业务能力继续为 `not_production_verified`。
+
+Boundary: production unchanged and not accessed; no provider call, local Docker operation, staging, commit or GitHub mutation.
+
+## 2026-08-21 部署合同复核结论（历史基线）
+
+已确认事实：
+
+- 原预检查在同步候选前检查远端旧 Compose；生产缺少新访问模式键时，包含修复的候选永远无法同步，形成启动死锁。
+- 原部署后检查用模拟身份 Header 要求知识库目录返回 `2xx`；正确的 `public-shell-readonly` 运行时必须对该业务读取返回 `503`。
+- 原默认生产 smoke 无条件读取知识库目录并要求 PostgreSQL 搜索就绪，与公开壳层禁止业务读取的合同冲突。
+- 发布清单的 `source_sha` 必须是 40 位精确 Git SHA。当前 46 文件脏工作树不是 HEAD `4b42b3ea…`，因此不能生成诚实的可部署清单。
+
+处理结论：
+
+- 三个部署合同缺陷已完成本地先红后绿修复；发布执行顺序、后置检查和默认 smoke 现在统一遵守公开壳层 fail-closed 边界。
+- 完整本地 Python、Web、文档和全栈门禁通过；当前证据等级为 `L2-local-live`，不等于 exact-head CI、部署或生产验收。
+- GitNexus 对全候选给出 `critical`：38 个 tracked 变更文件、109 个变更符号、300 条受影响流程。该风险来自共享认证、页面和发布入口的组合影响面，不能按单个部署脚本补丁的窄范围解释。
+- manifest-bound release package 保持阻塞，解除条件是经单独授权形成包含当前差异的精确 Git SHA，再从该 SHA 构建和校验发布包。
+
+不确定项：候选尚未部署，生产仍没有候选 `runtime_access` 和受保护接口 `503/no-store` 的同 SHA 验收证据。
+
+Boundary: production unchanged by this gate; no provider call, local Docker operation, Git write or GitHub mutation.
+
+## 2026-08-15 CodeRabbit 发现复现结论
+
+已确认事实：
+
+- 缺失访问模式变量会启用 Header 模拟，属于生产启动 fail-open；生产 manifest 校验也未绑定公开壳层模式。
+- `/workspace` 是独立工作台，不是跳转别名；正确路由分类是 21 个独立页面和 2 个兼容跳转。
+- 导航只读 runner 已有零写模式，但原 gate/package 没有可执行的 S1→S2 零审计增量收据链。
+- `?finding=` 会随筛选刷新重复应用；整改未知持久化状态泄漏 `KeyError`；报告工作台对同一项目重复解析签发 actor。
+- tracked 历史文档保留了用户特定 SSH key 绝对路径，虽未包含 key 内容，仍属于不必要的本机路径暴露。
+
+处理结论：以上问题已完成最小本地修复和定向回归。完整门禁尚未刷新，因此当前证据是 `L2-local-targeted`，不是 exact-head CI 或生产结论。
+
+不确定项：生产没有运行候选导航只读 gate；当前本地工作树没有 commit、push、PR review、merge 或部署证据。
+
+Boundary: local targeted evidence only; production unchanged and not accessed.
 
 ## 2026-08-14 exact-head 交付审计与状态合同发现
 

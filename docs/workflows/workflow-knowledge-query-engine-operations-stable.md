@@ -5,7 +5,7 @@ module: knowledge-query-engine
 topic: knowledge-query-engine-operations
 status: stable
 created: 2026-05-31
-updated: 2026-06-15
+updated: 2026-08-21
 owner: self
 source: human+ai
 ---
@@ -33,6 +33,8 @@ export KIMI_API_KEY='实际 key'
 scripts/serve-chat-workbench.sh
 ```
 
+该脚本是本地开发入口。调用者未显式设置 `MEDICAL_AUDIT_API_ACCESS_MODE` 时，脚本会为当前子进程设置 `header-transition-test`；显式传入的模式保持不变。该 Header 身份仅用于本地测试，不是可信登录方案，也不得用于生产部署。
+
 该脚本会执行：
 
 - 启动 `uvicorn` 到 `http://127.0.0.1:8010`。
@@ -50,7 +52,8 @@ scripts/serve-chat-workbench.sh
 仅启动 API、不加载检索后端时使用：
 
 ```bash
-uv run uvicorn medical_audit_kb.api.app:create_app --factory --reload
+MEDICAL_AUDIT_API_ACCESS_MODE=header-transition-test \
+  uv run uvicorn medical_audit_kb.api.app:create_app --factory --reload
 ```
 
 访问入口：
@@ -895,7 +898,8 @@ curl http://127.0.0.1:8010/index/postgres-status
 
 ```bash
 export KIMI_API_KEY='实际 key'
-uv run uvicorn medical_audit_kb.api.app:create_app --factory --host 127.0.0.1 --port 8010
+MEDICAL_AUDIT_API_ACCESS_MODE=header-transition-test \
+  uv run uvicorn medical_audit_kb.api.app:create_app --factory --host 127.0.0.1 --port 8010
 ```
 
 终端 B 加载后端：
@@ -903,7 +907,10 @@ uv run uvicorn medical_audit_kb.api.app:create_app --factory --host 127.0.0.1 --
 ```bash
 curl -X POST http://127.0.0.1:8010/index/search-backend/postgres \
   -H "Content-Type: application/json" \
+  -H "X-User-Id: local-bootstrap-admin" \
   -H "X-Role: it-admin" \
+  -H "X-Project-Key: SELF-CHECK-FUND-20260607" \
+  -H "X-Tenant-Id: hospital-demo" \
   -d '{
     "embedding_provider":"openai",
     "embedding_model":"kimi-for-coding",
@@ -914,7 +921,7 @@ curl -X POST http://127.0.0.1:8010/index/search-backend/postgres \
   }'
 ```
 
-加载成功后再执行 `/pages/chat` 或 `/query`。如果返回 `409`，先检查 `KIMI_API_KEY` 是否在启动 API 的同一 shell 环境中存在；如果返回 `503`，先检查 PostgreSQL 容器、schema 和导入数据。
+加载成功后再执行 `/pages/chat` 或 `/query`。如果返回 `409`，先检查 `KIMI_API_KEY` 是否在启动 API 的同一 shell 环境中存在；如果返回 `503 trusted_identity_required`，说明 API 没有显式进入本地 `header-transition-test`，停止进程并按本节命令重启。其他 `503` 再检查 PostgreSQL、schema 和导入数据。
 
 加载成功响应中的 `details.matching_embedding_count` 必须大于 `0`。当前生产 Kimi 主索引期望为 `49051`，如果为 `0` 或返回 `409 no postgres embeddings match requested provider metadata`，说明请求参数与数据库中的 `openai/kimi-for-coding/v1/1024` 主索引不一致。
 

@@ -4,14 +4,14 @@ doc_type: documentation-index
 module: documentation
 status: active
 created: 2026-08-13
-updated: 2026-08-14
+updated: 2026-08-15
 owner: self
 source: human+ai
 ---
 
 # medical_audit 文档入口
 
-本目录是 `AI 审计一体化协作平台` 的权威文档入口。外部观察时间为 2026-08-14 14:41（Asia/Shanghai）：Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`；[exact-head CI run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739) 成功。PR 当时为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。该观察不等同于 tracked 文档自身身份，也不证明候选已经合并或部署。2026 年 8 月 12 日的 L3 只读证据显示，生产当时运行 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；本轮没有刷新生产状态。
+本目录是 `AI 审计一体化协作平台` 的权威文档入口。外部观察时间为 2026-08-14 22:46（Asia/Shanghai）：Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`；[exact-head CI run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386) 成功。PR 当时为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。该观察不等同于 tracked 文档自身身份；本轮未提交工作树变更尚无新的 exact-head CI，也不证明候选已经合并或部署。2026 年 8 月 12 日的 L3 只读证据显示，生产当时运行 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；本轮没有刷新生产状态。
 
 ## 阅读顺序
 
@@ -38,9 +38,9 @@ source: human+ai
 
 ## 当前证据边界
 
-- `fact`：本地候选已使用临时 SQLite 和确定性 Fake Provider 完成 17 项 Playwright E2E；机器收据覆盖 20 个独立页面和 3 个兼容别名。
+- `fact`：本地候选已使用临时 SQLite 和确定性 Fake Provider 完成 17 项 Playwright E2E；当前路由合同覆盖 21 个独立页面和 2 个兼容跳转，共 23 个页面入口。
 - `fact`：候选将生产访问模式设为 `public-shell-readonly`，保护业务读取、写入和 Provider 调用。
-- `fact`：外部观察显示 PR #275 的 `b9553349…` exact-head CI 已通过 Python `1003` 项、Web `417` 项测试和文档门禁；后续 commit 必须取得新的外部 run 证据。
+- `fact`：外部观察显示 PR #275 的 `4b42b3ea…` exact-head CI 已通过 Python `1003` 项、Web `417` 项测试和文档门禁；本轮工作树变更和后续 commit 必须取得新的外部 run 证据。
 - `fact`：候选尚未部署，因此不能把本地访问门禁结果称为生产通过。
 - `inference`：生产应用源码与候选基线的用户态差异很小，但运行配置、数据和业务行为仍需发布后只读验收。
 - `uncertain`：可信身份、真实 HIS、真实 OCR/LLM Provider、现场 UAT 和隔离恢复演练尚未完成。

@@ -5,13 +5,54 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-14
+updated: 2026-08-21
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Progress
+
+## 2026-08-21 本地访问入口与文档证据修复进展
+
+- 前一候选审阅包确认两项阻断：本地 Chat Workbench 未显式进入 Header 测试模式；三份权威当前状态文档仍停在 Python `1012 passed`。
+- 启动器合同测试稳定复现为空访问模式，修复后默认捕获 `header-transition-test`，显式 `public-shell-readonly` 原样保留。FastAPI 无本地 opt-in 时返回受保护接口 `503 trusted_identity_required` 的回归继续通过。
+- 知识查询运行手册已为本地脚本和手动 `uvicorn` 命令声明 Header 测试模式，并补齐用户、角色、项目和租户 Header。生产 compose 仍固定 `public-shell-readonly`，生产容器入口未改。
+- README、稳定开发计划、状态/债务台账和差异报告的当前结果已统一为 `1016 passed, 1 skipped, 5 warnings`；明确标记为历史的 `1012` 结果未改写。
+- 完整本地质量门禁通过：Python `1016 passed, 1 skipped, 5 warnings`；Web 41 个文件、418 项测试；Ruff、Mypy 117 个源文件、ESLint、TypeScript、普通与公开壳层 26/26 构建和 docs lint 全部通过。
+- 首次 Web 全套与 Python 全套并行运行时，未改动的 documents 时序测试出现 1 次等待超时；目标文件随后独立 `23/23`、Web 全套独立 `418/418` 通过，没有修改该功能代码。
+- 本地全栈 Playwright 为 `17/17`；新收据运行时绑定 48 个可见变更文件，覆盖 21 个独立路由、2 个兼容别名、4 个工作流、27 个功能和 `provider_call=false`。最终文件清单摘要只保存在仓库外授权包，避免 tracked 文档自引用导致自然漂移。
+- GitNexus `detect_changes(scope=all)` 报告 40 个 tracked 变更文件、约 120 个变更符号（复核结果在 119–121 间波动）、300 条受影响流程，整体风险为 `critical`。Markdown 符号解析计数存在轻微波动；该结果是全候选影响面，不等于发现了 300 个缺陷。
+- 本门禁没有访问或修改生产，没有调用 Provider，没有操作本地 Docker，也没有 stage、commit、push、PR 修改、merge 或 deploy。
+
+Boundary: local launcher and documentation evidence repair complete at L2; exact staging, commit and every external promotion remain separately authorized.
+
+## 2026-08-21 本地部署契约修复门禁进展（历史基线）
+
+- 当时本地分支、远端候选分支均指向 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`；`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`。当时 46 文件工作树尚未提交。
+- 8 条定向回归先稳定失败，再在最小修复后全部通过。完整 `tests/knowledge_query/test_scripts.py` 也通过。
+- 部署预检查不再用旧生产 Compose 阻断候选同步；同步后在远端锁内验证候选 Compose 的 `MEDICAL_AUDIT_API_ACCESS_MODE=public-shell-readonly`，随后才准备发布目录。
+- 部署后检查移除模拟身份 Header 和受保护目录 `2xx` 断言，改查公开健康、部署元数据、公开文档页和受保护目录 `503`。默认生产 smoke 不再读取搜索目录，并校验 `runtime_access` 四字段、错误码、访问模式和 `no-store`。
+- 完整本地质量门禁通过：Python `1016 passed, 1 skipped, 5 warnings`；Web 41 个文件、418 项测试；Ruff、Mypy 117 个源文件、ESLint、TypeScript、26/26 Next.js 静态页面构建和 docs lint 全部通过。5 条 warning 来自第三方 SWIG 类型。
+- 本地全栈 Playwright 为 `17/17`；收据 `tmp/outputs/local-fullstack-feature-acceptance-latest.json` 为 `status=pass`、`L2-local-live`、21 个独立路由、2 个兼容别名、4 个工作流、27 个功能和 `provider_call=false`。
+- GitNexus `detect_changes(scope=all)` 报告 38 个 tracked 变更文件、109 个变更符号、300 条受影响流程，整体风险为 `critical`。该结果要求下一门禁继续做全候选审阅，不能由测试全绿推断为可部署。
+- `web/out/release-manifest.json` 保持不存在。发布清单要求精确 Git SHA，而当前变更尚未提交；本门禁没有用 HEAD 或合成摘要伪造候选身份。
+- 本门禁没有访问或修改生产，没有调用 Provider，没有操作本地 Docker，也没有 stage、commit、push、PR 修改、merge 或 deploy。
+
+Boundary: local deployment-contract repair and L2 verification complete; immutable release identity and all external promotion gates remain separately authorized.
+
+## 2026-08-15 本地修复门禁进展
+
+- 最近外部证据绑定 Draft PR #275 head `4b42b3eab6972d8ce7d870346f13d16f8ef04f79` 和 exact-head CI run `31778904386`；当前工作树变更尚未提交或取得新 CI。
+- P0 已先红后绿：后端缺省访问模式现在 fail-closed，生产 manifest 必须声明 `public-shell-readonly`。
+- P1 已完成定向回归：`/workspace` 归为第 21 个独立页面，兼容跳转为 2 个；生产导航只读 gate 要求 S1/S2 零审计增量；疑点深链只应用一次；整改未知状态返回稳定冲突；报告签发 actor 按项目缓存。
+- tracked 文档的用户特定 SSH key 绝对路径已替换为仓库外 `$SSH_KEY_PATH`，未读取或复制 key 内容。
+- 定向 Python 12 项与医疗审计前端 10 项通过。首轮完整门禁为 Python `1011 passed, 1 skipped, 5 warnings`、Web `418 passed`、Playwright `17/17`，以及 Ruff、Mypy、typecheck、lint、26/26 build 和 docs lint 通过。
+- 完整回归后又发现导航 gate 把公网域名确认值传给 SSH 捕获器；新增 RED 回归后已改为固定确认 SSH 观察目标 `101.34.52.232`，4 项相关 gate 回归通过。最终 Python 为 `1012 passed, 1 skipped, 5 warnings`，公开壳层静态构建通过；仓库外收据仍在生成。
+- GitNexus `detect_changes` 已按规则同时检查 `compare main` 和当前 unstaged 差异：整个 PR 为 97 个文件、334 个 changed symbols、300 个 affected symbols，当前 unstaged 为 36 个 tracked 文件、91 个 changed symbols、300 个受影响流程，均因共享认证和页面入口评为 `critical`。该结果用于回归路由，不等于发现新增失败；完整 Python、Web 和全栈入口均已通过。
+- 本轮没有访问生产、调用 Provider、操作本地 Docker、stage、commit、push 或修改 PR。
+
+Boundary: local fixes and verification in progress; production, provider, Docker, Git and GitHub side effects remain false.
 
 ## 2026-08-14 exact-head 观察与状态合同修复进展
 
@@ -47,7 +88,7 @@ Boundary: `remote_head=cc711fdb4dc2b36d2b5de705939a7726917960f1`, `local_commit_
 - 完成生产公开壳层访问模式和前端只读呈现；受保护请求在认证、业务和审计写入前返回 503。
 - 完成疑点定位、整改、报告签发、知识统计和工程告警的定向修复与测试。
 - 候选收口复审新增两条整改附件 RED 回归：不可见父整改项必须先于扩展名或文件体校验返回 `404`；附件存储不可用时也必须先确认父整改项存在和可见。修复后整改附件定向测试 `6/6` 通过。
-- 本地全栈 E2E 17/17 通过，机器收据覆盖 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流，共 27 条功能记录；确定性 Fake OCR 已纳入，没有真实 Provider 调用。
+- 本地全栈 E2E 17/17 通过；当前合同将 `/workspace` 归为独立工作台，覆盖 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流，共 27 条功能记录；确定性 Fake OCR 已纳入，没有真实 Provider 调用。
 - 已建立架构、API、用户与运维 Playbook、生产验收矩阵和中文技术写作规则。
 - 全量质量门禁刷新通过：Python `995 passed`、5 条第三方 SWIG `DeprecationWarning`；Web `41` 个文件、`412` 项测试通过；Ruff、Mypy 117 个源文件、ESLint、TypeScript、Next.js `26/26` 静态页面构建均通过。docs lint 和最终 `git diff --check` 由候选收口尾门复核。
 - 首批 4 个约 40 MiB 的 exact paths 已在用户确认后于 14:45 移动到系统 Trash；当时四个目标保留原 inode 和内容哈希、Git 状态哈希不变。16:02 新鲜复核发现 Finder 已于 15:10 清空 Trash，源和目标均不存在，当前不可恢复；系统日志不能证明触发者。
@@ -978,7 +1019,7 @@ Observed baseline:
 - Worktree: `/Users/pray/.config/superpowers/worktrees/medical_audit/ppt-feedback-product-optimization-20260711`.
 - Branch: `codex/ppt-feedback-product-optimization-20260711`, `ahead 50` of the currently cached `origin/main` before a fresh fetch.
 - Pre-existing dirty files are limited to the three protected workflow/draft documents listed in the Loop 51 plan.
-- SSH key `/Users/pray/Downloads/DDDD.pem`: readable, mode `0600`; contents not read.
+- Repository-external SSH key path was readable with mode `0600`; the tracked ledger does not retain its user-specific absolute path, and key contents were not read.
 - Known static findings to reproduce: `routes_chat.py` E501, `inventory.py` I001 plus optional narrowing, and `bm25_index.py` unreachable branch.
 
 Process note:
@@ -1014,7 +1055,7 @@ Boundary:
 - Fresh fetch confirmed `origin/main=51dfcb816a0c71928c206683f0fa7fef796e895a`; the feature branch is linear and `50` commits ahead before the Loop 51 closeout commit.
 - Deployment review found `StrictHostKeyChecking=no` and a remote `/tmp` log write in preflight. Two tests reproduced both security gaps.
 - The deploy script now uses `BatchMode=yes`, `StrictHostKeyChecking=yes`, and no remote preflight log file; both tests and the full backend suite pass.
-- Zero-execute preflight using `/Users/pray/Downloads/DDDD.pem` passed. `--allow-dirty` was used only to inspect the current protected dirty worktree and is forbidden in the formal execute plan.
+- Zero-execute preflight using the repository-external SSH key path passed. `--allow-dirty` was used only to inspect the current protected dirty worktree and is forbidden in the formal execute plan.
 
 ### Phase 4 Production Read-Only Audit
 

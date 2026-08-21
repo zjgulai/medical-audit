@@ -5,7 +5,7 @@ module: frontend
 topic: jinja-next-boundary
 status: stable
 created: 2026-06-23
-updated: 2026-08-14
+updated: 2026-08-15
 owner: self
 source: human+ai
 ---
@@ -22,8 +22,8 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 
 | 类型 | 当前归属 | 约束 |
 | --- | --- | --- |
-| 产品门户、导航和 20 个独立页面 | Next.js | 主用户入口 |
-| `/workspace`、`/findings`、`/knowledge-query` | Next.js 兼容别名 | 保留兼容合同，不再作为孤儿路由 |
+| 产品门户、导航和 21 个独立页面 | Next.js | 主用户入口；`/workspace` 是独立工作台 |
+| `/findings`、`/knowledge-query` | Next.js 兼容跳转 | 保留旧书签和查询参数映射合同 |
 | 疑点、整改、报告、项目和知识工作台 | Next.js 调用 `/api/v1/*` | 权限与状态机以服务端字段为准 |
 | `/pages/*`、旧表单和下载入口 | FastAPI Jinja | 兼容深页；只维护必要回归 |
 | 静态资源、健康和部署元数据 | Next.js/FastAPI | `public-shell-readonly` 下可公开 |
@@ -35,7 +35,7 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 
 `header-transition-test` 允许本地角色模拟，用于成员、主任、技术员和管理员的权限回归。页面必须显示“仅本地测试”，不能把浏览器角色值当作可信认证。
 
-当前显式接受一项受控兼容风险：后端同时缺少 `MEDICAL_AUDIT_API_ACCESS_MODE` 和 `MEDICAL_AUDIT_KB_DEV_MODE` 时，仍回退到 `header-transition-test`，以兼容现有测试和本地直接启动方式。生产 Compose 和生产 env 示例均固定 `MEDICAL_AUDIT_KB_DEV_MODE=0`、`MEDICAL_AUDIT_API_ACCESS_MODE=public-shell-readonly`，部署脚本也强制公开壳层构建，因此已配置的生产路径保持 fail-closed。任何新增启动器、容器编排或非 Compose 部署必须先显式设置访问模式；若无法证明设置存在，不得归类为生产候选。该风险在可信身份或统一 runtime profile 建成时重新评估。
+后端同时缺少 `MEDICAL_AUDIT_API_ACCESS_MODE` 和 `MEDICAL_AUDIT_KB_DEV_MODE` 时默认进入 `public-shell-readonly`。本地 Header 角色模拟必须显式设置 `MEDICAL_AUDIT_KB_DEV_MODE=1`，或显式选择 `header-transition-test`。测试夹具负责声明该本地模式，不能依赖缺失环境变量产生的隐式回退。
 
 ### 3.2 生产公开壳层
 
@@ -48,11 +48,11 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 1. 新功能统一使用 Next.js 页面和 `/api/v1/*` 规范接口。
 2. 权限、可见性、状态迁移和可写性由 FastAPI 返回，前端不自行推导。
 3. Jinja 兼容深页只修复缺陷和维持导出，不扩大新的产品入口。
-4. 删除旧路由前必须先更新 20 页面、3 别名合同与逐功能 Playbook。
+4. 删除旧路由前必须先更新 21 个独立页面、2 个兼容跳转合同与逐功能 Playbook。
 5. 任何生产写入验收都必须在可信身份上线后重新授权，不能复用历史 Header 模拟结果。
 
 ## 5. 当前证据
 
-- 本地：17 个 Playwright 场景，以及 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流已形成机器收据；功能记录总数为 27。
+- 本地：17 个 Playwright 场景，以及 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流已形成合同；功能记录总数为 27。
 - 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。
-- 候选外部观察：截至 2026-08-14 14:41（Asia/Shanghai），Draft PR #275 的观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`，exact-head CI run `31776394739` 成功；PR 当时仍为 Draft，review 数量为 0。该观察不证明 merge 或部署，业务功能保持 `not_production_verified`。
+- 候选外部观察：截至 2026-08-14 22:46（Asia/Shanghai），Draft PR #275 的观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`，exact-head CI run `31778904386` 成功；PR 当时仍为 Draft，review 数量为 0。本轮本地修复未被该 run 覆盖；该观察不证明 merge 或部署，业务功能保持 `not_production_verified`。

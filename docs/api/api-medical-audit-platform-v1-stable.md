@@ -4,7 +4,7 @@ doc_type: api-reference
 module: platform-api
 status: stable
 created: 2026-08-13
-updated: 2026-08-14
+updated: 2026-08-15
 owner: self
 source: human+ai+openapi
 ---
@@ -20,7 +20,7 @@ source: human+ai+openapi
 | `header-transition-test` | 本地测试 | 按角色和项目允许 | 按角色和项目允许 |
 | `public-shell-readonly` | 生产默认 | 禁止 | 禁止 |
 
-生产模式允许公开 `GET`、`HEAD` 健康和部署元数据。受保护请求统一返回 `503 trusted_identity_required`，并包含 `Cache-Control: no-store`。
+生产模式允许公开 `GET`、`HEAD` 健康、部署元数据和 `/release-manifest.json`。受保护请求统一返回 `503 trusted_identity_required`，并包含 `Cache-Control: no-store`。
 
 ## 请求身份
 

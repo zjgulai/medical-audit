@@ -4,7 +4,7 @@ doc_type: implementation-plan
 module: release-evidence
 status: local_validation_and_review_passed_pr_pending
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-08-15
 owner: self
 source: human+ai
 baseline: origin-main@2d790375621bafa3dd564b1a1464f3e229a053a2
@@ -77,10 +77,10 @@ test -z "$(git status --porcelain)"
 只读检查 SSH key 模式和远端容量；不得读取 key 或 `.env` 内容：
 
 ```bash
-KEY=/Users/pray/Downloads/DDDD.pem
-test -r "$KEY"
-test "$(stat -f '%Lp' "$KEY")" = 600
-ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+: "${SSH_KEY_PATH:?Set SSH_KEY_PATH to a repository-external SSH private key path}"
+test -r "$SSH_KEY_PATH"
+test "$(stat -f '%Lp' "$SSH_KEY_PATH")" = 600
+ssh -i "$SSH_KEY_PATH" -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
   ubuntu@101.34.52.232 \
   'set -euo pipefail; df -Pk /opt /var; du -sk /opt/medical-audit/backups /opt/medical-audit/app /var/www/audit'
 ```

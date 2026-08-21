@@ -4,7 +4,7 @@ doc_type: deployment-plan
 module: knowledge-query
 status: superseded
 created: 2026-07-22
-updated: 2026-08-13
+updated: 2026-08-15
 owner: self
 source: human+ai
 target_sha: 905f9f485dbe1a390fbd1fefea5a89f09722cdf9
@@ -45,7 +45,7 @@ Do not create another long-lived clone or worktree. Do not use `--allow-dirty` f
 
 ## 3. Phase A — fresh production read-only preflight
 
-This phase requires its own SSH/read-only authorization and uses `/Users/pray/Downloads/DDDD.pem` without reading or printing its contents.
+This phase requires its own SSH/read-only authorization and uses the repository-external `$SSH_KEY_PATH` without reading or printing key contents; this tracked draft does not retain a user-specific absolute path.
 
 1. Run the conditional-L3 deployment-state audit without asserting a target SHA to discover current deploy SHA, release topology, health, lock, backups and embedding readiness.
 2. Fail closed unless the observed current SHA is exactly the last verified SHA `18d3ff86170558b0ea20eafc1dbd6e4a32c33a28`. Any drift requires a new plan/authorization.
@@ -74,7 +74,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --execute \
   --confirm-production audit.lute-tlz-dddd.top \
   --approved-sha 905f9f485dbe1a390fbd1fefea5a89f09722cdf9 \
-  --ssh-key /Users/pray/Downloads/DDDD.pem \
+  --ssh-key "$SSH_KEY_PATH" \
   --stamp h1-strict-abstention-905f9f4-20260722T090844Z \
   --report tmp/outputs/production-e2e-smoke-after-deploy-h1-strict-abstention-905f9f4-20260722T090844Z.json
 ```
@@ -116,7 +116,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --confirm-production audit.lute-tlz-dddd.top \
   --expected-current-sha 905f9f485dbe1a390fbd1fefea5a89f09722cdf9 \
   --restore-sha 18d3ff86170558b0ea20eafc1dbd6e4a32c33a28 \
-  --ssh-key /Users/pray/Downloads/DDDD.pem \
+  --ssh-key "$SSH_KEY_PATH" \
   --stamp h1-strict-abstention-905f9f4-20260722T090844Z
 ```
 
@@ -184,7 +184,7 @@ Do not delete the local branch, stash, deployment backups or old production back
 
 Phase A — production read-only preflight:
 
-> 明确授权执行 Loop 72 Phase A 生产只读预检：目标部署 SHA `905f9f485dbe1a390fbd1fefea5a89f09722cdf9`，预期当前生产 SHA `18d3ff86170558b0ea20eafc1dbd6e4a32c33a28`；允许使用 `/Users/pray/Downloads/DDDD.pem` 执行 SSH 只读 deployment-state audit、release-guard S0、部署脚本非 execute preflight、锁/磁盘/五类备份路径和 stamp 冲突检查；允许 preflight 使用 `--allow-dirty` 仅绕过本地 planning/draft 脏状态，不得用于 execute。禁止备份创建、锁清理、文件同步、容器重建、DB/schema/env/runtime 写入、provider、review/document/index/agent 写入、deploy、branch DELETE。任何 SHA、拓扑、健康、锁、磁盘或 stamp 漂移立即停止。
+> 明确授权执行 Loop 72 Phase A 生产只读预检：目标部署 SHA `905f9f485dbe1a390fbd1fefea5a89f09722cdf9`，预期当前生产 SHA `18d3ff86170558b0ea20eafc1dbd6e4a32c33a28`；允许使用仓库外 `$SSH_KEY_PATH` 执行 SSH 只读 deployment-state audit、release-guard S0、部署脚本非 execute preflight、锁/磁盘/五类备份路径和 stamp 冲突检查；允许 preflight 使用 `--allow-dirty` 仅绕过本地 planning/draft 脏状态，不得用于 execute。禁止备份创建、锁清理、文件同步、容器重建、DB/schema/env/runtime 写入、provider、review/document/index/agent 写入、deploy、branch DELETE。任何 SHA、拓扑、健康、锁、磁盘或 stamp 漂移立即停止。
 
 Phase B — exact deployment; Phase A has frozen the stamp:
 

@@ -4,7 +4,7 @@ doc_type: cleanup-plan
 module: repository+production-operations
 status: superseded
 created: 2026-07-22
-updated: 2026-08-13
+updated: 2026-08-15
 owner: self
 source: local-readonly+historical-production-evidence
 ---
@@ -149,7 +149,7 @@ source: local-readonly+historical-production-evidence
 
 ## 8. 下一步只读授权模板
 
-> 明确授权执行 Loop 73 Phase B 生产只读备份清理预检：预期生产 SHA `905f9f485dbe1a390fbd1fefea5a89f09722cdf9`，预期唯一保留 stamp `h1-strict-abstention-905f9f4-20260722T090844Z`，允许使用 `/Users/pray/Downloads/DDDD.pem` 执行 deployment-state audit（`--backup-limit 1000`）以及 `/opt/medical-audit/backups` 全量 lstat/stat inventory、deploy lock/worker、transaction status、current/release/marker、disk、container health 和 Nginx 只读检查；允许生成本地 secret-free keep/delete/excluded manifests，但禁止读取或打印 env 内容，禁止 backup 创建、文件移动/删除、worktree/branch/stash 变更、DB/schema/env/runtime/provider/query/review/document/index/agent/deploy 写入。任何 SHA、stamp、lock、health、文件类型或 inventory 漂移立即停止。
+> 明确授权执行 Loop 73 Phase B 生产只读备份清理预检：预期生产 SHA `905f9f485dbe1a390fbd1fefea5a89f09722cdf9`，预期唯一保留 stamp `h1-strict-abstention-905f9f4-20260722T090844Z`，允许使用仓库外 `$SSH_KEY_PATH` 执行 deployment-state audit（`--backup-limit 1000`）以及 `/opt/medical-audit/backups` 全量 lstat/stat inventory、deploy lock/worker、transaction status、current/release/marker、disk、container health 和 Nginx 只读检查；允许生成本地 secret-free keep/delete/excluded manifests，但禁止读取或打印 env 内容，禁止 backup 创建、文件移动/删除、worktree/branch/stash 变更、DB/schema/env/runtime/provider/query/review/document/index/agent/deploy 写入。任何 SHA、stamp、lock、health、文件类型或 inventory 漂移立即停止。
 
 生产 survivor 恢复演练、local cleanup、production quarantine/purge 必须分别取得后续精确授权，不能由本只读授权推断。
 

@@ -4,7 +4,7 @@ doc_type: user-playbook
 module: platform
 status: stable
 created: 2026-08-13
-updated: 2026-08-14
+updated: 2026-08-15
 owner: self
 source: human+ai+local-acceptance
 ---
@@ -128,7 +128,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：页面合同和 CTA E2E 通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`not_production_verified`（历史观察 `2026-08-12` 为 `L3 shell pass`，仅历史值，未覆盖当前候选）。
 
 ## 5. 基金复核
 
@@ -243,7 +243,7 @@ source: human+ai+local-acceptance
 
 **本地证据**：目录和详情 E2E 通过。
 
-**生产证据**：`L3 shell pass`。
+**生产证据**：`not_production_verified`（历史观察 `2026-08-12` 为 `L3 shell pass`，仅历史值，未覆盖当前候选）。
 
 ## 9. 分析看板
 
@@ -589,7 +589,7 @@ source: human+ai+local-acceptance
 
 **生产证据**：`L3 shell pass`。
 
-## 21. 兼容别名
+## 21. 独立工作台与兼容跳转
 
 **适用角色**：全部页面用户。
 
@@ -613,7 +613,7 @@ source: human+ai+local-acceptance
 
 **已知限制**：旧文档可能仍描述 `/workspace → /chat`，该行为已废弃。
 
-**本地证据**：3 个别名的 Playwright 合同通过。
+**本地证据**：`/workspace` 独立页面和 2 个兼容跳转的 Playwright 合同通过。
 
 **生产证据**：`L3 shell pass`。
 

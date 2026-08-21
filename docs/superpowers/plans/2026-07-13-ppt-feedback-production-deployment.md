@@ -3,11 +3,11 @@ title: PPT 反馈产品优化生产部署与验收计划
 doc_type: deployment-plan
 module: deployment
 created: 2026-07-13
-updated: 2026-08-13
+updated: 2026-08-15
 owner: self
 source: human+ai
 created_at: 2026-07-13
-updated_at: 2026-08-13
+updated_at: 2026-08-15
 project: medical_audit
 scope: ppt-feedback-production-promotion
 status: local-fix-validated-awaiting-pr-rereview
@@ -44,7 +44,7 @@ PR #232 代码审查发现的项目隔离、前端身份失效和部署门禁问
 
 ### 2.2 生产只读基线
 
-- SSH：`ubuntu@101.34.52.232`，使用 `/Users/pray/Downloads/DDDD.pem`，`BatchMode=yes`、`StrictHostKeyChecking=yes`、`IdentitiesOnly=yes`。
+- SSH：`ubuntu@101.34.52.232`，使用仓库外环境变量 `$SSH_KEY_PATH` 指向的密钥，`BatchMode=yes`、`StrictHostKeyChecking=yes`、`IdentitiesOnly=yes`；tracked 文档不记录用户绝对路径。
 - 生产 SHA：`51dfcb816a0c71928c206683f0fa7fef796e895a`。
 - `medical_audit_app`、`medical_audit_pg`、`medical_audit_clamav`、`ai_video_nginx`：均为 `running/healthy`。
 - Nginx 配置检查通过；本机 health、search backend、公开首页和公开 health 均返回 HTTP `200`。
@@ -72,7 +72,7 @@ PR #232 代码审查发现的项目隔离、前端身份失效和部署门禁问
 
 ```bash
 uv run python scripts/deploy-tencent-cloud-production.py \
-  --ssh-key /Users/pray/Downloads/DDDD.pem \
+  --ssh-key "$SSH_KEY_PATH" \
   --stamp <deploy-stamp> \
   --report tmp/outputs/production-e2e-smoke-after-deploy-<deploy-stamp>.json
 ```
@@ -84,7 +84,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --execute \
   --confirm-production audit.lute-tlz-dddd.top \
   --approved-sha <merged-main-full-sha> \
-  --ssh-key /Users/pray/Downloads/DDDD.pem \
+  --ssh-key "$SSH_KEY_PATH" \
   --stamp <deploy-stamp> \
   --report tmp/outputs/production-e2e-smoke-after-deploy-<deploy-stamp>.json
 ```
@@ -146,7 +146,7 @@ uv run python scripts/deploy-tencent-cloud-production.py \
   --stamp <failed-deploy-backup-stamp> \
   --expected-current-sha <observed-current-deploy-marker-sha> \
   --restore-sha <previous-full-sha> \
-  --ssh-key /Users/pray/Downloads/DDDD.pem
+  --ssh-key "$SSH_KEY_PATH"
 ```
 
 回滚顺序：

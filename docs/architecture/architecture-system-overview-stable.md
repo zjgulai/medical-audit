@@ -4,7 +4,7 @@ doc_type: architecture
 module: platform
 status: stable
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-15
 owner: self
 source: human+ai
 ---
@@ -34,7 +34,7 @@ flowchart LR
 
 | 组件 | 路径 | 职责 | 当前边界 |
 |---|---|---|---|
-| Next.js 前端 | `web/` | 20 个独立页面、3 个兼容别名、角色化交互 | 生产只读导览；本地可使用角色模拟器 |
+| Next.js 前端 | `web/` | 21 个独立页面、2 个兼容跳转、角色化交互 | 生产只读导览；本地可使用角色模拟器 |
 | FastAPI 应用 | `src/medical_audit_kb/api/` | API、权限、业务编排、错误合同 | `/api/v1` 是规范入口 |
 | SQLAlchemy Store | `src/medical_audit_kb/api/*_store.py` | 项目、成员、疑点、任务、整改、上传和日志 | 生产使用 PostgreSQL；本地 E2E 使用临时 SQLite |
 | 检索引擎 | `src/medical_audit_kb/retrieval/` | BM25、向量检索、重排和引用 | Provider 可用性与索引状态独立判定 |
@@ -68,7 +68,7 @@ flowchart LR
 
 ### `header-transition-test`
 
-该模式只用于本地测试。请求通过 `X-User-Id`、`X-Role`、`X-Tenant-Id` 和项目上下文模拟身份。它不是可信登录方案，不得进入生产构建。
+该模式只用于本地测试。必须显式设置 `MEDICAL_AUDIT_KB_DEV_MODE=1` 或将 `MEDICAL_AUDIT_API_ACCESS_MODE` 设为 `header-transition-test`，请求才会通过 `X-User-Id`、`X-Role`、`X-Tenant-Id` 和项目上下文模拟身份。它不是可信登录方案，不得进入生产构建；两个变量均缺失时，后端默认进入 `public-shell-readonly`。
 
 ## 权限与项目可见性
 

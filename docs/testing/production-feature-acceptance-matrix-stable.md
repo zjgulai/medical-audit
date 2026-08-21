@@ -4,14 +4,14 @@ doc_type: acceptance-matrix
 module: testing
 status: stable
 created: 2026-08-13
-updated: 2026-08-14
+updated: 2026-08-15
 owner: self
 source: human+ai+local-acceptance
 ---
 
 # medical_audit 本地与生产功能验收矩阵
 
-矩阵区分本地活体验收、PR exact-head CI、生产壳层历史只读验收和受保护业务能力。外部观察时间为 2026-08-14 14:41（Asia/Shanghai）：Draft PR #275 的观测 head 为 `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`，[exact-head CI run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739) 成功。候选尚未部署，生产列不得继承本地或 CI 结果。
+矩阵区分本地活体验收、PR exact-head CI、生产壳层历史只读验收和受保护业务能力。最近外部观察时间为 2026-08-14 22:46（Asia/Shanghai）：Draft PR #275 的观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`，[exact-head CI run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386) 成功。本轮本地修复尚未提交，也未被该 run 覆盖；候选尚未部署，生产列不得继承本地或 CI 结果。
 
 ## 页面与功能
 
@@ -37,9 +37,9 @@ source: human+ai+local-acceptance
 | R18 | `/remediation` | UUID、状态机、附件 pass | `production_evidence=not_production_verified` | 无生产整改写入 |
 | R19 | `/archive` | Seed 合同 pass | `production_evidence=sample_only` | 只读 Sample |
 | R20 | `/guided-check` | 页面和 CTA pass | `production_evidence=L3 shell pass` | Provider 未运行 |
-| A01 | `/workspace` | 独立工作台 pass | `production_evidence=L3 shell pass` | 不再跳转 `/chat` |
-| A02 | `/findings` | 跳转 `/medical-audit` pass | `production_evidence=L3 shell pass` | 兼容别名 |
-| A03 | `/knowledge-query` | 参数映射 pass | `production_evidence=L3 shell pass` | 未知参数丢弃 |
+| R21 | `/workspace` | 独立工作台 pass | `production_evidence=L3 shell pass` | 独立页面；不再跳转 `/chat` |
+| A01 | `/findings` | 跳转 `/medical-audit` pass | `production_evidence=L3 shell pass` | 兼容跳转 |
+| A02 | `/knowledge-query` | 参数映射 pass | `production_evidence=L3 shell pass` | 兼容跳转；未知参数丢弃 |
 
 ## 关键业务门禁
 
@@ -74,14 +74,14 @@ source: human+ai+local-acceptance
 - `data_store=temporary-sqlite`。
 - `provider_call=false`。
 - `external_provider_smoke=not_run`。
-- `independent_route_count=20`。
-- `alias_count=3`。
+- `independent_route_count=21`。
+- `alias_count=2`。
 - `workflow_count=4`。
 - `feature_count=27`。
 - 四条活体业务工作流分别覆盖整改状态与附件、报告签发权限、项目/成员/文件持久化，以及确定性 Fake OCR 页映射。
 - `candidate_identity.changed_files` 和 `candidate_identity.manifest_sha256` 绑定收据运行时的预提交候选文件；最终值直接读取机器收据，避免文档修改使静态抄录失效。
 
-收据中的 `git_sha` 是预提交运行时基线 SHA；当时的候选差异由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。2026-08-14 14:41 的外部观察显示，PR head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` 已由 run `31776394739` 完成 exact-head CI：Python `1003 passed`、Web `417 passed`，文档合同为 119 个 tracked Markdown、123 个 API 操作、0 error、0 warning。后续 commit 必须取得新的外部 run 证据，不能继承本次结论。
+收据中的 `git_sha` 是预提交运行时基线 SHA；当时的候选差异由 `candidate_identity.changed_files` 和 manifest SHA-256 另行绑定。2026-08-14 22:46 的外部观察显示，PR head `4b42b3eab6972d8ce7d870346f13d16f8ef04f79` 已由 run `31778904386` 完成 exact-head CI：Python `1003 passed`、Web `417 passed`，文档合同为 119 个 tracked Markdown、123 个 API 操作、0 error、0 warning。本轮工作树变更和后续 commit 必须取得新的外部 run 证据，不能继承本次结论。
 
 ## 生产证据说明
 
@@ -90,7 +90,7 @@ source: human+ai+local-acceptance
 发布后只允许执行：
 
 1. L3 容器、前门、release manifest 和部署 SHA 检查。
-2. 20 个独立页面和 3 个别名的桌面、移动只读导航。
+2. 21 个独立页面和 2 个兼容跳转的桌面、移动只读导航。
 3. 一个受保护 GET 的 `503` 负向检查。
 4. 业务数据和审计日志无增量检查。
 

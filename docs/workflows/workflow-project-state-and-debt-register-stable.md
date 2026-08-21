@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-14
+updated: 2026-08-21
 owner: self
 source: human+ai
 ---
@@ -32,15 +32,16 @@ source: human+ai
 
 | 维度 | 观察事实 | 证据边界 |
 | --- | --- | --- |
-| 外部观察时间 | 2026-08-14 14:41（Asia/Shanghai） | GitHub 与仓库外只读审计收据 |
-| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` | `OPEN/DRAFT`、merge state `CLEAN`；review 数量为 0 |
-| exact-head CI | Python `1003 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 31776394739](https://github.com/zjgulai/medical-audit/actions/runs/31776394739)；只覆盖观测 head |
-| 本地完整回归 | Python `1002 passed, 1 skipped`；Web `417 passed`；Playwright `17/17` | L2 本地；唯一 skip 已在 exact-head CI 覆盖 |
+| 外部观察时间 | 2026-08-14 22:46（Asia/Shanghai） | GitHub 与仓库外只读审计收据 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `4b42b3eab6972d8ce7d870346f13d16f8ef04f79` | `OPEN/DRAFT`、merge state `CLEAN`；review 数量为 0 |
+| exact-head CI | Python `1003 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386)；只覆盖观测 head |
+| 当前本地修复 | fail-closed 默认、manifest 访问模式、21+2 路由分类、只读导航零增量 gate、深链 apply-once、整改异常状态和签发 actor 缓存 | 工作树变更；尚未提交、推送或取得新的 exact-head CI |
+| 本地完整回归 | Python `1016 passed, 1 skipped, 5 warnings`；Web `418 passed`；Playwright `17/17`；其余门禁通过 | L2 未提交工作树；唯一 skip 需要本地 PostgreSQL 测试 URL，5 条 warning 来自第三方 SWIG 类型；最近 exact-head CI 不覆盖本轮变更 |
 | API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账 |
 | 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
 | 生产业务能力 | `not_production_verified` | 候选未部署；业务读取、写入和 Provider 调用保持关闭 |
 
-门禁结论：exact-head CI 为 `PASS`；CodeRabbit 因 Draft 跳过 review，人工 review 数量为 0。CI 不能替代 review，Ready、merge、部署和生产验收仍是独立门禁。
+门禁结论：`4b42b3ea…` 的 exact-head CI 为 `PASS`；仓库外 CodeRabbit CLI review 的 9 项发现触发本地修复门禁。当前工作树不能继承该 CI；Ready、merge、部署和生产验收仍是独立门禁。
 
 状态合同：当前状态段只写带时间的外部观察；后续 commit、push 或 CI 变化不会反向使该观察失真。最新身份必须从 PR、Actions run 和仓库外收据重新解析。
 
@@ -80,7 +81,7 @@ source: human+ai
 | 候选分支 | `codex/medical-audit-reanalysis-playbook-20260813` | 尚未合并、推送或部署 |
 | 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 只读收据；不是本次候选部署证据 |
 | 源码差异 | `25e1654e..ccc73e95` 没有 `src/`、`web/` 业务源码差异 | 不等于配置、数据和行为完全一致 |
-| 本地全栈 | 17 个 Playwright 场景通过；收据覆盖 20 个独立页面、3 个兼容别名和 4 条持久化业务工作流 | 共 27 条功能记录；临时 SQLite、Fake Provider、`provider_call=false` |
+| 本地全栈 | 17 个 Playwright 场景通过；当前合同覆盖 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流 | 共 27 条功能记录；临时 SQLite、Fake Provider、`provider_call=false` |
 | 候选质量 | Python `995 passed`；Web `412 passed`；Ruff、Mypy、typecheck、lint、build 和本地全栈通过 | L2 本地证据；5 条 warning 来自第三方 SWIG 类型 |
 | 生产业务能力 | `not_production_verified` | 生产仅允许公开壳层；业务读取和写入关闭 |
 

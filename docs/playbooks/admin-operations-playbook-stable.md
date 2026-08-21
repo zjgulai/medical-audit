@@ -4,7 +4,7 @@ doc_type: operations-playbook
 module: operations
 status: stable
 created: 2026-08-13
-updated: 2026-08-13
+updated: 2026-08-15
 owner: self
 source: human+ai
 ---
@@ -47,7 +47,7 @@ git diff --check
 tmp/outputs/local-fullstack-feature-acceptance-latest.json
 ```
 
-收据必须包含 `provider_call=false`、20 个独立页面、3 个别名和 4 条持久化业务工作流，共 27 条功能记录。四条工作流分别验证整改状态与附件、报告签发权限、项目/成员/文件持久化，以及确定性 Fake OCR 页映射。
+收据必须包含 `provider_call=false`、21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流，共 27 条功能记录。四条工作流分别验证整改状态与附件、报告签发权限、项目/成员/文件持久化，以及确定性 Fake OCR 页映射。
 
 ## 2. 生产公开壳层只读检查
 
@@ -68,12 +68,29 @@ pnpm production:permission-readonly
 
 ## 3. 浏览器壳层验收
 
-只读导航验收覆盖 20 个独立页面、3 个别名、桌面和移动视口。执行前确认：
+只读导航验收覆盖 21 个独立页面、2 个兼容跳转、桌面和移动视口。执行前确认：
 
 - 目标域名和 expected SHA 精确匹配。
 - 使用 `--navigation-only-readonly`。
 - 阻断所有 `/api/` 业务请求。
 - 截图和报告写入本地证据目录，不写生产数据。
+
+只有在候选已经按 exact SHA 部署、S1 收据通过，并另外取得生产只读授权后，才运行下列唯一命令模板：
+
+```bash
+pnpm production:frontend-navigation-readonly -- \
+  --expected-deploy-sha <APPROVED_SHA> \
+  --acceptance-run-id <ACCEPTANCE_RUN_ID> \
+  --release-guard-report <S1_REPORT_PATH> \
+  --ssh-key "$SSH_KEY_PATH" \
+  --post-release-guard-report <S2_REPORT_PATH> \
+  --release-guard-compare-report <S1_S2_COMPARE_PATH> \
+  --confirm-production-readonly 101.34.52.232 \
+  --output <FRONTEND_REPORT_PATH> \
+  --screenshot-dir <SCREENSHOT_DIR>
+```
+
+该 gate 在浏览器导航前重新校验 S1，在导航后执行一次 L3 S2 只读捕获并生成 S1→S2 比较。只有 `audit_log_delta=0`、`database_write=false`、同一 SHA/run ID、23 个入口的桌面和移动截图均完整时才通过。任一参数缺失、证据文件复用、受保护 API 尝试或状态漂移都会失败关闭。
 
 发现页面错误时，在本地复现和修复。不得直接修改生产静态文件；每个新 hotfix SHA 都需要新的部署授权。
 
