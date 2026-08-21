@@ -5,13 +5,24 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-21
+updated: 2026-08-22
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Progress
+
+## 当前 PR #275 身份同步与评审门禁进展
+
+- 外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。本地、远端候选分支和 Draft PR #275 的观测 head 均为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；分支相对 main 为 `0 behind / 13 ahead`。
+- exact-head CI run `32499803192` 为 `success`：Python `1018 passed`、Web `419 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档门禁通过；Web 原始日志中的 React `act()` warning 为 0。
+- 只读 Ready 审计确认 PR 正文仍写旧 head、6 个提交、92 个文件和 `20+3` 路由分类，9 个 tracked 状态文档仍包含失实当前态；门禁结论为 `NO-GO`。
+- GitHub review、review request 和 review thread 均为 0；CodeRabbit status 的详情是 `Review skipped: draft pull request`。GitNexus 把共享访问门禁影响面评为 `critical`，必须取得独立评审证据。
+- 用户已授权状态同步、docs-only commit/push、PR 正文更新和独立评审激活。目标文档已备份；用户既有 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 保持排除。
+- tracked 状态继续采用带时间的非自指外部观察。最终 commit、push、CI 和 review 终态只由 GitHub 与仓库外收据证明。
+
+Boundary: external observation and authorized documentation/review gate only; merge, deploy, production access, provider call and local Docker operation remain excluded.
 
 ## 2026-08-21 本地访问入口与文档证据修复进展
 

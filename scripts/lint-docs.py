@@ -98,13 +98,13 @@ CURRENT_STATE_SECTIONS = (
     ("docs/README.md", "# medical_audit 文档入口", "## 历史文档状态"),
     (
         "docs/product/product-development-plan-medical-audit-stable.md",
-        "### 1.6 2026-08-14 exact-head CI 外部观察（当前）",
-        "### 1.5 2026-08-14 Draft PR 与本地收口基线（历史：push 前）",
+        "### 当前 exact-head CI 外部观察",
+        "### 1.6 2026-08-14 exact-head CI 外部观察（历史）",
     ),
     (
         "docs/workflows/workflow-project-state-and-debt-register-stable.md",
-        "### 2.6 2026-08-14 exact-head 交付观察（当前）",
-        "### 2.5 2026-08-14 Draft PR 与文档收口快照（历史：push 前）",
+        "### 当前 exact-head 交付观察",
+        "### 2.6 2026-08-14 exact-head 交付观察（历史）",
     ),
     (
         "docs/architecture/architecture-frontend-boundary-jinja-vs-next-20260623.md",
@@ -123,18 +123,18 @@ CURRENT_STATE_SECTIONS = (
     ),
     (
         ".kiro/plan/task_plan.md",
-        "## 2026-08-14 exact-head 交付观察与状态合同修复",
-        "## 2026-08-14 PR #275 文档与 P2 收口计划（历史：push 前）",
+        "## 当前 PR #275 身份同步与评审门禁",
+        "## 2026-08-21 本地访问入口与文档证据修复门禁",
     ),
     (
         ".kiro/plan/progress.md",
-        "## 2026-08-14 exact-head 观察与状态合同修复进展",
-        "## 2026-08-14 PR #275 文档与 P2 收口进展（历史：push 前）",
+        "## 当前 PR #275 身份同步与评审门禁进展",
+        "## 2026-08-21 本地访问入口与文档证据修复进展",
     ),
     (
         ".kiro/plan/findings.md",
-        "## 2026-08-14 exact-head 交付审计与状态合同发现",
-        "## 2026-08-14 PR #275 交付审计与收口发现（历史：push 前）",
+        "## 当前 PR #275 Ready 审计与身份漂移结论",
+        "## 2026-08-21 本地访问入口与证据同步复核结论",
     ),
 )
 VOLATILE_CURRENT_STATE_PHRASES = (

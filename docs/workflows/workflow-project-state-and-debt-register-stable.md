@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-21
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -26,7 +26,26 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-### 2.6 2026-08-14 exact-head 交付观察（当前）
+### 当前 exact-head 交付观察
+
+本节采用带时间的外部观察。tracked 文档不声明自身 commit SHA，也不保存瞬时 push 状态。
+
+| 维度 | 观察事实 | 证据边界 |
+| --- | --- | --- |
+| 外部观察时间 | 2026-08-22 00:59（Asia/Shanghai） | GitHub 与仓库外只读 Ready 审计收据 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `d1973206d4f9b01ad0b287fb252fccf760fdab5c` | `OPEN/DRAFT`、`MERGEABLE/CLEAN`；review、review request 和 review thread 均为 0 |
+| exact-head CI | Python `1018 passed`；Web `419 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192)；只覆盖观测 head |
+| CodeRabbit | status 为成功，但详情是 `Review skipped: draft pull request` | 不能作为代码评审通过证据 |
+| 候选范围 | 13 个提交、103 个文件；21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录 | PR diff、本地活体收据和 exact-head CI 分层证明 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 候选未部署；业务读取、写入和 Provider 调用保持关闭 |
+
+门禁结论：`d1973206…` 的 exact-head CI 为 `PASS`，但 2026-08-22 只读 Ready 审计因 PR 正文、tracked 当前状态和独立评审证据漂移判定为 `NO-GO`。本次状态同步只修复交付身份和文档合同；Ready、merge、部署和生产验收继续是独立门禁。
+
+状态合同：当前状态段只写带时间的外部观察；后续文档 commit、push、CI 或评审变化不会反向使该观察失真。最终 exact head 和外部终态必须从 PR、Actions run 和仓库外收据重新解析。
+
+### 2.6 2026-08-14 exact-head 交付观察（历史）
 
 本节采用带时间的外部观察。tracked 文档不声明自身 commit SHA，也不保存瞬时 push 状态。
 

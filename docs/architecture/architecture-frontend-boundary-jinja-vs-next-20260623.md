@@ -5,7 +5,7 @@ module: frontend
 topic: jinja-next-boundary
 status: stable
 created: 2026-06-23
-updated: 2026-08-15
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -55,4 +55,4 @@ Next.js 已经是产品门户和主要交互层，不再只是“读与轻交互
 
 - 本地：17 个 Playwright 场景，以及 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流已形成合同；功能记录总数为 27。
 - 生产：仅引用 2026-08-12 L3 壳层导航与健康证据。
-- 候选外部观察：截至 2026-08-14 22:46（Asia/Shanghai），Draft PR #275 的观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`，exact-head CI run `31778904386` 成功；PR 当时仍为 Draft，review 数量为 0。本轮本地修复未被该 run 覆盖；该观察不证明 merge 或部署，业务功能保持 `not_production_verified`。
+- 候选外部观察：截至 2026-08-22 00:59（Asia/Shanghai），Draft PR #275 的观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`，exact-head CI run `32499803192` 成功；Python `1018 passed`、Web `419 passed`，普通构建、公开壳层构建和文档门禁通过。PR 当时仍为 Draft，review、review request 和 review thread 均为 0；CodeRabbit 因 Draft 跳过 review。该观察不证明 Ready、merge 或部署，业务功能保持 `not_production_verified`。

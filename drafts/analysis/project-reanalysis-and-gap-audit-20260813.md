@@ -4,15 +4,15 @@ doc_type: analysis-report
 module: repository
 status: active
 created: 2026-08-13
-updated: 2026-08-21
+updated: 2026-08-22
 owner: self
 source: human+ai
 repository_observed_at: 2026-08-14T13:23:41+08:00
 repository_observed_sha: cc711fdb4dc2b36d2b5de705939a7726917960f1
 repository_observed_sha_role: precommit-base
-delivery_observed_at: 2026-08-14T22:46:42+08:00
-delivery_observed_pr_head: 4b42b3eab6972d8ce7d870346f13d16f8ef04f79
-delivery_observed_ci_run: 31778904386
+delivery_observed_at: 2026-08-22T00:59:15+08:00
+delivery_observed_pr_head: d1973206d4f9b01ad0b287fb252fccf760fdab5c
+delivery_observed_ci_run: 32499803192
 delivery_observed_ci_conclusion: success
 delivery_status_model: dated-external-observations
 pull_request: https://github.com/zjgulai/medical-audit/pull/275
@@ -27,9 +27,19 @@ provider_call: false
 
 本报告记录候选分支 `codex/medical-audit-reanalysis-playbook-20260813` 的代码、文档、本地测试、外部交付观察、生产历史证据和清理边界。状态采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
 
-## 2026 年 8 月 21 日本地部署合同修复
+## 2026 年 8 月 22 日 PR 身份同步门禁
 
-- 当前本地和远端候选分支均指向 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`；当前 46 文件工作树未提交。
+- 外部观察确认本地、远端候选分支和 Draft PR #275 均指向 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`；分支相对 main 为 `0 behind / 13 ahead`。
+- exact-head CI run `32499803192` 为 `success`：Python `1018 passed`，Web `419 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档门禁通过，Web 原始日志中的 React `act()` warning 为 0。
+- PR 相对 base 为 13 个提交、103 个文件；实际路由合同为 21 个独立页面和 2 个兼容跳转。PR 正文仍写旧 head、6 个提交、92 个文件和 `20+3` 路由分类，因此只读 Ready 审计判定为 `NO-GO`。
+- GitHub review、review request 和 review thread 均为 0；CodeRabbit status 明确写明因 Draft 跳过 review。GitNexus 把共享前端访问门禁的影响面评为 `critical`，必须取得独立评审证据。
+- 当前工作树中 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 属于用户既有变更，不纳入候选状态同步提交。
+- 本节是带时间的提交前外部观察，不声明 tracked 文档自身 SHA。状态同步后的最终 exact head、push、CI 和 review 终态由 GitHub 与仓库外收据另行绑定。
+- 本门禁不包含 merge、deploy、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026 年 8 月 21 日本地部署合同修复（历史：提交前）
+
+- 当时本地和远端候选分支均指向 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`；当时 46 文件工作树未提交。
 - 只读候选复核确认三个 P0 发布合同缺陷：预同步检查读取旧生产 Compose 形成启动死锁；部署后检查把受保护知识库目录 `2xx` 当成成功；默认生产 smoke 无条件读取该目录。
 - 修复后，生产访问模式在应用同步之后、发布准备之前并持远端部署锁检查；部署后检查只访问公开健康、部署元数据、公开页面，并要求受保护目录返回 `503`。默认 smoke 进一步校验 `runtime_access`、`trusted_identity_required`、`public-shell-readonly` 和 `Cache-Control: no-store`。
 - 8 条定向回归完成先红后绿，脚本测试全集通过。完整本地结果为 Python `1016 passed, 1 skipped, 5 warnings`、Web 41 个文件和 418 项测试、Playwright `17/17`；Ruff、Mypy、lint、typecheck、26/26 build 和 docs lint 通过。
@@ -40,11 +50,11 @@ provider_call: false
 
 ## 最新交付观察（外部、只读）
 
-- 观察时间：2026-08-14 22:46（Asia/Shanghai）。
-- Draft PR #275 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`；PR 为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。
-- GitHub Actions run `31778904386` 在观测 head 成功：Python `1003 passed`，Web `417 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过。
-- PR diff 为 6 个线性提交、92 个文件；本地与远端 head 在观察时一致。
-- GitHub CodeRabbit 因 Draft 跳过 review；仓库外 CodeRabbit CLI review 发现 5 项 major、4 项 minor。CI 成功不等于代码评审、Ready、merge、部署或生产验收通过。
+- 观察时间：2026-08-22 00:59（Asia/Shanghai）。
+- Draft PR #275 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，review、review request 和 review thread 均为 0。
+- GitHub Actions run `32499803192` 在观测 head 成功：Python `1018 passed`，Web `419 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过；Web 原始日志中的 React `act()` warning 为 0。
+- PR diff 为 13 个线性提交、103 个文件；本地、远端候选分支和 PR head 在观察时一致，分支相对 main 为 `0 behind / 13 ahead`。
+- GitHub CodeRabbit 因 Draft 跳过 review；独立 CLI review 尚未形成可引用终态。CI 成功不等于代码评审、Ready、merge、部署或生产验收通过。
 - 本次观察没有访问生产、调用 Provider 或修改本地 Docker。生产状态仍只引用 2026 年 8 月 12 日 L3 历史证据。
 
 ## 提交前与生产历史事实
@@ -317,11 +327,11 @@ production_delete=not_run
 
 - 本地全栈收据：`tmp/outputs/local-fullstack-feature-acceptance-latest.json`；当前合同要求 `status=pass`、`feature_count=27`、`provider_call=false`，包含 21 个独立页面、2 个兼容跳转和 4 条活体业务工作流。最终数值以本门禁重跑后的收据为准。
 - 本地全栈收据会绑定整个脏工作树，因此也记录了本轮明确保留的 `AGENTS.md`、`.claude/` 和 `CLAUDE.md`。本门禁授权范围以专项收据中的 18 个 `scoped_files_sha256` 为准，不把这些既有用户文件计入交付。
-- 提交前收据身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，观察基线 SHA 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；最近外部观察 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`。两者分别绑定各自时间点，不能混写为 tracked 文档自身身份；当前未提交工作树另行由本门禁收据绑定。
+- 提交前收据身份：分支 `codex/medical-audit-reanalysis-playbook-20260813`，观察基线 SHA 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；最近外部观察 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`。两者分别绑定各自时间点，不能混写为 tracked 文档自身身份；后续状态同步提交另行由 GitHub 与仓库外收据绑定。
 - Python：最新完整 `uv run pytest` 为 `1016 passed, 1 skipped, 5 warnings`；`uv run ruff check .` 和 `uv run mypy src` 通过，Mypy 覆盖 117 个源文件。唯一 skip 是本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`；5 条 warning 来自第三方 SWIG 类型。
 - Web：`pnpm web:test` 为 41 个文件、418 项测试通过；typecheck、lint 和 build 通过，Next.js 生成 26/26 个静态页面，仓库自有 warning 为零。
 - 文档：固定上游 commit `90ff8ccc07da5afc5ae00eb3516f9efa98bd572d` 的中文样式检查与项目文档合同均通过；119 个纳入检查的 Markdown 文件没有 frontmatter、断链或标题错误，FastAPI OpenAPI 的 123 个方法/路径操作全部逐项覆盖。
-- exact-head CI：run `31778904386` 为 `success`；Python `1003 passed`，Web `417 passed`，普通/公开壳层构建和文档门禁通过；不覆盖当前未提交工作树。
+- exact-head CI：run `32499803192` 为 `success`；Python `1018 passed`，Web `419 passed`，普通/公开壳层构建和文档门禁通过；该结论只覆盖观测 head `d1973206…`。
 - 工程：`git diff --check` 通过。根路径公开壳层负向回归和本地 Chat Workbench 显式访问模式合同均已纳入定向验证；完整门禁结果以本节列出的最新收据为准。
 - 依赖版本：Python 3.12.13、uv 0.11.11、Node.js 22.22.0、pnpm 9.15.0、Next.js 15.5.19。
 - 既有生产 L3 收据：`tmp/outputs/project-reanalysis-production-state-20260812.json`，SHA-256 为 `9e08f2271ceb0334f500c2f346395fe02590343755cd47afbce22468cdb4aa21`。本轮未刷新生产状态。

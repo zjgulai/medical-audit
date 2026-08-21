@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-08-21
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -14,7 +14,20 @@ source: human+ai
 
 ## 1. 当前基线
 
-### 1.6 2026-08-14 exact-head CI 外部观察（当前）
+### 当前 exact-head CI 外部观察
+
+本节采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
+
+- 外部观察时间：2026-08-22 00:59（Asia/Shanghai）。
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，review、review request 和 review thread 均为 0。
+- [GitHub Actions run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192) 在观测 head 成功：Python `1018 passed`，Web `419 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过；Web 原始日志中的 React `act()` warning 为 0。
+- PR 相对 base 为 13 个提交、103 个文件；当前路由合同为 21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录。
+- CodeRabbit status 明确写明因 Draft 跳过 review，不能视为独立代码评审。Ready 只读审计同时确认共享前端访问门禁具有 `critical` 影响面，必须先完成独立评审。
+- API 文档覆盖 112 个规范路径、123 个方法/路径操作；`docs:lint` 对 FastAPI OpenAPI 执行双向检查。
+- 生产只引用 2026 年 8 月 12 日 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 的 L3 历史只读观察；候选业务能力继续为 `not_production_verified`。
+- 本次状态同步采用非自指模型；随后文档提交的最终 exact head、push 和 CI 终态必须从 GitHub 与仓库外收据解析，不能由本节自行证明。
+
+### 1.6 2026-08-14 exact-head CI 外部观察（历史）
 
 本节采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
 

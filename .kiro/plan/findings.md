@@ -5,13 +5,34 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-21
+updated: 2026-08-22
 status: "active"
 owner: self
 source: human+ai
 ---
 
 # Findings
+
+## 当前 PR #275 Ready 审计与身份漂移结论
+
+外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。
+
+已确认事实：
+
+- 本地、远端候选分支和 Draft PR #275 的观测 head 均为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；exact-head CI run `32499803192` 为 `success`。
+- 实际 PR 为 13 个提交、103 个文件，Python `1018 passed`、Web `419 passed`；PR 正文仍写旧 head、6 个提交、92 个文件、Python `1003 passed` 和 Web `417 passed`。
+- 实际路由合同为 21 个独立页面和 2 个兼容跳转，PR 正文仍写 `20+3`。
+- GitHub review、review request 和 review thread 均为 0；CodeRabbit status 明确写明因 Draft 跳过 review，不能作为独立代码评审证据。
+- `main` 没有 branch protection 或 ruleset，也没有 required checks；CI 全绿属于有效 exact-head 证据，但仓库不会自动阻断未评审合并。
+- GitNexus 对共享前端访问门禁 `assertProtectedApiAvailable` 给出 `critical` 影响面；该结果用于评审路由，不等于已经发现代码缺陷。
+
+根因：带时间的外部观察模型已经建立，但 2026-08-15 至 21 日的后续修复、提交和 CI 没有同步回权威当前状态与 PR 正文，导致交付身份再次漂移。
+
+处理结论：Ready 保持 `NO-GO`。先同步当前状态文档和 lint 标记，再形成新的 docs-only exact head、刷新 PR 正文与 CI，并完成独立评审。tracked 文档不自声明最终 commit SHA，外部终态由 GitHub 和仓库外收据绑定。
+
+不确定项：候选没有生产同 SHA 验收；生产业务能力继续为 `not_production_verified`。
+
+Boundary: no merge, deploy, production access, provider call or local Docker operation in this gate.
 
 ## 2026-08-21 本地访问入口与证据同步复核结论
 

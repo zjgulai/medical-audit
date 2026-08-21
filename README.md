@@ -5,7 +5,7 @@ module: repository
 topic: project-overview
 status: stable
 created: 2026-05-31
-updated: 2026-08-15
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -22,14 +22,14 @@ source: human+ai
 
 ## 当前候选状态
 
-- 外部观察：截至 2026-08-14 22:46（Asia/Shanghai），Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`；PR 为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。
-- exact-head CI：[run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386) 在上述观测 head 通过 Python `1003` 项和 Web `417` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查。CodeRabbit 因 Draft 跳过 GitHub 代码评审，仓库外 CLI review 另发现 9 项待修复问题；不能视为 review 通过。
-- 本地修复门禁证据：Python `1016 passed, 1 skipped, 5 warnings`、Web `418 passed`、Playwright `17/17`，以及 Ruff、Mypy、typecheck、lint、26/26 普通/公开壳层构建和文档检查通过。唯一跳过项需要本地 PostgreSQL 测试 URL，5 条 warning 来自第三方 SWIG 类型；该本地证据包含未提交工作树，与 GitHub exact-head CI 分开记录。
+- 外部观察：截至 2026-08-22 00:59（Asia/Shanghai），Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，review、review request 和 review thread 均为 0。
+- exact-head CI：[run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192) 在上述观测 head 通过 Python `1018` 项和 Web `419` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查；Web 原始日志中的 React `act()` warning 为 0。CodeRabbit status 明确写明因 Draft 跳过 review，不能视为代码评审通过。
+- 候选范围：相对 base 为 13 个提交、103 个文件，包含生产公开壳层访问门禁、部署合同、疑点深链、整改与报告权限、知识统计、本地全栈验收和完整文档体系。路由合同为 21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录。
 - 身份合同：tracked 文档只保存带时间的外部观察，不声明自身 commit SHA 或瞬时 push 状态。最新候选身份必须从 GitHub PR、Actions run 和仓库外收据共同解析。
 - 生产历史证据：2026 年 8 月 12 日 L3 只读观测为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`。
-- 本地验收：临时 SQLite、确定性 Fake Provider、17 项 Playwright E2E 通过；路由合同按 21 个独立页面、2 个兼容跳转和 4 条真实 HTTP/SQLite 业务工作流归类，共 27 条功能记录。当前工作树变更尚未取得新的 exact-head CI。
+- 本地验收：临时 SQLite、确定性 Fake Provider、17 项 Playwright E2E 通过，`provider_call=false`。该证据属于 L2 本地活体验证，不能替代生产验收。
 - 生产边界：候选默认 `public-shell-readonly`，只开放产品导览、健康和部署元数据；业务读取、写入和 Provider 调用关闭。
-- 交付边界：上述观察只证明 `4b42b3ea…` 的 exact-head CI 和 PR 元数据；本轮未提交工作树变更不在该 CI 覆盖内，也不证明 review、merge、部署或生产业务验收。本地结果不能作为生产完成证明。
+- 交付边界：上述观察只证明 `d1973206…` 的 exact-head CI 和 PR 元数据。它不证明 review、Ready、merge、部署或生产业务验收；当前 tracked 文档同步提交及其后续 CI 由 GitHub 与仓库外收据另行绑定。
 
 权威文档从 [docs/README.md](docs/README.md) 开始阅读。用户操作见 [用户 Playbook](docs/playbooks/user-playbook-medical-audit-v1-stable.md)，运维与安全边界见 [管理员运维 Playbook](docs/playbooks/admin-operations-playbook-stable.md)。
 

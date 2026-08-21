@@ -5,7 +5,7 @@ module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
 created: 2026-06-30
-updated: 2026-08-21
+updated: 2026-08-22
 status: "active"
 owner: self
 source: human+ai
@@ -13,6 +13,23 @@ evidence_grade: "local-fullstack-plus-doc-derived"
 ---
 
 # medical_audit Loop Engineering Plan
+
+## 当前 PR #275 身份同步与评审门禁
+
+外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。
+
+- [x] 核验本地、远端候选分支和 Draft PR #275 的观测 head 均为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；分支相对 main 为 `0 behind / 13 ahead`。
+- [x] 核验 exact-head CI run `32499803192` 为 `success`：Python `1018 passed`、Web `419 passed`，Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档门禁通过。
+- [x] 完成只读 Ready 审计并判定 `NO-GO`：PR 正文与 tracked 当前状态仍绑定旧候选身份；CodeRabbit 因 Draft 跳过 review，GitHub review、review request 和 review thread 均为 0。
+- [x] 明确用户既有 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 不进入状态同步提交；10 个目标文档已备份到仓库外 file-history。
+- [x] 同步 README、文档入口、前端边界、开发计划、验收矩阵、状态/债务台账、差异报告和 `.kiro/plan` 三账，并更新当前状态 lint 标记。
+- [x] 运行 `docs:lint`、定向状态合同、Ruff、secret scan、GitNexus `detect_changes` 和 `git diff --check`；cached diff 在显式暂存后复核。
+- [ ] 形成 docs-only 原子提交并推送；随后用最终 exact head、实际 diff 和新 CI 收据更新 PR 正文。
+- [ ] 完成 CodeRabbit 与 GitNexus 独立评审；任何可复现缺陷进入修复循环，未完成评审不得提升 Ready。
+
+状态合同：本节记录带时间的外部观察和门禁步骤，不声明 tracked 文档自身 SHA。最终 commit、push、CI 和 review 终态由 GitHub 与仓库外收据绑定。
+
+边界：本门禁不包含 merge、deploy、生产访问、Provider 调用或本地 Docker 操作。
 
 ## 2026-08-21 本地访问入口与文档证据修复门禁
 
