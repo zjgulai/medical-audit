@@ -185,6 +185,28 @@ def test_deployment_metadata_reports_sha_without_runtime_side_effects(
     assert state.operation_logs == []
 
 
+def test_api_access_mode_defaults_to_public_shell_when_no_local_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MEDICAL_AUDIT_API_ACCESS_MODE", raising=False)
+    monkeypatch.delenv("MEDICAL_AUDIT_KB_DEV_MODE", raising=False)
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    metadata = client.get("/api/v1/deployment/metadata")
+    protected = client.get("/api/v1/auth/roles")
+
+    assert metadata.status_code == 200
+    assert metadata.json()["runtime_access"] == {
+        "mode": "public-shell-readonly",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": False,
+        "writes_allowed": False,
+    }
+    assert protected.status_code == 503
+    assert protected.json()["detail"]["code"] == "trusted_identity_required"
+
+
 def test_public_shell_readonly_exposes_only_shell_health_and_deploy_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

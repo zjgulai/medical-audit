@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
+import medical_audit_kb.api.routes_pages as routes_pages_module
 from medical_audit_kb.api.agent_store import SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
@@ -2034,6 +2035,44 @@ def test_review_task_list_visibility_caches_membership_and_aggregates_hidden_aud
     assert len(filtered_events) == 1
     assert filtered_events[0]["payload"]["hidden_count"] == 20
     assert all(log["action"] != "authorization-denied" for log in state.operation_logs)
+
+
+def test_report_workbench_caches_signoff_actor_per_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tasks = []
+    for index in range(5):
+        task = _legacy_report_ready_task(f"signoff-cache-{index}")
+        task["created_by"] = "next-member"
+        task["source"] = "report-template-draft"
+        dossier = cast(dict[str, object], task["dossier"])
+        dossier["report_template_draft"] = {
+            "project_key": "SELF-CHECK-FUND-20260607"
+        }
+        tasks.append(task)
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = InMemoryReviewTaskStore(tasks=tasks)
+    original = routes_pages_module.resolve_authenticated_user
+    calls = 0
+
+    def counting_resolver(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(routes_pages_module, "resolve_authenticated_user", counting_resolver)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/reports/workbench",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["report_entries"]) == 5
+    assert calls <= 2
 
 
 def test_report_template_draft_owner_can_export_json_markdown_and_docx(

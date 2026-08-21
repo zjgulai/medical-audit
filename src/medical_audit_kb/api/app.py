@@ -586,9 +586,9 @@ def _resolve_api_access_mode(api_access_mode: ApiAccessMode | None) -> ApiAccess
                 f"{', '.join(sorted(API_ACCESS_MODES))}"
             )
         return cast(ApiAccessMode, raw_mode)
-    if os.getenv(DEV_MODE_ENV, "").strip() == "0":
-        return API_ACCESS_MODE_PUBLIC_SHELL
-    return API_ACCESS_MODE_HEADER_TRANSITION
+    if os.getenv(DEV_MODE_ENV, "").strip() == "1":
+        return API_ACCESS_MODE_HEADER_TRANSITION
+    return API_ACCESS_MODE_PUBLIC_SHELL
 
 
 def _should_block_public_shell_request(path: str, method: str) -> bool:

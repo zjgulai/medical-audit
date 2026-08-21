@@ -789,6 +789,7 @@ def reports_workbench(
             )
         )
     )
+    signoff_actors: dict[str | None, AuthenticatedUser | None] = {}
     report_entries = tuple(
         _review_task_report_entry(
             task,
@@ -796,6 +797,7 @@ def reports_workbench(
                 state,
                 task,
                 request=request,
+                actor_cache=signoff_actors,
             ),
         )
         for task in review_tasks
@@ -2423,6 +2425,7 @@ def _review_task_signoff_capability(
     task: dict[str, object],
     *,
     request: Request,
+    actor_cache: dict[str | None, AuthenticatedUser | None],
 ) -> dict[str, bool]:
     dossier = _with_review_task_governance_defaults(_dict_value(task.get("dossier")))
     gate_ready = bool(_review_task_report_gate_context(task).get("ready_for_report"))
@@ -2431,8 +2434,11 @@ def _review_task_signoff_capability(
         and not bool(_signed_report_context(dossier)["signed"])
     )
     project_key = _review_task_project_key(task)
-    if project_key is None:
+    if project_key in actor_cache:
+        actor = actor_cache[project_key]
+    elif project_key is None:
         actor = _global_legacy_formal_actor(state, request=request)
+        actor_cache[project_key] = actor
     else:
         try:
             actor = resolve_authenticated_user(
@@ -2443,6 +2449,7 @@ def _review_task_signoff_capability(
             )
         except HTTPException:
             actor = None
+        actor_cache[project_key] = actor
     has_sign_permission = bool(
         actor is not None and user_has_permission(actor, Permission.SIGN_REPORTS)
     )

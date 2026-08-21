@@ -415,6 +415,48 @@ describe("MedicalAuditPage", () => {
     expect(screen.queryByText(/未找到可见疑点/)).not.toBeInTheDocument();
   });
 
+  it("applies a finding deep link only once while filters change", async () => {
+    mockApis();
+    useSearchParamsMock.mockReturnValue(
+      new URLSearchParams("finding=finding-deep-link-visible")
+    );
+    const deepLinkedResponse: AuditFindingsResponse = {
+      ...auditFindingsResponse,
+      items: [
+        ...auditFindingsResponse.items,
+        {
+          ...auditFindingsResponse.items[0],
+          finding_key: "finding-deep-link-visible",
+          rule_key: "deep-link-rule",
+          metadata: { department: "医保办", subject: "深链目标疑点" }
+        }
+      ],
+      stats: { ...auditFindingsResponse.stats, total: 2, open: 2 }
+    };
+    fetchAuditFindingsMock.mockResolvedValue(deepLinkedResponse);
+
+    render(<MedicalAuditPage />);
+
+    expect(await screen.findByLabelText("疑点详情")).toHaveTextContent(
+      "finding-deep-link-visible"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "policy drug scope" }));
+    expect(screen.getByLabelText("疑点详情")).toHaveTextContent(
+      "finding-f044ebd309b659dc"
+    );
+
+    fireEvent.change(screen.getByLabelText("复核状态"), {
+      target: { value: "confirmed-violation" }
+    });
+
+    await waitFor(() => {
+      expect(fetchAuditFindingsMock).toHaveBeenLastCalledWith("confirmed-violation");
+    });
+    expect(screen.getByLabelText("疑点详情")).toHaveTextContent(
+      "finding-f044ebd309b659dc"
+    );
+  });
+
   it("uses one non-disclosing message for an invalid or invisible finding link", async () => {
     mockApis();
     useSearchParamsMock.mockReturnValue(

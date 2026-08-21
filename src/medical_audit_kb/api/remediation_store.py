@@ -107,7 +107,10 @@ def update_remediation_status(
         return None
     if status not in VALID_STATUSES:
         raise ValueError(f"unsupported status: {status}")
-    if status not in REMEDIATION_STATUS_TRANSITIONS[item.status]:
+    allowed_transitions = REMEDIATION_STATUS_TRANSITIONS.get(item.status)
+    if allowed_transitions is None:
+        raise ValueError(f"unsupported stored remediation status: {item.status}")
+    if status not in allowed_transitions:
         raise ValueError(f"illegal remediation status transition: {item.status} -> {status}")
     previous_status = item.status
     values: dict[str, Any] = {

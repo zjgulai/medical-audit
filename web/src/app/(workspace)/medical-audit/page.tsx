@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import {
@@ -396,6 +396,7 @@ function MedicalAuditPageInner() {
   const writesAllowed = !publicShellReadonly;
   const preferredProjectId = searchParams.get("project");
   const preferredFindingKey = searchParams.get("finding");
+  const appliedPreferredFindingKeyRef = useRef<string | null>(null);
   const [activeTool, setActiveTool] = useState<ToolId>("audit");
   const [activeView, setActiveView] = useState<AuditView>("audit");
   const [activeRule, setActiveRule] = useState<RuleFilter>("all");
@@ -424,6 +425,7 @@ function MedicalAuditPageInner() {
   });
   useEffect(() => {
     if (publicShellReadonly) {
+      appliedPreferredFindingKeyRef.current = null;
       setAuditState({
         status: "error",
         message: "生产只读导览已关闭业务疑点读取。"
@@ -440,7 +442,11 @@ function MedicalAuditPageInner() {
           return;
         }
         setAuditState({ status: "ready", data });
-        if (preferredFindingKey) {
+        if (
+          preferredFindingKey &&
+          appliedPreferredFindingKeyRef.current !== preferredFindingKey
+        ) {
+          appliedPreferredFindingKeyRef.current = preferredFindingKey;
           const linkedFinding = data.items.find(
             (finding) => finding.finding_key === preferredFindingKey
           );
@@ -457,8 +463,15 @@ function MedicalAuditPageInner() {
             setFindingLinkNotice("未找到可见疑点，已显示当前可访问的疑点清单。");
           }
         } else {
-          setSelectedFindingKey((current) => current ?? data.items[0]?.finding_key ?? null);
-          setFindingLinkNotice(null);
+          if (!preferredFindingKey) {
+            appliedPreferredFindingKeyRef.current = null;
+            setFindingLinkNotice(null);
+          }
+          setSelectedFindingKey((current) =>
+            current && data.items.some((finding) => finding.finding_key === current)
+              ? current
+              : data.items[0]?.finding_key ?? null
+          );
         }
       })
       .catch((error: unknown) => {

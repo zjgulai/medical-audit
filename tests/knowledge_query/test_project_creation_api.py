@@ -1119,6 +1119,35 @@ def test_remediation_status_update_rejects_a_stale_concurrent_writer(
     engine.dispose()
 
 
+def test_remediation_status_update_rejects_unknown_persisted_state(
+    tmp_path: Path,
+) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    created = client.post(
+        "/remediation/items",
+        json={"title": "遗留异常状态", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    item_id = UUID(created.json()["item"]["id"])
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        item = session.get(RemediationItem, item_id)
+        assert item is not None
+        item.status = "legacy-unknown"
+        session.commit()
+
+    response = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "in-rectification"},
+        headers=MEMBER_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "unsupported stored remediation status: legacy-unknown"
+    engine.dispose()
+
+
 def test_remediation_parent_project_visibility_hides_resource_existence(tmp_path: Path) -> None:
     state, _ = _remediation_state(tmp_path)
     client = TestClient(create_app(state))
