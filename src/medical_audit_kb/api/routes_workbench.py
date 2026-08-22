@@ -11,8 +11,10 @@ from medical_audit_kb.api.app import ApiState, get_api_state, record_operation
 from medical_audit_kb.api.auth import (
     AuthenticatedUser,
     HospitalRole,
+    Permission,
     record_authorization_denied,
     resolve_authenticated_user,
+    user_has_permission,
 )
 from medical_audit_kb.api.project_member_store import (
     project_exists,
@@ -886,15 +888,38 @@ def remediation_workbench(
     x_user_id: Annotated[str | None, Header(alias="X-User-Id")] = None,
     x_role: Annotated[str | None, Header(alias="X-Role")] = None,
 ) -> dict[str, object]:
-    from medical_audit_kb.api.remediation_store import list_remediation_items
+    from medical_audit_kb.api.remediation_store import list_remediation_items  # noqa: PLC0415
+    from medical_audit_kb.api.routes_remediation import (  # noqa: PLC0415
+        remediation_allowed_transitions,
+    )
 
     store = state.review_task_store
     db_items: list[dict[str, object]] = []
     backend = "ReadonlyRemediationWorkbenchSeed"
+    data_mode = "sample"
+    store_ready = True
     if store is not None and hasattr(store, "_session_factory"):
+        user = resolve_authenticated_user(
+            state,
+            x_user_id=x_user_id,
+            x_role=x_role,
+        )
+        member_store = state.project_member_store
+        if member_store is None:
+            raise HTTPException(status_code=503, detail="project membership store unavailable")
         try:
+            visible_keys = visible_project_keys(
+                user_identifier=user.user_identifier,
+                is_admin=user.role is HospitalRole.ADMIN,
+                store=member_store,
+            )
             with store._session_factory() as session:  # noqa: SLF001
-                items = list_remediation_items(session, limit=200)
+                items = list_remediation_items(
+                    session,
+                    visible_project_keys=visible_keys,
+                    include_legacy_unscoped=user.role is HospitalRole.ADMIN,
+                    limit=200,
+                )
                 db_items = [
                     {
                         "id": str(it.id),
@@ -922,14 +947,31 @@ def remediation_workbench(
                         "nextAction": _remediation_next_action(it.status),
                         "href": f"/remediation?item={it.id}",
                         "attachment_count": it.attachment_count,
+                        "project_key": it.project_key,
+                        "legacy_unscoped": not bool(it.project_key),
+                        "writable": bool(it.project_key) and it.status != "closed",
+                        "allowed_transitions": remediation_allowed_transitions(
+                            it.status,
+                            user=user,
+                            writable=bool(it.project_key) and it.status != "closed",
+                        ),
+                        "can_upload_attachment": state.document_upload_store is not None
+                        and bool(it.project_key)
+                        and it.status != "closed"
+                        and user_has_permission(user, Permission.CREATE_REVIEW_TASK),
                     }
                     for it in items
+                    if it.project_key in visible_keys
+                    or (it.project_key is None and user.role is HospitalRole.ADMIN)
                 ]
             backend = "SqlAlchemyRemediationStore"
+            data_mode = "persistent"
         except SQLAlchemyError:
-            pass
+            backend = "SqlAlchemyRemediationStore"
+            data_mode = "unavailable"
+            store_ready = False
 
-    if db_items:
+    if data_mode == "persistent":
         case_count = len(db_items)
         active_count = sum(1 for i in db_items if i.get("status_key") != "closed")
         closed_count = case_count - active_count
@@ -947,13 +989,52 @@ def remediation_workbench(
             "timeline_count": 0,
         }
         remediation_cases: tuple[dict[str, object], ...] = tuple(db_items)
-        evidence_grade = "backend-db"
+        evidence_grade = "local-persistent-store"
         closure_gates: tuple[dict[str, object], ...] = _dynamic_closure_gates(db_items)
+        evidence_requests: tuple[dict[str, object], ...] = ()
+        timeline: tuple[dict[str, object], ...] = ()
+        writable = user_has_permission(user, Permission.CREATE_REVIEW_TASK)
+    elif data_mode == "unavailable":
+        metrics = {
+            "case_count": 0,
+            "active_case_count": 0,
+            "closed_case_count": 0,
+            "pending_evidence_count": 0,
+            "blocked_gate_count": 0,
+            "average_progress": 0,
+            "timeline_count": 0,
+        }
+        remediation_cases = ()
+        evidence_grade = "store-unavailable"
+        closure_gates = ()
+        evidence_requests = ()
+        timeline = ()
+        writable = False
     else:
         metrics = _remediation_metrics()
-        remediation_cases = REMEDIATION_CASES
-        evidence_grade = "local-readonly-api"
+        remediation_cases = tuple(
+            {
+                **item,
+                "status_key": "sample",
+                "legacy_unscoped": False,
+                "writable": False,
+                "allowed_transitions": (),
+                "can_upload_attachment": False,
+            }
+            for item in REMEDIATION_CASES
+        )
+        evidence_grade = "sample-only"
         closure_gates = REMEDIATION_CLOSURE_GATES
+        evidence_requests = tuple(
+            {
+                **item,
+                "remediation_item_id": None,
+                "writable": False,
+            }
+            for item in REMEDIATION_EVIDENCE_REQUESTS
+        )
+        timeline = REMEDIATION_TIMELINE
+        writable = False
 
     record_operation(
         state,
@@ -972,13 +1053,15 @@ def remediation_workbench(
         "workbench_title": "整改事项与补证闭环",
         "workbench_scope": "把报告整改事项、补证请求、责任科室和验收门禁组织成可追踪的整改工作台。",
         "remediation_cases": remediation_cases,
-        "evidence_requests": REMEDIATION_EVIDENCE_REQUESTS,
+        "evidence_requests": evidence_requests,
         "closure_gates": closure_gates,
-        "timeline": REMEDIATION_TIMELINE,
+        "timeline": timeline,
         "metrics": metrics,
         "evidence_grade": evidence_grade,
+        "data_mode": data_mode,
+        "capabilities": {"writable": writable},
         "production_side_effect": "none",
-        "store": {"ready": True, "backend": backend},
+        "store": {"ready": store_ready, "backend": backend},
     }
 
 

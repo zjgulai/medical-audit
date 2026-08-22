@@ -5,7 +5,7 @@ module: product
 topic: medical-audit-development-plan
 status: stable
 created: 2026-03-15
-updated: 2026-07-13
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -14,9 +14,67 @@ source: human+ai
 
 ## 1. 当前基线
 
+### 当前 exact-head CI 外部观察
+
+本节采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
+
+- 外部观察时间：2026-08-22 00:59（Asia/Shanghai）。
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，review、review request 和 review thread 均为 0。
+- [GitHub Actions run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192) 在观测 head 成功：Python `1018 passed`，Web `419 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过；Web 原始日志中的 React `act()` warning 为 0。
+- CI 观察边界：`evidence_grade=L2-exact-head-ci`、`production_side_effect=none`、`provider_call=false`；不构成生产批准。
+- PR 相对 base 为 13 个提交、103 个文件；当前路由合同为 21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录。
+- CodeRabbit status 明确写明因 Draft 跳过 review，不能视为独立代码评审。Ready 只读审计同时确认共享前端访问门禁具有 `critical` 影响面，必须先完成独立评审。
+- API 文档覆盖 112 个规范路径、123 个方法/路径操作；`docs:lint` 对 FastAPI OpenAPI 执行双向检查。
+- 生产只引用 2026 年 8 月 12 日 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 的 L3 历史只读观察；候选业务能力继续为 `not_production_verified`。
+- 历史生产观察边界：`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`provider_call=false`；不覆盖当前候选。
+- 本次状态同步采用非自指模型；随后文档提交的最终 exact head、push 和 CI 终态必须从 GitHub 与仓库外收据解析，不能由本节自行证明。
+
+### 1.6 2026-08-14 exact-head CI 外部观察（历史）
+
+本节采用带时间的外部观察，不把 tracked 文档自身 SHA 或瞬时 push 状态写成长期事实。
+
+- 最近外部观察时间：2026-08-14 22:46（Asia/Shanghai）。
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`；PR 为 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0。
+- [GitHub Actions run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386) 在观测 head 成功：Python `1003 passed`，Web `417 passed`，Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查通过。
+- CI 观察边界：`evidence_grade=L2-exact-head-ci`、`production_side_effect=none`、`provider_call=false`；不构成生产批准。
+- 仓库外 CodeRabbit CLI review 在该 head 发现 9 项问题。本轮只在本地修复经人工复现确认的问题；工作树变更尚未提交、推送或取得新的 exact-head CI。
+- 当前未提交工作树的本地完整回归为 Python `1016 passed, 1 skipped, 5 warnings`、Web `418 passed`、Playwright `17/17`；Ruff、Mypy、typecheck、lint、26/26 普通/公开壳层构建和文档检查通过。本机跳过项需要 PostgreSQL 测试 URL；最近 exact-head CI 不覆盖本轮工作树。
+- API 文档覆盖 112 个规范路径、123 个方法/路径操作；`docs:lint` 对 FastAPI OpenAPI 执行双向检查。
+- GitHub CodeRabbit 因 Draft 跳过 review。CI 成功和仓库外 CLI review 都不能替代最终人工复核，也不能证明 Ready、merge 或部署。
+- 生产只引用 2026 年 8 月 12 日 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 的 L3 历史只读观察；候选业务能力继续为 `not_production_verified`。
+- 历史生产观察边界：`evidence_grade=L3-production-read-only`、`production_side_effect=none`、`provider_call=false`；不覆盖当时的本地工作树或当前候选。
+
+### 1.5 2026-08-14 Draft PR 与本地收口基线（历史：push 前）
+
+本节保留本地提交完成、外部 push 发生前的历史快照。当前状态以上方 1.6 节为准；1.4 及更早章节同样只用于追溯。
+
+- Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 为 `OPEN`、`DRAFT`、`MERGEABLE/CLEAN`。base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，远端 head 为 `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本地候选分支在其上有 1 个原子提交，尚未推送。
+- exact-head GitHub Actions 通过 Python `1001` 项、Web `417` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查。该证据只覆盖远端 head；本地完整套件覆盖当前提交内容，但不构成远端 exact-head CI 证据。
+- 本门禁完整本地回归为 Python `1002 passed, 1 skipped, 5 warnings`、Web `417 passed`、Playwright `17/17`；Ruff、Mypy、typecheck、lint、26/26 构建和 docs lint 通过。唯一 skip 是本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`；对应 PostgreSQL 回归已在 exact-head CI 的 PostgreSQL service 中通过。
+- 本地收口补齐 OpenAPI 逐操作清单和机器覆盖门禁；当前规范 API 为 112 个 `/api/v1` 路径、123 个方法/路径操作。
+- 生产导航验收现在把壳层主动发起受保护 API 请求列为 P1；整改列表在 SQL `LIMIT` 前完成项目可见性过滤。
+- 后端无访问模式环境变量时保留本地 Header 回退，作为显式受控兼容风险；生产 Compose、env 示例和部署脚本必须显式固定 `public-shell-readonly`。新增部署入口没有该设置时一律 NO-GO。
+- 候选分支此前已经推送；本门禁原子提交尚未推送，PR 尚无代码评审，候选未合并、未部署，生产业务能力保持 `not_production_verified`。
+- 2026 年 8 月 12 日生产 SHA `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` 仅是既有 L3 历史观测，本门禁没有刷新生产状态。
+
+### 1.4 2026-08-13 全量复盘候选基线
+
+本节保留 2026 年 8 月 13 日候选建立时的历史快照；当前状态以上方 1.5 节为准，后续 1.1 至 1.3 节同样是带日期的历史基线。
+
+- 开始执行时，`main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246`。
+- 2026 年 8 月 12 日 L3 生产只读证据为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`；与本地基线没有用户态应用源码差异。
+- 候选分支 `codex/medical-audit-reanalysis-playbook-20260813` 新增生产公开壳层门禁、疑点深链、整改状态机、报告签发权限、知识统计修复、全量文档和 Playbook。
+- 临时 SQLite 与确定性 Fake Provider 的本地全栈 E2E 为 17/17；当前合同将 23 个入口归类为 21 个独立页面和 2 个兼容跳转，另含 4 条持久化业务工作流，共 27 条功能记录。旧收据中的 `20+3` 是已纠正的分类口径。
+- 候选收口复审修复了整改附件处理顺序的两项鉴权缺陷；刷新后的 Python 为 `995 passed`，Web 为 `412 passed`，Ruff、Mypy、typecheck、lint、build 和本地全栈均通过。
+- 候选尚未合并、推送或部署。生产业务能力保持 `not_production_verified`。
+
+全量本地质量门禁已完成。2026 年 8 月 13 日经用户确认，首批 4 个低风险 exact paths 于 14:45 移动到系统 Trash，并在当时完成内容与 Git 状态复核；16:02 新鲜复核发现 Trash 已于 15:10 被 Finder 清空，源和 Trash 目标均不再存在，当前不可恢复。旧工作区证据已归并为 416 个文件的离线证据包。第二批 5 个相互独立目录、约 2.50 GiB 已于 16:36 移动到受管同卷隔离目录；移动前后 inode、全量树哈希和候选 Git 状态一致。Loop 128 及其父仓库约 1.218 GiB 已于 17:44 转换为相对 worktree 关联并成对移动到同一受管隔离目录；移动前后 inode、非指针载荷哈希、Git 注册、`fsck`、alternates 和候选 Git 状态均通过。两批隔离均可按精确映射恢复，但未释放磁盘空间。永久删除、commit、push、merge、部署、生产业务测试和生产清理仍需分别授权。
+
 本计划以 `AI审计一体化协作平台 V1.0 PRD` 为母版，并以当前已部署的 AuditScope 知识库网站为工程基线。
 
-当前已完成：
+历史能力清单（截至各条原始证据日期）：
+
+以下条目用于追溯既有能力和历史生产验收，不能覆盖上方 2026-08-13 当前快照；其中版本、计数和“已部署”只在各自原始证据日期成立。
 
 - 知识库查询引擎已实现 `检索 + 引用型回答 + 原文预览 + 索引管理`。
 - 线上入口已部署到 `https://audit.lute-tlz-dddd.top/pages/chat`。
@@ -82,9 +140,9 @@ source: human+ai
 - 生产前端和权限只读门禁通过；文档专项 probe 仅在新页面文本检查失败，明确记录为部署前产品形态差异，不是当前服务故障。
 - 正式执行、备份、回滚和部署后验收顺序见 `docs/superpowers/plans/2026-07-13-ppt-feedback-production-deployment.md`。当前状态为 `ready_for_owner_authorization`，仍保持 `production unchanged`、`provider_call=false`、`database_write=false`。
 
-### 1.3 2026-08-09 Sprint 1–5 本地基线（最新）
+### 1.3 2026-08-09 Sprint 1–5 本地基线（历史，已被 1.4 替代）
 
-状态口径：Sprint-5 全部本地实现已完成，vitest 406/406，ruff/mypy 全绿。本地 main `226d3d0d` 领先 origin/main 1 commit；origin/main `d31a1b1d` 领先生产 deploy_sha `484c348f` 3 commits（Sprint-5 全部内容）。**生产仍停留在 Sprint-4，Sprint-5 功能尚未部署。**
+历史状态口径：本节仅记录 2026 年 8 月 9 日部署前快照。当前状态以 1.4 节和项目状态台账为准。
 
 **Sprint-5 已完成事项（2026-08-08/09）**
 
@@ -103,13 +161,11 @@ source: human+ai
 | workspace 待复核 | ✅ 疑点预览卡片 | ❌ 旧 redirect |
 | 知识库来源标签 | ✅ 中文化 | ❌ raw key |
 
-**下一步关键任务（按优先级）**
+**历史下一步关键任务（已完成或被替代）**
 
-1. push 本地 commit `226d3d0d`，将 origin/main 推进到最新。
-2. 部署 Sprint-5（origin/main `d31a1b1d`）到生产，运行 L3 只读验收。
-3. 验证 `PATCH /api/v1/remediation/items/{id}/status` HTTP 方法与前端 `updateRemediationItemStatus` 的一致性（现有后端为 `POST .../status`）。
-4. 整改附件上传映射到真实 `remediation_items.id` UUID（当前前端使用静态 case id）。
-5. Sprint-6 上线加固：SSO 可信代理接入、pg_restore 恢复演练、告警 webhook 配置、压测覆盖。
+1. Sprint 5 后续已进入生产历史基线；不要继续使用本节的 SHA 作为当前部署判断。
+2. 整改 HTTP 方法、真实 UUID 和签发权限已在 2026 年 8 月 13 日候选中修复。
+3. SSO、恢复演练、告警和压测继续保留为后续任务。
 
 当前未完成：
 

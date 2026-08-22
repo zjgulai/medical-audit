@@ -33,7 +33,9 @@ DEFAULT_PROTECTED_PATHS = (
     "/archive/workbench",
     "/reports/workbench",
 )
-PUBLIC_PATHS = ("/health", "/auth/roles")
+HEADER_TRANSITION_PUBLIC_PATHS = ("/health", "/auth/roles")
+PUBLIC_SHELL_PUBLIC_PATHS = ("/health", "/deployment/metadata")
+PUBLIC_SHELL_PROTECTED_PATH = "/projects"
 # Protected requests cross controlled-auth middleware. Even a code-audited GET
 # handler can persist authorization-denied when the supplied profile is disabled
 # or otherwise rejected, so no protected probe is universally read-only.
@@ -57,6 +59,7 @@ class SmokeConfig:
     api_key_env: str | None
     timeout_seconds: float
     json_output: Path | None
+    access_mode: str = "header-transition-test"
     allow_audit_log_writes: bool = False
     confirm_production_write: str | None = None
 
@@ -137,7 +140,8 @@ def run_readonly_permission_smoke(
         try:
             response = requester(probe, config.timeout_seconds)
             status = response.status
-            matched = status in probe.expected_statuses
+            contract_matched = _response_contract_matches(probe, response, config)
+            matched = status in probe.expected_statuses and contract_matched
             result: JsonObject = {
                 "name": probe.name,
                 "kind": probe.kind,
@@ -146,6 +150,7 @@ def run_readonly_permission_smoke(
                 "status": status,
                 "expected_statuses": list(probe.expected_statuses),
                 "matched": matched,
+                "contract_matched": contract_matched,
                 "body_length": len(response.text),
             }
         except ProbeTransportError as exc:
@@ -185,6 +190,7 @@ def run_readonly_permission_smoke(
     return {
         "status": status_value,
         "mode": config.mode,
+        "access_mode": config.access_mode,
         "side_effect_mode": (
             "audit-log-write-enabled" if audit_log_write_expected else "readonly"
         ),
@@ -228,7 +234,12 @@ def run_readonly_permission_smoke(
 def _build_probes(config: SmokeConfig) -> list[Probe]:
     api_key_headers = _api_key_headers(config)
     probes: list[Probe] = []
-    for path in PUBLIC_PATHS:
+    public_paths = (
+        PUBLIC_SHELL_PUBLIC_PATHS
+        if config.access_mode == "public-shell-readonly"
+        else HEADER_TRANSITION_PUBLIC_PATHS
+    )
+    for path in public_paths:
         probes.append(
             Probe(
                 name=f"public:{path}",
@@ -240,6 +251,20 @@ def _build_probes(config: SmokeConfig) -> list[Probe]:
                 kind="public",
             )
         )
+
+    if config.access_mode == "public-shell-readonly":
+        probes.append(
+            Probe(
+                name=f"protected-read-blocked:{PUBLIC_SHELL_PROTECTED_PATH}",
+                path=PUBLIC_SHELL_PROTECTED_PATH,
+                url=_build_url(config, PUBLIC_SHELL_PROTECTED_PATH),
+                method="GET",
+                headers=dict(api_key_headers),
+                expected_statuses=(503,),
+                kind="protected-read-blocked",
+            )
+        )
+        return probes
 
     for path in config.protected_paths:
         if config.allow_audit_log_writes:
@@ -292,6 +317,8 @@ def _build_probes(config: SmokeConfig) -> list[Probe]:
 
 
 def _build_skipped_probes(config: SmokeConfig) -> list[JsonObject]:
+    if config.access_mode == "public-shell-readonly":
+        return []
     if config.allow_audit_log_writes:
         return []
 
@@ -342,6 +369,10 @@ def _validate_write_authorization(config: SmokeConfig) -> None:
         )
     if not config.allow_audit_log_writes:
         return
+    if config.access_mode == "public-shell-readonly":
+        raise PermissionSmokeConfigError(
+            "public-shell-readonly does not allow audit-log write probes"
+        )
     if confirmation != PRODUCTION_HOST:
         raise PermissionSmokeConfigError(
             "audit-log writes require "
@@ -416,6 +447,7 @@ def _config_from_args(args: argparse.Namespace) -> SmokeConfig:
         api_key_env=str(args.api_key_env) if args.api_key_env else None,
         timeout_seconds=float(args.timeout_seconds),
         json_output=Path(args.json_output) if args.json_output else None,
+        access_mode=str(args.access_mode),
         allow_audit_log_writes=bool(getattr(args, "allow_audit_log_writes", False)),
         confirm_production_write=(
             str(confirmation_value) if confirmation_value is not None else None
@@ -457,6 +489,11 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--timeout-seconds", type=float, default=10)
     parser.add_argument("--json-output", default=None)
+    parser.add_argument(
+        "--access-mode",
+        choices=("header-transition-test", "public-shell-readonly"),
+        default="header-transition-test",
+    )
     parser.add_argument(
         "--allow-audit-log-writes",
         action="store_true",
@@ -510,6 +547,37 @@ def _optional_env_value(name: str | None) -> str | None:
 
 def _redact(value: str) -> str:
     return value.replace("\n", " ")[:1200]
+
+
+def _response_contract_matches(
+    probe: Probe,
+    response: HttpResponse,
+    config: SmokeConfig,
+) -> bool:
+    if config.access_mode != "public-shell-readonly":
+        return True
+    try:
+        payload = json.loads(response.text)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if probe.kind == "protected-read-blocked":
+        return payload.get("detail") == {
+            "code": "trusted_identity_required",
+            "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+            "access_mode": "public-shell-readonly",
+        }
+    if probe.path == "/health":
+        return payload.get("status") == "ok"
+    if probe.path == "/deployment/metadata":
+        return payload.get("runtime_access") == {
+            "mode": "public-shell-readonly",
+            "trusted_identity_ready": False,
+            "protected_reads_allowed": False,
+            "writes_allowed": False,
+        }
+    return False
 
 
 def _write_report(report: JsonObject, output_path: Path | None) -> None:

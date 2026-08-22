@@ -7,7 +7,8 @@ import {
   createReportDraft,
   downloadAuditArtifact,
   fetchProjects,
-  fetchReportWorkbench
+  fetchReportWorkbench,
+  signReportDraft
 } from "@/lib/api-client";
 import type {
   ProjectSummaryApiItem,
@@ -27,6 +28,7 @@ vi.mock("@/lib/api-client", () => ({
   downloadAuditArtifact: vi.fn(),
   fetchProjects: vi.fn(),
   fetchReportWorkbench: vi.fn(),
+  signReportDraft: vi.fn(),
   isBackendRequestError: (error: unknown) => (
     error instanceof Error && error.name === "BackendRequestError" && "status" in error
   )
@@ -36,6 +38,7 @@ const createReportDraftMock = vi.mocked(createReportDraft);
 const downloadAuditArtifactMock = vi.mocked(downloadAuditArtifact);
 const fetchProjectsMock = vi.mocked(fetchProjects);
 const fetchReportWorkbenchMock = vi.mocked(fetchReportWorkbench);
+const signReportDraftMock = vi.mocked(signReportDraft);
 
 const templateCategories: readonly ReportTemplateCategory[] = [
   { id: "plan", label: "计划类", availability: "awaiting-business-template" },
@@ -136,6 +139,16 @@ function reportEntry(
     gate_summary: status === "门禁阻断" ? "证据链待补齐" : "报告门禁已通过",
     updated_at: "2026-07-12T08:00:00Z",
     href: "/pages/review-tasks",
+    signoff: {
+      signed: status === "已签发",
+      signed_by: status === "已签发" ? "next-director" : "",
+      signed_at: status === "已签发" ? "2026-07-12T08:00:00Z" : "",
+      signoff_note: "",
+      report_id: status === "已签发" ? "signed-report-001" : "",
+      can_sign: status !== "门禁阻断" && status !== "已签发",
+      gate_ready: status !== "门禁阻断",
+      writes_allowed: status !== "已签发"
+    },
     download_links: downloads
   };
 }
@@ -259,14 +272,39 @@ beforeEach(() => {
     blob: new Blob(["artifact"], { type: "application/octet-stream" }),
     filename: "review-task-001.docx"
   });
+  signReportDraftMock.mockResolvedValue({
+    format: "signed-review-report-v1",
+    task_id: "ready-report",
+    report_id: "signed-ready-report",
+    signed_by: "next-director",
+    signed_at: "2026-08-14T00:00:00Z",
+    signoff_note: "证据与负责人确认已复核",
+    status: "signed"
+  });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("ReplicaReportWorkbench", () => {
+  it("does not request or expose report business data in the production shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_MEDICAL_AUDIT_API_ACCESS_MODE", "public-shell-readonly");
+
+    renderWorkbench();
+
+    expect(await screen.findByText(/报告读取、草稿创建、下载和签发均不开放/)).toBeInTheDocument();
+    expect(fetchReportWorkbenchMock).not.toHaveBeenCalled();
+    expect(fetchProjectsMock).not.toHaveBeenCalled();
+    expect(createReportDraftMock).not.toHaveBeenCalled();
+    expect(downloadAuditArtifactMock).not.toHaveBeenCalled();
+    expect(signReportDraftMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("combobox", { name: "所属项目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /刷新工作台|重试工作台/ })).not.toBeInTheDocument();
+  });
+
   it("requires an explicit ready project before a template can be opened", async () => {
     renderWorkbench();
 
@@ -426,7 +464,35 @@ describe("ReplicaReportWorkbench", () => {
     expect(screen.queryByRole("link", { name: "查看证据" })).not.toBeInTheDocument();
     expect(screen.getByText("证据详情由项目任务承载")).toBeInTheDocument();
     expect(document.querySelector('a[href="/pages/review-tasks"]')).toBeNull();
-    expect(screen.queryByRole("button", { name: /签发报告/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /签发报告/ })).not.toBeInTheDocument();
+  });
+
+  it("submits signoff only when all server gates allow it", async () => {
+    window.localStorage.setItem(AUDIT_ROLE_STORAGE_KEY, "director");
+    const ready = reportEntry("ready-report", "草稿", {
+      page: "/pages/review-tasks",
+      task_docx: "/review-tasks/ready-report/export?format=docx",
+      report_docx: null,
+      report_markdown: null,
+      report_json: null
+    });
+    fetchReportWorkbenchMock.mockResolvedValue(reportResponse({ entries: [ready] }));
+
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole("button", { name: "签发报告" }));
+    fireEvent.change(screen.getByPlaceholderText("签发说明（可选）"), {
+      target: { value: "证据与负责人确认已复核" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认签发" }));
+
+    await waitFor(() => {
+      expect(signReportDraftMock).toHaveBeenCalledWith(
+        "ready-report",
+        "证据与负责人确认已复核"
+      );
+    });
+    expect(await screen.findByText("✓ 签发成功")).toBeInTheDocument();
   });
 
   it("keeps technicians read-only even when active templates are visible", async () => {
@@ -523,7 +589,10 @@ describe("ReplicaReportWorkbench", () => {
 
   it("keeps the POST lock across a role change and releases it only after settle", async () => {
     const firstDraft = deferred<ReportDraftCreateResponse>();
-    createReportDraftMock.mockReturnValue(firstDraft.promise);
+    const secondDraft = deferred<ReportDraftCreateResponse>();
+    createReportDraftMock
+      .mockReturnValueOnce(firstDraft.promise)
+      .mockReturnValueOnce(secondDraft.promise);
     renderWorkbench();
     await selectTemplateAndProject();
     fireEvent.change(screen.getByRole("textbox", { name: "人工复核意见" }), {
@@ -546,6 +615,12 @@ describe("ReplicaReportWorkbench", () => {
     });
     fireEvent.submit(screen.getByRole("form", { name: "费用汇总风险底稿草稿" }));
     expect(createReportDraftMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      secondDraft.resolve(draftResponse());
+      await secondDraft.promise;
+    });
+    expect(await screen.findByText("草稿已进入待复核队列")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "所属项目" })).toBeEnabled();
   });
 
   it("preserves unsaved fields when a project change is cancelled and clears only after confirmation", async () => {

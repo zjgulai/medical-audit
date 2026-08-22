@@ -81,8 +81,9 @@ def main() -> int:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a production /api/v1/query/models read-only probe. The probe uses GET "
-            "only and verifies the public model catalog contract without provider calls."
+            "Verify that production exposes deployment metadata while /api/v1/query/models "
+            "remains blocked by public-shell-readonly. The probe uses GET only and never calls "
+            "a provider."
         )
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -110,7 +111,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-ready-model",
         action="store_true",
-        help="Fail unless at least one chat model alias is available.",
+        help=(
+            "Always fail in public-shell-readonly mode because chat-model readiness is "
+            "blocked until trusted identity is enabled."
+        ),
     )
     parser.add_argument("--report", default=DEFAULT_REPORT)
     return parser.parse_args()
@@ -166,6 +170,7 @@ def _run_probe(
         ),
     )
     if "error" not in deployment_details:
+        summary["runtime_access"] = deployment_details["runtime_access"]
         summary["deploy_sha"] = deployment_details["deploy_sha"]
         summary["deploy_sha_status"] = deployment_details["deploy_sha_status"]
         summary["deploy_sha_matches_expected"] = deployment_details[
@@ -174,25 +179,38 @@ def _run_probe(
 
     catalog_details = _run_step(
         steps,
-        "query-models-catalog",
-        lambda: _check_query_models_catalog(
+        "query-models-access-boundary",
+        lambda: _check_query_models_blocked(
             normalized_base_url,
             timeout_seconds=timeout_seconds,
             auth_headers=auth_headers,
-            require_ready_model=require_ready_model,
             http_get=selected_http_get,
         ),
     )
     if "error" not in catalog_details:
-        summary["contract_version"] = catalog_details["contract_version"]
-        summary["default_model"] = catalog_details["default_model"]
-        summary["model_aliases"] = catalog_details["model_aliases"]
-        summary["available_model_aliases"] = catalog_details["available_model_aliases"]
-        summary["unavailable_models"] = catalog_details["unavailable_models"]
-        summary["ready_model_count"] = len(catalog_details["available_model_aliases"])
+        summary["catalog_status"] = "blocked_by_access_mode"
+        summary["protected_status_code"] = catalog_details["status_code"]
 
+    if require_ready_model:
+        steps.append(
+            {
+                "name": "chat-model-readiness",
+                "passed": False,
+                "duration_ms": 0,
+                "details": {
+                    "error": "chat model readiness is blocked by public-shell-readonly"
+                },
+            }
+        )
+
+    access_mode = (
+        deployment_details.get("access_mode")
+        if "error" not in deployment_details
+        else None
+    )
     return {
         "status": "pass" if all(step["passed"] for step in steps) else "fail",
+        "access_mode": access_mode,
         "base_url": normalized_base_url,
         "started_at": started_at,
         "finished_at": _now_iso(),
@@ -202,6 +220,7 @@ def _run_probe(
             "provider_call": False,
             "browser_js_executed": False,
             "query_models_api_called": True,
+            "protected_business_data_read": False,
             "deployment_metadata_api_called": True,
             "secret_values_reported": False,
             "allowed_http_methods": ["GET"],
@@ -260,6 +279,10 @@ def _check_deployment_metadata(
         http_get=http_get,
     )
     boundaries = _dict(payload.get("boundaries"), "deployment metadata boundaries")
+    runtime_access = _dict(
+        payload.get("runtime_access"),
+        "deployment metadata runtime_access",
+    )
     deploy_sha = payload.get("deploy_sha")
     _require(
         payload.get("status") == "deployment_metadata_available",
@@ -281,6 +304,22 @@ def _check_deployment_metadata(
         boundaries.get("non_get_http_methods_allowed") is False,
         "deployment metadata allows non-GET methods",
     )
+    _require(
+        runtime_access.get("mode") == "public-shell-readonly",
+        "deployment metadata access mode is not public-shell-readonly",
+    )
+    _require(
+        runtime_access.get("trusted_identity_ready") is False,
+        "deployment metadata unexpectedly reports trusted identity ready",
+    )
+    _require(
+        runtime_access.get("protected_reads_allowed") is False,
+        "deployment metadata unexpectedly allows protected reads",
+    )
+    _require(
+        runtime_access.get("writes_allowed") is False,
+        "deployment metadata unexpectedly allows writes",
+    )
     normalized_expected = expected_deploy_sha.strip().lower() if expected_deploy_sha else None
     deploy_sha_matches_expected = (
         None if normalized_expected is None else deploy_sha == normalized_expected
@@ -297,66 +336,39 @@ def _check_deployment_metadata(
         "deploy_sha_status": payload.get("deploy_sha_status"),
         "deploy_sha_source": payload.get("deploy_sha_source"),
         "deploy_sha_matches_expected": deploy_sha_matches_expected,
+        "access_mode": runtime_access["mode"],
+        "runtime_access": runtime_access,
     }
 
 
-def _check_query_models_catalog(
+def _check_query_models_blocked(
     base_url: str,
     *,
     timeout_seconds: float,
     auth_headers: dict[str, str],
-    require_ready_model: bool,
     http_get: Callable[[str, dict[str, str], float], HttpResponse],
 ) -> dict[str, Any]:
-    payload = _request_json(
+    response = http_get(
         f"{base_url}{QUERY_MODELS_ENDPOINT}",
         {"Accept": "application/json", **auth_headers},
         timeout_seconds,
-        http_get=http_get,
     )
-    _assert_no_secret_fields(payload)
-    boundaries = _dict(payload.get("boundaries"), "query models boundaries")
-    items = _list(payload.get("items"), "query models items")
-    model_aliases = [
-        _str(_dict(item, "query model item").get("alias"), "query model alias")
-        for item in items
-    ]
-    available_model_aliases: list[str] = []
-    unavailable_models: dict[str, str | None] = {}
-    for item_value in items:
-        item = _dict(item_value, "query model item")
-        alias = _str(item.get("alias"), "query model alias")
-        available = _bool(item.get("available"), f"{alias}.available")
-        if available:
-            available_model_aliases.append(alias)
-        else:
-            reason = item.get("unavailable_reason")
-            unavailable_models[alias] = reason if isinstance(reason, str) else None
-
-    missing_aliases = [alias for alias in EXPECTED_MODEL_ALIASES if alias not in model_aliases]
-    _require(payload.get("contract_version") == "chat-model-catalog-v1", "contract mismatch")
-    _require(payload.get("default_model") in model_aliases, "default_model missing from items")
-    _require(not missing_aliases, f"missing model aliases: {missing_aliases}")
-    _require(boundaries.get("production_write") is False, "query models writes production")
-    _require(boundaries.get("provider_call") is False, "query models calls provider")
+    _require(response.status == 503, f"query models returned {response.status}, expected 503")
+    payload = _decode_json_response(response)
+    detail = _dict(payload.get("detail"), "query models access boundary detail")
+    _require(detail.get("code") == "trusted_identity_required", "access code drifted")
     _require(
-        boundaries.get("secret_values_reported") is False,
-        "query models reports secrets",
+        detail.get("access_mode") == "public-shell-readonly",
+        "access mode drifted",
     )
     _require(
-        boundaries.get("source") == "environment_capability_probe_only",
-        "query models source boundary drifted",
+        detail.get("message") == "可信身份认证尚未启用，生产业务数据访问已关闭。",
+        "access message drifted",
     )
-    if require_ready_model:
-        _require(bool(available_model_aliases), "no chat model alias is available")
-
     return {
-        "contract_version": payload.get("contract_version"),
-        "default_model": payload.get("default_model"),
-        "model_aliases": model_aliases,
-        "available_model_aliases": available_model_aliases,
-        "unavailable_models": unavailable_models,
-        "boundaries": boundaries,
+        "status_code": response.status,
+        "code": detail["code"],
+        "access_mode": detail["access_mode"],
     }
 
 
@@ -369,10 +381,16 @@ def _request_json(
 ) -> dict[str, Any]:
     response = http_get(url, headers, timeout_seconds)
     _require(response.status == 200, f"{url} returned {response.status}")
+    return _decode_json_response(response)
+
+
+def _decode_json_response(response: HttpResponse) -> dict[str, Any]:
     try:
         payload = json.loads(response.content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ReadOnlyProbeError(f"{url} did not return valid JSON: {exc}") from exc
+        raise ReadOnlyProbeError(
+            f"{response.url} did not return valid JSON: {exc}"
+        ) from exc
     return _dict(payload, "JSON response")
 
 

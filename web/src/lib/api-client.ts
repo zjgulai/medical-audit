@@ -71,6 +71,7 @@ import type {
   TableAnalysisUploadResponse
 } from "./api-types";
 import { auditAgentClientHeaders, auditClientHeaders, auditProjectClientHeaders } from "./audit-user";
+import { assertProtectedApiAvailable } from "./runtime-access";
 
 export class BackendRequestError extends Error {
   readonly method: "GET" | "POST";
@@ -126,6 +127,7 @@ async function getJsonWithAuditHeaders<T>(
   headers: Record<string, string> = auditClientHeaders()
 ): Promise<T> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
 
   const response = await fetch(path, {
     headers: {
@@ -162,6 +164,7 @@ async function postJson<T>(
   headers: Record<string, string> = auditClientHeaders()
 ): Promise<T> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
 
   const response = await fetch(path, {
     method: "POST",
@@ -204,6 +207,7 @@ async function postForm<T>(
   } = {}
 ): Promise<T> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
 
   const response = await fetch(path, {
     method: "POST",
@@ -473,6 +477,7 @@ export async function downloadAuditArtifact(
   options: { readonly signal?: AbortSignal } = {}
 ): Promise<AuditArtifactDownload> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
   const parsed = new URL(path, window.location.origin);
   if (
     !path.startsWith("/review-tasks/") ||
@@ -642,6 +647,7 @@ export function fetchDocumentLibrary(options: {
 
 export async function fetchDocumentFileBlob(path: string): Promise<Blob> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
   const response = await fetch(path, {
     headers: auditClientHeaders(),
     cache: "no-store"
@@ -874,6 +880,7 @@ export async function fetchProjectFileBlob(
   path: string
 ): Promise<Blob> {
   assertBackendProxyClientRuntime();
+  assertProtectedApiAvailable();
   const response = await fetch(path, {
     headers: auditProjectClientHeaders(projectId),
     cache: "no-store"

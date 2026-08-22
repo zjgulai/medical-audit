@@ -1,14 +1,20 @@
 ---
 title: "Knowledge Query Contract P5 Stable"
-project: "medical_audit"
+doc_type: api-contract
+module: knowledge-query
 status: "stable"
+created: 2026-07-04
+updated: 2026-08-13
+owner: self
+source: human+ai
+project: "medical_audit"
 created_at: "2026-07-04T13:45:00+08:00"
 evidence_grade: "L1-local-contract-freeze"
 provider_call: false
 database_write: false
 index_activation: false
 production_probe: false
-updated_at: "2026-07-15T14:33:00+08:00"
+updated_at: "2026-08-13T00:00:00+08:00"
 ---
 
 # Knowledge Query Contract P5 Stable

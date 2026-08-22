@@ -1,8 +1,14 @@
 ---
 title: 重构站上线前收敛门禁方案
+doc_type: release-plan
+module: frontend
+created: 2026-07-05
+updated: 2026-08-13
+owner: self
+source: human+ai
 project: medical_audit
 created_at: 2026-07-05
-status: draft
+status: superseded
 scope: frontend-ai-replica-release-convergence
 branch: codex/frontend-ai-replica-20260703
 evidence_level: L1-local-runtime

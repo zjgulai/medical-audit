@@ -2,15 +2,17 @@
 title: "Sprint-5 交接文档：本地完成状态与下一步执行方案"
 doc_type: handoff
 module: project-governance
-status: active
+status: superseded
 created: 2026-08-09
-updated: 2026-08-09
+updated: 2026-08-13
 owner: self
 source: human+ai
 target_agent: codex
 ---
 
 # Sprint-5 交接文档
+
+> 本文是 2026-08-09 的历史交接快照，已被 [当前文档索引](../../docs/README.md) 和 [项目复盘与差异审计](project-reanalysis-and-gap-audit-20260813.md) 替代。文中的未推送、未部署和待办判断不得作为当前状态使用。
 
 ## 一、当前状态速览
 

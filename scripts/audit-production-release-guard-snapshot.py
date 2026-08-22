@@ -845,8 +845,7 @@ def _audit_delta_is_attributable(
         after_rows.get(key) == value for key, value in before_rows.items()
     )
     attributable = (
-        delta > 0
-        and not global_deleted_ids
+        not global_deleted_ids
         and not run_deleted_ids
         and len(global_new_ids) == delta
         and len(run_new_ids) == after_run_count - before_run_count

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,6 +62,13 @@ class ReviewTaskStore(Protocol):
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
         pass
 
+    def mutate_task(
+        self,
+        task_id: str,
+        mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
+        pass
+
 
 @dataclass(slots=True)
 class SqlAlchemyReviewTaskStore:
@@ -69,6 +77,7 @@ class SqlAlchemyReviewTaskStore:
     create_schema: bool = False
     _engine: Engine = field(init=False, repr=False)
     _session_factory: sessionmaker[Session] = field(init=False, repr=False)
+    _lock: RLock = field(default_factory=RLock, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self._engine = create_engine(
@@ -129,10 +138,18 @@ class SqlAlchemyReviewTaskStore:
             return _task_to_payload(task)
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
-        with self._session_factory.begin() as session:
-            task = _load_task(session, task_id)
+        return self.mutate_task(task_id, lambda _task: values)
+
+    def mutate_task(
+        self,
+        task_id: str,
+        mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
+        with self._lock, self._session_factory.begin() as session:
+            task = _load_task(session, task_id, for_update=True)
             if task is None:
                 raise ReviewTaskNotFoundError(task_id)
+            values = mutator(_task_to_payload(task))
             previous_status = task.status
             if "status" in values:
                 task.status = str(values["status"])
@@ -202,11 +219,19 @@ class JsonFileReviewTaskStore:
         raise ReviewTaskNotFoundError(task_id)
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
+        return self.mutate_task(task_id, lambda _task: values)
+
+    def mutate_task(
+        self,
+        task_id: str,
+        mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
         with self._lock:
             tasks = self._read_tasks()
             for index, task in enumerate(tasks):
                 if task.get("task_id") != task_id:
                     continue
+                values = mutator(copy.deepcopy(task))
                 updated = {**task, **copy.deepcopy(values)}
                 tasks[index] = updated
                 self._write_tasks(tasks)
@@ -287,10 +312,18 @@ class InMemoryReviewTaskStore:
         raise ReviewTaskNotFoundError(task_id)
 
     def update_task(self, task_id: str, values: dict[str, object]) -> dict[str, object]:
+        return self.mutate_task(task_id, lambda _task: values)
+
+    def mutate_task(
+        self,
+        task_id: str,
+        mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
         with self._lock:
             for index, task in enumerate(self.tasks):
                 if task.get("task_id") != task_id:
                     continue
+                values = mutator(copy.deepcopy(task))
                 updated = {**task, **copy.deepcopy(values)}
                 self.tasks[index] = updated
                 return copy.deepcopy(updated)
@@ -319,8 +352,15 @@ def _connect_args(database_url: str) -> dict[str, object]:
     return {}
 
 
-def _load_task(session: Session, task_id: str) -> ReviewTask | None:
+def _load_task(
+    session: Session,
+    task_id: str,
+    *,
+    for_update: bool = False,
+) -> ReviewTask | None:
     statement = select(ReviewTask).where(ReviewTask.external_task_id == task_id)
+    if for_update:
+        statement = statement.with_for_update()
     return session.scalar(statement)
 
 

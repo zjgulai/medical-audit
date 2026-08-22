@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -14,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
+import medical_audit_kb.api.routes_pages as routes_pages_module
 from medical_audit_kb.api.agent_store import SqlAlchemyAgentStore
 from medical_audit_kb.api.app import ApiState, create_app
 from medical_audit_kb.api.audit_finding_store import SqlAlchemyAuditFindingStore
@@ -162,6 +164,8 @@ def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) 
     assert response.status_code == 200
     body = response.json()
     assert body["format"] == "remediation-workbench-v1"
+    assert body["data_mode"] == "sample"
+    assert body["capabilities"] == {"writable": False}
     assert body["workbench_id"] == "FUND-USAGE-REMEDIATION"
     assert body["metrics"]["case_count"] == 4
     assert body["metrics"]["active_case_count"] == 3
@@ -172,6 +176,8 @@ def test_remediation_workbench_api_returns_readonly_gate_status(tmp_path: Path) 
     assert body["production_side_effect"] == "none"
     assert body["store"] == {"ready": True, "backend": "ReadonlyRemediationWorkbenchSeed"}
     assert body["remediation_cases"][0]["sourceFinding"] == "FINDING-F044EBD309B659DC"
+    assert body["remediation_cases"][0]["allowed_transitions"] == []
+    assert body["remediation_cases"][0]["can_upload_attachment"] is False
     assert body["remediation_cases"][0]["href"] == "/reports"
     assert body["evidence_requests"][1]["status"] == "待上传"
     assert body["evidence_requests"][0]["href"] == "/reports"
@@ -1066,7 +1072,6 @@ def test_project_report_draft_enforces_formal_action_permissions_and_actor_bindi
     assert isinstance(signed_dossier, dict)
     assert signed_dossier["signed_report"]["signed_by"] == "next-director"
     assert state.operation_logs[-1]["payload"]["signed_by"] == "next-director"
-
     member_pending_rectification = client.post(
         f"/pages/review-tasks/{task_id}/rectification",
         headers=member_headers,
@@ -1128,6 +1133,197 @@ def test_project_report_draft_enforces_formal_action_permissions_and_actor_bindi
     serialized_denials = json.dumps(denials, ensure_ascii=False)
     assert "field_values" not in serialized_denials
     assert "普通成员补充复核意见" not in serialized_denials
+
+
+def test_report_draft_json_signoff_reuses_visibility_permission_and_closed_gates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _api_state(tmp_path)
+    project_store = InMemoryProjectMemberStore()
+    project_store.add_member(
+        "SELF-CHECK-FUND-20260607",
+        {
+            "user_identifier": "active-technician-json-signoff",
+            "name": "可见技术人员",
+            "role": "信息科",
+            "department": "信息科",
+            "status": "在项目中",
+        },
+    )
+    state.project_member_store = project_store
+    client = TestClient(create_app(state))
+    member_headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+    created = client.post(
+        "/reports/drafts",
+        headers=member_headers,
+        json={
+            "template_id": "workpaper-summary-risk",
+            "project_key": "SELF-CHECK-FUND-20260607",
+            "field_values": {"人工复核意见": "签发 API 权限验证"},
+        },
+    )
+    task_id = created.json()["task_id"]
+
+    denied_headers = (
+        member_headers,
+        {
+            "X-User-Id": "active-technician-json-signoff",
+            "X-Role": "technician",
+        },
+        {"X-User-Id": "next-admin", "X-Role": "admin"},
+    )
+    for headers in denied_headers:
+        denied = client.post(
+            f"/reports/drafts/{task_id}/signoff",
+            headers=headers,
+            json={"signoff_note": "must not sign"},
+        )
+        assert denied.status_code == 403
+        assert denied.json()["detail"] == "sign_reports is not allowed"
+
+    unrelated = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers={"X-User-Id": "unrelated-director", "X-Role": "director"},
+        json={"signoff_note": "must stay hidden"},
+    )
+    assert unrelated.status_code == 404
+    assert unrelated.json()["detail"] == "review task not found"
+
+    gate_blocked = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "gate blocked"},
+    )
+    assert gate_blocked.status_code == 409
+    assert gate_blocked.json()["detail"] == "review task is not ready for report draft"
+
+    task = _review_tasks(state)[0]
+    dossier = cast(dict[str, object], task["dossier"])
+    task["status"] = "not-violation"
+    task["status_label"] = "未发现违规"
+    task["reviewer_note"] = "主任已复核"
+    task["conclusion"] = "未发现违规"
+    dossier["owner_signoff"] = {
+        "status": "approved",
+        "status_label": "负责人已确认",
+        "confirmed_by": "next-director",
+        "confirmed_at": "2026-08-13T00:00:00Z",
+    }
+    assert state.review_task_store is not None
+    state.review_task_store.update_task(task_id, task)
+
+    signed = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "主任签发"},
+    )
+    assert signed.status_code == 200
+    assert signed.json()["signed_by"] == "next-director"
+    duplicate = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "duplicate"},
+    )
+    assert duplicate.status_code == 409
+
+    closed_task = state.review_task_store.get_task(task_id)
+    closed_task["status"] = "closed"
+    state.review_task_store.update_task(task_id, closed_task)
+    mutate_called = False
+
+    def fail_if_closed_task_reaches_mutation(
+        _store: object,
+        _task_id: str,
+        _mutator: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
+        nonlocal mutate_called
+        mutate_called = True
+        raise AssertionError("closed task must be rejected before mutation starts")
+
+    monkeypatch.setattr(
+        type(state.review_task_store),
+        "mutate_task",
+        fail_if_closed_task_reaches_mutation,
+    )
+    closed = client.post(
+        f"/reports/drafts/{task_id}/signoff",
+        headers=director_headers,
+        json={"signoff_note": "closed"},
+    )
+    assert closed.status_code == 409
+    assert closed.json()["detail"] == "review task is closed and read-only"
+    assert mutate_called is False
+
+
+def test_report_draft_signoff_is_atomic_under_concurrent_requests(
+    tmp_path: Path,
+) -> None:
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = SqlAlchemyReviewTaskStore(
+        f"sqlite:///{tmp_path / 'atomic-report-signoff.db'}",
+        create_schema=True,
+    )
+    app = create_app(state)
+    member_headers = {"X-User-Id": "next-member", "X-Role": "member"}
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/reports/drafts",
+            headers=member_headers,
+            json={
+                "template_id": "workpaper-summary-risk",
+                "project_key": "SELF-CHECK-FUND-20260607",
+                "field_values": {"人工复核意见": "并发签发验证"},
+            },
+        )
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+    assert state.review_task_store is not None
+    task = state.review_task_store.get_task(task_id)
+    dossier = cast(dict[str, object], task["dossier"])
+    task.update({
+        "status": "not-violation",
+        "status_label": "未发现违规",
+        "reviewer_note": "主任已复核",
+        "conclusion": "未发现违规",
+    })
+    dossier["owner_signoff"] = {
+        "status": "approved",
+        "status_label": "负责人已确认",
+        "confirmed_by": "next-director",
+        "confirmed_at": "2026-08-14T00:00:00Z",
+    }
+    state.review_task_store.update_task(task_id, task)
+    start = Barrier(2)
+
+    def sign(index: int) -> object:
+        start.wait(timeout=5)
+        with TestClient(app) as client:
+            return client.post(
+                f"/reports/drafts/{task_id}/signoff",
+                headers=director_headers,
+                json={"signoff_note": f"并发签发-{index}"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(sign, (1, 2)))
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    successful = next(response for response in responses if response.status_code == 200)
+    persisted = state.review_task_store.get_task(task_id)
+    persisted_dossier = cast(dict[str, object], persisted["dossier"])
+    signed_report = cast(dict[str, object], persisted_dossier["signed_report"])
+    successful_body = successful.json()
+    assert signed_report["report_id"] == successful_body["report_id"]
+    assert signed_report["signed_by"] == successful_body["signed_by"]
+    assert signed_report["signed_at"] == successful_body["signed_at"]
+    assert signed_report["signoff_note"] == successful_body["signoff_note"]
+    assert len([
+        log for log in state.operation_logs if log["action"] == "report-draft-signoff"
+    ]) == 1
 
 
 def test_report_template_draft_fails_closed_when_project_member_store_fails(
@@ -1859,6 +2055,44 @@ def test_review_task_list_visibility_caches_membership_and_aggregates_hidden_aud
     assert all(log["action"] != "authorization-denied" for log in state.operation_logs)
 
 
+def test_report_workbench_caches_signoff_actor_per_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tasks = []
+    for index in range(5):
+        task = _legacy_report_ready_task(f"signoff-cache-{index}")
+        task["created_by"] = "next-member"
+        task["source"] = "report-template-draft"
+        dossier = cast(dict[str, object], task["dossier"])
+        dossier["report_template_draft"] = {
+            "project_key": "SELF-CHECK-FUND-20260607"
+        }
+        tasks.append(task)
+    state = _api_state(tmp_path)
+    state.project_member_store = InMemoryProjectMemberStore()
+    state.review_task_store = InMemoryReviewTaskStore(tasks=tasks)
+    original = routes_pages_module.resolve_authenticated_user
+    calls = 0
+
+    def counting_resolver(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(routes_pages_module, "resolve_authenticated_user", counting_resolver)
+    client = TestClient(create_app(state))
+
+    response = client.get(
+        "/reports/workbench",
+        headers={"X-User-Id": "next-member", "X-Role": "member"},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["report_entries"]) == 5
+    assert 1 <= calls <= 2
+
+
 def test_report_template_draft_owner_can_export_json_markdown_and_docx(
     tmp_path: Path,
 ) -> None:
@@ -2211,6 +2445,13 @@ def test_report_template_draft_concurrent_requests_use_distinct_ids_and_persist_
             values: dict[str, object],
         ) -> dict[str, object]:
             return self.delegate.update_task(task_id, values)
+
+        def mutate_task(
+            self,
+            task_id: str,
+            mutator: Callable[[dict[str, object]], dict[str, object]],
+        ) -> dict[str, object]:
+            return self.delegate.mutate_task(task_id, mutator)
 
     state = _api_state(tmp_path)
     state.project_member_store = InMemoryProjectMemberStore()

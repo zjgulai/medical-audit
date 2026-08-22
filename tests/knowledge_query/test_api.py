@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import urllib.parse
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -14,10 +15,11 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pypdf import PdfWriter
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from medical_audit_kb.api import chat_models, routes_documents
+from medical_audit_kb.api import chat_models, routes_documents, routes_knowledge_base
 from medical_audit_kb.api.agent_store import (
     AGENT_ID_PREFIX,
     InMemoryAgentStore,
@@ -82,8 +84,14 @@ from medical_audit_kb.db.models import (
     AuditRule,
     AuditRun,
     AuditTask,
+    Base,
+    ChunkEmbedding,
+    DocumentChunk,
+    IndexVersion,
     ReviewTask,
     RuleVersion,
+    SourceDocument,
+    SourcePackageVersion,
 )
 from medical_audit_kb.domain.constants import SourceCollection
 from medical_audit_kb.domain.source_collection_registry import (
@@ -167,7 +175,109 @@ def test_deployment_metadata_reports_sha_without_runtime_side_effects(
         "allowed_http_methods": ["GET"],
         "non_get_http_methods_allowed": False,
     }
+    assert body["runtime_access"] == {
+        "mode": "header-transition-test",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": True,
+        "writes_allowed": True,
+    }
     assert "MEDICAL_AUDIT_DEPLOY_SHA" not in serialized
+    assert state.operation_logs == []
+
+
+def test_api_access_mode_defaults_to_public_shell_when_no_local_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MEDICAL_AUDIT_API_ACCESS_MODE", raising=False)
+    monkeypatch.delenv("MEDICAL_AUDIT_KB_DEV_MODE", raising=False)
+    client = TestClient(create_app(_api_state(tmp_path)))
+
+    metadata = client.get("/api/v1/deployment/metadata")
+    protected = client.get("/api/v1/auth/roles")
+
+    assert metadata.status_code == 200
+    assert metadata.json()["runtime_access"] == {
+        "mode": "public-shell-readonly",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": False,
+        "writes_allowed": False,
+    }
+    assert protected.status_code == 503
+    assert protected.json()["detail"]["code"] == "trusted_identity_required"
+
+
+def test_public_shell_readonly_exposes_only_shell_health_and_deploy_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    static_root = tmp_path / "web-out"
+    _write_text(static_root / "index.html", "<html><body>AuditScope Portal</body></html>")
+    _write_text(static_root / "workspace.html", "<html>Workspace Shell</html>")
+    _write_text(static_root / "workspace.txt", "Workspace RSC")
+    _write_text(
+        static_root / "fund-compliance" / "review.html",
+        "<html>Fund Review Shell</html>",
+    )
+    monkeypatch.setenv("MEDICAL_AUDIT_WEB_STATIC_ROOT", str(static_root))
+    state = _api_state(tmp_path)
+
+    class AuditStoreThatMustNotRun:
+        def add_event(self, *_args: object, **_kwargs: object) -> dict[str, object]:
+            raise AssertionError("public shell rejection must not write an audit event")
+
+    state.audit_log_store = AuditStoreThatMustNotRun()  # type: ignore[assignment]
+    client = TestClient(
+        create_app(
+            state,
+            enforce_controlled_api_auth=True,
+            api_access_mode="public-shell-readonly",
+        )
+    )
+
+    assert client.get("/").status_code == 200
+    assert "Workspace Shell" in client.get("/workspace").text
+    assert client.get("/workspace.txt").text == "Workspace RSC"
+    assert "Fund Review Shell" in client.get("/fund-compliance/review").text
+    assert "Fund Review Shell" in client.get("/fund-compliance/review.html").text
+    assert client.get("/health").status_code == 200
+    assert client.head("/api/v1/health").status_code == 200
+    metadata = client.get("/api/v1/deployment/metadata")
+    assert metadata.status_code == 200
+    assert metadata.json()["runtime_access"] == {
+        "mode": "public-shell-readonly",
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": False,
+        "writes_allowed": False,
+    }
+    assert client.head("/api/backend/deployment/metadata").status_code == 200
+
+    protected_responses = (
+        client.get("/auth/roles"),
+        client.get("/api/v1/index/postgres-status"),
+        client.get("/api/v1/projects"),
+        client.get("/reports/workbench"),
+        client.get("/projects/SELF-CHECK-FUND-20260607"),
+        client.get(
+            "/api/backend/reports/workbench",
+            headers={
+                "X-User-Id": "next-director",
+                "X-Role": "director",
+                "X-Tenant-Id": "hospital-demo",
+            },
+        ),
+        client.post("/api/v1/query", json={"question": "must not execute"}),
+        client.options("/api/v1/projects"),
+    )
+    expected_detail = {
+        "code": "trusted_identity_required",
+        "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+        "access_mode": "public-shell-readonly",
+    }
+    for response in protected_responses:
+        assert response.status_code == 503
+        assert response.json() == {"detail": expected_detail}
+        assert response.headers["cache-control"] == "no-store"
     assert state.operation_logs == []
 
 
@@ -4422,6 +4532,222 @@ def test_document_library_limits_documents_before_chunk_lateral_reads(
     assert normalized_query.index("LIMIT %s") < normalized_query.index("LEFT JOIN LATERAL")
     assert "FROM limited_documents limited" in normalized_query
     assert cursor.params[-1] == 5
+
+
+def test_knowledge_catalog_postgres_metrics_preaggregate_without_join_amplification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CursorStub:
+        current_query = ""
+        queries: list[str] = []
+
+        def __enter__(self) -> "CursorStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def execute(self, query: str) -> None:
+            self.current_query = " ".join(query.split())
+            self.queries.append(self.current_query)
+
+        def fetchall(self) -> list[dict[str, object]]:
+            if "WITH package_flags AS" in self.current_query:
+                return [
+                    {
+                        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                        "document_count": 1,
+                        "chunk_count": 2,
+                        "embedding_count": 2,
+                        "active_embedding_count": 2,
+                        "candidate_chunk_count": 2,
+                        "character_count": 8,
+                    }
+                ]
+            if "SELECT DISTINCT ON" in self.current_query:
+                return [
+                    {
+                        "source_collection": SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                        "latest_index_version_key": "index-v2",
+                        "latest_index_status": "candidate",
+                    }
+                ]
+            return []
+
+        def fetchone(self) -> dict[str, object]:
+            return {
+                "source_documents": 1,
+                "document_chunks": 2,
+                "chunk_embeddings": 2,
+            }
+
+    class ConnectionStub:
+        def __init__(self, cursor: CursorStub) -> None:
+            self._cursor = cursor
+
+        def __enter__(self) -> "ConnectionStub":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def cursor(self, *, row_factory: object) -> CursorStub:
+            assert row_factory is routes_knowledge_base.dict_row
+            return self._cursor
+
+    cursor = CursorStub()
+    monkeypatch.setattr(
+        routes_knowledge_base.psycopg,
+        "connect",
+        lambda *_args, **_kwargs: ConnectionStub(cursor),
+    )
+
+    metrics, totals, latest = routes_knowledge_base._metrics_from_postgres(
+        "postgresql+psycopg://user:pass@localhost:5433/db"
+    )
+
+    metric = metrics[SourceCollection.MEDICAL_INSURANCE_LAWS]
+    assert metric.character_count == 8
+    assert metric.embedding_count == 2
+    assert metric.active_embedding_count == 2
+    assert metric.candidate_chunk_count == 2
+    assert totals == {
+        "source_documents": 1,
+        "document_chunks": 2,
+        "chunk_embeddings": 2,
+    }
+    assert latest[SourceCollection.MEDICAL_INSURANCE_LAWS]["latest_index_version_key"] == "index-v2"
+
+    rollup_query = next(query for query in cursor.queries if "WITH package_flags AS" in query)
+    assert "BOOL_OR(status = 'active')" in rollup_query
+    assert "BOOL_OR(status = 'candidate')" in rollup_query
+    assert "SUM(LENGTH(text))" in rollup_query
+    assert "SUM(DISTINCT" not in rollup_query
+    assert "GROUP BY source_package_version_id" in rollup_query
+    assert "GROUP BY source_document_id" in rollup_query
+
+
+def test_knowledge_catalog_metrics_against_real_postgres() -> None:
+    database_url = os.environ.get("MEDICAL_AUDIT_TEST_POSTGRES_URL", "").strip()
+    if not database_url:
+        pytest.skip("MEDICAL_AUDIT_TEST_POSTGRES_URL is not configured")
+    parsed_url = make_url(database_url)
+    if not (parsed_url.database or "").startswith("medical_audit_test_"):
+        pytest.fail("real PostgreSQL regression requires a dedicated medical_audit_test_* database")
+
+    schema_name = f"medical_audit_metrics_{uuid4().hex}"
+    schema_database_url = parsed_url.update_query_dict(
+        {"options": f"-csearch_path={schema_name},public"}
+    ).render_as_string(hide_password=False)
+    control_engine = create_engine(database_url)
+    engine = create_engine(schema_database_url)
+    try:
+        with control_engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema_name}"')
+        Base.metadata.create_all(engine)
+        package_a = SourcePackageVersion(
+            version_key=f"metrics-active-{uuid4().hex}",
+            source_root_path="/fixture/active",
+            description="real PostgreSQL aggregation fixture",
+        )
+        package_b = SourcePackageVersion(
+            version_key=f"metrics-candidate-{uuid4().hex}",
+            source_root_path="/fixture/candidate",
+            description="real PostgreSQL aggregation fixture",
+        )
+        with Session(engine) as session:
+            session.add_all([package_a, package_b])
+            session.flush()
+            document_a = SourceDocument(
+                source_package_version_id=package_a.id,
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                relative_path="active.md",
+                file_name="active.md",
+                file_ext=".md",
+                media_type="text/markdown",
+                sha256="a" * 64,
+                size_bytes=8,
+                status="indexed",
+            )
+            document_b = SourceDocument(
+                source_package_version_id=package_b.id,
+                source_collection=SourceCollection.MEDICAL_INSURANCE_LAWS.value,
+                relative_path="candidate.md",
+                file_name="candidate.md",
+                file_ext=".md",
+                media_type="text/markdown",
+                sha256="b" * 64,
+                size_bytes=3,
+                status="indexed",
+            )
+            session.add_all([document_a, document_b])
+            session.flush()
+            chunks = [
+                DocumentChunk(source_document_id=document_a.id, chunk_index=0, text="甲乙丙丁"),
+                DocumentChunk(source_document_id=document_a.id, chunk_index=1, text="戊己庚辛"),
+                DocumentChunk(source_document_id=document_b.id, chunk_index=0, text="壬癸子"),
+            ]
+            session.add_all(chunks)
+            session.flush()
+            session.add_all([
+                ChunkEmbedding(
+                    chunk_id=chunk.id,
+                    provider="fixture",
+                    model_name="fixture-embedding",
+                    provider_version="v1",
+                    dimension=2,
+                    embedding=[0.1, 0.2],
+                )
+                for chunk in chunks
+            ])
+            session.add_all([
+                IndexVersion(
+                    source_package_version_id=package_a.id,
+                    version_key=f"index-active-{uuid4().hex}",
+                    status="active",
+                    chunk_count=2,
+                    document_count=1,
+                ),
+                IndexVersion(
+                    source_package_version_id=package_a.id,
+                    version_key=f"index-candidate-a-{uuid4().hex}",
+                    status="candidate",
+                    chunk_count=2,
+                    document_count=1,
+                ),
+                IndexVersion(
+                    source_package_version_id=package_b.id,
+                    version_key=f"index-candidate-b-{uuid4().hex}",
+                    status="candidate",
+                    chunk_count=1,
+                    document_count=1,
+                ),
+            ])
+            session.commit()
+
+        metrics, totals, _latest = routes_knowledge_base._metrics_from_postgres(
+            schema_database_url
+        )
+
+        metric = metrics[SourceCollection.MEDICAL_INSURANCE_LAWS]
+        assert metric.document_count == 2
+        assert metric.chunk_count == 3
+        assert metric.embedding_count == 3
+        assert metric.active_embedding_count == 2
+        assert metric.candidate_chunk_count == 3
+        assert metric.character_count == 11
+        assert totals == {
+            "source_documents": 2,
+            "document_chunks": 3,
+            "chunk_embeddings": 3,
+        }
+    finally:
+        engine.dispose()
+        try:
+            with control_engine.begin() as connection:
+                connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+        finally:
+            control_engine.dispose()
 
 
 def test_document_library_logs_degraded_postgres_read(

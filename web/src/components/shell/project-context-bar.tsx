@@ -10,6 +10,7 @@ import type { AuthSessionResponse } from "@/lib/api-types";
 import { auditClientRoleDetail, auditClientRoleLabel, auditRoleOptions } from "@/lib/audit-user";
 import { findNavigationItemForPath } from "@/lib/navigation";
 import { currentSelfCheckProject } from "@/lib/projects";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 import { useAuditUser } from "./audit-user-context";
 
@@ -22,10 +23,15 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
   const project = currentSelfCheckProject;
   const pathname = usePathname();
   const auditUser = useAuditUser();
+  const publicShellReadonly = isPublicShellReadonly();
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
   const activeItem = useMemo(() => findNavigationItemForPath(pathname), [pathname]);
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      setAuthSession(null);
+      return;
+    }
     let isMounted = true;
 
     fetchAuthSession()
@@ -43,7 +49,7 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
     return () => {
       isMounted = false;
     };
-  }, [auditUser.role]);
+  }, [auditUser.role, publicShellReadonly]);
 
   const pageTitle = activeItem?.label ?? "工作台";
 
@@ -84,7 +90,11 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
               工作台
             </Link>
           )}
-          <details className="relative shrink-0">
+          {publicShellReadonly ? (
+            <span className="rounded-[var(--audit-radius-md)] border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              只读导览
+            </span>
+          ) : <details className="relative shrink-0">
             <summary className="audit-focus-ring flex h-9 cursor-pointer list-none items-center gap-2 rounded-[var(--audit-radius-md)] border border-[var(--audit-line)] bg-[var(--audit-surface-muted)] px-1.5 text-xs font-semibold text-[var(--audit-ink-muted)] hover:bg-white sm:px-2 [&::-webkit-details-marker]:hidden">
               <span className="grid size-6 place-items-center rounded-[var(--audit-radius-sm)] bg-[var(--audit-blue-deep)] text-xs font-semibold text-white" aria-hidden="true">
                 {auditClientRoleLabel(auditUser.role).slice(0, 1)}
@@ -132,7 +142,7 @@ export function ProjectContextBar({ sidebarCollapsed = false, onToggleSidebar }:
                 ))}
               </div>
             </div>
-          </details>
+          </details>}
         </div>
       </div>
     </header>

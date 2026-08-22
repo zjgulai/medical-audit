@@ -576,12 +576,29 @@ describe("ReplicaProjectWorkbench", () => {
   });
 
   it("connects tabs to panels and supports keyboard navigation", async () => {
+    const alpha = project("ALPHA", "Alpha项目", "进行中", 1);
+    const membersRead = deferred<ProjectMembersResponse>();
+    const dashboardRead = deferred<ProjectDashboardResponse>();
+    const filesRead = deferred<ProjectFilesResponse>();
+    fetchProjectMembersMock.mockReturnValueOnce(membersRead.promise);
+    fetchProjectDashboardMock.mockReturnValueOnce(dashboardRead.promise);
+    fetchProjectFilesMock.mockReturnValueOnce(filesRead.promise);
+
     render(<ReplicaProjectWorkbench />);
     fireEvent.click(await screen.findByRole("button", { name: "查看：Alpha项目" }));
     const overviewTab = screen.getByRole("tab", { name: "项目概览" });
     expect(overviewTab).toHaveAttribute("aria-controls", "project-tabpanel-overview");
     expect(overviewTab).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "project-tab-overview");
+
+    await act(async () => {
+      membersRead.resolve(membersResponse(alpha.id, [member("ALPHA-M1", alpha.id, "张审计")]));
+      dashboardRead.resolve(dashboardResponse(alpha));
+      filesRead.resolve(filesResponse(alpha.id));
+      await Promise.all([membersRead.promise, dashboardRead.promise, filesRead.promise]);
+    });
+    expect(screen.getByText("ALPHA-M1-account")).toBeInTheDocument();
+    expect(screen.getByText("Alpha项目复核任务")).toBeInTheDocument();
 
     fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
 

@@ -173,6 +173,14 @@ export type RemediationCaseApiItem = {
   readonly evidenceStatus: string;
   readonly nextAction: string;
   readonly href: string;
+  readonly project_key?: string | null;
+  readonly legacy_unscoped: boolean;
+  readonly writable: boolean;
+  readonly allowed_transitions: readonly {
+    readonly status: string;
+    readonly label: string;
+  }[];
+  readonly can_upload_attachment: boolean;
 };
 
 export type RemediationEvidenceRequestApiItem = {
@@ -185,6 +193,8 @@ export type RemediationEvidenceRequestApiItem = {
   readonly dueDate: string;
   readonly detail: string;
   readonly href: string;
+  readonly remediation_item_id: string | null;
+  readonly writable: boolean;
 };
 
 export type RemediationClosureGateApiItem = {
@@ -223,6 +233,10 @@ export type RemediationWorkbenchResponse = {
     readonly timeline_count: number;
   };
   readonly evidence_grade: string;
+  readonly data_mode: "persistent" | "sample" | "unavailable";
+  readonly capabilities: {
+    readonly writable: boolean;
+  };
   readonly production_side_effect: "none" | string;
   readonly store: {
     readonly ready: boolean;
@@ -1180,6 +1194,9 @@ export type ReportWorkbenchEntry = {
     readonly signed_at: string;
     readonly signoff_note: string;
     readonly report_id: string;
+    readonly can_sign: boolean;
+    readonly gate_ready: boolean;
+    readonly writes_allowed: boolean;
   };
   readonly download_links: ReportDownloadLinks;
 };

@@ -31,10 +31,13 @@ DEFAULT_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 DEFAULT_USER_ID = "production-smoke-auditor"
 DEFAULT_ADMIN_USER_ID = "production-smoke-admin"
 DEFAULT_USER_ROLE = "auditor"
-REQUIRED_PAGES = {
-    "/": ("AI审计一体化协作平台", "登录工作台"),
-    "/login": ("AI审计一体化协作平台", "登录工作台"),
+PUBLIC_SHELL_ACCESS_MODE = "public-shell-readonly"
+HEADER_TRANSITION_ACCESS_MODE = "header-transition-test"
+REQUIRED_PAGE_TEXTS = {
+    PUBLIC_SHELL_ACCESS_MODE: ("AI审计一体化协作平台", "登录暂未开放"),
+    HEADER_TRANSITION_ACCESS_MODE: ("AI审计一体化协作平台", "登录工作台"),
 }
+REQUIRED_PAGE_PATHS = ("/", "/login")
 
 
 class SmokeError(RuntimeError):
@@ -159,20 +162,53 @@ def main() -> int:
             "health",
             lambda: _check_health(base_url, timeout_seconds=float(args.timeout_seconds)),
         )
-        _run_step(
-            steps,
-            "search-backend",
-            lambda: _check_search_backend(
-                base_url,
-                auth=auth,
-                expected_matching_embeddings=int(args.expected_matching_embeddings),
-                timeout_seconds=float(args.timeout_seconds),
-            ),
-        )
+        if args.access_mode == PUBLIC_SHELL_ACCESS_MODE:
+            _run_step(
+                steps,
+                "runtime-access",
+                lambda: _check_deployment_metadata(
+                    base_url,
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+            _run_step(
+                steps,
+                "protected-catalog",
+                lambda: _check_protected_catalog(
+                    base_url,
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
+            steps.append(
+                {
+                    "name": "search-backend",
+                    "passed": True,
+                    "details": {
+                        "status": "not_run",
+                        "reason": "blocked-by-public-shell-access-mode",
+                    },
+                }
+            )
+        else:
+            _run_step(
+                steps,
+                "search-backend",
+                lambda: _check_search_backend(
+                    base_url,
+                    auth=auth,
+                    expected_matching_embeddings=int(args.expected_matching_embeddings),
+                    timeout_seconds=float(args.timeout_seconds),
+                ),
+            )
         _run_step(
             steps,
             "page-rendering",
-            lambda: _check_pages(base_url, auth=auth, timeout_seconds=float(args.timeout_seconds)),
+            lambda: _check_pages(
+                base_url,
+                auth=auth if args.access_mode == HEADER_TRANSITION_ACCESS_MODE else None,
+                access_mode=str(args.access_mode),
+                timeout_seconds=float(args.timeout_seconds),
+            ),
         )
         steps.append(
             {
@@ -303,6 +339,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-cert-host", default="audit.lute-tlz-dddd.top")
     parser.add_argument("--expected-matching-embeddings", type=int, default=48985)
     parser.add_argument("--timeout-seconds", type=float, default=90.0)
+    parser.add_argument(
+        "--access-mode",
+        choices=(PUBLIC_SHELL_ACCESS_MODE, HEADER_TRANSITION_ACCESS_MODE),
+        default=PUBLIC_SHELL_ACCESS_MODE,
+        help="Production runtime access contract to validate.",
+    )
     parser.add_argument(
         "--report",
         default="tmp/outputs/production-e2e-smoke-latest.json",
@@ -547,9 +589,69 @@ def _check_search_backend(
     }
 
 
-def _check_pages(base_url: str, *, auth: SmokeAuth, timeout_seconds: float) -> dict[str, object]:
+def _check_deployment_metadata(
+    base_url: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    payload = _get_json(
+        f"{base_url}/api/v1/deployment/metadata",
+        timeout_seconds=timeout_seconds,
+    )
+    runtime_access = _ensure_dict(payload.get("runtime_access"))
+    expected: dict[str, object] = {
+        "mode": PUBLIC_SHELL_ACCESS_MODE,
+        "trusted_identity_ready": False,
+        "protected_reads_allowed": False,
+        "writes_allowed": False,
+    }
+    _require(runtime_access == expected, "deployment metadata runtime_access mismatch")
+    return expected
+
+
+def _check_protected_catalog(
+    base_url: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    response = _get_text(
+        f"{base_url}/api/v1/knowledge-base/catalog",
+        timeout_seconds=timeout_seconds,
+    )
+    _require(response.status == 503, f"protected catalog returned {response.status}")
+    try:
+        payload = _ensure_dict(json.loads(response.text))
+    except json.JSONDecodeError as exc:
+        raise SmokeError("protected catalog response is not valid JSON") from exc
+    detail = _ensure_dict(payload.get("detail"))
+    _require(
+        detail.get("code") == "trusted_identity_required",
+        "protected catalog error code mismatch",
+    )
+    _require(
+        detail.get("access_mode") == PUBLIC_SHELL_ACCESS_MODE,
+        "protected catalog access mode mismatch",
+    )
+    cache_control = response.headers.get("cache-control", "")
+    _require("no-store" in cache_control.lower(), "protected catalog permits caching")
+    return {
+        "status": response.status,
+        "code": detail.get("code"),
+        "access_mode": detail.get("access_mode"),
+        "cache_control": cache_control,
+    }
+
+
+def _check_pages(
+    base_url: str,
+    *,
+    auth: SmokeAuth | None,
+    access_mode: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
     pages: dict[str, object] = {}
-    for path, required_texts in REQUIRED_PAGES.items():
+    required_texts = REQUIRED_PAGE_TEXTS[access_mode]
+    for path in REQUIRED_PAGE_PATHS:
         response = _get_text(
             f"{base_url}{path}",
             auth=auth,
@@ -931,6 +1033,7 @@ def _report(
             "proxy_mode": "direct",
             "automatic_retry": False,
         },
+        "access_mode": str(args.access_mode),
         "base_url": base_url,
         "question": question,
         "auth": auth.to_report_dict() if auth else {},

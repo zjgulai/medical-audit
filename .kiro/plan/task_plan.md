@@ -1,12 +1,126 @@
 ---
 title: "medical_audit loop engineering release readiness plan"
+doc_type: plan
+module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
+created: 2026-06-30
+updated: 2026-08-22
 status: "active"
+owner: self
+source: human+ai
 evidence_grade: "local-fullstack-plus-doc-derived"
 ---
 
 # medical_audit Loop Engineering Plan
+
+## 当前 PR #275 身份同步与评审门禁
+
+外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。
+
+- [x] 核验本地、远端候选分支和 Draft PR #275 的观测 head 均为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；分支相对 main 为 `0 behind / 13 ahead`。
+- [x] 核验 exact-head CI run `32499803192` 为 `success`：Python `1018 passed`、Web `419 passed`，Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档门禁通过。
+- [x] 完成只读 Ready 审计并判定 `NO-GO`：PR 正文与 tracked 当前状态仍绑定旧候选身份；CodeRabbit 因 Draft 跳过 review，GitHub review、review request 和 review thread 均为 0。
+- [x] 明确用户既有 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 不进入状态同步提交；10 个目标文档已备份到仓库外 file-history。
+- [x] 同步 README、文档入口、前端边界、开发计划、验收矩阵、状态/债务台账、差异报告和 `.kiro/plan` 三账，并更新当前状态 lint 标记。
+- [x] 运行 `docs:lint`、定向状态合同、Ruff、secret scan、GitNexus `detect_changes` 和 `git diff --check`；cached diff 在显式暂存后复核。
+- [ ] 形成 docs-only 原子提交并推送；随后用最终 exact head、实际 diff 和新 CI 收据更新 PR 正文。
+- [ ] 完成 CodeRabbit 与 GitNexus 独立评审；任何可复现缺陷进入修复循环，未完成评审不得提升 Ready。
+
+状态合同：本节记录带时间的外部观察和门禁步骤，不声明 tracked 文档自身 SHA。最终 commit、push、CI 和 review 终态由 GitHub 与仓库外收据绑定。
+
+边界：本门禁不包含 merge、deploy、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026-08-21 本地访问入口与文档证据修复门禁
+
+- [x] 审阅 46 文件工作树并排除用户维护的 `AGENTS.md`、`CLAUDE.md` 和 `.claude/**`；前一授权包因两项提交前问题保持 `blocked_by_review_findings`。
+- [x] 先红后绿修复本地 Chat Workbench 访问模式：未显式设置时仅本地 Shell 入口使用 `header-transition-test`，显式 `public-shell-readonly` 保持不变；FastAPI 通用缺省继续 fail-closed。
+- [x] 更新知识查询运行手册的本地启动命令和完整 Header 上下文，不修改生产容器入口。
+- [x] 将 README、稳定开发计划、状态/债务台账和差异报告的当前证据统一为 Python `1016 passed, 1 skipped, 5 warnings`；历史 `1012` 记录继续保留。
+- [x] 完成完整本地门禁：Python `1016 passed, 1 skipped, 5 warnings`，Web `418 passed`，Playwright `17/17`，Ruff、Mypy、lint、typecheck、普通/公开壳层 26/26 build 和 docs lint 通过。
+- [x] 刷新本地全栈收据：工作树共 48 个可见变更文件，21 个独立路由、2 个兼容别名、4 个工作流和 27 个功能通过，`provider_call=false`；最终清单摘要只写入仓库外授权包，避免 tracked 文档自引用。
+- [x] 执行 GitNexus `detect_changes(scope=all)`：40 个 tracked 变更文件、约 120 个变更符号（复核结果在 119–121 间波动）、300 条受影响流程，整体风险为 `critical`。
+- [x] 生成并校验新的 40 文件候选 staging 授权包；本门禁仍不执行 staging 或 commit。
+
+下一门禁：以刷新后的 exact-path 授权包为依据决定是否显式 staging 和创建本地提交。push、PR 修改、merge、deploy、生产访问和 Provider 调用仍分别授权。
+
+边界：本门禁没有 stage、commit、push、PR 修改、merge、deploy、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026-08-21 本地部署契约修复门禁（历史基线）
+
+- [x] 先红后绿复现并修复三个 P0 发布合同缺陷：旧生产 Compose 阻断候选同步、部署后检查要求受保护业务接口 `2xx`、默认生产 smoke 读取受保护知识库目录。
+- [x] 将访问模式检查移动到应用同步之后、发布目录准备之前，并绑定远端部署锁；同步后的 Compose 必须显式固定 `public-shell-readonly`。
+- [x] 部署后检查改为公开健康、部署元数据、公开页面和受保护目录 `503`；默认生产 smoke 进一步校验 `runtime_access`、`trusted_identity_required` 和 `Cache-Control: no-store`。
+- [x] 完成完整本地门禁：Python `1016 passed, 1 skipped, 5 warnings`，Web `418 passed`，Playwright `17/17`，Ruff、Mypy、lint、typecheck、26/26 build 和 docs lint 通过。
+- [x] 刷新 `L2-local-live` 功能收据：21 个独立路由、2 个兼容别名、4 个业务工作流和 27 个功能，`provider_call=false`。
+- [x] 执行 GitNexus `detect_changes(scope=all)`：38 个 tracked 变更文件、109 个变更符号、300 条受影响流程，整体风险为 `critical`；下一门禁必须审阅全候选影响面。
+- [ ] 生成可部署的 manifest-bound release package。当前工作树未提交，发布清单要求精确 Git SHA；不得把 `4b42b3ea…` 或内容摘要伪装成当前 46 文件脏工作树的 `source_sha`。
+
+该门禁的下一步已由上方“本地访问入口与文档证据修复门禁”接续；其中 46 文件口径是修复前历史基线。
+
+边界：本门禁没有 commit、push、PR 修改、merge、deploy、生产写入、Provider 调用或本地 Docker 操作。
+
+## 2026-08-15 CodeRabbit 发现本地修复门禁
+
+- [x] 冻结 `4b42b3eab6972d8ce7d870346f13d16f8ef04f79`、Draft PR #275 和 CI run `31778904386` 的最近外部证据；保留用户已有 `AGENTS.md`、`.claude/`、`CLAUDE.md`。
+- [x] 先红后绿修复后端缺省 fail-open 与 release manifest 模式未绑定。
+- [x] 将路由合同纠正为 21 个独立页面和 2 个兼容跳转，功能总数保持 27。
+- [x] 为生产导航只读 gate 增加显式 package 入口、S1/S2 零审计增量证据和 fail-closed 参数校验；不在本门禁运行生产命令。
+- [x] 修复疑点深链重复应用、整改未知存储状态和报告签发 actor 重复解析。
+- [x] 同步架构、API、Playbook、验收矩阵、状态台账，并移除 tracked 文档中的用户特定 SSH key 绝对路径。
+- [x] 刷新完整 Python、Ruff、Mypy、Web、普通/公开壳层 build、本地全栈 E2E 和 docs lint；最终 `git diff --check` 在收据前复核。
+- [x] 执行 GitNexus `detect_changes`：相对 `main` 的整个 PR 风险为 `critical`，当前 unstaged 工作树同样因共享认证/页面入口而为 `critical`。已完成回归覆盖已识别受影响入口并补齐核心工况，但该条未提供每条受影响 execution flow 的逐项映射证据。
+
+边界：本门禁只允许本地代码、测试、文档与仓库外收据；不包含 stage、commit、push、PR 修改、Ready、review、merge、部署、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026-08-14 exact-head 交付观察与状态合同修复
+
+本节以 2026-08-14 14:41（Asia/Shanghai）的外部观察为依据，不把 tracked 文档自身 SHA 或瞬时 push 状态写成当前身份。
+
+- [x] 核验 Draft PR #275 的 base `ccc73e95`、观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3`、`OPEN/DRAFT`、merge state `CLEAN` 和 review 数量 0。
+- [x] 核验 exact-head CI run `31776394739` 为 `success`：Python `1003 passed`、Web `417 passed`、普通/公开壳层构建和文档门禁通过。
+- [x] 识别 P1 根因：当前状态文档把提交前 head 和瞬时 push 状态写成长期事实，外部 push 后必然漂移。
+- [x] 将 README、文档入口、开发计划、状态台账、前端边界、验收矩阵、差异报告和三账改为「带时间外部观察」模型。
+- [x] 重构 `docs:lint` 当前状态合同：校验观察时间、观察 SHA、CI run 和证据角色，不要求 tracked 文档等于自身 `HEAD` 或某个瞬时 push 状态。
+- [x] 完成本地 `docs:lint`、Ruff、`git diff --check`、旧瞬时口径扫描和 scoped manifest。
+- [ ] 后续独立门禁：审阅本地差异后再决定 staging/commit；push、PR 正文更新、Ready、review、merge、部署和生产验收继续分别授权。
+
+边界：本门禁只允许本地文档与文档检查器修复、验证和仓库外收据；不包含 Git/GitHub 写入、生产访问、Provider 调用或本地 Docker 操作。
+
+## 2026-08-14 PR #275 文档与 P2 收口计划（历史：push 前）
+
+当前远端 Git 基线为 Draft PR #275 head `cc711fdb4dc2b36d2b5de705939a7726917960f1`；本节管理其上的本地收口提交。
+
+- [x] 锁定 PR base/head、exact-head CI、review 状态和本门禁授权边界。
+- [x] 补齐 `/api/v1` OpenAPI 逐操作清单，并使 `docs:lint` 对 123 个方法/路径操作执行缺失和陈旧双向检查。
+- [x] 修复只读导航验收合同：公开壳层主动请求任一受保护 API 时记录 P1 并失败。
+- [x] 修复整改列表窗口：项目可见性进入 SQL 查询后再排序和 `LIMIT`。
+- [x] 显式接受后端无访问模式环境变量时的本地 Header 回退风险；生产启动路径必须设置 `public-shell-readonly`，新增部署入口缺少显式设置即 NO-GO。
+- [x] 同步 README、稳定开发计划、状态/债务台账、前端边界、验收矩阵、差异报告和三账的 PR/HEAD/CI 口径。
+- [x] 执行完整 Python、Ruff、Mypy、Web、build、本地全栈 E2E 和 docs lint：Python `1002 passed, 1 skipped`、Web `417 passed`、Playwright `17/17`；唯一 skip 是本机缺少 PostgreSQL 测试 URL，对应回归已在 exact-head CI 通过。
+- [x] 完成最终 `git diff --check`、18 文件 scoped manifest 和本地收据校验；收据位于 `/Users/pray/.Codex/file-history/medical_audit-20260814T132341+0800-doc-openapi-p2-gate/`。
+- [x] 按授权将 18 个 scoped 文件形成 1 个本地原子提交；用户既有 `AGENTS.md`、`.claude/` 和 `CLAUDE.md` 未纳入提交。
+- [ ] 后续独立门禁：push 与 PR 正文更新；Ready、review、merge、部署或生产验收继续分别授权。
+
+边界：`local_commit_created=true`、`push=false`、`pr_mutation=false`、`production_access=false`、`provider_call=false`、`local_docker_untouched=true`。
+
+## 2026-08-13 执行计划（历史）
+
+当前候选为 `codex/medical-audit-reanalysis-playbook-20260813`。本轮目标是让代码、权限边界、逐功能验收和权威文档一致；下方旧 Loop 内容是历史记录。
+
+- 已完成：公开壳层 fail-closed 门禁、疑点深链、整改状态机、签发权限、知识统计聚合、逐功能文档和本地全量质量验证。
+- 已完成首批清理门禁：用户确认的 4 个 exact paths 已移动到系统 Trash，源路径、inode、内容哈希、受保护路径和 Git 状态均复核通过。
+- 已完成旧工作区证据归并：416 个选定文件通过 gzip 与隔离解包逐文件哈希校验。
+- 新鲜证据变化：Finder 在 15:10 清空了系统 Trash，首批 4 个对象当前不可恢复；触发者未知。第二批不再使用系统 Trash。
+- 已完成第二批受管隔离：5 个相互独立旧目录、约 2.50 GiB 已按确认同卷移动；inode、全量树哈希和候选 Git 状态移动前后一致，可按收据精确恢复。
+- 已完成第三批受管隔离：Loop 128 及其父仓库约 1.218 GiB 已按确认转换为相对 worktree 关联并成对同卷移动；inode、非指针载荷、Git 注册、`fsck`、alternates 和候选 Git 状态均通过。
+- 已完成候选收口复审：发现整改附件在父资源鉴权前处理文件、附件存储不可用时提前返回空列表两项同源缺陷；新增 RED 回归后完成最小修复。全量门禁刷新为 Python `995 passed`、Web `412 passed`、本地全栈 Playwright `17/17`。
+- 继续保留：H1 潜在敏感源证据不允许永久删除；Loop 128 父仓库隔离后仍依赖当前候选仓库 objects alternates，三份原绝对关联元数据备份不得删除。
+- 未授权：commit、merge、push、部署、生产业务读取/写入、Provider 调用、其他 Trash/隔离移动、任何永久删除和生产删除。
+- 生产边界：仅引用 2026-08-12 L3 只读证据；候选业务功能统一为 `not_production_verified`。
+- 下一门禁：生成并审阅本地候选 exact-manifest；只有获得单独授权后才可 staging 或 commit，不能由本地测试通过推断生产推广授权。
+
+权威任务和差异见 `drafts/analysis/project-reanalysis-and-gap-audit-20260813.md`。
 
 ## Goal
 
@@ -150,7 +264,7 @@ Goal:
 - Close the four repository-wide Ruff/Mypy findings left after the PPT-grounded product implementation.
 - Revalidate the complete local product candidate from the current feature worktree.
 - Refresh the release baseline against current `origin/main` without merging or rebasing user-owned work.
-- Use `/Users/pray/Downloads/DDDD.pem` only for an SSH read-only production audit and produce an executable deployment, rollback, and acceptance plan.
+- Use only the repository-external `$SSH_KEY_PATH` for an explicitly authorized SSH read-only production audit; tracked plans must not retain a user-specific absolute key path.
 
 Acceptance contract:
 

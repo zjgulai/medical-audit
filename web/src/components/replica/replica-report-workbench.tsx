@@ -23,6 +23,7 @@ import type {
   WorkpaperTemplateRegistryItem
 } from "@/lib/api-types";
 import type { AuditClientRole } from "@/lib/audit-user";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type LanePhase = "loading" | "ready" | "degraded" | "error";
 
@@ -302,7 +303,11 @@ function SignoffButton({
     );
   }
 
-  if (entry.status === "门禁阻断") return null;
+  if (
+    !entry.signoff?.can_sign
+    || !entry.signoff.gate_ready
+    || !entry.signoff.writes_allowed
+  ) return null;
 
   return (
     <span className="report-signoff-group">
@@ -514,6 +519,7 @@ function hasNonEmptyValues(fieldValues: Readonly<Record<string, string>>): boole
 
 export function ReplicaReportWorkbench() {
   const auditUser = useAuditUser();
+  const publicShellReadonly = isPublicShellReadonly();
   const requestGenerationRef = useRef(0);
   const interactionGenerationRef = useRef(0);
   const submittingRef = useRef(false);
@@ -549,6 +555,7 @@ export function ReplicaReportWorkbench() {
   }, []);
 
   const loadWorkbench = useCallback((role: AuditClientRole) => {
+    if (publicShellReadonly) return;
     const generation = ++requestGenerationRef.current;
     setReportState(loadingLane(role));
     setProjectsState(loadingLane(role));
@@ -583,7 +590,7 @@ export function ReplicaReportWorkbench() {
           setProjectsState({ phase: "error", response: null, role });
         }
       });
-  }, []);
+  }, [publicShellReadonly]);
 
   useEffect(() => {
     abortPendingDownload(true);
@@ -700,7 +707,13 @@ export function ReplicaReportWorkbench() {
 
   async function submitDraft(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!selectedTemplate || !selectedProjectVisible || !canCreate || submittingRef.current) return;
+    if (
+      publicShellReadonly
+      || !selectedTemplate
+      || !selectedProjectVisible
+      || !canCreate
+      || submittingRef.current
+    ) return;
     const allowedFields = new Set(selectedTemplate.evidence_bindings);
     const normalizedValues: Record<string, string> = {};
     for (const [field, value] of Object.entries(fieldValues)) {
@@ -736,7 +749,7 @@ export function ReplicaReportWorkbench() {
   }
 
   const handleDownload = useCallback(async (href: string) => {
-    if (downloadPendingRef.current) return;
+    if (publicShellReadonly || downloadPendingRef.current) return;
     const generation = ++downloadGenerationRef.current;
     const controller = new AbortController();
     downloadPendingRef.current = true;
@@ -758,9 +771,10 @@ export function ReplicaReportWorkbench() {
         if (mountedRef.current) setDownloadingPath(null);
       }
     }
-  }, []);
+  }, [publicShellReadonly]);
 
   const handleSignoff = useCallback(async (taskId: string, note: string) => {
+    if (publicShellReadonly) return;
     setSignoffState({ status: "signing", taskId });
     try {
       const result = await signReportDraft(taskId, note);
@@ -771,7 +785,28 @@ export function ReplicaReportWorkbench() {
     } catch {
       setSignoffState({ status: "error", taskId, message: "签发失败，请确认权限后重试。" });
     }
-  }, [auditUser.role, loadWorkbench, reportState.role]);
+  }, [auditUser.role, loadWorkbench, publicShellReadonly, reportState.role]);
+
+  if (publicShellReadonly) {
+    return (
+      <main className="replica-page replica-page-standard replica-report-workbench">
+        <header className="replica-page-header">
+          <div>
+            <p className="replica-kicker">审计交付</p>
+            <h1>报告与底稿</h1>
+            <p>可信身份认证启用前，仅开放不含真实业务数据的产品导览。</p>
+          </div>
+          <div className="replica-report-boundary" aria-label="报告边界">
+            <span>只读导览</span>
+            <span>业务能力已关闭</span>
+          </div>
+        </header>
+        <p className="replica-report-message is-degraded" role="status">
+          可信身份认证启用前，报告读取、草稿创建、下载和签发均不开放。
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="replica-page replica-page-standard replica-report-workbench">
@@ -783,7 +818,7 @@ export function ReplicaReportWorkbench() {
         </div>
         <div className="replica-report-boundary" aria-label="报告边界">
           <span>{canCreate ? "草稿可创建" : "当前身份只读"}</span>
-          <span>签发不在本页</span>
+          <span>签发按服务端门禁</span>
         </div>
       </header>
 

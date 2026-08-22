@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReplicaRuntimeResult } from "@/components/replica/use-replica-runtime";
@@ -121,7 +121,7 @@ describe("DocumentsPage", () => {
     window.history.pushState({}, "", "/documents");
   });
 
-  it("keeps the first render read-only for knowledge query side effects", () => {
+  it("keeps the first render read-only for knowledge query side effects", async () => {
     render(<DocumentsPage />);
 
     expect(screen.getByRole("heading", { name: "文档检索" })).toBeInTheDocument();
@@ -133,6 +133,7 @@ describe("DocumentsPage", () => {
     expect(screen.queryByDisplayValue("劳动争议司法案件解释")).not.toBeInTheDocument();
     expect(runKnowledgeQueryMock).not.toHaveBeenCalled();
     expect(searchDocumentsMock).not.toHaveBeenCalled();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
   it("loads original audit documents with preview, download and provenance instead of category placeholders", async () => {
@@ -224,7 +225,7 @@ describe("DocumentsPage", () => {
     );
   });
 
-  it("mounts the personal material panel without regressing search, catalog, history, or AI controls", () => {
+  it("mounts the personal material panel without regressing search, catalog, history, or AI controls", async () => {
     render(<DocumentsPage />);
 
     expect(screen.getByRole("region", { name: "个人材料只读面板" })).toBeInTheDocument();
@@ -232,6 +233,7 @@ describe("DocumentsPage", () => {
     expect(screen.getByRole("region", { name: "搜索历史" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "医保法规库 (12)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /检索AI\+/ })).toBeInTheDocument();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
   it("uses the medical-audit default when either search mode receives a blank draft", async () => {
@@ -268,7 +270,7 @@ describe("DocumentsPage", () => {
     expect(screen.queryByText("劳动争议司法案件解释")).not.toBeInTheDocument();
   });
 
-  it("does not substitute hard-coded or fixture documents into the initial live page", () => {
+  it("does not substitute hard-coded or fixture documents into the initial live page", async () => {
     render(<DocumentsPage />);
 
     expect(screen.getAllByText("医保法规库").length).toBeGreaterThan(0);
@@ -277,9 +279,10 @@ describe("DocumentsPage", () => {
     expect(screen.queryByText("雨丰民生25年流水.xlsx")).not.toBeInTheDocument();
     expect(screen.queryByText("18_投标被否决原因统计表.pdf")).not.toBeInTheDocument();
     expect(screen.queryByText("智能科技的CEO是谁")).not.toBeInTheDocument();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
-  it("renders runtime catalog and history empty states without fabricated zero totals", () => {
+  it("renders runtime catalog and history empty states without fabricated zero totals", async () => {
     runtimeMock.current = {
       ...makeApiRuntime(),
       outcome: "empty",
@@ -294,6 +297,7 @@ describe("DocumentsPage", () => {
     expect(screen.queryByText("文档目录读取失败")).not.toBeInTheDocument();
     expect(screen.queryByText("文档库：0 类 / 0 份")).not.toBeInTheDocument();
     expect(screen.queryByText("0 条匹配")).not.toBeInTheDocument();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
   it("renders runtime catalog errors without leaking stale catalog, history, or fixture data", () => {
@@ -315,7 +319,7 @@ describe("DocumentsPage", () => {
     expect(screen.queryByText("文档库：1 类 / 12 份")).not.toBeInTheDocument();
   });
 
-  it("shows unknown catalog counts without fabricating zero values", () => {
+  it("shows unknown catalog counts without fabricating zero values", async () => {
     runtimeMock.current = {
       ...makeApiRuntime(),
       outcome: "degraded",
@@ -342,9 +346,10 @@ describe("DocumentsPage", () => {
     expect(screen.queryByRole("button", { name: "全部文档 (0)" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "医保法规库 (0)" })).not.toBeInTheDocument();
     expect(screen.queryByText("文档目录读取失败")).not.toBeInTheDocument();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
-  it("keeps a real zero catalog count visible as zero", () => {
+  it("keeps a real zero catalog count visible as zero", async () => {
     runtimeMock.current = {
       ...makeApiRuntime(),
       data: {
@@ -366,6 +371,7 @@ describe("DocumentsPage", () => {
     expect(screen.getByRole("button", { name: "全部文档 (0)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "医保法规库 (0)" })).toBeInTheDocument();
     expect(screen.getByText("文档库：1 类 / 0 份")).toBeInTheDocument();
+    await screen.findByRole("status", { name: "原文档目录空状态" });
   });
 
   it("renders runtime fixture history and documents only when the source is fixture", () => {
@@ -615,6 +621,10 @@ describe("DocumentsPage", () => {
     }));
 
     render(<DocumentsPage />);
+    await screen.findByRole("status", { name: "原文档目录空状态" });
+    fetchDocumentLibraryMock.mockImplementation(
+      () => new Promise<Awaited<ReturnType<typeof fetchDocumentLibrary>>>(() => undefined)
+    );
     fireEvent.click(screen.getByRole("button", { name: "医保法规库 (12)" }));
     fireEvent.click(screen.getByRole("button", { name: "搜索" }));
 
@@ -634,34 +644,36 @@ describe("DocumentsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "医保支付" }));
     fireEvent.click(screen.getByRole("button", { name: "全部文档 (12)" }));
 
-    resolveSearch({
-      contract_version: "document-search-v1",
-      query: "医保基金监管",
-      effective_source_collections: ["personal-materials"],
-      items: [
-        {
-          id: "snapshot-result",
-          chunk_id: "snapshot-result",
-          title: "快照绑定结果",
-          source_collection: "personal-materials",
-          source_label: "个人材料",
-          snippet: "结果上下文应保持原请求。",
-          locator: { title: "快照绑定结果" },
-          score: 1,
-          matched_by: ["bm25"],
-          index_version_key: "index-v1",
-          source_package_version_key: "package-v1",
-          preview_url: "/api/v1/preview/snapshot-result"
+    await act(async () => {
+      resolveSearch({
+        contract_version: "document-search-v1",
+        query: "医保基金监管",
+        effective_source_collections: ["personal-materials"],
+        items: [
+          {
+            id: "snapshot-result",
+            chunk_id: "snapshot-result",
+            title: "快照绑定结果",
+            source_collection: "personal-materials",
+            source_label: "个人材料",
+            snippet: "结果上下文应保持原请求。",
+            locator: { title: "快照绑定结果" },
+            score: 1,
+            matched_by: ["bm25"],
+            index_version_key: "index-v1",
+            source_package_version_key: "package-v1",
+            preview_url: "/api/v1/preview/snapshot-result"
+          }
+        ],
+        store: { ready: true, backend: "unit-test" },
+        boundaries: {
+          production_write: false,
+          provider_call: false,
+          database_write: false,
+          object_storage_write: false,
+          query_history_write: false
         }
-      ],
-      store: { ready: true, backend: "unit-test" },
-      boundaries: {
-        production_write: false,
-        provider_call: false,
-        database_write: false,
-        object_storage_write: false,
-        query_history_write: false
-      }
+      });
     });
 
     expect((await screen.findAllByText("快照绑定结果")).length).toBeGreaterThan(0);

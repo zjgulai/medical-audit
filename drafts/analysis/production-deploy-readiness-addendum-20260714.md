@@ -2,14 +2,18 @@
 title: medical_audit 生产部署就绪补充报告
 doc_type: analysis-report
 module: repository
-status: pr233_postmerge_deploy_prep_blocked_audit_log_side_effect
+status: superseded_postmerge_audit_log_side_effect
+superseded_by: drafts/analysis/project-reanalysis-and-gap-audit-20260813.md
+superseded_date: 2026-08-16
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-08-16
 owner: self
 source: fresh-clean-candidate-and-production-readonly-evidence
 ---
 
 # medical_audit 生产部署就绪补充报告
+
+> 本报告已标记 `superseded`，用于 2026-07-14 历史归档；当前候选请以 `drafts/analysis/project-reanalysis-and-gap-audit-20260813.md` 与 `2026-08-15+` 生产/本地证据为准。
 
 ## 结论
 
@@ -72,7 +76,7 @@ git fetch origin --prune
 git switch main
 git pull --ff-only origin main
 HOME=/private/tmp/medical-audit-known-home.lbIBOo uv run python scripts/deploy-tencent-cloud-production.py \
-  --ssh-key /Users/pray/Downloads/DDDD.pem \
+  --ssh-key "$SSH_KEY_PATH" \
   --execute \
   --confirm-production audit.lute-tlz-dddd.top \
   --approved-sha b88ecdff7f773c8990454009d4a2b33ea8fdc2d4 \

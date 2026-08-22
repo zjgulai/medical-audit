@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import {
@@ -8,7 +8,6 @@ import {
   createMedicalAuditReviewTask,
   fetchAuditFindings,
   fetchDocumentSourceCollections,
-  fetchProjectDashboard,
   fetchProjects,
   fetchReportWorkbench,
   recordMedicalAuditImportPreflight,
@@ -16,13 +15,13 @@ import {
   updateMedicalAuditReviewStatus
 } from "@/lib/api-client";
 import { DEFAULT_AUDIT_PROJECT_KEY } from "@/lib/audit-user";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 import type {
   AuditFinding as BackendAuditFinding,
   AuditFindingsResponse,
   DocumentSourceCollectionCatalogItem,
   DocumentSourceCollectionCatalogResponse,
   MedicalAuditWorkflowActionResponse,
-  ProjectDashboardResponse,
   ProjectSummaryApiItem,
   ProjectsResponse,
   ReportWorkbenchResponse,
@@ -393,7 +392,11 @@ export default function MedicalAuditPage() {
 
 function MedicalAuditPageInner() {
   const searchParams = useSearchParams();
+  const publicShellReadonly = isPublicShellReadonly();
+  const writesAllowed = !publicShellReadonly;
   const preferredProjectId = searchParams.get("project");
+  const preferredFindingKey = searchParams.get("finding");
+  const appliedPreferredFindingKeyRef = useRef<string | null>(null);
   const [activeTool, setActiveTool] = useState<ToolId>("audit");
   const [activeView, setActiveView] = useState<AuditView>("audit");
   const [activeRule, setActiveRule] = useState<RuleFilter>("all");
@@ -406,6 +409,7 @@ function MedicalAuditPageInner() {
   const [workflowActionState, setWorkflowActionState] = useState<WorkflowActionState>({ status: "idle" });
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [findingLinkNotice, setFindingLinkNotice] = useState<string | null>(null);
 
   const [auditState, setAuditState] = useState<LoadState<AuditFindingsResponse>>({
     status: "loading"
@@ -419,11 +423,17 @@ function MedicalAuditPageInner() {
   const [projectState, setProjectState] = useState<LoadState<ProjectsResponse>>({
     status: "loading"
   });
-  const [dashboardState, setDashboardState] = useState<LoadState<ProjectDashboardResponse>>({
-    status: "loading"
-  });
-
   useEffect(() => {
+    if (publicShellReadonly) {
+      appliedPreferredFindingKeyRef.current = null;
+      setAuditState({
+        status: "error",
+        message: "生产只读导览已关闭业务疑点读取。"
+      });
+      setSelectedFindingKey(null);
+      setFindingLinkNotice(null);
+      return;
+    }
     let cancelled = false;
     setAuditState({ status: "loading" });
     fetchAuditFindings(reviewStatus || undefined)
@@ -432,7 +442,37 @@ function MedicalAuditPageInner() {
           return;
         }
         setAuditState({ status: "ready", data });
-        setSelectedFindingKey((current) => current ?? data.items[0]?.finding_key ?? null);
+        if (
+          preferredFindingKey &&
+          appliedPreferredFindingKeyRef.current !== preferredFindingKey
+        ) {
+          appliedPreferredFindingKeyRef.current = preferredFindingKey;
+          const linkedFinding = data.items.find(
+            (finding) => finding.finding_key === preferredFindingKey
+          );
+          if (linkedFinding) {
+            setActiveTool("audit");
+            setActiveView("audit");
+            setActiveRule("all");
+            setRiskFilter("全部风险");
+            setSearchQuery("");
+            setSelectedFindingKey(linkedFinding.finding_key);
+            setFindingLinkNotice(null);
+          } else {
+            setSelectedFindingKey(data.items[0]?.finding_key ?? null);
+            setFindingLinkNotice("未找到可见疑点，已显示当前可访问的疑点清单。");
+          }
+        } else {
+          if (!preferredFindingKey) {
+            appliedPreferredFindingKeyRef.current = null;
+            setFindingLinkNotice(null);
+          }
+          setSelectedFindingKey((current) =>
+            current && data.items.some((finding) => finding.finding_key === current)
+              ? current
+              : data.items[0]?.finding_key ?? null
+          );
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -445,9 +485,20 @@ function MedicalAuditPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [reviewStatus]);
+  }, [preferredFindingKey, publicShellReadonly, reviewStatus]);
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      setSourceState({
+        status: "error",
+        message: "生产只读导览已关闭知识库业务目录读取。"
+      });
+      setReportState({
+        status: "error",
+        message: "生产只读导览已关闭报告业务数据读取。"
+      });
+      return;
+    }
     let cancelled = false;
     fetchDocumentSourceCollections()
       .then((data) => {
@@ -482,52 +533,35 @@ function MedicalAuditPageInner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [publicShellReadonly]);
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      setProjectState({
+        status: "error",
+        message: "生产只读导览已关闭项目业务数据读取。"
+      });
+      return;
+    }
     let cancelled = false;
     setProjectState({ status: "loading" });
-    setDashboardState({ status: "loading" });
     fetchProjects()
       .then((projects) => {
         if (cancelled) {
           return;
         }
         setProjectState({ status: "ready", data: projects });
-        const project = selectMedicalAuditProject(projects.items, preferredProjectId);
-        if (!project) {
-          setDashboardState({
-            status: "error",
-            message: "当前没有可关联的审计专题项目"
-          });
-          return;
-        }
-        return fetchProjectDashboard(project.id)
-          .then((dashboard) => {
-            if (!cancelled) {
-              setDashboardState({ status: "ready", data: dashboard });
-            }
-          })
-          .catch((error: unknown) => {
-            if (!cancelled) {
-              setDashboardState({
-                status: "error",
-                message: error instanceof Error ? error.message : "专题驾驶舱接口读取异常"
-              });
-            }
-          });
       })
       .catch((error: unknown) => {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "审计专题项目接口读取异常";
           setProjectState({ status: "error", message });
-          setDashboardState({ status: "error", message: "专题驾驶舱等待项目数据恢复" });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preferredProjectId, publicShellReadonly]);
 
   const auditData = auditState.status === "ready" ? auditState.data : null;
   const sourceData = sourceState.status === "ready" ? sourceState.data : null;
@@ -601,6 +635,13 @@ function MedicalAuditPageInner() {
   }
 
   async function handleWorkflowConfirm(dialog: WorkflowDialog, reviewerNote: string) {
+    if (!writesAllowed) {
+      setWorkflowActionState({
+        status: "error",
+        message: "生产只读导览不允许提交业务操作。"
+      });
+      return;
+    }
     setWorkflowActionState({ status: "running", message: "正在提交到后端流程..." });
     try {
       let response: MedicalAuditWorkflowActionResponse | undefined;
@@ -684,6 +725,9 @@ function MedicalAuditPageInner() {
   }
 
   function updateTool(tool: ToolId) {
+    if (!writesAllowed && tool === "setting") {
+      return;
+    }
     setActiveTool(tool);
     const nextRule = toolRuleFilters[tool];
     if (nextRule) {
@@ -712,6 +756,7 @@ function MedicalAuditPageInner() {
       <MedicalStatusRail
         activeTool={activeTool}
         badges={toolBadges}
+        writesAllowed={writesAllowed}
         onToolChange={updateTool}
       />
       <RuleNavigator
@@ -754,20 +799,21 @@ function MedicalAuditPageInner() {
           </div>
           <details className="replica-medical-notice">
             <summary>查看数据与权限说明</summary>
-            <p>页面初始加载读取生产数据；复核、报告、任务和补充材料写入仍需经过独立确认门禁。</p>
+            <p>本地测试模式读取受控业务数据；生产公开壳层不会读取业务数据，写操作也保持关闭。</p>
             <p>
               疑点清单来自 <code>/api/v1/audit-findings</code>，知识库分类来自{" "}
               <code>/api/v1/documents/source-collections</code>，报告模板来自{" "}
-              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code> 与{" "}
-              <code>/api/v1/projects/:id/dashboard</code>。
+              <code>/api/v1/reports/workbench</code>，专题项目来自 <code>/api/v1/projects</code>。
             </p>
           </details>
+          {findingLinkNotice ? (
+            <p className="replica-medical-notice" role="status">{findingLinkNotice}</p>
+          ) : null}
           {activeView === "audit" ? (
             <SmartAuditView
               activeRule={activeRule}
               auditState={auditState}
               activeProject={activeProject}
-              dashboardState={dashboardState}
               filteredFindings={filteredFindings}
               projectState={projectState}
               reportState={reportState}
@@ -777,6 +823,7 @@ function MedicalAuditPageInner() {
               sourceState={sourceState}
               statusOptions={statusOptions}
               reviewStatus={reviewStatus}
+              writesAllowed={writesAllowed}
               onDialog={setWorkflowDialog}
               onRiskFilterChange={setRiskFilter}
               onReviewStatusChange={setReviewStatus}
@@ -788,6 +835,7 @@ function MedicalAuditPageInner() {
             <TemplateWorkbookView
               reportState={reportState}
               view={activeView}
+              writesAllowed={writesAllowed}
               onDialog={(kind) => setWorkflowDialog({ kind })}
             />
           )}
@@ -797,6 +845,7 @@ function MedicalAuditPageInner() {
             finding={selectedFinding}
             sourceKeys={sourceKeys}
             statusOptions={statusOptions}
+            writesAllowed={writesAllowed}
             onDialog={(kind, finding) => setWorkflowDialog({ kind, finding })}
             onClose={() => setSelectedFindingKey(null)}
           />
@@ -813,7 +862,7 @@ function MedicalAuditPageInner() {
       </section>
       <WorkflowGateDialog
         actionState={workflowActionState}
-        dialog={workflowDialog}
+        dialog={writesAllowed ? workflowDialog : null}
         onClose={() => {
           setWorkflowDialog(null);
           setWorkflowActionState({ status: "idle" });
@@ -827,15 +876,17 @@ function MedicalAuditPageInner() {
 function MedicalStatusRail({
   activeTool,
   badges,
+  writesAllowed,
   onToolChange
 }: {
   readonly activeTool: ToolId;
   readonly badges: Record<ToolId, string>;
+  readonly writesAllowed: boolean;
   readonly onToolChange: (tool: ToolId) => void;
 }) {
   return (
     <aside className="replica-medical-iconrail" aria-label="医保审计工具">
-      {toolModules.map((module) => (
+      {toolModules.filter((module) => writesAllowed || module.id !== "setting").map((module) => (
         <button
           aria-label={module.label}
           className={activeTool === module.id ? "is-active" : ""}
@@ -939,7 +990,6 @@ function SmartAuditView({
   activeRule,
   auditState,
   activeProject,
-  dashboardState,
   filteredFindings,
   projectState,
   reportState,
@@ -949,6 +999,7 @@ function SmartAuditView({
   sourceState,
   statusOptions,
   reviewStatus,
+  writesAllowed,
   onDialog,
   onRiskFilterChange,
   onReviewStatusChange,
@@ -959,7 +1010,6 @@ function SmartAuditView({
   readonly activeRule: RuleFilter;
   readonly auditState: LoadState<AuditFindingsResponse>;
   readonly activeProject: ProjectSummaryApiItem | null;
-  readonly dashboardState: LoadState<ProjectDashboardResponse>;
   readonly filteredFindings: readonly BackendAuditFinding[];
   readonly projectState: LoadState<ProjectsResponse>;
   readonly reportState: LoadState<ReportWorkbenchResponse>;
@@ -969,6 +1019,7 @@ function SmartAuditView({
   readonly sourceState: LoadState<DocumentSourceCollectionCatalogResponse>;
   readonly statusOptions: Record<string, string>;
   readonly reviewStatus: string;
+  readonly writesAllowed: boolean;
   readonly onDialog: (dialog: WorkflowDialog) => void;
   readonly onRiskFilterChange: (risk: RiskFilter) => void;
   readonly onReviewStatusChange: (status: string) => void;
@@ -1018,7 +1069,7 @@ function SmartAuditView({
           </select>
         </label>
         <span className="replica-medical-count-pill">{filteredFindings.length} 条</span>
-        <div className="replica-medical-filter-actions">
+        {writesAllowed ? <div className="replica-medical-filter-actions">
           <button
             className="replica-secondary-button"
             type="button"
@@ -1032,7 +1083,7 @@ function SmartAuditView({
           <button className="replica-danger-button" type="button" onClick={() => onDialog({ kind: "review" })}>
             批量复核
           </button>
-        </div>
+        </div> : null}
       </div>
       {auditState.status === "loading" ? (
         <section className="replica-medical-evidence is-blue">
@@ -1051,7 +1102,11 @@ function SmartAuditView({
         </section>
       ) : null}
       {auditData && auditData.items.length === 0 ? (
-        <EmptyReadinessPanel readiness={auditData.generation_readiness} onDialog={onDialog} />
+        <EmptyReadinessPanel
+          readiness={auditData.generation_readiness}
+          writesAllowed={writesAllowed}
+          onDialog={onDialog}
+        />
       ) : null}
       {auditData && auditData.items.length > 0 ? (
         <FindingsTable
@@ -1059,6 +1114,7 @@ function SmartAuditView({
           selectedFindingKey={selectedFindingKey}
           selectedKeys={selectedKeys}
           statusOptions={statusOptions}
+          writesAllowed={writesAllowed}
           onDialog={onDialog}
           onSelectFinding={onSelectFinding}
           onToggleFinding={onToggleFinding}
@@ -1187,6 +1243,7 @@ function FindingsTable({
   selectedFindingKey,
   selectedKeys,
   statusOptions,
+  writesAllowed,
   onDialog,
   onSelectFinding,
   onToggleFinding
@@ -1195,6 +1252,7 @@ function FindingsTable({
   readonly selectedFindingKey: string | null;
   readonly selectedKeys: ReadonlySet<string>;
   readonly statusOptions: Record<string, string>;
+  readonly writesAllowed: boolean;
   readonly onDialog: (dialog: WorkflowDialog) => void;
   readonly onSelectFinding: (key: string) => void;
   readonly onToggleFinding: (key: string) => void;
@@ -1251,7 +1309,7 @@ function FindingsTable({
               ) : null}
               <span className="audit-finding-card__date">{formatDate(finding.updated_at)}</span>
             </div>
-            <div className="audit-finding-card__actions">
+            {writesAllowed ? <div className="audit-finding-card__actions">
               <button type="button" onClick={() => onDialog({ kind: "review", finding })}>
                 复核
               </button>
@@ -1261,7 +1319,7 @@ function FindingsTable({
               <button type="button" onClick={() => onDialog({ kind: "report", finding })}>
                 加入报告
               </button>
-            </div>
+            </div> : null}
           </article>
         );
       })}
@@ -1305,12 +1363,14 @@ function FindingDrawer({
   finding,
   sourceKeys,
   statusOptions,
+  writesAllowed,
   onClose,
   onDialog
 }: {
   readonly finding: BackendAuditFinding;
   readonly sourceKeys: readonly string[];
   readonly statusOptions: Record<string, string>;
+  readonly writesAllowed: boolean;
   readonly onClose: () => void;
   readonly onDialog: (kind: WorkflowKind, finding?: BackendAuditFinding | null) => void;
 }) {
@@ -1391,18 +1451,24 @@ function FindingDrawer({
       </ul>
       <p className="replica-medical-source">最后更新：{formatDate(finding.updated_at)}</p>
       <div className="replica-medical-drawer-actions">
-        <button className="is-primary" type="button" onClick={() => onDialog("review", finding)}>
-          进入复核
-        </button>
+        {writesAllowed ? (
+          <button className="is-primary" type="button" onClick={() => onDialog("review", finding)}>
+            进入复核
+          </button>
+        ) : null}
         <a className="replica-secondary-button" href={buildChatHref(finding, sourceKeys)}>
           AI 分析
         </a>
-        <button type="button" onClick={() => onDialog("report", finding)}>
-          加入报告
-        </button>
-        <button type="button" onClick={() => onDialog("import", finding)}>
-          补充材料
-        </button>
+        {writesAllowed ? (
+          <>
+            <button type="button" onClick={() => onDialog("report", finding)}>
+              加入报告
+            </button>
+            <button type="button" onClick={() => onDialog("import", finding)}>
+              补充材料
+            </button>
+          </>
+        ) : null}
       </div>
     </aside>
   );
@@ -1410,9 +1476,11 @@ function FindingDrawer({
 
 function EmptyReadinessPanel({
   readiness,
+  writesAllowed,
   onDialog
 }: {
   readonly readiness: AuditFindingsResponse["generation_readiness"];
+  readonly writesAllowed: boolean;
   readonly onDialog: (dialog: WorkflowDialog) => void;
 }) {
   return (
@@ -1427,14 +1495,14 @@ function EmptyReadinessPanel({
           </li>
         ))}
       </ul>
-      <div className="replica-medical-drawer-actions" style={{ position: "static", margin: "14px 0 0" }}>
+      {writesAllowed ? <div className="replica-medical-drawer-actions" style={{ position: "static", margin: "14px 0 0" }}>
         <button className="is-primary" type="button" onClick={() => onDialog({ kind: "import" })}>
           导入表格
         </button>
         <button type="button" onClick={() => onDialog({ kind: "new-task" })}>
           创建任务
         </button>
-      </div>
+      </div> : null}
     </section>
   );
 }
@@ -1442,10 +1510,12 @@ function EmptyReadinessPanel({
 function TemplateWorkbookView({
   reportState,
   view,
+  writesAllowed,
   onDialog
 }: {
   readonly reportState: LoadState<ReportWorkbenchResponse>;
   readonly view: AuditView;
+  readonly writesAllowed: boolean;
   readonly onDialog: (kind: WorkflowKind) => void;
 }) {
   if (view === "audit") {
@@ -1462,14 +1532,14 @@ function TemplateWorkbookView({
           <h2>{config.title}</h2>
           <span>{template ? "模板已就绪" : "待导入数据"}</span>
         </div>
-        <div>
+        {writesAllowed ? <div>
           <button className="replica-secondary-button" type="button" onClick={() => onDialog("new-task")}>
             创建审计任务
           </button>
           <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
             导入表格文件
           </button>
-        </div>
+        </div> : null}
       </header>
 
       <div className="replica-medical-table-empty-guide">
@@ -1486,9 +1556,11 @@ function TemplateWorkbookView({
             <span>{columns.slice(0, 6).join(" · ")}{columns.length > 6 ? ` · ... 等 ${columns.length - 6} 项` : ""}</span>
           </div>
         </div>
-        <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
-          立即导入
-        </button>
+        {writesAllowed ? (
+          <button className="replica-primary-button" type="button" onClick={() => onDialog("import")}>
+            立即导入
+          </button>
+        ) : null}
       </div>
     </section>
   );

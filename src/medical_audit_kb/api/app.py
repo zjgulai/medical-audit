@@ -199,6 +199,18 @@ class DeploymentMetadataBoundaries(BaseModel):
     non_get_http_methods_allowed: bool
 
 
+ApiAccessMode = Literal["header-transition-test", "public-shell-readonly"]
+
+
+class DeploymentRuntimeAccess(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: ApiAccessMode
+    trusted_identity_ready: bool
+    protected_reads_allowed: bool
+    writes_allowed: bool
+
+
 class DeploymentMetadataResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -210,11 +222,14 @@ class DeploymentMetadataResponse(BaseModel):
     deploy_sha_source: DeploymentShaSource
     required_report_fields: dict[str, str | bool | None]
     boundaries: DeploymentMetadataBoundaries
+    runtime_access: DeploymentRuntimeAccess
     supported_claims: list[str]
     forbidden_claims: list[str]
 
 
 CONTROLLED_API_AUTH_ENV = "MEDICAL_AUDIT_CONTROLLED_API_AUTH"
+API_ACCESS_MODE_ENV = "MEDICAL_AUDIT_API_ACCESS_MODE"
+DEV_MODE_ENV = "MEDICAL_AUDIT_KB_DEV_MODE"
 CONTROLLED_API_TENANT_HEADER = "X-Tenant-Id"
 DEPLOY_SHA_ENV = "MEDICAL_AUDIT_DEPLOY_SHA"
 DEPLOY_SHA_FILE_ENV = "MEDICAL_AUDIT_DEPLOY_SHA_FILE"
@@ -223,6 +238,9 @@ WEB_STATIC_ROOT_ENV = "MEDICAL_AUDIT_WEB_STATIC_ROOT"
 API_V1_PREFIX = "/api/v1"
 API_BACKEND_PREFIX = "/api/backend"
 CONTROLLED_API_AUTH_VALUES = frozenset({"1", "true", "yes", "enforce", "required"})
+API_ACCESS_MODES = frozenset({"header-transition-test", "public-shell-readonly"})
+API_ACCESS_MODE_PUBLIC_SHELL: ApiAccessMode = "public-shell-readonly"
+API_ACCESS_MODE_HEADER_TRANSITION: ApiAccessMode = "header-transition-test"
 CONTROLLED_API_PUBLIC_EXACT_PATHS = frozenset(
     {
         "/",
@@ -307,14 +325,18 @@ STATIC_EXPORT_PORTAL_PATHS = (
     "agents",
     "analytics",
     "archive",
+    "audit-cockpit",
     "chat",
     "documents",
     "findings",
+    "fund-compliance",
+    "fund-compliance/review",
     "graph",
     "guided-check",
     "knowledge-base",
     "knowledge-query",
     "login",
+    "medical-audit",
     "ocr",
     "projects",
     "remediation",
@@ -328,10 +350,13 @@ def create_app(
     api_state: ApiState | None = None,
     *,
     enforce_controlled_api_auth: bool | None = None,
+    api_access_mode: ApiAccessMode | None = None,
 ) -> FastAPI:
     state = api_state or ApiState.from_settings(load_settings())
+    resolved_access_mode = _resolve_api_access_mode(api_access_mode)
     app = FastAPI(title="Medical Audit Knowledge Query API", version=__version__)
     app.state.api_state = state
+    app.state.api_access_mode = resolved_access_mode
 
     @app.middleware("http")
     async def audit_operation_identity_middleware(
@@ -359,9 +384,12 @@ def create_app(
             request: Request,
             call_next: Callable[[Request], Awaitable[StarletteResponse]],
         ) -> StarletteResponse:
-            if _should_authenticate_controlled_api_path(
+            if (
+                resolved_access_mode == API_ACCESS_MODE_HEADER_TRANSITION
+                and _should_authenticate_controlled_api_path(
                 request.url.path,
                 request.method,
+                )
             ):
                 tenant_id = normalize_tenant_id(request.headers.get(CONTROLLED_API_TENANT_HEADER))
                 if tenant_id is None:
@@ -415,6 +443,27 @@ def create_app(
                 request.state.authenticated_user = user
             return await call_next(request)
 
+    if resolved_access_mode == API_ACCESS_MODE_PUBLIC_SHELL:
+
+        @app.middleware("http")
+        async def public_shell_readonly_middleware(
+            request: Request,
+            call_next: Callable[[Request], Awaitable[StarletteResponse]],
+        ) -> StarletteResponse:
+            if _should_block_public_shell_request(request.url.path, request.method):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "detail": {
+                            "code": "trusted_identity_required",
+                            "message": "可信身份认证尚未启用，生产业务数据访问已关闭。",
+                            "access_mode": API_ACCESS_MODE_PUBLIC_SHELL,
+                        }
+                    },
+                    headers={"Cache-Control": "no-store"},
+                )
+            return await call_next(request)
+
     app.mount(
         "/static",
         StaticFiles(directory=Path(__file__).parent / "static"),
@@ -422,6 +471,7 @@ def create_app(
     )
 
     @app.get("/health", response_model=HealthResponse)
+    @app.head("/health", include_in_schema=False)
     def health() -> HealthResponse:
         return HealthResponse(
             status="ok",
@@ -429,18 +479,25 @@ def create_app(
         )
 
     @app.get(f"{API_V1_PREFIX}/health", response_model=HealthResponse)
+    @app.head(f"{API_V1_PREFIX}/health", include_in_schema=False)
     def versioned_health() -> HealthResponse:
         return health()
 
     @app.get(f"{API_BACKEND_PREFIX}/health", response_model=HealthResponse)
+    @app.head(f"{API_BACKEND_PREFIX}/health", include_in_schema=False)
     def backend_proxy_health() -> HealthResponse:
         return health()
 
     @app.get("/deployment/metadata", response_model=DeploymentMetadataResponse)
+    @app.head("/deployment/metadata", include_in_schema=False)
     def deployment_metadata() -> DeploymentMetadataResponse:
-        return _deployment_metadata_response()
+        return _deployment_metadata_response(resolved_access_mode)
 
-    @app.get(f"{API_V1_PREFIX}/deployment/metadata", response_model=DeploymentMetadataResponse)
+    @app.get(
+        f"{API_V1_PREFIX}/deployment/metadata",
+        response_model=DeploymentMetadataResponse,
+    )
+    @app.head(f"{API_V1_PREFIX}/deployment/metadata", include_in_schema=False)
     def versioned_deployment_metadata() -> DeploymentMetadataResponse:
         return deployment_metadata()
 
@@ -448,6 +505,7 @@ def create_app(
         f"{API_BACKEND_PREFIX}/deployment/metadata",
         response_model=DeploymentMetadataResponse,
     )
+    @app.head(f"{API_BACKEND_PREFIX}/deployment/metadata", include_in_schema=False)
     def backend_proxy_deployment_metadata() -> DeploymentMetadataResponse:
         return deployment_metadata()
 
@@ -519,6 +577,46 @@ def _controlled_api_auth_enabled(enforce_controlled_api_auth: bool | None) -> bo
     return os.getenv(CONTROLLED_API_AUTH_ENV, "").strip().lower() in CONTROLLED_API_AUTH_VALUES
 
 
+def _resolve_api_access_mode(api_access_mode: ApiAccessMode | None) -> ApiAccessMode:
+    raw_mode = api_access_mode or os.getenv(API_ACCESS_MODE_ENV, "").strip()
+    if raw_mode:
+        if raw_mode not in API_ACCESS_MODES:
+            raise ValueError(
+                f"{API_ACCESS_MODE_ENV} must be one of: "
+                f"{', '.join(sorted(API_ACCESS_MODES))}"
+            )
+        return cast(ApiAccessMode, raw_mode)
+    if os.getenv(DEV_MODE_ENV, "").strip() == "1":
+        return API_ACCESS_MODE_HEADER_TRANSITION
+    return API_ACCESS_MODE_PUBLIC_SHELL
+
+
+def _should_block_public_shell_request(path: str, method: str) -> bool:
+    normalized_path = _controlled_api_match_path(path)
+    if method.upper() not in {"GET", "HEAD"}:
+        return True
+    if normalized_path in {"/health", "/deployment/metadata", "/favicon.ico"}:
+        return False
+    if normalized_path == "/":
+        return _web_static_export_root() is None
+    if path == "/release-manifest.json" or path.startswith("/_next/"):
+        return False
+    if path.startswith("/brand/") or path.startswith("/static/"):
+        return False
+    return not _is_public_shell_portal_path(path)
+
+
+def _is_public_shell_portal_path(path: str) -> bool:
+    normalized = path.strip("/")
+    if normalized == "":
+        return False
+    portal_path = normalized.removesuffix(".html").removesuffix(".txt")
+    return (
+        _web_static_export_root() is not None
+        and portal_path in STATIC_EXPORT_PORTAL_PATHS
+    )
+
+
 def _should_authenticate_controlled_api_path(path: str, method: str) -> bool:
     if method.upper() == "OPTIONS":
         return False
@@ -561,7 +659,7 @@ def _web_static_export_root() -> Path | None:
     return Path(raw_root).expanduser().resolve()
 
 
-def _deployment_metadata_response() -> DeploymentMetadataResponse:
+def _deployment_metadata_response(access_mode: ApiAccessMode) -> DeploymentMetadataResponse:
     deploy_sha_status, deploy_sha, deploy_sha_source = _resolve_deploy_sha()
     return DeploymentMetadataResponse(
         status="deployment_metadata_available",
@@ -583,6 +681,12 @@ def _deployment_metadata_response() -> DeploymentMetadataResponse:
             secret_values_reported=False,
             allowed_http_methods=["GET"],
             non_get_http_methods_allowed=False,
+        ),
+        runtime_access=DeploymentRuntimeAccess(
+            mode=access_mode,
+            trusted_identity_ready=False,
+            protected_reads_allowed=access_mode == API_ACCESS_MODE_HEADER_TRANSITION,
+            writes_allowed=access_mode == API_ACCESS_MODE_HEADER_TRANSITION,
         ),
         supported_claims=[
             "This endpoint exposes the running application deploy SHA when configured.",

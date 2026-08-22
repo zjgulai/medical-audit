@@ -1,5 +1,11 @@
 ---
 title: "Knowledge Query Contract V2"
+doc_type: api-contract
+module: knowledge-query
+created: 2026-07-05
+updated: 2026-08-13
+owner: self
+source: human+ai
 project: "medical_audit"
 created_at: "2026-07-05T15:21:56+08:00"
 status: "draft"

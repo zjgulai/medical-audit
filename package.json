@@ -26,15 +26,16 @@
     "local:fullstack:e2e": "uv run python scripts/run-local-fullstack-e2e.py",
     "local:postgres:readonly": "uv run python scripts/run-local-fullstack-e2e.py --backend-mode postgres-readonly",
     "local:permission:readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py",
+    "docs:lint": "python tools/tech-doc-style-chinese/scripts/lint_copy_rules.py README.md docs/README.md docs/architecture/architecture-system-overview-stable.md docs/api/api-medical-audit-platform-v1-stable.md docs/playbooks docs/testing docs/style drafts/analysis/project-reanalysis-and-gap-audit-20260813.md && uv run python scripts/lint-docs.py",
     "auth:sso-contract-readiness": "uv run python scripts/audit-auth-sso-contract-readiness.py",
     "document:governance-contract-readiness": "uv run python scripts/audit-document-governance-contract-readiness.py",
     "document:governance-ready-profile": "uv run python scripts/run-document-governance-ready-profile.py",
     "document:governance-production-readonly-plan": "uv run python scripts/prepare-document-governance-production-readonly-plan.py",
     "document:governance-production-readonly-precheck": "uv run python scripts/run-document-governance-production-readonly-precheck.py",
     "document:governance-production-readonly-coverage": "uv run python scripts/prepare-document-governance-production-readonly-observation-coverage.py",
-    "production:permission-readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py --base-url https://audit.lute-tlz-dddd.top --api-prefix /api/v1 --mode observe --json-output tmp/outputs/production-permission-readonly-smoke-latest.json",
+    "production:permission-readonly": "uv run python scripts/run-controlled-api-readonly-permission-smoke.py --base-url https://audit.lute-tlz-dddd.top --api-prefix /api/v1 --mode enforce --access-mode public-shell-readonly --json-output tmp/outputs/production-permission-readonly-smoke-latest.json",
     "production:frontend-acceptance": "node scripts/run-production-frontend-acceptance-gate.mjs",
-    "production:chat-model-catalog-readonly": "uv run python scripts/run-production-chat-model-catalog-readonly-probe.py --report tmp/outputs/production-chat-model-catalog-readonly-latest.json",
-    "production:chat-model-ready": "uv run python scripts/run-production-chat-model-catalog-readonly-probe.py --require-ready-model --report tmp/outputs/production-chat-model-ready-latest.json"
+    "production:frontend-navigation-readonly": "node scripts/run-production-frontend-acceptance-gate.mjs --navigation-only-readonly",
+    "production:chat-model-catalog-readonly": "uv run python scripts/run-production-chat-model-catalog-readonly-probe.py --report tmp/outputs/production-chat-model-catalog-readonly-latest.json"
   }
 }

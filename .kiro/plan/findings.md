@@ -1,11 +1,207 @@
 ---
 title: "medical_audit loop findings"
+doc_type: findings
+module: project-governance
 project: "medical_audit"
 created_at: "2026-06-30T21:42:00+08:00"
+created: 2026-06-30
+updated: 2026-08-22
 status: "active"
+owner: self
+source: human+ai
 ---
 
 # Findings
+
+## 2026-08-22 PR #275 CI Python 运行时边界纠正
+
+已确认事实：
+
+- 候选 head `c08453f02baa842d514af02785ee92d641bcbff5c` 的 exact-head CI run `32513965724` 中，Web 与 Documentation 成功，Backend 以 `1 failed, 1018 passed` 失败。
+- 失败用例是 `test_release_guard_fixture_capture_executes_under_python_310`；它通过 `uv python find 3.10` 启动独立 Python 3.10 子进程，验证面向生产采集边界的兼容性。CI 删除 3.10 setup 后找不到该解释器。
+- 仓库主运行时仍由 `pyproject.toml` 固定为 Python `>=3.12`。正确的 CI 边界是先安装 Python 3.10 供该子进程使用，再将 Python 3.12 设为主测试运行时；这不是把完整测试矩阵降级到 Python 3.10。
+- 已先修改 CI 合同测试并取得预期红灯；工作流修复后的绿灯和新 exact-head CI 尚未取得。
+
+处理结论：上一轮“Python 3.10 setup 无效、应删除”的判断被新鲜 CI 证据推翻，现已公开纠正。Ready 继续保持 `NO-GO`，直至定向回归、新 exact-head CI 与复审均完成。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local CI remediation and GitHub CI observation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
+## 2026-08-22 PR #275 独立复审第二轮
+
+已确认事实：
+
+- 候选 head `d159d62f9efdea7ccea08ef2dbe6199fac21cc72` 的 CI run `32511547035` 成功，并在专用 PostgreSQL service 中验证独立 schema 聚合测试。
+- CodeRabbit CLI 第二轮报告 19 项问题。4 项未来日期判断忽略 `Asia/Shanghai` 观察时区；生产 permission read-only 脚本在 `public-shell-readonly` 下只执行公开 GET 和一个预认证 503 GET，并禁止 audit-log write 模式；整改状态标签 fallback 建议会掩盖内部状态机常量不一致，且 GitNexus 风险为 `HIGH`。以上 6 项不进入修复。
+- 成立项包括：两个公开壳层工作台仍调用业务 client、签发关闭态审计发生在持久化 mutation 内、SQLite 连接未显式关闭、文档 lint 使用 `assert` 处理输入错误，以及 6 项文档元数据或证据边界缺口。关于 Python 3.10 setup 的原判断已被 run `32513965724` 推翻，见上方纠正记录。
+- `pyproject.toml` 要求 Python `>=3.12`，主测试运行时不能降级；发布守卫 fixture 同时需要一个仅供子进程调用的 Python 3.10 解释器。
+- 公开壳层工作台、签发关闭态和 CI 合同均已取得先红后绿的定向测试；其余成立项完成最小修正。新 exact-head CI 和第三轮复审尚未取得。
+
+处理结论：Ready 保持 `NO-GO`，直至本轮修复形成新 exact head、CI 全绿且复审没有新的有效问题。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local review remediation and GitHub CI observation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
+## 2026-08-22 PR #275 独立评审缺陷复核
+
+已确认事实：
+
+- CodeRabbit CLI 对 `main..候选 head` 完成独立评审并报告 10 项问题。
+- 其中 5 项不成立：4 项日期判断忽略项目 `Asia/Shanghai` 时区，另 1 项所称 Vitest 环境变量未清理已有 `afterEach(vi.unstubAllEnvs)` 覆盖。
+- 其余 5 项可复现或可由代码合同直接证明：Playbook 的旧生产 L3 证据缺少统一观察窗；整改附件空结果缺少 `count`；本地全栈 workflow 抛出 `RuntimeError` 时不会生成失败收据；缓存测试没有证明 resolver 至少被调用一次；真实 PostgreSQL 聚合测试会在共享测试数据库执行全局 `drop_all`。
+- 整改附件和 workflow 失败收据按测试先红后绿完成最小修复；缓存测试补上 resolver 调用次数下限；真实 PostgreSQL 测试改为每次创建唯一 schema 并在结束时只删除该 schema；Playbook 补充了观察时间、部署 SHA、证据等级、副作用、Provider 和收据边界。
+- 本地完整 Python、Ruff、Mypy 和文档契约检查通过；本机未配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL`，真实 PostgreSQL schema 隔离用例按合同跳过，仍需 exact-head CI 的专用数据库证据。
+
+处理结论：独立评审的本地缺陷修复已完成，但 Ready 仍不得仅凭本地结果提升；下一门禁是形成新 exact head、取得 CI 和复审证据，并确认没有新的有效问题。
+
+不确定项：候选没有生产同 SHA 验收；本轮没有访问或修改生产。
+
+Boundary: local review remediation only; no Ready transition, merge, deploy, production access, provider call or local Docker operation.
+
+## 当前 PR #275 Ready 审计与身份漂移结论
+
+外部观察时间为 2026-08-22 00:59（Asia/Shanghai）。
+
+已确认事实：
+
+- 本地、远端候选分支和 Draft PR #275 的观测 head 均为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；exact-head CI run `32499803192` 为 `success`。
+- 实际 PR 为 13 个提交、103 个文件，Python `1018 passed`、Web `419 passed`；PR 正文仍写旧 head、6 个提交、92 个文件、Python `1003 passed` 和 Web `417 passed`。
+- 实际路由合同为 21 个独立页面和 2 个兼容跳转，PR 正文仍写 `20+3`。
+- GitHub review、review request 和 review thread 均为 0；CodeRabbit status 明确写明因 Draft 跳过 review，不能作为独立代码评审证据。
+- `main` 没有 branch protection 或 ruleset，也没有 required checks；CI 全绿属于有效 exact-head 证据，但仓库不会自动阻断未评审合并。
+- GitNexus 对共享前端访问门禁 `assertProtectedApiAvailable` 给出 `critical` 影响面；该结果用于评审路由，不等于已经发现代码缺陷。
+
+根因：带时间的外部观察模型已经建立，但 2026-08-15 至 21 日的后续修复、提交和 CI 没有同步回权威当前状态与 PR 正文，导致交付身份再次漂移。
+
+处理结论：Ready 保持 `NO-GO`。先同步当前状态文档和 lint 标记，再形成新的 docs-only exact head、刷新 PR 正文与 CI，并完成独立评审。tracked 文档不自声明最终 commit SHA，外部终态由 GitHub 和仓库外收据绑定。
+
+不确定项：候选没有生产同 SHA 验收；生产业务能力继续为 `not_production_verified`。
+
+Boundary: no merge, deploy, production access, provider call or local Docker operation in this gate.
+
+## 2026-08-21 本地访问入口与证据同步复核结论
+
+已确认事实：
+
+- FastAPI 在缺少 `MEDICAL_AUDIT_API_ACCESS_MODE` 且未显式启用 dev mode 时正确进入 `public-shell-readonly`。
+- 本地 `scripts/serve-chat-workbench.sh` 原先没有声明访问模式，却会用 Header 调用受保护的搜索后端初始化接口，因此新缺省合同下必然得到 `503 trusted_identity_required`。
+- 生产 compose 显式固定 `public-shell-readonly` 且关闭 HTTP 后端 bootstrap；本轮不需要、也不应让生产容器默认进入 Header 模式。
+- 最新完整本地收据为 Python `1016 passed, 1 skipped, 5 warnings`，而 README、稳定开发计划和状态台账的当前段仍写 `1012 passed`；差异报告同时存在新旧两种当前口径。
+
+处理结论：
+
+- 仅本地 Shell 启动器在调用者没有显式模式时设置 `header-transition-test`；显式模式优先，FastAPI 和生产 compose 的 fail-closed 缺省不变。
+- 合同测试验证默认本地值和显式生产值两条路径；知识查询运行手册同步了命令、身份 Header、错误诊断和本地限定。
+- 当前证据文档统一到 `1016 passed`，历史章节中的 `1012 passed` 继续按时间点保留。
+- 完整 Python、Web、构建、文档和本地全栈门禁通过，当前最高证据等级仍为 `L2-local-live`。
+
+合理推断：首次 Web 并行回归的单次等待超时来自与 Python 全套并发时的资源竞争；依据是目标文件独立 `23/23` 和随后 Web 全套独立 `418/418` 均通过。该推断不等于已证明测试不存在时序脆弱性。
+
+不确定项：外部 Codex review 未形成终态；候选尚未提交、取得新 exact-head CI 或部署，生产业务能力继续为 `not_production_verified`。
+
+Boundary: production unchanged and not accessed; no provider call, local Docker operation, staging, commit or GitHub mutation.
+
+## 2026-08-21 部署合同复核结论（历史基线）
+
+已确认事实：
+
+- 原预检查在同步候选前检查远端旧 Compose；生产缺少新访问模式键时，包含修复的候选永远无法同步，形成启动死锁。
+- 原部署后检查用模拟身份 Header 要求知识库目录返回 `2xx`；正确的 `public-shell-readonly` 运行时必须对该业务读取返回 `503`。
+- 原默认生产 smoke 无条件读取知识库目录并要求 PostgreSQL 搜索就绪，与公开壳层禁止业务读取的合同冲突。
+- 发布清单的 `source_sha` 必须是 40 位精确 Git SHA。当前 46 文件脏工作树不是 HEAD `4b42b3ea…`，因此不能生成诚实的可部署清单。
+
+处理结论：
+
+- 三个部署合同缺陷已完成本地先红后绿修复；发布执行顺序、后置检查和默认 smoke 现在统一遵守公开壳层 fail-closed 边界。
+- 完整本地 Python、Web、文档和全栈门禁通过；当前证据等级为 `L2-local-live`，不等于 exact-head CI、部署或生产验收。
+- GitNexus 对全候选给出 `critical`：38 个 tracked 变更文件、109 个变更符号、300 条受影响流程。该风险来自共享认证、页面和发布入口的组合影响面，不能按单个部署脚本补丁的窄范围解释。
+- manifest-bound release package 保持阻塞，解除条件是经单独授权形成包含当前差异的精确 Git SHA，再从该 SHA 构建和校验发布包。
+
+不确定项：候选尚未部署，生产仍没有候选 `runtime_access` 和受保护接口 `503/no-store` 的同 SHA 验收证据。
+
+Boundary: production unchanged by this gate; no provider call, local Docker operation, Git write or GitHub mutation.
+
+## 2026-08-15 CodeRabbit 发现复现结论
+
+已确认事实：
+
+- 缺失访问模式变量会启用 Header 模拟，属于生产启动 fail-open；生产 manifest 校验也未绑定公开壳层模式。
+- `/workspace` 是独立工作台，不是跳转别名；正确路由分类是 21 个独立页面和 2 个兼容跳转。
+- 导航只读 runner 已有零写模式，但原 gate/package 没有可执行的 S1→S2 零审计增量收据链。
+- `?finding=` 会随筛选刷新重复应用；整改未知持久化状态泄漏 `KeyError`；报告工作台对同一项目重复解析签发 actor。
+- tracked 历史文档保留了用户特定 SSH key 绝对路径，虽未包含 key 内容，仍属于不必要的本机路径暴露。
+
+处理结论：以上问题已完成最小本地修复和定向回归。完整门禁尚未刷新，因此当前证据是 `L2-local-targeted`，不是 exact-head CI 或生产结论。
+
+不确定项：生产没有运行候选导航只读 gate；当前本地工作树没有 commit、push、PR review、merge 或部署证据。
+
+Boundary: local targeted evidence only; production unchanged and not accessed.
+
+## 2026-08-14 exact-head 交付审计与状态合同发现
+
+已确认事实：
+
+- PR #275 的观测 head `b9553349a31d305aefc8b1ca8b5adfaa9628adf3` 与 exact-head CI run `31776394739` 一致，CI 结论为 `success`。
+- Python exact-head CI 为 `1003 passed`，Web 为 `417 passed`；PR diff 是 5 个线性提交、92 个文件，本地与 GitHub 路径集合一致。
+- PR 保持 `OPEN/DRAFT`、merge state `CLEAN`，review 数量为 0；CodeRabbit 明确因 Draft 跳过 review。
+- tracked 当前状态段仍引用提交前 head `cc711fdb…` 和瞬时 push 状态，导致外部状态变化后文档自然漂移。
+
+根因：commit SHA 取决于 tracked 文档内容，外部 push 和 CI 又发生在 commit 之后，因此 tracked 文档无法同时把「自身 exact SHA」和「已 push/CI 终态」作为永远成立的当前事实。
+
+处理结论：权威当前状态改为带时间的外部观察，最终身份由 Git 对象、GitHub 和仓库外收据解析；`docs:lint` 只校验证据字段、语义角色和当前段禁止项，不再要求文档等于自身 `HEAD` 或瞬时 push 状态。
+
+推断：该模型可以保留可复核 SHA 和 CI 证据，同时避免每次外部状态变化都让同一 commit 内的文档自动失真。
+
+不确定项：本门禁没有代码 review、merge、部署或生产业务验收；生产能力继续为 `not_production_verified`。
+
+Boundary: local documentation contract remediation only; no Git write, PR mutation, production access, provider call or local Docker operation.
+
+## 2026-08-14 PR #275 交付审计与收口发现（历史：push 前）
+
+已确认事实：
+
+- PR head `cc711fdb` 的 CI 全绿不等于文档已对齐、代码已 review、PR 可合并或候选已部署。
+- 权威文档曾混用 `ccc73e95`、`ea33cd8e`、旧测试数和“尚未推送”状态；PR 正文也仍绑定旧本地证据。
+- 稳定 API 文档此前只覆盖接口族，不能证明 112 个路径、123 个方法/路径操作完整；旧 `docs:lint` 会对此误报通过。
+- 生产导航验收此前记录受保护 API 尝试，但不会因该计数失败。
+- 整改列表此前在 SQL `LIMIT` 后才删除不可见项目，隐藏数据可挤占用户的结果窗口。
+- 后端同时缺少访问模式和 dev-mode 环境变量时回退 `header-transition-test`；配置完备的生产 Compose、env 示例和部署脚本显式固定公开壳层，因此当前生产发布路径的控制有效，但通用启动器仍存在误分类风险。
+
+处理结论：
+
+- 文档、OpenAPI 覆盖门禁、只读导航门禁和整改列表查询均已在本地收口。
+- 后端通用缺省行为采用“显式风险接受”，不是“修复完成”。触发新增启动器、编排方式、SSO 或统一 runtime profile 时必须重新决策；缺少显式访问模式的发布候选直接 NO-GO。
+
+推断：把 CI、文档覆盖、review 和部署状态分成独立门禁，可以避免“测试全绿”掩盖交付合同漂移。
+
+不确定项：本门禁没有刷新生产状态，也没有执行真实业务读取、写入或 Provider 调用；生产业务能力继续为 `not_production_verified`。
+
+Boundary: one local atomic commit, no push, no PR mutation, no production access, no provider call, no local Docker operation.
+
+## 2026-08-13 全量复盘结论
+
+已确认事实：
+
+- 生产可信身份尚未建设，Header/LocalStorage 角色模拟不能作为生产认证。
+- 整改接口此前缺少完整项目可见性和服务端迁移门禁；Sample ID 不能用于 UUID 附件接口。
+- 报告草稿 JSON 签发接口此前错误复用 `CREATE_REVIEW_TASK`，可绕过正式 `SIGN_REPORTS` 门禁。
+- 知识统计此前存在 Join 放大和 `SUM(DISTINCT LENGTH(...))` 对等长文本误减。
+- 旧稳定文档和三账包含过期 SHA、路由和生产状态，不能继续作为当前证据。
+- 候选收口复审确认两个同源附件鉴权顺序缺陷：上传接口会在父整改项可见性检查前处理扩展名和文件体；附件列表在存储未启用时会在父资源检查前返回空列表。两条 RED 分别稳定得到 `422` 和 `200`，最小修复后统一满足不可见资源 `404` 合同。
+
+推断：OpenCode 优化扩大了功能面，但权限、测试合同和文档同步没有同时收口。
+
+不确定项：生产配置、数据和业务行为未逐功能读取；在可信身份门禁完成前保持 `not_production_verified`。
+
+清理事实：首批 4 个低风险 exact paths 已经用户确认于 14:45 移动到同卷系统 Trash，约 40 MiB；移动完成时目标 inode 和内容哈希一致，Git 状态未变化。16:02 新鲜复核发现 Finder 已于 15:10 清空 Trash，源和目标均不存在，当前不可恢复；系统日志不能证明触发者。该变化不授权其他旧工作区或生产备份删除。
+
+第二批清理事实：416 个选定历史证据文件已归并并通过隔离解包哈希验证；5 个相互独立旧目录约 2.50 GiB 已按用户确认移动到受管同卷隔离目录。移动前后 inode、全量树哈希和候选 Git 状态一致，可按精确映射恢复，但未释放磁盘空间。Loop 128 与父仓库因 worktree/alternates 依赖继续保留；H1 中匹配强凭据特征的源证据不能永久删除，其他永久删除也未授权。
+
+第三批清理事实：Loop 128 和父仓库约 1.218 GiB 已按确认转换为相对 worktree 关联并成对同卷隔离。两个原路径均不存在；移动前后 inode 和非指针载荷哈希一致，worktree 注册、clean 状态、`fsck`、全部 ref tip 祖先关系、alternates 和候选 Git 状态均通过。三份原绝对关联元数据已有本地备份，可按收据恢复。父仓库 objects alternates 继续依赖当前候选仓库，隔离不是自包含 Git 副本，也未释放磁盘空间。
+
+Boundary: no staging or commit, no production business read/write, no provider call, no deploy, no local Docker operation.
 
 ## 2026-07-21 Loop 60 Initial Findings
 

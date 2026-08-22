@@ -5,7 +5,7 @@ module: project-governance
 topic: project-state-and-debt-register
 status: stable
 created: 2026-06-14
-updated: 2026-08-09
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
@@ -26,7 +26,109 @@ source: human+ai
 
 ## 2. 当前状态冻结
 
-### 2.3 2026-08-09 Sprint-5 完整基线（最新）
+### 当前 exact-head 交付观察
+
+本节采用带时间的外部观察。tracked 文档不声明自身 commit SHA，也不保存瞬时 push 状态。
+
+| 维度 | 观察事实 | 证据边界 |
+| --- | --- | --- |
+| 外部观察时间 | 2026-08-22 00:59（Asia/Shanghai） | GitHub 与仓库外只读 Ready 审计收据 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `d1973206d4f9b01ad0b287fb252fccf760fdab5c` | `OPEN/DRAFT`、`MERGEABLE/CLEAN`；review、review request 和 review thread 均为 0 |
+| exact-head CI | Python `1018 passed`；Web `419 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192)；只覆盖观测 head |
+| CodeRabbit | status 为成功，但详情是 `Review skipped: draft pull request` | 不能作为代码评审通过证据 |
+| 候选范围 | 13 个提交、103 个文件；21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录 | PR diff、本地活体收据和 exact-head CI 分层证明 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 候选未部署；业务读取、写入和 Provider 调用保持关闭 |
+
+门禁结论：`d1973206…` 的 exact-head CI 为 `PASS`，但 2026-08-22 只读 Ready 审计因 PR 正文、tracked 当前状态和独立评审证据漂移判定为 `NO-GO`。本次状态同步只修复交付身份和文档合同；Ready、merge、部署和生产验收继续是独立门禁。
+
+状态合同：当前状态段只写带时间的外部观察；后续文档 commit、push、CI 或评审变化不会反向使该观察失真。最终 exact head 和外部终态必须从 PR、Actions run 和仓库外收据重新解析。
+
+### 2.6 2026-08-14 exact-head 交付观察（历史）
+
+本节采用带时间的外部观察。tracked 文档不声明自身 commit SHA，也不保存瞬时 push 状态。
+
+| 维度 | 观察事实 | 证据边界 |
+| --- | --- | --- |
+| 外部观察时间 | 2026-08-14 22:46（Asia/Shanghai） | GitHub 与仓库外只读审计收据 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，观测 head `4b42b3eab6972d8ce7d870346f13d16f8ef04f79` | `OPEN/DRAFT`、merge state `CLEAN`；review 数量为 0 |
+| exact-head CI | Python `1003 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | [Actions run 31778904386](https://github.com/zjgulai/medical-audit/actions/runs/31778904386)；只覆盖观测 head |
+| 当前本地修复 | fail-closed 默认、manifest 访问模式、21+2 路由分类、只读导航零增量 gate、深链 apply-once、整改异常状态和签发 actor 缓存 | 工作树变更；尚未提交、推送或取得新的 exact-head CI |
+| 本地完整回归 | Python `1016 passed, 1 skipped, 5 warnings`；Web `418 passed`；Playwright `17/17`；其余门禁通过 | L2 未提交工作树；唯一 skip 需要本地 PostgreSQL 测试 URL，5 条 warning 来自第三方 SWIG 类型；最近 exact-head CI 不覆盖本轮变更 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 候选未部署；业务读取、写入和 Provider 调用保持关闭 |
+
+门禁结论：`4b42b3ea…` 的 exact-head CI 为 `PASS`；仓库外 CodeRabbit CLI review 的 9 项发现触发本地修复门禁。当前工作树不能继承该 CI；Ready、merge、部署和生产验收仍是独立门禁。
+
+状态合同：当前状态段只写带时间的外部观察；后续 commit、push 或 CI 变化不会反向使该观察失真。最新身份必须从 PR、Actions run 和仓库外收据重新解析。
+
+### 2.5 2026-08-14 Draft PR 与文档收口快照（历史：push 前）
+
+以下内容保留本地提交完成、外部 push 发生前的历史快照。当前状态以 2.6 节为准；2.4 及更早章节同样只用于追溯。
+
+| 维度 | 当前事实 | 证据边界 |
+| --- | --- | --- |
+| 主分支基线 | `main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246` | 本地 Git 只读核验 |
+| Draft PR | [#275](https://github.com/zjgulai/medical-audit/pull/275)，base `ccc73e95`，head `cc711fdb4dc2b36d2b5de705939a7726917960f1` | `OPEN`、`DRAFT`、`MERGEABLE/CLEAN`；尚无 code review |
+| exact-head CI | Python `1001 passed`；Web `417 passed`；Ruff、Mypy、typecheck、lint、普通/公开壳层构建和文档检查通过 | GitHub Actions run `31768924010`；只覆盖 `cc711fdb` |
+| 当前本地提交 | OpenAPI 覆盖门禁、只读导航 API 请求门禁、整改可见性分页和状态文档同步 | 1 个原子提交，尚未推送；Python `1002 passed, 1 skipped`、Web `417 passed`、Playwright `17/17`，其余本地门禁通过 |
+| API 文档 | 112 个规范路径、123 个方法/路径操作逐项列出 | `docs:lint` 从 FastAPI OpenAPI 对账，缺失或陈旧操作均阻断 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 历史只读收据；本门禁未刷新 |
+| 生产业务能力 | `not_production_verified` | 未部署候选；业务读取、写入和 Provider 调用保持关闭 |
+
+本门禁处理结果：
+
+- `P1-current-state-document-drift`：本地权威文档已改为区分主分支、PR exact head、本地未推送提交和历史生产观测；PR 正文本身仍需在后续独立 GitHub 写入门禁更新。
+- `P1-openapi-documentation-coverage-gap`：本地已补齐逐操作清单，并把方法/路径集合与 FastAPI OpenAPI 纳入 `docs:lint`。
+- `P2-readonly-navigation-contract`：已修复。`public-shell-readonly` 导航中只要出现受保护 API 尝试，就记录 P1 并使验收失败。
+- `P2-remediation-limit-before-visibility`：已修复。项目可见性进入 SQL 查询后再排序和 `LIMIT`，避免隐藏项目挤占结果窗口。
+- `P2-generic-backend-default`：显式接受为受控兼容风险，不将其标记为已修复。现有测试和本地直接启动继续允许 Header 回退；生产 Compose、生产 env 示例和部署脚本必须显式指定 `public-shell-readonly`。责任人为后端/运维维护者；统一 runtime profile 或可信身份上线时重新评估。在新增启动器、编排或部署路径时，如果缺少显式访问模式，发布门禁直接 NO-GO。
+
+当前下一步边界：本地原子提交已经完成；push 与 PR 正文更新仍需独立授权，Ready、review、merge、部署和生产验收继续分别授权。
+
+本地完整回归已经完成。唯一 skip 是本机没有配置 `MEDICAL_AUDIT_TEST_POSTGRES_URL` 的知识统计 PostgreSQL 回归；它不是仓库失败，对应测试已在 PR exact-head CI 的 PostgreSQL service 中通过。5 条 warning 仍来自 `pymupdf==1.27.2.2` 的 SWIG 类型导入。
+
+### 2.4 2026-08-13 全量复盘候选快照（历史）
+
+以下内容保留候选创建日的历史快照。当前状态以 2.5 节为准；2.3 及更早章节同样只用于追溯。
+
+| 维度 | 当前事实 | 证据边界 |
+| --- | --- | --- |
+| 候选起点 | `main == origin/main == ccc73e95820e39559430e96c01d52c8dfb77a246` | 分支创建时的本地 Git 证据 |
+| 候选分支 | `codex/medical-audit-reanalysis-playbook-20260813` | 尚未合并、推送或部署 |
+| 生产身份 | `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224` | 2026-08-12 L3 只读收据；不是本次候选部署证据 |
+| 源码差异 | `25e1654e..ccc73e95` 没有 `src/`、`web/` 业务源码差异 | 不等于配置、数据和行为完全一致 |
+| 本地全栈 | 17 个 Playwright 场景通过；当前合同覆盖 21 个独立页面、2 个兼容跳转和 4 条持久化业务工作流 | 共 27 条功能记录；临时 SQLite、Fake Provider、`provider_call=false` |
+| 候选质量 | Python `995 passed`；Web `412 passed`；Ruff、Mypy、typecheck、lint、build 和本地全栈通过 | L2 本地证据；5 条 warning 来自第三方 SWIG 类型 |
+| 生产业务能力 | `not_production_verified` | 生产仅允许公开壳层；业务读取和写入关闭 |
+
+本轮候选已经实现生产公开壳层门禁、疑点深链、整改可见性和状态机、报告签发权限、知识统计聚合修复，以及逐功能 Playbook。完整测试仍以候选最终收据为准。
+
+候选收口复审补充修复了两项整改附件鉴权顺序缺陷：父整改项不可见时必须在文件扩展名、文件体或附件存储状态处理前返回 `404`。新增回归先复现 `422/200`，修复后定向测试 `6/6` 通过。
+
+当前阻塞与下一门禁：
+
+- 可信 SSO/OIDC 延期；没有可信身份前，不开放生产业务读取、写入或 Provider 调用。
+- merge、push、部署和生产写入均未授权。
+- 首批 4 个低风险路径已按用户确认于 14:45 移动到系统 Trash，约 40 MiB；但 16:02 新鲜复核发现 Finder 在 15:10 清空了 Trash，源和 Trash 目标均不存在，因此当前不可恢复。系统日志不能证明触发者。
+- 旧工作区的 416 个选定证据文件已归并并通过隔离解包哈希校验；第二批 5 个相互独立目录、约 2.50 GiB 已按确认移动到受管同卷隔离目录。
+- Loop 128 及其父仓库约 1.218 GiB 已按确认完成第三批成对隔离：三处 Git 关联元数据已转为相对 worktree 路径，保持同级布局的两个目录已同卷移动到受管隔离目录。
+- 两个目录移动前后 inode 和非指针载荷哈希一致；worktree 注册、clean 状态、`fsck`、全部 ref tip 祖先关系、alternates 和候选 Git 状态均通过。父仓库仍通过 alternates 依赖当前候选仓库，并非自包含副本。
+- 第二批没有使用系统 Trash；移动前后 inode、全量树哈希和候选 Git 状态一致，精确恢复映射已写入收据。隔离不释放磁盘空间，永久删除仍未授权。
+- 第三批同样未使用系统 Trash；原绝对 Git 关联元数据已有 `0700` 本地备份，移动收据记录了成对恢复顺序。隔离不释放磁盘空间，永久删除仍未授权。
+- 生产备份没有新鲜隔离恢复证明，删除门禁为 `blocked`。
+
+当前权威入口：
+
+- [文档索引](../README.md)
+- [系统架构](../architecture/architecture-system-overview-stable.md)
+- [平台 API](../api/api-medical-audit-platform-v1-stable.md)
+- [用户 Playbook](../playbooks/user-playbook-medical-audit-v1-stable.md)
+- [生产验收矩阵](../testing/production-feature-acceptance-matrix-stable.md)
+
+### 2.3 2026-08-09 Sprint-5 完整基线（历史）
 
 状态口径：本节记录 Sprint-5 在 2026-08-08/09 执行后的完整基线。本地 main 领先 origin/main 1 个 commit（`226d3d0d`），尚未 push；生产仍停留在 Sprint-4 deploy_sha = `484c348f`，尚未部署 sprint-5 内容。
 

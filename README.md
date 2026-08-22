@@ -1,24 +1,37 @@
 ---
-title: 医疗审计项目仓库说明
+title: AI 审计一体化协作平台仓库说明
 doc_type: knowledge
 module: repository
 topic: project-overview
 status: stable
 created: 2026-05-31
-updated: 2026-06-15
+updated: 2026-08-22
 owner: self
 source: human+ai
 ---
 
-# 医疗审计项目
+# AI 审计一体化协作平台
 
 ## 当前定位
 
-当前项目不是通用 SaaS，也不是纯研究仓库，而是一个面向医院场景的私有化医疗审计产品项目。现有材料指向的最小可落地目标，是先在单院环境内跑通基于 HIS 数据的医疗/医保审计 MVP。
+本仓库是面向医院场景的私有化医疗审计产品，不是通用 SaaS 或纯研究仓库。核心目标是在可信身份和数据治理边界内完成「知识依据 → 合规判断与疑点 → 底稿与报告 → 整改跟踪」。
 
 核心闭环为：
 
 `法规与知识支撑 -> 合规判断与风险识别 -> 审计底稿与报告 -> 整改跟踪`
+
+## 当前候选状态
+
+- 外部观察：截至 2026-08-22 00:59（Asia/Shanghai），Draft PR [#275](https://github.com/zjgulai/medical-audit/pull/275) 的 base 为 `ccc73e95820e39559430e96c01d52c8dfb77a246`，观测 head 为 `d1973206d4f9b01ad0b287fb252fccf760fdab5c`；PR 为 `OPEN/DRAFT`、`MERGEABLE/CLEAN`，review、review request 和 review thread 均为 0。
+- exact-head CI：[run 32499803192](https://github.com/zjgulai/medical-audit/actions/runs/32499803192) 在上述观测 head 通过 Python `1018` 项和 Web `419` 项测试，以及 Ruff、Mypy、typecheck、lint、普通构建、公开壳层构建和文档检查；Web 原始日志中的 React `act()` warning 为 0。CodeRabbit status 明确写明因 Draft 跳过 review，不能视为代码评审通过。
+- 候选范围：相对 base 为 13 个提交、103 个文件，包含生产公开壳层访问门禁、部署合同、疑点深链、整改与报告权限、知识统计、本地全栈验收和完整文档体系。路由合同为 21 个独立页面、2 个兼容跳转、4 条业务工作流和 27 条功能记录。
+- 身份合同：tracked 文档只保存带时间的外部观察，不声明自身 commit SHA 或瞬时 push 状态。最新候选身份必须从 GitHub PR、Actions run 和仓库外收据共同解析。
+- 生产历史证据：2026 年 8 月 12 日 L3 只读观测为 `25e1654e0c44ca5cbb2bb42e82debdb40fa6f224`。
+- 本地验收：临时 SQLite、确定性 Fake Provider、17 项 Playwright E2E 通过，`provider_call=false`。该证据属于 L2 本地活体验证，不能替代生产验收。
+- 生产边界：候选默认 `public-shell-readonly`，只开放产品导览、健康和部署元数据；业务读取、写入和 Provider 调用关闭。
+- 交付边界：上述观察只证明 `d1973206…` 的 exact-head CI 和 PR 元数据。它不证明 review、Ready、merge、部署或生产业务验收；当前 tracked 文档同步提交及其后续 CI 由 GitHub 与仓库外收据另行绑定。
+
+权威文档从 [docs/README.md](docs/README.md) 开始阅读。用户操作见 [用户 Playbook](docs/playbooks/user-playbook-medical-audit-v1-stable.md)，运维与安全边界见 [管理员运维 Playbook](docs/playbooks/admin-operations-playbook-stable.md)。
 
 ## 当前材料的权威层级
 
@@ -50,24 +63,34 @@ source: human+ai
 - `tmp/`: 临时输出、截图、调试产物
 - `data/`: 正式输入资料和知识源文件
 
-## 当前已完成的初始化
+## 开发与验证
 
-- 已初始化 git 仓库
-- 已建立标准目录骨架
-- 已将根目录文档迁入正式区、知识区或归档区
-- 已补充项目资料审计结论和产品范围基线
-- 已落地 `docs/product/product-prd-medical-audit-v1-stable.md` 作为 V1.0 PRD 执行基线
-- 已形成知识库查询引擎的架构、API 和运行手册
-- 已建立 `docs/knowledge/knowledge-query-evidence-register-stable.md`，用于登记知识库评测、迁移、UI smoke 和 provider 预检草稿证据
-- 已产出 `drafts/docs/architecture-his-data-ingestion-design-draft-20260602.md`，作为 HIS DDL、字段映射和任务级快照设计的评审草稿
-- 已完成 `国家规章平台文档.zip` 增量资料补充、稳定增量索引激活和腾讯云生产 E2E 复核；当前生产 active index 为 `incremental-20260615-national-regulation-stable-20260615103344`，覆盖 `503` 个文档、`49051` 个 chunks 和 `49051` 条 embeddings
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy src
+pnpm web:test
+pnpm web:typecheck
+pnpm web:lint
+pnpm web:build
+pnpm local:fullstack:e2e
+pnpm docs:lint
+```
 
-## 下一步
+`pnpm local:fullstack:e2e` 不使用生产数据或真实 Provider。未经单独授权，不执行生产部署、业务写入、Provider 调用或备份删除。
 
-下一步围绕 V1.0 PRD 和当前生产基线继续收敛：
+## 已实现能力概览
 
-- 评审 HIS 数据接入设计草稿，并向院方/信息科索取 HIS DDL、字段字典、脱敏历史数据和验证集
-- 补充首个专项审计场景 PRD、底稿报告模板设计
-- 与院方确认 HIS DDL、脱敏测试集、报告模板和准确率口径
-- 将 V1.0 的 0/1 合规判定、复核、报告和整改链路拆成可开发任务
-- 继续补齐真实生成模型 provider、个人/系统/公开知识库治理、文档权限、真实医院数据验收和案件级审计闭环
+- Next.js 前端提供 21 个独立页面和 2 个兼容跳转；`/workspace` 是独立工作台，不是别名。
+- FastAPI 提供知识问答、文档、OCR、合同审计、智能体、项目、疑点、报告、整改、索引和日志 API。
+- PostgreSQL/pgvector 支持知识检索和持久化业务 Store；本地 E2E 使用临时 SQLite。
+- 整改状态迁移和报告签发由服务端返回能力字段并执行权限门禁。
+- 生产构建通过 release manifest 绑定 Git SHA、lockfile、公开构建变量和静态文件哈希。
+
+## 明确保留的后续任务
+
+- 可信 SSO/OIDC 和身份代理。
+- 生产业务读取、写入和 Provider UAT。
+- 真实 HIS、DLP、OCR/LLM Provider 和医院现场验收。
+- rules、archive 和部分智能体配置从 Sample/Preview 升级为持久化功能。
+- 隔离恢复演练、性能基线、告警/Webhook 和灾备演练。

@@ -1,8 +1,14 @@
 ---
 title: "Frontend Interaction Gap Audit And Remediation Plan"
+doc_type: analysis-plan
+module: frontend
+created: 2026-07-04
+updated: 2026-08-13
+owner: self
+source: human+ai
 project: "medical_audit"
 created_at: "2026-07-04T15:48:00+08:00"
-status: "draft"
+status: "superseded"
 evidence_level: "local-browser-plus-maintained-e2e-plus-local-frontend-gates"
 branch: "codex/frontend-ai-replica-20260703"
 boundary:

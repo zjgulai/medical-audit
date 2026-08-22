@@ -1,4 +1,6 @@
 import type { NextConfig } from "next";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:8021";
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
@@ -40,6 +42,7 @@ const staticExportEnabled = process.env.MEDICAL_AUDIT_NEXT_EXPORT === "1";
 const staticExportBuildId = staticExportEnabled
   ? resolveStaticExportBuildId(process.env.MEDICAL_AUDIT_DEPLOY_SHA)
   : undefined;
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const backendRouteSources = [
   "/health",
@@ -57,6 +60,8 @@ const backendRouteSources = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: repositoryRoot,
+  turbopack: { root: repositoryRoot },
   ...(staticExportEnabled ? { output: "export" as const } : {}),
   ...(staticExportBuildId ? { generateBuildId: () => staticExportBuildId } : {}),
   typescript: {

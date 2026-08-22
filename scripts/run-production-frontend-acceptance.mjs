@@ -113,22 +113,31 @@ const routeCheckProfiles = {
       expectedPath: "/",
       session: "anonymous",
       minimumBodyTextLength: 60,
-      requiredText: [/登录工作台/],
-      requiredControlText: [/(^|\s)登录($|\s)/],
+      requiredTextAny: [[/登录工作台/, /登录暂未开放/]],
+      requiredControlText: [/(^|\s)(登录|进入只读产品导览)($|\s)/],
     },
     {
       route: "/login",
       expectedPath: "/login",
       session: "anonymous",
       minimumBodyTextLength: 60,
-      requiredText: [/登录工作台/],
-      requiredControlText: [/(^|\s)登录($|\s)/],
+      requiredTextAny: [[/登录工作台/, /登录暂未开放/]],
+      requiredControlText: [/(^|\s)(登录|进入只读产品导览)($|\s)/],
+    },
+    {
+      route: "/workspace",
+      expectedPath: "/workspace",
+      session: "workspace",
+      requiredText: [/工作台/, /待复核疑点|常用功能|今日审计工作台/],
     },
     {
       route: "/medical-audit",
       expectedPath: "/medical-audit",
       session: "workspace",
       requiredText: [/医保审计/, /智能审计/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(任务配置|新建任务|批量导入|批量复核|复核|建任务|加入报告|进入复核|补充材料|创建审计任务|导入表格文件|立即导入)(?=\s|$)/,
+      ],
     },
     {
       route: "/fund-compliance",
@@ -150,6 +159,9 @@ const routeCheckProfiles = {
       expectedPath: "/chat",
       session: "workspace",
       requiredText: [/AI，让审计更智能/, /全部知识库|选择模型|发送问题|AI 对话/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(上传附件|发送问题|选择模型|全部知识库|智能体)(?=\s|$)/,
+      ],
     },
     {
       route: "/agents",
@@ -172,6 +184,10 @@ const routeCheckProfiles = {
       expectedPath: "/analytics",
       session: "workspace",
       requiredText: [/表格分析/, /选择一个审计案例/, /审计数据分析/, /财务杜邦分析/],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(选择分析表格|开始审计数据分析|开始财务杜邦分析|刷新|重试)(?=\s|$)/,
+        /(^|\s)载入(审计数据分析|财务杜邦分析)案例(?=\s|$)/,
+      ],
     },
     {
       route: "/projects",
@@ -199,6 +215,10 @@ const routeCheckProfiles = {
       session: "workspace",
       requiredText: [/扫描材料识别工作台/, /Unlimited-OCR/, /上传待识别文件/],
       requiredControlText: [/开始文本识别/],
+      navigationOnlyRequiredControlText: [],
+      navigationOnlyForbiddenControlText: [
+        /(^|\s)(开始文本识别|选择扫描 PDF 或图片)(?=\s|$)/,
+      ],
     },
     {
       route: "/knowledge-base",
@@ -251,14 +271,6 @@ const routeCheckProfiles = {
   ],
 };
 const aliasRouteChecks = [
-  {
-    route: "/workspace",
-    inputSearch: "",
-    expectedPath: "/workspace",
-    expectedSearch: "",
-    session: "workspace",
-    requiredText: [/工作台/, /待复核疑点|常用功能|今日审计工作台/],
-  },
   {
     route: "/findings",
     inputSearch: "",
@@ -986,6 +998,19 @@ function partitionReadonlyConsoleErrors(consoleErrors, blockedApiRequestCount) {
   return { expected, actionable };
 }
 
+function classifyReadonlyApiRequestAttempts(blockedApiRequests) {
+  if (blockedApiRequests.length === 0) {
+    return [];
+  }
+  const requestCount = blockedApiRequests.length;
+  return [{
+    severity: "P1",
+    type: "readonly-protected-api-request-attempt",
+    message: `public shell attempted ${requestCount} protected API requests`,
+    requestCount,
+  }];
+}
+
 function isRecoveredAbortedRequest(failed, successfulResponseUrls) {
   return (
     failed.method === "GET"
@@ -1357,6 +1382,9 @@ function routeCheckForExecution(routeCheck, { navigationOnlyReadonly = false } =
   if (routeCheck.navigationOnlyRequiredControlText) {
     executionCheck.requiredControlText = routeCheck.navigationOnlyRequiredControlText;
   }
+  if (routeCheck.navigationOnlyForbiddenControlText) {
+    executionCheck.forbiddenControlText = routeCheck.navigationOnlyForbiddenControlText;
+  }
   if (routeCheck.navigationOnlyRequiredTextAny) {
     executionCheck.requiredTextAny = routeCheck.navigationOnlyRequiredTextAny;
   }
@@ -1472,6 +1500,11 @@ function classify(check, routeCheck, data) {
       issues.push(issue("P1", "missing-control", String(pattern)));
     }
   }
+  for (const pattern of routeCheck.forbiddenControlText ?? []) {
+    if (matchText(pattern, combinedControlText)) {
+      issues.push(issue("P1", "forbidden-control", String(pattern)));
+    }
+  }
   for (const patternGroup of routeCheck.requiredTextAny ?? []) {
     const matched = Array.isArray(patternGroup)
       ? patternGroup.some((pattern) => matchText(pattern, data.bodyText))
@@ -1549,6 +1582,7 @@ async function observeReleaseIdentity({ baseUrl, acceptanceHeaders, timeoutMs })
       deploy_sha_status: deploymentMetadata.body?.deploy_sha_status ?? null,
       observed_deploy_sha: deploymentMetadata.body?.deploy_sha ?? null,
       deploy_sha_source: deploymentMetadata.body?.deploy_sha_source ?? null,
+      runtime_access: deploymentMetadata.body?.runtime_access ?? null,
       body_sha256: deploymentMetadata.bodySha256,
     },
   };
@@ -1574,6 +1608,10 @@ function validateReleaseIdentityObservation(observation, expectedDeploySha, labe
     deploymentMetadata.observed_deploy_sha !== expectedDeploySha ||
     typeof deploymentMetadata.deploy_sha_source !== "string" ||
     deploymentMetadata.deploy_sha_source.length === 0 ||
+    deploymentMetadata.runtime_access?.mode !== "public-shell-readonly" ||
+    deploymentMetadata.runtime_access?.trusted_identity_ready !== false ||
+    deploymentMetadata.runtime_access?.protected_reads_allowed !== false ||
+    deploymentMetadata.runtime_access?.writes_allowed !== false ||
     !SHA256_PATTERN.test(deploymentMetadata.body_sha256 ?? "")
   ) {
     throw new Error(
@@ -1602,7 +1640,8 @@ function validateReleaseIdentityPair(
     initialManifest.source_sha === finalManifest.source_sha &&
     initialMetadata.body_sha256 === finalMetadata.body_sha256 &&
     initialMetadata.observed_deploy_sha === finalMetadata.observed_deploy_sha &&
-    initialMetadata.deploy_sha_source === finalMetadata.deploy_sha_source;
+    initialMetadata.deploy_sha_source === finalMetadata.deploy_sha_source &&
+    JSON.stringify(initialMetadata.runtime_access) === JSON.stringify(finalMetadata.runtime_access);
   if (!stable) {
     throw new Error("release identity changed during frontend acceptance");
   }
@@ -1629,6 +1668,7 @@ function validateReleaseIdentityPair(
       deploy_sha_status: "set",
       observed_deploy_sha: initialMetadata.observed_deploy_sha,
       deploy_sha_source: initialMetadata.deploy_sha_source,
+      runtime_access: initialMetadata.runtime_access,
       initial_body_sha256: initialMetadata.body_sha256,
       final_body_sha256: finalMetadata.body_sha256,
       current_release_target: null,
@@ -1958,22 +1998,25 @@ async function run() {
             failedRequests: actionableFailedRequests.map(sanitizeFailedRequest),
             recoveredAbortedRequestCount: recoveredAbortedRequests.length,
             recoveredAbortedRequests: recoveredAbortedRequests.map(sanitizeFailedRequest),
-            readonlyBlockedApiRequestCount: expectedReadonlyBlockedRequests.length,
-            readonlyBlockedApiRequests: expectedReadonlyBlockedRequests.map(sanitizeFailedRequest),
+            readonlyBlockedApiRequestCount: readonlyBlockedApiRequests.length,
+            readonlyBlockedApiRequests: readonlyBlockedApiRequests.map(sanitizeFailedRequest),
             interactionErrorCount: interactionErrors.length,
-            issues: classify(
-              {
-                status,
-                error,
-                consoleErrors: consoleErrorPartition.actionable,
-                failedRequests: actionableFailedRequests,
-                interactionErrors,
-                finalUrl: observedFinalUrl,
-                finalSearch: observedFinalSearch,
-              },
-              routeCheckForExecution(routeCheck, options),
-              data,
-            ),
+            issues: [
+              ...classify(
+                {
+                  status,
+                  error,
+                  consoleErrors: consoleErrorPartition.actionable,
+                  failedRequests: actionableFailedRequests,
+                  interactionErrors,
+                  finalUrl: observedFinalUrl,
+                  finalSearch: observedFinalSearch,
+                },
+                routeCheckForExecution(routeCheck, options),
+                data,
+              ),
+              ...classifyReadonlyApiRequestAttempts(readonlyBlockedApiRequests),
+            ],
           };
           const shouldCaptureScreenshot =
             captureScreenshots &&
@@ -2134,6 +2177,7 @@ export {
   buildAuditPermissionProbeHeaders,
   buildBrowserContextOptions,
   classify,
+  classifyReadonlyApiRequestAttempts,
   deriveAcceptanceUserId,
   finalPath,
   finalSearch,

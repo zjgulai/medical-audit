@@ -9,6 +9,7 @@ import {
   readAuditClientRole,
   writeAuditClientRole
 } from "@/lib/audit-user";
+import { isPublicShellReadonly } from "@/lib/runtime-access";
 
 type AuditUserContextValue = {
   readonly role: AuditClientRole;
@@ -23,9 +24,13 @@ type AuditUserProviderProps = {
 };
 
 export function AuditUserProvider({ children }: AuditUserProviderProps) {
+  const publicShellReadonly = isPublicShellReadonly();
   const [role, setRoleState] = useState<AuditClientRole>("admin");
 
   useEffect(() => {
+    if (publicShellReadonly) {
+      return;
+    }
     setRoleState(readAuditClientRole());
 
     function handleStorage() {
@@ -45,18 +50,19 @@ export function AuditUserProvider({ children }: AuditUserProviderProps) {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("medical-audit-role-change", handleRoleChange);
     };
-  }, []);
+  }, [publicShellReadonly]);
 
   const value = useMemo<AuditUserContextValue>(
     () => ({
       role,
       setRole: (nextRole) => {
+        if (publicShellReadonly) return;
         writeAuditClientRole(nextRole);
         setRoleState(nextRole);
       },
-      can: (permission) => hasAuditClientPermission(role, permission)
+      can: (permission) => !publicShellReadonly && hasAuditClientPermission(role, permission)
     }),
-    [role]
+    [publicShellReadonly, role]
   );
 
   return <AuditUserContext.Provider value={value}>{children}</AuditUserContext.Provider>;
@@ -65,10 +71,15 @@ export function AuditUserProvider({ children }: AuditUserProviderProps) {
 export function useAuditUser(): AuditUserContextValue {
   const value = useContext(AuditUserContext);
   if (value === null) {
+    const publicShellReadonly = isPublicShellReadonly();
     return {
       role: DEFAULT_AUDIT_ROLE,
-      setRole: writeAuditClientRole,
-      can: (permission) => hasAuditClientPermission(DEFAULT_AUDIT_ROLE, permission)
+      setRole: (role) => {
+        if (!publicShellReadonly) writeAuditClientRole(role);
+      },
+      can: (permission) => (
+        !publicShellReadonly && hasAuditClientPermission(DEFAULT_AUDIT_ROLE, permission)
+      )
     };
   }
   return value;

@@ -444,11 +444,12 @@ test("all restored sidebar pages expose their current product skeleton", async (
   await expectNoBrokenImages(page);
 });
 
-test("workspace keeps its redirect while compatibility routes render current product pages", async ({ page }) => {
-  const redirects = [
-    { from: "/workspace", to: /\/chat$/ },
-    { from: "/findings", to: /\/medical-audit$/ }
-  ] as const;
+test("workspace and compatibility routes render current product pages", async ({ page }) => {
+  await page.goto("/workspace");
+  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page.getByRole("heading", { name: "你好", exact: true })).toBeVisible();
+
+  const redirects = [{ from: "/findings", to: /\/medical-audit$/ }] as const;
 
   for (const redirect of redirects) {
     await page.goto(redirect.from);
@@ -471,7 +472,7 @@ test("workspace keeps its redirect while compatibility routes render current pro
     { href: "/rules", heading: "规则运行工作台", text: "规则法规库" },
     { href: "/archive", heading: "归档工作台", text: "归档包" },
     { href: "/guided-check", heading: "引导式核查", text: "核查步骤" },
-    { href: "/remediation", heading: "整改工作台", text: "整改事项、补证请求、关闭门禁" }
+    { href: "/remediation", heading: "整改工作台", text: "跟踪整改事项、补证请求和关闭门禁" }
   ] as const;
 
   for (const route of compatibilityPages) {

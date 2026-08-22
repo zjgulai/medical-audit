@@ -2,13 +2,16 @@
 title: "medical_audit Loop 30 post-demo backlog triage"
 project: "medical_audit"
 created_at: "2026-07-01T12:08:00+08:00"
-status: "triaged"
+status: "superseded"
+updated: "2026-08-13"
 evidence_grade: "planning-from-L3-production-read-only"
 deployed_sha: "b1c9a6c229a7880afcbfed35c1903d514914bb15"
 source_evidence: "Loop 28 and Loop 29"
 ---
 
 # Loop 30 Post-Demo Backlog Triage
+
+> 这是 2026-07-01 的历史待办快照，已被 `docs/README.md` 和 `drafts/analysis/project-reanalysis-and-gap-audit-20260813.md` 替代。保留本文仅用于追溯当时决策。
 
 ## Decision
 

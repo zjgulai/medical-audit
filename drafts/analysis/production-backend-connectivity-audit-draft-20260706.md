@@ -1,5 +1,12 @@
 ---
 title: "生产环境后端联通与虚拟数据排查报告"
+doc_type: analysis-report
+module: production
+status: superseded
+created: 2026-07-06
+updated: 2026-08-13
+owner: self
+source: human+ai
 project: medical_audit
 created_at: "2026-07-06T03:56:48.287046+00:00"
 evidence_grade: "L3-production-read-only for GET/browser observations; POST paths not submitted"

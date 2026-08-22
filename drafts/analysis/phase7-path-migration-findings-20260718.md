@@ -1,9 +1,12 @@
 ---
 title: Phase 7 path migration findings
 doc_type: execution-findings
+module: repository
 status: active
 created: 2026-07-18
+updated: 2026-08-13
 owner: Codex
+source: human+ai
 ---
 
 # Phase 7 path migration findings

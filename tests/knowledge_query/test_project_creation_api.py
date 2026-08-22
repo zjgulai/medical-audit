@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,8 +23,12 @@ from medical_audit_kb.api.project_member_store import (
     ProjectIdentityConflictError,
     SqlAlchemyProjectMemberStore,
 )
+from medical_audit_kb.api.remediation_store import (
+    RemediationStatusConflictError,
+    update_remediation_status,
+)
 from medical_audit_kb.core.config import KnowledgeQuerySettings, ModelProviderSettings
-from medical_audit_kb.db.models import AuditProject, AuditProjectMember
+from medical_audit_kb.db.models import AuditProject, AuditProjectMember, RemediationItem
 
 ADMIN_HEADERS = {"X-User-Id": "project-admin", "X-Role": "admin"}
 PROJECT_PAYLOAD = {
@@ -859,7 +865,8 @@ def _remediation_state(tmp_path: Path) -> tuple[ApiState, str]:
     return state, database_url
 
 
-MEMBER_HEADERS = {"X-User-Id": "auditor-1", "X-Role": "member"}
+MEMBER_HEADERS = {"X-User-Id": "next-member", "X-Role": "member"}
+REMEDIATION_PROJECT_KEY = "SELF-CHECK-FUND-20260607"
 
 
 def test_remediation_attachment_upload_and_list(tmp_path: Path) -> None:
@@ -868,7 +875,11 @@ def test_remediation_attachment_upload_and_list(tmp_path: Path) -> None:
 
     create_resp = client.post(
         "/remediation/items",
-        json={"title": "附件测试整改事项", "description": "补证材料测试"},
+        json={
+            "title": "附件测试整改事项",
+            "description": "补证材料测试",
+            "project_key": REMEDIATION_PROJECT_KEY,
+        },
         headers=MEMBER_HEADERS,
     )
     assert create_resp.status_code == 200
@@ -904,7 +915,7 @@ def test_remediation_attachment_rejects_oversized_file(tmp_path: Path) -> None:
 
     create_resp = client.post(
         "/remediation/items",
-        json={"title": "大文件测试"},
+        json={"title": "大文件测试", "project_key": REMEDIATION_PROJECT_KEY},
         headers=MEMBER_HEADERS,
     )
     assert create_resp.status_code == 200
@@ -925,7 +936,7 @@ def test_remediation_attachment_rejects_unsupported_extension(tmp_path: Path) ->
 
     create_resp = client.post(
         "/remediation/items",
-        json={"title": "扩展名测试"},
+        json={"title": "扩展名测试", "project_key": REMEDIATION_PROJECT_KEY},
         headers=MEMBER_HEADERS,
     )
     assert create_resp.status_code == 200
@@ -951,3 +962,352 @@ def test_remediation_attachment_404_for_missing_item(tmp_path: Path) -> None:
         headers=MEMBER_HEADERS,
     )
     assert resp.status_code == 404
+
+
+def test_remediation_status_machine_permissions_and_closed_state(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    director_headers = {"X-User-Id": "next-director", "X-Role": "director"}
+
+    missing_project = client.post(
+        "/remediation/items",
+        json={"title": "缺少项目"},
+        headers=MEMBER_HEADERS,
+    )
+    invisible_project = client.post(
+        "/remediation/items",
+        json={"title": "不可见项目", "project_key": "CATALOG-LIMIT-202606"},
+        headers=MEMBER_HEADERS,
+    )
+    assert missing_project.status_code == 422
+    assert invisible_project.status_code == 404
+
+    created = client.post(
+        "/remediation/items",
+        json={"title": "状态机测试", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    assert created.status_code == 200
+    item = created.json()["item"]
+    item_id = item["id"]
+    assert item["item_key"].startswith("remediation-")
+    assert item["allowed_transitions"] == [{"status": "in-rectification", "label": "整改中"}]
+    assert item["can_upload_attachment"] is True
+
+    invalid_status = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "unknown"},
+        headers=MEMBER_HEADERS,
+    )
+    skipped_state = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "pending-acceptance"},
+        headers=MEMBER_HEADERS,
+    )
+    assert invalid_status.status_code == 422
+    assert skipped_state.status_code == 409
+
+    for target in ("in-rectification", "pending-acceptance"):
+        response = client.post(
+            f"/remediation/items/{item_id}/status",
+            json={"status": target, "note": f"进入 {target}"},
+            headers=MEMBER_HEADERS,
+        )
+        assert response.status_code == 200, response.text
+
+    for denied_headers in (
+        MEMBER_HEADERS,
+        {"X-User-Id": "next-technician", "X-Role": "technician"},
+        {"X-User-Id": "project-admin", "X-Role": "admin"},
+    ):
+        denied = client.post(
+            f"/remediation/items/{item_id}/status",
+            json={"status": "accepted"},
+            headers=denied_headers,
+        )
+        assert denied.status_code == 403
+
+    accepted = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "accepted", "note": "主任验收"},
+        headers=director_headers,
+    )
+    closed = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "closed", "note": "主任关闭"},
+        headers=director_headers,
+    )
+    assert accepted.status_code == 200
+    assert closed.status_code == 200
+    assert closed.json()["item"]["allowed_transitions"] == []
+    assert closed.json()["item"]["can_upload_attachment"] is False
+
+    closed_transition = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "rejected"},
+        headers=director_headers,
+    )
+    closed_upload = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("evidence.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+    assert closed_transition.status_code == 409
+    assert closed_upload.status_code == 409
+
+
+def test_remediation_status_update_rejects_a_stale_concurrent_writer(
+    tmp_path: Path,
+) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "并发状态测试", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    assert created.status_code == 200
+    item_id = created.json()["item"]["id"]
+    for target in ("in-rectification", "pending-acceptance"):
+        response = client.post(
+            f"/remediation/items/{item_id}/status",
+            json={"status": target},
+            headers=MEMBER_HEADERS,
+        )
+        assert response.status_code == 200
+
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    first = Session(engine)
+    stale = Session(engine, expire_on_commit=False)
+    try:
+        remediation_id = UUID(item_id)
+        first_item = first.get(RemediationItem, remediation_id)
+        stale_item = stale.get(RemediationItem, remediation_id)
+        assert first_item is not None and first_item.status == "pending-acceptance"
+        assert stale_item is not None and stale_item.status == "pending-acceptance"
+        stale.commit()
+
+        accepted = update_remediation_status(
+            first,
+            remediation_id,
+            status="accepted",
+            note="并发请求一已验收",
+        )
+        assert accepted is not None and accepted.status == "accepted"
+        first.commit()
+
+        with pytest.raises(
+            RemediationStatusConflictError,
+            match="pending-acceptance -> accepted",
+        ):
+            update_remediation_status(
+                stale,
+                remediation_id,
+                status="rejected",
+                note="陈旧请求不得覆盖",
+            )
+        stale.rollback()
+    finally:
+        first.close()
+        stale.close()
+
+    with Session(engine) as verification:
+        persisted = verification.get(RemediationItem, remediation_id)
+        assert persisted is not None
+        assert persisted.status == "accepted"
+        assert persisted.acceptance_note == "并发请求一已验收"
+    engine.dispose()
+
+
+def test_remediation_status_update_rejects_unknown_persisted_state(
+    tmp_path: Path,
+) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state), raise_server_exceptions=False)
+    created = client.post(
+        "/remediation/items",
+        json={"title": "遗留异常状态", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    item_id = UUID(created.json()["item"]["id"])
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        item = session.get(RemediationItem, item_id)
+        assert item is not None
+        item.status = "legacy-unknown"
+        session.commit()
+
+    response = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "in-rectification"},
+        headers=MEMBER_HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "unsupported stored remediation status: legacy-unknown"
+    engine.dispose()
+
+
+def test_remediation_parent_project_visibility_hides_resource_existence(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "项目可见性", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    item_id = created.json()["item"]["id"]
+    outsider_headers = {"X-User-Id": "auditor-catalog", "X-Role": "member"}
+
+    detail = client.get(f"/remediation/items/{item_id}", headers=outsider_headers)
+    update = client.post(
+        f"/remediation/items/{item_id}/status",
+        json={"status": "in-rectification"},
+        headers=outsider_headers,
+    )
+    attachments = client.get(
+        f"/remediation/items/{item_id}/attachments",
+        headers=outsider_headers,
+    )
+    upload = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("evidence.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=outsider_headers,
+    )
+    observed_statuses = [
+        detail.status_code,
+        update.status_code,
+        attachments.status_code,
+        upload.status_code,
+    ]
+    assert observed_statuses == [
+        404,
+        404,
+        404,
+        404,
+    ]
+
+
+def test_remediation_list_filters_project_visibility_before_limit(tmp_path: Path) -> None:
+    state, database_url = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    now = datetime.now(UTC)
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    with Session(engine) as session:
+        session.add_all(
+            [
+                RemediationItem(
+                    item_key="remediation-visible-before-limit",
+                    title="成员可见整改",
+                    project_key=REMEDIATION_PROJECT_KEY,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                RemediationItem(
+                    item_key="remediation-hidden-before-limit",
+                    title="其他项目整改",
+                    project_key="CATALOG-LIMIT-202606",
+                    created_at=now + timedelta(seconds=1),
+                    updated_at=now + timedelta(seconds=1),
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/remediation/items?limit=1", headers=MEMBER_HEADERS)
+
+    assert response.status_code == 200
+    assert [item["item_key"] for item in response.json()["items"]] == [
+        "remediation-visible-before-limit"
+    ]
+
+
+def test_remediation_attachment_visibility_precedes_file_validation(tmp_path: Path) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "附件前置鉴权", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    item_id = created.json()["item"]["id"]
+    outsider_headers = {"X-User-Id": "auditor-catalog", "X-Role": "member"}
+
+    response = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
+        headers=outsider_headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_remediation_capabilities_fail_closed_without_attachment_store(
+    tmp_path: Path,
+) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "附件能力门禁", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    assert created.status_code == 200
+    item_id = created.json()["item"]["id"]
+    assert created.json()["item"]["can_upload_attachment"] is True
+
+    state.document_upload_store = None
+    detail = client.get(f"/remediation/items/{item_id}", headers=MEMBER_HEADERS)
+    listing = client.get("/remediation/items", headers=MEMBER_HEADERS)
+    workbench = client.get("/remediation/workbench", headers=MEMBER_HEADERS)
+    upload = client.post(
+        f"/remediation/items/{item_id}/attachments",
+        files={"file": ("evidence.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=MEMBER_HEADERS,
+    )
+
+    assert detail.status_code == 200
+    assert detail.json()["item"]["can_upload_attachment"] is False
+    assert listing.status_code == 200
+    listed_item = next(item for item in listing.json()["items"] if item["id"] == item_id)
+    assert listed_item["can_upload_attachment"] is False
+    assert workbench.status_code == 200
+    workbench_item = next(
+        item for item in workbench.json()["remediation_cases"] if item["id"] == item_id
+    )
+    assert workbench_item["can_upload_attachment"] is False
+    assert upload.status_code == 409
+    assert upload.json()["detail"] == "附件存储未启用，请联系管理员配置。"
+
+
+def test_remediation_attachment_list_checks_parent_when_store_unavailable(
+    tmp_path: Path,
+) -> None:
+    state, _ = _remediation_state(tmp_path)
+    client = TestClient(create_app(state))
+    created = client.post(
+        "/remediation/items",
+        json={"title": "无附件存储", "project_key": REMEDIATION_PROJECT_KEY},
+        headers=MEMBER_HEADERS,
+    )
+    item_id = created.json()["item"]["id"]
+    state.document_upload_store = None
+    outsider_headers = {"X-User-Id": "auditor-catalog", "X-Role": "member"}
+
+    hidden = client.get(
+        f"/remediation/items/{item_id}/attachments",
+        headers=outsider_headers,
+    )
+    visible = client.get(
+        f"/remediation/items/{item_id}/attachments",
+        headers=MEMBER_HEADERS,
+    )
+
+    assert hidden.status_code == 404
+    assert visible.status_code == 200
+    assert visible.json() == {
+        "format": "remediation-attachments-v1",
+        "item_id": item_id,
+        "items": [],
+        "count": 0,
+    }
