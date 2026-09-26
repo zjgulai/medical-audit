@@ -139,6 +139,7 @@ from medical_audit_kb.indexing.taxonomy_backfill import (
 from medical_audit_kb.ingestion.pipeline import KnowledgeIndexPipeline
 from medical_audit_kb.preview.resolver import PreviewResolver
 from medical_audit_kb.retrieval.postgres_search import load_postgres_hybrid_search_engine
+from medical_audit_kb.retrieval.rerank import rerank_provider_from_name
 
 PREVIEW_LINK_PATTERN = re.compile(r'href="(?P<path>/pages/preview/[0-9a-fA-F-]+)"')
 
@@ -296,6 +297,15 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_postgres.add_argument(
         "--index-version-key",
         help="Optional exact index_versions.version_key to evaluate within the selected status.",
+    )
+    evaluate_postgres.add_argument(
+        "--rerank",
+        choices=("none", "fake", "domain"),
+        default="none",
+        help=(
+            "none=与生产一致（默认，rerank 关闭）；fake=token-overlap 基线；"
+            "domain=域码感知候选。用于同一用例集下的 rerank A/B。"
+        ),
     )
     _add_embedding_provider_args(evaluate_postgres)
 
@@ -725,6 +735,7 @@ def _evaluate_postgres_index(args: argparse.Namespace) -> int:
     search_engine = load_postgres_hybrid_search_engine(
         database_url=database_url,
         embedding_provider=embedding_provider,
+        rerank_provider=rerank_provider_from_name(args.rerank),
         index_version_status=args.index_version_status,
         index_version_key=args.index_version_key,
     )
