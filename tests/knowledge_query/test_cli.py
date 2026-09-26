@@ -998,6 +998,67 @@ cases:
     assert captured_kwargs["index_version_key"] == "full-rebuild-next"
 
 
+def test_evaluate_postgres_index_rerank_flag_selects_provider(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """rerank A/B 开关：缺省与 none 必须保持生产行为（rerank 关闭），其余按名构造。"""
+    source_root = tmp_path / "医保审核前期资料"
+    _write_text(
+        source_root / "全量法律" / "医保基金监管条例.md",
+        "第一条 医疗机构应当保留医保基金审核依据。",
+    )
+    cases_file = tmp_path / "cases.yaml"
+    cases_file.write_text(
+        """
+cases:
+  - case_id: postgres-rerank-case-001
+    question: 医疗机构需要保留什么审核依据？
+    expected_evidence:
+      - source_collection: medical-insurance-laws
+        source_path: 全量法律/医保基金监管条例.md
+        article_or_rule: 第一条
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TEST_DATABASE_URL", "postgresql://user:pass@localhost/db")
+    captured: dict[str, object] = {}
+
+    def fake_loader(**kwargs: object) -> EmptySearchEngine:
+        captured.clear()
+        captured.update(kwargs)
+        return EmptySearchEngine()
+
+    monkeypatch.setattr(
+        "medical_audit_kb.cli.load_postgres_hybrid_search_engine",
+        fake_loader,
+    )
+
+    def selected_provider(extra_args: tuple[str, ...]) -> str | None:
+        exit_code = main(
+            [
+                "evaluate-postgres-index",
+                "--source-root",
+                str(source_root),
+                "--database-url-env",
+                "TEST_DATABASE_URL",
+                "--output",
+                str(tmp_path / "report.md"),
+                "--cases-file",
+                str(cases_file),
+                *extra_args,
+            ]
+        )
+        assert exit_code == 0
+        provider = captured["rerank_provider"]
+        return None if provider is None else str(getattr(provider, "provider", ""))
+
+    assert selected_provider(()) is None
+    assert selected_provider(("--rerank", "none")) is None
+    assert selected_provider(("--rerank", "fake")) == "fake"
+    assert selected_provider(("--rerank", "domain")) == "heuristic"
+
+
 def test_evaluate_answers_command_writes_answer_quality_outputs(tmp_path: Path) -> None:
     source_root = tmp_path / "医保审核前期资料"
     _write_text(
